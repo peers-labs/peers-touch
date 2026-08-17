@@ -183,9 +183,11 @@ func domainAgentToMap(agent *domain.Agent) map[string]interface{} {
 		"description":    agent.Description,
 		"provider_id":    agent.ProviderID,
 		"model_name":     agent.ModelName,
+		"effort":         agent.Effort,
 		"visibility":     agent.Visibility,
 		"owner_actor_id": agent.OwnerActorID,
 		"config_json":    agent.ConfigJSON,
+		"version":        agent.Version,
 		"created_at":     agent.CreatedAt,
 		"updated_at":     agent.UpdatedAt,
 	}
@@ -203,6 +205,7 @@ func (h *AgentHandlers) HandleUpdateAgent(ctx context.Context, req *model.Update
 		Effort:      req.GetEffort(),
 		Visibility:  protoAgentVisibilityToDomain(req.GetVisibility()),
 		ConfigJSON:  req.GetConfigJson(),
+		Version:     req.GetVersion(),
 	})
 	if err != nil {
 		return nil, toHandlerError(err)
@@ -272,6 +275,7 @@ func domainAgentToProto(agent *domain.Agent) *model.Agent {
 		Visibility:   domainAgentVisibilityToProto(agent.Visibility),
 		OwnerActorId: agent.OwnerActorID,
 		ConfigJson:   agent.ConfigJSON,
+		Version:      agent.Version,
 		CreatedAt:    timestamppb.New(agent.CreatedAt),
 		UpdatedAt:    timestamppb.New(agent.UpdatedAt),
 	}

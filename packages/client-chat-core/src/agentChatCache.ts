@@ -45,6 +45,7 @@ export interface CachedAgentMessage {
   readonly replacesMessageId?: string;
   readonly reasoningJson?: string;
   readonly toolCallsJson?: string;
+  readonly metadataJson?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

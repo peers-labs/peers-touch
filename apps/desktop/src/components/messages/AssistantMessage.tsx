@@ -31,6 +31,7 @@ import { AgentIconTile } from '../agent/AgentIconTile';
 import { ProviderIcon } from '../settings/ProviderIcon';
 import { useTranslation } from 'react-i18next';
 import { MessageActionBar } from '../messages';
+import { ForwardMessageModal } from './ForwardMessageModal';
 import { ToolCallsBlock } from './ToolCallCard';
 import { ThinkingIndicator } from './ThinkingBlock';
 import { chatMarkdownProps } from './markdownConfig';
@@ -314,6 +315,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const { t } = useTranslation('chat');
   const [hovered, setHovered] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
 
   const branchFromMessage = useChatStore(s => s.branchFromMessage);
   const continueGeneration = useChatStore(s => s.continueGeneration);
@@ -387,6 +389,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
 
   return (
     <Flexbox
+      data-pt-agent-message="assistant"
+      data-pt-agent-message-id={message.id}
       id={`agent-message-${message.id}`}
       align="flex-start"
       gap={8}
@@ -638,6 +642,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                 void navigator.clipboard.writeText(exported);
               }
             },
+            onForward: () => setForwardOpen(true),
           }}
           style={{
             alignSelf: 'flex-start',
@@ -647,6 +652,11 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           }}
         />
       )}
+      <ForwardMessageModal
+        open={forwardOpen}
+        messages={[message]}
+        onClose={() => setForwardOpen(false)}
+      />
     </Flexbox>
   );
 }

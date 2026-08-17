@@ -45,6 +45,9 @@ if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
   void import('./acceptance/registry').then(({ installAcceptanceHarnesses }) => {
     void installAcceptanceHarnesses();
   });
+  void import('./acceptance/agentAcceptanceHarness').then(({ installAgentAcceptanceHarness }) => {
+    installAgentAcceptanceHarness();
+  });
 }
 
 window.__PT_BOOT_STATUS__?.('Initializing…');

@@ -20,11 +20,15 @@ package persistence
 // 2026-07-05 — Added DirectRun for Station-owned direct model runtime records.
 // 2026-07-05 — Added TaskBudgetUsage for Station-owned budget usage evidence indexing.
 // 2026-08-14 — Added EcosystemAgentGroup, EcosystemTopicComment, EcosystemEvalDataset, EcosystemCustomPlugin for M11 localStorage→Station migration.
+// 2026-08-16 — Added AgentThread for R11 durable conversation Thread (sub-conversation) support.
+// 2026-08-16 — Added AgentTask for O3 user-created single-agent task lifecycle (localStorage→Station).
 func AllModels() []interface{} {
 	return []interface{}{
 		&Agent{},
 		&Conversation{},
 		&AgentMessage{},
+		&AgentThread{},
+		&AgentTask{},
 		&Memory{},
 		&MemoryEvent{},
 		&MemorySnapshot{},

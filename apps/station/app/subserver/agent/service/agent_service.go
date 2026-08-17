@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -88,6 +89,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, options domain.AgentUpse
 		Visibility:   string(normalizeAgentVisibility(options.Visibility)),
 		OwnerActorID: actorID,
 		ConfigJSON:   options.ConfigJSON,
+		Version:      1,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -108,6 +110,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 	if err != nil {
 		return nil, err
 	}
+	if options.Version <= 0 || record.Version != options.Version {
+		return nil, errcode.New(
+			errcode.AgentVersionConflict,
+			http.StatusConflict,
+			fmt.Sprintf("version conflict: current=%d, submitted=%d", record.Version, options.Version),
+			nil,
+		)
+	}
 	if strings.TrimSpace(options.Name) != "" {
 		record.Name = strings.TrimSpace(options.Name)
 	}
@@ -118,10 +128,34 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 	record.Effort = strings.TrimSpace(options.Effort)
 	record.Visibility = string(normalizeAgentVisibility(options.Visibility))
 	record.ConfigJSON = options.ConfigJSON
-	record.UpdatedAt = time.Now()
-	if err := db.WithContext(ctx).Save(record).Error; err != nil {
-		logger.Errorf(ctx, "failed to update agent: actor_id=%s agent_id=%s err=%v", options.ActorID, options.AgentID, err)
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to update agent", err)
+	nextVersion := record.Version + 1
+	updates := map[string]interface{}{
+		"name":        record.Name,
+		"title":       record.Title,
+		"description": record.Description,
+		"provider_id": record.ProviderID,
+		"model_name":  record.ModelName,
+		"effort":      record.Effort,
+		"visibility":  record.Visibility,
+		"config_json": record.ConfigJSON,
+		"version":     nextVersion,
+		"updated_at":  time.Now(),
+	}
+	result := db.WithContext(ctx).
+		Model(&persistence.Agent{}).
+		Where("id = ? AND owner_actor_id = ? AND version = ?", record.ID, options.ActorID, record.Version).
+		Updates(updates)
+	if result.Error != nil {
+		logger.Errorf(ctx, "failed to update agent: actor_id=%s agent_id=%s err=%v", options.ActorID, options.AgentID, result.Error)
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to update agent", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "agent changed during update", nil)
+	}
+	if err := db.WithContext(ctx).
+		Where("id = ? AND owner_actor_id = ?", record.ID, options.ActorID).
+		First(record).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to re-read agent after update", err)
 	}
 	agent := persistenceAgentToDomain(record)
 	return &agent, nil
@@ -232,6 +266,7 @@ func persistenceAgentToDomain(record *persistence.Agent) domain.Agent {
 		Visibility:   domain.AgentVisibility(record.Visibility),
 		OwnerActorID: record.OwnerActorID,
 		ConfigJSON:   record.ConfigJSON,
+		Version:      record.Version,
 		CreatedAt:    record.CreatedAt,
 		UpdatedAt:    record.UpdatedAt,
 	}

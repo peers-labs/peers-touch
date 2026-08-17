@@ -1,6 +1,6 @@
 import { Flexbox } from 'react-layout-kit';
 import { ActionIcon } from '@lobehub/ui';
-import { X, FolderOpen, Activity, Bot } from 'lucide-react';
+import { ChevronLeft, X, FolderOpen, Activity, Bot } from 'lucide-react';
 import { theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 
@@ -13,13 +13,15 @@ interface PortalHeaderProps {
 }
 
 function viewTitle(view: PortalView | null, t: (key: string) => string): string {
-  if (!view || view.type === 'artifacts') return 'Artifacts';
-  if (view.type === 'artifactDetail') return view.artifact.title || 'Artifact';
-  if (view.type === 'toolDetail') return 'Tool Detail';
+  if (!view || view.type === 'artifacts') return t('agent.portal.artifacts');
+  if (view.type === 'artifactDetail') return view.artifact.title || t('agent.portal.artifact');
+  if (view.type === 'toolDetail') return t('agent.portal.toolDetail');
+  if (view.type === 'thread') return t('agent.portal.thread');
+  if (view.type === 'topicComments') return t('agent.portal.topicComments');
   if (view.type === 'workingFiles') return t('agent.working.files');
   if (view.type === 'workingProgress') return t('agent.working.progress');
   if (view.type === 'agentOverview') return t('agent.working.overview');
-  return 'Portal';
+  return t('agent.portal.title');
 }
 
 type WorkingTab = 'files' | 'progress' | 'overview';
@@ -37,6 +39,7 @@ export function PortalHeader({ activeView }: PortalHeaderProps) {
   const { t } = useTranslation('agent');
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const selectedAgent = useAgentStore((s) => s.selectedAgent);
+  const canGoBack = usePortalStore((s) => s.portalStack.length > 1);
 
   const currentWorkingTab = isWorkingView(activeView);
 
@@ -75,12 +78,36 @@ export function PortalHeader({ activeView }: PortalHeaderProps) {
         justify="space-between"
         style={{ height: 44, padding: '0 12px' }}
       >
-        <span style={{ fontSize: 14, fontWeight: 500, color: token.colorText }}>
-          {viewTitle(activeView, t)}
-        </span>
+        <Flexbox horizontal align="center" gap={6} style={{ flex: 1, minWidth: 0 }}>
+          {canGoBack && (
+            <ActionIcon
+              data-pt-agent-portal-back
+              aria-label={t('agent.portal.back')}
+              icon={ChevronLeft}
+              size="small"
+              title={t('agent.portal.back')}
+              onClick={() => usePortalStore.getState().goBack()}
+            />
+          )}
+          <span
+            style={{
+              color: token.colorText,
+              fontSize: 14,
+              fontWeight: 500,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {viewTitle(activeView, t)}
+          </span>
+        </Flexbox>
         <ActionIcon
+          data-pt-agent-portal-close
+          aria-label={t('agent.portal.close')}
           icon={X}
           size="small"
+          title={t('agent.portal.close')}
           onClick={() => usePortalStore.getState().close()}
         />
       </Flexbox>
@@ -94,6 +121,7 @@ export function PortalHeader({ activeView }: PortalHeaderProps) {
       >
         {tabItems.map(({ key, icon: Icon, label }) => (
           <Flexbox
+            data-pt-agent-portal-tab={key}
             key={key}
             horizontal
             align="center"

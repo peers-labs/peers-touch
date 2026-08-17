@@ -29,4 +29,5 @@ export interface MessageActionContext {
   onThread: () => void;
   onReadAloud: () => void;
   onExport: () => void;
+  onForward: () => void;
 }

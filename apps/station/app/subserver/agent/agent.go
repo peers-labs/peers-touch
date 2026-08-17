@@ -188,6 +188,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	agentHandlers := handler.NewAgentHandlers(agentSvc, eventBus)
 	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc, chatTaskSvc, convSvc)
 	convHandlers := handler.NewConversationHandlers(convSvc, turnSvc)
+	threadHandlers := handler.NewThreadHandlers(service.NewThreadService())
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)
 	workspaceHandlers := handler.NewWorkspaceHandlers(workspaceSvc)
 	configHandlers := handler.NewAgentConfigHandlers(configSvc)
@@ -204,6 +205,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// M11: Ecosystem handlers — localStorage→Station migration.
 	ecosystemSvc := service.NewEcosystemService()
 	ecosystemHandlers := handler.NewEcosystemHandlers(ecosystemSvc)
+	agentTaskHandlers := handler.NewAgentTaskHandlers(service.NewAgentTaskService())
 
 	providerHandlers := handler.NewProviderHandlers(
 		service.NewProviderConfigService(service.NewCLIAdapterRegistry()),
@@ -221,6 +223,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-turn-stream", "/agent/turn/stream", server.POST, turnHandlers.HandleExecuteTurnStream, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-turn-cancel", "/agent/turn/cancel", server.POST, turnHandlers.HandleCancelTurn, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-turn-local-tool-result", "/agent/turn/local-tool-result", server.POST, turnHandlers.HandleLocalToolResult, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-quick-completion", "/agent/quick-completion", server.POST, turnHandlers.HandleQuickCompletion, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-list", "/agent/turn/trace/list", server.POST, turnHandlers.HandleListTurnTraces, logIDWrapper, jwtWrapper),
@@ -232,7 +235,12 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-conversation-update", "/agent/conversation/update", server.POST, convHandlers.HandleUpdateConversation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-archive", "/agent/conversation/archive", server.POST, convHandlers.HandleArchiveConversation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-messages", "/agent/conversation/messages", server.POST, convHandlers.HandleListMessages, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-message-translate", "/agent/conversation/message/translate", server.POST, convHandlers.HandleSetMessageTranslation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-events", "/agent/conversation/events", server.POST, convHandlers.HandleStreamConversationEvents, logIDWrapper, jwtWrapper),
+
+		server.NewHTTPHandler("agent-thread-create", "/agent/thread/create", server.POST, threadHandlers.HandleCreateThread, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-thread-list", "/agent/thread/list", server.POST, threadHandlers.HandleListThreads, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-thread-messages", "/agent/thread/messages", server.POST, threadHandlers.HandleListThreadMessages, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-provider-verify-cli", "/agent/provider/verify-cli", server.POST, providerHandlers.HandleVerifyCli, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-fetch-cli-models", "/agent/provider/fetch-cli-models", server.POST, providerHandlers.HandleFetchCliModels, logIDWrapper, jwtWrapper),
@@ -381,6 +389,14 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("ecosystem-plugin-update", "/agent/ecosystem/plugin/update", server.POST, ecosystemHandlers.HandleUpdateCustomPlugin, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("ecosystem-plugin-delete", "/agent/ecosystem/plugin/delete", server.POST, ecosystemHandlers.HandleDeleteCustomPlugin, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("ecosystem-plugin-list", "/agent/ecosystem/plugin/list", server.POST, ecosystemHandlers.HandleListCustomPlugins, logIDWrapper, jwtWrapper),
+
+		// Agent Tasks: user-created single-agent task lifecycle (O3).
+		server.NewHTTPHandler("agent-task-create", "/agent/task/create", server.POST, agentTaskHandlers.HandleCreateTask, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-task-list", "/agent/task/list", server.POST, agentTaskHandlers.HandleListTasks, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-task-status", "/agent/task/status", server.POST, agentTaskHandlers.HandleUpdateTaskStatus, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-task-delete", "/agent/task/delete", server.POST, agentTaskHandlers.HandleDeleteTask, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-task-subtask-add", "/agent/task/subtask/add", server.POST, agentTaskHandlers.HandleAddSubtask, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-task-subtask-complete", "/agent/task/subtask/complete", server.POST, agentTaskHandlers.HandleCompleteSubtask, logIDWrapper, jwtWrapper),
 	}
 	return prefixHandlers(s.opts.Path, handlers)
 }

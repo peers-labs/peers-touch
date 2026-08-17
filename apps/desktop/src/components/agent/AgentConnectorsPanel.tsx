@@ -1,10 +1,12 @@
-import { useEffect, useCallback } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { theme, Empty, Switch } from 'antd';
-import { Tag } from '@lobehub/ui';
-import { Link2, Unplug, Settings2 } from 'lucide-react';
+import { App, theme, Empty, Switch } from 'antd';
+import { Button, Tag } from '@lobehub/ui';
+import { Link2, RefreshCw, Unplug, Settings2 } from 'lucide-react';
 import { useAgentConnectorStore, type ConnectorInfo } from '../../store/agentConnectors';
+import { useAgentStore } from '../../store/agent';
+import { parseAgentChatConfig } from '../../services/desktop_api';
 
 interface AgentConnectorsPanelProps {
   agentId: string;
@@ -33,16 +35,24 @@ function ConnectorStatusBadge({ status }: { status: ConnectorInfo['status'] }) {
 function ConnectorRow({
   connector,
   bound,
+  pending,
+  onSync,
   onToggle,
+  onConnect,
 }: {
   connector: ConnectorInfo;
   bound: boolean;
+  pending: boolean;
+  onSync: (connectorId: string) => void;
   onToggle: (connectorId: string, checked: boolean) => void;
+  onConnect: (connectorId: string) => void;
 }) {
+  const { t } = useTranslation('agent');
   const { token } = theme.useToken();
 
   return (
     <Flexbox
+      data-pt-agent-connector={connector.id}
       horizontal
       align="center"
       gap={10}
@@ -110,12 +120,38 @@ function ConnectorRow({
 
       <ConnectorStatusBadge status={connector.status} />
 
-      <Switch
-        size="small"
-        checked={bound}
-        disabled={connector.status === 'disconnected'}
-        onChange={(checked) => onToggle(connector.id, checked)}
-      />
+      {connector.status === 'disconnected' ? (
+        <Button
+          data-pt-agent-connector-connect={connector.id}
+          loading={pending}
+          size="small"
+          onClick={() => onConnect(connector.id)}
+        >
+          {t('agent.connectors.connect')}
+        </Button>
+      ) : (
+        <Flexbox horizontal align="center" gap={6}>
+          {bound && (
+            <Button
+              data-pt-agent-connector-sync={connector.id}
+              aria-label={t('agent.connectors.syncTools')}
+              icon={<RefreshCw size={12} />}
+              loading={pending}
+              size="small"
+              title={t('agent.connectors.syncTools')}
+              onClick={() => onSync(connector.id)}
+            />
+          )}
+          <Switch
+            data-pt-agent-connector-toggle={connector.id}
+            checked={bound}
+            disabled={pending}
+            loading={pending}
+            size="small"
+            onChange={(checked) => onToggle(connector.id, checked)}
+          />
+        </Flexbox>
+      )}
     </Flexbox>
   );
 }
@@ -123,27 +159,60 @@ function ConnectorRow({
 export function AgentConnectorsPanel({ agentId, onNavigateToSettings }: AgentConnectorsPanelProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
+  const { message } = App.useApp();
+  const [pendingConnectorId, setPendingConnectorId] = useState<string | null>(null);
 
   const availableConnectors = useAgentConnectorStore((s) => s.availableConnectors);
   const loading = useAgentConnectorStore((s) => s.loading);
-  const loadConnectors = useAgentConnectorStore((s) => s.loadConnectors);
   const bindConnector = useAgentConnectorStore((s) => s.bindConnector);
   const unbindConnector = useAgentConnectorStore((s) => s.unbindConnector);
-  const isConnectorBound = useAgentConnectorStore((s) => s.isConnectorBound);
+  const connectConnector = useAgentConnectorStore((s) => s.connectConnector);
+  const syncConnectorTools = useAgentConnectorStore((s) => s.syncConnectorTools);
+  // Bindings live in the agent's chatConfig; subscribe to the agent record so the
+  // panel re-renders when a mount is added/removed (C7 durable persistence).
+  const agent = useAgentStore((s) => s.agents.find((a) => a.id === agentId));
+  const boundConnectorIds = useMemo(
+    () => new Set((agent ? parseAgentChatConfig(agent).connectors ?? [] : []).map((e) => e.connectorId)),
+    [agent],
+  );
 
-  useEffect(() => {
-    void loadConnectors();
-  }, [loadConnectors]);
+  const runConnectorAction = useCallback(
+    async (connectorId: string, action: () => Promise<void>) => {
+      setPendingConnectorId(connectorId);
+      try {
+        await action();
+      } catch {
+        void message.error(t('agent.connectors.actionFailed'));
+      } finally {
+        setPendingConnectorId(null);
+      }
+    },
+    [message, t],
+  );
 
   const handleToggle = useCallback(
     (connectorId: string, checked: boolean) => {
       if (checked) {
-        bindConnector(agentId, connectorId);
+        void runConnectorAction(connectorId, () => bindConnector(agentId, connectorId));
       } else {
-        unbindConnector(agentId, connectorId);
+        void runConnectorAction(connectorId, () => unbindConnector(agentId, connectorId));
       }
     },
-    [agentId, bindConnector, unbindConnector],
+    [agentId, bindConnector, runConnectorAction, unbindConnector],
+  );
+
+  const handleConnect = useCallback(
+    (connectorId: string) => {
+      void runConnectorAction(connectorId, () => connectConnector(connectorId));
+    },
+    [connectConnector, runConnectorAction],
+  );
+
+  const handleSync = useCallback(
+    (connectorId: string) => {
+      void runConnectorAction(connectorId, () => syncConnectorTools(agentId, connectorId));
+    },
+    [agentId, runConnectorAction, syncConnectorTools],
   );
 
   if (!loading && availableConnectors.length === 0) {
@@ -180,13 +249,16 @@ export function AgentConnectorsPanel({ agentId, onNavigateToSettings }: AgentCon
   }
 
   return (
-    <Flexbox gap={6} style={{ minHeight: 0, overflow: 'auto' }}>
+    <Flexbox data-pt-agent-connectors gap={6} style={{ minHeight: 0, overflow: 'auto' }}>
       {availableConnectors.map((connector) => (
         <ConnectorRow
           key={connector.id}
           connector={connector}
-          bound={isConnectorBound(agentId, connector.id)}
+          bound={boundConnectorIds.has(connector.id)}
+          pending={pendingConnectorId === connector.id}
           onToggle={handleToggle}
+          onConnect={handleConnect}
+          onSync={handleSync}
         />
       ))}
     </Flexbox>

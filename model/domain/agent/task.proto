@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package domain.agent;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model";
+
+// ─── Agent Tasks ─────────────────────────────────────────────
+// User-created todo-style task cards for a single agent, with a manual
+// lifecycle (pending → running/paused → completed/cancelled/failed) and
+// optional subtasks. Distinct from CollaborationTask (multi-agent
+// orchestration) and TaskRun (chat conversation root runtime).
+
+message AgentSubtask {
+  string id = 1;
+  string title = 2;
+  string status = 3; // "pending" | "completed" | "failed"
+  int64 completed_at = 4;
+}
+
+message AgentTask {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  string agent_id = 4;
+  string status = 5;   // "pending" | "running" | "paused" | "completed" | "failed" | "cancelled"
+  string priority = 6; // "low" | "medium" | "high"
+  int32 progress = 7;  // 0-100
+  repeated AgentSubtask subtasks = 8;
+  string topic_key = 9;
+  int64 created_at = 10;
+  int64 updated_at = 11;
+  int64 completed_at = 12;
+  string result = 13;
+  string error = 14;
+}
+
+message CreateAgentTaskRequest {
+  string title = 1;
+  string description = 2;
+  string agent_id = 3;
+  string priority = 4;
+  string topic_key = 5;
+}
+
+message CreateAgentTaskResponse {
+  AgentTask task = 1;
+}
+
+message ListAgentTasksRequest {
+  string agent_id = 1; // optional filter; empty = all owned tasks
+}
+
+message ListAgentTasksResponse {
+  repeated AgentTask tasks = 1;
+}
+
+message UpdateAgentTaskStatusRequest {
+  string id = 1;
+  string status = 2;
+  string result = 3; // set on completed
+  string error = 4;  // set on failed
+}
+
+message UpdateAgentTaskStatusResponse {
+  AgentTask task = 1;
+}
+
+message DeleteAgentTaskRequest {
+  string id = 1;
+}
+
+message DeleteAgentTaskResponse {
+  bool ok = 1;
+}
+
+message AddAgentSubtaskRequest {
+  string task_id = 1;
+  string title = 2;
+}
+
+message AddAgentSubtaskResponse {
+  AgentTask task = 1;
+}
+
+message CompleteAgentSubtaskRequest {
+  string task_id = 1;
+  string subtask_id = 2;
+}
+
+message CompleteAgentSubtaskResponse {
+  AgentTask task = 1;
+}

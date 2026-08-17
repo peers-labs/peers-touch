@@ -886,6 +886,16 @@ export interface AgentChatConfig {
   mcpServers?: string[];
   tools?: string[];
   skills?: string[];
+  connectors?: AgentConnectorConfigEntry[];
+}
+
+// C7 Connectors — per-agent connector mount persisted in chatConfig (durable via Station
+// config_json, mirroring mcpServers/skills/tools). `enabledTools` is synced from the OAuth2
+// provider's declared resources. This is the agent↔connector mount relation (LobeHub
+// `mountConnectorToAgent`); the OAuth connection itself lives in the existing OAuth2 subsystem.
+export interface AgentConnectorConfigEntry {
+  connectorId: string;
+  enabledTools: string[];
 }
 
 export interface Agent {
@@ -919,6 +929,7 @@ export interface Agent {
   chatConfig: string;
   knowledgeResources: string;
   isDefault: boolean;
+  version: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -952,6 +963,7 @@ export interface AgentCreate {
   openingQuestions?: string;
   chatConfig?: string;
   knowledgeResources?: string;
+  version?: number;
 }
 
 export type AgentWorkspaceCleanScope = 'tasks' | 'artifacts' | 'logs' | 'all_workspace';
@@ -1185,6 +1197,8 @@ export interface ProviderListItem {
   enabled: boolean;
   builtin: boolean;
   has_api_key: boolean;
+  requires_api_key: boolean;
+  credential_status: string;
   runtime_kind: 'cli' | 'direct';
   version: number;
 }
@@ -1648,8 +1662,11 @@ export interface MarketSkillEntry {
   scanVerdict?: string;
   version?: string;
   author?: string;
+  publisher?: string;
   license?: string;
   keywords?: string[];
+  homepage?: string;
+  repository?: string;
   trustLevel?: string;
   riskLevel?: string;
   packageType?: string;
@@ -2579,8 +2596,10 @@ export interface AgentMessage {
   seq: number;
   branch_id?: string;
   replaces_message_id?: string;
+  thread_id?: string;
   reasoning_json?: string;
   tool_calls_json?: string;
+  metadata_json?: string;
   created_at: string;
   updated_at: string;
 }
@@ -2614,6 +2633,191 @@ export interface AgentConversationMessagesInput {
 export interface AgentConversationArchiveInput {
   conversation_id: string;
   permanent?: boolean;
+}
+
+export interface AgentThread {
+  thread_id: string;
+  conversation_id: string;
+  source_message_id: string;
+  title: string;
+  source_seq: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentThreadCreateInput {
+  conversation_id: string;
+  source_message_id: string;
+  title?: string;
+}
+
+export interface AgentThreadListInput {
+  conversation_id: string;
+}
+
+export interface AgentThreadMessagesInput {
+  thread_id: string;
+  after_seq?: number;
+}
+
+export interface AgentGroupCreateInput {
+  name: string;
+  description?: string;
+  member_agent_ids?: string[];
+  orchestration_mode?: string;
+}
+
+export interface AgentGroupUpdateInput {
+  id: string;
+  name?: string;
+  description?: string;
+  member_agent_ids?: string[];
+  orchestration_mode?: string;
+}
+
+export interface AgentGroupDeleteInput {
+  id: string;
+}
+
+// Raw Station row (Go-default PascalCase serialization of ecosystem_agent_groups).
+export interface StationAgentGroupRow {
+  ID: string;
+  Name: string;
+  Description: string;
+  MemberAgentIDs: string; // JSON array string
+  OrchestrationMode: string;
+  OwnerActorID: string;
+  CreatedAt: string;
+  UpdatedAt: string;
+}
+
+export interface TopicCommentCreateInput {
+  topic_key: string;
+  content: string;
+}
+
+export interface TopicCommentDeleteInput {
+  topic_key: string;
+  comment_id: string;
+}
+
+export interface TopicCommentListInput {
+  topic_key: string;
+}
+
+// Raw Station row (Go-default PascalCase serialization of ecosystem_topic_comments).
+export interface StationTopicCommentRow {
+  ID: string;
+  TopicKey: string;
+  Content: string;
+  AuthorID: string;
+  CreatedAt: string;
+}
+
+export interface AgentTaskCreateInput {
+  title: string;
+  description?: string;
+  agent_id: string;
+  priority?: string;
+  topic_key?: string;
+}
+
+export interface AgentTaskListInput {
+  agent_id?: string;
+}
+
+export interface AgentTaskStatusInput {
+  id: string;
+  status: string;
+  result?: string;
+  error?: string;
+}
+
+export interface AgentTaskDeleteInput {
+  id: string;
+}
+
+export interface AgentTaskSubtaskAddInput {
+  task_id: string;
+  title: string;
+}
+
+export interface AgentTaskSubtaskCompleteInput {
+  task_id: string;
+  subtask_id: string;
+}
+
+export interface AgentMessageTranslateInput {
+  message_id: string;
+  translation: string;
+}
+
+// C6 Knowledge bindings — first-class agent↔resource join rows in Station
+// `agent_knowledge_bindings` (mirrors LobeHub `agentsFiles`). The resource descriptors
+// (title/source/type) stay in agent config_json; these rows are the queryable relation.
+export interface AgentKnowledgeBindingListInput {
+  agent_id: string;
+}
+
+export interface AgentKnowledgeBindingCreateInput {
+  agent_id: string;
+  resource_id: string;
+  policy?: string;
+  enabled?: boolean;
+}
+
+export interface AgentKnowledgeBindingUpdateInput {
+  id: string;
+  agent_id: string;
+  resource_id: string;
+  policy?: string;
+  enabled?: boolean;
+}
+
+export interface AgentKnowledgeBindingDeleteInput {
+  id: string;
+}
+
+// Raw Station binding row (protojson camelCase from the typed config handler).
+export interface StationAgentKnowledgeBindingRow {
+  id: string;
+  agentId: string;
+  resourceId: string;
+  policy: string;
+  enabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// Station task row (snake_case json tags from agent_task_handler).
+export interface StationAgentSubtaskRow {
+  id: string;
+  title: string;
+  status: string;
+  completed_at?: number;
+}
+
+export interface StationAgentTaskRow {
+  id: string;
+  title: string;
+  description: string;
+  agent_id: string;
+  status: string;
+  priority: string;
+  progress: number;
+  subtasks: StationAgentSubtaskRow[];
+  topic_key: string;
+  result: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+}
+
+export interface AgentConversationReplayEventsInput {
+  stream_id: string;
+  conversation_id: string;
+  after_seq?: number;
 }
 
 export interface AgentTurnStreamPayload {
@@ -3698,7 +3902,7 @@ export const api = {
               provider_name: p.name || p.id,
               type: model.type || 'chat',
               context_window: Number(model.context_window || 0),
-              enabled: Boolean(model.enabled),
+              enabled: Boolean(model.enabled ?? true),
               function_call: Boolean(model.function_call),
               vision: Boolean(model.vision),
               reasoning: Boolean(model.reasoning),
@@ -4129,7 +4333,10 @@ export const api = {
     invokeRustDataFromStatus<void, { markets: MarketSummary[] }>('skills_market_list').then(r => r.markets),
 
   addSkillMarketSource: (url: string, name?: string, branch?: string) =>
-    invokeRustDataFromStatus<SkillMarketAddInput, { ok: boolean }>('skills_market_add', { url, name, branch }),
+    invokeRustDataFromStatus<SkillMarketAddInput, { ok: boolean; id: string }>(
+      'skills_market_add',
+      { url, name, branch },
+    ),
 
   removeSkillMarketSource: (id: string) =>
     invokeRustDataFromStatus<SkillMarketIdInput, { ok: boolean }>('skills_market_remove', { id }),
@@ -4271,6 +4478,131 @@ export const api = {
       conversation_id: conversationId,
       permanent,
     }),
+
+  createAgentThread: (input: AgentThreadCreateInput) =>
+    invokeRustDataFromStatus<AgentThreadCreateInput, { ok: boolean; thread: AgentThread }>(
+      'agent_thread_create',
+      input,
+    ).then((r) => r.thread),
+
+  listAgentThreads: (conversationId: string) =>
+    invokeRustDataFromStatus<AgentThreadListInput, { ok: boolean; threads: AgentThread[] }>(
+      'agent_thread_list',
+      { conversation_id: conversationId },
+    ).then((r) => r.threads),
+
+  listAgentThreadMessages: (input: AgentThreadMessagesInput) =>
+    invokeRustDataFromStatus<AgentThreadMessagesInput, { ok: boolean; messages: AgentMessage[] }>(
+      'agent_thread_messages',
+      input,
+    ).then((r) => r.messages),
+
+  // ── Agent Groups (Station-backed, O1/O2) ──
+  // Station returns the raw ecosystem_agent_groups row with Go-default PascalCase keys.
+  createAgentGroupRemote: (input: AgentGroupCreateInput) =>
+    invokeRustDataFromStatus<AgentGroupCreateInput, { ok: boolean; group: StationAgentGroupRow }>(
+      'agent_group_create',
+      input,
+    ).then((r) => r.group),
+
+  updateAgentGroupRemote: (input: AgentGroupUpdateInput) =>
+    invokeRustDataFromStatus<AgentGroupUpdateInput, { ok: boolean }>('agent_group_update', input),
+
+  deleteAgentGroupRemote: (id: string) =>
+    invokeRustDataFromStatus<AgentGroupDeleteInput, { ok: boolean }>('agent_group_delete', { id }),
+
+  listAgentGroupsRemote: () =>
+    invokeRustDataFromStatus<void, { ok: boolean; groups: StationAgentGroupRow[] | null }>(
+      'agent_group_list',
+    ).then((r) => r.groups ?? []),
+
+  // ── Topic Comments (Station-backed, X4) ──
+  createTopicCommentRemote: (input: TopicCommentCreateInput) =>
+    invokeRustDataFromStatus<TopicCommentCreateInput, { ok: boolean; comment: StationTopicCommentRow }>(
+      'topic_comment_create',
+      input,
+    ).then((r) => r.comment),
+
+  deleteTopicCommentRemote: (input: TopicCommentDeleteInput) =>
+    invokeRustDataFromStatus<TopicCommentDeleteInput, { ok: boolean }>('topic_comment_delete', input),
+
+  listTopicCommentsRemote: (topicKey: string) =>
+    invokeRustDataFromStatus<TopicCommentListInput, { ok: boolean; comments: StationTopicCommentRow[] | null }>(
+      'topic_comment_list',
+      { topic_key: topicKey },
+    ).then((r) => r.comments ?? []),
+
+  // ── Agent Knowledge bindings (Station-backed, C6) ──
+  listAgentKnowledgeBindings: (agentId: string) =>
+    invokeRustDataFromStatus<
+      AgentKnowledgeBindingListInput,
+      { bindings: StationAgentKnowledgeBindingRow[] | null }
+    >('agent_knowledge_binding_list', { agent_id: agentId }).then((r) => r.bindings ?? []),
+
+  createAgentKnowledgeBinding: (input: AgentKnowledgeBindingCreateInput) =>
+    invokeRustDataFromStatus<
+      AgentKnowledgeBindingCreateInput,
+      { binding: StationAgentKnowledgeBindingRow }
+    >('agent_knowledge_binding_create', input).then((r) => r.binding),
+
+  updateAgentKnowledgeBinding: (input: AgentKnowledgeBindingUpdateInput) =>
+    invokeRustDataFromStatus<
+      AgentKnowledgeBindingUpdateInput,
+      { binding: StationAgentKnowledgeBindingRow }
+    >('agent_knowledge_binding_update', input).then((r) => r.binding),
+
+  deleteAgentKnowledgeBinding: (id: string) =>
+    invokeRustDataFromStatus<AgentKnowledgeBindingDeleteInput, { success: boolean }>(
+      'agent_knowledge_binding_delete',
+      { id },
+    ),
+
+  // ── Agent Tasks (Station-backed, O3) ──
+  createAgentTaskRemote: (input: AgentTaskCreateInput) =>
+    invokeRustDataFromStatus<AgentTaskCreateInput, { ok: boolean; task: StationAgentTaskRow }>(
+      'agent_task_create',
+      input,
+    ).then((r) => r.task),
+
+  listAgentTasksRemote: (agentId?: string) =>
+    invokeRustDataFromStatus<AgentTaskListInput, { ok: boolean; tasks: StationAgentTaskRow[] | null }>(
+      'agent_task_list',
+      { agent_id: agentId },
+    ).then((r) => r.tasks ?? []),
+
+  updateAgentTaskStatusRemote: (input: AgentTaskStatusInput) =>
+    invokeRustDataFromStatus<AgentTaskStatusInput, { ok: boolean; task: StationAgentTaskRow }>(
+      'agent_task_status',
+      input,
+    ).then((r) => r.task),
+
+  deleteAgentTaskRemote: (id: string) =>
+    invokeRustDataFromStatus<AgentTaskDeleteInput, { ok: boolean }>('agent_task_delete', { id }),
+
+  addAgentSubtaskRemote: (input: AgentTaskSubtaskAddInput) =>
+    invokeRustDataFromStatus<AgentTaskSubtaskAddInput, { ok: boolean; task: StationAgentTaskRow }>(
+      'agent_task_subtask_add',
+      input,
+    ).then((r) => r.task),
+
+  completeAgentSubtaskRemote: (input: AgentTaskSubtaskCompleteInput) =>
+    invokeRustDataFromStatus<AgentTaskSubtaskCompleteInput, { ok: boolean; task: StationAgentTaskRow }>(
+      'agent_task_subtask_complete',
+      input,
+    ).then((r) => r.task),
+
+  // Persist a message translation into Station message metadata (R10).
+  updateMessageTranslate: (messageId: string, translation: string) =>
+    invokeRustDataFromStatus<AgentMessageTranslateInput, { ok: boolean }>('agent_message_translate', {
+      message_id: messageId,
+      translation,
+    }),
+
+  replayAgentConversationEvents: (input: AgentConversationReplayEventsInput) =>
+    invokeRustDataFromStatus<AgentConversationReplayEventsInput, { stream_id: string }>(
+      'agent_replay_conversation_events',
+      input,
+    ),
 
   // ── Cron Jobs API ──
 
@@ -5318,6 +5650,8 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     enabled: Boolean(item.enabled),
     builtin: Boolean(item.builtin),
     has_api_key: hasKey,
+    requires_api_key: item.show_api_key !== false,
+    credential_status: String(item.credential_status || (hasKey ? 'configured' : 'not_configured')),
     runtime_kind: runtimeKind === 'cli' || hasCliCommand ? 'cli' : 'direct',
     version: Number(item.version || 0),
   };
@@ -5546,19 +5880,28 @@ export function streamAgentTurn(
     return controller;
   }
   (async () => {
-    let unlisten: (() => void) | undefined;
+    let unlistenLive: (() => void) | undefined;
+    let unlistenReplay: (() => void) | undefined;
+    let settled = false;
+    const cleanup = () => {
+      unlistenLive?.();
+      unlistenReplay?.();
+      unlistenLive = undefined;
+      unlistenReplay = undefined;
+    };
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+    };
     try {
       const { listen } = await import('@tauri-apps/api/event');
       const streamId = input.stream_id || createAgentTurnStreamId();
+      let lastEventSeq = 0;
+      let capturedConversationId = input.conversation_id || '';
+      let replayStarted = false;
 
-      unlisten = await listen<AgentTurnStreamPayload>('agent:turn-stream-event', (tauriEvent) => {
-        const payload = tauriEvent.payload;
-        if (payload.streamId !== streamId) return;
-        if (controller.signal.aborted) {
-          unlisten?.();
-          return;
-        }
-
+      const forwardEvent = (payload: AgentTurnStreamPayload) => {
         const data: Record<string, unknown> = {};
         Object.entries(payload.data || {}).forEach(([key, value]) => {
           data[key] = value;
@@ -5570,21 +5913,121 @@ export function streamAgentTurn(
         if (typeof payload.data?.arguments === 'string') data.args = payload.data.arguments;
         if (typeof payload.data?.stage === 'string') data.message = payload.data.stage;
 
+        const seq = typeof payload.data?.seq === 'number'
+          ? payload.data.seq
+          : typeof payload.data?.seq === 'string'
+            ? parseInt(payload.data.seq, 10)
+            : 0;
+        if (seq > 0 && seq > lastEventSeq) {
+          lastEventSeq = seq;
+        }
+        if (payload.event === 'conversation_created' && typeof payload.data?.conversation_id === 'string') {
+          capturedConversationId = payload.data.conversation_id;
+        }
+
         eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
-          streamId,
-          conversationId: input.conversation_id,
+          streamId: payload.streamId,
+          conversationId: capturedConversationId || input.conversation_id,
           agentId: input.agent_id,
           event: payload.event,
           data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])),
           timestampMs: Date.now(),
         } satisfies AgentTurnStreamEventPayload);
         onEvent({ event: payload.event, data });
-        if (payload.event === 'done') {
-          unlisten?.();
+      };
+
+      const startReplay = async () => {
+        if (replayStarted || settled) return;
+        replayStarted = true;
+        if (!capturedConversationId) {
+          log.warn('api', 'Replay skipped: no conversationId captured', { streamId });
           onDone();
+          settle();
+          return;
+        }
+        try {
+          const replayStreamId = `replay-${streamId}-${Date.now()}`;
+          const afterSeq = lastEventSeq > 0 ? lastEventSeq : 0;
+          unlistenReplay = await listen<AgentTurnStreamPayload>('agent:turn-stream-event', (tauriEvent) => {
+            const replayPayload = tauriEvent.payload;
+            if (replayPayload.streamId !== replayStreamId) return;
+            if (controller.signal.aborted) {
+              unlistenReplay?.();
+              return;
+            }
+            forwardEvent(replayPayload);
+            if (replayPayload.event === 'catchup_done') {
+              unlistenReplay?.();
+              unlistenReplay = undefined;
+              onDone();
+              settle();
+            }
+            if (replayPayload.event === 'error') {
+              unlistenReplay?.();
+              unlistenReplay = undefined;
+              const errData = replayPayload.data || {};
+              const err = new Error(typeof errData.error === 'string' ? errData.error : 'agent.error.replayFailed') as Error & {
+                resolution?: unknown;
+                errorDetail?: string;
+                providerId?: string;
+              };
+              onError(err);
+              settle();
+            }
+            if (replayPayload.event === 'done' || replayPayload.event === 'cancelled') {
+              unlistenReplay?.();
+              unlistenReplay = undefined;
+              onDone();
+              settle();
+            }
+          });
+          const replayResult = await api.replayAgentConversationEvents({
+            stream_id: replayStreamId,
+            conversation_id: capturedConversationId,
+            after_seq: afterSeq,
+          });
+          if (replayResult?.stream_id !== replayStreamId) {
+            unlistenReplay?.();
+            throw new Error('agent.error.replayStreamIdMismatch');
+          }
+        } catch (replayErr: unknown) {
+          if (!settled) {
+            log.error('api', 'Replay failed', { error: String(replayErr), conversationId: capturedConversationId });
+            onError(replayErr instanceof Error ? replayErr : new Error(String(replayErr)));
+            settle();
+          }
+        }
+      };
+
+      unlistenLive = await listen<AgentTurnStreamPayload>('agent:turn-stream-event', (tauriEvent) => {
+        const payload = tauriEvent.payload;
+        if (payload.streamId !== streamId) return;
+        if (controller.signal.aborted) {
+          unlistenLive?.();
+          return;
+        }
+        forwardEvent(payload);
+        if (payload.event === 'done') {
+          unlistenLive?.();
+          unlistenLive = undefined;
+          onDone();
+          settle();
+        }
+        if (payload.event === 'reconciling') {
+          unlistenLive?.();
+          unlistenLive = undefined;
+          void startReplay();
+        }
+        if (payload.event === 'cancelled') {
+          unlistenLive?.();
+          unlistenLive = undefined;
+          onDone();
+          settle();
         }
         if (payload.event === 'error') {
-          unlisten?.();
+          unlistenLive?.();
+          unlistenLive = undefined;
+          const data = payload.data || {};
           const err = new Error(typeof data.error === 'string' ? data.error : 'agent.error.streamFailed') as Error & {
             resolution?: unknown;
             errorDetail?: string;
@@ -5594,19 +6037,20 @@ export function streamAgentTurn(
           if (typeof data.detail === 'string') err.errorDetail = data.detail;
           if (typeof data.providerId === 'string') err.providerId = data.providerId;
           onError(err);
+          settle();
         }
       });
 
       const result = await api.startAgentTurnStream({ ...input, stream_id: streamId });
       if (result?.stream_id !== streamId) {
-        unlisten();
+        cleanup();
         throw new Error('agent.error.streamIdMismatch');
       }
       if (controller.signal.aborted) {
         api.cancelAgentTurnStream(streamId).catch((error) => {
           log.warn('api', 'streamAgentTurn cancel failed', { error: String(error) });
         });
-        unlisten();
+        cleanup();
         return;
       }
 
@@ -5614,11 +6058,13 @@ export function streamAgentTurn(
         api.cancelAgentTurnStream(streamId).catch((error) => {
           log.warn('api', 'streamAgentTurn cancel failed', { error: String(error) });
         });
-        unlisten?.();
+        cleanup();
       }, { once: true });
     } catch (err: unknown) {
-      unlisten?.();
-      onError(err instanceof Error ? err : new Error(String(err)));
+      cleanup();
+      if (!settled) {
+        onError(err instanceof Error ? err : new Error(String(err)));
+      }
     }
   })();
   return controller;

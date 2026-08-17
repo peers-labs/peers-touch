@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { theme } from 'antd';
 
 import { useChatStore, type ChatComposerAttachment } from '../../store/chat';
-import { useAgentStore } from '../../store/agent';
 import { useAgentAttachmentDrafts, AGENT_ATTACHMENT_ACCEPT } from './useAgentAttachmentDrafts';
 import { AttachmentStage } from './AttachmentStage';
 import { ComposerTextarea } from './ComposerTextarea';
@@ -39,12 +39,13 @@ export function ChatComposer({
   const topicDraftRef = useRef<Record<string, string>>({});
   const prevSessionKeyRef = useRef('');
   const { t } = useTranslation('chat');
+  const { token } = theme.useToken();
 
   const sendMessage = useChatStore(s => s.sendMessage);
   const stopStreaming = useChatStore(s => s.stopStreaming);
   const isStreaming = useChatStore(s => s.isStreaming);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
-  const loadModels = useAgentStore(s => s.loadModels);
+  const readinessErrorKey = useChatStore(s => s.readinessErrorKey);
 
   const {
     drafts,
@@ -59,9 +60,6 @@ export function ChatComposer({
     disabled: isStreaming,
     fallbackName: t('chat.input.attachmentFallbackName'),
   });
-
-  // Load available models on mount
-  useEffect(() => { loadModels(); }, [loadModels]);
 
   // Persist draft text per session key
   useEffect(() => {
@@ -101,7 +99,8 @@ export function ChatComposer({
   const handleSend = useCallback(() => {
     const text = input.trim();
     if ((!text && readyAttachments.length === 0) || isStreaming || uploading) return;
-    sendMessage(text, toComposerAttachments());
+    const accepted = sendMessage(text, toComposerAttachments());
+    if (!accepted) return;
     setInput('');
     clearDrafts();
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -147,6 +146,12 @@ export function ChatComposer({
       }}
     >
       <AttachmentStage drafts={drafts} onRemove={removeDraft} />
+
+      {readinessErrorKey && (
+        <div style={{ color: token.colorError, fontSize: 12 }}>
+          {t(readinessErrorKey)}
+        </div>
+      )}
 
       <ComposerTextarea
         value={input}

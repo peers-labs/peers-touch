@@ -20,6 +20,7 @@ type AgentMessage struct {
 	Seq               int64           `gorm:"not null;uniqueIndex:idx_agent_messages_conv_seq,priority:2"`
 	BranchID          *string         `gorm:"type:varchar(36);index:idx_agent_messages_branch"`
 	ReplacesMessageID *string         `gorm:"type:varchar(36)"`
+	ThreadID          *string         `gorm:"type:varchar(36);index:idx_agent_messages_thread"`
 	CreatedAt         time.Time       `gorm:"not null;autoCreateTime;index:idx_agent_messages_created_at"`
 	UpdatedAt         time.Time       `gorm:"not null;autoUpdateTime"`
 

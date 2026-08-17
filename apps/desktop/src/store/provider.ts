@@ -3,11 +3,27 @@ import { api, type ProviderListItem, type ProviderDetail } from '../services/des
 import { log } from '../utils/logger';
 import { useAgentStore } from './agent';
 
+export type ProviderReadinessStatus =
+  | 'loading'
+  | 'unconfigured'
+  | 'saving'
+  | 'checking'
+  | 'ready'
+  | 'invalid'
+  | 'unavailable'
+  | 'error';
+
+export interface ProviderReadiness {
+  status: ProviderReadinessStatus;
+  error?: string;
+}
+
 interface ProviderState {
   providers: ProviderListItem[];
   selectedId: string | null;
   detail: ProviderDetail | null;
   loading: boolean;
+  readinessById: Record<string, ProviderReadiness>;
 
   // P0: per-provider operation tracking for optimistic UX
   providerLoadingIds: Set<string>;
@@ -31,23 +47,40 @@ interface ProviderState {
   refreshAfterMutation: (providerId?: string) => Promise<void>;
 }
 
+export function deriveProviderReadiness(provider: ProviderListItem): ProviderReadiness {
+  if (!provider.enabled || provider.credential_status === 'cli_not_installed') {
+    return { status: 'unavailable' };
+  }
+  if (provider.runtime_kind === 'direct' && provider.requires_api_key && !provider.has_api_key) {
+    return { status: 'unconfigured' };
+  }
+  return { status: 'ready' };
+}
+
 export const useProviderStore = createDesktopStore<ProviderState>('provider', (set, get) => ({
   providers: [],
   selectedId: null,
   detail: null,
   loading: false,
+  readinessById: {},
   providerLoadingIds: new Set<string>(),
   detailCache: new Map<string, ProviderDetail>(),
 
   loadProviders: async () => {
+    set({ loading: true });
     try {
       const providers = await api.listProviders();
-      set({ providers });
+      set({
+        providers,
+        loading: false,
+        readinessById: Object.fromEntries(providers.map((provider) => [provider.id, deriveProviderReadiness(provider)])),
+      });
       if (!get().selectedId && providers.length > 0) {
-        get().selectProvider(providers[0].id);
+        void get().selectProvider(providers[0].id);
       }
     } catch (e) {
       log.error('provider', 'Failed to load providers', e);
+      set({ loading: false });
     }
   },
 
@@ -82,8 +115,19 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
   updateProvider: async (id: string, apiKey: string, baseUrl: string, enabled: boolean) => {
     const detail = get().detail;
     const version = detail?.id === id ? detail.version : 0;
-    await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled, version });
-    await get().refreshAfterMutation(id);
+    set((state) => ({
+      readinessById: { ...state.readinessById, [id]: { status: 'saving' } },
+    }));
+    try {
+      await api.updateProvider(id, { api_key: apiKey, base_url: baseUrl, enabled, version });
+      await get().refreshAfterMutation(id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set((state) => ({
+        readinessById: { ...state.readinessById, [id]: { status: 'error', error: message } },
+      }));
+      throw error;
+    }
   },
 
   toggleProvider: async (id: string, enabled: boolean) => {
@@ -126,7 +170,25 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
   },
 
   checkProvider: async (id: string, apiKey?: string, baseUrl?: string, model?: string) => {
-    return api.checkProvider(id, { api_key: apiKey, base_url: baseUrl, model });
+    set((state) => ({
+      readinessById: { ...state.readinessById, [id]: { status: 'checking' } },
+    }));
+    try {
+      const result = await api.checkProvider(id, { api_key: apiKey, base_url: baseUrl, model });
+      set((state) => ({
+        readinessById: {
+          ...state.readinessById,
+          [id]: result.ok ? { status: 'ready' } : { status: 'invalid', error: result.error },
+        },
+      }));
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set((state) => ({
+        readinessById: { ...state.readinessById, [id]: { status: 'error', error: message } },
+      }));
+      throw error;
+    }
   },
 
   createProvider: async (data) => {
@@ -143,7 +205,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     nextCache.delete(id);
     set({ selectedId: null, detail: null, detailCache: nextCache });
     await get().loadProviders();
-    useAgentStore.getState().loadModels();
+    await useAgentStore.getState().loadModels();
   },
 
   addModel: async (providerId: string, data: { id: string; display_name?: string; type?: string; context_window?: number; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean; enabled?: boolean }) => {
@@ -162,7 +224,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     if (detail && detail.id === providerId) {
       set({ detail: { ...detail, models: detail.models.filter((m) => m.id !== modelId) } });
     }
-    useAgentStore.getState().loadModels();
+    await useAgentStore.getState().loadModels();
   },
 
   fetchRemoteModels: async (providerId: string, apiKey?: string, baseUrl?: string) => {
@@ -185,6 +247,6 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
     if (activeId && get().selectedId === activeId) {
       await get().selectProvider(activeId, true);
     }
-    useAgentStore.getState().loadModels();
+    await useAgentStore.getState().loadModels();
   },
 }));

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -108,7 +109,14 @@ func (s *agentConfigService) UpdateKnowledgeBinding(ctx context.Context, binding
 }
 
 func (s *agentConfigService) DeleteKnowledgeBinding(ctx context.Context, id string) error {
-	return s.db.Delete(&persistence.AgentKnowledgeBinding{}, id).Error
+	result := s.db.WithContext(ctx).Where("id = ?", id).Delete(&persistence.AgentKnowledgeBinding{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("agent knowledge binding not found: %s", id)
+	}
+	return nil
 }
 
 func (s *agentConfigService) ListSkillBindings(ctx context.Context, agentID string) ([]*AgentSkillBinding, error) {
@@ -154,7 +162,14 @@ func (s *agentConfigService) UpdateSkillBinding(ctx context.Context, binding *Ag
 }
 
 func (s *agentConfigService) DeleteSkillBinding(ctx context.Context, id string) error {
-	return s.db.Delete(&persistence.AgentSkillBinding{}, id).Error
+	result := s.db.WithContext(ctx).Where("id = ?", id).Delete(&persistence.AgentSkillBinding{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("agent skill binding not found: %s", id)
+	}
+	return nil
 }
 
 func (s *agentConfigService) ListMcpBindings(ctx context.Context, agentID string) ([]*AgentMcpBinding, error) {
@@ -200,7 +215,14 @@ func (s *agentConfigService) UpdateMcpBinding(ctx context.Context, binding *Agen
 }
 
 func (s *agentConfigService) DeleteMcpBinding(ctx context.Context, id string) error {
-	return s.db.Delete(&persistence.AgentMcpBinding{}, id).Error
+	result := s.db.WithContext(ctx).Where("id = ?", id).Delete(&persistence.AgentMcpBinding{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("agent MCP binding not found: %s", id)
+	}
+	return nil
 }
 
 func (s *agentConfigService) toDomainKnowledgeBinding(b *persistence.AgentKnowledgeBinding) *AgentKnowledgeBinding {

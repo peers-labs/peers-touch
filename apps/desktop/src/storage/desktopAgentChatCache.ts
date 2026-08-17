@@ -71,6 +71,7 @@ function toCachedMessage(message: {
   replaces_message_id?: string;
   reasoning_json?: string;
   tool_calls_json?: string;
+  metadata_json?: string;
   created_at: string;
   updated_at: string;
 }): CachedAgentMessage {
@@ -86,6 +87,7 @@ function toCachedMessage(message: {
     replacesMessageId: message.replaces_message_id,
     reasoningJson: message.reasoning_json,
     toolCallsJson: message.tool_calls_json,
+    metadataJson: message.metadata_json,
     createdAt: message.created_at,
     updatedAt: message.updated_at,
   };

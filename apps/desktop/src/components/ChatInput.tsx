@@ -8,8 +8,12 @@ import { ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Squ
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
+import { useMentionStore } from '../store/mentions';
 import { useAgentAttachmentDrafts } from './composer/useAgentAttachmentDrafts';
-import type { AvailableModel } from '../services/desktop_api';
+import { useMentionTrigger } from './chat/composer/useMentionTrigger';
+import { MentionPopup } from './chat/MentionPopup';
+import { MentionTagBar } from './chat/MentionTag';
+import type { AvailableModel, Agent } from '../services/desktop_api';
 import { ProviderIcon } from './settings/ProviderIcon';
 
 const COMPOSER_COLORS = {
@@ -46,12 +50,21 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const stopStreaming = useChatStore(s => s.stopStreaming);
   const isStreaming = useChatStore(s => s.isStreaming);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
+  const readinessErrorKey = useChatStore(s => s.readinessErrorKey);
+  const composerFill = useChatStore(s => s.composerFill);
+  const consumeComposerFill = useChatStore(s => s.consumeComposerFill);
   const selectedModel = useAgentStore(s => s.selectedModel);
   const selectedProviderId = useAgentStore(s => s.selectedProviderId);
   const defaultModel = useAgentStore(s => s.defaultModel);
   const availableModels = useAgentStore(s => s.availableModels);
-  const loadModels = useAgentStore(s => s.loadModels);
   const setSelectedModel = useAgentStore(s => s.setSelectedModel);
+
+  // Mention (@) system — wires the standalone mention store/popup/trigger into
+  // the live agent composer. Aligns Peers @mention with LobeHub composer-level
+  // mention draft behavior.
+  const { handleInputChange: mentionScan, handleKeyDown: mentionKeyDown } = useMentionTrigger();
+  const clearMentions = useMentionStore(s => s.clearMentions);
+  const showMentionPopup = useMentionStore(s => s.showMentionPopup);
 
   const {
     drafts,
@@ -67,10 +80,6 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   });
 
   useEffect(() => {
-    loadModels();
-  }, [loadModels]);
-
-  useEffect(() => {
     const previousKey = prevSessionKeyRef.current;
     if (previousKey) topicDraftRef.current[previousKey] = input;
     setInput(topicDraftRef.current[currentSessionKey] || '');
@@ -80,6 +89,22 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   useEffect(() => {
     if (currentSessionKey) topicDraftRef.current[currentSessionKey] = input;
   }, [currentSessionKey, input]);
+
+  // I2 follow-up: consume a pending composer-fill request (fill-not-send), aligning
+  // with LobeHub `fillInputMessage`. Populate the draft, focus, then clear the request.
+  useEffect(() => {
+    if (!composerFill) return;
+    setInput(composerFill.text);
+    consumeComposerFill();
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        const end = composerFill.text.length;
+        el.setSelectionRange(end, end);
+      }
+    });
+  }, [composerFill, consumeComposerFill]);
 
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
@@ -105,19 +130,46 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const handleSend = useCallback(() => {
     const text = input.trim();
     if ((!text && readyAttachments.length === 0) || isStreaming || uploading) return;
-    sendMessage(text, toComposerAttachments());
+    const accepted = sendMessage(text, toComposerAttachments());
+    if (!accepted) return;
     setInput('');
     clearDrafts();
+    clearMentions();
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [input, readyAttachments.length, isStreaming, uploading, sendMessage, toComposerAttachments, clearDrafts]);
+  }, [input, readyAttachments.length, isStreaming, uploading, sendMessage, toComposerAttachments, clearDrafts, clearMentions]);
+
+  // Scan the draft for "@" triggers whenever it changes, driving the popup.
+  const handleInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
+    const value = event.target.value;
+    setInput(value);
+    mentionScan(value, event.target.selectionStart ?? value.length);
+  }, [mentionScan]);
+
+  // Insert the selected agent's mention token into the draft at the "@" position.
+  const handleMentionSelect = useCallback((_agent: Agent, insertText: string) => {
+    const el = textareaRef.current;
+    setInput((prev) => {
+      const cursor = el?.selectionStart ?? prev.length;
+      const before = prev.slice(0, cursor);
+      const after = prev.slice(cursor);
+      const atIndex = before.lastIndexOf('@');
+      if (atIndex === -1) return prev;
+      const next = before.slice(0, atIndex) + insertText + after;
+      return next;
+    });
+    // Return focus to the textarea after selection.
+    requestAnimationFrame(() => el?.focus());
+  }, []);
 
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Let the mention popup consume navigation keys while it is open.
+    if (mentionKeyDown(event)) return;
     if (event.key !== 'Enter' || event.shiftKey) return;
     const native = event.nativeEvent as unknown as { isComposing?: boolean; keyCode?: number };
     if (isComposingRef.current || native.isComposing || native.keyCode === 229) return;
     event.preventDefault();
     handleSend();
-  }, [handleSend]);
+  }, [handleSend, mentionKeyDown]);
 
   const insertSlash = useCallback(() => {
     const el = textareaRef.current;
@@ -240,6 +292,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
   return (
     <section
+      data-pt-agent-composer
       style={{
         width: '100%',
         minHeight,
@@ -291,36 +344,48 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         </Flexbox>
       )}
 
-      <textarea
-        ref={textareaRef}
-        value={input}
-        onChange={(event) => setInput(event.target.value)}
-        onKeyDown={handleKeyDown}
-        onInput={resizeTextarea}
-        onCompositionStart={() => {
-          isComposingRef.current = true;
-        }}
-        onCompositionEnd={() => {
-          isComposingRef.current = false;
-        }}
-        placeholder={customPlaceholder || t('chat.input.placeholder')}
-        rows={2}
-        style={{
-          width: '100%',
-          minHeight: 34,
-          maxHeight: 190,
-          border: 0,
-          outline: 'none',
-          resize: 'none',
-          color: token.colorText,
-          fontSize: 14,
-          lineHeight: 1.5,
-          fontFamily: 'inherit',
-          background: 'transparent',
-          boxSizing: 'border-box',
-          padding: 0,
-        }}
-      />
+      {readinessErrorKey && (
+        <div style={{ color: token.colorError, fontSize: 12 }}>
+          {t(readinessErrorKey)}
+        </div>
+      )}
+
+      <MentionTagBar />
+
+      <div style={{ position: 'relative', width: '100%' }}>
+        {showMentionPopup && <MentionPopup onSelect={handleMentionSelect} />}
+        <textarea
+          data-pt-agent-composer-input
+          ref={textareaRef}
+          value={input}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
+          onInput={resizeTextarea}
+          onCompositionStart={() => {
+            isComposingRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            isComposingRef.current = false;
+          }}
+          placeholder={customPlaceholder || t('chat.input.placeholder')}
+          rows={2}
+          style={{
+            width: '100%',
+            minHeight: 34,
+            maxHeight: 190,
+            border: 0,
+            outline: 'none',
+            resize: 'none',
+            color: token.colorText,
+            fontSize: 14,
+            lineHeight: 1.5,
+            fontFamily: 'inherit',
+            background: 'transparent',
+            boxSizing: 'border-box',
+            padding: 0,
+          }}
+        />
+      </div>
 
       <Flexbox horizontal align="center" gap={8}>
         <Flexbox horizontal align="center" gap={8}>
@@ -418,6 +483,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
             />
           ) : (
             <ActionIcon
+              data-pt-agent-composer-send
               icon={ArrowUp}
               onClick={handleSend}
               disabled={sendDisabled}

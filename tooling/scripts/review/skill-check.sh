@@ -66,6 +66,7 @@ required_rules=(
   "No mock"
   "hardcoded secrets"
   "hardcoded-ui-string"
+  "user-home-absolute-path"
   "silent error"
   "generated"
   "runtime projection"

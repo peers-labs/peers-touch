@@ -12,6 +12,7 @@ export type OperationStatus =
 export type RunState =
   | 'idle'
   | 'streaming'
+  | 'reconciling'
   | 'approval_pending'
   | 'completed'
   | 'failed'
@@ -36,6 +37,9 @@ export interface Operation {
   endedAt?: number;
   error?: OperationError;
   pendingApproval?: PendingApproval;
+  turnId?: string;
+  conversationId?: string;
+  lastEventSeq?: number;
 }
 
 export interface PendingApproval {
@@ -59,6 +63,9 @@ export type TurnStreamEventType =
   | 'image'
   | 'conversation_created'
   | 'error'
+  | 'cancelled'
+  | 'reconciling'
+  | 'catchup_done'
   | 'done';
 
 export interface TextEventPayload {
@@ -129,6 +136,14 @@ export interface DoneEventPayload {
   turn?: Record<string, unknown>;
   type?: string;
   suggestions?: string[];
+  model?: string;
+  seq?: number;
+}
+
+export interface CatchupDoneEventPayload {
+  type: 'catchup_done';
+  seq: number;
+  reason?: string;
 }
 
 export type TurnStreamEventPayload =
@@ -142,7 +157,8 @@ export type TurnStreamEventPayload =
   | ImageEventPayload
   | ConversationCreatedPayload
   | ErrorEventPayload
-  | DoneEventPayload;
+  | DoneEventPayload
+  | CatchupDoneEventPayload;
 
 export interface TurnStreamEvent {
   event: TurnStreamEventType;
@@ -160,6 +176,7 @@ export interface StreamingAccumulator {
   model: string;
   error: OperationError | null;
   isDone: boolean;
+  isCancelled: boolean;
   lastEventAt: number;
 }
 

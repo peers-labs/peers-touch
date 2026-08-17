@@ -36,6 +36,24 @@ func TestEmitTurnEventAppliesTurnContext(t *testing.T) {
 	}
 }
 
+func TestCancelTurnCancelsRegisteredExecution(t *testing.T) {
+	svc := TurnService{}
+	ctx, release := svc.RegisterTurn(context.Background(), "turn_1")
+	defer release()
+
+	if !svc.CancelTurn("turn_1") {
+		t.Fatal("expected active turn cancellation to be accepted")
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("registered turn context was not cancelled")
+	}
+	if svc.CancelTurn("missing") {
+		t.Fatal("missing turn must not report cancellation success")
+	}
+}
+
 func TestDesktopLocalBuiltinToolUsesLocalBridge(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

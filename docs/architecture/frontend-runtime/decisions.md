@@ -453,7 +453,7 @@ Phase 0 构建了 acceptance/dev telemetry pipeline：客户端采集 → Statio
 
 ### Rationale
 
-- 符合 [architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/architecture.md) 的所有权规则：跨端共享证据由 Station 侧统一收敛；device-local runtime 仍只负责采集和本地调试缓冲。
+- 符合 [architecture.md](../../../docs/global/architecture.md) 的所有权规则：跨端共享证据由 Station 侧统一收敛；device-local runtime 仍只负责采集和本地调试缓冲。
 - 原始事件保留使得跨 runtime（browser-gateway vs tauri-webview-dev vs tauri-webview-packaged）、跨版本、跨设备的对比成为可能。
 - 本地聚合无法支持多 runtime / 多版本场景下的一致 gate 判定。
 - D-06 要求"归因到 page/section/runtime/store subscription"，只有原始事件才能做到细粒度归因。

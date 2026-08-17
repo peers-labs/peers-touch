@@ -205,6 +205,45 @@ func (s *ConversationService) UpdateConversation(ctx context.Context, conversati
 	return s.GetConversation(ctx, conversationID)
 }
 
+// SetMessageTranslation persists a translation for an existing message by
+// merging it into the message's metadata_json column (R10). Passing an empty
+// translation clears it. No proto/schema change — translation lives in metadata.
+func (s *ConversationService) SetMessageTranslation(ctx context.Context, messageID, translation string) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "message_id is required", nil)
+	}
+
+	var row persistence.AgentMessage
+	if err := db.WithContext(ctx).Where("id = ?", messageID).First(&row).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return errcode.New(errcode.AgentInvalidRequest, http.StatusNotFound, "message not found", err)
+		}
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to load message", err)
+	}
+
+	meta := map[string]interface{}{}
+	if len(row.MetadataJSON) > 0 {
+		_ = json.Unmarshal(row.MetadataJSON, &meta)
+	}
+	if strings.TrimSpace(translation) == "" {
+		delete(meta, "translation")
+	} else {
+		meta["translation"] = translation
+	}
+	metaJSON, _ := json.Marshal(meta)
+
+	if err := db.WithContext(ctx).Model(&persistence.AgentMessage{}).Where("id = ?", messageID).
+		Updates(map[string]interface{}{"metadata_json": metaJSON, "updated_at": time.Now()}).Error; err != nil {
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to update message translation", err)
+	}
+	return nil
+}
+
 func (s *ConversationService) ArchiveConversation(ctx context.Context, conversationID string, permanent bool) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -450,6 +489,9 @@ func persistenceAgentMessageToDomain(row *persistence.AgentMessage) *domain.Mess
 	}
 	if row.ReplacesMessageID != nil {
 		m.ReplacesMessageID = *row.ReplacesMessageID
+	}
+	if row.ThreadID != nil {
+		m.ThreadID = *row.ThreadID
 	}
 	return m
 }

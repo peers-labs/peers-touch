@@ -8,6 +8,7 @@ const (
 	TurnStatusRunning     TurnStatus = "running"
 	TurnStatusCompleted   TurnStatus = "completed"
 	TurnStatusFailed      TurnStatus = "failed"
+	TurnStatusCancelled   TurnStatus = "cancelled"
 	TurnStatusInterrupted TurnStatus = "interrupted"
 )
 
@@ -21,6 +22,11 @@ type Turn struct {
 	Status         TurnStatus
 	StartedAt      time.Time
 	EndedAt        *time.Time
+	// Model records the LLM model that produced the final response. This is a
+	// domain-only field (not proto-mapped) populated after the provider call
+	// completes, so the turn stream "done" event can carry the model name back
+	// to the client.
+	Model string
 }
 
 type TurnTrace struct {

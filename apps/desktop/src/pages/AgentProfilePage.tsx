@@ -316,6 +316,7 @@ function AgentWorkbenchHero({
             style={{ border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 8, background: token.colorBgContainer }}
           />
           <ActionIcon
+            data-pt-agent-profile-back
             icon={ArrowLeft}
             title={t('agent.profile.backToAgent')}
             aria-label={t('agent.profile.backToAgent')}
@@ -956,12 +957,12 @@ export function AgentProfilePage({
   const availableModels = useAgentStore(s => s.availableModels);
   const loadAgents = useAgentStore(s => s.loadAgents);
   const updateAgentProfile = useAgentStore(s => s.updateAgentProfile);
+  const createAgent = useAgentStore(s => s.createAgent);
   const updateKnowledgeResources = useAgentStore(s => s.updateKnowledgeResources);
-  const loadModels = useAgentStore(s => s.loadModels);
   const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
-  const setAgentSurface = useAgentStore(s => s.setAgentSurface);
   const agentRosterOpen = useAgentStore(s => s.agentRosterOpen);
   const setAgentRosterOpen = useAgentStore(s => s.setAgentRosterOpen);
+  const saveStateByAgentId = useAgentStore(s => s.saveStateByAgentId);
 
   const [profileAgentName, setProfileAgentName] = useState(agentName);
   const agentListOpen = agentRosterOpen;
@@ -991,7 +992,6 @@ export function AgentProfilePage({
   const systemPromptSaveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const skills = useSkillStore(s => s.skills);
   const builtins = useSkillStore(s => s.builtins);
-  const loadSkills = useSkillStore(s => s.loadSkills);
   const activityMessages = useChatStore((state) => state.messages);
   const activityCurrentSessionKey = useChatStore((state) => state.currentSessionKey);
   const activitySessions = useChatStore((state) => state.sessions);
@@ -1041,12 +1041,6 @@ export function AgentProfilePage({
     }
     return labels;
   }, [builtins, skills]);
-
-  useEffect(() => {
-    loadAgents();
-    loadModels();
-    loadSkills();
-  }, [loadAgents, loadModels, loadSkills]);
 
   // Refresh agent data when Agent Builder modifies the agent
   useEffect(() => {
@@ -1259,11 +1253,6 @@ export function AgentProfilePage({
       try {
         const updated = await updateAgentProfile(agent.id, { model: modelId || '', provider: providerId });
         setAgent(updated);
-        if (modelId) {
-          await api.setModelConfig(`agent:${agent.name}`, { provider: providerId, model: modelId });
-        } else {
-          await api.deleteModelConfig(`agent:${agent.name}`);
-        }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('agent.profile.failedToUpdateModel');
         antMessage.error(message);
@@ -1283,9 +1272,6 @@ export function AgentProfilePage({
           model: shouldClearModel ? '' : agent.model,
         });
         setAgent(updated);
-        if (shouldClearModel) {
-          await api.deleteModelConfig(`agent:${agent.name}`);
-        }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('agent.profile.failedToUpdateModel');
         antMessage.error(message);
@@ -1352,7 +1338,9 @@ export function AgentProfilePage({
   const handleCreateAgent = useCallback(async () => {
     const suffix = Date.now().toString(36);
     try {
-      const created = await api.createAgent({
+      // First-class store createAgent (C5): persists + merges roster + selects +
+      // sets profile surface. Profile-local editing state is seeded from result.
+      const created = await createAgent({
         name: `agent-${suffix}`,
         title: t('agent.profile.identityTitlePlaceholder'),
         description: '',
@@ -1363,7 +1351,6 @@ export function AgentProfilePage({
         visibility: 'private',
         workspaceMode: 'agent',
       });
-      setAgentSurface(created.name, 'profile');
       setProfileAgentName(created.name);
       setAgent(created);
       setSoulMd(created.soulMd || '');
@@ -1371,12 +1358,11 @@ export function AgentProfilePage({
       setAgentsMd(created.agentsMd || '');
       setAgentsMdDirty(false);
       window.history.pushState(null, '', `#/agent-profile/${encodeURIComponent(created.name)}`);
-      await loadAgents();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
       antMessage.error(message);
     }
-  }, [loadAgents, setAgentSurface, t]);
+  }, [createAgent, t]);
 
   const handleBoundSkillsChange = useCallback(
     async (values: string[]) => {
@@ -2090,6 +2076,19 @@ export function AgentProfilePage({
                 ]}
               />
             </div>
+            <Flexbox horizontal justify="flex-end" style={{ marginTop: -6, marginBottom: 10 }}>
+              <Tag
+                color={
+                  saveStateByAgentId[agent.id] === 'failed' || saveStateByAgentId[agent.id] === 'conflict'
+                    ? 'red'
+                    : saveStateByAgentId[agent.id] === 'saving'
+                      ? 'blue'
+                      : 'default'
+                }
+              >
+                {t(`agent.profile.saveState.${saveStateByAgentId[agent.id] || 'idle'}`)}
+              </Tag>
+            </Flexbox>
 
             {/* ── Prototype-aligned mode switch: Configure vs Activity ── */}
             <Flexbox
@@ -2135,6 +2134,7 @@ export function AgentProfilePage({
             <div style={{ display: 'flex', gap: 4, flexShrink: 0, borderBottom: `1px solid ${token.colorBorderSecondary}`, marginBottom: 12, flexWrap: 'wrap' }}>
               {visibleTabs.map((tab) => (
                 <div
+                  data-pt-agent-profile-tab={tab.key}
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
                   style={{
@@ -2463,6 +2463,7 @@ export function AgentProfilePage({
                           {t('agent.profile.knowledge.pickFolder')}
                         </Button>
                         <Button
+                          data-pt-agent-knowledge-add-toggle
                           size="small"
                           icon={<Plus size={14} />}
                           onClick={() => setKnowledgeAddOpen(!knowledgeAddOpen)}
@@ -2502,6 +2503,7 @@ export function AgentProfilePage({
                             ]}
                           />
                           <Input
+                            data-pt-agent-knowledge-source
                             value={knowledgeAddSource}
                             onChange={(e) => setKnowledgeAddSource(e.target.value)}
                             placeholder={t('agent.profile.knowledge.sourcePlaceholder')}
@@ -2512,6 +2514,7 @@ export function AgentProfilePage({
                         </Flexbox>
                         <Flexbox horizontal gap={8} align="center">
                           <Input
+                            data-pt-agent-knowledge-title
                             value={knowledgeAddTitle}
                             onChange={(e) => setKnowledgeAddTitle(e.target.value)}
                             placeholder={t('agent.profile.knowledge.titlePlaceholder')}
@@ -2519,7 +2522,12 @@ export function AgentProfilePage({
                             style={{ flex: 1 }}
                             onPressEnter={handleKnowledgeAddSubmit}
                           />
-                          <Button size="small" type="primary" onClick={handleKnowledgeAddSubmit}>
+                          <Button
+                            data-pt-agent-knowledge-submit
+                            size="small"
+                            type="primary"
+                            onClick={handleKnowledgeAddSubmit}
+                          >
                             {t('agent.profile.knowledge.add')}
                           </Button>
                         </Flexbox>
@@ -2537,6 +2545,7 @@ export function AgentProfilePage({
                             : FileText;
                           return (
                             <Flexbox
+                              data-pt-agent-knowledge-resource={resource.id}
                               key={resource.id}
                               horizontal
                               align="center"
@@ -2558,6 +2567,7 @@ export function AgentProfilePage({
                                 {t(`agent.profile.knowledge.type.${resource.type}`)}
                               </Tag>
                               <button
+                                data-pt-agent-knowledge-policy={resource.id}
                                 type="button"
                                 onClick={() => handleToggleKnowledgeResource(resource.id)}
                                 title={isDisabled ? t('agent.profile.knowledge.policy.manual') : t('agent.profile.knowledge.policy.disabled')}
@@ -2579,6 +2589,7 @@ export function AgentProfilePage({
                                 {isDisabled ? t('agent.profile.knowledge.policy.disabled') : t('agent.profile.knowledge.status.bound')}
                               </button>
                               <button
+                                data-pt-agent-knowledge-remove={resource.id}
                                 type="button"
                                 onClick={() => handleRemoveKnowledgeResource(resource.id)}
                                 title={t('agent.profile.knowledge.remove')}

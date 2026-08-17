@@ -34,6 +34,14 @@
       "notes": "Managed domain with a local Desktop lifecycle contract and Gate. Python Core wrapper, native visible A-to-B-to-close-to-wakeup proof, and cross-platform Mobile remain incomplete or unproven; active means structurally onboarded, not product-ready."
     },
     {
+      "id": "agent",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/agent.yaml",
+      "capabilities": "tooling/acceptance/capabilities/agent.yaml",
+      "coverage": "managed_domain",
+      "notes": "Managed domain for Native Agent product journeys. Current contracts cover mention composition, Station-backed knowledge binding, connector lifecycle, message forwarding, and Portal navigation; each remains unproven until its dedicated Native Gate passes."
+    },
+    {
       "id": "station-dashboard",
       "status": "active",
       "profile": "tooling/acceptance/domains/station-dashboard.yaml",

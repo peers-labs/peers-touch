@@ -14,6 +14,7 @@ type fakeStreamResponse struct {
 	headers map[string]string
 	body    bytes.Buffer
 	status  int
+	flushed bool
 }
 
 func (r *fakeStreamResponse) Header() map[string]string {
@@ -29,6 +30,11 @@ func (r *fakeStreamResponse) SetHeader(key, value string) {
 
 func (r *fakeStreamResponse) Write(data []byte) (int, error) {
 	return r.body.Write(data)
+}
+
+func (r *fakeStreamResponse) Flush() error {
+	r.flushed = true
+	return nil
 }
 
 func (r *fakeStreamResponse) WriteHeader(status int) {
@@ -58,6 +64,9 @@ func TestWriteTurnStreamEvent(t *testing.T) {
 	}
 	if !strings.HasSuffix(body, "\n\n") {
 		t.Fatalf("expected SSE frame terminator, got %q", body)
+	}
+	if !resp.flushed {
+		t.Fatal("expected SSE frame to flush")
 	}
 }
 

@@ -20,6 +20,7 @@ type Agent struct {
 	Visibility   AgentVisibility
 	OwnerActorID string
 	ConfigJSON   string
+	Version      int64
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -42,4 +43,5 @@ type AgentUpsertOptions struct {
 	Effort      string
 	Visibility  AgentVisibility
 	ConfigJSON  string
+	Version     int64
 }

@@ -148,6 +148,27 @@
       "tier": "ci-cheap",
       "description": "Validate the unified messaging platform ownership, protocol, queue, and crypto contracts."
     },
+    "station-agent-unit": {
+      "command": "cd apps/station && go test ./app/subserver/agent/...",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run Station Agent package tests."
+    },
+    "chat-runtime-e2e": {
+      "command": "python3 tooling/acceptance/gates/chat/runtime_e2e.py",
+      "timeout_seconds": 600,
+      "environment": "fedp5",
+      "tier": "env-evidence",
+      "description": "Run a real Station Chat API flow with two temporary actors, persisted message delivery, and read acknowledgement."
+    },
+    "chat-live-realtime-e2e": {
+      "command": "python3 tooling/acceptance/gates/chat/live_realtime_e2e.py",
+      "timeout_seconds": 600,
+      "environment": "fedp5",
+      "tier": "env-evidence",
+      "description": "Run a real Station SSE flow proving live chat message and read receipt delivery between two temporary actors."
+    },
     "chat-desktop-gateway-e2e": {
       "command": "python3 tooling/acceptance/gates/chat/desktop_gateway_e2e.py",
       "timeout_seconds": 600,
@@ -182,6 +203,41 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Prove two Desktop dev-runtime instances can run simultaneously with distinct gateway ports, storage roots, and profiles without port or PID conflicts."
+    },
+    "agent-native-mention-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_native_gate.py --capability I1",
+      "timeout_seconds": 900,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "description": "Prove Native Agent composer mention popup, selection, removable tag, and successful-send cleanup."
+    },
+    "agent-native-knowledge-binding-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_native_gate.py --capability C6",
+      "timeout_seconds": 900,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "description": "Prove Native Agent Profile knowledge add/update/remove with Station agent_knowledge_bindings readback."
+    },
+    "agent-native-connector-lifecycle-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_native_gate.py --capability C7",
+      "timeout_seconds": 1200,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "description": "Prove approved test connector OAuth entry, mount, tool sync, authoritative readback, and unmount."
+    },
+    "agent-native-message-forward-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_native_gate.py --capability R9",
+      "timeout_seconds": 1200,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "description": "Prove Native Agent message forward action persists and renders a transcript in a distinct target Agent conversation."
+    },
+    "agent-native-portal-navigation-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_native_gate.py --capability P2",
+      "timeout_seconds": 900,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "description": "Prove Native Agent Portal push, Back, collapse/reopen preservation, and explicit close semantics."
     },
     "applet-desktop-lifecycle-smoothness": {
       "command": "pnpm applet:desktop-lifecycle-smoothness-gate",

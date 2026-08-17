@@ -156,7 +156,7 @@ fn claim_and_execute(session: &WorkerSession) -> Result<(), String> {
             return Ok(());
         }
     };
-    let agent = local_agent_json(&session.actor_id, &local_agent_id)?;
+    let agent = local_agent_json(&session.actor_id, &session.token, &local_agent_id)?;
     let cli_command = value_string(&agent, &["cliCommand", "cli_command"]);
     if cli_command.is_empty() {
         let summary = format!("Local agent {local_agent_id} has no CLI command.");
@@ -329,9 +329,10 @@ fn submit_worker_result(
     Ok(())
 }
 
-fn local_agent_json(actor_id: &str, agent_id: &str) -> Result<Value, String> {
+fn local_agent_json(actor_id: &str, token: &str, agent_id: &str) -> Result<Value, String> {
     let result = payload_json(app_agents::agents_get(
         actor_id,
+        token,
         AgentIdInput {
             id: agent_id.to_string(),
         },
@@ -340,6 +341,7 @@ fn local_agent_json(actor_id: &str, agent_id: &str) -> Result<Value, String> {
         Ok(value) => Ok(value),
         Err(error) if !actor_id.trim().is_empty() => payload_json(app_agents::agents_get(
             "",
+            token,
             AgentIdInput {
                 id: agent_id.to_string(),
             },

@@ -252,6 +252,80 @@
       ]
     },
     {
+      "id": "agent-core",
+      "features": ["agent-core-chat-loop"],
+      "when": {"paths": ["apps/station/app/subserver/agent/**", "apps/desktop/src/store/agent.ts", "apps/desktop/src/store/provider.ts", "apps/desktop/src/services/eventStream.ts"]},
+      "require": ["desktop-check", "station-agent-unit"]
+    },
+    {
+      "id": "agent-mention-composer",
+      "features": ["agent-mention-composer"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/components/ChatInput.tsx",
+          "apps/desktop/src/components/chat/MentionPopup.tsx",
+          "apps/desktop/src/components/chat/MentionTag.tsx",
+          "apps/desktop/src/store/mentions.ts"
+        ]
+      },
+      "require": ["desktop-check", "agent-native-mention-e2e"]
+    },
+    {
+      "id": "agent-knowledge-binding",
+      "features": ["agent-knowledge-binding"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/pages/AgentProfilePage.tsx",
+          "apps/desktop/src/store/agent.ts",
+          "apps/desktop/src/services/desktop_api.ts",
+          "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/agent_turn.rs",
+          "apps/station/app/subserver/agent/service/agent_config_service.go",
+          "apps/station/app/subserver/agent/domain/agent_config_service.go",
+          "apps/station/app/subserver/agent/infrastructure/persistence/agent_config.go"
+        ]
+      },
+      "require": ["desktop-check", "station-agent-unit", "agent-native-knowledge-binding-e2e"]
+    },
+    {
+      "id": "agent-connector-lifecycle",
+      "features": ["agent-connector-lifecycle"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+          "apps/desktop/src/store/agentConnectors.ts",
+          "apps/desktop/src/store/oauth2.ts",
+          "apps/desktop/src/runtimes/agentCapabilityRuntime.ts"
+        ]
+      },
+      "require": ["desktop-check", "agent-native-connector-lifecycle-e2e"]
+    },
+    {
+      "id": "agent-message-forward",
+      "features": ["agent-message-forward"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/components/messages/ForwardMessageModal.tsx",
+          "apps/desktop/src/components/messages/actions/registry.ts",
+          "apps/desktop/src/utils/forwardContent.ts",
+          "apps/desktop/src/utils/openAgentChatSession.ts",
+          "apps/desktop/src/store/chat.ts"
+        ]
+      },
+      "require": ["desktop-check", "agent-native-message-forward-e2e"]
+    },
+    {
+      "id": "agent-portal-navigation",
+      "features": ["agent-portal-navigation"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/store/portal.ts",
+          "apps/desktop/src/components/portal/**"
+        ]
+      },
+      "require": ["desktop-check", "agent-native-portal-navigation-e2e"]
+    },
+    {
       "id": "acceptance-framework",
       "features": ["acceptance-framework"],
       "when": {

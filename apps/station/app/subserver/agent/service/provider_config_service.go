@@ -74,48 +74,57 @@ func (s *ProviderConfigService) Create(ctx context.Context, req ProviderCreateRe
 		return nil, err
 	}
 
-	runtimeKind := "http"
-	cliCommand := ""
-	modelsCommand := ""
-
-	cp := catalog.Find(req.ProviderID)
-	if cp != nil {
-		if cp.RuntimeKind != "" {
-			runtimeKind = cp.RuntimeKind
-		}
-		cliCommand = cp.CliCommand
-		modelsCommand = cp.ModelsCommand
-	}
-	if runtimeKind == "cli" && s.cliRegistry.IsRegistered(req.ProviderID) {
+	provider := newProviderRecord(req)
+	if provider.RuntimeKind == "cli" && s.cliRegistry.IsRegistered(req.ProviderID) {
 		spec, ok := s.cliRegistry.Resolve(req.ProviderID)
-		if ok && cliCommand == "" {
-			cliCommand = spec.BinaryPath
+		if ok && provider.CliCommand == "" {
+			provider.CliCommand = spec.BinaryPath
 		}
 	}
 
-	provider := persistence.AgentProvider{
-		ID:            uuid.New().String(),
-		ActorID:       req.ActorID,
-		Name:          req.ProviderID,
-		DisplayName:   req.DisplayName,
-		BaseURL:       req.BaseURL,
-		Config:        req.ConfigJSON,
-		SourceType:    "custom",
-		RuntimeKind:   runtimeKind,
-		CliCommand:    cliCommand,
-		ModelsCommand: modelsCommand,
-		Protocol:      req.Protocol,
-		Enabled:       true,
-		Version:       1,
-	}
-
-	if err := db.WithContext(ctx).Create(&provider).Error; err != nil {
+	if err := db.WithContext(ctx).Create(provider).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to create provider", err)
 	}
 
-	logger.Infof(ctx, "provider created: actor=%s, provider=%s, runtime=%s", req.ActorID, req.ProviderID, runtimeKind)
-	return &provider, nil
+	logger.Infof(ctx, "provider created: actor=%s, provider=%s, runtime=%s", req.ActorID, req.ProviderID, provider.RuntimeKind)
+	return provider, nil
+}
+
+func newProviderRecord(req ProviderCreateRequest) *persistence.AgentProvider {
+	provider := &persistence.AgentProvider{
+		ID:          uuid.New().String(),
+		ActorID:     req.ActorID,
+		Name:        req.ProviderID,
+		DisplayName: req.DisplayName,
+		BaseURL:     req.BaseURL,
+		Config:      req.ConfigJSON,
+		SourceType:  "custom",
+		RuntimeKind: "http",
+		Protocol:    req.Protocol,
+		Enabled:     true,
+		Version:     1,
+	}
+
+	if cp := catalog.Find(req.ProviderID); cp != nil {
+		provider.SourceType = "catalog"
+		if provider.DisplayName == "" {
+			provider.DisplayName = cp.Name
+		}
+		if provider.BaseURL == "" {
+			provider.BaseURL = cp.DefaultBaseURL
+		}
+		if provider.Protocol == "" {
+			provider.Protocol = cp.Protocol
+		}
+		if cp.RuntimeKind != "" {
+			provider.RuntimeKind = cp.RuntimeKind
+		}
+		provider.CliCommand = cp.CliCommand
+		provider.ModelsCommand = cp.ModelsCommand
+	}
+
+	return provider
 }
 
 func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRequest) (*persistence.AgentProvider, error) {

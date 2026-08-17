@@ -161,6 +161,28 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       };
     }
 
+    case 'cancelled':
+      return {
+        ...msg,
+        cancelled: true,
+        loading: false,
+        lastEventAt: Date.now(),
+      };
+
+    case 'reconciling':
+      return {
+        ...msg,
+        loading: true,
+        lastEventAt: Date.now(),
+      };
+
+    case 'catchup_done':
+      return {
+        ...msg,
+        loading: false,
+        lastEventAt: Date.now(),
+      };
+
     case 'done': {
       const doneCalls = (msg.toolCalls || []).map((tc) =>
         tc.pending ? { ...tc, pending: false, status: 'success' as ToolCallStatus } : tc,
@@ -181,7 +203,7 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
 }
 
 export function isTerminalEvent(event: TurnStreamEvent): boolean {
-  return event.event === 'done' || event.event === 'error';
+  return event.event === 'done' || event.event === 'error' || event.event === 'cancelled';
 }
 
 export function isApprovalEvent(event: TurnStreamEvent): boolean {
@@ -200,6 +222,7 @@ export function createStreamingAccumulator(): StreamingAccumulator {
     model: '',
     error: null,
     isDone: false,
+    isCancelled: false,
     lastEventAt: 0,
   };
 }
@@ -222,6 +245,8 @@ export function accumulateEvent(acc: StreamingAccumulator, event: TurnStreamEven
       return { ...acc, images: [...acc.images, s(d.url)], lastEventAt: Date.now() };
     case 'error':
       return { ...acc, error: { message: s(d.error), detail: s(d.detail), providerId: s(d.providerId) }, lastEventAt: Date.now() };
+    case 'cancelled':
+      return { ...acc, isCancelled: true, lastEventAt: Date.now() };
     case 'done':
       return { ...acc, isDone: true, model: s(d.model) || acc.model, lastEventAt: Date.now() };
     default:

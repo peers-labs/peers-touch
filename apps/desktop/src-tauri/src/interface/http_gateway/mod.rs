@@ -2744,7 +2744,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // =================================================================
         // Agents (no state)
         // =================================================================
-        "agents_list" => to_json(app_agents::agents_list("")),
+        "agents_list" => {
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_list("", &token))
+        }
         "agents_get_selected" => to_json(app_agents::agents_get_selected("")),
         "agents_set_selected" => {
             let input = match parse_args::<AgentSelectInput>(args) {
@@ -2766,49 +2772,77 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_get("", input))
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_get("", &token, input))
         }
         "agents_create" => {
             let input = match parse_args::<AgentCreateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_create("", input))
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_create("", &token, input))
         }
         "agents_update" => {
             let input = match parse_args::<AgentUpdateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_update("", input))
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_update("", &token, input))
         }
         "agents_delete" => {
             let input = match parse_args::<AgentIdInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_delete("", input))
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_delete("", &token, input))
         }
         "agents_duplicate" => {
             let input = match parse_args::<AgentDuplicateInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_duplicate("", input))
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_duplicate("", &token, input))
         }
         "agents_export_package" => {
             let input = match parse_args::<AgentPackageExportInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_export_package("", input))
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_export_package("", &token, input))
         }
         "agents_import_package" => {
             let input = match parse_args::<AgentPackageImportInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agents::agents_import_package("", input))
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(app_agents::agents_import_package("", &token, input))
         }
         "agents_search" => {
             let input = match parse_args::<AgentSearchInput>(args) {
@@ -2879,6 +2913,189 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agent_turn::agent_conversation_archive(input, &token))
         }
+        "agent_thread_create" => {
+            let input = match parse_args::<AgentThreadCreateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_thread_create(input, &token))
+        }
+        "agent_thread_list" => {
+            let input = match parse_args::<AgentThreadListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_thread_list(input, &token))
+        }
+        "agent_thread_messages" => {
+            let input = match parse_args::<AgentThreadMessagesInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_thread_messages(input, &token))
+        }
+        "agent_group_create" => {
+            let input = match parse_args::<AgentGroupCreateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_group_create(input, &token))
+        }
+        "agent_group_update" => {
+            let input = match parse_args::<AgentGroupUpdateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_group_update(input, &token))
+        }
+        "agent_group_delete" => {
+            let input = match parse_args::<AgentGroupDeleteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_group_delete(input, &token))
+        }
+        "agent_group_list" => {
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_group_list(&token))
+        }
+        "topic_comment_create" => {
+            let input = match parse_args::<TopicCommentCreateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::topic_comment_create(input, &token))
+        }
+        "topic_comment_delete" => {
+            let input = match parse_args::<TopicCommentDeleteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::topic_comment_delete(input, &token))
+        }
+        "topic_comment_list" => {
+            let input = match parse_args::<TopicCommentListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::topic_comment_list(input, &token))
+        }
+        "agent_task_create" => {
+            let input = match parse_args::<AgentTaskCreateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_create(input, &token))
+        }
+        "agent_task_list" => {
+            let input = match parse_args::<AgentTaskListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_list(input, &token))
+        }
+        "agent_task_status" => {
+            let input = match parse_args::<AgentTaskStatusInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_status(input, &token))
+        }
+        "agent_task_delete" => {
+            let input = match parse_args::<AgentTaskDeleteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_delete(input, &token))
+        }
+        "agent_task_subtask_add" => {
+            let input = match parse_args::<AgentTaskSubtaskAddInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_subtask_add(input, &token))
+        }
+        "agent_task_subtask_complete" => {
+            let input = match parse_args::<AgentTaskSubtaskCompleteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_subtask_complete(input, &token))
+        }
+        "agent_message_translate" => {
+            let input = match parse_args::<AgentMessageTranslateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_message_translate(input, &token))
+        }
         "agent_execute_turn" => {
             let input = match parse_args::<AgentExecuteTurnInput>(args) {
                 Ok(v) => v,
@@ -2933,7 +3150,50 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agent_turn::cancel_agent_turn_stream(&input.stream_id))
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::cancel_agent_turn_stream(
+                &input.stream_id,
+                &token,
+            ))
+        }
+        "agent_replay_conversation_events" => {
+            let input = match parse_args::<AgentConversationReplayEventsInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            let stream_id = input.stream_id.trim().to_string();
+            let stream_id_for_task = stream_id.clone();
+            let app_for_task = match runtime.app_handle("agent_replay_conversation_events") {
+                Ok(app_handle) => app_handle,
+                Err(error) => return error,
+            };
+            tauri::async_runtime::spawn_blocking(move || {
+                if let Err(error) =
+                    app_agent_turn::replay_conversation_events_stream(&app_for_task, input, &token)
+                {
+                    tracing::error!(command = "agent_replay_conversation_events", error = %error, "Conversation events replay failed");
+                    app_agent_turn::emit_turn_stream_event(
+                        &app_for_task,
+                        &stream_id_for_task,
+                        "error",
+                        json!({
+                            "type": "error",
+                            "error": error,
+                        }),
+                    );
+                }
+            });
+            to_json(AppResult::success(StubPayload {
+                command: "agent_replay_conversation_events".to_string(),
+                status: json!({ "stream_id": stream_id }).to_string(),
+            }))
         }
         "agent_turn_trace_list" => {
             let input = match parse_args::<AgentTurnTraceListInput>(args) {

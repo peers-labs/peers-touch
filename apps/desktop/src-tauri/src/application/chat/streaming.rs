@@ -191,7 +191,7 @@ async fn stream_openai(
     stream_id: &str,
     config: &StreamConfig,
 ) -> Result<(), String> {
-    let url = format!("{}/chat/completions", config.base_url);
+    let url = build_openai_endpoint(&config.base_url);
     let body = serde_json::json!({
         "model": config.model_id,
         "messages": [{"role": "user", "content": config.message}],
@@ -287,6 +287,28 @@ async fn stream_openai(
     }
 
     Ok(())
+}
+
+/// Build the OpenAI-compatible endpoint URL, mirroring the Station logic in
+/// `provider_service.go::callOpenAI`. Handles base URLs that:
+///   - already end with `/chat/completions` (use as-is)
+///   - end with a version segment like `/v1`, `/v3`, `/api/v3` (append `/chat/completions`)
+///   - have no version segment (append `/v1/chat/completions`)
+fn build_openai_endpoint(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    if base.ends_with("/chat/completions") {
+        return base.to_string();
+    }
+    // Check if the URL ends with a version segment like /v1, /v3, /api/v3.
+    // The regex matches a final path segment of the form "vN" (digits only).
+    let last_segment = base.rsplit('/').next().unwrap_or("");
+    let has_version_suffix =
+        last_segment.starts_with('v') && last_segment[1..].chars().all(|c| c.is_ascii_digit());
+    if has_version_suffix && last_segment.len() > 1 {
+        format!("{}/chat/completions", base)
+    } else {
+        format!("{}/v1/chat/completions", base)
+    }
 }
 
 async fn stream_anthropic(
@@ -419,4 +441,55 @@ async fn stream_anthropic(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_openai_endpoint_with_version_suffix() {
+        // Ark-style: base URL ends with /api/v3
+        assert_eq!(
+            build_openai_endpoint("https://ark.cn-beijing.volces.com/api/v3"),
+            "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+        );
+    }
+
+    #[test]
+    fn build_openai_endpoint_with_v1_suffix() {
+        assert_eq!(
+            build_openai_endpoint("https://api.openai.com/v1"),
+            "https://api.openai.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn build_openai_endpoint_without_version() {
+        // No version segment — must prepend /v1
+        assert_eq!(
+            build_openai_endpoint("https://api.openai.com"),
+            "https://api.openai.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn build_openai_endpoint_already_complete() {
+        assert_eq!(
+            build_openai_endpoint("https://custom.example.com/v1/chat/completions"),
+            "https://custom.example.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn build_openai_endpoint_strips_trailing_slash() {
+        assert_eq!(
+            build_openai_endpoint("https://ark.cn-beijing.volces.com/api/v3/"),
+            "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+        );
+        assert_eq!(
+            build_openai_endpoint("https://api.openai.com/"),
+            "https://api.openai.com/v1/chat/completions"
+        );
+    }
 }

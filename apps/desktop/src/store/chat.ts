@@ -11,8 +11,9 @@ import {
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
 import { buildAgentRuntimeConfig } from '../services/agent-runtime-config';
-import { useAgentStore } from './agent';
+import { resolveAgentModelRef, useAgentStore } from './agent';
 import { useAgentTopicStore } from './agentTopics';
+import { createAgentDraftKey, isAgentDraftKey } from './agentDraft';
 import { getDesktopAgentChatCache } from '../storage/desktopAgentChatCache';
 import type { CachedAgentConversation, CachedAgentMessage } from '@peers-touch/client-chat-core';
 import {
@@ -120,6 +121,7 @@ export interface ChatMessage {
   timestamp: number;
   model?: string;
   error?: string;
+  cancelled?: boolean;
   errorDetail?: string;
   resolution?: ErrorResolutionAction | null;
   providerId?: string;
@@ -181,6 +183,15 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
       }));
     } catch {
       // Malformed persisted tool-call payload; render message without tool calls.
+    }
+  }
+  // Restore a persisted translation from message metadata (R10).
+  if (message.metadataJson) {
+    try {
+      const meta = JSON.parse(message.metadataJson) as { translation?: string };
+      if (meta.translation) chatMessage.translation = meta.translation;
+    } catch {
+      // Malformed metadata; ignore.
     }
   }
   return chatMessage;
@@ -403,9 +414,16 @@ interface ChatState {
   sessionBuffers: Record<string, ChatMessage[]>;
   abortController: AbortController | null;
   memoryDisabledSessions: Record<string, boolean>;
+  draftPromotions: Record<string, string>;
+  readinessErrorKey: string | null;
 
 
   wideScreen: boolean;
+
+  // Composer fill channel (I2 follow-up): a one-shot request to populate the ChatInput
+  // draft WITHOUT sending, aligning with LobeHub `fillInputMessage`. ChatInput consumes
+  // the pending value, writes it into its draft, focuses, and clears the request.
+  composerFill: { text: string; nonce: number } | null;
 
   loadSessions: () => Promise<void>;
   mergeSessions: (sessions: Session[]) => void;
@@ -414,7 +432,7 @@ interface ChatState {
   bootstrapSession: () => Promise<void>;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
-  sendMessage: (content: string, attachments?: ChatComposerAttachment[]) => void;
+  sendMessage: (content: string, attachments?: ChatComposerAttachment[]) => boolean;
   regenerateMessage: (messageId: string) => void;
   retryMessage: (messageId: string) => void;
   deleteAndRegenerateMessage: (messageId: string) => void;
@@ -428,10 +446,9 @@ interface ChatState {
   translateMessage: (id: string) => Promise<void>;
 
   syncMessages: () => Promise<void>;
-  saveCurrentTopic: () => Promise<void>;
-
-
   setWideScreen: (wide: boolean) => void;
+  fillComposer: (text: string) => void;
+  consumeComposerFill: () => void;
   toggleSessionMemory: (sessionKey?: string) => void;
   isMemoryDisabled: (sessionKey?: string) => boolean;
   loadPreferences: () => Promise<void>;
@@ -516,24 +533,22 @@ function buildAgentTurnInput(
   };
 }
 
-function getAgentRuntimeConfig(agentName: string): {
-  workspaceRoot?: string;
-  contextWindowSize?: number;
-  maxRetries?: number;
-  knowledgeResources?: AgentExecuteTurnKnowledgeResource[];
-  identity?: string;
-  agentConfigPrompt?: string;
-  effort?: string;
-  provider?: string;
-  model?: string;
-  cliCommand?: string;
-  workspaceMode?: string;
-  runtimeBackend?: string;
-  rootfsPath?: string;
-  allowedRoots?: string[];
-} {
-  const agent = useAgentStore.getState().agents.find((item) => item.name === agentName);
-  return buildAgentRuntimeConfig(agent);
+function resolveAgentExecutionRef(agentName: string): {
+  agentId: string;
+  provider: string;
+  model: string;
+  runtimeConfig: ReturnType<typeof buildAgentRuntimeConfig>;
+} | null {
+  const agentState = useAgentStore.getState();
+  const agent = agentState.agents.find((item) => item.name === agentName);
+  if (!agent) return null;
+  const ref = resolveAgentModelRef(agent, agentState.availableModels);
+  if (!ref) return null;
+  return {
+    agentId: agent.id,
+    ...ref,
+    runtimeConfig: buildAgentRuntimeConfig(agent),
+  };
 }
 
 function reconcileTopicsAfterTurn(sessionKey: string): void {
@@ -669,6 +684,45 @@ function clearBuffer(buffers: Record<string, ChatMessage[]>, sessionKey: string)
   return next;
 }
 
+export function applyOperationEventIdentity(
+  operations: Record<string, ChatOperation>,
+  sessionKey: string,
+  event: StreamEvent,
+): { operations: Record<string, ChatOperation>; accepted: boolean } {
+  const operation = operations[sessionKey];
+  if (!operation) return { operations, accepted: true };
+  const seq = Number(event.data?.seq || 0);
+  if (seq > 0 && (operation.lastEventSeq || 0) >= seq) {
+    return { operations, accepted: false };
+  }
+  const turnId =
+    typeof event.data?.turnId === 'string'
+      ? event.data.turnId
+      : typeof event.data?.turn_id === 'string'
+        ? event.data.turn_id
+        : operation.turnId;
+  const conversationId =
+    typeof event.data?.conversationId === 'string'
+      ? event.data.conversationId
+      : typeof event.data?.conversation_id === 'string'
+        ? event.data.conversation_id
+        : operation.conversationId;
+  return {
+    accepted: true,
+    operations: {
+      ...operations,
+      [sessionKey]: {
+        ...operation,
+        turnId,
+        conversationId,
+        lastEventSeq: seq > 0 ? seq : operation.lastEventSeq,
+        runState:
+          event.event === 'reconciling' ? 'reconciling' : operation.runState,
+      },
+    },
+  };
+}
+
 async function loadSessionMessages(
   key: string,
   get: () => ChatState,
@@ -704,9 +758,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   sessionBuffers: {},
   abortController: null,
   memoryDisabledSessions: {},
+  draftPromotions: {},
+  readinessErrorKey: null,
 
 
   wideScreen: false,
+  composerFill: null,
 
   loadSessions: async () => {
     log.info('chat', 'Loading sessions');
@@ -721,15 +778,8 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       log.info('chat', 'Sessions loaded from cache', { count: sessions.length });
       set({ sessions });
       const { currentSessionKey, messages, operations } = get();
-      const { selectedModel, defaultModel } = useAgentStore.getState();
-      if (!selectedModel || selectedModel === defaultModel) {
-        const current = sessions.find((s) => s.key === currentSessionKey);
-        if (current?.model_override) {
-          useAgentStore.getState().setSelectedModel(current.model_override);
-        }
-      }
       if (
-        !currentSessionKey.startsWith('draft:') &&
+        !isAgentDraftKey(currentSessionKey) &&
         messages.length === 0 &&
         !operations[currentSessionKey] &&
         sessions.some((s) => s.key === currentSessionKey)
@@ -764,21 +814,9 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     });
   },
 
-  selectSession: async (key: string, sessionOverride?: Session) => {
+  selectSession: async (key: string, _sessionOverride?: Session) => {
     log.info('chat', 'Selecting session', { key });
     if (key === get().currentSessionKey) return;
-    const session = sessionOverride ?? get().sessions.find((s) => s.key === key);
-    const sessionModel = session?.model_override || '';
-    const { availableModels, defaultModel } = useAgentStore.getState();
-    const modelIds = new Set(availableModels.map((m) => m.id));
-    let nextModel = sessionModel || defaultModel;
-    if (nextModel && modelIds.size > 0 && !modelIds.has(nextModel)) {
-      nextModel = '';
-    }
-    if (!nextModel && availableModels.length > 0) {
-      nextModel = modelIds.has(defaultModel) ? defaultModel : availableModels[0].id;
-    }
-    useAgentStore.getState().setSelectedModel(nextModel);
     const liveOp = get().operations[key];
     // Only adopt a buffered message list while a stream is actively running for
     // this session. A buffer with no live operation is stale (e.g. left behind
@@ -790,9 +828,10 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       isStreaming: isActiveOperation(liveOp),
       streamingStartedAt: liveOp?.startedAt ?? null,
       abortController: liveOp?.abortController ?? null,
+      readinessErrorKey: null,
     });
     if (liveBuffer) return;
-    if (key.startsWith('draft:')) {
+    if (isAgentDraftKey(key)) {
       set({ messages: [] });
       return;
     }
@@ -802,7 +841,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   bootstrapSession: async () => {
     const key = get().currentSessionKey;
     log.info('chat', 'Bootstrapping current session history', { key });
-    if (key.startsWith('draft:')) {
+    if (isAgentDraftKey(key)) {
       set({ messages: [] });
       return;
     }
@@ -812,8 +851,13 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   },
 
   newSession: () => {
-    const key = `draft:${Date.now()}`;
-    const { selectedAgent, defaultModel } = useAgentStore.getState();
+    const { selectedAgent, agents } = useAgentStore.getState();
+    const agent = agents.find((item) => item.name === selectedAgent);
+    if (!agent) {
+      log.warn('chat', 'Cannot create Agent draft before Agent projection is ready');
+      return;
+    }
+    const key = createAgentDraftKey(agent.id);
     const agentName = selectedAgent || 'assistant';
     const now = new Date().toISOString();
     const draftSession: Session = {
@@ -826,11 +870,11 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       updated_at: now,
     };
     log.info('chat', 'New draft session created', { key, agentName });
-    useAgentStore.getState().setSelectedModel(defaultModel);
     set((state) => ({
       currentSessionKey: key,
       messages: [],
-      sessions: [draftSession, ...state.sessions.filter((s) => !s.key.startsWith('draft:'))],
+      readinessErrorKey: null,
+      sessions: [draftSession, ...state.sessions.filter((s) => !isAgentDraftKey(s.key))],
     }));
   },
 
@@ -859,7 +903,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const { currentSessionKey, messages: currentMessages } = get();
 
     try {
-      if (currentSessionKey.startsWith('draft:')) {
+      if (isAgentDraftKey(currentSessionKey)) {
         return;
       }
       const synced = await agentChatCache.syncConversation(currentSessionKey);
@@ -873,32 +917,26 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
   },
 
-  saveCurrentTopic: async () => {
-    const { currentSessionKey, messages } = get();
-    if (messages.length === 0) return;
-
-    const firstUserMsg = messages.find((m) => m.role === 'user');
-    const title = firstUserMsg?.content.slice(0, 40) || i18n.t('chat.session.newTopicFallback', { ns: 'chat' });
-
-    const newKey = `session-${Date.now()}`;
-    set({ currentSessionKey: newKey, messages: [] });
-    get().loadSessions();
-    log.info('chat', `Saved topic "${title}" from ${currentSessionKey}, switched to ${newKey}`);
-  },
-
   sendMessage: (content: string, attachments: ChatComposerAttachment[] = []) => {
     log.info('chat', 'Sending message', { sessionKey: get().currentSessionKey, contentLength: content.length });
     const { currentSessionKey } = get();
-    const isDraft = currentSessionKey.startsWith('draft:');
+    const isDraft = isAgentDraftKey(currentSessionKey);
     const effectiveConvId = isDraft ? '' : currentSessionKey;
     const agentState = useAgentStore.getState();
-    const { selectedAgent, selectedModel, selectedProviderId, defaultModel, availableModels } = agentState;
+    const { selectedAgent } = agentState;
     const agentName = selectedAgent || 'assistant';
-    const runtimeConfig = getAgentRuntimeConfig(agentName);
-
-    const resolvedModel = selectedModel || defaultModel || availableModels[0]?.id;
-    const effectiveModel = resolvedModel || runtimeConfig.model;
-    const effectiveProvider = (effectiveModel && availableModels.find((m) => m.id === effectiveModel)?.provider_id) || selectedProviderId || runtimeConfig.provider || availableModels[0]?.provider_id || '';
+    const execution = resolveAgentExecutionRef(agentName);
+    if (!execution) {
+      set({ readinessErrorKey: 'chat.agentReadiness.modelRequired' });
+      return false;
+    }
+    const {
+      agentId,
+      provider: effectiveProvider,
+      model: effectiveModel,
+      runtimeConfig,
+    } = execution;
+    set({ readinessErrorKey: null });
 
     const imageUrls = attachments
       .filter((item) => item.mime_type.startsWith('image/'))
@@ -944,15 +982,25 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       (event: StreamEvent) => {
         if (typeof event.data?.task_id === 'string') capturedTaskId = event.data.task_id;
         if (event.event === 'conversation_created' && typeof event.data?.conversation_id === 'string' && isDraft) {
-          const realConvId = event.data.conversation_id;
-          log.info('chat', 'Draft session resolved to real conversation', { draftKey: currentSessionKey, convId: realConvId });
-          resolvedSessionKey = realConvId;
+          const realConvId = event.data.conversation_id.trim();
+          let promotedSession: Session | undefined;
           set((state) => {
+            const existingPromotion = state.draftPromotions[currentSessionKey];
+            if (existingPromotion) {
+              if (existingPromotion !== realConvId) {
+                log.error('chat', 'Draft received conflicting conversation promotion', {
+                  draftKey: currentSessionKey,
+                  existingConversationId: existingPromotion,
+                  receivedConversationId: realConvId,
+                });
+              }
+              return state;
+            }
             const byKey = new Map(state.sessions.map((s) => [s.key, s]));
             const draft = byKey.get(currentSessionKey);
             byKey.delete(currentSessionKey);
             const now = new Date().toISOString();
-            byKey.set(realConvId, {
+            promotedSession = {
               id: realConvId,
               key: realConvId,
               agent_name: draft?.agent_name || agentName,
@@ -961,7 +1009,8 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
               model_override: draft?.model_override,
               created_at: draft?.created_at || now,
               updated_at: now,
-            });
+            };
+            byKey.set(realConvId, promotedSession);
             const nextOps = { ...state.operations };
             const existing = nextOps[currentSessionKey];
             delete nextOps[currentSessionKey];
@@ -978,11 +1027,32 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
               sessions: Array.from(byKey.values()),
               operations: nextOps,
               sessionBuffers: nextBuffers,
+              draftPromotions: {
+                ...state.draftPromotions,
+                [currentSessionKey]: realConvId,
+              },
               ...(isCurrent ? { abortController: controller } : {}),
             };
           });
+          resolvedSessionKey =
+            get().draftPromotions[currentSessionKey] || resolvedSessionKey;
+          if (promotedSession) {
+            log.info('chat', 'Draft session resolved to real conversation', {
+              draftKey: currentSessionKey,
+              convId: resolvedSessionKey,
+            });
+            useAgentTopicStore
+              .getState()
+              .promoteDraftTopic(agentId, currentSessionKey, promotedSession);
+          }
         }
         set((state) => {
+          const operationEvent = applyOperationEventIdentity(
+            state.operations,
+            resolvedSessionKey,
+            event,
+          );
+          if (!operationEvent.accepted) return state;
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
           const applyTo = (list: ChatMessage[]): ChatMessage[] => {
             const idx = list.findIndex((m) => m.id === assistantId);
@@ -992,9 +1062,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             return next;
           };
           const sessionBuffers = setBuffer(state.sessionBuffers, resolvedSessionKey, applyTo);
-          if (!isCurrent) return { sessionBuffers };
+          if (!isCurrent) {
+            return { sessionBuffers, operations: operationEvent.operations };
+          }
           return {
             sessionBuffers,
+            operations: operationEvent.operations,
             messages: applyTo(state.messages),
           };
         });
@@ -1012,7 +1085,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
           };
         });
         get().loadSessions();
-        if (!resolvedSessionKey.startsWith('draft:')) {
+        if (!isAgentDraftKey(resolvedSessionKey)) {
           void agentChatCache.syncConversation(resolvedSessionKey).catch((syncError) => {
             log.warn('chat', 'Post-turn cache sync failed', { key: resolvedSessionKey, error: String(syncError) });
           });
@@ -1067,6 +1140,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         sessionBuffers: { ...state.sessionBuffers, [currentSessionKey]: baseMessages },
       };
     });
+    return true;
   },
 
   regenerateMessage: async (messageId: string) => {
@@ -1078,17 +1152,15 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
     const { currentSessionKey } = get();
     const agentState = useAgentStore.getState();
-    const { selectedAgent, selectedModel, selectedProviderId, defaultModel, availableModels } = agentState;
+    const { selectedAgent } = agentState;
     const agentName = selectedAgent || 'assistant';
-    const runtimeConfig = getAgentRuntimeConfig(agentName);
-    const resolvedModel = selectedModel || defaultModel || availableModels[0]?.id;
-    const resolvedProviderId = selectedProviderId
-      || availableModels.find((m) => m.id === resolvedModel)?.provider_id
-      || availableModels[0]?.provider_id
-      || '';
-    const modelOverride = resolvedModel && resolvedModel !== defaultModel ? resolvedModel : undefined;
-    const effectiveModel = resolvedModel || runtimeConfig.model;
-    const effectiveProvider = (effectiveModel && availableModels.find((m) => m.id === effectiveModel)?.provider_id) || resolvedProviderId || runtimeConfig.provider || '';
+    const execution = resolveAgentExecutionRef(agentName);
+    if (!execution) {
+      set({ readinessErrorKey: 'chat.agentReadiness.modelRequired' });
+      return;
+    }
+    const { provider: effectiveProvider, model: effectiveModel, runtimeConfig } = execution;
+    set({ readinessErrorKey: null });
     const replacedId = prompt.responseIds[prompt.responseIds.length - 1] || messageId;
 
     const assistantMsg: ChatMessage = {
@@ -1097,7 +1169,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       content: '',
       loading: true,
       timestamp: Date.now(),
-      model: modelOverride || resolvedModel || runtimeConfig.model || undefined,
+      model: effectiveModel,
       operation: 'regenerate',
       replacementOf: replacedId,
     };
@@ -1119,6 +1191,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       (event: StreamEvent) => {
         if (typeof event.data?.task_id === 'string') capturedTaskId = event.data.task_id;
         set((state) => {
+          const operationEvent = applyOperationEventIdentity(
+            state.operations,
+            currentSessionKey,
+            event,
+          );
+          if (!operationEvent.accepted) return state;
           const isCurrent = state.currentSessionKey === currentSessionKey;
           const applyTo = (list: ChatMessage[]): ChatMessage[] => {
             const idx = list.findIndex((m) => m.id === assistantId);
@@ -1128,8 +1206,14 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             return next;
           };
           const sessionBuffers = setBuffer(state.sessionBuffers, currentSessionKey, applyTo);
-          if (!isCurrent) return { sessionBuffers };
-          return { sessionBuffers, messages: applyTo(state.messages) };
+          if (!isCurrent) {
+            return { sessionBuffers, operations: operationEvent.operations };
+          }
+          return {
+            sessionBuffers,
+            operations: operationEvent.operations,
+            messages: applyTo(state.messages),
+          };
         });
       },
       () => {
@@ -1196,17 +1280,15 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
     const { currentSessionKey } = get();
     const agentState = useAgentStore.getState();
-    const { selectedAgent, selectedModel, selectedProviderId, defaultModel, availableModels } = agentState;
+    const { selectedAgent } = agentState;
     const agentName = selectedAgent || 'assistant';
-    const runtimeConfig = getAgentRuntimeConfig(agentName);
-    const resolvedModel = selectedModel || defaultModel || availableModels[0]?.id;
-    const resolvedProviderId = selectedProviderId
-      || availableModels.find((m) => m.id === resolvedModel)?.provider_id
-      || availableModels[0]?.provider_id
-      || '';
-    const modelOverride = resolvedModel && resolvedModel !== defaultModel ? resolvedModel : undefined;
-    const effectiveModel = resolvedModel || runtimeConfig.model;
-    const effectiveProvider = (effectiveModel && availableModels.find((m) => m.id === effectiveModel)?.provider_id) || resolvedProviderId || runtimeConfig.provider || '';
+    const execution = resolveAgentExecutionRef(agentName);
+    if (!execution) {
+      set({ readinessErrorKey: 'chat.agentReadiness.modelRequired' });
+      return;
+    }
+    const { provider: effectiveProvider, model: effectiveModel, runtimeConfig } = execution;
+    set({ readinessErrorKey: null });
     const replacedId = prompt.responseIds[prompt.responseIds.length - 1] || messageId;
 
     const assistantMsg: ChatMessage = {
@@ -1215,7 +1297,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       content: '',
       loading: true,
       timestamp: Date.now(),
-      model: modelOverride || resolvedModel || runtimeConfig.model || undefined,
+      model: effectiveModel,
       operation: 'retry',
       replacementOf: replacedId,
     };
@@ -1237,6 +1319,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       (event: StreamEvent) => {
         if (typeof event.data?.task_id === 'string') capturedTaskId = event.data.task_id;
         set((state) => {
+          const operationEvent = applyOperationEventIdentity(
+            state.operations,
+            currentSessionKey,
+            event,
+          );
+          if (!operationEvent.accepted) return state;
           const isCurrent = state.currentSessionKey === currentSessionKey;
           const applyTo = (list: ChatMessage[]): ChatMessage[] => {
             const idx = list.findIndex((m) => m.id === assistantId);
@@ -1246,8 +1334,14 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             return next;
           };
           const sessionBuffers = setBuffer(state.sessionBuffers, currentSessionKey, applyTo);
-          if (!isCurrent) return { sessionBuffers };
-          return { sessionBuffers, messages: applyTo(state.messages) };
+          if (!isCurrent) {
+            return { sessionBuffers, operations: operationEvent.operations };
+          }
+          return {
+            sessionBuffers,
+            operations: operationEvent.operations,
+            messages: applyTo(state.messages),
+          };
         });
       },
       () => {
@@ -1455,6 +1549,10 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       set((s) => ({
         messages: s.messages.map((m) => m.id === id ? { ...m, translation: undefined } : m),
       }));
+      // Clear the persisted translation (no-op for optimistic temp ids).
+      if (!id.startsWith('temp-')) {
+        try { await api.updateMessageTranslate(id, ''); } catch { /* clear best-effort */ }
+      }
       return;
     }
     const agentId = useAgentStore.getState().selectedAgent;
@@ -1466,6 +1564,10 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       set((s) => ({
         messages: s.messages.map((m) => m.id === id ? { ...m, translation: result } : m),
       }));
+      // Persist the translation to Station (metadata_json); skip optimistic temp ids.
+      if (!id.startsWith('temp-')) {
+        try { await api.updateMessageTranslate(id, result); } catch { /* persist best-effort */ }
+      }
     } catch { /* translation unavailable */ }
   },
 
@@ -1473,13 +1575,33 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const { messages } = get();
     const target = messages.find((m) => m.id === messageId);
     if (!target || target.role !== 'assistant') return;
-    get().sendMessage(i18n.t('chat.message.continuePrompt', { ns: 'chat' }));
+    // Real continuation: feed the already-generated content back as context so the
+    // model picks up where it stopped, rather than re-prompting a bare "continue".
+    // (Peers turn always appends a user message + loads full history, so the model
+    // sees the prior assistant content; carrying it explicitly makes continuation
+    // reliable and provider-agnostic. Topology differs from LobeHub same-bubble
+    // assistant prefill — accepted as 能力对齐/拓扑不同.)
+    const priorContent = (target.content || '').trim();
+    const prompt = priorContent
+      ? i18n.t('chat.message.continueWithContext', { ns: 'chat', content: priorContent })
+      : i18n.t('chat.message.continuePrompt', { ns: 'chat' });
+    get().sendMessage(prompt);
   },
 
 
   setWideScreen: (wide: boolean) => {
     set({ wideScreen: wide });
     api.setPreferences({ wide_screen: wide }).catch(() => {});
+  },
+
+  // Request the composer to be filled with `text` without sending. The nonce lets
+  // ChatInput react even when the same suggestion text is chosen twice in a row.
+  fillComposer: (text: string) => {
+    set({ composerFill: { text, nonce: Date.now() } });
+  },
+
+  consumeComposerFill: () => {
+    set({ composerFill: null });
   },
 
   toggleSessionMemory: (sessionKey?: string) => {

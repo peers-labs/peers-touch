@@ -131,6 +131,15 @@ while IFS= read -r file; do
       ;;
   esac
 
+  if is_documentation_file "$file"; then
+    if rg --pcre2 -n '(/Users/(?!Shared(?:/|$))[^/[:space:]`]+(?:/|$)|/home/[^/[:space:]`]+(?:/|$)|[A-Za-z]:\\Users\\[^\\[:space:]`]+(?:\\|$))' "$file" >/tmp/pt-review-match.$$ 2>/dev/null; then
+      while IFS= read -r line; do
+        report_failure "user-home-absolute-path" "$file:$line"
+      done < /tmp/pt-review-match.$$
+      rm -f /tmp/pt-review-match.$$
+    fi
+  fi
+
   if is_source_file "$file"; then
     if rg -n 'console\.log[[:space:]]*\(|fmt\.Println[[:space:]]*\(|println![[:space:]]*\(|debugPrint[[:space:]]*\(|(^|[^[:alnum:]_])print\(' "$file" >/tmp/pt-review-match.$$ 2>/dev/null; then
       while IFS= read -r line; do

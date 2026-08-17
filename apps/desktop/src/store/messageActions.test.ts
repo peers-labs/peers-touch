@@ -22,6 +22,7 @@ function createContext(overrides: Partial<MessageActionContext> = {}): MessageAc
     onThread: noop,
     onReadAloud: noop,
     onExport: noop,
+    onForward: noop,
     ...overrides,
   };
 }

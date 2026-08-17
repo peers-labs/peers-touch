@@ -1051,6 +1051,145 @@ pub struct AgentConversationArchiveInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentThreadCreateInput {
+    pub conversation_id: String,
+    pub source_message_id: String,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentThreadListInput {
+    pub conversation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentThreadMessagesInput {
+    pub thread_id: String,
+    pub after_seq: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentGroupCreateInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub member_agent_ids: Option<Vec<String>>,
+    pub orchestration_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentGroupUpdateInput {
+    pub id: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub member_agent_ids: Option<Vec<String>>,
+    pub orchestration_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentGroupDeleteInput {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopicCommentCreateInput {
+    pub topic_key: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopicCommentDeleteInput {
+    pub topic_key: String,
+    pub comment_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopicCommentListInput {
+    pub topic_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskCreateInput {
+    pub title: String,
+    pub description: Option<String>,
+    pub agent_id: String,
+    pub priority: Option<String>,
+    pub topic_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskListInput {
+    pub agent_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskStatusInput {
+    pub id: String,
+    pub status: String,
+    pub result: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskDeleteInput {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskSubtaskAddInput {
+    pub task_id: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskSubtaskCompleteInput {
+    pub task_id: String,
+    pub subtask_id: String,
+}
+
+// C6 Knowledge binding — first-class join rows in Station `agent_knowledge_bindings`
+// (mirrors LobeHub `agentsFiles`/`createAgentFiles`). The resource descriptor catalog
+// still lives in agent `config_json`; these inputs reconcile the queryable binding relation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentKnowledgeBindingListInput {
+    pub agent_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentKnowledgeBindingCreateInput {
+    pub agent_id: String,
+    pub resource_id: String,
+    pub policy: Option<String>,
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentKnowledgeBindingUpdateInput {
+    pub id: String,
+    pub agent_id: String,
+    pub resource_id: String,
+    pub policy: Option<String>,
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentKnowledgeBindingDeleteInput {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentMessageTranslateInput {
+    pub message_id: String,
+    pub translation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationReplayEventsInput {
+    pub stream_id: String,
+    pub conversation_id: String,
+    pub after_seq: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCollaborationCreateInput {
     pub title: String,
     pub description: String,

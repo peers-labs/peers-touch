@@ -106,6 +106,7 @@ providers:
     enabled: true
     builtin: true
     show_checker: true
+    show_api_key: false
     protocol: ollama
     discovery: ollama-tags
     home_url: https://ollama.com
@@ -212,12 +213,7 @@ providers:
     runtime_kind: cli
     credential_env_key: OPENAI_API_KEY
     cli_command: codex --json exec --skip-git-repo-check -
-    models:
-      - id: gpt-5-codex
-        display_name: GPT-5 Codex
-        type: chat
-        enabled: true
-        context_window: 128000
+    models: []
   - id: cursor-cli
     name: Cursor CLI
     description: Local Cursor Agent CLI adapter running in the Agent workspace
@@ -233,12 +229,7 @@ providers:
     runtime_kind: cli
     cli_command: cursor-agent --print --output-format text --trust
     models_command: cursor-agent --list-models
-    models:
-      - id: auto
-        display_name: Auto
-        type: chat
-        enabled: true
-        context_window: 200000
+    models: []
   - id: claude-cli
     name: Claude CLI
     description: Local Claude CLI adapter running in the Agent workspace
@@ -255,25 +246,15 @@ providers:
     credential_env_key: ANTHROPIC_API_KEY
     cli_command: claude -p
     models:
-      - id: sonnet
-        display_name: Claude Sonnet
+      - id: default
+        display_name: Default
         type: chat
         enabled: true
-        context_window: 200000
-      - id: opus
-        display_name: Claude Opus
-        type: chat
-        enabled: false
-        context_window: 200000
-      - id: haiku
-        display_name: Claude Haiku
-        type: chat
-        enabled: false
         context_window: 200000
   - id: trae-cli
     name: TRAE CLI
     description: Local TRAE CLI adapter running in the Agent workspace
-    enabled: true
+    enabled: false
     builtin: true
     show_checker: false
     show_api_key: false
@@ -285,9 +266,4 @@ providers:
     runtime_kind: cli
     cli_command: traecli --json exec --skip-git-repo-check -
     models_command: traecli debug models
-    models:
-      - id: GPT-5.5
-        display_name: GPT-5.5
-        type: chat
-        enabled: true
-        context_window: 128000
+    models: []

@@ -43,9 +43,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -64,6 +66,8 @@ import (
 
 // TurnConfig holds per-execution configuration for a single turn.
 type TurnConfig struct {
+	TurnID             string
+	ExecutionContext   context.Context
 	AgentID            string
 	ActorID            string
 	ConversationID     string
@@ -101,6 +105,7 @@ type TurnEventSink func(ctx context.Context, event TurnEvent)
 
 type TurnEvent struct {
 	Type           string `json:"type"`
+	Seq            int64  `json:"seq,omitempty"`
 	TurnID         string `json:"turnId,omitempty"`
 	ConversationID string `json:"conversationId,omitempty"`
 	AgentID        string `json:"agentId,omitempty"`
@@ -145,6 +150,8 @@ type TurnService struct {
 	liveResumeBroker *LiveResumeBroker
 	eventBus         domain.EventBus
 	eventWriter      *TaskEventWriter
+	activeTurns      sync.Mutex
+	activeTurnCancel map[string]context.CancelFunc
 }
 
 func NewTurnService(
@@ -179,6 +186,7 @@ func NewTurnService(
 		nudgeState:       domain.NewNudgeState(),
 		localToolBroker:  NewLocalToolBroker(),
 		liveResumeBroker: NewLiveResumeBroker(),
+		activeTurnCancel: make(map[string]context.CancelFunc),
 	}
 }
 
@@ -230,6 +238,43 @@ func (s *TurnService) SubmitLocalToolResult(result LocalToolResult) error {
 	return s.localToolBroker.Submit(result)
 }
 
+func (s *TurnService) CancelTurn(turnID string) bool {
+	turnID = strings.TrimSpace(turnID)
+	if turnID == "" {
+		return false
+	}
+	s.activeTurns.Lock()
+	cancel := s.activeTurnCancel[turnID]
+	s.activeTurns.Unlock()
+	if cancel == nil {
+		return false
+	}
+	cancel()
+	return true
+}
+
+func (s *TurnService) RegisterTurn(
+	ctx context.Context,
+	turnID string,
+) (context.Context, func()) {
+	executionCtx, cancel := context.WithCancel(ctx)
+	s.activeTurns.Lock()
+	if s.activeTurnCancel == nil {
+		s.activeTurnCancel = make(map[string]context.CancelFunc)
+	}
+	s.activeTurnCancel[turnID] = cancel
+	s.activeTurns.Unlock()
+	var once sync.Once
+	return executionCtx, func() {
+		once.Do(func() {
+			cancel()
+			s.activeTurns.Lock()
+			delete(s.activeTurnCancel, turnID)
+			s.activeTurns.Unlock()
+		})
+	}
+}
+
 func (s *TurnService) AwaitLiveResume(ctx context.Context, taskID, stepID, turnID, interruptID string) (LiveResumeDecision, error) {
 	broker := s.liveResumeBroker
 	if broker == nil {
@@ -248,6 +293,23 @@ func (s *TurnService) emitTurnEvent(ctx context.Context, config *TurnConfig, tur
 	}
 	if event.AgentID == "" {
 		event.AgentID = config.AgentID
+	}
+	if s.convService != nil && event.ConversationID != "" && event.TurnID != "" {
+		payload := map[string]interface{}{}
+		encoded, _ := json.Marshal(event)
+		_ = json.Unmarshal(encoded, &payload)
+		seq, err := s.convService.PersistTurnEvent(
+			ctx,
+			event.ConversationID,
+			event.TurnID,
+			event.Type,
+			payload,
+		)
+		if err != nil {
+			logger.Warnf(ctx, "failed to persist turn event: turn_id=%s type=%s err=%v", event.TurnID, event.Type, err)
+		} else {
+			event.Seq = seq
+		}
 	}
 	config.EventSink(ctx, event)
 }
@@ -271,6 +333,24 @@ func (s *TurnService) emitTurnEvent(ctx context.Context, config *TurnConfig, tur
 //	Step 10 — persist assistant message + complete turn
 //	Step 11 — save TurnTrace
 func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userInput string) (*domain.Turn, error) {
+	if config == nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"turn config is required",
+			nil,
+		)
+	}
+	if strings.TrimSpace(config.TurnID) == "" {
+		config.TurnID = NewTurnID()
+	}
+	if config.ExecutionContext != nil {
+		ctx = config.ExecutionContext
+	} else {
+		var release func()
+		ctx, release = s.RegisterTurn(ctx, config.TurnID)
+		defer release()
+	}
 
 	// Step 1 — Create turn record (status=running).
 	turnRecord, err := s.createTurnRecord(ctx, config, userInput)
@@ -315,7 +395,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	// Persist user message.
-	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleUser), userInput); err != nil {
+	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleUser), userInput, config.Model); err != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist user message")
 		return nil, err
 	}
@@ -418,6 +498,14 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages,
 	)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			_ = s.cancelTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID)
+			s.emitTurnEvent(context.WithoutCancel(ctx), config, turnID, TurnEvent{
+				Type:  "cancelled",
+				Stage: "turn_cancelled",
+			})
+			return nil, err
+		}
 		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, fmt.Sprintf("provider call failed after retries: %v", err))
 		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 			Type:  "error",
@@ -477,7 +565,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	// Step 10 — Persist assistant message and update turn status.
-	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleAssistant), assistantResponse); err != nil {
+	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleAssistant), assistantResponse, config.Model); err != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist assistant message")
 		return nil, err
 	}
@@ -499,6 +587,14 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	now := time.Now()
+	// Extract the model name from the last successful provider call record.
+	turnModel := config.Model
+	for i := len(providerCalls) - 1; i >= 0; i-- {
+		if providerCalls[i].Model != "" {
+			turnModel = providerCalls[i].Model
+			break
+		}
+	}
 	turn := &domain.Turn{
 		TurnID:         turnID,
 		ConversationID: config.ConversationID,
@@ -509,6 +605,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		Status:         domain.TurnStatusCompleted,
 		StartedAt:      turnRecord.StartedAt,
 		EndedAt:        &now,
+		Model:          turnModel,
 	}
 
 	logger.Infof(ctx, "turn completed: turn_id=%s iterations=%d", turnID, toolIterations)
@@ -761,6 +858,9 @@ func (s *TurnService) providerCallWithRetry(
 	}
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return "", providerCalls, false, err
+		}
 
 		providerID := strings.TrimSpace(config.Provider)
 		if providerID == "" {
@@ -811,6 +911,9 @@ func (s *TurnService) providerCallWithRetry(
 		})
 
 		callDuration := time.Since(callStart)
+		if err := ctx.Err(); err != nil {
+			return "", providerCalls, false, err
+		}
 
 		// Build provider call record for trace regardless of outcome.
 		callRecord := domain.ProviderCallRecord{
@@ -1040,7 +1143,7 @@ func (s *TurnService) processToolCalls(
 
 			// Persist tool result as a tool-role message.
 			toolMsg := fmt.Sprintf("[%s] %s", tc.ToolName, resultContent)
-			if persistErr := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleTool), toolMsg); persistErr != nil {
+			if persistErr := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleTool), toolMsg, config.Model); persistErr != nil {
 				logger.Errorf(ctx, "failed to persist tool message: turn_id=%s tool=%s err=%v", turnID, tc.ToolName, persistErr)
 			}
 
@@ -1568,13 +1671,16 @@ func (s *TurnService) createTurnRecord(ctx context.Context, config *TurnConfig, 
 
 	now := time.Now()
 	record := &persistence.AgentTurn{
-		ID:             generateID("turn"),
+		ID:             strings.TrimSpace(config.TurnID),
 		ConversationID: config.ConversationID,
 		AgentID:        config.AgentID,
 		UserInput:      &userInput,
 		ToolIterations: 0,
 		Status:         string(domain.TurnStatusRunning),
 		StartedAt:      now,
+	}
+	if record.ID == "" {
+		record.ID = generateID("turn")
 	}
 
 	if err := db.WithContext(ctx).Create(record).Error; err != nil {
@@ -1590,7 +1696,7 @@ func (s *TurnService) createTurnRecord(ctx context.Context, config *TurnConfig, 
 // Helper: persistMessage
 // ---------------------------------------------------------------------------
 
-func (s *TurnService) persistMessage(ctx context.Context, conversationID, turnID, role, content string) error {
+func (s *TurnService) persistMessage(ctx context.Context, conversationID, turnID, role, content, modelName string) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
@@ -1622,6 +1728,9 @@ func (s *TurnService) persistMessage(ctx context.Context, conversationID, turnID
 		Seq:            seq,
 		CreatedAt:      now,
 		UpdatedAt:      now,
+	}
+	if modelName != "" {
+		msg.ModelName = &modelName
 	}
 
 	if err := db.WithContext(ctx).Create(msg).Error; err != nil {
@@ -1974,6 +2083,36 @@ func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, ste
 	return nil
 }
 
+func (s *TurnService) cancelTurn(ctx context.Context, agentID, turnID, taskID, stepID string) error {
+	ctx = context.WithoutCancel(ctx)
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	result := db.WithContext(ctx).
+		Model(&persistence.AgentTurn{}).
+		Where("id = ? AND status = ?", turnID, string(domain.TurnStatusRunning)).
+		Updates(map[string]interface{}{
+			"status":         string(domain.TurnStatusCancelled),
+			"final_response": "cancelled by user",
+			"ended_at":       now,
+		})
+	if result.Error != nil {
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to mark turn as cancelled",
+			result.Error,
+		)
+	}
+	s.publishDomainEvent(ctx, agentID, turnID, taskID, stepID, string(domain.EventTypeAgentTurnCancelled), map[string]interface{}{
+		"turn_id": turnID,
+		"reason":  "cancelled by user",
+	})
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Internal: getDB
 // ---------------------------------------------------------------------------
@@ -2139,7 +2278,7 @@ func (s *TurnService) executeCLITurn(ctx context.Context, config *TurnConfig, tu
 	finalResponse := responseBuilder.String()
 
 	// Persist assistant response and complete the turn record.
-	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleAssistant), finalResponse); err != nil {
+	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleAssistant), finalResponse, config.Model); err != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist CLI assistant message")
 		return nil, err
 	}
@@ -2159,6 +2298,7 @@ func (s *TurnService) executeCLITurn(ctx context.Context, config *TurnConfig, tu
 		Status:         domain.TurnStatusCompleted,
 		StartedAt:      now,
 		EndedAt:        &now,
+		Model:          config.Model,
 	}
 
 	logger.Infof(ctx, "CLI turn completed: turn_id=%s", turnID)
@@ -2187,6 +2327,10 @@ func generateID(prefix string) string {
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
 	return fmt.Sprintf("%s_%x", prefix, b)
+}
+
+func NewTurnID() string {
+	return generateID("turn")
 }
 
 // sha256Short returns the first 16 hex characters of the SHA-256 digest.

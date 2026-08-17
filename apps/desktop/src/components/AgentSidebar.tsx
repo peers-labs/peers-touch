@@ -48,6 +48,8 @@ import { useSessionGroupStore } from '../store/sessionGroups';
 import type { SessionGroup } from '../store/sessionGroups';
 import { resolveI18nValue } from '../i18n';
 
+const OVERFLOW_TOOLTIP_ELLIPSIS = { tooltipWhenOverflow: true } as const;
+
 interface AgentSidebarProps {
   onEditAgent: (agent: Agent) => void;
   onCreateAgent: () => void;
@@ -182,25 +184,13 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   const { token } = theme.useToken();
 
   // Session groups
-  const {
-    groups: allSessionGroups,
-    loadGroups: loadSessionGroups,
-    createGroup: createSessionGroup,
-    renameGroup: renameSessionGroup,
-    deleteGroup: deleteSessionGroup,
-    moveTopicToGroup,
-    getGroupsForAgent,
-    getGroupForTopic,
-  } = useSessionGroupStore((s) => ({
-    groups: s.groups,
-    loadGroups: s.loadGroups,
-    createGroup: s.createGroup,
-    renameGroup: s.renameGroup,
-    deleteGroup: s.deleteGroup,
-    moveTopicToGroup: s.moveTopicToGroup,
-    getGroupsForAgent: s.getGroupsForAgent,
-    getGroupForTopic: s.getGroupForTopic,
-  }));
+  const allSessionGroups = useSessionGroupStore((s) => s.groups);
+  const createSessionGroup = useSessionGroupStore((s) => s.createGroup);
+  const renameSessionGroup = useSessionGroupStore((s) => s.renameGroup);
+  const deleteSessionGroup = useSessionGroupStore((s) => s.deleteGroup);
+  const moveTopicToGroup = useSessionGroupStore((s) => s.moveTopicToGroup);
+  const getGroupsForAgent = useSessionGroupStore((s) => s.getGroupsForAgent);
+  const getGroupForTopic = useSessionGroupStore((s) => s.getGroupForTopic);
 
   const currentAgent = useMemo(
     () => agents.find((a) => a.name === selectedAgent),
@@ -212,24 +202,12 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     [currentAgent, topicsByAgentId],
   );
 
-  useEffect(() => {
-    loadAgents();
-  }, [loadAgents]);
-
-  useEffect(() => {
-    loadSessionGroups();
-  }, [loadSessionGroups]);
-
   const loadAgentTopics = useCallback(() => {
     if (!currentAgent) {
       return;
     }
     void loadTopicsForAgent(currentAgent.id, 'sidebar');
   }, [currentAgent, loadTopicsForAgent]);
-
-  useEffect(() => {
-    loadAgentTopics();
-  }, [loadAgentTopics]);
 
   useEffect(() => {
     setShowSearch(false);
@@ -460,6 +438,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
       {/* Nav Actions */}
       <Flexbox style={{ padding: hideAgentPicker ? '0 14px 8px' : '8px', flexShrink: 0, borderBottom: hideAgentPicker ? 'none' : `1px solid ${token.colorBorderSecondary}` }} gap={2}>
         <NavItem
+          testId="start-topic"
           icon={<MessageSquarePlus size={16} />}
           label={t('agent.sidebar.startNewTopic')}
           onClick={handleNewTopic}
@@ -524,6 +503,7 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
           />
         ) : totalTopics === 0 ? (
           <NavItem
+              testId="start-topic"
               icon={<MessageSquarePlus size={16} />}
               label={t('agent.sidebar.startNewTopic')}
               onClick={handleNewTopic}
@@ -768,6 +748,7 @@ function NavItem({
   active,
   token,
   style,
+  testId,
 }: {
   icon: ReactNode;
   label: string;
@@ -775,9 +756,11 @@ function NavItem({
   active?: boolean;
   token: GlobalToken;
   style?: React.CSSProperties;
+  testId?: string;
 }) {
   return (
     <Block
+      data-pt-agent-nav={testId}
       horizontal
       align="center"
       clickable
@@ -799,7 +782,7 @@ function NavItem({
       </Center>
       <Text
         color={active ? token.colorText : token.colorTextSecondary}
-        ellipsis={{ tooltipWhenOverflow: true }}
+        ellipsis={OVERFLOW_TOOLTIP_ELLIPSIS}
         style={{ flex: 1 }}
       >
         {label}
@@ -1610,7 +1593,7 @@ function AgentPickerItem({
       </Center>
       <Text
         color={isSelected ? token.colorText : token.colorTextSecondary}
-        ellipsis={{ tooltipWhenOverflow: true }}
+        ellipsis={OVERFLOW_TOOLTIP_ELLIPSIS}
         style={{
           flex: 1,
           minWidth: 0,

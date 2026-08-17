@@ -1,0 +1,311 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1660" height="1292" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="12">
+<rect width="1660" height="1292" fill="#ffffff"/>
+<rect x="630.0" y="18" width="400" height="34" rx="8" fill="#24292f"/>
+<text x="830.0" y="40" fill="#ffffff" text-anchor="middle" font-size="15" font-weight="700">Agent 全量能力对比（进度看板·已对齐 39/45）</text>
+<rect x="540.0" y="70" width="160" height="26" rx="6" fill="#0969da"/><text x="620.0" y="88" fill="#fff" text-anchor="middle" font-weight="700">Peers-Touch</text>
+<rect x="960.0" y="70" width="160" height="26" rx="6" fill="#8250df"/><text x="1040.0" y="88" fill="#fff" text-anchor="middle" font-weight="700">LobeHub</text>
+<path d="M830.0 52 C 830.0 86, 620.0 56, 620.0 70" stroke="#8b949e" fill="none"/>
+<path d="M830.0 52 C 830.0 86, 1040.0 56, 1040.0 70" stroke="#8b949e" fill="none"/>
+<rect x="680.0" y="283.0" width="300" height="24" rx="6" fill="#eaeef2" stroke="#d0d7de"/>
+<text x="830.0" y="299.0" text-anchor="middle" font-weight="600" fill="#24292f">对话运行时</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="131.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="131.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="135.0" text-anchor="end" fill="#24292f">✅ R1 发送 sendMessage · 已闭环 · chat.ts#L903</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="131.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="131.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="135.0" text-anchor="start" fill="#24292f">R1 发送 sendMessage · 已闭环 · conversationLifecycle.ts#L267</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="153.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="153.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="157.0" text-anchor="end" fill="#24292f">✅ R2 重新生成 regenerate · 已闭环 · chat.ts#L1129</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="153.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="153.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="157.0" text-anchor="start" fill="#24292f">R2 重新生成 regenerate · 已闭环 · regenerate.ts(branch重跑)</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="175.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="175.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="179.0" text-anchor="end" fill="#24292f">✅ R3 重试 retry · 已闭环 · chat.ts#L1257</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="175.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="175.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="179.0" text-anchor="start" fill="#24292f">R3 重试 retry · 已闭环 · useRetryParentMessage.ts#L7</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="197.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="197.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="201.0" text-anchor="end" fill="#24292f">✅ R4 停止 stop · 已闭环 · chat.ts#L1493→Station</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="197.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="197.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="201.0" text-anchor="start" fill="#24292f">R4 停止 stop · 已闭环 · stopGenerateMessage#L228 纯客户端</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="219.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="219.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="223.0" text-anchor="end" fill="#24292f">✅ R5 工具审批 approve · 已闭环 · chat.ts#L1439</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="219.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="219.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="223.0" text-anchor="start" fill="#24292f">R5 工具审批 approve · 已闭环 · conversationControl.ts</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="241.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="241.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="245.0" text-anchor="end" fill="#24292f">✅ R6 断连重放 replay · 已闭环 · agent_turn/mod.rs#L1462</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="241.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="241.0" r="4" fill="#0969da"/>
+<text x="996.0" y="245.0" text-anchor="start" fill="#24292f">R6 断连重放 replay · 架构不同 · hetero/resumeReplay.ts</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="263.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="263.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="267.0" text-anchor="end" fill="#24292f">✅ R7 删除 delete · 已闭环 · chat.ts#L1509</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="263.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="263.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="267.0" text-anchor="start" fill="#24292f">R7 删除 delete · 已闭环 · MessageActionBar/del.ts</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="285.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="285.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="289.0" text-anchor="end" fill="#24292f">✅ R8 编辑 edit · 已闭环 · chat.ts#L1518</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="285.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="285.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="289.0" text-anchor="start" fill="#24292f">R8 编辑 edit · 已闭环 · MessageActionBar/edit.ts</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="307.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="307.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="311.0" text-anchor="end" fill="#24292f">✅ R9 转发 forward · 已闭环 · Native PROVEN(Station+target DOM)</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="307.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="307.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="311.0" text-anchor="start" fill="#24292f">R9 转发 forward · 已闭环 · slices/forward</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="329.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="329.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="333.0" text-anchor="end" fill="#24292f">✅ R10 翻译 translate · 已闭环 · translateMessage 落库 metadata_json</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="329.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="329.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="333.0" text-anchor="start" fill="#24292f">R10 翻译 translate · 已闭环 · translate/action.ts#L44</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="351.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="351.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="355.0" text-anchor="end" fill="#24292f">✅ R11 Thread 分支 · 已闭环 · thread_service.go+ThreadView(Station落库)</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="351.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="351.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="355.0" text-anchor="start" fill="#24292f">R11 Thread 分支 · 已闭环 · thread/action.ts#L130</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="373.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="373.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="377.0" text-anchor="end" fill="#24292f">✅ R12 复制 copy · 已闭环 · AssistantMessage.tsx#L620</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="373.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="373.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="377.0" text-anchor="start" fill="#24292f">R12 复制 copy · 已闭环 · MessageActionBar/copy.ts</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="395.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="395.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="399.0" text-anchor="end" fill="#24292f">✅ R13 继续 continue · 已闭环 · chat.ts#L1566(带上下文续写)</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="395.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="395.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="399.0" text-anchor="start" fill="#24292f">R13 继续 continue · 已闭环 · continueGeneration.ts</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="417.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="417.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="421.0" text-anchor="end" fill="#24292f">✅ R14 删除并重生 · 已闭环 · chat.ts#L1383</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="417.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="417.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="421.0" text-anchor="start" fill="#24292f">R14 删除并重生 · 已闭环 · delAndRegenerate.ts(破坏性)</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="439.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="439.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="443.0" text-anchor="end" fill="#24292f">✅ R15 导出 export · 已闭环 · AssistantMessage.tsx#L635</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="439.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="439.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="443.0" text-anchor="start" fill="#24292f">R15 导出 export · 已闭环 · share.tsx#L19→ShareMessageModal/*</text>
+<line x1="680.0" y1="296.0" x2="672.0" y2="461.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="461.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="465.0" text-anchor="end" fill="#24292f">✅ R16 朗读 read-aloud · 已闭环 · AssistantMessage.tsx#L630→TTS</text>
+<line x1="980.0" y1="296.0" x2="988.0" y2="461.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="461.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="465.0" text-anchor="start" fill="#24292f">R16 朗读 read-aloud · 已闭环 · MessageActionBar/tts.ts</text>
+<line x1="830.0" y1="104" x2="830.0" y2="472" stroke="#eaeef2"/>
+<rect x="680.0" y="550.0" width="300" height="24" rx="6" fill="#eaeef2" stroke="#d0d7de"/>
+<text x="830.0" y="566.0" text-anchor="middle" font-weight="600" fill="#24292f">Agent 配置</text>
+<line x1="680.0" y1="563.0" x2="672.0" y2="497.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="497.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="501.0" text-anchor="end" fill="#24292f">✅ C1 Provider 建/改 · 已闭环 · provider.ts#L194</text>
+<line x1="980.0" y1="563.0" x2="988.0" y2="497.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="497.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="501.0" text-anchor="start" fill="#24292f">C1 Provider 建/改 · 已闭环 · aiInfra/aiProvider</text>
+<line x1="680.0" y1="563.0" x2="672.0" y2="519.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="519.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="523.0" text-anchor="end" fill="#24292f">✅ C2 Model 开关 · 已闭环 · provider.ts#L234</text>
+<line x1="980.0" y1="563.0" x2="988.0" y2="519.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="519.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="523.0" text-anchor="start" fill="#24292f">C2 Model 开关 · 已闭环 · aiInfra/aiModel</text>
+<line x1="680.0" y1="563.0" x2="672.0" y2="541.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="541.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="545.0" text-anchor="end" fill="#24292f">✅ C3 Profile 更新 · 已闭环 · agent.ts#L277</text>
+<line x1="980.0" y1="563.0" x2="988.0" y2="541.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="541.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="545.0" text-anchor="start" fill="#24292f">C3 Profile 更新 · 已闭环 · agent/slices/agent</text>
+<line x1="680.0" y1="563.0" x2="672.0" y2="563.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="563.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="567.0" text-anchor="end" fill="#24292f">✅ C4 选 Agent/Model · 已闭环 · agent.ts#L97</text>
+<line x1="980.0" y1="563.0" x2="988.0" y2="563.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="563.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="567.0" text-anchor="start" fill="#24292f">C4 选 Agent/Model · 已闭环 · setActiveAgentId</text>
+<line x1="680.0" y1="563.0" x2="672.0" y2="585.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="585.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="589.0" text-anchor="end" fill="#24292f">✅ C5 Agent 创建 · 已闭环 · agent.ts#L278 createAgent(一等)</text>
+<line x1="980.0" y1="563.0" x2="988.0" y2="585.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="585.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="589.0" text-anchor="start" fill="#24292f">C5 Agent 创建 · 已闭环 · agent(createAgent)</text>
+<line x1="680.0" y1="563.0" x2="672.0" y2="607.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="607.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="611.0" text-anchor="end" fill="#24292f">✅ C6 Knowledge 绑定 · 已闭环 · Native PROVEN(add/disable/re-enable/remove)</text>
+<line x1="980.0" y1="563.0" x2="988.0" y2="607.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="607.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="611.0" text-anchor="start" fill="#24292f">C6 Knowledge 绑定 · 已闭环 · knowledge#L29(仅id关联)</text>
+<line x1="680.0" y1="563.0" x2="672.0" y2="629.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="629.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="633.0" text-anchor="end" fill="#24292f">✅ C7 Connectors · 已闭环 · Native PROVEN(GitHub mount/sync/unmount)</text>
+<line x1="980.0" y1="563.0" x2="988.0" y2="629.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="629.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="633.0" text-anchor="start" fill="#24292f">C7 Connectors · 已闭环 · tool/slices/connector</text>
+<line x1="830.0" y1="104" x2="830.0" y2="640" stroke="#eaeef2"/>
+<rect x="680.0" y="674.0" width="300" height="24" rx="6" fill="#eaeef2" stroke="#d0d7de"/>
+<text x="830.0" y="690.0" text-anchor="middle" font-weight="600" fill="#24292f">多 Agent / 编排</text>
+<line x1="680.0" y1="687.0" x2="672.0" y2="665.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="665.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="669.0" text-anchor="end" fill="#24292f">✅ O1 Group 增删改 · 已闭环 · agentGroups.ts→Station(localStorage清零)</text>
+<line x1="980.0" y1="687.0" x2="988.0" y2="665.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="665.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="669.0" text-anchor="start" fill="#24292f">O1 Group 增删改 · 已闭环 · agentGroup/curd</text>
+<line x1="680.0" y1="687.0" x2="672.0" y2="687.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="687.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="691.0" text-anchor="end" fill="#24292f">✅ O2 成员/排序 · 已闭环 · 走 group/update 有序数组</text>
+<line x1="980.0" y1="687.0" x2="988.0" y2="687.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="687.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="691.0" text-anchor="start" fill="#24292f">O2 成员/排序 · 已闭环 · agentGroup/member</text>
+<line x1="680.0" y1="687.0" x2="672.0" y2="709.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="709.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="713.0" text-anchor="end" fill="#24292f">✅ O3 Task 生命周期 · 已闭环 · task.proto+agent_tasks 表+store 改 Station</text>
+<line x1="980.0" y1="687.0" x2="988.0" y2="709.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="709.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="713.0" text-anchor="start" fill="#24292f">O3 Task 生命周期 · 已闭环 · task/slices/lifecycle</text>
+<line x1="830.0" y1="104" x2="830.0" y2="720" stroke="#eaeef2"/>
+<rect x="680.0" y="765.0" width="300" height="24" rx="6" fill="#eaeef2" stroke="#d0d7de"/>
+<text x="830.0" y="781.0" text-anchor="middle" font-weight="600" fill="#24292f">输入与内容</text>
+<line x1="680.0" y1="778.0" x2="672.0" y2="745.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="745.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="749.0" text-anchor="end" fill="#24292f">✅ I1 @Mention · 已闭环 · Native PROVEN(select/remove/send-clear)</text>
+<line x1="980.0" y1="778.0" x2="988.0" y2="745.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="745.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="749.0" text-anchor="start" fill="#24292f">I1 @Mention · 已闭环 · store/mention</text>
+<line x1="680.0" y1="778.0" x2="672.0" y2="767.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="767.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="771.0" text-anchor="end" fill="#24292f">✅ I2 Follow-up · 已闭环 · 服务端已生成+fill-not-send(composerFill)</text>
+<line x1="980.0" y1="778.0" x2="988.0" y2="767.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="767.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="771.0" text-anchor="start" fill="#24292f">I2 Follow-up · 已闭环 · fillInputMessage 填入不发+服务端生成</text>
+<line x1="680.0" y1="778.0" x2="672.0" y2="789.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="789.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="793.0" text-anchor="end" fill="#24292f">✅ I3 Markdown · 已闭环 · markdownConfig+InlineThinkingTag(&lt;think&gt;)</text>
+<line x1="980.0" y1="778.0" x2="988.0" y2="789.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="789.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="793.0" text-anchor="start" fill="#24292f">I3 Markdown · 已闭环 · Markdown/plugins/*</text>
+<line x1="680.0" y1="778.0" x2="672.0" y2="811.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="811.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="815.0" text-anchor="end" fill="#24292f">✅ I4 虚拟化列表 · 已闭环 · MessageList.tsx#L25(agent域)</text>
+<line x1="980.0" y1="778.0" x2="988.0" y2="811.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="811.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="815.0" text-anchor="start" fill="#24292f">I4 虚拟化列表 · 已闭环 · Conversation/ChatList</text>
+<line x1="830.0" y1="104" x2="830.0" y2="822" stroke="#eaeef2"/>
+<rect x="680.0" y="856.0" width="300" height="24" rx="6" fill="#eaeef2" stroke="#d0d7de"/>
+<text x="830.0" y="872.0" text-anchor="middle" font-weight="600" fill="#24292f">资源与页面</text>
+<line x1="680.0" y1="869.0" x2="672.0" y2="847.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="847.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="851.0" text-anchor="end" fill="#24292f">✅ P1 Notebook/Pages · 已闭环 · notebook.ts#L50</text>
+<line x1="980.0" y1="869.0" x2="988.0" y2="847.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="847.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="851.0" text-anchor="start" fill="#24292f">P1 Notebook/Pages · 已闭环 · store/notebook+page</text>
+<line x1="680.0" y1="869.0" x2="672.0" y2="869.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="869.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="873.0" text-anchor="end" fill="#24292f">✅ P2 Portal 侧栏 · 已闭环 · Native PROVEN(push/back/collapse/close)</text>
+<line x1="980.0" y1="869.0" x2="988.0" y2="869.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="869.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="873.0" text-anchor="start" fill="#24292f">P2 Portal 侧栏 · 已闭环 · slices/portal</text>
+<line x1="680.0" y1="869.0" x2="672.0" y2="891.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="891.0" r="4" fill="#9a6700"/>
+<text x="664.0" y="895.0" text-anchor="end" fill="#24292f">⬜ P3 Home Page · 部分闭环 · HomePage.tsx</text>
+<line x1="980.0" y1="869.0" x2="988.0" y2="891.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="891.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="895.0" text-anchor="start" fill="#24292f">P3 Home Page · 已闭环 · store/home/*</text>
+<line x1="830.0" y1="104" x2="830.0" y2="902" stroke="#eaeef2"/>
+<rect x="680.0" y="936.0" width="300" height="24" rx="6" fill="#eaeef2" stroke="#d0d7de"/>
+<text x="830.0" y="952.0" text-anchor="middle" font-weight="600" fill="#24292f">观测与评估</text>
+<line x1="680.0" y1="949.0" x2="672.0" y2="927.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="927.0" r="4" fill="#9a6700"/>
+<text x="664.0" y="931.0" text-anchor="end" fill="#24292f">⬜ E1 Eval run 取消 · 部分闭环 · evaluation.ts#L231</text>
+<line x1="980.0" y1="949.0" x2="988.0" y2="927.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="927.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="931.0" text-anchor="start" fill="#24292f">E1 Eval run 取消 · 已闭环 · eval/slices/run</text>
+<line x1="680.0" y1="949.0" x2="672.0" y2="949.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="949.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="953.0" text-anchor="end" fill="#24292f">✅ E2 User Memory · 已闭环 · memory.ts#L93/L106 + MemoryPage#L280</text>
+<line x1="980.0" y1="949.0" x2="988.0" y2="949.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="949.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="953.0" text-anchor="start" fill="#24292f">E2 User Memory · 已闭环 · userMemory/*</text>
+<line x1="680.0" y1="949.0" x2="672.0" y2="971.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="971.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="975.0" text-anchor="end" fill="#24292f">✅ E3 Session/Topic · 已闭环 · agentTopics.ts#L231</text>
+<line x1="980.0" y1="949.0" x2="988.0" y2="971.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="971.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="975.0" text-anchor="start" fill="#24292f">E3 Session/Topic · 已闭环 · topic+session</text>
+<line x1="830.0" y1="104" x2="830.0" y2="982" stroke="#eaeef2"/>
+<rect x="680.0" y="1027.0" width="300" height="24" rx="6" fill="#eaeef2" stroke="#d0d7de"/>
+<text x="830.0" y="1043.0" text-anchor="middle" font-weight="600" fill="#24292f">生成能力</text>
+<line x1="680.0" y1="1040.0" x2="672.0" y2="1007.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="1007.0" r="4" fill="#cf222e"/>
+<text x="664.0" y="1011.0" text-anchor="end" fill="#24292f">⛔ G1 Image Gen · 长期不支持 · Owner 决定不做</text>
+<line x1="980.0" y1="1040.0" x2="988.0" y2="1007.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="1007.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="1011.0" text-anchor="start" fill="#24292f">G1 Image Gen · 已闭环 · store/image/*</text>
+<line x1="680.0" y1="1040.0" x2="672.0" y2="1029.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="1029.0" r="4" fill="#cf222e"/>
+<text x="664.0" y="1033.0" text-anchor="end" fill="#24292f">⛔ G2 Video Gen · 长期不支持 · Owner 决定不做</text>
+<line x1="980.0" y1="1040.0" x2="988.0" y2="1029.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="1029.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="1033.0" text-anchor="start" fill="#24292f">G2 Video Gen · 已闭环 · store/video/*</text>
+<line x1="680.0" y1="1040.0" x2="672.0" y2="1051.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="1051.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="1055.0" text-anchor="end" fill="#24292f">✅ G3a TTS 朗读(客户端) · 已闭环 · tts.ts#L51(Web Speech)</text>
+<line x1="980.0" y1="1040.0" x2="988.0" y2="1051.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="1051.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="1055.0" text-anchor="start" fill="#24292f">G3a TTS 朗读(客户端) · 已闭环 · tts/action.ts#L24</text>
+<line x1="680.0" y1="1040.0" x2="672.0" y2="1073.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="1073.0" r="4" fill="#8250df"/>
+<text x="664.0" y="1077.0" text-anchor="end" fill="#24292f">⬜ G3b TTS 服务端合成 · 代码存在未接线 · tts/mod.rs#L16(stub)</text>
+<line x1="980.0" y1="1040.0" x2="988.0" y2="1073.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="1073.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="1077.0" text-anchor="start" fill="#24292f">G3b TTS 服务端合成 · 已闭环 · file/slices/tts</text>
+<line x1="830.0" y1="104" x2="830.0" y2="1084" stroke="#eaeef2"/>
+<rect x="680.0" y="1140.0" width="300" height="24" rx="6" fill="#eaeef2" stroke="#d0d7de"/>
+<text x="830.0" y="1156.0" text-anchor="middle" font-weight="600" fill="#24292f">扩展生态</text>
+<line x1="680.0" y1="1153.0" x2="672.0" y2="1109.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="1109.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="1113.0" text-anchor="end" fill="#24292f">✅ X1 MCP Server · 已闭环 · mcp.ts#L36</text>
+<line x1="980.0" y1="1153.0" x2="988.0" y2="1109.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="1109.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="1113.0" text-anchor="start" fill="#24292f">X1 MCP Server · 已闭环 · tool/mcpStore</text>
+<line x1="680.0" y1="1153.0" x2="672.0" y2="1131.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="1131.0" r="4" fill="#8250df"/>
+<text x="664.0" y="1135.0" text-anchor="end" fill="#24292f">⛔ X2 Custom Plugins · 代码存在未接线 · customPlugins.ts#L54</text>
+<line x1="980.0" y1="1153.0" x2="988.0" y2="1131.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="1131.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="1135.0" text-anchor="start" fill="#24292f">X2 Custom Plugins · 已闭环 · tool/customPlugin</text>
+<line x1="680.0" y1="1153.0" x2="672.0" y2="1153.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="1153.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="1157.0" text-anchor="end" fill="#24292f">✅ X3 Marketplace · 已闭环 · 多source package discover+install/uninstall</text>
+<line x1="980.0" y1="1153.0" x2="988.0" y2="1153.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="1153.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="1157.0" text-anchor="start" fill="#24292f">X3 Marketplace · 已闭环 · store/discover/*</text>
+<line x1="680.0" y1="1153.0" x2="672.0" y2="1175.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="1175.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="1179.0" text-anchor="end" fill="#24292f">✅ X4 Topic Comments · 已闭环 · topicComments.ts→Station(localStorage清零)</text>
+<line x1="980.0" y1="1153.0" x2="988.0" y2="1175.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="1175.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="1179.0" text-anchor="start" fill="#24292f">X4 Topic Comments · 已闭环 · store/topicComment</text>
+<line x1="680.0" y1="1153.0" x2="672.0" y2="1197.0" stroke="#d0d7de"/>
+<circle cx="672.0" cy="1197.0" r="4" fill="#1a7f37"/>
+<text x="664.0" y="1201.0" text-anchor="end" fill="#24292f">✅ X5 Skill 管理 · 已闭环 · skill.ts#L53 + skill-service.ts#L44</text>
+<line x1="980.0" y1="1153.0" x2="988.0" y2="1197.0" stroke="#d0d7de"/>
+<circle cx="988.0" cy="1197.0" r="4" fill="#1a7f37"/>
+<text x="996.0" y="1201.0" text-anchor="start" fill="#24292f">X5 Skill 管理 · 已闭环 · tool/agentSkills+SkillStore</text>
+<line x1="830.0" y1="104" x2="830.0" y2="1208" stroke="#eaeef2"/>
+<text x="30" y="1232" font-weight="700" fill="#24292f">状态图例</text>
+<circle cx="120" cy="1228" r="5" fill="#1a7f37"/><text x="130" y="1232" fill="#24292f">已闭环</text>
+<circle cx="280" cy="1228" r="5" fill="#9a6700"/><text x="290" y="1232" fill="#24292f">部分闭环</text>
+<circle cx="440" cy="1228" r="5" fill="#8250df"/><text x="450" y="1232" fill="#24292f">代码存在未接线</text>
+<circle cx="600" cy="1228" r="5" fill="#cf222e"/><text x="610" y="1232" fill="#24292f">缺失</text>
+<circle cx="760" cy="1228" r="5" fill="#0969da"/><text x="770" y="1232" fill="#24292f">架构不同</text>
+<circle cx="920" cy="1228" r="5" fill="#57606a"/><text x="930" y="1232" fill="#24292f">未证实</text>
+<text x="30" y="1254" fill="#57606a">对齐 icon：✅ 已对齐 · 🟨 进行中 · ⬜ 未开始 · ⛔ 不做（范畴：Agent 项目，不含 Social/chat）</text>
+</svg>

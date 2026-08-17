@@ -48,6 +48,7 @@ fn compile_protos() {
         "domain/social/relationship.proto",
         "domain/social/circle.proto",
         "domain/agent/agent.proto",
+        "domain/agent/agent_config.proto",
         "domain/agent/skill.proto",
         "domain/agent/memory.proto",
         "domain/key_exchange/key_exchange.proto",

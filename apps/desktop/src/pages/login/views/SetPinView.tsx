@@ -119,6 +119,7 @@ export const SetPinView = memo(function SetPinView({
           onClick={onSkip}
           disabled={loading}
           style={{ marginTop: 20, fontSize: 12, color: token.colorTextTertiary }}
+          data-login-pin-skip
         >
           {t('auth.pin.skipForNow', { defaultValue: 'Skip for now' })}
         </Button>

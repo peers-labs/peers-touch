@@ -932,6 +932,7 @@ pub fn skills_market_install(
         "agent" => {
             return install_agent_market_package(
                 actor_id,
+                token,
                 target_agent_id,
                 market_id,
                 skill,
@@ -1085,6 +1086,7 @@ fn install_plugin_market_package(
 
 fn install_agent_market_package(
     actor_id: &str,
+    token: &str,
     target_agent_id: String,
     market_id: String,
     skill: MarketSkill,
@@ -1103,6 +1105,7 @@ fn install_agent_market_package(
     };
     let result = agents::agents_import_package(
         actor_id,
+        token,
         AgentPackageImportInput {
             package,
             name: Some(skill.name.clone()),
@@ -1285,6 +1288,7 @@ pub fn skills_market_uninstall(
     if package_type == "agent" {
         let result = agents::agents_delete(
             actor_id,
+            token,
             AgentIdInput {
                 id: record.skill_id.clone(),
             },

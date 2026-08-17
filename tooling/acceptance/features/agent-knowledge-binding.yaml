@@ -1,0 +1,37 @@
+{
+  "id": "agent-knowledge-binding",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/desktop/src/pages/AgentProfilePage.tsx",
+    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/services/desktop_api.ts",
+    "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
+    "apps/station/app/subserver/agent/service/agent_config_service.go"
+  ],
+  "truth_sources": [
+    "Station agent_knowledge_bindings",
+    "Station Agent config knowledge resource descriptors"
+  ],
+  "visible_surfaces": [
+    {"type": "native-tauri", "route": "#/agent", "surface": "Agent Profile knowledge section"},
+    {"type": "station-readback", "surface": "agent knowledge binding list"}
+  ],
+  "required_gates": ["agent-native-knowledge-binding-e2e"],
+  "acceptance": {
+    "service": [
+      "adding a knowledge resource creates an enabled Station binding for the selected Agent and resource id",
+      "disabling a resource removes its enabled Station binding and re-enabling recreates it",
+      "removing the resource removes the Station binding"
+    ],
+    "visible": [
+      "the added resource is visible in Agent Profile after persistence",
+      "partial Station reconciliation failure is surfaced rather than reported as success"
+    ]
+  },
+  "negative": [
+    "config_json descriptor presence alone must not prove the first-class binding relation",
+    "a UI toast or optimistic row must not replace Station readback",
+    "knowledge binding proof must not claim RAG indexing or retrieval"
+  ]
+}

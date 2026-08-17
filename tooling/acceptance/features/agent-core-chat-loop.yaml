@@ -1,0 +1,39 @@
+{
+  "id": "agent-core-chat-loop",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler.go",
+    "apps/station/app/subserver/agent/application/service.go",
+    "apps/station/app/subserver/agent/infrastructure/repo.go",
+    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/services/eventStream.ts"
+  ],
+  "truth_sources": [
+    "running Station agent API",
+    "configured provider with valid API key",
+    "agent_conversations",
+    "agent_messages"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/chat/send"},
+    {"type": "api", "route": "/agent/chat/messages"},
+    {"type": "sse", "route": "/agent/chat/stream"}
+  ],
+  "required_gates": ["agent-core-chat-e2e"],
+  "acceptance": {
+    "service": [
+      "a user can send a message to a configured agent and receive a streaming response",
+      "the streamed response is persisted as a complete message after stream ends",
+      "the conversation history lists both user and assistant messages in order"
+    ],
+    "visible": [
+      "the streaming response renders incrementally in the Desktop conversation surface",
+      "the final message is visible in the conversation after stream completion"
+    ]
+  },
+  "negative": [
+    "streaming delivery must not be reported as complete until the final chunk is received",
+    "agent chat must not function without at least one provider configured with a valid API key"
+  ]
+}

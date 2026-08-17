@@ -1,7 +1,13 @@
 import { createDesktopStore } from './createDesktopStore';
 import { log } from '../utils/logger';
 import { useOAuth2Store } from './oauth2';
-import type { OAuth2ProviderSummary, OAuth2Connection } from '../services/desktop_api';
+import { useAgentStore } from './agent';
+import { api, parseAgentChatConfig } from '../services/desktop_api';
+import type {
+  OAuth2ProviderSummary,
+  OAuth2Connection,
+  AgentConnectorConfigEntry,
+} from '../services/desktop_api';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -26,28 +32,33 @@ export interface AgentConnectorBinding {
   enabledTools: string[];
 }
 
-// ── localStorage persistence ─────────────────────────────────────────
+// ── chatConfig persistence ───────────────────────────────────────────
+// C7: connector mounts are per-agent config, durable through the same Station
+// config_json channel used by mcpServers/skills/tools. There is no localStorage
+// fallback — the agent store is the single source of truth for the mount relation.
 
-const BINDINGS_STORAGE_KEY = 'peers-agent-connector-bindings';
-
-function loadBindingsFromStorage(): AgentConnectorBinding[] {
-  try {
-    const raw = localStorage.getItem(BINDINGS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed as AgentConnectorBinding[];
-  } catch {
-    return [];
-  }
+function readAgentConnectorEntries(agentId: string): AgentConnectorConfigEntry[] {
+  const agent = useAgentStore.getState().agents.find((a) => a.id === agentId);
+  if (!agent) return [];
+  return parseAgentChatConfig(agent).connectors ?? [];
 }
 
-function saveBindingsToStorage(bindings: AgentConnectorBinding[]): void {
-  try {
-    localStorage.setItem(BINDINGS_STORAGE_KEY, JSON.stringify(bindings));
-  } catch {
-    log.error('agentConnectors', 'Failed to persist connector bindings to localStorage');
-  }
+function entriesToBindings(agentId: string, entries: AgentConnectorConfigEntry[]): AgentConnectorBinding[] {
+  return entries.map((entry) => ({
+    agentId,
+    connectorId: entry.connectorId,
+    enabledTools: entry.enabledTools ?? [],
+  }));
+}
+
+async function persistAgentConnectorEntries(
+  agentId: string,
+  entries: AgentConnectorConfigEntry[],
+): Promise<void> {
+  const agentStore = useAgentStore.getState();
+  const agent = agentStore.agents.find((a) => a.id === agentId);
+  if (!agent) throw new Error(`agent ${agentId} not found`);
+  await agentStore.updateAgentConfig(agent.name, { chatConfig: { connectors: entries } });
 }
 
 // ── Mapping helpers ──────────────────────────────────────────────────
@@ -78,12 +89,13 @@ function mapOAuth2ToConnector(
 
 interface AgentConnectorState {
   availableConnectors: ConnectorInfo[];
-  bindings: AgentConnectorBinding[];
   loading: boolean;
 
   loadConnectors: () => Promise<void>;
-  bindConnector: (agentId: string, connectorId: string) => void;
-  unbindConnector: (agentId: string, connectorId: string) => void;
+  connectConnector: (connectorId: string) => Promise<void>;
+  bindConnector: (agentId: string, connectorId: string) => Promise<void>;
+  unbindConnector: (agentId: string, connectorId: string) => Promise<void>;
+  syncConnectorTools: (agentId: string, connectorId: string) => Promise<void>;
   getBindingsForAgent: (agentId: string) => AgentConnectorBinding[];
   getAvailableForAgent: (agentId: string) => ConnectorInfo[];
   isConnectorBound: (agentId: string, connectorId: string) => boolean;
@@ -93,58 +105,91 @@ export const useAgentConnectorStore = createDesktopStore<AgentConnectorState>(
   'agentConnectors',
   (set, get) => ({
     availableConnectors: [],
-    bindings: loadBindingsFromStorage(),
     loading: false,
 
     loadConnectors: async () => {
       set({ loading: true });
+      try {
+        // Leverage the existing OAuth2 store to discover connectors
+        const oauth2 = useOAuth2Store.getState();
+        await oauth2.loadAll();
 
-      // Leverage the existing OAuth2 store to discover connectors
-      const oauth2 = useOAuth2Store.getState();
-      await oauth2.loadAll();
+        const { providers, connections } = useOAuth2Store.getState();
+        const connectors: ConnectorInfo[] = providers
+          .filter((p) => p.enabled)
+          .map((provider) => {
+            const connection = connections.find((c) => c.provider_id === provider.id);
+            return mapOAuth2ToConnector(provider, connection);
+          });
 
-      const { providers, connections } = useOAuth2Store.getState();
+        set({ availableConnectors: connectors });
+      } catch (error) {
+        log.error('agentConnectors', 'Failed to load connectors', { error: String(error) });
+        throw error;
+      } finally {
+        set({ loading: false });
+      }
+    },
 
-      const connectors: ConnectorInfo[] = providers
-        .filter((p) => p.enabled)
-        .map((provider) => {
-          const connection = connections.find((c) => c.provider_id === provider.id);
-          return mapOAuth2ToConnector(provider, connection);
+    // OAuth leg: reuse the complete existing OAuth2 loopback flow to establish
+    // the provider connection. This does not mount to any agent; it only makes the
+    // connector "connected" so it becomes eligible to bind.
+    connectConnector: async (connectorId: string) => {
+      try {
+        await useOAuth2Store.getState().startAuth(connectorId);
+        await get().loadConnectors();
+      } catch (error) {
+        log.error('agentConnectors', 'Failed to connect OAuth connector', {
+          connectorId,
+          error: String(error),
         });
-
-      set({ availableConnectors: connectors, loading: false });
+        throw error;
+      }
     },
 
-    bindConnector: (agentId: string, connectorId: string) => {
-      const { bindings } = get();
-      const exists = bindings.some(
-        (b) => b.agentId === agentId && b.connectorId === connectorId,
-      );
-      if (exists) return;
-
-      const newBinding: AgentConnectorBinding = {
-        agentId,
-        connectorId,
-        enabledTools: [],
-      };
-      const updated = [...bindings, newBinding];
-      set({ bindings: updated });
-      saveBindingsToStorage(updated);
+    bindConnector: async (agentId: string, connectorId: string) => {
+      const entries = readAgentConnectorEntries(agentId);
+      if (entries.some((e) => e.connectorId === connectorId)) return;
+      const updated = [...entries, { connectorId, enabledTools: [] }];
+      await persistAgentConnectorEntries(agentId, updated);
       log.info('agentConnectors', 'Bound connector to agent', { agentId, connectorId });
+      // Sync the connector's tool set right after mount, mirroring Lobe's mount→syncTools.
+      await get().syncConnectorTools(agentId, connectorId);
     },
 
-    unbindConnector: (agentId: string, connectorId: string) => {
-      const { bindings } = get();
-      const updated = bindings.filter(
-        (b) => !(b.agentId === agentId && b.connectorId === connectorId),
-      );
-      set({ bindings: updated });
-      saveBindingsToStorage(updated);
+    unbindConnector: async (agentId: string, connectorId: string) => {
+      const entries = readAgentConnectorEntries(agentId);
+      const updated = entries.filter((e) => e.connectorId !== connectorId);
+      if (updated.length === entries.length) return;
+      await persistAgentConnectorEntries(agentId, updated);
       log.info('agentConnectors', 'Unbound connector from agent', { agentId, connectorId });
     },
 
+    // syncTools leg: pull the connector provider's declared resources (its callable
+    // surface) and persist them as the mount's enabledTools. Reuses the existing
+    // oauth2 provider detail; no separate tool-discovery backend.
+    syncConnectorTools: async (agentId: string, connectorId: string) => {
+      try {
+        const detail = await api.oauth2GetProvider(connectorId);
+        const tools = detail.resources ? Object.keys(detail.resources) : [];
+        const entries = readAgentConnectorEntries(agentId);
+        const updated = entries.map((e) =>
+          e.connectorId === connectorId ? { ...e, enabledTools: tools } : e,
+        );
+        if (!updated.some((e) => e.connectorId === connectorId)) return;
+        await persistAgentConnectorEntries(agentId, updated);
+      } catch (error) {
+        log.error('agentConnectors', 'Failed to sync connector tools', {
+          agentId,
+          connectorId,
+          error: String(error),
+        });
+        throw error;
+      }
+    },
+
     getBindingsForAgent: (agentId: string) => {
-      return get().bindings.filter((b) => b.agentId === agentId);
+      return entriesToBindings(agentId, readAgentConnectorEntries(agentId));
     },
 
     getAvailableForAgent: (_agentId: string) => {
@@ -152,9 +197,7 @@ export const useAgentConnectorStore = createDesktopStore<AgentConnectorState>(
     },
 
     isConnectorBound: (agentId: string, connectorId: string) => {
-      return get().bindings.some(
-        (b) => b.agentId === agentId && b.connectorId === connectorId,
-      );
+      return readAgentConnectorEntries(agentId).some((e) => e.connectorId === connectorId);
     },
   }),
 );

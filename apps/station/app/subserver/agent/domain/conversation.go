@@ -29,6 +29,17 @@ type Conversation struct {
 	UpdatedAt      time.Time
 }
 
+// Thread is a durable sub-conversation forked from a source message.
+type Thread struct {
+	ThreadID        string
+	ConversationID  string
+	SourceMessageID string
+	Title           string
+	SourceSeq       int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 type MessageRole string
 
 const (
@@ -52,6 +63,7 @@ type Message struct {
 	Seq               int64
 	BranchID          string
 	ReplacesMessageID string
+	ThreadID          string
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }

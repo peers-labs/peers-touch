@@ -46,8 +46,6 @@ const DEFERRED_APP_RUNTIME_IDS = [
   settingsRuntime.id,
   federationRuntime.id,
   momentsRuntime.id,
-  agentCapabilityRuntime.id,
-  agentTopicRuntime.id,
 ];
 
 function yieldToRenderer(): Promise<void> {
@@ -85,11 +83,39 @@ export function installDeferredAppRuntimeProjections(): Promise<void> {
   installAppRuntime();
 
   deferredInstallInFlight = (async () => {
+    // #region debug-point D:deferred-runtime-bootstrap
+    void fetch('http://127.0.0.1:7777/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'post-login-update-loop',
+        runId: 'post-fix',
+        hypothesisId: 'D',
+        location: 'services/appRuntime.ts:installDeferredAppRuntimeProjections',
+        msg: '[DEBUG] Deferred runtime bootstrap started',
+        data: { runtimeIds: DEFERRED_APP_RUNTIME_IDS },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     const installedRuntimes: string[] = [];
     for (const runtimeId of DEFERRED_APP_RUNTIME_IDS) {
       installRuntime(runtimeId);
       await bootstrapRuntime(runtimeId, null);
       installedRuntimes.push(runtimeId);
+      // #region debug-point D:deferred-runtime-bootstrap
+      void fetch('http://127.0.0.1:7777/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'post-login-update-loop',
+          runId: 'post-fix',
+          hypothesisId: 'D',
+          location: 'services/appRuntime.ts:deferred-runtime-loop',
+          msg: '[DEBUG] Deferred runtime bootstrapped',
+          data: { installedRuntimes, runtimeId },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       await yieldToRenderer();
     }
     deferredInstalled = true;

@@ -69,3 +69,16 @@ func Find(id string) *CatalogProvider {
 	}
 	return nil
 }
+
+// SetForTesting replaces the catalog registry with the given providers.
+// It must only be called from tests. Callers should defer RestoreForTesting
+// to avoid polluting other tests.
+func SetForTesting(providers []CatalogProvider) {
+	catalogOnce.Do(func() {}) // ensure sync.Once is spent
+	catalogRegistry = providers
+}
+
+// RestoreForTesting reloads the catalog from the embedded default YAML.
+func RestoreForTesting() {
+	loadCatalog()
+}

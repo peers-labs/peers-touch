@@ -4,7 +4,7 @@
 > 不作为当前 Desktop Chat / Auth / BFF 实现真源。
 > 若与现状冲突，以 `docs/README.md`、`docs/client/desktop/global-context-kernel.md`、`docs/global/coding-guide/desktop/service-api.md`、`docs/architecture/boundaries/station-desktop-scope-boundary.md` 为准。
 
-> **Workspace:** /Users/bytedance/Documents/Projects/peers-touch/peers-touch
+> **Workspace:** <repo-root>
 
 ---
 
@@ -556,7 +556,7 @@ rotate_key → PRAGMA rekey → 失败则回滚到旧密钥
 
 现在让我批量读取所有 domain 层文件的头部内容：
 
-`interface/tauri_commands/` 目录实际位于 `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/interface/tauri_commands/`，而不是在 `application/` 下。现在搜索其中的 `mod domain_` 和 `mod infrastructure_` 声明：
+`interface/tauri_commands/` 目录实际位于 `apps/desktop/src-tauri/src/interface/tauri_commands/`，而不是在 `application/` 下。现在搜索其中的 `mod domain_` 和 `mod infrastructure_` 声明：
 
 以下是完整的搜索结果。
 
@@ -867,7 +867,7 @@ Rust 直接透传不会有问题，但前端如果要消费这些数据，需要
 
 5. **[低] `group_chat_mark_read` 字段不完整**: Rust 发送 `group_ulid` 但 proto `MarkGroupReadRequest` 还定义了 `up_to_ulid` 字段，Rust 未传递。
 
-以下是对 `/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/` 下 DDD 分层架构的全面审查结果。所有文件均已完整读取和分析。
+以下是对 `apps/desktop/src-tauri/src/` 下 DDD 分层架构的全面审查结果。所有文件均已完整读取和分析。
 
 ---
 
@@ -1698,7 +1698,7 @@ interface/group_chat.rs   ──> application/chat_storage.rs     infrastructure
 
 ### 文件变更明细
 
-**1. [chat_storage.rs](/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/application/chat_storage.rs) (application 层)**
+**1. [chat_storage.rs](apps/desktop/src-tauri/src/application/chat_storage.rs) (application 层)**
 
 新增内容：
 - `SyncResult` 结构体 -- 同步结果
@@ -1711,7 +1711,7 @@ interface/group_chat.rs   ──> application/chat_storage.rs     infrastructure
   - `sync_friend_from_station` -- 包含分页、cursor 管理、增量过滤、本地 ingest 的完整流程
   - `sync_group_from_station` -- 同上
 
-**2. [friend_chat.rs](/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) (interface 层)**
+**2. [friend_chat.rs](apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs) (interface 层)**
 
 移除：
 - `use crate::infrastructure::station_client`
@@ -1723,7 +1723,7 @@ interface/group_chat.rs   ──> application/chat_storage.rs     infrastructure
 
 所有命令函数改为委托 `chat_storage::*` 方法，文件从 406 行精简到 221 行。
 
-**3. [group_chat.rs](/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) (interface 层)**
+**3. [group_chat.rs](apps/desktop/src-tauri/src/interface/tauri_commands/group_chat.rs) (interface 层)**
 
 与 friend_chat.rs 相同模式的变更，文件从 400 行精简到 220 行。
 
@@ -8316,7 +8316,7 @@ TypeScript 编译通过，零错误。
 
 ### 修改的文件
 
-**1. [desktop_api.ts](/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/services/desktop_api.ts)**
+**1. [desktop_api.ts](apps/desktop/src/services/desktop_api.ts)**
 
 在 `ContextActionDispatchInput` 接口之后，新增了以下内容：
 
@@ -8346,9 +8346,9 @@ TypeScript 编译通过，零错误。
 
 ### 新建的文件
 
-**2. [socialChat.ts](/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/store/socialChat.ts)**
+**2. [socialChat.ts](apps/desktop/src/store/socialChat.ts)**
 
-遵循 [chat.ts](/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/store/chat.ts) 的 Zustand `create` 模式，导出 `useSocialChatStore`，包含：
+遵循 [chat.ts](apps/desktop/src/store/chat.ts) 的 Zustand `create` 模式，导出 `useSocialChatStore`，包含：
 
 **状态字段**：`sessions`, `groups`, `activeSessionUlid`, `activeGroupUlid`, `activeTab`, `messages`, `loading`
 
@@ -8396,14 +8396,14 @@ Rust 瘦化和前端 API + Store 都完成了。让我验证当前状态并继�
 
 ### 新建文件 (4 个)
 
-1. [ChatSessionList.tsx](/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/chat/ChatSessionList.tsx) - 左侧会话列表面板，包含 Friends/Groups 切换的 Segmented 控件，点击选中会话
-2. [ChatMessageArea.tsx](/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/components/chat/ChatMessageArea.tsx) - 右侧消息展示区 + 底部输入栏，支持发送好友/群聊消息
-3. [SocialChatPage.tsx](/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/pages/SocialChatPage.tsx) - 主页面，水平排列 ChatSessionList + ChatMessageArea
-4. [social-chat.ts](/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/modules/social-chat.ts) - 模块注册，完全遵循 `channels.ts` 的模式调用 `registerModule()`
+1. [ChatSessionList.tsx](apps/desktop/src/components/chat/ChatSessionList.tsx) - 左侧会话列表面板，包含 Friends/Groups 切换的 Segmented 控件，点击选中会话
+2. [ChatMessageArea.tsx](apps/desktop/src/components/chat/ChatMessageArea.tsx) - 右侧消息展示区 + 底部输入栏，支持发送好友/群聊消息
+3. [SocialChatPage.tsx](apps/desktop/src/pages/SocialChatPage.tsx) - 主页面，水平排列 ChatSessionList + ChatMessageArea
+4. [social-chat.ts](apps/desktop/src/modules/social-chat.ts) - 模块注册，完全遵循 `channels.ts` 的模式调用 `registerModule()`
 
 ### 修改文件 (1 个)
 
-5. [modules/index.ts](/Users/bytedance/Documents/Projects/peers-touch/peers-touch/apps/desktop/src/modules/index.ts) - 在 `import './channels'` 之前添加了 `import './social-chat'`
+5. [modules/index.ts](apps/desktop/src/modules/index.ts) - 在 `import './channels'` 之前添加了 `import './social-chat'`
 
 ## 修复的类型错误
 

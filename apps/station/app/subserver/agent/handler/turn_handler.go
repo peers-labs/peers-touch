@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
@@ -35,6 +36,10 @@ type localToolResultRequest struct {
 	CallID  string `json:"call_id"`
 	Content string `json:"content"`
 	IsError bool   `json:"is_error"`
+}
+
+type cancelTurnRequest struct {
+	TurnID string `json:"turn_id"`
 }
 
 func NewTurnHandlers(turnService *service.TurnService, toolRegistry *service.ToolRegistryService, chatTaskService *service.ChatTaskService, convService *service.ConversationService) *TurnHandlers {
@@ -161,6 +166,9 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		})
 		return nil
 	}
+	turnID := service.NewTurnID()
+	turnCtx, releaseTurn := h.turnService.RegisterTurn(ctx, turnID)
+	defer releaseTurn()
 
 	if strings.TrimSpace(input.GetConversationId()) == "" && h.convService != nil {
 		userID := subjectActorID(ctx)
@@ -170,7 +178,7 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 			return nil
 		}
 		input.ConversationId = conv.ConversationID
-		_ = writeTurnStreamEvent(resp, "conversation_created", map[string]any{
+		_ = h.writePersistedTurnStreamEvent(ctx, resp, "conversation_created", turnID, conv.ConversationID, input.GetAgentId(), map[string]any{
 			"type":            "conversation_created",
 			"conversation_id": conv.ConversationID,
 		})
@@ -183,7 +191,7 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 				_ = writeTurnStreamEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
 				return nil
 			}
-			_ = writeTurnStreamEvent(resp, "conversation_created", map[string]any{
+			_ = h.writePersistedTurnStreamEvent(ctx, resp, "conversation_created", turnID, conv.ConversationID, input.GetAgentId(), map[string]any{
 				"type":            "conversation_created",
 				"conversation_id": conv.ConversationID,
 			})
@@ -200,12 +208,18 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 
 	events := make(chan service.TurnEvent, 32)
 	done := make(chan turnStreamResult, 1)
+	var errorEmitted atomic.Bool
 	config := h.turnConfigFromRequest(ctx, &input, func(eventCtx context.Context, event service.TurnEvent) {
+		if event.Type == "error" || event.Type == "cancelled" {
+			errorEmitted.Store(true)
+		}
 		select {
 		case events <- event:
 		case <-eventCtx.Done():
 		}
 	})
+	config.TurnID = turnID
+	config.ExecutionContext = turnCtx
 	taskID, stepID := h.beginChatTaskStep(ctx, &input)
 	config.TaskID = taskID
 	config.StepID = stepID
@@ -227,7 +241,11 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		if err == nil && turn != nil {
 			suggestions = h.turnService.GenerateFollowUpSuggestions(ctx, config, input.GetUserInput(), turn.FinalResponse)
 		}
-		done <- turnStreamResult{turn: domainTurnToProto(turn), taskID: taskID, err: err, suggestions: suggestions}
+		turnModel := ""
+		if turn != nil {
+			turnModel = turn.Model
+		}
+		done <- turnStreamResult{turn: domainTurnToProto(turn), taskID: taskID, err: err, suggestions: suggestions, model: turnModel}
 		close(events)
 	}()
 
@@ -241,23 +259,53 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 			_ = writeTurnStreamEvent(resp, event.Type, event)
 		case result := <-done:
 			if result.err != nil {
-				_ = writeTurnStreamEvent(resp, "error", map[string]any{
-					"type":  "error",
-					"error": result.err.Error(),
-				})
+				if !errorEmitted.Load() {
+					_ = h.writePersistedTurnStreamEvent(ctx, resp, "error", turnID, input.GetConversationId(), input.GetAgentId(), map[string]any{
+						"type":  "error",
+						"error": result.err.Error(),
+					})
+				}
 				return nil
 			}
-			_ = writeTurnStreamEvent(resp, "done", map[string]any{
+			donePayload := map[string]any{
 				"type":        "done",
 				"turn":        result.turn,
 				"task_id":     result.taskID,
 				"suggestions": result.suggestions,
-			})
+			}
+			// Include model at top level so the BFF and frontend can
+			// extract it without navigating the proto Turn structure.
+			if result.turn != nil && result.turn.GetFinalResponse() != "" {
+				donePayload["model"] = turnModelFromResult(result)
+			}
+			_ = h.writePersistedTurnStreamEvent(ctx, resp, "done", turnID, input.GetConversationId(), input.GetAgentId(), donePayload)
 			return nil
 		case <-ctx.Done():
 			return nil
 		}
 	}
+}
+
+func (h *TurnHandlers) writePersistedTurnStreamEvent(
+	ctx context.Context,
+	resp server.Response,
+	event string,
+	turnID string,
+	conversationID string,
+	agentID string,
+	payload map[string]any,
+) error {
+	payload["turnId"] = turnID
+	payload["conversationId"] = conversationID
+	payload["agentId"] = agentID
+	if h.convService != nil && conversationID != "" && turnID != "" {
+		seq, err := h.convService.PersistTurnEvent(ctx, conversationID, turnID, event, payload)
+		if err != nil {
+			return err
+		}
+		payload["seq"] = seq
+	}
+	return writeTurnStreamEvent(resp, event, payload)
 }
 
 func (h *TurnHandlers) HandleLocalToolResult(ctx context.Context, req server.Request, resp server.Response) error {
@@ -286,6 +334,23 @@ func (h *TurnHandlers) HandleLocalToolResult(ctx context.Context, req server.Req
 	}
 
 	_, _ = resp.Write([]byte(`{"ok":true}`))
+	return nil
+}
+
+func (h *TurnHandlers) HandleCancelTurn(_ context.Context, req server.Request, resp server.Response) error {
+	resp.SetHeader("Content-Type", "application/json")
+	var input cancelTurnRequest
+	if err := json.Unmarshal(req.Body(), &input); err != nil || strings.TrimSpace(input.TurnID) == "" {
+		resp.WriteHeader(400)
+		_, _ = resp.Write([]byte(`{"ok":false,"error":"turn_id is required"}`))
+		return nil
+	}
+	if !h.turnService.CancelTurn(input.TurnID) {
+		resp.WriteHeader(404)
+		_, _ = resp.Write([]byte(`{"ok":false,"error":"active turn not found"}`))
+		return nil
+	}
+	_, _ = resp.Write([]byte(`{"ok":true,"status":"cancelling"}`))
 	return nil
 }
 
@@ -326,6 +391,13 @@ type turnStreamResult struct {
 	taskID      string
 	err         error
 	suggestions []string
+	model       string // Model name from domain.Turn.Model (not in proto).
+}
+
+// turnModelFromResult returns the model name recorded on the result. The proto
+// Turn message lacks a model field, so the handler carries it separately.
+func turnModelFromResult(result turnStreamResult) string {
+	return result.model
 }
 
 func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.ExecuteTurnRequest, sink service.TurnEventSink) *service.TurnConfig {
@@ -429,7 +501,7 @@ func writeTurnStreamEvent(resp server.Response, event string, payload any) error
 	if _, err := resp.Write([]byte("data: " + string(data) + "\n\n")); err != nil {
 		return err
 	}
-	return nil
+	return resp.Flush()
 }
 
 func domainTurnToProto(t *domain.Turn) *model.Turn {
@@ -464,6 +536,8 @@ func domainTurnStatusToProto(s domain.TurnStatus) model.TurnStatus {
 		return model.TurnStatus_TURN_STATUS_FAILED
 	case domain.TurnStatusInterrupted:
 		return model.TurnStatus_TURN_STATUS_INTERRUPTED
+	case domain.TurnStatusCancelled:
+		return model.TurnStatus_TURN_STATUS_CANCELLED
 	default:
 		return model.TurnStatus_TURN_STATUS_UNSPECIFIED
 	}

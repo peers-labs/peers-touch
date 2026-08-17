@@ -204,8 +204,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
   const { token } = theme.useToken();
   const agents = useAgentStore(s => s.agents);
   const loadAgents = useAgentStore(s => s.loadAgents);
-  const setAgentSurface = useAgentStore(s => s.setAgentSurface);
-  const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
+  const createAgent = useAgentStore(s => s.createAgent);
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [prompt, setPrompt] = useState('');
   const [runState, setRunState] = useState<CanvasRunState>('idle');
@@ -357,7 +356,9 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
   const handleCreateAgent = useCallback(async () => {
     if (isRunning) return;
     const suffix = Date.now().toString(36);
-    const created = await api.createAgent({
+    // Use the store's first-class createAgent (C5): it persists, merges into the
+    // roster, selects the new agent and switches to its profile surface.
+    const created = await createAgent({
       name: `agent-${suffix}`,
       title: t('agent.profile.identityTitlePlaceholder'),
       description: '',
@@ -368,11 +369,8 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
       visibility: 'private',
       workspaceMode: 'agent',
     });
-    await loadAgents();
-    setAgentSurface(created.name, 'profile');
-    setSelectedAgent(created.name);
     onCreateAgent(created.name);
-  }, [isRunning, loadAgents, onCreateAgent, setAgentSurface, setSelectedAgent, t]);
+  }, [isRunning, createAgent, onCreateAgent, t]);
 
   const removeNode = useCallback((nodeId: string) => {
     if (isRunning) return;

@@ -56,6 +56,11 @@ type messageListRequest struct {
 	Limit          int    `json:"limit"`
 }
 
+type messageTranslateRequest struct {
+	MessageID   string `json:"message_id"`
+	Translation string `json:"translation"`
+}
+
 type streamEventsRequest struct {
 	ConversationID string `json:"conversation_id"`
 	AfterSeq       int64  `json:"after_seq"`
@@ -72,6 +77,7 @@ func writeSSEEvent(w server.Response, event string, data interface{}) {
 	payload, _ := json.Marshal(data)
 	_, _ = w.Write([]byte("event: " + event + "\n"))
 	_, _ = w.Write([]byte("data: " + string(payload) + "\n\n"))
+	_ = w.Flush()
 }
 
 func (h *ConversationHandlers) HandleListConversations(ctx context.Context, req server.Request, resp server.Response) error {
@@ -205,6 +211,24 @@ func (h *ConversationHandlers) HandleListMessages(ctx context.Context, req serve
 	return nil
 }
 
+func (h *ConversationHandlers) HandleSetMessageTranslation(ctx context.Context, req server.Request, resp server.Response) error {
+	var input messageTranslateRequest
+	if err := json.Unmarshal(req.Body(), &input); err != nil {
+		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+		return nil
+	}
+	if input.MessageID == "" {
+		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "message_id is required"})
+		return nil
+	}
+	if err := h.convService.SetMessageTranslation(ctx, input.MessageID, input.Translation); err != nil {
+		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
+		return nil
+	}
+	writeJSON(resp, http.StatusOK, map[string]any{"ok": true})
+	return nil
+}
+
 func (h *ConversationHandlers) HandleStreamConversationEvents(ctx context.Context, req server.Request, resp server.Response) error {
 	resp.SetHeader("Content-Type", "text/event-stream")
 	resp.SetHeader("Cache-Control", "no-cache")
@@ -237,8 +261,6 @@ func (h *ConversationHandlers) HandleStreamConversationEvents(ctx context.Contex
 	}
 
 	writeSSEEvent(resp, "catchup_done", map[string]any{"type": "catchup_done", "seq": input.AfterSeq})
-
-	<-ctx.Done()
 	return nil
 }
 
@@ -291,11 +313,17 @@ func messagesToJSON(msgs []*domain.Message) []map[string]any {
 		if len(m.ToolCallsJSON) > 0 {
 			item["tool_calls_json"] = string(m.ToolCallsJSON)
 		}
+		if len(m.MetadataJSON) > 0 {
+			item["metadata_json"] = string(m.MetadataJSON)
+		}
 		if m.BranchID != "" {
 			item["branch_id"] = m.BranchID
 		}
 		if m.ReplacesMessageID != "" {
 			item["replaces_message_id"] = m.ReplacesMessageID
+		}
+		if m.ThreadID != "" {
+			item["thread_id"] = m.ThreadID
 		}
 		out = append(out, item)
 	}

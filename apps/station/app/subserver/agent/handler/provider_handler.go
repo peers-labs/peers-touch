@@ -105,6 +105,14 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 				credentialStatus = "configured"
 			}
 		}
+
+		// For CLI providers, mark credential status as "cli_not_installed" when binary is missing.
+		if cp.RuntimeKind == "cli" && cp.CliCommand != "" {
+			if result := cli.VerifyCliBinary(cp.CliCommand); !result.Available {
+				credentialStatus = "cli_not_installed"
+			}
+		}
+
 		enabled := cp.Enabled
 		version := int64(0)
 		if userMatch != nil {
@@ -437,6 +445,13 @@ func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *mod
 	resp := &model.ListAvailableModelsResponse{}
 
 	for _, cp := range entries {
+		// Gate: skip CLI providers whose binary is not installed.
+		if cp.RuntimeKind == "cli" && cp.CliCommand != "" {
+			if result := cli.VerifyCliBinary(cp.CliCommand); !result.Available {
+				continue
+			}
+		}
+
 		var userMatch *persistence.AgentProvider
 		for i := range userProviders {
 			if userProviders[i].Name == cp.ID {
@@ -452,6 +467,9 @@ func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *mod
 		if !enabled {
 			continue
 		}
+		if !catalogProviderReadyForAgent(cp, userMatch) {
+			continue
+		}
 
 		hidden := parseHiddenModels(func() string {
 			if userMatch != nil {
@@ -463,7 +481,7 @@ func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *mod
 		catalogIDs := make(map[string]bool, len(cp.Models))
 		for _, m := range cp.Models {
 			catalogIDs[m.ID] = true
-			if !m.Enabled || contains(hidden, m.ID) {
+			if !catalogModelAvailableForAgent(m, hidden) {
 				continue
 			}
 			resp.Models = append(resp.Models, &model.AvailableModelInfo{
@@ -495,6 +513,25 @@ func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *mod
 	}
 
 	return resp, nil
+}
+
+func catalogProviderReadyForAgent(cp catalog.CatalogProvider, userMatch *persistence.AgentProvider) bool {
+	if cp.RuntimeKind == "cli" {
+		if cp.CliCommand == "" {
+			return false
+		}
+		return cli.VerifyCliBinary(cp.CliCommand).Available
+	}
+
+	requiresAPIKey := cp.ShowAPIKey == nil || *cp.ShowAPIKey
+	if !requiresAPIKey {
+		return true
+	}
+	return userMatch != nil && parseKeyVaultAPIKey(userMatch.KeyVaults) != ""
+}
+
+func catalogModelAvailableForAgent(model catalog.CatalogModel, hidden []string) bool {
+	return model.Enabled && model.Type == "chat" && !contains(hidden, model.ID)
 }
 
 func (h *ProviderHandlers) HandleProviderDelete(ctx context.Context, req *model.DeleteProviderRequest) (*model.DeleteProviderResponse, error) {
@@ -581,6 +618,9 @@ func (h *ProviderHandlers) HandleModelUpdate(ctx context.Context, req *model.Upd
 
 func (h *ProviderHandlers) HandleCredentialSet(ctx context.Context, req *model.SetCredentialRequest) (*model.SetCredentialResponse, error) {
 	actorID := subjectActorID(ctx)
+	if req.GetProviderId() == "" || req.GetApiKey() == "" {
+		return nil, server.NewHandlerError(http.StatusBadRequest, "provider_id and api_key are required")
+	}
 
 	status, err := h.credentialCfg.Set(ctx, service.CredentialSetRequest{
 		ActorID:    actorID,

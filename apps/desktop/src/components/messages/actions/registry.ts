@@ -1,4 +1,4 @@
-import { Copy, Pencil, Trash2, RefreshCw, RotateCcw, GitBranch, ChevronRight, Eraser, Languages, MessageSquareMore, Volume2, Download } from 'lucide-react';
+import { Copy, Pencil, Trash2, RefreshCw, RotateCcw, GitBranch, ChevronRight, Eraser, Languages, MessageSquareMore, Volume2, Download, Forward } from 'lucide-react';
 import type { MessageActionDef, MessageActionContext } from './types';
 import { isActiveOperation } from '../../../store/streaming';
 
@@ -38,6 +38,7 @@ function buildUserActions(ctx: MessageActionContext): { primary: MessageActionDe
     ],
     menu: [
       { key: 'regenerate', label: 'chat.message.action.regenerate', icon: RefreshCw, onClick: ctx.onRegenerate },
+      { key: 'forward', label: 'chat.message.action.forward', icon: Forward, onClick: ctx.onForward },
       { key: 'delete', label: 'chat.message.action.delete', icon: Trash2, danger: true, onClick: ctx.onDelete },
     ],
   };
@@ -57,6 +58,7 @@ function buildAssistantActions(ctx: MessageActionContext): { primary: MessageAct
       { key: 'continue', label: 'chat.message.action.continue', icon: ChevronRight, onClick: ctx.onContinue },
       { key: 'translate', label: 'chat.message.action.translate', icon: Languages, onClick: ctx.onTranslate },
       { key: 'export', label: 'chat.message.action.export', icon: Download, onClick: ctx.onExport },
+      { key: 'forward', label: 'chat.message.action.forward', icon: Forward, onClick: ctx.onForward },
       { key: 'delAndRegenerate', label: 'chat.message.action.delAndRegenerate', icon: Eraser, onClick: ctx.onDeleteAndRegenerate },
       { key: 'delete', label: 'chat.message.action.delete', icon: Trash2, danger: true, onClick: ctx.onDelete },
     ],

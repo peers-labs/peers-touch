@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "agent",
+  "description": "Agent is a managed product domain for AI assistant conversation paths. It validates provider/model configuration, agent CRUD, streaming runtime message delivery, and Desktop conversation surfaces.",
+  "capabilities": [
+    "acceptance-framework-self-consistency",
+    "agent-mention-composer",
+    "agent-knowledge-binding",
+    "agent-connector-lifecycle",
+    "agent-message-forward",
+    "agent-portal-navigation"
+  ],
+  "validation_gate_id": "agent-domain-validation",
+  "report": "tooling/acceptance/reports/agent-validation.json"
+}

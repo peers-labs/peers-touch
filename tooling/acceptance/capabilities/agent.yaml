@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "agent-mention-composer",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": ["agent-mention-composer"],
+      "required_gates": ["agent-native-mention-e2e"],
+      "synthetic_paths": ["apps/desktop/src/components/ChatInput.tsx"],
+      "evidence": {
+        "truth_sources": ["Desktop mention draft state", "Agent roster projection"],
+        "surfaces": ["Native Tauri Agent composer"],
+        "proven_by": ["agent-native-mention-e2e"],
+        "proven_scope": ["Mention popup, selection, tag removal, and successful-send cleanup in the Native Agent composer"],
+        "unproven_scope": ["Multi-Agent orchestration semantics after mention submission"]
+      }
+    },
+    {
+      "id": "agent-knowledge-binding",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": ["agent-knowledge-binding"],
+      "required_gates": ["agent-native-knowledge-binding-e2e"],
+      "synthetic_paths": ["apps/desktop/src/store/agent.ts"],
+      "evidence": {
+        "truth_sources": ["Station agent_knowledge_bindings", "Station Agent config"],
+        "surfaces": ["Native Tauri Agent Profile knowledge section", "Station binding readback"],
+        "proven_by": ["agent-native-knowledge-binding-e2e"],
+        "proven_scope": ["Add, disable/re-enable, and remove behavior with Native UI and Station binding readback"],
+        "unproven_scope": ["Document ingestion, chunking, embedding, indexing, and RAG retrieval"]
+      }
+    },
+    {
+      "id": "agent-connector-lifecycle",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": ["agent-connector-lifecycle"],
+      "required_gates": ["agent-native-connector-lifecycle-e2e"],
+      "synthetic_paths": ["apps/desktop/src/store/agentConnectors.ts"],
+      "evidence": {
+        "truth_sources": ["Station OAuth provider state", "Station-backed Agent chatConfig.connectors"],
+        "surfaces": ["Native Tauri Agent Profile connectors section", "Station Agent config readback"],
+        "proven_by": ["agent-native-connector-lifecycle-e2e"],
+        "proven_scope": ["Connector OAuth entry, mount, tool sync, authoritative readback, and unmount for an approved test provider"],
+        "unproven_scope": ["Production third-party OAuth providers not represented by the approved disposable fixture"]
+      }
+    },
+    {
+      "id": "agent-message-forward",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": ["agent-message-forward"],
+      "required_gates": ["agent-native-message-forward-e2e"],
+      "synthetic_paths": ["apps/desktop/src/components/messages/ForwardMessageModal.tsx"],
+      "evidence": {
+        "truth_sources": ["Station Agent conversations", "Station Agent messages"],
+        "surfaces": ["Native Tauri Agent message action", "target Agent conversation"],
+        "proven_by": ["agent-native-message-forward-e2e"],
+        "proven_scope": ["Forward modal selection and persisted transcript visibility in a distinct target Agent conversation"],
+        "unproven_scope": ["Cross-Station forwarding and forwarding non-message artifacts"]
+      }
+    },
+    {
+      "id": "agent-portal-navigation",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": ["agent-portal-navigation"],
+      "required_gates": ["agent-native-portal-navigation-e2e"],
+      "synthetic_paths": ["apps/desktop/src/store/portal.ts"],
+      "evidence": {
+        "truth_sources": ["Desktop Portal navigation state machine"],
+        "surfaces": ["Native Tauri Agent conversation Portal"],
+        "proven_by": ["agent-native-portal-navigation-e2e"],
+        "proven_scope": ["Native visible push, Back, collapse/reopen preservation, and explicit close stack clearing"],
+        "unproven_scope": ["Portal view types not exercised by the selected fixture"]
+      }
+    }
+  ]
+}

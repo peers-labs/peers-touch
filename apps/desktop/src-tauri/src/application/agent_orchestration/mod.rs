@@ -49,7 +49,7 @@ fn resolve_station_agent_ids(
     token: &str,
     local_actor_id: &str,
 ) -> Result<Vec<String>, AppResult<StubPayload>> {
-    let local_agents = local_agents_by_id(local_actor_id);
+    let local_agents = local_agents_by_id(local_actor_id, token);
     let mut station_agents = match list_station_agents(token) {
         Ok(agents) => agents,
         Err(error) => return Err(error.into_app_result("Failed to list Station Agents")),
@@ -88,8 +88,8 @@ fn resolve_station_agent_ids(
     Ok(resolved)
 }
 
-fn local_agents_by_id(local_actor_id: &str) -> HashMap<String, Value> {
-    let result = application_agents::agents_list(local_actor_id);
+fn local_agents_by_id(local_actor_id: &str, token: &str) -> HashMap<String, Value> {
+    let result = application_agents::agents_list(local_actor_id, token);
     let Some(payload) = result.data else {
         return HashMap::new();
     };

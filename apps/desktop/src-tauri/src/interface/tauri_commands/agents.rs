@@ -17,10 +17,15 @@ fn actor_id_for_cmd(state: &State<'_, Arc<AppState>>, window: &Window) -> String
     session_resolver::actor_id_for_window(state.inner(), window).unwrap_or_default()
 }
 
+fn token_for_cmd(state: &State<'_, Arc<AppState>>, window: &Window) -> String {
+    session_resolver::token_for_window(state.inner(), window).unwrap_or_default()
+}
+
 #[tauri::command]
 pub fn agents_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
-    application_agents::agents_list(&actor_id)
+    let token = token_for_cmd(&state, &window);
+    application_agents::agents_list(&actor_id, &token)
 }
 
 #[tauri::command]
@@ -68,7 +73,8 @@ pub fn agents_get(
     input: AgentIdInput,
 ) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
-    application_agents::agents_get(&actor_id, input)
+    let token = token_for_cmd(&state, &window);
+    application_agents::agents_get(&actor_id, &token, input)
 }
 
 #[tauri::command]
@@ -78,7 +84,8 @@ pub fn agents_create(
     input: AgentCreateInput,
 ) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
-    application_agents::agents_create(&actor_id, input)
+    let token = token_for_cmd(&state, &window);
+    application_agents::agents_create(&actor_id, &token, input)
 }
 
 #[tauri::command]
@@ -88,7 +95,8 @@ pub fn agents_update(
     input: AgentUpdateInput,
 ) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
-    application_agents::agents_update(&actor_id, input)
+    let token = token_for_cmd(&state, &window);
+    application_agents::agents_update(&actor_id, &token, input)
 }
 
 #[tauri::command]
@@ -98,7 +106,8 @@ pub fn agents_delete(
     input: AgentIdInput,
 ) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
-    application_agents::agents_delete(&actor_id, input)
+    let token = token_for_cmd(&state, &window);
+    application_agents::agents_delete(&actor_id, &token, input)
 }
 
 #[tauri::command]
@@ -108,7 +117,8 @@ pub fn agents_duplicate(
     input: AgentDuplicateInput,
 ) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
-    application_agents::agents_duplicate(&actor_id, input)
+    let token = token_for_cmd(&state, &window);
+    application_agents::agents_duplicate(&actor_id, &token, input)
 }
 
 #[tauri::command]
@@ -118,7 +128,8 @@ pub fn agents_export_package(
     input: AgentPackageExportInput,
 ) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
-    application_agents::agents_export_package(&actor_id, input)
+    let token = token_for_cmd(&state, &window);
+    application_agents::agents_export_package(&actor_id, &token, input)
 }
 
 #[tauri::command]
@@ -128,7 +139,8 @@ pub fn agents_import_package(
     input: AgentPackageImportInput,
 ) -> AppResult<StubPayload> {
     let actor_id = actor_id_for_cmd(&state, &window);
-    application_agents::agents_import_package(&actor_id, input)
+    let token = token_for_cmd(&state, &window);
+    application_agents::agents_import_package(&actor_id, &token, input)
 }
 
 #[tauri::command]

@@ -37,6 +37,7 @@ const (
 	EventTypeAgentTurnStarted                EventType = "agent.turn.started"
 	EventTypeAgentTurnCompleted              EventType = "agent.turn.completed"
 	EventTypeAgentTurnFailed                 EventType = "agent.turn.failed"
+	EventTypeAgentTurnCancelled              EventType = "agent.turn.cancelled"
 	EventTypeCollaborationTaskCreated        EventType = "agent.collaboration.task.created"
 	EventTypeCollaborationTaskCompleted      EventType = "agent.collaboration.task.completed"
 	EventTypeCollaborationTaskFailed         EventType = "agent.collaboration.task.failed"

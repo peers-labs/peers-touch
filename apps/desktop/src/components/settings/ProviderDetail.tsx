@@ -94,7 +94,7 @@ export function ProviderDetail() {
     detail, loading, updateProvider, toggleProvider,
     checkProvider, deleteProvider, addModel, updateModel, deleteModel,
     fetchRemoteModels, selectProvider, toggleModel, toggleAllModels,
-    selectedId,
+    selectedId, readinessById,
   } = useActiveProviderSlice((s) => ({
     detail: s.detail,
     loading: s.loading,
@@ -110,6 +110,7 @@ export function ProviderDetail() {
     toggleModel: s.toggleModel,
     toggleAllModels: s.toggleAllModels,
     selectedId: s.selectedId,
+    readinessById: s.readinessById,
   }));
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
@@ -157,11 +158,11 @@ export function ProviderDetail() {
         try {
           await updateProvider(detail.id, key, url, detail.enabled);
         } catch {
-          // silently fail
+          message.error(t('provider.detail.saveFailed'));
         }
       }, 800);
     },
-    [detail, updateProvider],
+    [detail, t, updateProvider],
   );
 
   useEffect(() => {
@@ -288,7 +289,15 @@ export function ProviderDetail() {
   };
 
   const isCliProvider = detail.runtime_kind === 'cli';
-  const isUnconfigured = !isCliProvider && !detail.has_api_key && apiKey.trim().length === 0;
+  const readiness = readinessById[detail.id]?.status ?? 'loading';
+  const isUnconfigured = readiness === 'unconfigured' && apiKey.trim().length === 0;
+  const readinessColor = readiness === 'ready'
+    ? 'success'
+    : readiness === 'invalid' || readiness === 'error'
+      ? 'error'
+      : readiness === 'saving' || readiness === 'checking'
+        ? 'processing'
+        : 'default';
   const modelOptions = allModels.map((m) => ({
     value: m.id,
     label: m.display_name || m.id,
@@ -365,6 +374,15 @@ export function ProviderDetail() {
                   }}
                 >
                   {t('provider.detail.notConfigured')}
+                </Tag>
+              )}
+              {!isUnconfigured && (
+                <Tag
+                  bordered={false}
+                  color={readinessColor}
+                  style={{ margin: 0, fontSize: 11, lineHeight: '16px', paddingInline: 6, flexShrink: 0 }}
+                >
+                  {t(`provider.readiness.${readiness}`)}
                 </Tag>
               )}
             </Flexbox>

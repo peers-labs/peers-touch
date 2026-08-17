@@ -1,8 +1,8 @@
 # Agent 架构
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-04-11 | **Updated**: 2026-07-30
+> **Version**: v1.3
+> **Created**: 2026-04-11 | **Updated**: 2026-08-17
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `apps/station/app/subserver/agent/`, `apps/desktop/src-tauri/src/application/agent_turn/`, `apps/desktop/src-tauri/src/application/mcp/`
 
@@ -53,8 +53,10 @@
 
 | 优先级 | 状态 | 文档 | 定位 |
 |---|---|---|---|
+| V2 | draft / product-review | [Modern Chat Agent V2](./execution-plans/20260817-modern-chat-agent-v2.md) | **下一轮产品级迭代讨论稿** — Home Command Center、统一 Tool/MCP/Connector capability plane、真实 tool invocation、审批/恢复/审计；G1/G2 长期不支持，G3b/E1 待产品决策；未通过 PRODUCT/DESIGN gate 前不授权实施 |
+| V1 | active / functional-first | [First Useful Answer](./execution-plans/20260815-v1-first-useful-answer.md) | **当前最高优先执行入口** — 以 Settings 配置 Direct Model → Agent Profile 保存 provider+model → New Topic → 真实流式回复 → Desktop 重启读回为一个原子产品切换；先关闭功能与运行态，像素级收口由 deferred [Visual Replica Contract](./execution-plans/20260815-v1-visual-replica-contract.md) 后置执行 |
 | P0-P2 | draft / design-blocked | [modern-chat-agent](./execution-plans/20260730-modern-chat-agent.md) | Station 单一真源下的现代 Agent Chat 集成、所有权切换与端到端验收计划 |
-| P0-P4 | active | [agent-lobehub-rebuild](./execution-plans/20260616-agent-lobehub-rebuild.md) | 以 LobeHub 为蓝本的 Agent 产品与能力重构执行计划 |
+| P0-P4 | capability inventory | [agent-lobehub-rebuild](./execution-plans/20260616-agent-lobehub-rebuild.md) | LobeHub Agent 广度能力库存；不得再以模块/文件存在替代产品旅程完成，V1 完成前不启动新的横向能力批次 |
 | P0 | code | [system-prompt-assembly](./execution-plans/20260411-system-prompt-assembly.md) | System Prompt 层级组装 + Context References + Prompt Caching |
 | P0 | code | [skill-filesystem-and-routing](./execution-plans/20260411-skill-filesystem-and-routing.md) | Skill 文件系统、渐进式披露、Skills Guard 安全扫描 |
 | P0 | code | [memory-bounded-store](./execution-plans/20260411-memory-bounded-store.md) | Memory 有界存储、冻结快照、Knowledge Salvage |

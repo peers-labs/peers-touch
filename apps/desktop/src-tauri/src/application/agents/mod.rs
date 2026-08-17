@@ -5,7 +5,9 @@ use crate::contracts::{
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::actor_bucket::actor_bucket_id;
+use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -131,21 +133,6 @@ impl AgentStore {
                 .collect(),
         }
     }
-
-    fn next_agent_id(&self) -> String {
-        let next = self
-            .agents
-            .iter()
-            .filter_map(|item| item.id.strip_prefix("agent-")?.parse::<usize>().ok())
-            .max()
-            .unwrap_or(0)
-            + 1;
-        format!("agent-{next}")
-    }
-
-    fn next_sort_order(&self) -> i64 {
-        self.agents.iter().map(agent_sort_order).max().unwrap_or(-1) + 1
-    }
 }
 
 struct AgentStores {
@@ -203,6 +190,228 @@ fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayl
         command: command.to_string(),
         status: data.to_string(),
     })
+}
+
+fn station_failure(
+    error: station_client::StationClientError,
+    context: &str,
+) -> AppResult<StubPayload> {
+    error.into_app_result(context)
+}
+
+fn require_token(token: &str) -> Result<(), AppResult<StubPayload>> {
+    if token.trim().is_empty() {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        ));
+    }
+    Ok(())
+}
+
+fn normalize_station_visibility(value: Value) -> Value {
+    match value.as_str() {
+        Some("workspace") | Some("AGENT_VISIBILITY_WORKSPACE") => json!("workspace"),
+        _ => json!("private"),
+    }
+}
+
+fn normalize_station_i64(value: Value) -> Value {
+    value
+        .as_i64()
+        .or_else(|| value.as_str().and_then(|raw| raw.parse::<i64>().ok()))
+        .map(Value::from)
+        .unwrap_or_else(|| Value::from(0))
+}
+
+fn station_agent_to_desktop(agent: Value) -> Value {
+    let config = agent
+        .get("config_json")
+        .or_else(|| agent.get("configJson"))
+        .and_then(Value::as_str)
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .unwrap_or_else(|| json!({}));
+    let mut desktop = config.as_object().cloned().unwrap_or_default();
+    let field = |snake: &str, camel: &str| {
+        agent
+            .get(snake)
+            .or_else(|| agent.get(camel))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    desktop.insert("id".to_string(), field("agent_id", "agentId"));
+    desktop.insert("name".to_string(), field("name", "name"));
+    desktop.insert("title".to_string(), field("title", "title"));
+    desktop.insert(
+        "description".to_string(),
+        field("description", "description"),
+    );
+    desktop.insert("provider".to_string(), field("provider_id", "providerId"));
+    desktop.insert("model".to_string(), field("model_name", "modelName"));
+    desktop.insert("effort".to_string(), field("effort", "effort"));
+    desktop.insert(
+        "visibility".to_string(),
+        normalize_station_visibility(field("visibility", "visibility")),
+    );
+    desktop.insert(
+        "version".to_string(),
+        normalize_station_i64(field("version", "version")),
+    );
+    desktop.insert("createdAt".to_string(), field("created_at", "createdAt"));
+    desktop.insert("updatedAt".to_string(), field("updated_at", "updatedAt"));
+    normalize_agent_value(Value::Object(desktop))
+}
+
+fn desktop_agent_config(data: &Value) -> String {
+    let mut config = data.as_object().cloned().unwrap_or_default();
+    for key in [
+        "id",
+        "name",
+        "title",
+        "description",
+        "provider",
+        "model",
+        "effort",
+        "visibility",
+        "version",
+        "createdAt",
+        "updatedAt",
+    ] {
+        config.remove(key);
+    }
+    Value::Object(config).to_string()
+}
+
+fn station_agent_body(data: &Value, agent_id: Option<&str>) -> Value {
+    let string_value = |key: &str| {
+        data.get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let visibility =
+        normalize_station_visibility(data.get("visibility").cloned().unwrap_or(Value::Null));
+    let mut body = json!({
+        "name": string_value("name"),
+        "title": string_value("title"),
+        "description": string_value("description"),
+        "provider_id": string_value("provider"),
+        "model_name": string_value("model"),
+        "effort": string_value("effort"),
+        "visibility": visibility,
+        "config_json": desktop_agent_config(data),
+        "version": data.get("version").and_then(Value::as_i64).unwrap_or(0),
+    });
+    if let Some(agent_id) = agent_id {
+        body["agent_id"] = json!(agent_id);
+    }
+    body
+}
+
+fn station_agent(token: &str, agent_id: &str) -> Result<Value, station_client::StationClientError> {
+    let result = station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/get",
+        token,
+        None,
+        Some(&json!({"agent_id": agent_id})),
+    )?;
+    Ok(station_agent_to_desktop(
+        result.get("agent").cloned().unwrap_or(result),
+    ))
+}
+
+fn unique_station_agent_name(
+    token: &str,
+    requested: &str,
+) -> Result<String, station_client::StationClientError> {
+    let result = station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/list",
+        token,
+        None,
+        Some(&json!({"page": 1, "page_size": 100})),
+    )?;
+    let existing = result
+        .get("agents")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|agent| agent.get("name").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    let base = requested.trim();
+    let base = if base.is_empty() {
+        DEFAULT_AGENT_NAME
+    } else {
+        base
+    };
+    if !existing.contains(&base) {
+        return Ok(base.to_string());
+    }
+    for index in 2..1000 {
+        let candidate = format!("{base} {index}");
+        if !existing.iter().any(|name| *name == candidate) {
+            return Ok(candidate);
+        }
+    }
+    Ok(format!("{base} {}", now_rfc3339()))
+}
+
+fn create_station_agent(
+    actor_id: &str,
+    token: &str,
+    data: Value,
+    command: &str,
+) -> AppResult<StubPayload> {
+    match station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/create",
+        token,
+        None,
+        Some(&station_agent_body(&normalize_agent_value(data), None)),
+    ) {
+        Ok(result) => {
+            let agent = station_agent_to_desktop(result.get("agent").cloned().unwrap_or(result));
+            let _ = agents_list(actor_id, token);
+            success_payload(command, agent)
+        }
+        Err(error) => station_failure(error, "Failed to create Agent"),
+    }
+}
+
+fn replace_station_projection(actor_id: &str, agents: &[Value]) -> Result<(), String> {
+    let records = agents
+        .iter()
+        .cloned()
+        .filter_map(record_from_value)
+        .collect::<Vec<_>>();
+    let key = actor_bucket_id(actor_id);
+    let mut stores = agent_stores()
+        .lock()
+        .map_err(|error| format!("failed to acquire Agent projection: {error}"))?;
+    let store = stores
+        .buckets
+        .entry(key)
+        .or_insert_with(|| AgentStore::load(actor_id));
+    store.agents = records;
+    if !store
+        .agents
+        .iter()
+        .any(|item| agent_name(item) == store.selected_agent)
+    {
+        store.selected_agent = store.agents.first().map(agent_name).unwrap_or_default();
+    }
+    if !store
+        .agents
+        .iter()
+        .any(|item| agent_name(item) == store.default_agent)
+    {
+        store.default_agent = store.selected_agent.clone();
+    }
+    mark_default_agent(&mut store.agents, &store.default_agent);
+    sort_agent_records(&mut store.agents);
+    persist_store(actor_id, store)
 }
 
 fn invalid_argument(message: &str) -> AppResult<StubPayload> {
@@ -317,6 +526,7 @@ fn normalize_agent_value(mut data: Value) -> Value {
         .or_insert_with(|| json!(""));
     obj.entry("updatedAt".to_string())
         .or_insert_with(|| json!(""));
+    obj.entry("version".to_string()).or_insert_with(|| json!(0));
     data
 }
 
@@ -418,29 +628,6 @@ fn now_rfc3339() -> String {
         time::OffsetDateTime::from_unix_timestamp(unix).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
     dt.format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
-}
-
-fn unique_agent_name(store: &AgentStore, requested: &str) -> String {
-    let base = requested.trim();
-    let base = if base.is_empty() {
-        DEFAULT_AGENT_NAME
-    } else {
-        base
-    };
-    if !store.agents.iter().any(|item| agent_name(item) == base) {
-        return base.to_string();
-    }
-    for index in 2..1000 {
-        let candidate = format!("{base} {index}");
-        if !store
-            .agents
-            .iter()
-            .any(|item| agent_name(item) == candidate)
-        {
-            return candidate;
-        }
-    }
-    format!("{base} {}", now_rfc3339())
 }
 
 fn sanitize_chat_config_for_export(
@@ -590,50 +777,32 @@ fn agent_data_from_package(package: Value) -> Result<Value, String> {
     Ok(agent)
 }
 
-fn prepare_imported_agent(
-    store: &AgentStore,
-    mut data: Value,
-    id: String,
-    name: Option<String>,
-) -> Value {
-    if let Some(obj) = data.as_object_mut() {
-        let requested = name
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .or_else(|| {
-                obj.get("name")
-                    .and_then(Value::as_str)
-                    .map(|value| value.to_string())
-            })
-            .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
-        obj.insert("id".to_string(), json!(id));
-        obj.insert(
-            "name".to_string(),
-            json!(unique_agent_name(store, &requested)),
-        );
-        obj.insert("isDefault".to_string(), json!(false));
-        obj.insert("sortOrder".to_string(), json!(store.next_sort_order()));
-        obj.insert("createdAt".to_string(), json!(now_rfc3339()));
-        obj.insert("updatedAt".to_string(), json!(now_rfc3339()));
+pub fn agents_list(actor_id: &str, token: &str) -> AppResult<StubPayload> {
+    if let Err(error) = require_token(token) {
+        return error;
     }
-    normalize_agent_value(data)
-}
-
-pub fn agents_list(actor_id: &str) -> AppResult<StubPayload> {
+    let result = match station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/list",
+        token,
+        None,
+        Some(&json!({"page": 1, "page_size": 100})),
+    ) {
+        Ok(result) => result,
+        Err(error) => return station_failure(error, "Failed to list Agents"),
+    };
+    let agents = result
+        .get("agents")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .cloned()
+        .map(station_agent_to_desktop)
+        .collect::<Vec<_>>();
+    if let Err(error) = replace_station_projection(actor_id, &agents) {
+        return persist_error(error);
+    }
     with_agent_app_result(actor_id, |store| {
-        sort_agent_records(&mut store.agents);
-        let agents = store
-            .agents
-            .iter()
-            .map(|item| item.data.clone())
-            .collect::<Vec<_>>();
-        tracing::info!(
-            command = "agents_list",
-            count = agents.len(),
-            "Agents listed"
-        );
         success_payload(
             "agents_list",
             json!({
@@ -702,187 +871,178 @@ pub fn agents_set_default(actor_id: &str, input: AgentIdInput) -> AppResult<Stub
     })
 }
 
-pub fn agents_get(actor_id: &str, input: AgentIdInput) -> AppResult<StubPayload> {
+pub fn agents_get(_actor_id: &str, token: &str, input: AgentIdInput) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
-    with_agent_app_result(actor_id, |store| {
-        if let Some(agent) = store.agents.iter().find(|item| item.id == input.id) {
-            return success_payload("agents_get", agent.data.clone());
-        }
-        AppResult::fail(ErrorCode::NotFound, "Agent not found", None)
-    })
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    match station_agent(token, &input.id) {
+        Ok(agent) => success_payload("agents_get", agent),
+        Err(error) => station_failure(error, "Failed to get Agent"),
+    }
 }
 
-pub fn agents_create(actor_id: &str, input: AgentCreateInput) -> AppResult<StubPayload> {
-    with_agent_mutation(actor_id, |store| {
-        let id = store.next_agent_id();
-        tracing::info!(command = "agents_create", agent_id = %id, "Creating agent");
-        let mut data = input.data;
-        let sort_order = store.next_sort_order();
-        if let Some(obj) = data.as_object_mut() {
-            obj.insert("id".to_string(), json!(id.clone()));
-            obj.insert("isDefault".to_string(), json!(false));
-            obj.insert("sortOrder".to_string(), json!(sort_order));
-        }
-        let data = normalize_agent_value(data);
-        store.agents.push(AgentRecord {
-            id,
-            data: data.clone(),
-        });
-        success_payload("agents_create", data)
-    })
+pub fn agents_create(
+    actor_id: &str,
+    token: &str,
+    input: AgentCreateInput,
+) -> AppResult<StubPayload> {
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    create_station_agent(actor_id, token, input.data, "agents_create")
 }
 
-pub fn agents_update(actor_id: &str, input: AgentUpdateInput) -> AppResult<StubPayload> {
+pub fn agents_update(
+    actor_id: &str,
+    token: &str,
+    input: AgentUpdateInput,
+) -> AppResult<StubPayload> {
     tracing::info!(command = "agents_update", agent_id = %input.id, "Updating agent");
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
-    with_agent_mutation(actor_id, |store| {
-        let Some(index) = store.agents.iter().position(|item| item.id == input.id) else {
-            return AppResult::fail(ErrorCode::NotFound, "Agent not found", None);
-        };
-        let previous_name = agent_name(&store.agents[index]);
-        let mut data = store.agents[index].data.clone();
-        if let (Some(base), Some(update)) = (data.as_object_mut(), input.data.as_object()) {
-            for (key, value) in update {
-                if matches!(
-                    key.as_str(),
-                    "chatConfig" | "params" | "toolsAllow" | "toolsDeny" | "toolsProfile"
-                ) {
-                    continue;
-                }
-                base.insert(key.to_string(), value.clone());
-            }
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    let current = match station_agent(token, &input.id) {
+        Ok(agent) => agent,
+        Err(error) => return station_failure(error, "Failed to load Agent before update"),
+    };
+    let mut data = current;
+    if let (Some(base), Some(update)) = (data.as_object_mut(), input.data.as_object()) {
+        for (key, value) in update {
+            base.insert(key.clone(), value.clone());
         }
-        if let Some(obj) = data.as_object_mut() {
-            obj.insert("id".to_string(), json!(input.id));
+    }
+    let data = normalize_agent_value(data);
+    match station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/update",
+        token,
+        None,
+        Some(&station_agent_body(&data, Some(&input.id))),
+    ) {
+        Ok(result) => {
+            let updated = station_agent_to_desktop(result.get("agent").cloned().unwrap_or(result));
+            let _ = agents_list(actor_id, token);
+            success_payload("agents_update", updated)
         }
-        let mut data = normalize_agent_value(data);
-        let next_name = data
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or(DEFAULT_AGENT_NAME)
-            .to_string();
-        if store.selected_agent == previous_name {
-            store.selected_agent = next_name.clone();
-        }
-        if let Some(obj) = data.as_object_mut() {
-            obj.insert(
-                "isDefault".to_string(),
-                json!(store.default_agent == previous_name),
-            );
-        }
-        store.agents[index].data = data.clone();
-        if store.default_agent == previous_name {
-            set_default_agent(store, next_name);
-        }
-        sort_agent_records(&mut store.agents);
-        success_payload("agents_update", data)
-    })
+        Err(error) => station_failure(error, "Failed to update Agent"),
+    }
 }
 
-pub fn agents_delete(actor_id: &str, input: AgentIdInput) -> AppResult<StubPayload> {
+pub fn agents_delete(actor_id: &str, token: &str, input: AgentIdInput) -> AppResult<StubPayload> {
     tracing::info!(command = "agents_delete", agent_id = %input.id, "Deleting agent");
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
-    with_agent_mutation(actor_id, |store| {
-        let deleted_selected = store
-            .agents
-            .iter()
-            .find(|item| item.id == input.id)
-            .map(|item| agent_name(item) == store.selected_agent)
-            .unwrap_or(false);
-        let before = store.agents.len();
-        store.agents.retain(|item| item.id != input.id);
-        if deleted_selected {
-            store.selected_agent = store
-                .agents
-                .first()
-                .map(agent_name)
-                .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    match station_client::request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/delete",
+        token,
+        None,
+        Some(&json!({"agent_id": input.id})),
+    ) {
+        Ok(_) => {
+            let _ = agents_list(actor_id, token);
+            success_payload("agents_delete", json!({"ok": true}))
         }
-        if !store
-            .agents
-            .iter()
-            .any(|item| agent_name(item) == store.default_agent)
-        {
-            let fallback = store
-                .agents
-                .first()
-                .map(agent_name)
-                .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
-            set_default_agent(store, fallback);
-        }
-        success_payload(
-            "agents_delete",
-            json!({ "ok": before != store.agents.len() }),
-        )
-    })
+        Err(error) => station_failure(error, "Failed to delete Agent"),
+    }
 }
 
-pub fn agents_duplicate(actor_id: &str, input: AgentDuplicateInput) -> AppResult<StubPayload> {
+pub fn agents_duplicate(
+    actor_id: &str,
+    token: &str,
+    input: AgentDuplicateInput,
+) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() || input.name.trim().is_empty() {
         return invalid_argument("id and name are required");
     }
-    with_agent_mutation(actor_id, |store| {
-        if let Some(agent) = store.agents.iter().find(|item| item.id == input.id) {
-            let id = store.next_agent_id();
-            let mut data = agent.data.clone();
-            if let Some(obj) = data.as_object_mut() {
-                obj.insert("id".to_string(), json!(id.clone()));
-                obj.insert("name".to_string(), json!(input.name));
-                obj.insert("isDefault".to_string(), json!(false));
-                obj.insert("sortOrder".to_string(), json!(store.next_sort_order()));
-            }
-            let data = normalize_agent_value(data);
-            store.agents.push(AgentRecord {
-                id,
-                data: data.clone(),
-            });
-            return success_payload("agents_duplicate", data);
-        }
-        AppResult::fail(ErrorCode::NotFound, "Agent not found", None)
-    })
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    let mut data = match station_agent(token, &input.id) {
+        Ok(agent) => agent,
+        Err(error) => return station_failure(error, "Failed to load Agent before duplicate"),
+    };
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert("name".to_string(), json!(input.name.trim()));
+        obj.insert("isDefault".to_string(), json!(false));
+        obj.remove("id");
+        obj.remove("version");
+        obj.remove("createdAt");
+        obj.remove("updatedAt");
+    }
+    create_station_agent(actor_id, token, data, "agents_duplicate")
 }
 
 pub fn agents_export_package(
-    actor_id: &str,
+    _actor_id: &str,
+    token: &str,
     input: AgentPackageExportInput,
 ) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
-    with_agent_app_result(actor_id, |store| {
-        let Some(agent) = store.agents.iter().find(|item| item.id == input.id) else {
-            return AppResult::fail(ErrorCode::NotFound, "Agent not found", None);
-        };
-        success_payload(
-            "agents_export_package",
-            json!({ "package": package_agent_data(agent, input.include_local_paths) }),
-        )
-    })
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    let data = match station_agent(token, &input.id) {
+        Ok(agent) => agent,
+        Err(error) => return station_failure(error, "Failed to load Agent before export"),
+    };
+    let Some(agent) = record_from_value(data) else {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "Station returned an Agent without an id",
+            None,
+        );
+    };
+    success_payload(
+        "agents_export_package",
+        json!({ "package": package_agent_data(&agent, input.include_local_paths) }),
+    )
 }
 
 pub fn agents_import_package(
     actor_id: &str,
+    token: &str,
     input: AgentPackageImportInput,
 ) -> AppResult<StubPayload> {
-    let data = match agent_data_from_package(input.package) {
+    if let Err(error) = require_token(token) {
+        return error;
+    }
+    let mut data = match agent_data_from_package(input.package) {
         Ok(data) => data,
         Err(error) => return AppResult::fail(ErrorCode::InvalidArgument, error, None),
     };
-    with_agent_mutation(actor_id, |store| {
-        let id = store.next_agent_id();
-        let data = prepare_imported_agent(store, data, id.clone(), input.name);
-        store.agents.push(AgentRecord {
-            id,
-            data: data.clone(),
-        });
-        success_payload("agents_import_package", data)
-    })
+    let requested_name = input
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .or_else(|| data.get("name").and_then(Value::as_str))
+        .unwrap_or(DEFAULT_AGENT_NAME);
+    let unique_name = match unique_station_agent_name(token, requested_name) {
+        Ok(name) => name,
+        Err(error) => return station_failure(error, "Failed to resolve imported Agent name"),
+    };
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert("name".to_string(), json!(unique_name));
+        obj.insert("isDefault".to_string(), json!(false));
+        obj.remove("id");
+        obj.remove("version");
+        obj.remove("createdAt");
+        obj.remove("updatedAt");
+    }
+    create_station_agent(actor_id, token, data, "agents_import_package")
 }
 
 pub fn agents_search(actor_id: &str, input: AgentSearchInput) -> AppResult<StubPayload> {
@@ -941,518 +1101,54 @@ pub fn agents_list_sessions(actor_id: &str, input: AgentIdInput) -> AppResult<St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    static TEST_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    #[test]
+    fn station_mapping_normalizes_agent_contract() {
+        let mapped = station_agent_to_desktop(json!({
+            "agent_id": "agent-1",
+            "name": "assistant",
+            "provider_id": "ark",
+            "model_name": "ep-model",
+            "effort": "medium",
+            "visibility": "AGENT_VISIBILITY_PRIVATE",
+            "version": "2",
+            "config_json": "{\"openingMessage\":\"Ready\"}"
+        }));
 
-    fn reset_agent_stores_for_test() {
-        if let Ok(mut stores) = agent_stores().lock() {
-            stores.buckets.clear();
-        }
-    }
+        assert_eq!(mapped["id"], "agent-1");
+        assert_eq!(mapped["provider"], "ark");
+        assert_eq!(mapped["model"], "ep-model");
+        assert_eq!(mapped["effort"], "medium");
+        assert_eq!(mapped["visibility"], "private");
+        assert_eq!(mapped["version"], 2);
+        assert_eq!(mapped["openingMessage"], "Ready");
 
-    fn with_temp_storage_root(f: impl FnOnce()) {
-        let _guard = TEST_ENV_LOCK
-            .get_or_init(|| Mutex::new(()))
-            .lock()
-            .expect("test env lock");
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time")
-            .as_nanos();
-        let base = std::env::temp_dir().join(format!(
-            "peers-touch-agent-store-{}-{nanos}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&base).expect("temp storage root");
-        let previous_storage_root = std::env::var_os("PEERS_STORAGE_ROOT");
-        std::env::set_var("PEERS_STORAGE_ROOT", base.to_str().expect("utf8 path"));
-        reset_agent_stores_for_test();
-        f();
-        reset_agent_stores_for_test();
-        match previous_storage_root {
-            Some(value) => std::env::set_var("PEERS_STORAGE_ROOT", value),
-            None => std::env::remove_var("PEERS_STORAGE_ROOT"),
-        }
-        let _ = fs::remove_dir_all(base);
+        let body = station_agent_body(&mapped, Some("agent-1"));
+        assert_eq!(body["agent_id"], "agent-1");
+        assert_eq!(body["visibility"], "private");
+        assert_eq!(body["version"], 2);
     }
 
     #[test]
-    fn agent_stores_isolate_actors() {
-        with_temp_storage_root(|| {
-            let a = "actor-agent-a";
-            let b = "actor-agent-b";
-            let create = AgentCreateInput {
-                data: json!({ "name": "unique-x", "title": "t" }),
-            };
-            let created = agents_create(a, create);
-            assert!(created.ok, "create a");
-            let list_b = agents_list(b);
-            assert!(list_b.ok, "list b");
-            let payload = list_b.data.expect("payload");
-            let v: Value = serde_json::from_str(&payload.status).expect("json");
-            let n = v
-                .get("agents")
-                .and_then(|a| a.as_array())
-                .map(|a| a.len())
-                .unwrap_or(0);
-            assert_eq!(n, 1, "B should only have the default seeded agent");
-            let list_a = agents_list(a);
-            assert!(list_a.ok, "list a");
-            let p2 = list_a.data.expect("payload");
-            let v2: Value = serde_json::from_str(&p2.status).expect("json");
-            let n2 = v2
-                .get("agents")
-                .and_then(|a| a.as_array())
-                .map(|a| a.len())
-                .unwrap_or(0);
-            assert_eq!(n2, 2);
-        });
-    }
+    fn agent_package_round_trip_keeps_runtime_identity_and_redacts_secrets() {
+        let record = record_from_value(json!({
+            "id": "agent-1",
+            "name": "coder",
+            "provider": "ark",
+            "model": "ep-model",
+            "chatConfig": "{\"mcpServers\":[\"local\"],\"api_key\":\"secret\"}",
+            "knowledgeResources": "[{\"id\":\"docs\",\"type\":\"url\",\"source\":\"https://example.test\"}]"
+        }))
+        .expect("agent record");
 
-    #[test]
-    fn agent_store_survives_cache_reset() {
-        with_temp_storage_root(|| {
-            let actor = "actor-agent-persist";
-            let created = agents_create(
-                actor,
-                AgentCreateInput {
-                    data: json!({
-                        "name": "coder",
-                        "title": "t",
-                        "chatConfig": "{\"workspace\":{\"root\":\"/tmp/work\",\"policy\":\"workspace-only\"},\"mcpServers\":[\"local\"],\"tools\":[\"local_file_read\"],\"skills\":[\"skill-a\"]}"
-                    }),
-                },
-            );
-            assert!(created.ok, "create persisted agent");
-            let selected = agents_set_selected(
-                actor,
-                AgentSelectInput {
-                    name: "coder".to_string(),
-                },
-            );
-            assert!(selected.ok, "select persisted agent");
+        let package = package_agent_data(&record, false);
+        let text = package.to_string();
+        assert_eq!(package["providerPreset"]["provider"], "ark");
+        assert_eq!(package["providerPreset"]["model"], "ep-model");
+        assert!(!text.contains("\"api_key\":\"secret\""));
 
-            reset_agent_stores_for_test();
-
-            let selected_after_restart = agents_get_selected(actor);
-            assert!(selected_after_restart.ok, "load selected after restart");
-            let selected_payload = selected_after_restart.data.expect("selected payload");
-            let selected_json: Value =
-                serde_json::from_str(&selected_payload.status).expect("selected json");
-            assert_eq!(
-                selected_json.get("selectedAgent").and_then(Value::as_str),
-                Some("coder")
-            );
-
-            let list = agents_list(actor);
-            assert!(list.ok, "list after restart");
-            let payload = list.data.expect("list payload");
-            let value: Value = serde_json::from_str(&payload.status).expect("list json");
-            let agents = value
-                .get("agents")
-                .and_then(Value::as_array)
-                .expect("agents array");
-            let coder = agents
-                .iter()
-                .find(|item| item.get("name").and_then(Value::as_str) == Some("coder"))
-                .expect("persisted coder agent");
-            let chat_config = coder
-                .get("chatConfig")
-                .and_then(Value::as_str)
-                .expect("chat config");
-            assert!(chat_config.contains("local_file_read"));
-            assert!(chat_config.contains("skill-a"));
-        });
-    }
-
-    #[test]
-    fn default_agent_is_visible_configurable_and_persistent() {
-        with_temp_storage_root(|| {
-            let actor = "actor-agent-default";
-            let created = agents_create(
-                actor,
-                AgentCreateInput {
-                    data: json!({ "name": "coder", "title": "Coder" }),
-                },
-            );
-            assert!(created.ok, "create configurable default agent");
-            let created_payload = created.data.expect("created payload");
-            let created_json: Value =
-                serde_json::from_str(&created_payload.status).expect("created json");
-            let coder_id = created_json
-                .get("id")
-                .and_then(Value::as_str)
-                .expect("coder id")
-                .to_string();
-
-            let default_before = agents_get_default(actor);
-            assert!(default_before.ok, "get seeded default");
-            let payload = default_before.data.expect("default payload");
-            let value: Value = serde_json::from_str(&payload.status).expect("default json");
-            assert_eq!(
-                value.get("defaultAgent").and_then(Value::as_str),
-                Some(DEFAULT_AGENT_NAME)
-            );
-            assert_eq!(
-                value["agent"].get("isDefault").and_then(Value::as_bool),
-                Some(true)
-            );
-
-            let set_default = agents_set_default(actor, AgentIdInput { id: coder_id });
-            assert!(set_default.ok, "set default agent");
-
-            reset_agent_stores_for_test();
-
-            let list = agents_list(actor);
-            assert!(list.ok, "list after default restart");
-            let payload = list.data.expect("list payload");
-            let value: Value = serde_json::from_str(&payload.status).expect("list json");
-            assert_eq!(
-                value.get("defaultAgent").and_then(Value::as_str),
-                Some("coder")
-            );
-            let agents = value
-                .get("agents")
-                .and_then(Value::as_array)
-                .expect("agents array");
-            assert_eq!(
-                agents
-                    .iter()
-                    .find(|item| item.get("name").and_then(Value::as_str) == Some("coder"))
-                    .and_then(|item| item.get("isDefault"))
-                    .and_then(Value::as_bool),
-                Some(true)
-            );
-            assert_eq!(
-                agents
-                    .iter()
-                    .find(
-                        |item| item.get("name").and_then(Value::as_str) == Some(DEFAULT_AGENT_NAME)
-                    )
-                    .and_then(|item| item.get("isDefault"))
-                    .and_then(Value::as_bool),
-                Some(false)
-            );
-        });
-    }
-
-    #[test]
-    fn deleting_default_agent_falls_back_without_clone_or_import_stealing_default() {
-        with_temp_storage_root(|| {
-            let actor = "actor-agent-default-delete";
-            let created = agents_create(
-                actor,
-                AgentCreateInput {
-                    data: json!({ "name": "coder", "title": "Coder" }),
-                },
-            );
-            assert!(created.ok, "create coder");
-            let created_payload = created.data.expect("created payload");
-            let created_json: Value =
-                serde_json::from_str(&created_payload.status).expect("created json");
-            let coder_id = created_json
-                .get("id")
-                .and_then(Value::as_str)
-                .expect("coder id")
-                .to_string();
-
-            assert!(
-                agents_set_default(
-                    actor,
-                    AgentIdInput {
-                        id: coder_id.clone()
-                    }
-                )
-                .ok
-            );
-
-            let cloned = agents_duplicate(
-                actor,
-                AgentDuplicateInput {
-                    id: coder_id.clone(),
-                    name: "coder copy".to_string(),
-                },
-            );
-            assert!(cloned.ok, "clone should not become default");
-            let cloned_json: Value =
-                serde_json::from_str(&cloned.data.expect("clone payload").status)
-                    .expect("clone json");
-            assert_eq!(
-                cloned_json.get("isDefault").and_then(Value::as_bool),
-                Some(false)
-            );
-
-            let exported = agents_export_package(
-                actor,
-                AgentPackageExportInput {
-                    id: coder_id.clone(),
-                    include_local_paths: false,
-                },
-            );
-            assert!(exported.ok, "export default");
-            let exported_json: Value =
-                serde_json::from_str(&exported.data.expect("export payload").status)
-                    .expect("export json");
-            let package = exported_json.get("package").cloned().expect("package");
-            let imported = agents_import_package(
-                actor,
-                AgentPackageImportInput {
-                    package,
-                    name: Some("imported coder".to_string()),
-                },
-            );
-            assert!(imported.ok, "import should not become default");
-            let imported_json: Value =
-                serde_json::from_str(&imported.data.expect("import payload").status)
-                    .expect("import json");
-            assert_eq!(
-                imported_json.get("isDefault").and_then(Value::as_bool),
-                Some(false)
-            );
-
-            let deleted = agents_delete(actor, AgentIdInput { id: coder_id });
-            assert!(deleted.ok, "delete default");
-            let default_after_delete = agents_get_default(actor);
-            assert!(default_after_delete.ok, "fallback default exists");
-            let value: Value =
-                serde_json::from_str(&default_after_delete.data.expect("default payload").status)
-                    .expect("default json");
-            assert_eq!(
-                value.get("defaultAgent").and_then(Value::as_str),
-                Some(DEFAULT_AGENT_NAME)
-            );
-            assert_eq!(
-                value["agent"].get("isDefault").and_then(Value::as_bool),
-                Some(true)
-            );
-        });
-    }
-
-    #[test]
-    fn pinned_favorite_and_order_survive_restart_with_partial_updates() {
-        with_temp_storage_root(|| {
-            let actor = "actor-agent-order";
-            let beta = agents_create(
-                actor,
-                AgentCreateInput {
-                    data: json!({ "name": "beta", "title": "Beta" }),
-                },
-            );
-            assert!(beta.ok, "create beta");
-            let alpha = agents_create(
-                actor,
-                AgentCreateInput {
-                    data: json!({ "name": "alpha", "title": "Alpha" }),
-                },
-            );
-            assert!(alpha.ok, "create alpha");
-            let alpha_json: Value =
-                serde_json::from_str(&alpha.data.expect("alpha payload").status)
-                    .expect("alpha json");
-            let alpha_id = alpha_json
-                .get("id")
-                .and_then(Value::as_str)
-                .expect("alpha id")
-                .to_string();
-
-            let updated = agents_update(
-                actor,
-                AgentUpdateInput {
-                    id: alpha_id,
-                    data: json!({ "pinned": true, "favorite": true }),
-                },
-            );
-            assert!(updated.ok, "pin alpha");
-            let updated_json: Value =
-                serde_json::from_str(&updated.data.expect("updated payload").status)
-                    .expect("updated json");
-            assert_eq!(
-                updated_json.get("title").and_then(Value::as_str),
-                Some("Alpha")
-            );
-            assert_eq!(
-                updated_json.get("pinned").and_then(Value::as_bool),
-                Some(true)
-            );
-            assert_eq!(
-                updated_json.get("favorite").and_then(Value::as_bool),
-                Some(true)
-            );
-
-            reset_agent_stores_for_test();
-
-            let list = agents_list(actor);
-            assert!(list.ok, "list ordered agents");
-            let payload = list.data.expect("list payload");
-            let value: Value = serde_json::from_str(&payload.status).expect("list json");
-            let agents = value
-                .get("agents")
-                .and_then(Value::as_array)
-                .expect("agents array");
-            assert_eq!(agents[0].get("name").and_then(Value::as_str), Some("alpha"));
-            assert_eq!(agents[0].get("pinned").and_then(Value::as_bool), Some(true));
-            assert_eq!(
-                agents[0].get("favorite").and_then(Value::as_bool),
-                Some(true)
-            );
-            assert_eq!(
-                agents[1].get("name").and_then(Value::as_str),
-                Some(DEFAULT_AGENT_NAME)
-            );
-            assert_eq!(agents[2].get("name").and_then(Value::as_str), Some("beta"));
-        });
-    }
-
-    #[test]
-    fn agent_package_round_trip_preserves_supported_fields_without_overwrite() {
-        with_temp_storage_root(|| {
-            let actor = "actor-agent-package";
-            let created = agents_create(
-                actor,
-                AgentCreateInput {
-                    data: json!({
-                        "name": "coder",
-                        "title": "Coder",
-                        "description": "Writes code",
-                        "provider": "openai",
-                        "model": "gpt-4.1",
-                        "openingMessage": "Ready",
-                        "openingQuestions": "Review code\nWrite tests",
-                        "chatConfig": "{\"mcpServers\":[\"local\"],\"tools\":[\"local_file_read\"],\"skills\":[\"skill-a\"],\"enableStreaming\":true}"
-                    }),
-                },
-            );
-            assert!(created.ok, "create source agent");
-            let created_payload = created.data.expect("created payload");
-            let created_json: Value =
-                serde_json::from_str(&created_payload.status).expect("created json");
-            let source_id = created_json
-                .get("id")
-                .and_then(Value::as_str)
-                .expect("source id")
-                .to_string();
-
-            let exported = agents_export_package(
-                actor,
-                AgentPackageExportInput {
-                    id: source_id.clone(),
-                    include_local_paths: false,
-                },
-            );
-            assert!(exported.ok, "export package");
-            let exported_payload = exported.data.expect("exported payload");
-            let exported_json: Value =
-                serde_json::from_str(&exported_payload.status).expect("exported json");
-            let package = exported_json.get("package").cloned().expect("package");
-            assert_eq!(package["schemaVersion"], AGENT_PACKAGE_SCHEMA);
-            assert_eq!(package["providerPreset"]["provider"], "openai");
-            assert_eq!(package["bindings"]["mcpServers"][0], "local");
-            assert_eq!(package["bindings"]["tools"][0], "local_file_read");
-            assert_eq!(package["bindings"]["skills"][0], "skill-a");
-
-            let imported = agents_import_package(
-                actor,
-                AgentPackageImportInput {
-                    package,
-                    name: None,
-                },
-            );
-            assert!(imported.ok, "import package");
-            let imported_payload = imported.data.expect("imported payload");
-            let imported_json: Value =
-                serde_json::from_str(&imported_payload.status).expect("imported json");
-            assert_ne!(imported_json["id"], source_id);
-            assert_eq!(imported_json["name"], "coder 2");
-            assert_eq!(imported_json["provider"], "openai");
-            assert_eq!(imported_json["model"], "gpt-4.1");
-            assert_eq!(imported_json["openingMessage"], "Ready");
-            assert!(imported_json["chatConfig"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("local_file_read"));
-        });
-    }
-
-    #[test]
-    fn share_safe_agent_package_redacts_secrets_and_local_sources() {
-        with_temp_storage_root(|| {
-            let actor = "actor-agent-share-safe";
-            let created = agents_create(
-                actor,
-                AgentCreateInput {
-                    data: json!({
-                        "name": "private-coder",
-                        "title": "Private Coder",
-                        "provider": "openai",
-                        "model": "gpt-4.1",
-                        "chatConfig": "{\"workspace\":{\"root\":\"/tmp/private-workspace\",\"policy\":\"workspace-only\"},\"mcpServers\":[\"local\"],\"api_key\":\"sk-secret\"}",
-                        "knowledgeResources": "[{\"id\":\"local-file\",\"type\":\"folder\",\"title\":\"Local\",\"source\":\"/tmp/private-workspace\",\"policy\":\"always\",\"status\":\"bound\"},{\"id\":\"public-url\",\"type\":\"url\",\"title\":\"Docs\",\"source\":\"https://example.test/docs\",\"policy\":\"auto\",\"status\":\"bound\"}]"
-                    }),
-                },
-            );
-            assert!(created.ok, "create share-safe source agent");
-            let created_json: Value =
-                serde_json::from_str(&created.data.expect("created payload").status)
-                    .expect("created json");
-            let source_id = created_json["id"].as_str().expect("source id").to_string();
-
-            let exported = agents_export_package(
-                actor,
-                AgentPackageExportInput {
-                    id: source_id,
-                    include_local_paths: false,
-                },
-            );
-            assert!(exported.ok, "export share-safe package");
-            let exported_json: Value =
-                serde_json::from_str(&exported.data.expect("export payload").status)
-                    .expect("export json");
-            let package = exported_json.get("package").expect("package");
-            let package_text = package.to_string();
-            assert!(!package_text.contains("sk-secret"));
-            assert!(!package_text.contains("/tmp/private-workspace"));
-            assert_eq!(
-                package["source"]["sharePolicy"]["includeLocalPaths"].as_bool(),
-                Some(false)
-            );
-            assert_eq!(package["source"]["sharePolicy"]["secrets"], "redacted");
-            assert!(package["source"]["redactions"]
-                .as_array()
-                .expect("redactions")
-                .iter()
-                .any(|item| item.as_str() == Some("agent.knowledgeResources.localSources")));
-            assert!(package["agent"]["knowledgeResources"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("https://example.test/docs"));
-        });
-    }
-
-    #[test]
-    fn agent_duplicate_creates_distinct_identity() {
-        with_temp_storage_root(|| {
-            let actor = "actor-agent-clone";
-            let list = agents_list(actor);
-            let payload = list.data.expect("list payload");
-            let value: Value = serde_json::from_str(&payload.status).expect("list json");
-            let source_id = value["agents"][0]["id"]
-                .as_str()
-                .expect("source id")
-                .to_string();
-
-            let cloned = agents_duplicate(
-                actor,
-                AgentDuplicateInput {
-                    id: source_id.clone(),
-                    name: "assistant-copy".to_string(),
-                },
-            );
-            assert!(cloned.ok, "clone agent");
-            let payload = cloned.data.expect("clone payload");
-            let value: Value = serde_json::from_str(&payload.status).expect("clone json");
-            assert_ne!(value["id"], source_id);
-            assert_eq!(value["name"], "assistant-copy");
-        });
+        let imported = agent_data_from_package(package).expect("package round trip");
+        assert_eq!(imported["provider"], "ark");
+        assert_eq!(imported["model"], "ep-model");
     }
 }
