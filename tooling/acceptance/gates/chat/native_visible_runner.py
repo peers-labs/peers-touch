@@ -321,12 +321,7 @@ class NativeObserver:
         require(result is True, f"observer input fill failed for {selector}")
 
     def count(self, selector: str) -> int:
-        return int(
-            self.eval(
-                f"document.querySelectorAll({json.dumps(selector)}).length"
-            )
-            or 0
-        )
+        return len(self.driver.find_elements(selector))
 
     def visible(self, selector: str) -> bool:
         return bool(
