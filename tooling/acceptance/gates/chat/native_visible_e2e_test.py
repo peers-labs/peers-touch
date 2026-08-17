@@ -393,5 +393,22 @@ class NativeObserverFillTest(unittest.TestCase):
         self.assertIn('exact \\"plaintext\\"', scripts[1])
 
 
+class NativeObserverCountTest(unittest.TestCase):
+    def test_count_uses_native_element_lookup_without_script_execution(self) -> None:
+        class Driver:
+            def find_elements(self, selector: str) -> list[str]:
+                self.selector = selector
+                return ["first", "second"]
+
+            def execute_script(self, *_args: Any) -> Any:
+                raise AssertionError("count must not execute renderer script")
+
+        driver = Driver()
+        observer = runner.NativeObserver(driver)
+
+        self.assertEqual(observer.count("[data-ready]"), 2)
+        self.assertEqual(driver.selector, "[data-ready]")
+
+
 if __name__ == "__main__":
     unittest.main()
