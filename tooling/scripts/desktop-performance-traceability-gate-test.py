@@ -33,8 +33,16 @@ class DesktopPerformanceTraceabilityGateTest(unittest.TestCase):
             def fake_latest_path(gate_id: str, role: str) -> Path:
                 return root / gate_id / role.replace("/", "-")
 
-            def fake_latest_ref(gate_id: str, role: str) -> dict:
-                return {"workspaceId": "workspace", "gateId": gate_id, "runId": "run", "path": role}
+            def fake_latest_artifact(
+                gate_id: str,
+                role: str,
+            ) -> tuple[Path, dict]:
+                return fake_latest_path(gate_id, role), {
+                    "workspaceId": "workspace",
+                    "gateId": gate_id,
+                    "runId": "run",
+                    "path": role,
+                }
 
             old_argv = sys.argv
             try:
@@ -43,10 +51,10 @@ class DesktopPerformanceTraceabilityGateTest(unittest.TestCase):
                     "--output",
                     str(output),
                 ]
-                with mock.patch.object(module, "latest_path", side_effect=fake_latest_path), mock.patch.object(
+                with mock.patch.object(
                     module,
-                    "latest_ref",
-                    side_effect=fake_latest_ref,
+                    "latest_artifact",
+                    side_effect=fake_latest_artifact,
                 ):
                     module.main()
             finally:

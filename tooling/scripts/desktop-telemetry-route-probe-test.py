@@ -52,10 +52,10 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
                     "--output",
                     str(output),
                 ]
-                with mock.patch.object(module, "latest_path", return_value=runtime_closure), mock.patch.object(
+                with mock.patch.object(
                     module,
-                    "latest_ref",
-                    return_value=artifact_ref,
+                    "latest_artifact",
+                    return_value=(runtime_closure, artifact_ref),
                 ), mock.patch.object(module, "build_report", side_effect=fake_build_report), mock.patch.object(
                     module,
                     "render_markdown",

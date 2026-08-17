@@ -15,8 +15,8 @@ from tooling.acceptance.core import (  # noqa: E402
     EvidenceStore,
     current_artifact_path,
     latest_artifact_path,
+    validate_external_output_path,
 )
-from tooling.acceptance.core.errors import EvidenceRootForbidden  # noqa: E402
 
 
 def artifact_session(gate_id: str) -> ArtifactSession:
@@ -28,15 +28,7 @@ def artifact_session(gate_id: str) -> ArtifactSession:
 
 
 def explicit_output_path(value: str | Path) -> Path:
-    candidate = Path(value).expanduser().resolve()
-    repository = REPO_ROOT.resolve()
-    if candidate == repository or repository in candidate.parents:
-        raise EvidenceRootForbidden(
-            "explicit Acceptance output must remain outside the repository",
-            operation="resolve-explicit-output",
-            path_role="test-fixture-output",
-        )
-    return candidate
+    return validate_external_output_path(value, repo_root=REPO_ROOT)
 
 
 def replace_resolved_artifact_paths(
@@ -72,6 +64,18 @@ def latest_path(gate_id: str, role: str) -> Path:
         role,
         repo_root=REPO_ROOT,
     )
+
+
+def latest_artifact(
+    gate_id: str,
+    role: str,
+) -> tuple[Path, dict[str, Any]]:
+    store = EvidenceStore.from_environment(
+        repo_root=REPO_ROOT,
+        worktree=REPO_ROOT,
+    )
+    reference = store.latest_artifact_ref(gate_id, role)
+    return store.resolve(reference), reference.to_dict()
 
 
 def latest_ref(gate_id: str, role: str) -> dict[str, Any]:
