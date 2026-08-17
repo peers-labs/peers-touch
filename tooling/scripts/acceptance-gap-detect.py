@@ -139,6 +139,36 @@ def detect(
     results = result_entries(run)
     obligations = set(required_gates)
 
+    planned_paths = plan.get("changed_paths")
+    if isinstance(planned_paths, list):
+        normalized_planned_paths = {
+            str(path) for path in planned_paths if str(path)
+        }
+        actual_paths = set(paths)
+        if normalized_planned_paths != actual_paths:
+            gaps.append(
+                gap(
+                    gap_type="ACCEPTANCE_GAP_DETECTOR_INPUT_INVALID",
+                    claim=claim,
+                    owner_stage="PLAN",
+                    required_closure=(
+                        "Regenerate the Acceptance plan for the detector's "
+                        "exact git range"
+                    ),
+                    evidence=[
+                        {
+                            "reason": "Acceptance plan paths do not match detector range",
+                            "missingFromPlan": sorted(
+                                actual_paths - normalized_planned_paths
+                            ),
+                            "notInRange": sorted(
+                                normalized_planned_paths - actual_paths
+                            ),
+                        }
+                    ],
+                )
+            )
+
     receipt_paths = sorted(RECEIVER_VISIBLE_PATHS.intersection(paths))
     if receipt_paths:
         obligations.add(RECEIVER_PROOF_GATE)
