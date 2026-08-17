@@ -7,6 +7,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session
+
 
 ARTIFACT_KIND = "desktop-telemetry-db-schema-gate"
 PHASE = "P0a-5/P0c-5"
@@ -16,7 +18,7 @@ GATE = (
     "Station telemetry DB schema evidence must prove raw event persistence, rollup persistence, "
     "query capability, and runtime migration application before P0a-5 local schema evidence can close"
 )
-DEFAULT_OUTPUT = Path("tooling/acceptance/reports/desktop-telemetry-db-schema-gate.json")
+DEFAULT_OUTPUT = "reports/desktop-telemetry-db-schema-gate.json"
 STORE_PATH = Path("apps/station/app/subserver/frontend_telemetry/store.go")
 HANDLER_TEST_PATH = Path("apps/station/app/subserver/frontend_telemetry/handler_test.go")
 SUBSERVER_PATH = Path("apps/station/app/subserver/frontend_telemetry/subserver.go")
@@ -357,16 +359,34 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument("--output")
     parser.add_argument("--root", default=".")
     args = parser.parse_args()
     root = Path(args.root).resolve()
-    output = Path(args.output)
-    report = build_report(root, output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    output.with_suffix(".md").write_text(render_markdown(report), encoding="utf-8")
-    print(f"[desktop-telemetry-db-schema-gate] wrote {output}")
+    logical_output = Path(args.output) if args.output else Path(DEFAULT_OUTPUT)
+    report = build_report(root, logical_output)
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        output.with_suffix(".md").write_text(render_markdown(report), encoding="utf-8")
+        display_output = str(output)
+    else:
+        with artifact_session(ARTIFACT_KIND) as session:
+            session.write_json(DEFAULT_OUTPUT, report, role="report")
+            session.write_bytes(
+                str(Path(DEFAULT_OUTPUT).with_suffix(".md")),
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_output = DEFAULT_OUTPUT
+    print(f"[desktop-telemetry-db-schema-gate] wrote {display_output}")
     return 0 if report["status"] == "pass" else 1
 
 

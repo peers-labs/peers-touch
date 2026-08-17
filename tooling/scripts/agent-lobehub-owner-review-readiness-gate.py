@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session
+
 
 ARTIFACT_KIND = "agent-lobehub-owner-review-readiness-gate"
 PHASE = "PLAN-P2 Owner review preparation / PLAN-P5 blocked precondition"
@@ -19,7 +21,7 @@ SPEC = ["SPEC-010", "SPEC-013", "SPEC-014"]
 GATE = "Owner review package must be complete while prototype remains fail-closed and PLAN-P5 remains blocked"
 
 DEFAULT_LEDGER = "tmp/agent-lobehub-fullstack-ledger.md"
-DEFAULT_OUTPUT_PREFIX = "tooling/acceptance/reports/agent-lobehub-owner-review-readiness-gate-latest"
+DEFAULT_OUTPUT_PREFIX = "reports/agent-lobehub-owner-review-readiness-gate-latest"
 
 REQUIRED_FILES = {
     "manifest": "packages/prototypes/desktop/features/agent-lobehub-parity/prototype.manifest.ts",
@@ -1435,14 +1437,36 @@ def write_outputs(report: dict[str, Any], output_prefix: Path) -> tuple[Path, Pa
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", default=".")
-    parser.add_argument("--output-prefix", default=DEFAULT_OUTPUT_PREFIX)
+    parser.add_argument("--output-prefix")
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
     report = build_report(repo_root)
-    json_path, md_path = write_outputs(report, Path(args.output_prefix))
-    print(f"agent lobehub owner-review readiness gate JSON: {json_path}")
-    print(f"agent lobehub owner-review readiness gate Markdown: {md_path}")
+    if args.output_prefix:
+        json_path, md_path = write_outputs(
+            report,
+            Path(args.output_prefix),
+        )
+        json_output = str(json_path)
+        markdown_output = str(md_path)
+    else:
+        json_output = str(Path(DEFAULT_OUTPUT_PREFIX).with_suffix(".json"))
+        markdown_output = str(Path(DEFAULT_OUTPUT_PREFIX).with_suffix(".md"))
+        with artifact_session(ARTIFACT_KIND) as session:
+            session.write_json(json_output, report, role="report")
+            session.write_bytes(
+                markdown_output,
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+    print(f"agent lobehub owner-review readiness gate JSON: {json_output}")
+    print(f"agent lobehub owner-review readiness gate Markdown: {markdown_output}")
     print(f"status: {report['status']}")
     return 0 if report["status"] == "pass" else 1
 

@@ -9,21 +9,18 @@ from typing import Any, Optional
 
 from .drivers.base import BaseDriver, DomDriver
 from .errors import GateError
-from .evidence import EvidenceReport, REPO_ROOT, REPORTS_DIR, EVIDENCE_DIR, new_report
+from .evidence import EvidenceReport, new_report
 from .harness import call_async_harness
 
 
 class AcceptanceGate(ABC):
     gate_id: str = ""
     report_path: Optional[Path] = None
-    evidence_dir: Path = EVIDENCE_DIR
+    evidence_dir: Optional[Path] = None
 
     def __init__(self) -> None:
         if not self.gate_id:
             raise GateError(f"Gate subclass {type(self).__name__} must define gate_id")
-        if self.report_path is None:
-            self.report_path = REPORTS_DIR / f"{self.gate_id}.json"
-        self.evidence_dir = EVIDENCE_DIR / self.gate_id
         self.report: EvidenceReport = new_report(self.gate_id)
         self._start_time: float = 0.0
         self._drivers: list[BaseDriver] = []
@@ -42,31 +39,43 @@ class AcceptanceGate(ABC):
         self._drivers.clear()
         return failures
 
-    def save_app_log(self, driver: BaseDriver, name: str) -> str:
+    def save_app_log(self, driver: BaseDriver, name: str) -> Any:
         log_path = getattr(driver, "log_path", None)
         if log_path:
             path = Path(log_path)
             if path.exists():
-                return self.report.add_evidence_file(f"{name}-app-log", path)
+                return self.report.add_evidence_file(
+                    f"{name}-app-log",
+                    path,
+                    destination_dir=self.evidence_dir,
+                )
         return ""
 
-    def save_screenshot(self, driver: DomDriver, name: str) -> str:
+    def save_screenshot(self, driver: DomDriver, name: str) -> Any:
         import tempfile
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             tmp_path = Path(tmp.name)
         try:
             driver.save_screenshot(str(tmp_path))
-            return self.report.add_evidence_file(f"{name}-screenshot", tmp_path)
+            return self.report.add_evidence_file(
+                f"{name}-screenshot",
+                tmp_path,
+                destination_dir=self.evidence_dir,
+            )
         finally:
             tmp_path.unlink(missing_ok=True)
 
-    def save_dom(self, driver: DomDriver, name: str) -> str:
+    def save_dom(self, driver: DomDriver, name: str) -> Any:
         import tempfile
         with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as tmp:
             tmp.write(driver.get_page_source())
             tmp_path = Path(tmp.name)
         try:
-            return self.report.add_evidence_file(f"{name}-dom", tmp_path)
+            return self.report.add_evidence_file(
+                f"{name}-dom",
+                tmp_path,
+                destination_dir=self.evidence_dir,
+            )
         finally:
             tmp_path.unlink(missing_ok=True)
 
@@ -92,7 +101,8 @@ class AcceptanceGate(ABC):
 
     def execute(self) -> int:
         self._start_time = time.time()
-        self.evidence_dir.mkdir(parents=True, exist_ok=True)
+        if self.evidence_dir is not None:
+            self.evidence_dir.mkdir(parents=True, exist_ok=True)
         result: dict[str, Any] = {}
         caught_error: Exception | None = None
         try:
@@ -122,7 +132,7 @@ class AcceptanceGate(ABC):
 
         self.report.duration_ms = int((time.time() - self._start_time) * 1000)
         try:
-            self.report.write(self.report_path)
+            self.report_path = self.report.write(self.report_path)
         except Exception as report_error:
             self._print_fail(report_error)
             return 1

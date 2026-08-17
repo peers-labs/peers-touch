@@ -6,6 +6,5 @@
     "acceptance-framework-self-consistency",
     "<domain-capability-id>"
   ],
-  "validation_gate_id": "<domain-validation-gate-id>",
-  "report": "tooling/acceptance/reports/<domain-id>-validation.json"
+  "validation_gate_id": "<domain-validation-gate-id>"
 }

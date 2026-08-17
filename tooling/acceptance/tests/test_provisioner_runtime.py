@@ -223,7 +223,15 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 live_commit="abc1234",
                 workspace_digest="clean",
                 proto_digest="proto-digest",
-                artifact_path="tooling/acceptance/reports/manifests/att.json",
+                artifact_ref={
+                    "artifactKind": "acceptance-artifact-ref",
+                    "workspaceId": "0" * 16,
+                    "gateId": "test-gate",
+                    "runId": "20260817T000000000000Z-" + "0" * 32,
+                    "path": "runtime/attestation.json",
+                    "sha256": "0" * 64,
+                    "mediaType": "application/json",
+                },
                 produced_at="2026-08-16T00:00:00+00:00",
             )
             with patch(
