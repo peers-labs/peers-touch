@@ -21,15 +21,15 @@
 | Branch | `design/acceptance-runtime-provisioning-contract` |
 | Stage | `EXECUTE` |
 | Current workstream | `WS8-A: Identity Prerequisite`, `WS8-B: Profile Lease`, `WS8-C: Leak Canary` |
-| Current step | Commit the three locally verified prerequisite implementations, deploy that exact source, and start Native proof. |
+| Current step | Commit the SSH-held remote source lease, deploy the exact source, and start Native proof. |
 | Progress | WS1, WS5, and WS7 DONE; WS2, WS3, WS4, and WS6 PARTIAL; WS8-A/B/C IMPLEMENTED_UNPROVEN; WS8 BLOCKED until live evidence closes those dependencies. AS-03 and AS-05 PASSED; AS-01 and AS-02 PARTIAL; AS-04 BLOCKED/UNPROVEN; Direct Chat DELIVERED UNPROVEN. |
-| Last completed | Strict PTID/window-account profile sync, cross-worktree `station-three` lease, and generated leak-canary are implemented. Rust profile tests, 285 Desktop tests, Desktop check, 51 provisioning/lease tests, 18 runner tests, 23 Native static tests, Chat structure, and coverage pass. |
-| Current action | Review and commit only task-owned files so Station/client attestation can bind to one source commit. |
+| Last completed | The Profile Three lease now combines the local cross-worktree `flock` with an SSH-held remote Git source lease. Core/Provisioning tests pass 87/87, runner tests pass 18/18, and a live probe proves Git writers are blocked while the lease is held and `.git/index.lock` is removed on release. |
+| Current action | Review and commit only task-owned remote-lease files so Station/client attestation can bind to one source commit. |
 | Next action | Deploy through the leased path, run two-client Native proof, perform exact canary scan, then run the remaining three Native Gates. |
 | Blockers | None for commit/deploy. Native proof remains `UNPROVEN` until the environment-backed Gates execute. |
 | Decisions required | None. The user approved the scope amendment; identity-lifecycle and provisioning-lease semantics already exist in accepted contracts. |
-| Evidence | `PASSED`: local identity, lease, canary, Native static, structure, coverage, cleanup, and review regressions. Historical v9/v10 failures remain diagnostic only. `UNPROVEN`: current-commit four Native Gates and live AS-04 canary scan. |
-| Last updated | 2026-08-17 09:16 CST |
+| Evidence | `PASSED`: local identity, local/remote lease unit tests, live remote writer-block/release probe, canary, Native static, structure, coverage, cleanup, and review regressions. Historical v9/v10 failures remain diagnostic only. `UNPROVEN`: current-commit four Native Gates, final source-match guard, and live AS-04 canary scan. |
+| Last updated | 2026-08-17 10:16 CST |
 
 ---
 
@@ -405,13 +405,13 @@ Once this gate passes, the framework is ready to be used to validate actual prod
 | Workstream | Status | Completion Date | Commit | Notes |
 |------------|--------|-----------------|--------|-------|
 | WS1: Core Data Model | DONE | 2026-08-16 | `9d05335e1` | Immutable contract/manifest models and schema tests pass. |
-| WS2: Provisioner Runtime | PARTIAL | — | `9d05335e1`, `b274e68c1`, `034bd725b` | Shared deploy/Provisioner `flock` lease is implemented and contention/crash-release tests pass; live contention and successful complete-Gate cleanup remain unproven. |
+| WS2: Provisioner Runtime | PARTIAL | — | `9d05335e1`, `b274e68c1`, `034bd725b` | Shared deploy/Provisioner local `flock` and SSH-held remote Git source lease are implemented. Contention/crash-release tests and the live remote writer-block/release probe pass; successful complete-Gate cleanup remains unproven. |
 | WS3: Attestation & Actors | PARTIAL | — | `9d05335e1`, `d0af86743`, `1fc55890f` | Live attestation, reset, canonical Alice/Bob PTIDs, and authenticated login/logout are proven. The latest run correctly blocked when a concurrent deployment replaced the Station commit. |
 | WS4: Credential Redaction | PARTIAL | — | `9d05335e1`, `f9bcead42` | Generated high-entropy leak-canary and exact-value artifact redaction are implemented and locally tested; live Gate scan remains unproven. |
 | WS5: Registry Behavior Rules | DONE | 2026-08-16 | `9d05335e1` | Receipt owner selects two-client Gate; unrelated messaging and proto paths do not over-select it. |
 | WS6: Runner Integration | PARTIAL | — | `9d05335e1`, `f9bcead42`, `8f88bb038`, `b274e68c1`, `034bd725b`, `7b6938982`, `ba1d799ba` | Provision-before-run, manifest-only input, TauriDriver, cleanup, failed-result traceability, and final live commit guard are implemented; final guard live evidence and a successful complete product Gate remain unproven. |
 | WS7: Gap Detector Skill | DONE | 2026-08-17 | `9d05335e1`, `a0ff6368a`, `ce564cb95`, `23b7391be` | Detector and submit wiring fail closed. Quality/Review range isolation, gap-aware readiness, and valid environment-proof closure regressions cover the discovered completion-path silent passes. |
 | WS8-A: Identity Prerequisite | PARTIAL | — | — | Strict PTID validation and window-bound account writes pass Rust/Desktop/static tests; Native login evidence pending. |
-| WS8-B: Shared Profile Lease | PARTIAL | — | — | Deploy and Provisioner share one crash-safe `station-three` flock; local contention and process-exit release pass, live proof pending. |
+| WS8-B: Shared Profile Lease | PARTIAL | — | — | Deploy and Provisioner share the local `station-three` lease; Provisioner additionally holds the deployment worktree's `.git/index.lock` through SSH. Unit contention/crash-release and live writer-block/release pass; final Native source-match proof remains pending. |
 | WS8-C: Leak Canary | PARTIAL | — | — | Generated high-entropy CredentialRef and exact artifact redaction pass local tests; live zero-match scan pending. |
-| WS8: Chat Native Validation | BLOCKED | — | `8f88bb038`, `b274e68c1`, `570dfd514`, `f826199bf`, `034bd725b`, `7b6938982`, `ba1d799ba` | Source-matched dual Native execution reaches Bob password login and then fails at `shell.ready`; later run proves shared Station drift. Product amendment and environment lease are unresolved; Direct Chat remains UNPROVEN. |
+| WS8: Chat Native Validation | BLOCKED | — | `8f88bb038`, `b274e68c1`, `570dfd514`, `f826199bf`, `034bd725b`, `7b6938982`, `ba1d799ba` | Historical source-matched dual Native execution reached Bob password login and failed at `shell.ready`; a later run exposed shared Station drift. Identity and lease prerequisites are now implemented but require current-source Native proof; Direct Chat remains UNPROVEN. |
