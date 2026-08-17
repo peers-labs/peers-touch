@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 def load_sampler_module():
@@ -144,6 +145,64 @@ def complete_station_mirror() -> dict:
 
 
 class DesktopPerformanceSamplerGateTest(unittest.TestCase):
+    def test_default_inputs_persist_typed_refs_without_artifact_root_paths(self) -> None:
+        module = load_sampler_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifact-root"
+            output_prefix = Path(tmp) / "sampler"
+
+            def fake_latest_path(gate_id: str, role: str) -> Path:
+                return root / gate_id / role.replace("/", "-")
+
+            def fake_latest_artifact(
+                gate_id: str,
+                role: str,
+            ) -> tuple[Path, dict]:
+                return fake_latest_path(gate_id, role), {
+                    "workspaceId": "workspace",
+                    "gateId": gate_id,
+                    "runId": "run",
+                    "path": role,
+                }
+
+            def fake_build_report(*paths: Path) -> dict:
+                return {
+                    "status": "diagnostic incomplete",
+                    "completionStatus": "PARTIAL",
+                    "proofStatus": "UNPROVEN",
+                    "resolvedInputs": [str(path) for path in paths],
+                }
+
+            old_argv = sys.argv
+            try:
+                sys.argv = [
+                    "desktop-performance-sampler-gate.py",
+                    "--output-prefix",
+                    str(output_prefix),
+                ]
+                with mock.patch.object(
+                    module,
+                    "latest_artifact",
+                    side_effect=fake_latest_artifact,
+                ), mock.patch.object(
+                    module,
+                    "build_report",
+                    side_effect=fake_build_report,
+                ), mock.patch.object(
+                    module,
+                    "render_markdown",
+                    return_value="sampler\n",
+                ):
+                    module.main()
+            finally:
+                sys.argv = old_argv
+
+            persisted = output_prefix.with_suffix(".json").read_text(encoding="utf-8")
+
+        self.assertNotIn(str(root), persisted)
+        self.assertIn('"inputArtifactRefs"', persisted)
+        self.assertIn('"workspaceId": "workspace"', persisted)
+
     def test_missing_station_mirror_is_partial_unproven(self) -> None:
         module = load_sampler_module()
         with tempfile.TemporaryDirectory() as tmp:

@@ -11,15 +11,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    inspect_command,
+)
+
 ARTIFACT_KIND = "desktop-anchor-dom-evidence"
 OBSERVATIONS_TEMPLATE_ARTIFACT_KIND = "desktop-anchor-dom-observations-template"
-DEFAULT_OUTPUT = Path("tooling/acceptance/reports/desktop-anchor-dom-evidence.json")
-DEFAULT_OBSERVATIONS_TEMPLATE_OUTPUT = Path("tooling/acceptance/reports/desktop-anchor-dom-observations-template.json")
-COLLECT_COMMAND = (
-    "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py "
-    "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json "
-    "--output tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
-)
+PRODUCER_ID = "desktop-anchor-dom-evidence-template-gate"
+EVIDENCE_TEMPLATE_PATH = "reports/desktop-anchor-dom-evidence-template.json"
+OBSERVATIONS_TEMPLATE_PATH = "reports/desktop-anchor-dom-observations-template.json"
+COLLECT_COMMAND = "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py"
 
 
 def utc_now() -> str:
@@ -67,7 +70,7 @@ def issue_breakdown() -> list[dict[str, Any]]:
             "completionStatus": "PARTIAL",
             "proofStatus": "UNPROVEN",
             "sampleEmissionAllowed": False,
-            "sourceArtifact": "tooling/acceptance/reports/desktop-anchor-dom-evidence.json",
+            "sourceArtifact": "evidence-store:current:evidence-template",
             "sourceArtifactKind": ARTIFACT_KIND,
             "sourcePhase": inventory.DOM_EVIDENCE_PHASE,
             "sourceBom": list(inventory.DOM_EVIDENCE_BOM),
@@ -93,7 +96,7 @@ def recommended_review_commands() -> list[dict[str, str]]:
         },
         {
             "purpose": "Inspect the DOM evidence source artifact diagnostics.",
-            "command": "jq '{status,proofStatus,issue_breakdown,recommended_review_commands}' tooling/acceptance/reports/desktop-anchor-dom-evidence.json",
+            "command": inspect_command(PRODUCER_ID, "evidence-template"),
         },
         {
             "purpose": "Re-run the independent DOM evidence gate.",
@@ -207,9 +210,7 @@ def build_observations_template() -> dict[str, Any]:
             inventory.REQUIRED_ANCHORS,
         ),
         "recommendedCollectionCommand": (
-            "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py "
-            "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json "
-            "--output tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
+            "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py"
         ),
         "summary": {
             "status": "diagnostic incomplete",
@@ -222,72 +223,56 @@ def build_observations_template() -> dict[str, Any]:
     }
 
 
-def preserves_collected_evidence(output_path: Path) -> bool:
-    if not output_path.exists():
-        return False
-    try:
-        existing = json.loads(output_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return False
-    return existing.get("artifactKind") == ARTIFACT_KIND and existing.get("source") != "dom-evidence-template"
-
-
-def normalize_command_text(command: str) -> str:
-    collect = "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py"
-    observations = "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json"
-    output = "--output tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
-    if command == collect:
-        return COLLECT_COMMAND
-    if command.startswith(collect) and observations in command and output not in command:
-        return f"{command} {output}"
-    return command
-
-
-def normalize_preserved_evidence_commands(output_path: Path) -> None:
-    existing = json.loads(output_path.read_text(encoding="utf-8"))
-    changed = False
-    for key in ("recommended_review_commands", "recommendedReviewCommands"):
-        commands = existing.get(key)
-        if not isinstance(commands, list):
-            continue
-        for command in commands:
-            if not isinstance(command, dict) or not isinstance(command.get("command"), str):
-                continue
-            normalized = normalize_command_text(command["command"])
-            if normalized != command["command"]:
-                command["command"] = normalized
-                changed = True
-    if changed:
-        output_path.write_text(json.dumps(existing, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--output",
-        default=str(DEFAULT_OUTPUT),
-    )
-    parser.add_argument(
-        "--observations-template-output",
-        default=str(DEFAULT_OBSERVATIONS_TEMPLATE_OUTPUT),
-    )
+    parser.add_argument("--output")
+    parser.add_argument("--observations-template-output")
     args = parser.parse_args()
 
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    observations_template_path = Path(args.observations_template_output)
-    observations_template_path.parent.mkdir(parents=True, exist_ok=True)
-    observations_template_path.write_text(
-        json.dumps(build_observations_template(), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    if preserves_collected_evidence(output_path):
-        normalize_preserved_evidence_commands(output_path)
-        print(f"desktop anchor DOM evidence preserved: {output_path}")
+    if bool(args.output) != bool(args.observations_template_output):
+        parser.error(
+            "--output and --observations-template-output must be supplied together"
+        )
+    evidence_template = build_template()
+    observations_template = build_observations_template()
+    if args.output:
+        output_path = explicit_output_path(args.output)
+        observations_template_path = explicit_output_path(
+            args.observations_template_output
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json.dumps(evidence_template, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        observations_template_path.parent.mkdir(parents=True, exist_ok=True)
+        observations_template_path.write_text(
+            json.dumps(observations_template, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        evidence_output = str(output_path)
+        observations_output = str(observations_template_path)
     else:
-        output_path.write_text(json.dumps(build_template(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        print(f"desktop anchor DOM evidence template: {output_path}")
-    print(f"desktop anchor DOM observations template: {observations_template_path}")
+        with artifact_session(PRODUCER_ID) as session:
+            session.write_json(
+                EVIDENCE_TEMPLATE_PATH,
+                evidence_template,
+                role="evidence-template",
+            )
+            session.write_json(
+                OBSERVATIONS_TEMPLATE_PATH,
+                observations_template,
+                role="observations-template",
+            )
+            session.complete(
+                status=evidence_template["status"],
+                completion_status=evidence_template["completionStatus"],
+                proof_status=evidence_template["proofStatus"],
+            )
+        evidence_output = EVIDENCE_TEMPLATE_PATH
+        observations_output = OBSERVATIONS_TEMPLATE_PATH
+    print(f"desktop anchor DOM evidence template: {evidence_output}")
+    print(f"desktop anchor DOM observations template: {observations_output}")
     print("status: diagnostic incomplete")
     return 1
 

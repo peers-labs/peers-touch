@@ -31,8 +31,18 @@ _PRIVATE_KEY = re.compile(
 )
 
 
+def _camel_to_snake(name: str) -> str:
+    import re
+    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
+
+
 def is_sensitive_key(key: object) -> bool:
-    normalized = str(key).strip().lower().replace("-", "_")
+    normalized = _camel_to_snake(str(key).strip().replace("-", "_"))
+    if normalized.endswith(
+        ("_ref", "_refs", "_reference", "_references")
+    ):
+        return False
     return any(part in normalized for part in SENSITIVE_KEY_PARTS)
 
 
@@ -48,7 +58,13 @@ def redact_text(text: str) -> str:
 def redact_value(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {
-            str(key): REDACTED if is_sensitive_key(key) else redact_value(item)
+            str(key): (
+                item
+                if is_sensitive_key(key) and isinstance(item, bool)
+                else REDACTED
+                if is_sensitive_key(key)
+                else redact_value(item)
+            )
             for key, item in value.items()
         }
     if isinstance(value, list):

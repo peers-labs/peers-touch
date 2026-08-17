@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 def load_gate_module():
@@ -22,6 +23,73 @@ def load_gate_module():
 
 
 class DesktopPerformanceMatrixGateTest(unittest.TestCase):
+    def test_default_inputs_persist_typed_refs_without_artifact_root_paths(self) -> None:
+        module = load_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifact-root"
+            output_prefix = Path(tmp) / "matrix"
+
+            def fake_latest_path(gate_id: str, role: str) -> Path:
+                if role.startswith("cell-"):
+                    return root / gate_id / "reports" / "desktop-performance-cells" / f"{role.removeprefix('cell-')}.json"
+                return root / gate_id / role.replace("/", "-")
+
+            def fake_latest_artifact(
+                gate_id: str,
+                role: str,
+            ) -> tuple[Path, dict]:
+                return fake_latest_path(gate_id, role), {
+                    "workspaceId": "workspace",
+                    "gateId": gate_id,
+                    "runId": "run",
+                    "path": role,
+                }
+
+            def fake_build_matrix(args: argparse.Namespace) -> dict:
+                return {
+                    "status": "diagnostic incomplete",
+                    "completionStatus": "PARTIAL",
+                    "proofStatus": "UNPROVEN",
+                    "resolvedInputs": [
+                        args.live_gate_report,
+                        args.preflight_report,
+                        args.cohort_report,
+                        args.events_report,
+                        str(Path(args.cell_evidence_dir) / "tauri-webview-dev.json"),
+                        str(Path(args.cell_evidence_dir) / "tauri-webview-packaged.json"),
+                    ],
+                }
+
+            old_argv = sys.argv
+            try:
+                sys.argv = [
+                    "desktop-performance-matrix-gate.py",
+                    "--output-prefix",
+                    str(output_prefix),
+                ]
+                with mock.patch.object(
+                    module,
+                    "latest_artifact",
+                    side_effect=fake_latest_artifact,
+                ), mock.patch.object(
+                    module,
+                    "build_matrix",
+                    side_effect=fake_build_matrix,
+                ), mock.patch.object(
+                    module,
+                    "render_markdown",
+                    return_value="matrix\n",
+                ):
+                    module.main()
+            finally:
+                sys.argv = old_argv
+
+            persisted = output_prefix.with_suffix(".json").read_text(encoding="utf-8")
+
+        self.assertNotIn(str(root), persisted)
+        self.assertIn('"inputArtifactRefs"', persisted)
+        self.assertIn('"workspaceId": "workspace"', persisted)
+
     LIVE_GATE_PHASE = "P0a-3/P0a-4/P0a-5/P0a-6/P0c-5"
     LIVE_GATE_BOM = [
         "BOM-RUN-03",
@@ -561,6 +629,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -595,6 +664,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -643,6 +713,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -665,6 +736,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -690,6 +762,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -718,6 +791,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(Path(tmp) / "missing-cells"),
                 )
             )
@@ -756,6 +830,7 @@ class DesktopPerformanceMatrixGateTest(unittest.TestCase):
                 argparse.Namespace(
                     live_gate_report=str(live_gate),
                     events_report=str(events_report),
+                    cohort_report=str(Path(tmp) / "desktop-performance-cohort-gate.json"),
                     cell_evidence_dir=str(evidence_dir),
                 )
             )

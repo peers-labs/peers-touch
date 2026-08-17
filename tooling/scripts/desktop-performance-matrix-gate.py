@@ -15,6 +15,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    inspect_command,
+    latest_artifact,
+    replace_resolved_artifact_paths,
+)
+
+
+PRODUCER_GATE_ID = "desktop-performance-matrix-gate"
+DEFAULT_OUTPUT_PREFIX = "reports/desktop-performance-matrix-latest"
 
 ALLOWED_STATUSES = {
     "sampled",
@@ -109,7 +120,7 @@ DEFAULT_CELLS = (
     MatrixCellSpec(
         cell_id="tauri-webview-packaged",
         runtime="tauri-webview-packaged",
-        entrypoint="pnpm --dir apps/desktop tauri build --features e2e-testing",
+        entrypoint="pnpm --dir apps/desktop tauri build --features acceptance-webdriver",
         startup_mode="packaged-tauri-webview",
         bom=("BOM-GATE-02", "BOM-CAP-04"),
         spec=("SPEC-GATE-02", "SPEC-RUN-01"),
@@ -211,7 +222,10 @@ def runtime_cell_review_commands(spec: MatrixCellSpec) -> list[dict[str, str]]:
         },
         {
             "purpose": "Inspect this runtime cell evidence artifact.",
-            "command": f"jq '{{status,proofStatus,issue_breakdown,recommended_review_commands}}' tooling/acceptance/reports/desktop-performance-cells/{spec.cell_id}.json",
+            "command": inspect_command(
+                "desktop-performance-cell-collect-gate",
+                f"cell-{spec.cell_id}",
+            ),
         },
         {
             "purpose": "Re-run the matrix gate after runtime cell evidence exists.",
@@ -336,9 +350,10 @@ def validate_live_gate_source_metadata(report: dict[str, Any]) -> list[str]:
     return reasons
 
 
-def preflight_source_state(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        reason = f"missing Desktop performance preflight report: {path}"
+def preflight_source_state(path: Path | None) -> dict[str, Any]:
+    if path is None or not path.exists():
+        source = str(path) if path is not None else "evidence-store:latest:desktop-performance-preflight-gate:report"
+        reason = f"missing Desktop performance preflight report: {source}"
         issue_breakdown = [
             {
                 "category": "desktop-performance-preflight",
@@ -353,8 +368,8 @@ def preflight_source_state(path: Path) -> dict[str, Any]:
             {"purpose": "Re-run the full Phase 0 bundle.", "command": "make acceptance PLAN=tooling/acceptance/plans/desktop-performance-phase0.json"},
         ]
         return {
-            "path": str(path),
-            "sourceArtifact": str(path),
+            "path": source,
+            "sourceArtifact": source,
             "status": "diagnostic incomplete",
             "sourceStatus": "missing",
             "completionStatus": "PARTIAL",
@@ -425,9 +440,10 @@ def preflight_source_state(path: Path) -> dict[str, Any]:
     return evidence
 
 
-def cohort_source_state(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        reason = f"missing Desktop performance cohort gate report: {path}"
+def cohort_source_state(path: Path | None) -> dict[str, Any]:
+    if path is None or not path.exists():
+        source = str(path) if path is not None else "evidence-store:latest:desktop-performance-cohort-gate:report"
+        reason = f"missing Desktop performance cohort gate report: {source}"
         issues = [
             {
                 "category": "desktop-performance-cohort",
@@ -437,8 +453,8 @@ def cohort_source_state(path: Path) -> dict[str, Any]:
             }
         ]
         return {
-            "path": str(path),
-            "sourceArtifact": str(path),
+            "path": source,
+            "sourceArtifact": source,
             "status": "diagnostic incomplete",
             "sourceStatus": "missing",
             "completionStatus": "PARTIAL",
@@ -1049,7 +1065,7 @@ def matrix_issue_breakdown(
         fill("completionStatus", "PARTIAL")
         fill("proofStatus", "UNPROVEN")
         fill("sampleEmissionAllowed", False)
-        fill("sourceArtifact", source.get("sourceArtifact") or source.get("path") or "tooling/acceptance/reports/desktop-performance-matrix-latest.json")
+        fill("sourceArtifact", source.get("sourceArtifact") or source.get("path") or "evidence-store:current:report")
         fill("sourceArtifactKind", source.get("sourceArtifactKind") or MATRIX_ARTIFACT_KIND)
         fill("sourcePhase", source.get("sourcePhase") or MATRIX_PHASE)
         fill("sourceBom", source.get("sourceBom") or list(MATRIX_BOM))
@@ -1165,13 +1181,9 @@ def build_matrix(args: argparse.Namespace) -> dict[str, Any]:
     cells: list[dict[str, Any]] = []
     cell_evidence_dir = Path(args.cell_evidence_dir)
     preflight_report = getattr(args, "preflight_report", None)
-    if preflight_report is None:
-        preflight_report = str(Path(args.live_gate_report).with_name("desktop-performance-preflight.json"))
-    preflight = preflight_source_state(Path(preflight_report))
+    preflight = preflight_source_state(Path(preflight_report) if preflight_report else None)
     cohort_report = getattr(args, "cohort_report", None)
-    if cohort_report is None:
-        cohort_report = str(Path(args.events_report).with_name("desktop-performance-cohort-gate.json"))
-    cohort = cohort_source_state(Path(cohort_report))
+    cohort = cohort_source_state(Path(cohort_report) if cohort_report else None)
     cohort_allowed = bool(cohort.get("sampleEmissionAllowed"))
     for spec in DEFAULT_CELLS:
         if spec.cell_id == "browser-gateway":
@@ -1402,7 +1414,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def write_outputs(report: dict[str, Any], output_prefix: str) -> tuple[Path, Path]:
-    prefix = Path(output_prefix)
+    prefix = explicit_output_path(output_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = prefix.with_suffix(".json")
     md_path = prefix.with_suffix(".md")
@@ -1415,36 +1427,104 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--live-gate-report",
-        default="tooling/acceptance/reports/desktop-telemetry-live-gate.json",
     )
     parser.add_argument(
         "--preflight-report",
-        default="tooling/acceptance/reports/desktop-performance-preflight.json",
     )
     parser.add_argument(
         "--cohort-report",
-        default="tooling/acceptance/reports/desktop-performance-cohort-gate.json",
     )
     parser.add_argument(
         "--output-prefix",
-        default="tooling/acceptance/reports/desktop-performance-matrix-latest",
     )
     parser.add_argument(
         "--events-report",
-        default="tooling/acceptance/reports/desktop-performance-latest.json",
         help="Dev mirror report containing raw frontend telemetry events for red-line evaluation.",
     )
     parser.add_argument(
         "--cell-evidence-dir",
-        default="tooling/acceptance/reports/desktop-performance-cells",
-        help="Directory containing per-runtime cell evidence files named <cellId>.json.",
+        help="Explicit directory containing per-runtime cell evidence. Defaults to latest per-cell artifacts.",
     )
     args = parser.parse_args()
 
+    input_refs: dict[str, Any] = {}
+    resolved_refs: dict[Path, dict[str, Any]] = {}
+    if not args.live_gate_report:
+        resolved_path, artifact_ref = latest_artifact(
+            "desktop-telemetry-live-gate",
+            "report",
+        )
+        args.live_gate_report = str(resolved_path)
+        input_refs["liveGate"] = artifact_ref
+        resolved_refs[resolved_path] = artifact_ref
+    if not args.preflight_report:
+        resolved_path, artifact_ref = latest_artifact(
+            "desktop-performance-preflight-gate",
+            "report",
+        )
+        args.preflight_report = str(resolved_path)
+        input_refs["preflight"] = artifact_ref
+        resolved_refs[resolved_path] = artifact_ref
+    if not args.cohort_report:
+        resolved_path, artifact_ref = latest_artifact(
+            "desktop-performance-cohort-gate",
+            "report",
+        )
+        args.cohort_report = str(resolved_path)
+        input_refs["cohort"] = artifact_ref
+        resolved_refs[resolved_path] = artifact_ref
+    if not args.events_report:
+        resolved_path, artifact_ref = latest_artifact(
+            "desktop-telemetry-live-gate",
+            "mirror-report",
+        )
+        args.events_report = str(resolved_path)
+        input_refs["events"] = artifact_ref
+        resolved_refs[resolved_path] = artifact_ref
+    if not args.cell_evidence_dir:
+        cell_paths: list[Path] = []
+        cell_refs: dict[str, dict[str, Any]] = {}
+        for spec in DEFAULT_CELLS:
+            if spec.cell_id == "browser-gateway":
+                continue
+            resolved_path, artifact_ref = latest_artifact(
+                "desktop-performance-cell-collect-gate",
+                f"cell-{spec.cell_id}",
+            )
+            cell_paths.append(resolved_path)
+            cell_refs[spec.cell_id] = artifact_ref
+            resolved_refs[resolved_path] = artifact_ref
+        parents = {path.parent for path in cell_paths}
+        if len(parents) != 1:
+            raise RuntimeError("latest runtime-cell artifacts do not share one immutable run")
+        args.cell_evidence_dir = str(parents.pop())
+        input_refs["cells"] = cell_refs
     report = build_matrix(args)
-    json_path, md_path = write_outputs(report, args.output_prefix)
-    print(f"desktop performance matrix: {json_path}")
-    print(f"desktop performance matrix: {md_path}")
+    if input_refs:
+        report["inputArtifactRefs"] = input_refs
+    report = replace_resolved_artifact_paths(report, resolved_refs)
+    if args.output_prefix:
+        json_path, md_path = write_outputs(report, args.output_prefix)
+        display_json = str(json_path)
+        display_markdown = str(md_path)
+    else:
+        with artifact_session(PRODUCER_GATE_ID) as session:
+            session.write_json(DEFAULT_OUTPUT_PREFIX + ".json", report, role="report")
+            session.write_bytes(
+                DEFAULT_OUTPUT_PREFIX + ".md",
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_json = DEFAULT_OUTPUT_PREFIX + ".json"
+        display_markdown = DEFAULT_OUTPUT_PREFIX + ".md"
+    print(f"desktop performance matrix: {display_json}")
+    print(f"desktop performance matrix: {display_markdown}")
     print(f"status: {report['status']}")
     return 0 if report["status"] == "pass" else 1
 

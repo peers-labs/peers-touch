@@ -9,14 +9,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import (
+    artifact_session,
+    explicit_output_path,
+    latest_artifact,
+    replace_resolved_artifact_paths,
+)
+
 
 ARTIFACT_KIND = "desktop-performance-traceability-gate"
 PHASE = "P0c-5"
 BOM = ["BOM-RUN-05", "BOM-CAP-05", "BOM-GATE-02"]
 SPEC = ["SPEC-MIRROR-01", "SPEC-STA-03", "SPEC-GATE-02"]
 GATE = "Phase 0 aggregate issue and result evidence must preserve source artifact, phase, BOM, Spec, and Gate traceability"
-DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-performance-traceability-gate.json"
-DEFAULT_LATEST_OUTPUT = "tooling/acceptance/reports/desktop-performance-traceability-gate-latest.json"
+DEFAULT_OUTPUT = "reports/desktop-performance-traceability-gate.json"
 REQUIRED_ISSUE_FIELDS = [
     "sourceArtifact",
     "sourceArtifactKind",
@@ -42,11 +48,32 @@ RAW_EVIDENCE_SUMMARY_FIELDS = [
     "rawSourceGate",
 ]
 SOURCE_TRACE_FIELD_SET = set(REQUIRED_ISSUE_FIELDS)
-DEFAULT_INPUTS = [
-    "tooling/acceptance/reports/latest-run.json",
-    "tooling/acceptance/reports/desktop-performance-report-latest.json",
-    "tooling/acceptance/reports/desktop-performance-matrix-latest.json",
-]
+DEFAULT_INPUT_ROLES = (
+    ("acceptance-run", "run"),
+    (
+        "desktop-performance-report-gate",
+        "report",
+    ),
+    (
+        "desktop-performance-matrix-gate",
+        "report",
+    ),
+)
+
+
+def default_inputs_with_refs() -> tuple[list[str], dict[Path, dict[str, Any]]]:
+    inputs: list[str] = []
+    resolved_refs: dict[Path, dict[str, Any]] = {}
+    for gate_id, role in DEFAULT_INPUT_ROLES:
+        resolved_path, artifact_ref = latest_artifact(gate_id, role)
+        inputs.append(str(resolved_path))
+        resolved_refs[resolved_path] = artifact_ref
+    return inputs, resolved_refs
+
+
+def default_inputs() -> list[str]:
+    inputs, _ = default_inputs_with_refs()
+    return inputs
 
 
 def utc_now() -> str:
@@ -503,7 +530,7 @@ def build_report(inputs: list[str]) -> dict[str, Any]:
             "sampleEmissionAllowed": False,
             "summary": report["reason"],
               "proofImpact": "P0c-5 remains PARTIAL/UNPROVEN until every aggregate issue, nested evidence source, acceptance-run result, and route trust verdict has source artifact, phase, BOM, Spec, Gate binding, and fail-closed consistency.",
-            "sourceArtifact": "tooling/acceptance/reports/desktop-performance-traceability-gate.json",
+            "sourceArtifact": "evidence-store:current:report",
             "sourceArtifactKind": ARTIFACT_KIND,
             "sourcePhase": PHASE,
             "sourceBom": BOM,
@@ -517,7 +544,7 @@ def build_report(inputs: list[str]) -> dict[str, Any]:
 
 
 def write_report(report: dict[str, Any], output: str) -> Path:
-    path = Path(output)
+    path = explicit_output_path(output)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path
@@ -526,15 +553,30 @@ def write_report(report: dict[str, Any], output: str) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", action="append", default=[])
-    parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument("--output")
     args = parser.parse_args()
-    inputs = args.input or DEFAULT_INPUTS
+    if args.input:
+        inputs = args.input
+        resolved_refs: dict[Path, dict[str, Any]] = {}
+    else:
+        inputs, resolved_refs = default_inputs_with_refs()
     report = build_report(inputs)
-    path = write_report(report, args.output)
-    print(f"desktop performance traceability gate: {path}")
-    if args.output == DEFAULT_OUTPUT:
-        latest_path = write_report(report, DEFAULT_LATEST_OUTPUT)
-        print(f"desktop performance traceability gate: {latest_path}")
+    if resolved_refs:
+        report["inputArtifactRefs"] = list(resolved_refs.values())
+    report = replace_resolved_artifact_paths(report, resolved_refs)
+    if args.output:
+        path = write_report(report, args.output)
+        display_output = str(path)
+    else:
+        with artifact_session(ARTIFACT_KIND) as session:
+            session.write_json(DEFAULT_OUTPUT, report, role="report")
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_output = DEFAULT_OUTPUT
+    print(f"desktop performance traceability gate: {display_output}")
     print(f"status: {report['status']}")
     return 0 if report["status"] == "pass" else 1
 

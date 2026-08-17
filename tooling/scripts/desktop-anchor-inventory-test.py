@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from _acceptance_artifacts import latest_path
 
 
 def load_inventory_module():
@@ -95,11 +99,7 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
         self.assertTrue(
             any(
                 item["command"]
-                == (
-                    "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py "
-                    "--observations tooling/acceptance/reports/desktop-anchor-dom-observations.json "
-                    "--output tooling/acceptance/reports/desktop-anchor-dom-evidence.json"
-                )
+                == "python3 tooling/scripts/desktop-anchor-dom-evidence-collect.py"
                 for item in report["recommended_review_commands"]
             )
         )
@@ -178,6 +178,48 @@ class DesktopAnchorInventoryTest(unittest.TestCase):
         self.assertIn("| Anchor | Browser | Dev native | Packaged native |", markdown)
         self.assertIn("`diagnostic incomplete`", markdown)
         self.assertIn("missing or invalid phase", markdown)
+
+    def test_main_resolves_typed_dom_evidence_and_writes_external_report(self) -> None:
+        module = load_inventory_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            source_root = self.write_source(tmp, self.complete_anchor_source())
+            old_argv = sys.argv
+            try:
+                with patch.dict(
+                    os.environ,
+                    {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(Path(tmp) / "artifacts")},
+                ):
+                    with module.artifact_session(
+                        module.DOM_EVIDENCE_PRODUCER_ID
+                    ) as session:
+                        session.write_json(
+                            "reports/desktop-anchor-dom-evidence.json",
+                            self.complete_dom_evidence(module),
+                            role=module.DOM_EVIDENCE_ROLE,
+                        )
+                        session.complete(
+                            status="pass",
+                            completion_status="DONE",
+                            proof_status="PROVEN",
+                        )
+                    sys.argv = [
+                        "desktop-anchor-inventory.py",
+                        "--source-root",
+                        str(source_root),
+                    ]
+                    exit_code = module.main()
+                    written = json.loads(
+                        latest_path(
+                            module.ANCHOR_INVENTORY_PRODUCER_ID,
+                            "report",
+                        ).read_text(encoding="utf-8")
+                    )
+            finally:
+                sys.argv = old_argv
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(written["status"], "pass")
+        self.assertIsInstance(written["domAutomation"]["sourceArtifact"], dict)
 
 
 if __name__ == "__main__":

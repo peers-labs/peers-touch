@@ -18,7 +18,7 @@
     "tooling/acceptance/registry.yaml",
     "tooling/acceptance/gates.yaml",
     "tooling/acceptance/features/*.yaml",
-    "tooling/acceptance/reports/latest-run.json"
+    "evidence-store:acceptance-run:latest:run"
   ],
   "required_gates": ["acceptance-plan-self"],
   "acceptance": {
