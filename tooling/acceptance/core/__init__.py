@@ -34,6 +34,7 @@ from .evidence_store import (
     latest_artifact_path,
     resolve_artifact_root,
     source_identity,
+    validate_external_output_path,
     write_current_artifact,
     workspace_id,
 )
@@ -117,6 +118,7 @@ __all__ = [
     "latest_artifact_path",
     "resolve_artifact_root",
     "source_identity",
+    "validate_external_output_path",
     "write_current_artifact",
     "workspace_id",
 ]

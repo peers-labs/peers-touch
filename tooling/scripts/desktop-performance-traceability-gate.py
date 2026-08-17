@@ -12,8 +12,7 @@ from typing import Any
 from _acceptance_artifacts import (
     artifact_session,
     explicit_output_path,
-    latest_path,
-    latest_ref,
+    latest_artifact,
     replace_resolved_artifact_paths,
 )
 
@@ -53,11 +52,11 @@ DEFAULT_INPUT_ROLES = (
     ("acceptance-run", "run"),
     (
         "desktop-performance-report-gate",
-        "reports/desktop-performance-report-latest.json",
+        "report",
     ),
     (
         "desktop-performance-matrix-gate",
-        "reports/desktop-performance-matrix-latest.json",
+        "report",
     ),
 )
 
@@ -66,8 +65,7 @@ def default_inputs_with_refs() -> tuple[list[str], dict[Path, dict[str, Any]]]:
     inputs: list[str] = []
     resolved_refs: dict[Path, dict[str, Any]] = {}
     for gate_id, role in DEFAULT_INPUT_ROLES:
-        resolved_path = latest_path(gate_id, role)
-        artifact_ref = latest_ref(gate_id, role)
+        resolved_path, artifact_ref = latest_artifact(gate_id, role)
         inputs.append(str(resolved_path))
         resolved_refs[resolved_path] = artifact_ref
     return inputs, resolved_refs

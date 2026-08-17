@@ -26,8 +26,7 @@ from _acceptance_artifacts import (
     artifact_session,
     explicit_output_path,
     inspect_command,
-    latest_path,
-    latest_ref,
+    latest_artifact,
     replace_resolved_artifact_paths,
 )
 
@@ -1221,8 +1220,7 @@ def main() -> int:
     runtime_closure_ref = None
     resolved_refs: dict[Path, dict[str, Any]] = {}
     if not args.runtime_closure_report:
-        resolved_path = latest_path("desktop-telemetry-runtime-closure-gate", "report")
-        runtime_closure_ref = latest_ref(
+        resolved_path, runtime_closure_ref = latest_artifact(
             "desktop-telemetry-runtime-closure-gate",
             "report",
         )

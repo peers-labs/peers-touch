@@ -443,6 +443,20 @@ class EvidenceStoreTests(unittest.TestCase):
                 repo_root=self.worktree,
                 environment={ARTIFACT_ROOT_ENV: str(root_link)},
             )
+        with self.assertRaises(EvidenceSymlinkRejected):
+            EvidenceStore(root_link, worktree=self.worktree)
+
+        linked_parent = self.base / "linked-parent"
+        linked_parent.symlink_to(external, target_is_directory=True)
+        with self.assertRaises(EvidenceSymlinkRejected):
+            resolve_artifact_root(
+                repo_root=self.worktree,
+                environment={
+                    ARTIFACT_ROOT_ENV: str(
+                        linked_parent / "acceptance"
+                    )
+                },
+            )
 
         linked_root = self.base / "linked-root"
         linked_root.mkdir()

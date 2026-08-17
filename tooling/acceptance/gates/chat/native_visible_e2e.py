@@ -16,6 +16,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from tooling.acceptance.core import (  # noqa: E402
     current_artifact_path,
     current_artifact_ref,
+    validate_external_output_path,
     write_current_artifact,
 )
 from native_visible_runner import REPORT_NAMES, commits_match, source_identity
@@ -309,7 +310,10 @@ def main() -> int:
     )
     managed_output = args.output is None
     output = (
-        Path(args.output)
+        validate_external_output_path(
+            args.output,
+            repo_root=REPO_ROOT,
+        )
         if args.output
         else current_artifact_path(
             f"reports/chat-native-{args.journey}-validation.json",

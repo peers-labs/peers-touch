@@ -48,10 +48,10 @@ class DesktopTelemetryLiveGateTest(unittest.TestCase):
                     "--mirror-prefix",
                     str(mirror_prefix),
                 ]
-                with mock.patch.object(module, "latest_path", return_value=runtime_closure), mock.patch.object(
+                with mock.patch.object(
                     module,
-                    "latest_ref",
-                    return_value=artifact_ref,
+                    "latest_artifact",
+                    return_value=(runtime_closure, artifact_ref),
                 ), mock.patch.object(module, "runtime_closure_evidence", return_value=evidence):
                     module.main()
             finally:

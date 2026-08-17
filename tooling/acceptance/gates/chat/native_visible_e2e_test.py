@@ -12,6 +12,7 @@ sys.path.insert(0, str(HERE))
 
 import native_visible_e2e as gate  # noqa: E402
 import native_visible_runner as runner  # noqa: E402
+from tooling.acceptance.core.errors import EvidenceRootForbidden  # noqa: E402
 
 
 class ActorCredentialReferenceTest(unittest.TestCase):
@@ -185,6 +186,21 @@ class NativeVisibleEvidenceTest(unittest.TestCase):
         for journey in runner.REPORT_NAMES:
             with self.subTest(journey=journey):
                 gate.validate_report(self.report(journey), journey)
+
+    def test_rejects_explicit_output_inside_repository(self) -> None:
+        arguments = [
+            "native_visible_e2e.py",
+            "--journey",
+            "two-client",
+            "--source",
+            "/missing/source.json",
+            "--output",
+            str(gate.REPO_ROOT / "tooling/forbidden.json"),
+        ]
+        with patch.object(sys, "argv", arguments), self.assertRaises(
+            EvidenceRootForbidden
+        ):
+            gate.main()
 
     def test_accepts_short_live_commit_for_full_attestation(self) -> None:
         report = self.report("two-client")

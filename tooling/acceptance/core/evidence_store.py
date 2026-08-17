@@ -60,6 +60,38 @@ def workspace_id(worktree: Path) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
+def _reject_symlink_components(path: Path, *, role: str) -> None:
+    absolute = Path(os.path.abspath(str(path)))
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current = current / part
+        if current.is_symlink():
+            stat = current.lstat()
+            if os.name != "nt" and stat.st_uid == 0:
+                continue
+            raise EvidenceSymlinkRejected(
+                f"symlink path component is forbidden: {current}",
+                operation="validate-path",
+                path_role=role,
+            )
+
+
+def validate_external_output_path(
+    value: str | Path,
+    *,
+    repo_root: Path,
+) -> Path:
+    candidate = Path(os.path.realpath(os.path.abspath(str(value))))
+    repository = Path(canonical_workspace_path(repo_root))
+    if candidate == repository or _contains(repository, candidate):
+        raise EvidenceRootForbidden(
+            "explicit Acceptance output must remain outside the repository",
+            operation="resolve-explicit-output",
+            path_role="test-fixture-output",
+        )
+    return candidate
+
+
 def source_identity(repo_root: Path) -> dict[str, str]:
     from .attestation import source_workspace_digest
 
@@ -169,12 +201,7 @@ def resolve_artifact_root(
             path_role="artifact-root",
         )
 
-    if candidate.is_symlink():
-        raise EvidenceSymlinkRejected(
-            "artifact root cannot be a symlink",
-            operation="resolve-root",
-            path_role="artifact-root",
-        )
+    _reject_symlink_components(candidate, role="artifact-root")
     root = Path(os.path.realpath(str(candidate)))
     canonical_repo = Path(os.path.realpath(str(repo_root)))
     if root == canonical_repo or _contains(canonical_repo, root):
@@ -651,6 +678,7 @@ class EvidenceStore:
         worktree: Path,
         byte_budget: int | None = None,
     ) -> None:
+        _reject_symlink_components(Path(root), role="artifact-root")
         self.root = Path(os.path.realpath(str(root)))
         self.worktree = Path(canonical_workspace_path(worktree))
         if self.root == self.worktree or _contains(self.worktree, self.root):

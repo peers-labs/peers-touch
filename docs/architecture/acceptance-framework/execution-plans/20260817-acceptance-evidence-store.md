@@ -20,13 +20,13 @@
 | Current workstream | `ES-W4: Standalone And Domain Writer Cutover` |
 | Current step | Migrate remaining standalone writers and cross-Gate readers to logical artifact roles |
 | Progress | 7/8 workstreams evidence-complete; ES-W8 delivery remains blocked; Chat G15 remains out of scope and `FAILED/UNPROVEN` |
-| Last completed | Agent-led review closed three D-11 blockers: internal symlinks, explicit output bypass, and persisted resolved paths |
+| Last completed | Second review closed root-symlink ancestry, Native output bypass, and atomic latest path/ref pairing |
 | Current action | Commit the Acceptance-only migration and update Draft PR #91 with exact evidence/non-claims |
 | Next action | Re-run quality/review on the committed range and resolve or waive the four product-owned Chat Native Gate gaps |
 | Blockers | AS-ES-09 is `BLOCKED/UNPROVEN` by Station/source commit mismatch; Gap Detector also requires four Chat Native product Gates that this Acceptance-only change does not claim |
 | Decisions required | Product/owner waiver or future product-owned proof is required before the Gap Detector can permit ready-to-merge |
-| Evidence | `test_evidence_store.py`: PASS 29/29; artifact helper: PASS 2/2; Core/Provisioning: PASS 115/115; Desktop scripts: PASS 179/179; CI bundle: PASS 3/3; skill-check: PASS; external chain: PASS; representative env Gate: `BLOCKED/UNPROVEN`; Chat G15: `FAILED/UNPROVEN` |
-| Last updated | 2026-08-17 14:41 CST |
+| Evidence | Evidence + Native static: PASS 56/56; artifact helper: PASS 3/3; Core/Provisioning: PASS 116/116; Desktop scripts: PASS 179/179; CI bundle: PASS 3/3; skill-check: PASS; external chain: PASS; representative env Gate: `BLOCKED/UNPROVEN`; Chat G15: `FAILED/UNPROVEN` |
+| Last updated | 2026-08-17 15:08 CST |
 
 ---
 

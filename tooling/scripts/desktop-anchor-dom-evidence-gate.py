@@ -14,8 +14,7 @@ from typing import Any
 from _acceptance_artifacts import (
     artifact_session,
     explicit_output_path,
-    latest_path,
-    latest_ref,
+    latest_artifact,
 )
 
 ARTIFACT_KIND = "desktop-anchor-dom-evidence-gate"
@@ -164,12 +163,13 @@ def main() -> int:
     if args.dom_evidence:
         report = build_report(Path(args.dom_evidence))
     else:
+        source_path, source_ref = latest_artifact(
+            DOM_EVIDENCE_PRODUCER_ID,
+            DOM_EVIDENCE_ROLE,
+        )
         report = build_report(
-            latest_path(DOM_EVIDENCE_PRODUCER_ID, DOM_EVIDENCE_ROLE),
-            source_artifact=latest_ref(
-                DOM_EVIDENCE_PRODUCER_ID,
-                DOM_EVIDENCE_ROLE,
-            ),
+            source_path,
+            source_artifact=source_ref,
         )
     if args.output_prefix:
         json_path, md_path = write_outputs(report, args.output_prefix)
