@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from _acceptance_artifacts import artifact_session, inspect_command
+from _acceptance_artifacts import artifact_session, explicit_output_path, inspect_command
 
 DEFAULT_GATEWAY = "http://127.0.0.1:3030"
 DEFAULT_STATION = "http://10.37.246.80:18080"
@@ -238,7 +238,7 @@ def main() -> int:
 
     report = build_report(args.gateway, args.station, args.timeout, DEFAULT_OUTPUT)
     if args.output:
-        output = Path(args.output)
+        output = explicit_output_path(args.output)
         write_report(output, report)
         display_output = str(output)
     else:
