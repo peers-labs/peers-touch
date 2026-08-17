@@ -48,10 +48,12 @@ else
     echo "hard-rules: invalid or unreadable git range: $diff_range" >&2
     exit 1
   fi
-  if [[ ! -s "$tmp_files" ]]; then
+  if [[ ! -s "$tmp_files" && "$diff_range" == "HEAD" ]]; then
     git diff --name-only --cached -- > "$tmp_files"
   fi
-  git ls-files --others --exclude-standard >> "$tmp_files"
+  if [[ "$diff_range" == "HEAD" ]]; then
+    git ls-files --others --exclude-standard >> "$tmp_files"
+  fi
   sort -u "$tmp_files" -o "$tmp_files"
 fi
 

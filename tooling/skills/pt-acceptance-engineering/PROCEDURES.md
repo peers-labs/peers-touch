@@ -56,8 +56,8 @@ List current Acceptance assets:
 rg --files tooling/acceptance/domains \
   tooling/acceptance/capabilities \
   tooling/acceptance/features \
-  tooling/acceptance/gates \
-  tooling/acceptance/reports
+  tooling/acceptance/gates
+python3 tooling/scripts/acceptance-artifact.py root
 ```
 
 ### Artifacts
@@ -132,9 +132,12 @@ make acceptance-validate DOMAIN=<domain>
 When reports exist:
 
 ```bash
-sed -n '1,260p' tooling/acceptance/reports/latest-plan.json
-sed -n '1,320p' tooling/acceptance/reports/latest-run.json
-sed -n '1,320p' tooling/acceptance/reports/<domain>-validation.json
+python3 tooling/scripts/acceptance-artifact.py cat \
+  --gate acceptance-plan --role plan
+python3 tooling/scripts/acceptance-artifact.py cat \
+  --gate acceptance-run --role run
+python3 tooling/scripts/acceptance-artifact.py cat \
+  --gate <validation-gate-id> --role validation
 ```
 
 Do not run `--require-proven` yet merely to discover structure. Proof judgment
@@ -445,7 +448,8 @@ Do not commit concrete secrets or transient local paths.
 
 ```bash
 make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>
-sed -n '1,320p' tooling/acceptance/reports/latest-plan.json
+python3 tooling/scripts/acceptance-artifact.py cat \
+  --gate acceptance-plan --role plan
 ```
 
 For an uncommitted or synthetic path check:
@@ -459,7 +463,7 @@ sed -n '1,260p' /tmp/acceptance-path-plan.json
 
 ### Artifacts
 
-- `tooling/acceptance/reports/latest-plan.json`
+- `acceptance-plan` Gate role `plan` in the external Evidence Store.
 - Plan review note containing:
   changed paths, matched rules, impacted Features, selected Gates, tiers,
   environments, and mismatches.
@@ -735,8 +739,8 @@ python3 tooling/scripts/acceptance-validate.py \
 
 ### Artifacts
 
-- `tooling/acceptance/reports/latest-run.json`
-- `tooling/acceptance/reports/logs/<gate-id>.log`
+- `acceptance-run` Gate role `run` in the external Evidence Store.
+- Each executed Gate's role `log` in its immutable external run.
 - Gate-specific reports and source evidence.
 - Domain validation report.
 
@@ -814,8 +818,11 @@ Scan generated evidence and logs for secret-bearing field names and inspect any
 match before delivery:
 
 ```bash
+artifact_root="$(
+  python3 tooling/scripts/acceptance-artifact.py root
+)"
 rg -n -i 'password|secret|private_key|api_key|authorization|bearer|token' \
-  tooling/acceptance/reports
+  "$artifact_root"
 ```
 
 ### Artifacts

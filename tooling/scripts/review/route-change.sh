@@ -42,11 +42,15 @@ if ! changed_files="$(git diff --name-only "$diff_range" --)"; then
   echo "route-change: invalid or unreadable git range: $diff_range" >&2
   exit 1
 fi
-if [[ -z "$changed_files" ]]; then
+if [[ -z "$changed_files" && "$diff_range" == "HEAD" ]]; then
   changed_files="$(git diff --name-only --cached --)"
 fi
-untracked_files="$(git ls-files --others --exclude-standard)"
-changed_files="$(printf '%s\n%s\n' "$changed_files" "$untracked_files" | sed '/^$/d' | sort -u)"
+if [[ "$diff_range" == "HEAD" ]]; then
+  untracked_files="$(git ls-files --others --exclude-standard)"
+  changed_files="$(printf '%s\n%s\n' "$changed_files" "$untracked_files" | sed '/^$/d' | sort -u)"
+else
+  changed_files="$(printf '%s\n' "$changed_files" | sed '/^$/d' | sort -u)"
+fi
 
 tmp_profiles="$(mktemp)"
 trap 'rm -f "$tmp_profiles"' EXIT

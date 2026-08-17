@@ -54,10 +54,12 @@ else
     echo "knowledge-match: invalid or unreadable git range: $diff_range" >&2
     exit 1
   fi
-  if [[ ! -s "$tmp_changed" ]]; then
+  if [[ ! -s "$tmp_changed" && "$diff_range" == "HEAD" ]]; then
     git diff --name-only --cached -- > "$tmp_changed"
   fi
-  git ls-files --others --exclude-standard >> "$tmp_changed"
+  if [[ "$diff_range" == "HEAD" ]]; then
+    git ls-files --others --exclude-standard >> "$tmp_changed"
+  fi
   sort -u "$tmp_changed" -o "$tmp_changed"
 fi
 

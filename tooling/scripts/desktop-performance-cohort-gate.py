@@ -9,16 +9,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session, explicit_output_path
+
 
 ARTIFACT_KIND = "desktop-performance-cohort-gate"
+PRODUCER_GATE_ID = "desktop-performance-cohort-gate"
 MANIFEST_ARTIFACT_KIND = "desktop-performance-cohort-manifest"
 OBSERVATIONS_ARTIFACT_KIND = "desktop-performance-cohort-observations"
 PHASE = "P0c-3"
 PLAN_TASK = "P0c3-R2"
 GATE = "All runtime cells must prove one complete and identical cohort, including the actual authenticated actor"
 DEFAULT_MANIFEST = "tooling/acceptance/desktop-performance-cohort.json"
-DEFAULT_OBSERVATIONS = "tooling/acceptance/reports/desktop-performance-cohort-observations.json"
-DEFAULT_OUTPUT = "tooling/acceptance/reports/desktop-performance-cohort-gate.json"
+DEFAULT_OUTPUT = "reports/desktop-performance-cohort-gate.json"
 REQUIRED_RUNTIMES = (
     "browser-gateway",
     "tauri-webview-dev",
@@ -231,12 +233,29 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", default=DEFAULT_MANIFEST)
-    parser.add_argument("--observations", default=DEFAULT_OBSERVATIONS)
-    parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument("--observations", required=True)
+    parser.add_argument("--output")
     args = parser.parse_args()
-    report = build_report(Path(args.manifest), Path(args.observations), Path(args.output))
-    write_report(Path(args.output), report)
-    print(f"desktop performance cohort gate: {args.output}")
+    logical_output = args.output or DEFAULT_OUTPUT
+    report = build_report(
+        Path(args.manifest),
+        Path(args.observations),
+        Path(logical_output),
+    )
+    if args.output:
+        output = explicit_output_path(args.output)
+        write_report(output, report)
+        display_output = str(output)
+    else:
+        with artifact_session(PRODUCER_GATE_ID) as session:
+            session.write_json(DEFAULT_OUTPUT, report, role="report")
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_output = DEFAULT_OUTPUT
+    print(f"desktop performance cohort gate: {display_output}")
     print(f"status: {report['status']}")
     return 0 if report["sampleEmissionAllowed"] else 1
 

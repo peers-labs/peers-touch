@@ -11,6 +11,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -19,8 +20,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-
 REPO_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(REPO_ROOT))
+
+from tooling.acceptance.core import (
+    ArtifactRef,
+    EvidenceError,
+    EvidenceStore,
+    ProvisioningError,
+    current_artifact_ref,
+    current_artifact_path,
+    load_json_artifact,
+    load_runtime_manifest,
+    write_current_artifact,
+)
+from tooling.acceptance.drivers.tauri import TauriDriver
+
 WAIT_TICK = threading.Event()
 DEFAULT_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "60"))
 STARTUP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STARTUP_TIMEOUT_SECONDS", "900"))
@@ -102,6 +117,26 @@ def sha256_files(root: Path, paths: Iterable[Path]) -> str:
     return digest.hexdigest()
 
 
+def resolve_actor_credential(actor_manifest: dict[str, Any]) -> str:
+    credential_refs = actor_manifest.get("credentialRefs")
+    require(
+        isinstance(credential_refs, list) and len(credential_refs) == 1,
+        "actor manifest requires exactly one Chat credential reference",
+    )
+    credential_ref = str(credential_refs[0])
+    require(
+        credential_ref.startswith("env:"),
+        "Chat credential reference must use an env: source",
+    )
+    credential_name = credential_ref[4:]
+    credential = os.environ.get(credential_name, "")
+    require(
+        bool(credential),
+        f"credential reference {credential_ref} is unresolved",
+    )
+    return credential
+
+
 def source_identity(worktree: Path) -> dict[str, str]:
     commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -155,6 +190,8 @@ def wait_until(
             value = predicate()
             if value:
                 return value
+        except JourneyError:
+            raise
         except Exception as error:  # noqa: BLE001 - retained for boundary diagnostics.
             last_error = error
         WAIT_TICK.wait(min(interval, max(0.0, deadline - time.monotonic())))
@@ -220,42 +257,17 @@ class StepTelemetry:
 
 
 class NativeObserver:
-    def __init__(self, socket_path: Path):
-        self.socket_path = socket_path
-        self.connection: socket.socket | None = None
-        self.reader: Any = None
+    def __init__(self, driver: TauriDriver):
+        self.driver = driver
 
     def connect(self) -> None:
-        self.close()
-        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        connection.settimeout(DEFAULT_TIMEOUT)
-        connection.connect(str(self.socket_path))
-        self.connection = connection
-        self.reader = connection.makefile("r", encoding="utf-8")
-        require(self.command({"type": "ping"}) == "pong", "native observer ping failed")
+        self.driver.connect(DEFAULT_TIMEOUT)
 
     def close(self) -> None:
-        if self.reader is not None:
-            self.reader.close()
-        if self.connection is not None:
-            self.connection.close()
-        self.reader = None
-        self.connection = None
-
-    def command(self, payload: dict[str, Any]) -> Any:
-        require(self.connection is not None and self.reader is not None, "observer is not connected")
-        self.connection.sendall((json.dumps(payload, separators=(",", ":")) + "\n").encode())
-        line = self.reader.readline()
-        require(bool(line), "native observer closed the connection")
-        response = json.loads(line)
-        require(
-            response.get("ok") is True,
-            f"observer {payload.get('type')} failed for {payload.get('selector', '')}: {response.get('error')}",
-        )
-        return response.get("data")
+        self.driver.stop()
 
     def eval(self, script: str) -> Any:
-        return self.command({"type": "eval", "script": script})
+        return self.driver.execute_script(f"return ({script})")
 
     def click(self, selector: str, timeout: float = DEFAULT_TIMEOUT) -> None:
         clicked = self.eval(
@@ -294,12 +306,28 @@ class NativeObserver:
             )
             require(result is True, f"observer textarea fill failed for {selector}")
             return
-        self.command(
-            {"type": "fill", "selector": selector, "text": text, "timeout_ms": int(timeout * 1000)}
+        result = self.eval(
+            f"""(()=>{{
+              const element=document.querySelector({json.dumps(selector)});
+              if(!(element instanceof HTMLInputElement)) return false;
+              const setter=Object.getOwnPropertyDescriptor(
+                HTMLInputElement.prototype,'value'
+              )?.set;
+              if(!setter) return false;
+              setter.call(element,{json.dumps(text)});
+              element.dispatchEvent(new InputEvent('input',{{
+                bubbles:true,
+                inputType:'insertText',
+                data:{json.dumps(text)}
+              }}));
+              element.dispatchEvent(new Event('change',{{bubbles:true}}));
+              return element.value==={json.dumps(text)};
+            }})()"""
         )
+        require(result is True, f"observer input fill failed for {selector}")
 
     def count(self, selector: str) -> int:
-        return int(self.command({"type": "count", "selector": selector}) or 0)
+        return len(self.driver.find_elements(selector))
 
     def visible(self, selector: str) -> bool:
         return bool(
@@ -312,12 +340,14 @@ class NativeObserver:
         )
 
     def wait_for(self, selector: str, timeout: float = DEFAULT_TIMEOUT) -> None:
-        self.command(
-            {"type": "wait_for_selector", "selector": selector, "timeout_ms": int(timeout * 1000)}
+        wait_until(
+            lambda: self.count(selector),
+            f"observer selector {selector}",
+            timeout,
         )
 
     def content(self) -> str:
-        return str(self.command({"type": "content"}) or "")
+        return self.driver.get_page_source()
 
 
 @dataclass
@@ -327,6 +357,11 @@ class ClientSpec:
     expected_ptid: str
     worktree: Path
     index: int
+    gateway_port: int = 0
+    renderer_port: int = 0
+    webdriver_port: int = 0
+    profile: str = ""
+    storage_root: Path | None = None
 
 
 @dataclass
@@ -342,13 +377,24 @@ class NativeClient:
     process_id: str = ""
 
     def __post_init__(self) -> None:
-        self.gateway_port = int(os.environ.get("CHAT_NATIVE_GATEWAY_PORT", "3330")) + self.spec.index
-        self.renderer_port = int(os.environ.get("CHAT_NATIVE_RENDERER_PORT", "3510")) + self.spec.index
-        self.storage_root = self.run_root / self.spec.name / "storage"
+        require(self.spec.gateway_port > 0, f"{self.spec.name} gateway port is required")
+        require(self.spec.renderer_port > 0, f"{self.spec.name} renderer port is required")
+        require(self.spec.webdriver_port > 0, f"{self.spec.name} WebDriver port is required")
+        require(self.spec.storage_root is not None, f"{self.spec.name} storage root is required")
+        self.gateway_port = self.spec.gateway_port
+        self.renderer_port = self.spec.renderer_port
+        self.webdriver_port = self.spec.webdriver_port
+        self.storage_root = self.spec.storage_root
         self.runtime_profile_path = self.run_root / self.spec.name / "profile.env"
-        self.socket_path = self.run_root / f"{self.spec.name}.sock"
         self.log_path = self.evidence_dir / self.spec.name / "desktop.log"
-        self.observer = NativeObserver(self.socket_path)
+        self.driver = TauriDriver(
+            port=self.webdriver_port,
+            gateway_port=self.gateway_port,
+            profile=self.spec.profile,
+            storage_root=str(self.storage_root),
+        )
+        self.driver.log_path = self.log_path
+        self.observer = NativeObserver(self.driver)
         self.identity = source_identity(self.spec.worktree)
         self.active_conversation_id = ""
 
@@ -358,7 +404,7 @@ class NativeClient:
         self.runtime_profile_path.write_text(
             "\n".join(
                 (
-                    f"PT_DEV_PROFILE=chat-native-{self.spec.name}",
+                    f"PT_DEV_PROFILE={self.spec.profile}",
                     f"PT_DEV_SLOT={self.spec.index}",
                     "PT_STATION_MODE=remote",
                     "PT_STATION_NAME=chat-native-station",
@@ -378,7 +424,7 @@ class NativeClient:
         env.update(
             {
                 "WORKTREE_ID": f"chat-native-{self.spec.name}",
-                "PT_DEV_PROFILE": f"chat-native-{self.spec.name}",
+                "PT_DEV_PROFILE": self.spec.profile,
                 "PT_DESKTOP_INSTANCE_OFFSET": "0",
                 "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
                 "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
@@ -387,7 +433,7 @@ class NativeClient:
                 "PT_STATION_URL": self.station_url,
                 "PEERS_STATION_URL": self.station_url,
                 "PT_DESKTOP_E2E": "true",
-                "PT_PLAYWRIGHT_SOCKET": str(self.socket_path),
+                "TAURI_WEBDRIVER_PORT": str(self.webdriver_port),
                 "PT_DEV_PROFILE_FILE": str(self.runtime_profile_path),
                 "RESTART": "1",
                 "CARGO_BUILD_JOBS": "1",
@@ -419,7 +465,21 @@ class NativeClient:
         self.process_id = completed.stdout.strip().splitlines()[0]
 
     def connect_observer(self) -> None:
-        wait_until(self.socket_path.exists, f"{self.spec.name} observer socket", STARTUP_TIMEOUT)
+        def ready() -> bool:
+            if self.process is not None and self.process.poll() is not None:
+                raise JourneyError(
+                    f"{self.spec.name} Desktop exited with {self.process.returncode}"
+                )
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{self.webdriver_port}/status",
+                    timeout=1,
+                ):
+                    return True
+            except Exception:
+                return False
+
+        wait_until(ready, f"{self.spec.name} WebDriver", STARTUP_TIMEOUT)
         self.observer.connect()
 
     def select_station(self) -> None:
@@ -646,60 +706,101 @@ class NativeClient:
     def stop(self) -> None:
         self.observer.close()
         if self.process is not None:
-            try:
-                os.killpg(self.process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                self.process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
+            if self.process.poll() is None:
                 try:
-                    os.killpg(self.process.pid, signal.SIGKILL)
+                    os.killpg(self.process.pid, signal.SIGTERM)
                 except ProcessLookupError:
                     pass
-                self.process.wait(timeout=5)
+                try:
+                    self.process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(self.process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    self.process.wait(timeout=5)
         self.process = None
         if self.log_handle is not None:
             self.log_handle.close()
             self.log_handle = None
-        self.socket_path.unlink(missing_ok=True)
 
 
 class NativeVisibleJourney:
     def __init__(self, journey: str):
         require(journey in REPORT_NAMES, f"unknown native journey: {journey}")
         self.journey = journey
-        self.station_url = os.environ.get("CHAT_NATIVE_STATION_URL", "").rstrip("/")
-        require(bool(self.station_url), "CHAT_NATIVE_STATION_URL is required")
-        self.station_attestation_path = Path(
-            os.environ.get("CHAT_NATIVE_STATION_ATTESTATION", "")
-        )
-        require(
-            str(self.station_attestation_path) not in {"", "."},
-            "CHAT_NATIVE_STATION_ATTESTATION is required",
-        )
-        self.report_path = Path(
-            os.environ.get(
-                f"CHAT_NATIVE_{journey.upper().replace('-', '_')}_REPORT",
-                f"tooling/acceptance/reports/{REPORT_NAMES[journey]}",
+        self.gate_id = f"chat-native-{journey}-e2e"
+        manifest_value = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "")
+        require(bool(manifest_value), "PT_ACCEPTANCE_RUNTIME_MANIFEST is required")
+        self.runtime_manifest_path = Path(manifest_value).resolve()
+        self.runtime_manifest_ref = current_artifact_ref(
+            "runtime/environment-manifest.json",
+            repo_root=REPO_ROOT,
+        ).to_dict()
+        try:
+            self.runtime_manifest = load_runtime_manifest(
+                self.runtime_manifest_path,
+                self.gate_id,
             )
+        except ProvisioningError as error:
+            raise JourneyError(str(error)) from error
+        station = self.runtime_manifest.get("station")
+        require(isinstance(station, dict), "runtime manifest Station is required")
+        self.station_url = str(station.get("url") or "").rstrip("/")
+        require(bool(self.station_url), "runtime manifest Station URL is required")
+        self.evidence_store = EvidenceStore.from_environment(
+            repo_root=REPO_ROOT,
+            worktree=REPO_ROOT,
         )
-        self.evidence_dir = self.report_path.with_suffix("").with_name(
-            self.report_path.stem + "-evidence"
+        try:
+            attestation_ref = ArtifactRef.from_dict(
+                station.get("attestationArtifact") or {}
+            )
+            actor_manifest_ref = ArtifactRef.from_dict(
+                self.runtime_manifest.get("actorManifest") or {}
+            )
+            self.station_attestation_path = self.evidence_store.resolve(
+                attestation_ref
+            )
+            self.actor_manifest_path = self.evidence_store.resolve(
+                actor_manifest_ref
+            )
+        except EvidenceError as error:
+            raise JourneyError(f"runtime artifact reference is invalid: {error}") from error
+        try:
+            self.actor_manifest = load_json_artifact(
+                self.actor_manifest_path,
+                "acceptance-actor-manifest",
+            )
+        except ProvisioningError as error:
+            raise JourneyError(str(error)) from error
+        self.password = resolve_actor_credential(self.actor_manifest)
+        self.report_path = current_artifact_path(
+            f"reports/{REPORT_NAMES[journey]}",
+            repo_root=REPO_ROOT,
         )
-        configured_run_root = os.environ.get("CHAT_NATIVE_RUN_ROOT", "").strip()
-        self.run_root = (
-            Path(configured_run_root)
-            if configured_run_root
-            else Path(f"/tmp/pt-chat-native-{os.getpid()}-{journey}")
+        self.evidence_dir = current_artifact_path(
+            f"evidence/{self.report_path.stem}",
+            repo_root=REPO_ROOT,
         )
-        self.password = os.environ.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
+        clients = self.runtime_manifest.get("clients")
+        require(isinstance(clients, list) and clients, "runtime manifest clients are required")
+        first_storage_value = str(clients[0].get("storage_root") or "")
+        require(bool(first_storage_value), "runtime manifest client storage root is required")
+        first_storage = Path(first_storage_value)
+        self.run_root = first_storage.parents[1]
         self.telemetry = StepTelemetry(journey, self.evidence_dir)
         self.station_identity: dict[str, Any] = {}
         self.clients = self._clients()
         self.launch_order: list[str] = []
         self.assertions: list[dict[str, Any]] = []
         self.failure = ""
+        self.captured_failure_diagnostics: list[dict[str, Any]] = []
+        self.cleanup_evidence: dict[str, Any] = {
+            "status": "not-run",
+            "clients": [],
+            "storageReleased": False,
+        }
 
     def _clients(self) -> list[NativeClient]:
         roles = {
@@ -708,23 +809,47 @@ class NativeVisibleJourney:
             "recovery": ("alice", "bob"),
             "group-mls": ("alice", "bob", "charlie"),
         }[self.journey]
-        worktrees = [
-            Path(item).resolve()
-            for item in os.environ.get("CHAT_NATIVE_CLIENT_WORKTREES", str(REPO_ROOT)).split(",")
-            if item.strip()
-        ]
-        if len(worktrees) == 1:
-            worktrees *= len(roles)
-        require(len(worktrees) == len(roles), "one client worktree is required per native client")
+        runtime_clients = self.runtime_manifest.get("clients")
+        require(
+            isinstance(runtime_clients, list) and len(runtime_clients) == len(roles),
+            "runtime manifest client count does not match the native journey",
+        )
+        actor_entries = self.actor_manifest.get("actors")
+        require(isinstance(actor_entries, list), "actor manifest actors are required")
+        actors = {
+            str(actor.get("role") or ""): actor
+            for actor in actor_entries
+            if isinstance(actor, dict)
+        }
         clients = []
-        for index, (role, worktree) in enumerate(zip(roles, worktrees)):
+        for index, (role, runtime) in enumerate(zip(roles, runtime_clients)):
+            require(isinstance(runtime, dict), f"{role} runtime entry must be an object")
+            require(runtime.get("actor") == role, f"{role} runtime actor mismatch")
             actor = "bob" if role.startswith("bob") else role
-            email = os.environ.get(f"CHAT_NATIVE_{actor.upper()}_EMAIL", f"{actor}@p.t")
-            ptid = os.environ.get(f"CHAT_NATIVE_{actor.upper()}_PTID", "")
-            require(bool(ptid), f"CHAT_NATIVE_{actor.upper()}_PTID is required")
+            actor_entry = actors.get(actor)
+            require(isinstance(actor_entry, dict), f"actor manifest role {actor} is required")
+            account_ref = str(actor_entry.get("accountRef") or "")
+            require(
+                account_ref.startswith("station-account:"),
+                f"actor manifest accountRef for {actor} is invalid",
+            )
+            email = account_ref.removeprefix("station-account:")
+            ptid = str(actor_entry.get("ptid") or "")
+            require(ptid.startswith("ptid:"), f"actor manifest PTID for {actor} is invalid")
             clients.append(
                 NativeClient(
-                    ClientSpec(role, email, ptid, worktree, index),
+                    ClientSpec(
+                        role,
+                        email,
+                        ptid,
+                        Path(str(runtime.get("worktree") or "")).resolve(),
+                        index,
+                        gateway_port=int(runtime.get("gateway_port") or 0),
+                        renderer_port=int(runtime.get("renderer_port") or 0),
+                        webdriver_port=int(runtime.get("webdriver_port") or 0),
+                        profile=str(runtime.get("profile") or ""),
+                        storage_root=Path(str(runtime.get("storage_root") or "")),
+                    ),
                     self.station_url,
                     self.password,
                     self.run_root,
@@ -736,6 +861,18 @@ class NativeVisibleJourney:
     def verify_sources(self) -> None:
         attestation = json.loads(self.station_attestation_path.read_text(encoding="utf-8"))
         require(isinstance(attestation, dict), "Station attestation must be a JSON object")
+        require(
+            attestation.get("artifactKind") == "station-deployment-attestation",
+            "Station attestation artifactKind is invalid",
+        )
+        require(
+            attestation.get("producer") == "station-deployment",
+            "Station attestation producer is invalid",
+        )
+        require(
+            self.actor_manifest.get("runId") == self.runtime_manifest.get("runId"),
+            "actor manifest runId does not match runtime manifest",
+        )
         live = read_json_url(f"{self.station_url}/app-meta/version")
         live_commit = str(live.get("build_commit") or "")
         expected_commit = str(attestation.get("commit") or "")
@@ -753,14 +890,41 @@ class NativeVisibleJourney:
         require(len(client_protos) == 1, "client proto digests do not match")
         require(station_proto in client_protos, "Station/client proto digests do not match")
         require(expected_commit in client_commits, "Station/client commits do not match")
+        manifest_source = self.runtime_manifest.get("source")
+        require(isinstance(manifest_source, dict), "runtime manifest source identity is required")
+        require(
+            manifest_source.get("commit") == expected_commit,
+            "runtime manifest source commit does not match Station",
+        )
         self.station_identity = {
             "url": self.station_url,
             "commit": expected_commit,
             "workspaceDigest": "clean",
             "protoDigest": station_proto,
             "live": live,
-            "attestation": str(self.station_attestation_path),
+            "finalLive": None,
+            "sourceStable": False,
+            "attestation": station.get("attestationArtifact"),
+            "runtimeManifest": self.runtime_manifest_ref,
+            "actorManifest": self.runtime_manifest.get("actorManifest"),
         }
+
+    def verify_final_station_identity(self) -> None:
+        if not self.station_identity:
+            return
+        expected_commit = str(self.station_identity.get("commit") or "")
+        final_live = read_json_url(f"{self.station_url}/app-meta/version")
+        final_commit = str(final_live.get("build_commit") or "")
+        stable = commits_match(final_commit, expected_commit)
+        self.station_identity["finalLive"] = final_live
+        self.station_identity["sourceStable"] = stable
+        require(
+            stable,
+            (
+                f"live Station commit drifted during Gate: "
+                f"expected {expected_commit}, got {final_commit or 'missing'}"
+            ),
+        )
 
     def start_clients(self) -> None:
         order = list(self.clients)
@@ -983,6 +1147,10 @@ class NativeVisibleJourney:
         report = {
             "artifactKind": f"chat-native-{self.journey}-run",
             "producer": "chat-native-visible-runner",
+            "phase": "W8",
+            "bom": [f"CHAT-NATIVE-{self.journey.upper()}"],
+            "spec": ["chat-native-visible-clients"],
+            "gate": self.gate_id,
             "automated": True,
             "runtime": "visible-native-desktop",
             "status": status,
@@ -997,49 +1165,116 @@ class NativeVisibleJourney:
             "lastSuccessfulStep": self.telemetry.last_successful_step,
             "launchOrder": self.launch_order,
             "station": self.station_identity,
+            "runtimeManifest": {
+                "path": str(self.runtime_manifest_path),
+                "runId": self.runtime_manifest.get("runId"),
+                "state": self.runtime_manifest.get("state"),
+            },
             "clients": [
                 {
                     "name": client.spec.name,
                     "ptid": client.spec.expected_ptid,
                     "deviceId": client.device_id,
-                    "profile": f"chat-native-{client.spec.name}",
+                    "profile": client.spec.profile,
                     "gatewayPort": client.gateway_port,
                     "rendererPort": client.renderer_port,
+                    "webdriverPort": client.webdriver_port,
                     "storageRoot": str(client.storage_root),
-                    "observerSocket": str(client.socket_path),
                     **client.identity,
                 }
                 for client in self.clients
             ],
             "steps": self.telemetry.steps,
             "assertions": self.assertions,
-            "failureDiagnostics": [] if passed else self.failure_diagnostics(),
+            "failureDiagnostics": (
+                [] if passed else self.captured_failure_diagnostics
+            ),
+            "cleanup": self.cleanup_evidence,
         }
-        self.report_path.parent.mkdir(parents=True, exist_ok=True)
-        self.report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        write_current_artifact(
+            f"reports/{REPORT_NAMES[self.journey]}",
+            (json.dumps(report, indent=2) + "\n").encode("utf-8"),
+            repo_root=REPO_ROOT,
+        )
 
-    def close(self) -> None:
+    def close(self) -> list[str]:
+        failures: list[str] = []
+        client_cleanup: list[dict[str, Any]] = []
         for client in self.clients:
-            client.stop()
-        if os.environ.get("CHAT_NATIVE_KEEP_STORAGE") != "1":
-            shutil.rmtree(self.run_root, ignore_errors=True)
+            try:
+                client.stop()
+            except Exception as error:
+                failures.append(f"{client.spec.name}: stop failed: {error}")
+            ports = {}
+            for label, port in (
+                ("gateway", client.gateway_port),
+                ("renderer", client.renderer_port),
+                ("webdriver", client.webdriver_port),
+            ):
+                with socket.socket() as probe:
+                    released = probe.connect_ex(("127.0.0.1", port)) != 0
+                ports[label] = {"port": port, "released": released}
+                if not released:
+                    failures.append(
+                        f"{client.spec.name}: {label} port {port} still listening"
+                    )
+            client_cleanup.append(
+                {
+                    "client": client.spec.name,
+                    "ports": ports,
+                }
+            )
+        shutil.rmtree(self.run_root, ignore_errors=True)
+        storage_released = not self.run_root.exists()
+        if not storage_released:
+            failures.append(f"run storage still exists: {self.run_root}")
+        self.cleanup_evidence = {
+            "status": "pass" if not failures else "failed",
+            "clients": client_cleanup,
+            "storageReleased": storage_released,
+            "failures": failures,
+        }
+        return failures
 
 
 def run_journey(journey: str) -> int:
     runner: NativeVisibleJourney | None = None
+    failure = ""
     try:
         runner = NativeVisibleJourney(journey)
         runner.run()
-        runner.write_report("pass")
-        print(f"[OK] {journey}: {runner.report_path}")
-        return 0
     except Exception as error:  # noqa: BLE001 - top-level acceptance boundary.
+        failure = str(error)
         if runner is not None:
-            runner.write_report("failed", str(error))
-            print(f"[FAIL] {journey}: {runner.report_path}: {error}")
+            runner.captured_failure_diagnostics = runner.failure_diagnostics()
         else:
             print(f"[FAIL] {journey}: {error}")
-        return 1
     finally:
         if runner is not None:
-            runner.close()
+            cleanup_failures = runner.close()
+            if cleanup_failures:
+                cleanup_failure = "; ".join(cleanup_failures)
+                failure = (
+                    f"{failure}; cleanup failed: {cleanup_failure}"
+                    if failure
+                    else f"cleanup failed: {cleanup_failure}"
+                )
+            try:
+                runner.verify_final_station_identity()
+            except Exception as error:  # noqa: BLE001 - source drift invalidates all proof.
+                source_failure = f"final Station source revalidation failed: {error}"
+                failure = (
+                    f"{failure}; {source_failure}"
+                    if failure
+                    else source_failure
+                )
+
+    if runner is None:
+        return 1
+    if failure:
+        runner.write_report("failed", failure)
+        print(f"[FAIL] {journey}: {runner.report_path}: {failure}")
+        return 1
+    runner.write_report("pass")
+    print(f"[OK] {journey}: {runner.report_path}")
+    return 0
