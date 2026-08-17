@@ -86,6 +86,9 @@ These checks are automatic and blocking:
 - no silent error swallowing;
 - no cross-app shared model defined outside `model/domain/*.proto`;
 - no user-facing string literal in UI surfaces when it should use i18n.
+- no absolute path rooted in a developer or CI user's home directory in
+  committed documentation-like files; require repo-relative paths or portable
+  placeholders.
 
 Hard gates are intentionally conservative. A false positive should be fixed by narrowing the script rule and adding a fixture, not by bypassing review.
 
