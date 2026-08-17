@@ -19,14 +19,14 @@
 | Branch | `fix/acceptance-domain-structural-validation` |
 | Stage | `DELIVER` |
 | Current workstream | All implementation workstreams complete |
-| Current step | Open a Draft PR with explicit evidence gaps |
+| Current step | Hold Draft PR #93 for owner review and terminal CI evidence |
 | Progress | `CAS-W1` through `CAS-W5` complete |
-| Last completed | Commit-range review found no P0-P2 defects; submit pipeline then failed closed on two declared out-of-scope coverage gaps |
-| Current action | Push the dedicated branch and create a Draft PR without weakening Quality Evidence policy or staging unrelated generated files |
-| Next action | Inspect Draft PR checks and request owner judgment on the declared gaps |
-| Blockers | Project memory namespace is externally contaminated with unrelated Big-A content, so `active_work` cannot be safely updated in this run |
+| Last completed | Pushed commit `96688acf9` and opened Draft PR #93 with the complete evidence gaps and non-claims |
+| Current action | Keep PR #93 Draft while Quality Evidence remains fail closed and the external build rerun is queued |
+| Next action | Owner reviews the two declared coverage gaps; rerun or inspect external CI when GitHub scheduling recovers |
+| Blockers | Quality Evidence reports two intentional out-of-scope coverage gaps; labeler lacks integration permission; GitHub returned 429 for Buildx download and its rerun remains queued; project memory namespace is contaminated with unrelated Big-A content |
 | Decisions required | none for repository delivery; memory namespace ownership requires external repair |
-| Evidence | Framework self-tests 105/105 PASS; validator 7/7 PASS; Skill check PASS; Applet, Station Dashboard, and Chat structural validation PASS; Federation reports only missing `fedp5` wiring/contract; source-bound Acceptance Gates PASS and Gap Detector `PROVEN`; static review found no P0-P2 defects; submit pipeline failed at Quality Evidence on two declared out-of-scope coverage gaps; Messaging Infra subset restored to HEAD; full hard-rules blocked only by two pre-existing Agent generated files |
+| Evidence | Draft PR #93; implementation commit `96688acf9`; framework self-tests 105/105 PASS; validator 7/7 PASS; Skill check PASS; Applet, Station Dashboard, and Chat structural validation PASS; Federation reports only missing `fedp5` wiring/contract; source-bound Acceptance Gates PASS and Gap Detector `PROVEN`; static review found no P0-P2 defects; commitlint/title/description PASS; review-framework fail closed on two out-of-scope gaps; labeler failed on token permission; pr-build initial run failed on GitHub 429 and rerun is queued; Messaging Infra subset restored to HEAD; full hard-rules blocked only by two pre-existing Agent generated files |
 | Last updated | 2026-08-17 |
 
 ## 1. Goal
