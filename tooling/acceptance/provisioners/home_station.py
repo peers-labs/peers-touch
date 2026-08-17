@@ -157,6 +157,11 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     reason="Active profile is missing PT_STATION_URL",
                     resource="profile:PT_STATION_URL",
                 )
+            if profile_env.get("PT_STATION_MODE", "local") == "remote":
+                self.acquire_remote_git_source_lease(
+                    deployment_environment,
+                    f"acceptance:{gate_id}:{manifest.run_id}",
+                )
             if not self._station_ready(station_url, health_url):
                 if profile_env.get("PT_STATION_MODE", "local") != "remote":
                     completed = subprocess.run(

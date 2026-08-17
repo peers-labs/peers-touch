@@ -11,7 +11,13 @@ from pathlib import Path
 from ._paths import MANIFESTS_DIR, REPO_ROOT
 from .attestation import source_workspace_digest
 from .errors import BlockedError, ProvisioningError
-from .lease import ProfileLease, ProfileLeaseUnavailable
+from .lease import (
+    ProfileLease,
+    ProfileLeaseUnavailable,
+    RemoteGitSourceLease,
+    RemoteGitSourceLeaseUnavailable,
+    normalize_lease_resource,
+)
 from .provisioning import (
     EnvironmentContract,
     ProvisioningState,
@@ -81,6 +87,61 @@ class EnvironmentProvisioner(ABC):
             ) from error
         self.register_cleanup(
             f"profile-lease:{lease.resource}",
+            lease.release,
+        )
+
+    def acquire_remote_git_source_lease(
+        self,
+        resource: str,
+        owner: str,
+    ) -> None:
+        try:
+            environment_name = normalize_lease_resource(resource)
+        except ValueError as error:
+            raise BlockedError(
+                reason=str(error),
+                resource="source-lease:invalid-resource",
+            ) from error
+        if environment_name != resource:
+            raise BlockedError(
+                reason=(
+                    f"Station deployment environment {resource!r} is not a "
+                    "canonical lease resource"
+                ),
+                resource="source-lease:invalid-resource",
+            )
+        environment_path = (
+            REPO_ROOT
+            / ".local"
+            / "deploy"
+            / "envs"
+            / f"{environment_name}.env"
+        )
+        if not environment_path.is_file():
+            raise BlockedError(
+                reason=(
+                    "Station deployment environment is missing: "
+                    f"{environment_path}"
+                ),
+                resource=f"station-deployment:{environment_name}",
+            )
+        environment = load_env_file(environment_path)
+        try:
+            lease = RemoteGitSourceLease(
+                environment_name,
+                owner,
+                host=environment.get("PT_DEPLOY_HOST", ""),
+                user=environment.get("PT_DEPLOY_USER", ""),
+                deploy_path=environment.get("PT_DEPLOY_PATH", ""),
+            )
+            lease.acquire()
+        except (ValueError, RemoteGitSourceLeaseUnavailable) as error:
+            raise BlockedError(
+                reason=str(error),
+                resource=f"source-lease:{environment_name}",
+            ) from error
+        self.register_cleanup(
+            f"source-lease:{lease.resource}",
             lease.release,
         )
 
