@@ -11,6 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session, inspect_command
+
+
+PRODUCER_GATE_ID = "desktop-telemetry-mirror-template-gate"
+DEFAULT_OUTPUT = "reports/desktop-performance-mirror-template.json"
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -37,11 +43,11 @@ def build_template(station_url: str, filters: dict[str, Any] | None = None) -> d
         },
         {
             "purpose": "Run the live Gateway -> Station telemetry gate and write the Dev/CI mirror artifact.",
-            "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py --mirror-prefix tooling/acceptance/reports/desktop-performance-latest",
+            "command": "python3 tooling/scripts/desktop-telemetry-live-gate.py",
         },
         {
             "purpose": "Inspect the mirror source artifact diagnostics.",
-            "command": "jq '{status,proofStatus,issue_breakdown,recommended_review_commands}' tooling/acceptance/reports/desktop-performance-latest.json",
+            "command": inspect_command(PRODUCER_GATE_ID, "report"),
         },
         {
             "purpose": "Re-run the full Phase 0 bundle and keep fail-closed evidence if live samples are still missing.",
@@ -67,7 +73,7 @@ def build_template(station_url: str, filters: dict[str, Any] | None = None) -> d
             "summary": reason,
             "sampleEmissionAllowed": False,
             "proofImpact": "P0a-6/P0c-5 remains PARTIAL/UNPROVEN until Station raw events and rollups are queried from the product sink.",
-            "sourceArtifact": "tooling/acceptance/reports/desktop-performance-latest.json",
+            "sourceArtifact": "evidence-store:current:report",
             "sourceArtifactKind": mirror.ARTIFACT_KIND,
             "sourcePhase": mirror.PHASE,
             "sourceBom": list(mirror.BOM),
@@ -178,48 +184,6 @@ def render_markdown(report: dict[str, Any]) -> str:
 def write_template(output_prefix: Path, report: dict[str, Any], *, force: bool = False) -> tuple[Path, Path, bool]:
     json_path = output_prefix.with_suffix(".json")
     md_path = output_prefix.with_suffix(".md")
-    if json_path.exists() and md_path.exists() and not force:
-        try:
-            existing = json.loads(json_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            existing = {}
-        existing_is_template = existing.get("source") == "station-query-template"
-        existing_has_diagnostics = isinstance(existing.get("issue_breakdown"), list) and isinstance(
-            existing.get("recommended_review_commands"),
-            list,
-        )
-        existing_commands = [
-            command.get("command", "")
-            for command in existing.get("recommended_review_commands", [])
-            if isinstance(command, dict)
-        ]
-        existing_has_live_gate_mirror_prefix = any(
-            "desktop-telemetry-live-gate.py --mirror-prefix" in command for command in existing_commands
-        )
-        existing_has_no_token_standalone_mirror = any(
-            command.startswith("python3 tooling/scripts/desktop-telemetry-mirror.py --station-url")
-            for command in existing_commands
-        )
-        existing_has_fail_closed_sample_emission = (
-            existing.get("sampleEmissionAllowed") is False
-            and isinstance(existing.get("summary"), dict)
-            and existing["summary"].get("sampleEmissionAllowed") is False
-            and all(
-                issue.get("sampleEmissionAllowed") is False
-                and issue.get("completionStatus") == "PARTIAL"
-                and issue.get("proofStatus") == "UNPROVEN"
-                for issue in existing.get("issue_breakdown", [])
-                if isinstance(issue, dict)
-            )
-        )
-        existing_has_current_review_commands = (
-            existing_has_diagnostics
-            and existing_has_live_gate_mirror_prefix
-            and not existing_has_no_token_standalone_mirror
-            and existing_has_fail_closed_sample_emission
-        )
-        if not existing_is_template or existing_has_current_review_commands:
-            return json_path, md_path, False
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path_text = str(json_path)
     for field in ("issue_breakdown", "issueBreakdown"):
@@ -236,23 +200,34 @@ def write_template(output_prefix: Path, report: dict[str, Any], *, force: bool =
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--station-url", default="http://127.0.0.1:18080")
-    parser.add_argument("--output-prefix", default="tooling/acceptance/reports/desktop-performance-latest")
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--output-prefix")
     args = parser.parse_args()
 
     report = build_template(args.station_url)
-    json_path, md_path, written = write_template(Path(args.output_prefix), report, force=args.force)
-    action = "wrote" if written else "preserved"
-    print(f"desktop telemetry mirror template {action}: {json_path}")
-    print(f"desktop telemetry mirror template {action}: {md_path}")
-    print(f"status: {report['status'] if written else 'preserved'}")
-    if written:
-        return report_exit_code(report)
-    try:
-        existing = json.loads(json_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return 1
-    return report_exit_code(existing)
+    if args.output_prefix:
+        json_path, md_path, _ = write_template(Path(args.output_prefix), report)
+        display_json = str(json_path)
+        display_markdown = str(md_path)
+    else:
+        with artifact_session(PRODUCER_GATE_ID) as session:
+            session.write_json(DEFAULT_OUTPUT, report, role="report")
+            session.write_bytes(
+                str(Path(DEFAULT_OUTPUT).with_suffix(".md")),
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_json = DEFAULT_OUTPUT
+        display_markdown = str(Path(DEFAULT_OUTPUT).with_suffix(".md"))
+    print(f"desktop telemetry mirror template wrote: {display_json}")
+    print(f"desktop telemetry mirror template wrote: {display_markdown}")
+    print(f"status: {report['status']}")
+    return report_exit_code(report)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,11 @@ from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import Iterable
 
-from tooling.acceptance.core._paths import MANIFESTS_DIR, REPO_ROOT
+from tooling.acceptance.core._paths import REPO_ROOT
+from tooling.acceptance.core.evidence_store import (
+    current_artifact_ref,
+    write_current_artifact,
+)
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioning import (
     ActorIdentity,
@@ -220,7 +224,7 @@ def produce_actor_manifest(
     password: str,
     credential_ref: str,
     reset_authorized: bool,
-) -> tuple[ActorManifest, Path]:
+) -> tuple[ActorManifest, Path, dict[str, str]]:
     unique_roles = tuple(dict.fromkeys(roles))
     if not reset_authorized:
         raise BlockedError(
@@ -247,6 +251,17 @@ def produce_actor_manifest(
         reset_authorized=True,
         target_verified=True,
     )
-    path = MANIFESTS_DIR / f"actor-manifest-{environment_id}-{run_id}.json"
-    manifest.write(path)
-    return manifest, path
+    relative_path = "runtime/actor-manifest.json"
+    path = write_current_artifact(
+        relative_path,
+        (
+            json.dumps(manifest.to_dict(), indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8"),
+        repo_root=REPO_ROOT,
+    )
+    reference = current_artifact_ref(
+        relative_path,
+        repo_root=REPO_ROOT,
+        media_type="application/json",
+    )
+    return manifest, path, reference.to_dict()

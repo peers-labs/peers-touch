@@ -5,7 +5,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 
 def load(path: Path) -> dict:
@@ -13,14 +19,31 @@ def load(path: Path) -> dict:
 
 
 def main() -> int:
+    from tooling.acceptance.core import (
+        RUN_GATE_ENV,
+        ArtifactSession,
+        EvidenceStore,
+    )
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--plan", default="tooling/acceptance/reports/latest-plan.json")
-    parser.add_argument("--run", default="tooling/acceptance/reports/latest-run.json")
-    parser.add_argument("--output", default="tooling/acceptance/reports/latest-report.md")
+    parser.add_argument("--plan")
+    parser.add_argument("--run")
     args = parser.parse_args()
 
-    plan = load(Path(args.plan))
-    run = load(Path(args.run))
+    store = EvidenceStore.from_environment(
+        repo_root=REPO_ROOT,
+        worktree=REPO_ROOT,
+    )
+    plan = (
+        load(Path(args.plan))
+        if args.plan
+        else store.read_json(store.latest_artifact_ref("acceptance-plan", "plan"))
+    )
+    run = (
+        load(Path(args.run))
+        if args.run
+        else store.read_json(store.latest_artifact_ref("acceptance-run", "run"))
+    )
     lines = [
         "# Acceptance Report",
         "",
@@ -56,10 +79,20 @@ def main() -> int:
     if not run.get("results"):
         lines.append("- not run")
 
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"acceptance report: {output}")
+    gate_id = os.environ.get(RUN_GATE_ENV) or "acceptance-report"
+    with ArtifactSession(repo_root=REPO_ROOT, gate_id=gate_id) as session:
+        reference = session.write_bytes(
+            "reports/acceptance-report.md",
+            ("\n".join(lines) + "\n").encode("utf-8"),
+            media_type="text/markdown",
+            role="report",
+        )
+        session.complete(
+            status="passed",
+            completion_status=str(run.get("completionStatus") or "PARTIAL"),
+            proof_status=str(run.get("proofStatus") or "UNPROVEN"),
+        )
+    print(f"acceptance report: {json.dumps(reference.to_dict(), sort_keys=True)}")
     return 0
 
 

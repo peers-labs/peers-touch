@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session
+
 
 ARTIFACT_KIND = "desktop-telemetry-runtime-closure-gate"
 PHASE = "P0a-3/P0a-4/P0a-5/P0a-6/P0c-5"
@@ -22,7 +24,7 @@ GATE = (
     "P0a Station runtime proof must use a managed Station+Postgres dependency closure before "
     "Gateway upload, route probe, query, rollup, mirror, or runtime sample emission can be trusted"
 )
-DEFAULT_OUTPUT = Path("tooling/acceptance/reports/desktop-telemetry-runtime-closure-gate.json")
+DEFAULT_OUTPUT = "reports/desktop-telemetry-runtime-closure-gate.json"
 STATION_DEV_PATH = Path("tooling/scripts/local-dev/station-dev.sh")
 STORE_LOCAL_PATH = Path("apps/station/app/conf/store.local.yml")
 COMPOSE_PATH = Path("tooling/docker/compose.yml")
@@ -672,17 +674,35 @@ def render_markdown(report: dict[str, Any]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default=".")
-    parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument("--output")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
-    output = Path(args.output)
-    report = build_report(root, output, args.timeout)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    output.with_suffix(".md").write_text(render_markdown(report), encoding="utf-8")
-    print(f"[desktop-telemetry-runtime-closure-gate] wrote {output}")
+    logical_output = Path(args.output) if args.output else Path(DEFAULT_OUTPUT)
+    report = build_report(root, logical_output, args.timeout)
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        output.with_suffix(".md").write_text(render_markdown(report), encoding="utf-8")
+        display_output = str(output)
+    else:
+        with artifact_session(ARTIFACT_KIND) as session:
+            session.write_json(DEFAULT_OUTPUT, report, role="report")
+            session.write_bytes(
+                str(Path(DEFAULT_OUTPUT).with_suffix(".md")),
+                render_markdown(report).encode("utf-8"),
+                media_type="text/markdown",
+                role="report-markdown",
+            )
+            session.complete(
+                status=report["status"],
+                completion_status=report["completionStatus"],
+                proof_status=report["proofStatus"],
+            )
+        display_output = DEFAULT_OUTPUT
+    print(f"[desktop-telemetry-runtime-closure-gate] wrote {display_output}")
     print(f"status: {report['status']} sampleEmissionAllowed={report['sampleEmissionAllowed']}")
     return 0 if report["proofStatus"] == "PROVEN" else 1
 

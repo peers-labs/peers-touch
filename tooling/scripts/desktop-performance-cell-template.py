@@ -11,8 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from _acceptance_artifacts import artifact_session, inspect_command
+
 OBSERVATIONS_TEMPLATE_ARTIFACT_KIND = "desktop-performance-cell-observations-template"
-DEFAULT_OBSERVATIONS_TEMPLATE_OUTPUT = Path("tooling/acceptance/reports/desktop-performance-cell-observations-template.json")
+PRODUCER_GATE_ID = "desktop-performance-cell-template-gate"
+DEFAULT_OUTPUT_DIR = "reports/desktop-performance-cells"
+DEFAULT_OBSERVATIONS_TEMPLATE_OUTPUT = "reports/desktop-performance-cell-observations-template.json"
 
 
 def utc_now() -> str:
@@ -62,7 +66,7 @@ def runtime_cell_review_commands(spec: Any) -> list[dict[str, str]]:
         },
         {
             "purpose": "Inspect this runtime cell evidence artifact.",
-            "command": f"jq '{{status,proofStatus,issue_breakdown,recommended_review_commands}}' tooling/acceptance/reports/desktop-performance-cells/{spec.cell_id}.json",
+            "command": inspect_command(PRODUCER_GATE_ID, f"cell-{spec.cell_id}"),
         },
         {
             "purpose": "Re-run the matrix gate after runtime cell evidence exists.",
@@ -169,8 +173,7 @@ def build_observations_template() -> dict[str, Any]:
         "cells": cells,
         "recommendedCollectionCommand": (
             "python3 tooling/scripts/desktop-performance-cell-collect.py "
-            "--observations tooling/acceptance/reports/desktop-performance-cell-observations.json "
-            "--output-dir tooling/acceptance/reports/desktop-performance-cells"
+            "--observations <runtime-cell-observations.json>"
         ),
         "summary": {
             "status": "diagnostic incomplete",
@@ -206,11 +209,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--output-dir",
-        default="tooling/acceptance/reports/desktop-performance-cells",
+        help="Explicit output directory. Defaults to a new Evidence Store run.",
     )
     parser.add_argument(
         "--observations-template-output",
-        default=str(DEFAULT_OBSERVATIONS_TEMPLATE_OUTPUT),
+        help="Explicit observations-template output path. Required with --output-dir.",
     )
     parser.add_argument(
         "--strict-exit",
@@ -219,16 +222,41 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    written = write_templates(Path(args.output_dir))
-    observations_template_path = Path(args.observations_template_output)
-    observations_template_path.parent.mkdir(parents=True, exist_ok=True)
-    observations_template_path.write_text(
-        json.dumps(build_observations_template(), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    for path in written:
-        print(f"desktop performance cell template: {path}")
-    print(f"desktop performance cell observations template: {observations_template_path}")
+    if bool(args.output_dir) != bool(args.observations_template_output):
+        parser.error("--output-dir and --observations-template-output must be provided together")
+    templates = build_templates()
+    observations_template = build_observations_template()
+    if args.output_dir:
+        written = write_templates(Path(args.output_dir))
+        observations_template_path = Path(args.observations_template_output)
+        observations_template_path.parent.mkdir(parents=True, exist_ok=True)
+        observations_template_path.write_text(
+            json.dumps(observations_template, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        display_templates = [str(path) for path in written]
+        display_observations = str(observations_template_path)
+    else:
+        with artifact_session(PRODUCER_GATE_ID) as session:
+            display_templates = []
+            for cell_id, template in templates.items():
+                relative_path = f"{DEFAULT_OUTPUT_DIR}/{cell_id}.json"
+                session.write_json(relative_path, template, role=f"cell-{cell_id}")
+                display_templates.append(relative_path)
+            session.write_json(
+                DEFAULT_OBSERVATIONS_TEMPLATE_OUTPUT,
+                observations_template,
+                role="observations-template",
+            )
+            session.complete(
+                status="diagnostic incomplete",
+                completion_status="PARTIAL",
+                proof_status="UNPROVEN",
+            )
+        display_observations = DEFAULT_OBSERVATIONS_TEMPLATE_OUTPUT
+    for output in display_templates:
+        print(f"desktop performance cell template: {output}")
+    print(f"desktop performance cell observations template: {display_observations}")
     print("status: diagnostic incomplete")
     return 1 if args.strict_exit else 0
 
