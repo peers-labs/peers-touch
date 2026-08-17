@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from os import environ
 from pathlib import Path
+from unittest.mock import patch
 
 from _acceptance_artifacts import (
     REPO_ROOT,
+    artifact_session,
     explicit_output_path,
+    latest_artifact,
     replace_resolved_artifact_paths,
 )
 from tooling.acceptance.core.errors import EvidenceRootForbidden
@@ -49,6 +53,31 @@ class AcceptanceArtifactHelpersTest(unittest.TestCase):
         self.assertEqual(replaced["sourceArtifact"], reference)
         self.assertEqual(replaced["nested"][0]["path"], reference)
         self.assertEqual(replaced["fixture"], "/external/fixture.json")
+
+    def test_latest_artifact_returns_one_resolved_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            environ,
+            {"PT_ACCEPTANCE_ARTIFACT_ROOT": directory},
+            clear=True,
+        ):
+            with artifact_session("source-gate") as session:
+                expected = session.write_json(
+                    "reports/source.json",
+                    {"status": "passed"},
+                    role="report",
+                )
+                session.complete(
+                    status="passed",
+                    completion_status="DONE",
+                    proof_status="PROVEN",
+                )
+            path, reference = latest_artifact(
+                "source-gate",
+                "report",
+            )
+
+        self.assertEqual(reference, expected.to_dict())
+        self.assertEqual(path.name, "source.json")
 
 
 if __name__ == "__main__":
