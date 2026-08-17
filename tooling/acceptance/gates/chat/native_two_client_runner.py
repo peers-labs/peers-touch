@@ -16,7 +16,7 @@ from typing import Any, Callable
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
-from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPO_ROOT
+from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPO_ROOT, REPORTS_DIR
 from tooling.acceptance.drivers.tauri import TauriDriver
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
@@ -31,7 +31,7 @@ from tooling.acceptance.gates.chat.native_support import (
 REPORT_PATH = Path(
     os.environ.get(
         "CHAT_NATIVE_TWO_CLIENT_REPORT",
-        "tooling/acceptance/reports/chat-native-two-client-run.json",
+        str(REPORTS_DIR / "chat-native-two-client-run.json"),
     )
 )
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
