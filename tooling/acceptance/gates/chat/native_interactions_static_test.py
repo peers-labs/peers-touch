@@ -41,7 +41,21 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn('"alice": "alice@p.t"', support)
         self.assertIn('"bob": "bob@p.t"', support)
         self.assertIn('"charlie": "carol@p.t"', support)
+        self.assertIn('DEV_ACCOUNT_PASSWORD = "1"', support)
         self.assertNotIn('"charlie": "charlie@p.t"', support)
+        self.assertNotIn("CHAT_ACCEPTANCE_PASSWORD", support)
+
+    def test_native_runners_use_committed_dev_account_fixture(self) -> None:
+        for path in (
+            "tooling/acceptance/gates/chat/native_two_client_runner.py",
+            "tooling/acceptance/gates/chat/native_interactions_runner.py",
+            "tooling/acceptance/gates/chat/native_typing_runner.py",
+        ):
+            with self.subTest(path=path):
+                self.assertNotIn(
+                    "CHAT_ACCEPTANCE_PASSWORD",
+                    self.source(path),
+                )
 
     def test_native_dom_selectors_cover_interaction_and_typing_state(self) -> None:
         row = self.source(

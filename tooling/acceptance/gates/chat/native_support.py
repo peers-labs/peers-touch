@@ -14,6 +14,7 @@ from tooling.acceptance.drivers.tauri import TauriDriver
 
 
 DEFAULT_STATION = "http://10.37.94.156:18080"
+DEV_ACCOUNT_PASSWORD = "1"
 ACCOUNTS = {
     "alice": "alice@p.t",
     "bob": "bob@p.t",
@@ -105,9 +106,6 @@ def start_authenticated_client(
     )
     client.start()
     try:
-        password = os.environ.get("CHAT_ACCEPTANCE_PASSWORD", "")
-        if not password:
-            raise GateError("CHAT_ACCEPTANCE_PASSWORD is required")
         client.wait_for_acceptance_harness(30)
         configure_station(client, station_url)
         with StationDriver(
@@ -117,7 +115,10 @@ def start_authenticated_client(
         login = async_harness(
             client,
             "loginWithPassword",
-            {"account": ACCOUNTS[account], "password": password},
+            {
+                "account": ACCOUNTS[account],
+                "password": DEV_ACCOUNT_PASSWORD,
+            },
             timeout=30,
         )
         ptid = str((login or {}).get("actorId") or "")

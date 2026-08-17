@@ -191,8 +191,8 @@ WS4 + WS5 + WS7 + WS6 ──► WS8 (Final Validation)
 - **Failure behavior**: Gate failures produce automatic screenshot/DOM/log evidence
 - **Runtime scenario**: Full Chat domain validation
 - **Gates**:
-  - `CHAT_ACCEPTANCE_RESET=1 CHAT_ACCEPTANCE_PASSWORD=<pw> python3 tooling/acceptance/gates/chat/desktop_dom_message_visible.py`
-  - `CHAT_ACCEPTANCE_RESET=1 CHAT_ACCEPTANCE_PASSWORD=<pw> python3 tooling/acceptance/gates/chat/native_two_client_runner.py`
+  - `CHAT_ACCEPTANCE_RESET=1 python3 tooling/acceptance/gates/chat/desktop_dom_message_visible.py`
+  - `CHAT_ACCEPTANCE_RESET=1 python3 tooling/acceptance/gates/chat/native_two_client_runner.py`
   - `python3 -m unittest tooling.acceptance.gates.chat.native_visible_e2e_test tooling.acceptance.gates.chat.native_visible_static_test`
 - **Evidence**: `tooling/acceptance/reports/chat-desktop-dom-message-visible.json`, `chat-native-two-client-run.json`, `chat-validation.json` all PASS
 - **Done when**: `CHAT_ACCEPTANCE_RESET=1 make acceptance-chat-domain-validation` PASS; evidence conforms to schema
