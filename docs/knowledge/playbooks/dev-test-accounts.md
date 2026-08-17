@@ -90,6 +90,9 @@ PIN:      111111
 ## 3. 使用约束
 
 - 不用于生产环境。
+- Native Acceptance 直接使用本文档与 `actor.yml` 声明的 disposable 账号密码；
+  不要求额外的 secret-style password 环境变量。Acceptance Harness 和测试数据不进入
+  production Desktop package。
 - 共享开发 Station 上的普通验收复用 alice、bob、carol，不得每次运行注册新 actor。
 - 必须创建临时 actor 的 E2E（压力、安全、隔离）只能运行在 disposable Station 数据库中。
 - 性能排查报告引用这些账号时，只记录账号标识和测试环境，不扩散到生产文档。
