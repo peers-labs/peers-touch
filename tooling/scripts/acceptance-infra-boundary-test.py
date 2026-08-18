@@ -106,6 +106,62 @@ class AcceptanceInfraBoundaryTests(unittest.TestCase):
         self.assertIn("acceptance-infra-validate", submit_pipeline)
         self.assertIn("acceptance-framework", submit_pipeline)
 
+    def test_procedures_enforce_ownership_classification(self) -> None:
+        procedures = read(
+            "tooling/skills/pt-acceptance-engineering/PROCEDURES.md"
+        )
+
+        self.assertIn("Responsibility Ownership Rule", procedures)
+        self.assertIn("ACCEPTANCE_OWNERSHIP_MISCLASSIFIED", procedures)
+        self.assertIn(
+            "Classify ownership of every touched file",
+            procedures,
+        )
+        self.assertIn("native_visible_runner.py", procedures)
+        self.assertIn(
+            "Does NOT determine ownership",
+            procedures,
+        )
+
+    def test_ownership_classification_table(self) -> None:
+        """Verify that known paths classify correctly per the rule."""
+        procedures = read(
+            "tooling/skills/pt-acceptance-engineering/PROCEDURES.md"
+        )
+
+        INFRA_PATHS = (
+            "tooling/scripts/acceptance-validate.py",
+            "tooling/scripts/acceptance-plan.py",
+            "tooling/scripts/quality-evidence.py",
+            "tooling/acceptance/core/",
+            "tooling/scripts/acceptance-run.py",
+        )
+        BUSINESS_PATHS = (
+            "tooling/acceptance/gates/chat/native_visible_runner.py",
+            "tooling/acceptance/gates/chat/native_interactions_runner.py",
+            "tooling/acceptance/provisioners/home_station.py",
+            "tooling/acceptance/gates/chat/native_typing_runner.py",
+            "apps/desktop/src/acceptance/chat/harness.ts",
+        )
+
+        self.assertIn(
+            "Would break ALL Domains if removed",
+            procedures,
+        )
+        self.assertIn(
+            "Would break only one Domain if removed",
+            procedures,
+        )
+
+        for path in BUSINESS_PATHS:
+            self.assertNotIn(
+                path,
+                procedures.split("A file is **Acceptance Infra**")[1].split(
+                    "A file is **business injection**"
+                )[0],
+                msg=f"{path} must not appear in Infra definition section",
+            )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
