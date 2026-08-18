@@ -95,6 +95,17 @@ class AcceptanceInfraBoundaryTests(unittest.TestCase):
             quality,
         )
 
+    def test_submit_pipeline_routes_infra_only_changes(self) -> None:
+        makefile = read("tooling/make/acceptance.mk")
+        submit_pipeline = read(
+            "tooling/scripts/review/submit-pipeline.sh"
+        )
+
+        self.assertIn("acceptance-infra-validate:", makefile)
+        self.assertIn("--infra", makefile)
+        self.assertIn("acceptance-infra-validate", submit_pipeline)
+        self.assertIn("acceptance-framework", submit_pipeline)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
