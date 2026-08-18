@@ -19,14 +19,14 @@
 | Branch | `fix/acceptance-domain-structural-validation` |
 | Stage | `DELIVER` |
 | Current workstream | All implementation workstreams complete |
-| Current step | Commit CAS-W6 and update Draft PR #93 |
+| Current step | Hold Draft PR #93 for Owner review and terminal CI evidence |
 | Progress | `CAS-W1` through `CAS-W6` complete |
-| Last completed | Added the Infra-only Skill, Agent handbook routing, D-12 responsibility boundary, direction-aware Quality Evidence, and deterministic boundary tests |
-| Current action | Verify final Skill freshness, commit the Infra firewall, and update PR #93 without touching business injection |
-| Next action | Rerun exact-range Quality Evidence and PR checks, then request Owner review |
+| Last completed | Exact-range submit pipeline passed with `acceptance_scope: infra`; all three Infra Gates passed and Gap Detector returned `PROVEN` with zero gaps |
+| Current action | Publish final traceability and keep PR #93 focused on Acceptance Infra only |
+| Next action | Inspect terminal PR checks, then request Owner review/merge |
 | Blockers | Project memory namespace is contaminated with unrelated Big-A content; two unrelated Agent proto outputs remain untracked |
 | Decisions required | none; Owner approved the Skill name and responsibility model |
-| Evidence | Draft PR #93; Infra self-validation 114/114 PASS; boundary tests 6/6 PASS; Quality Evidence tests 10/10 PASS; validator 8/8 PASS; `make acceptance-infra-validate` PASS; self-plan selects only `acceptance-plan-self`, `acceptance-infra-validation`, and `acceptance-runtime-provisioning-self`; canonical Skill is registered in `AGENTS.md` and `docs/global/workflow.md`; no business injection was added or modified |
+| Evidence | Draft PR #93; exact-range Quality Evidence `Ready for pt-github-review: yes` with zero gaps; review framework PASS; Infra self-validation 114/114 PASS; boundary tests 6/6 PASS; Quality Evidence tests 10/10 PASS; validator 8/8 PASS; `acceptance-plan-self`, `acceptance-infra-validation`, and `acceptance-runtime-provisioning-self` PASS; Gap Detector `PROVEN`; canonical Skill registered in `AGENTS.md` and `docs/global/workflow.md`; no business injection added or modified |
 | Last updated | 2026-08-18 |
 
 ## 1. Goal
