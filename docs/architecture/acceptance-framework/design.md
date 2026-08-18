@@ -555,6 +555,48 @@ Desktop Rust receipt/decrypt path
 - symlink、dual-write或legacy compatibility owner；
 - 迁移旧report作为当前产品proof。
 
+### 4.11 Acceptance Infra 与业务注入责任防火墙
+
+Acceptance Infra 与业务 Domain 使用两个独立责任平面。责任按语义判断，不按目录
+判断：
+
+| Acceptance Infra | 业务模块注入 |
+|---|---|
+| Contract schema、extension interface、typed error | Domain / Feature / Capability 实例 |
+| Planner、Validator、Runner、Reporter | 产品 assertion、negative constraint、truth source |
+| Evidence Store 与 artifact lifecycle | 产品 evidence 与 proof state |
+| Provisioner / Driver / Fixture / Harness 抽象 | 具体 Environment、Provisioner、Fixture、角色与凭据 |
+| Registry / Gate / Environment 注册机制与结构校验 | Registry rules、Gate entries 与 Gate implementations |
+| 通用 timeout、cancel、cleanup、isolation、concurrency | 产品失败修复与 receiver-visible proof |
+| synthetic fixtures 与 framework self-validation | 真实业务 runtime 和数据集 |
+
+Infra 可以验证注入是否符合 contract，但不得替业务模块创建、修复、降级或伪造注入。
+缺失注入使用：
+
+```text
+BUSINESS_INJECTION_REQUIRED
+  owner domain
+  missing contract slot
+  expected schema/interface
+  affected Domain
+  Infra impact: non-blocking
+```
+
+Readiness 规则：
+
+- `acceptance_core_self_validation` 是 Infra merge readiness 的权威 capability。
+- `product_domain_validates_acceptance` 是附加反向证据，默认只报告，不阻塞每次
+  Infra PR。
+- `acceptance_validates_product` 与具体业务 Gate 的状态只约束对应业务 Domain。
+- 业务 `FAILED`、`BLOCKED` 或 `UNPROVEN` 不能转换成 Infra failure。
+- 只有通用注入机制、schema、validator、runner 或 evidence lifecycle 本身有缺陷时，
+  才能阻塞 Infra readiness。
+
+Agent 对 Acceptance Infra 的优化和审计必须使用
+[`pt-acceptance-infra-engineering`](../../../tooling/skills/pt-acceptance-infra-engineering/SKILL.md)。
+业务接入与产品证明继续使用
+[`pt-acceptance-engineering`](../../../tooling/skills/pt-acceptance-engineering/SKILL.md)。
+
 ---
 
 ## 5. 端点 / API

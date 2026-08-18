@@ -48,6 +48,8 @@ what they want to do and proceeds with task classification (§2).
 | Signal | Starting stage | Rationale |
 |--------|---------------|-----------|
 | User requests a new product/module/capability, workflow redesign, or benchmark rebuild | PRODUCT | Needs product outcome, experience, and acceptance contract |
+| User requests Acceptance Infra optimization or audit | CROSS-STAGE via `pt-acceptance-infra-engineering` | Framework responsibility must remain separate from business injection |
+| User requests business Domain Acceptance injection or proof | CROSS-STAGE via `pt-acceptance-engineering` | Product contracts and runtime evidence own the closure |
 | Product contract accepted; user mentions new architecture / boundary / ownership / protocol | DESIGN | Needs architecture methodology |
 | Product and architecture accepted; user says "plan" / "execute" / "implement" | PLAN | Needs execution breakdown |
 | Plan exists and is accepted, user says "start coding" / "do it" | EXECUTE | Plan already passed review |
