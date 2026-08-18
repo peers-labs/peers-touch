@@ -122,6 +122,136 @@ def validate_gate_catalog(
             require(environment == "local", f"{gate_id}: CI tier gates must use local environment")
 
 
+def validate_gate_inheritance(
+    repo_root: Path,
+    gate_defs: dict[str, Any],
+    required_gate_ids: set[str],
+) -> None:
+    """I1: Gates using python3 -m must contain an AcceptanceGate subclass."""
+    violations: list[str] = []
+    for gate_id in sorted(required_gate_ids & gate_defs.keys()):
+        command = str(gate_defs[gate_id].get("command", ""))
+        if "python3 -m" not in command and "python3 -c" not in command:
+            continue
+        parts = command.split()
+        try:
+            module_index = parts.index("-m") + 1
+        except ValueError:
+            continue
+        if module_index >= len(parts):
+            continue
+        module_path = parts[module_index].replace(".", "/")
+        candidates = [
+            repo_root / f"{module_path}.py",
+            repo_root / module_path / "__main__.py",
+        ]
+        source = next((c for c in candidates if c.is_file()), None)
+        if source is None:
+            continue
+        content = source.read_text(encoding="utf-8", errors="replace")
+        if "AcceptanceGate" not in content:
+            violations.append(gate_id)
+    if violations:
+        raise RuntimeError(
+            "ACCEPTANCE_GATE_CONTRACT_VIOLATION: gates using python3 -m must "
+            f"contain AcceptanceGate subclass: {violations}"
+        )
+
+
+def validate_gate_import_isolation(
+    repo_root: Path,
+    gate_defs: dict[str, Any],
+    required_gate_ids: set[str],
+) -> None:
+    """I2: Gate runner modules must not import from other gate runner modules."""
+    import re
+
+    gate_modules: set[str] = set()
+    gate_files: dict[str, tuple[Path, str]] = {}
+
+    for gate_id in sorted(required_gate_ids & gate_defs.keys()):
+        command = str(gate_defs[gate_id].get("command", ""))
+        if "python3 -m" not in command:
+            continue
+        parts = command.split()
+        try:
+            module_index = parts.index("-m") + 1
+        except ValueError:
+            continue
+        if module_index >= len(parts):
+            continue
+        module_name = parts[module_index]
+        gate_modules.add(module_name)
+        module_path = module_name.replace(".", "/")
+        source = repo_root / f"{module_path}.py"
+        if source.is_file():
+            gate_files[gate_id] = (source, module_name)
+
+    import_pattern = re.compile(
+        r"^(?:from|import)\s+(tooling\.acceptance\.gates\.\w+\.\w+)",
+        re.MULTILINE,
+    )
+    violations: list[dict[str, str]] = []
+    for gate_id, (source, own_module) in sorted(gate_files.items()):
+        content = source.read_text(encoding="utf-8", errors="replace")
+        for match in import_pattern.finditer(content):
+            imported = match.group(1)
+            if imported in gate_modules and imported != own_module:
+                rel = str(source.relative_to(repo_root))
+                violations.append(
+                    {"gate": gate_id, "file": rel, "imports": imported}
+                )
+    if violations:
+        raise RuntimeError(
+            "ACCEPTANCE_GATE_IMPORT_VIOLATION: gate modules must not import "
+            "from other gate modules. Extract shared code to a utility module "
+            f"or tooling/acceptance/core/: {json.dumps(violations, sort_keys=True)}"
+        )
+
+
+def validate_synthetic_paths(
+    repo_root: Path,
+    capabilities: list[dict[str, Any]],
+    features: list[dict[str, Any]],
+) -> None:
+    """I4: synthetic_paths and source_paths must point to existing files."""
+    import glob as glob_module
+
+    stale: list[dict[str, str]] = []
+
+    def check_paths(source_id: str, paths: list[str]) -> None:
+        for path_str in paths:
+            if "*" in path_str or "?" in path_str or "[" in path_str:
+                matches = glob_module.glob(
+                    str(repo_root / path_str), recursive=True
+                )
+                if not matches:
+                    stale.append({"source": source_id, "path": path_str, "type": "glob_no_match"})
+            else:
+                if not (repo_root / path_str).exists():
+                    stale.append({"source": source_id, "path": path_str, "type": "missing"})
+
+    for capability in capabilities:
+        cap_id = str(capability.get("id", ""))
+        for path_str in capability.get("synthetic_paths", []):
+            check_paths(f"capability:{cap_id}", [path_str])
+        for path_str in capability.get("source_paths", []):
+            check_paths(f"capability:{cap_id}", [path_str])
+
+    for feature in features:
+        feat_id = str(feature.get("id", ""))
+        for path_str in feature.get("synthetic_paths", []):
+            check_paths(f"feature:{feat_id}", [path_str])
+        for path_str in feature.get("source_paths", []):
+            check_paths(f"feature:{feat_id}", [path_str])
+
+    if stale:
+        raise RuntimeError(
+            "ACCEPTANCE_SYNTHETIC_PATH_STALE: paths in capability/feature "
+            f"contracts do not exist: {json.dumps(stale[:20], sort_keys=True)}"
+        )
+
+
 def collect_domain_gate_closure(
     capabilities: list[dict[str, Any]],
     features: list[dict[str, Any]],
@@ -407,7 +537,7 @@ def validate_domain(
         selected.append(capabilities[capability_id])
     require(selected, f"domain {domain_id}: no capabilities selected")
     validation_gate_id = str(domain.get("validation_gate_id") or "")
-    validate_domain_contract_closure(
+    required_gates = validate_domain_contract_closure(
         acceptance_root,
         domain_id,
         selected,
@@ -415,6 +545,9 @@ def validate_domain(
         gate_defs,
         validation_gate_id,
     )
+    validate_gate_inheritance(repo_root, gate_defs, required_gates)
+    validate_gate_import_isolation(repo_root, gate_defs, required_gates)
+    validate_synthetic_paths(repo_root, selected, features)
     passed_gates = latest_passed_gates(
         store,
         validation_gate_id,
@@ -448,7 +581,7 @@ def validate_infra(
         for path in sorted((acceptance_root / "features").glob("*.yaml"))
     ]
     gate_defs = load(acceptance_root / "gates.yaml").get("gates", {})
-    validate_domain_contract_closure(
+    required_gates = validate_domain_contract_closure(
         acceptance_root,
         "acceptance-infra",
         selected,
@@ -456,6 +589,9 @@ def validate_infra(
         gate_defs,
         current_gate_id,
     )
+    validate_gate_inheritance(repo_root, gate_defs, required_gates)
+    validate_gate_import_isolation(repo_root, gate_defs, required_gates)
+    validate_synthetic_paths(repo_root, selected, features)
     passed_gates = latest_passed_gates(
         store,
         current_gate_id,
