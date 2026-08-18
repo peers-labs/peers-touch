@@ -241,6 +241,8 @@ class DomainContractClosureTests(unittest.TestCase):
             acceptance_root = repo_root / "tooling" / "acceptance"
             for directory in ("domains", "capabilities", "features"):
                 (acceptance_root / directory).mkdir(parents=True, exist_ok=True)
+            (repo_root / "selected").mkdir(parents=True, exist_ok=True)
+            (repo_root / "selected" / "path.py").write_text("", encoding="utf-8")
 
             self._write_json(
                 acceptance_root / "domains" / "selected.yaml",
