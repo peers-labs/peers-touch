@@ -948,12 +948,16 @@ impl MessagingEngine {
         if conversation_id.trim().is_empty() || message_id.trim().is_empty() {
             return Err("messaging interaction target is required".to_string());
         }
-        if self
+        let (projection, _) = self
             .store
             .message_projection(conversation_id, message_id)?
-            .is_none()
+            .ok_or_else(|| {
+                "messaging interaction target projection is unavailable".to_string()
+            })?;
+        if matches!(interaction, MetadataInteraction::Retract)
+            && projection.sender_ptid != self.endpoint.ptid
         {
-            return Err("messaging interaction target projection is unavailable".to_string());
+            return Err("messaging retract target is not authored by this actor".to_string());
         }
         self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
         let plan = self.prepare_send_plan(token, conversation_id)?;

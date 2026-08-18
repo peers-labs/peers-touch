@@ -152,7 +152,8 @@ class TauriDriver(DomDriver):
                     """
                     return {
                       hasRoot: Boolean(document.querySelector('#root')),
-                      hasTauri: typeof window.__TAURI__ === 'object',
+                      hasTauri: typeof window.__TAURI_INTERNALS__ === 'object'
+                               || typeof window.__TAURI__ === 'object',
                       readyState: document.readyState,
                       title: document.title,
                       url: location.href,

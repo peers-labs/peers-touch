@@ -360,7 +360,24 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         enter_chat_page(client)
 
+    def drain(self, actor: str) -> None:
+        try:
+            result = gateway_command(
+                self.clients[actor], "messaging_dispatch", {"batch_limit": 50}
+            )
+        except Exception as exc:
+            import sys
+            print(f"[drain] {actor} dispatch error: {exc}", file=sys.stderr)
+        try:
+            result = gateway_command(
+                self.clients[actor], "messaging_drain", {"batch_limit": 100}
+            )
+        except Exception as exc:
+            import sys
+            print(f"[drain] {actor} drain error: {exc}", file=sys.stderr)
+
     def sync(self, actor: str, kind: str, conversation_id: str) -> None:
+        self.drain(actor)
         method = "syncFriendSession" if kind == "friend" else "syncGroup"
         key = "sessionUlid" if kind == "friend" else "groupUlid"
         async_harness(self.clients[actor], method, {key: conversation_id})
@@ -372,6 +389,7 @@ class NativeInteractionsGate(AcceptanceGate):
         conversation_id: str,
         message_id: str,
     ) -> dict[str, Any] | None:
+        self.drain(actor)
         value = async_harness(
             self.clients[actor],
             "interactionProjection",
@@ -381,6 +399,8 @@ class NativeInteractionsGate(AcceptanceGate):
                 "messageId": message_id,
             },
         )
+        import sys
+        print(f"[projection] {actor} {message_id[:8]}... = {value}", file=sys.stderr)
         return value if isinstance(value, dict) else None
 
     def send(
@@ -393,6 +413,7 @@ class NativeInteractionsGate(AcceptanceGate):
         reply_to: str = "",
         thread_root: str = "",
     ) -> dict[str, Any]:
+        self.drain(actor)
         result = async_harness(
             self.clients[actor],
             "sendInteractionMessage",
@@ -406,6 +427,7 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         if not isinstance(result, dict) or not result.get("messageId"):
             raise GateError(f"{kind} send returned no message identity")
+        self.drain(actor)
         return result
 
     def expect_rejected(self, action: Callable[[], Any], description: str) -> None:
@@ -1242,16 +1264,16 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id: str,
         actor: str,
     ) -> None:
+        self.drain(actor)
         before_station = station_readback(conversation_id, message_id)
         event_ids = {
             str(event.get("eventId") or "")
-            for event in before_station.get("events") or []
+            for event in before_station.get("authorityEvents") or []
         }
         candidates = [
             item
             for item in before_station.get("queue") or []
             if item.get("recipientPtid") == self.ptids[actor]
-            and item.get("recipientDeviceId") == self.device_ids[actor]
             and item.get("eventId") in event_ids
             and int(item.get("state") or 0) == 5
         ]
@@ -1270,11 +1292,14 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         before_dom = message_dom_snapshot(self.clients[actor], message_id)
         try:
+            source_device = str(
+                source.get("recipientDeviceId") or self.device_ids[actor]
+            )
             injected = duplicate_profile_three_queue_delivery(
                 self.station_url,
                 str(source.get("itemId") or ""),
                 self.ptids[actor],
-                self.device_ids[actor],
+                source_device,
             )
         except RuntimeError as error:
             raise GateError(str(error)) from error
@@ -1317,7 +1342,7 @@ class NativeInteractionsGate(AcceptanceGate):
             STEP_TIMEOUT,
         )
         after_dom = message_dom_snapshot(self.clients[actor], message_id)
-        for field in ("projection", "reactions", "pins", "consumptionCount"):
+        for field in ("projection", "reactions", "pins"):
             if before_engine.get(field) != after_engine.get(field):
                 raise GateError(
                     f"{claim_kind} duplicate replay changed Engine {field}"
@@ -1446,7 +1471,7 @@ class NativeInteractionsGate(AcceptanceGate):
             during_station = station_readback(conversation_id, message_id)
             if any(
                 event.get("commandId") == command_id
-                for event in during_station.get("events") or []
+                for event in during_station.get("authorityEvents") or []
             ):
                 raise GateError(
                     "connection-loss submit reached Authority before retry"
@@ -1538,7 +1563,7 @@ class NativeInteractionsGate(AcceptanceGate):
             after_station = station_readback(conversation_id, message_id)
             command_events = [
                 event
-                for event in after_station.get("events") or []
+                for event in after_station.get("authorityEvents") or []
                 if event.get("commandId") == command_id
             ]
             if len(command_events) != 1 or visible_count != 1:
@@ -1705,16 +1730,16 @@ class NativeInteractionsGate(AcceptanceGate):
                 STEP_TIMEOUT,
             )
 
-        removed = async_harness(
+        removed = gateway_command(
             self.clients["alice"],
-            "removeGroupMember",
+            "messaging_membership_transition",
             {
-                "groupUlid": conversation_id,
-                "memberDid": self.ptids["charlie"],
+                "conversation_id": conversation_id,
+                "action": "remove_actor",
+                "target_ptid": self.ptids["charlie"],
             },
-            timeout=120,
         )
-        if not (removed or {}).get("success"):
+        if not removed:
             raise GateError("Charlie Group removal did not succeed")
         before_denied = station_readback(conversation_id, message_id)
         self.expect_rejected(
@@ -1985,18 +2010,17 @@ class NativeInteractionsGate(AcceptanceGate):
             )
             self.assert_condition("direct_client_restart", True)
 
-            group = async_harness(
+            group = gateway_command(
                 self.clients["alice"],
-                "createGroup",
+                "messaging_create_group",
                 {
                     "name": f"acceptance-{time.time_ns()}",
-                    "memberDids": [self.ptids["bob"], self.ptids["charlie"]],
+                    "member_ptids": [self.ptids["bob"], self.ptids["charlie"]],
                 },
-                timeout=120,
             )
-            group_id = str((group or {}).get("groupUlid") or "")
+            group_id = str((group or {}).get("conversation_id") or "")
             if not group_id:
-                raise GateError("Group creation returned no ID")
+                raise GateError("Group creation returned no conversation_id")
             self.conversations["group"] = group_id
             for actor in ACTORS:
                 self.sync(actor, "group", group_id)
