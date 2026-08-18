@@ -52,6 +52,7 @@ type subServer struct {
 	localStationID       string
 	fedKpFetcher         *FederatedKeyPackageFetcher
 	gateEval             *ConversationGateEvaluator
+	relQuerier           social_gate.RelationshipQuerier
 	db                   *gorm.DB
 }
 
@@ -164,6 +165,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	relAdapter := NewConversationRelationshipAdapter(repo, rds)
 	roleAdapter := NewConversationGroupRoleAdapter(repo)
 	s.gateEval = NewConversationGateEvaluator(relAdapter, roleAdapter, nil)
+	s.relQuerier = relAdapter
 
 	return nil
 }
@@ -172,6 +174,7 @@ func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 	workerCtx, cancel := context.WithCancel(context.Background())
 	s.proposalWorkerCancel = cancel
 	go s.runCommandProposalWorker(workerCtx)
+	registerSignalAuthorizer(s.relQuerier)
 	s.status = server.StatusRunning
 	return nil
 }
@@ -181,6 +184,7 @@ func (s *subServer) Stop(ctx context.Context) error {
 		s.proposalWorkerCancel()
 		s.proposalWorkerCancel = nil
 	}
+	registerSignalAuthorizer(nil)
 	s.status = server.StatusStopped
 	return nil
 }

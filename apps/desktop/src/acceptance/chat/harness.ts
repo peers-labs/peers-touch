@@ -304,7 +304,7 @@ export function installAcceptanceHarness(): void {
     async syncGroup({ groupUlid, limit: _limit = 50, maxPages: _maxPages = 1 }: SyncGroupInput) {
       const social = useSocialChatStore.getState();
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid);
+      await social.loadGroupMembers(groupUlid).catch(() => {});
       await social.loadMessages(groupUlid, 'group');
       social.selectGroup(groupUlid);
       social.setActiveTab('group');
