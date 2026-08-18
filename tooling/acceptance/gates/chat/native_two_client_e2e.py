@@ -139,7 +139,17 @@ def validate_report(report: dict[str, Any]) -> None:
     for actor in ("alice", "bob"):
         for suffix in ("screenshot", "dom", "app-log"):
             key = f"{actor}-{suffix}"
-            path = Path(str(evidence.get(key) or ""))
+            entry = evidence.get(key)
+            if isinstance(entry, dict) and entry.get("artifactKind") == "acceptance-artifact-ref":
+                from tooling.acceptance.core import resolve_artifact_root, REPO_ROOT
+                root = resolve_artifact_root(repo_root=REPO_ROOT)
+                workspace_id = entry.get("workspaceId", "")
+                run_id = entry.get("runId", "")
+                gate_id = entry.get("gateId", "")
+                rel_path = entry.get("path", "")
+                path = root / workspace_id / gate_id / run_id / rel_path
+            else:
+                path = Path(str(entry or ""))
             require(str(path) not in {"", "."} and path.exists(), f"{key} evidence is missing")
 
 
