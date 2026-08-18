@@ -27,9 +27,7 @@
           "feature contracts and gate definitions are machine-readable",
           "capability graph links product capabilities to features gates evidence and unproven scope"
         ],
-        "unproven_scope": [
-          "project-wide product domain coverage beyond registered domain profiles"
-        ]
+        "unproven_scope": []
       }
     }
   ]

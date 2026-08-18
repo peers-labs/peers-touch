@@ -140,7 +140,8 @@ The agent must NOT do the work itself when a skill exists for it:
 | Need to write plan to file | Just dump markdown | `pt-plan-and-document` |
 | Need status, resume, handoff, or progress context | Reconstruct from chat | `pt-context-anchor` |
 | Need to implement planned step | Code without checking plan | `pt-execution-plan-guardian` |
-| Need to add, complete, upgrade, or audit Acceptance | Infer onboarding or start from a Gate | `pt-acceptance-engineering` |
+| Need to optimize/audit Acceptance Infra | Let business evidence drive framework readiness | `pt-acceptance-infra-engineering` |
+| Need business Domain Acceptance injection/proof | Infer onboarding or start from a Gate | `pt-acceptance-engineering` |
 | Need to commit | `git commit -m "stuff"` | `pt-github-commit` |
 | Need to create PR | `gh pr create` bare | `pt-github-pr` |
 | Need review | Self-approve | `pt-github-review` |
@@ -205,7 +206,7 @@ When starting new work:
 |--------|-------|-----------|
 | New product/module/capability, workflow redesign, or benchmark rebuild | PRODUCT | Product outcome and acceptance are not yet defined |
 | Add/complete Acceptance for an existing module | CROSS-STAGE | Invoke `pt-acceptance-engineering`; its gap matrix determines PRODUCT, DESIGN, PLAN, EXECUTE, or REVIEW |
-| Upgrade Acceptance Core, Driver, Fixture, Harness, Evidence, or environment lifecycle | DESIGN | Invoke `pt-acceptance-engineering`, then architecture design unless an accepted design and plan cover the exact upgrade |
+| Optimize or audit Acceptance Core, planner, validator, runner, Evidence Store, generic lifecycle, or framework tooling | CROSS-STAGE | Invoke `pt-acceptance-infra-engineering`; business injection gaps are non-blocking handoffs |
 | Product accepted; needs new boundary / ownership / contract decision | DESIGN | Architecture not yet defined |
 | Product and architecture accepted; needs implementation breakdown | PLAN | Accepted contracts need an execution plan |
 | Plan exists and accepted | EXECUTE | Ready to implement |
@@ -268,8 +269,10 @@ pt-god-view (methodology OS / entry point)
   │     └── pt-context-anchor (plan-owned anchor + verified status projection)
   │
   ├── ACCEPTANCE cross-stage entry
+  │     ├── pt-acceptance-infra-engineering
+  │     │     └── framework-only contracts, lifecycle, tooling, and self-validation
   │     └── pt-acceptance-engineering
-  │           ├── PRODUCT / DESIGN / PLAN / EXECUTE dispatch
+  │           ├── business Domain injection and proof
   │           ├── pt-dev-runtime-handoff (runtime evidence)
   │           └── pt-quality-check (review evidence)
   │

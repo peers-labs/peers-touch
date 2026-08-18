@@ -60,6 +60,13 @@ If no target is available, ask for one. Do not produce a generic checklist.
 8. Invoke `pt-acceptance-gap-detector` for the exact readiness claim. A
    detector gap makes `Ready for pt-github-review: no`.
 
+For Acceptance Infra changes, classify capability evidence by direction:
+
+- `acceptance_core_self_validation`: blocking Infra readiness evidence.
+- `product_domain_validates_acceptance`: informational reverse evidence.
+- Business Domain injection/proof gaps: report separately; never block Infra
+  unless they expose a defect in the generic injection mechanism.
+
 ## Evidence Rules
 
 - A gate that did not run is `unproven`, never `passed`.
@@ -69,6 +76,7 @@ If no target is available, ask for one. Do not produce a generic checklist.
 - `acceptance-validate` without `--require-proven` proves structure only.
 - Environment-dependent gates (`fedp5`, Desktop gateway, browser, simulator)
   are evidence requests unless the environment is actually available.
+- Business `FAILED/BLOCKED/UNPROVEN` is not an Acceptance Infra failure.
 
 ## Output
 
