@@ -36,6 +36,44 @@ On a named failure state:
 6. Locate existing contract IDs, Registry rules, Gate definitions, Gate
    implementations, Fixtures, Harnesses, Drivers, and latest evidence.
 7. Separate facts found in source from inferred gaps.
+8. **Classify ownership of every touched file** using the Responsibility
+   Ownership Rule below. Emit the classification artifact before proceeding.
+
+### Responsibility Ownership Rule
+
+Ownership is determined by **what the code decides**, not where it lives or how
+many lines it has.
+
+| Signal | Does NOT determine ownership |
+|--------|------------------------------|
+| File path under `tooling/acceptance/` | Business Gate implementations live here too |
+| Large line count or shared by multiple Gates | Domain-local composition, not Infra |
+| Reused lifecycle (login, launch, cleanup) | Shared runner within one Domain is still business |
+| Called "runner" or "harness" | Only generic abstractions are Infra |
+
+A file is **Acceptance Infra** only if it:
+
+- Defines a generic contract, schema, or extension point consumed by multiple
+  independent Domains without modification.
+- Implements planner, validator, runner dispatch, Evidence Store, or report
+  semantics that are Domain-neutral.
+- Would break ALL Domains if removed, not just one.
+
+A file is **business injection** if it:
+
+- Contains product-specific journeys, assertions, or scenarios.
+- Maps actors/roles/credentials to a specific Domain.
+- Implements Gate logic that only one Domain exercises.
+- Would break only one Domain if removed.
+
+**Canonical misclassification example**: `native_visible_runner.py` under
+`tooling/acceptance/gates/chat/` is ~1200 lines shared by 4+ Chat journeys.
+It is NOT Infra because it contains Chat-specific actor allocation, Chat
+journey dispatch, Chat provisioner consumption, and Chat report naming. It
+is Domain-local shared infrastructure owned by the Chat business module.
+
+If classification is ambiguous, emit `ACCEPTANCE_OWNERSHIP_MISCLASSIFIED` and
+stop. Do not proceed with implementation under the wrong ownership.
 
 ### Commands
 
@@ -88,12 +126,16 @@ Emit `ACCEPTANCE_REQUEST_CLASSIFIED` and `ACCEPTANCE_SCOPE_INVENTORIED`.
   contracts disagree.
 - `ACCEPTANCE_EXISTING_WORK_UNRESOLVED`: active plan or branch ownership is
   unknown.
+- `ACCEPTANCE_OWNERSHIP_MISCLASSIFIED`: a file or request was classified under
+  the wrong responsibility plane (e.g. business injection labeled as Infra, or
+  Infra labeled as business). Stop and reclassify before proceeding.
 
 ### Exit Criteria
 
 - Mode and smallest valid Acceptance unit are explicit.
 - Truth owner, receiver, surface, and runtime cells are source-backed.
 - Existing assets and evidence have been inventoried.
+- Every touched file has an explicit ownership classification (Infra or Business).
 - Every uncertainty is either resolved or represented by a named failure state.
 
 ## Step 2. Build The Coverage Gap Matrix
