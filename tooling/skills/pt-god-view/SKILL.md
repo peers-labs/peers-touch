@@ -8,7 +8,7 @@ description: >
   any time the agent should operate under the full Peers-Touch methodology.
 stage: "orchestrator"
 requires: []
-produces: ["stage-aware reasoning", "correct skill dispatch", "active_work updates"]
+produces: ["stage-aware reasoning", "correct skill dispatch", "active_work updates", "Context Anchor projection"]
 ---
 
 # God View
@@ -72,7 +72,7 @@ under methodology: proper edits, proper checks, proper commits.
 ```
 Read project_memory.md → active_work registry table
 Match user's intent to a registry entry (by plan name, keyword, or #id)
-If resuming: locate plan file path + stage + current_step
+If resuming: locate plan → invoke pt-context-anchor → verify worktree/branch/stage/current_step
 If new multi-step: classify (§4) and add to registry
 ```
 
@@ -138,8 +138,10 @@ The agent must NOT do the work itself when a skill exists for it:
 | Need to design architecture | Write design ad-hoc | `pt-architecture-design-methodology` |
 | Need to break down into steps | List steps from memory | `pt-architecture-execution-methodology` |
 | Need to write plan to file | Just dump markdown | `pt-plan-and-document` |
+| Need status, resume, handoff, or progress context | Reconstruct from chat | `pt-context-anchor` |
 | Need to implement planned step | Code without checking plan | `pt-execution-plan-guardian` |
-| Need to add, complete, upgrade, or audit Acceptance | Infer onboarding or start from a Gate | `pt-acceptance-engineering` |
+| Need to optimize/audit Acceptance Infra | Let business evidence drive framework readiness | `pt-acceptance-infra-engineering` |
+| Need business Domain Acceptance injection/proof | Infer onboarding or start from a Gate | `pt-acceptance-engineering` |
 | Need to commit | `git commit -m "stuff"` | `pt-github-commit` |
 | Need to create PR | `gh pr create` bare | `pt-github-pr` |
 | Need review | Self-approve | `pt-github-review` |
@@ -204,7 +206,7 @@ When starting new work:
 |--------|-------|-----------|
 | New product/module/capability, workflow redesign, or benchmark rebuild | PRODUCT | Product outcome and acceptance are not yet defined |
 | Add/complete Acceptance for an existing module | CROSS-STAGE | Invoke `pt-acceptance-engineering`; its gap matrix determines PRODUCT, DESIGN, PLAN, EXECUTE, or REVIEW |
-| Upgrade Acceptance Core, Driver, Fixture, Harness, Evidence, or environment lifecycle | DESIGN | Invoke `pt-acceptance-engineering`, then architecture design unless an accepted design and plan cover the exact upgrade |
+| Optimize or audit Acceptance Core, planner, validator, runner, Evidence Store, generic lifecycle, or framework tooling | CROSS-STAGE | Invoke `pt-acceptance-infra-engineering`; business injection gaps are non-blocking handoffs |
 | Product accepted; needs new boundary / ownership / contract decision | DESIGN | Architecture not yet defined |
 | Product and architecture accepted; needs implementation breakdown | PLAN | Accepted contracts need an execution plan |
 | Plan exists and accepted | EXECUTE | Ready to implement |
@@ -218,20 +220,9 @@ implementation of something already accepted and planned?"
 
 ## 5. Status Display
 
-When asked for status or resuming:
-
-```
-## Current Work
-
-| # | Work | Stage | Step | Branch | Last Active |
-|---|------|-------|------|--------|-------------|
-| 1 | Provider Station Ownership Phase 1 | EXECUTE | Step 1 | main | 2026-07-23 |
-
-Currently at: EXECUTE stage, Step 1 (Proto generation).
-Next action: invoke pt-execution-plan-guardian to execute Step 1.
-
-Continue?
-```
+When asked for status or resuming, invoke `pt-context-anchor`, verify actual Git
+context, and return its single copyable fenced projection as the final response
+section. Never reconstruct progress from chat history.
 
 ---
 
@@ -274,9 +265,14 @@ When showing status, flag entries with `last_session` >14 days:
 ```
 pt-god-view (methodology OS / entry point)
   │
+  ├── CONTEXT synchronization
+  │     └── pt-context-anchor (plan-owned anchor + verified status projection)
+  │
   ├── ACCEPTANCE cross-stage entry
+  │     ├── pt-acceptance-infra-engineering
+  │     │     └── framework-only contracts, lifecycle, tooling, and self-validation
   │     └── pt-acceptance-engineering
-  │           ├── PRODUCT / DESIGN / PLAN / EXECUTE dispatch
+  │           ├── business Domain injection and proof
   │           ├── pt-dev-runtime-handoff (runtime evidence)
   │           └── pt-quality-check (review evidence)
   │
@@ -311,5 +307,6 @@ pt-god-view (methodology OS / entry point)
 2. **Methodology over speed** — when active, the agent follows the system even if it's "slower" than freestyling.
 3. **Show reasoning** — state which stage, which skill, why, before acting.
 4. **Delegate to skills** — god-view decides WHO to call, never does the work itself.
-5. **Track state** — update active_work registry on every meaningful state change.
+5. **Track state** — update the plan-owned Context Anchor first, then synchronize
+   active_work and status projections on every meaningful state change.
 6. **Respect gates** — never skip a review boundary.

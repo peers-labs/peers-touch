@@ -2,8 +2,8 @@
 name: "pt-execution-plan-guardian"
 description: "Executes an approved plan without architecture or scope drift, preserving dependency order, cutovers, gates, and evidence. Invoke only after a formal plan exists when implementing, continuing, merging, or reporting planned work."
 stage: "EXECUTE"
-requires: ["accepted execution plan with status table"]
-produces: ["code changes", "tests", "evidence", "updated plan status"]
+requires: ["accepted execution plan with status table and Context Anchor"]
+produces: ["code changes", "tests", "evidence", "updated plan status", "synchronized Context Anchor"]
 next: "pt-github-commit"
 ---
 
@@ -157,11 +157,15 @@ Before any code edit, verify:
 - Product status is accepted/active where product design is required.
 - Architecture status is accepted/active where architecture is required.
 - A formal execution plan exists and is approved.
+- The plan contains a `Context Anchor` maintained through `pt-context-anchor`.
+- Anchor worktree and branch match `pwd`, Git root, and current branch.
 - Requested work maps to a plan workstream/task ID.
 - Dependencies for that task are complete.
 - Required cutover, deletion, gates, and evidence are defined.
 
 If not, return the matching blocked/amendment state from the Stage Contract.
+If only the Anchor is missing or stale, reconcile it before editing; do not
+reconstruct progress from conversation memory.
 
 ### 1. Find Plan Sources
 
@@ -254,6 +258,21 @@ independent units and check whether they can run concurrently:
 - Do not rename ad hoc work as formal plan completion.
 - Do not report readiness higher than the gates prove.
 - Keep note of gaps discovered during execution.
+- Synchronize the plan status table and Context Anchor after every meaningful
+  step, evidence, blocker, scope, worktree, branch, or stage change.
+
+### 4.1 Context Synchronization Checkpoints
+
+Invoke `pt-context-anchor`:
+
+1. before the first tracked edit;
+2. when a workstream or step starts;
+3. immediately after verification passes or fails;
+4. when worktree, branch, scope, blocker, or decision changes;
+5. before progress/readiness reports and session handoff.
+
+Update `active_work`, todos, dashboards, and chat only after the durable plan
+Anchor is synchronized.
 
 ### 5. Report With Evidence
 
@@ -281,6 +300,9 @@ non-trivial:
 
 For readiness reports with predefined gates, use the gate table from the
 readiness document instead of a free-form claim.
+
+End every tracked progress, readiness, blocker, or handoff response with the
+single copyable fenced projection required by `pt-context-anchor`.
 
 ## Claim Rules
 

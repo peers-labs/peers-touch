@@ -1,6 +1,6 @@
 # Acceptance Evidence Store — Execution Plan
 
-> **Status**: approved
+> **Status**: complete — merged in PR #91
 > **Version**: v1.0
 > **Created**: 2026-08-17 | **Updated**: 2026-08-17
 > **Owner**: Acceptance Core Evidence Store
@@ -16,17 +16,17 @@
 | Tracking source | This plan §10 Acceptance Scenarios and §13 Status |
 | Worktree | `<repo-root>` |
 | Branch | `design/acceptance-runtime-provisioning-contract` |
-| Stage | `EXECUTE` |
-| Current workstream | `ES-W4: Standalone And Domain Writer Cutover` |
-| Current step | Migrate remaining standalone writers and cross-Gate readers to logical artifact roles |
-| Progress | 7/8 workstreams evidence-complete; ES-W8 delivery remains blocked; Chat G15 remains out of scope and `FAILED/UNPROVEN` |
-| Last completed | Agent-led review 2/2 found no remaining Acceptance Core P0/P1; commits pushed and Draft PR #91 updated |
-| Current action | Hold PR #91 as Draft because required Messaging product evidence remains UNPROVEN |
-| Next action | Product owner must provide exact-source Desktop Gateway/Native proof or an explicit reviewed waiver |
-| Blockers | AS-ES-09 is `BLOCKED/UNPROVEN` by Station/source commit mismatch; Gap Detector requires five Messaging product Gates that this Acceptance-only change does not claim |
-| Decisions required | Product/owner waiver or future product-owned proof is required before the Gap Detector can permit ready-to-merge |
-| Evidence | Evidence + Native static: PASS 56/56; helper: PASS 3/3; Core/Provisioning: PASS 116/116; Desktop scripts: PASS 179/179; final CI bundle: PASS 5/5; PR checks except expected Review Framework/Vercel: PASS; representative env Gate: `BLOCKED/UNPROVEN`; Gap Detector: 5 blocking env Gates |
-| Last updated | 2026-08-17 15:22 CST |
+| Stage | `complete` |
+| Current workstream | Evidence Store delivery closed |
+| Current step | none |
+| Progress | 8/8 framework workstreams delivered; Chat product proof remains out of scope and `FAILED/UNPROVEN` |
+| Last completed | PR #91 merged the external Evidence Store and Runtime Provisioning framework into `master` at `93691c088` |
+| Current action | none; framework delivery is complete |
+| Next action | Product-owned Gates may consume the merged Evidence Store without changing its completion state |
+| Blockers | none for this closed framework plan |
+| Decisions required | none |
+| Evidence | Evidence + Native static PASS 56/56; helper PASS 3/3; Core/Provisioning PASS 116/116; Desktop scripts PASS 179/179; final CI bundle PASS 5/5; representative environment failure remained durably source-bound and `UNPROVEN` |
+| Last updated | 2026-08-17 |
 
 ---
 
@@ -499,7 +499,7 @@ Ready-to-merge requires:
 6. Secret scan has zero raw secret/canary matches.
 7. Quality, Completion, and agent-led review have no Acceptance Core P0/P1.
 8. PR body names Chat G15 as `FAILED/UNPROVEN`, never PASS.
-9. PR is ready-to-merge but remains unmerged per user instruction.
+9. PR #91 merged after owner review separated framework delivery from product Gate proof.
 
 ## 13. Status
 
@@ -512,7 +512,7 @@ Ready-to-merge requires:
 | ES-W5 Contracts/Operations | done | Make/CI/skills/docs migrated; workflow/catalog parse and skill-check PASS |
 | ES-W6 Atomic Cutover/Delete | done | Legacy constants and reports owner deleted; no recreation after tests |
 | ES-W7 Failure/Isolation | done | AS-ES-02/03/04/05/06/07 PASS; redaction canary and zero fallback covered |
-| ES-W8 End-To-End/Delivery | blocked | Local chain PASS; representative env Gate and five Messaging product Gates remain UNPROVEN; PR remains Draft |
+| ES-W8 End-To-End/Delivery | done | Framework delivery merged in PR #91; representative env evidence remained durably source-bound while Messaging product Gates stayed explicitly UNPROVEN |
 
 ## 14. Review Prompt
 

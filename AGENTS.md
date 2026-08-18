@@ -3,7 +3,7 @@
 > Single authoritative source for all AI coding agents.
 > `docs/.agent/<platform>.md` is the agent entry layer: use it to find the real source documents, hard constraints, and verification commands.
 >
-> Last updated: 2026-04-12
+> Last updated: 2026-08-18
 
 ---
 
@@ -136,6 +136,7 @@ Example:
 7. **Desktop debug uses Make** — During investigation, lifecycle debugging, browser/app E2E, applet runtime debugging, or acceptance triage, start Desktop through `make desktop` (or `make desktop-web` only when the task explicitly needs the browser shell). Do **not** switch to hard packaged `.app` / `tauri build` / release bundle flows unless the user explicitly asks for packaging, release validation, installer validation, or a package-only acceptance gate. See `docs/knowledge/playbooks/desktop-debug-runtime.md`.
 8. **UI Identity first** — For any UI/UX design, visual refactor, screenshot review, layout issue, button/style issue, or client UI code change, first read `docs/client/common/ux-design-methodology.md`, `docs/client/common/ui-identity/README.md`, and the closest module contract under `docs/client/common/ui-identity/modules/`. Do not rely on ad-hoc component-library defaults.
 9. **Service coordination first** — For cross-service issues (relay mount, DHT bootstrap, federation resolve failures, Station↔Relay↔Desktop connectivity), consult `docs/architecture/service-coordination.md` before debugging. It defines the dependency DAG, credential lifecycle, and troubleshooting index.
+10. **Acceptance Infra ownership first** — Acceptance Core, planner, validator, runner, Evidence Store, lifecycle, and framework tooling work MUST use `pt-acceptance-infra-engineering`. Infra defines and validates injection contracts; it MUST NOT create, repair, weaken, or complete business Domain injection. Business Acceptance onboarding and proof remain with `pt-acceptance-engineering`.
 
 ---
 
@@ -161,6 +162,16 @@ Use domain-specific loggers only (see platform docs for specifics).
 - Never hardcode keys, tokens, passwords.
 - All secrets via environment variables.
 - `.gitignore` must cover: `*.key`, `*.pem`, `*.local.yml`, `*.jks`, `*.keystore`.
+
+### No User-Home Absolute Paths
+
+- Committed docs, plans, prompts, reports, knowledge, skills, fixtures, and
+  configuration must not contain paths rooted in a developer or CI user's home.
+- Use repo-relative paths for repository content.
+- Use `<repo-root>`, `<workspace-root>`, `<runtime-home>`, or `$HOME` only when
+  a portable placeholder is semantically required.
+- Runtime worktree verification may use the real absolute path, but persisted
+  Context Anchors record `<repo-root>` plus the verified branch.
 
 ### No Mocking
 
@@ -326,12 +337,14 @@ Current project skills:
 |-------|---------|
 | `pt-dev-workflow` | Drive a complete development task from planning to PR |
 | `pt-god-view` | God view: explicitly invoked to show global work status, route to correct stage skill, manage work lifecycle |
+| `pt-acceptance-infra-engineering` | Optimize and audit Acceptance Infra while enforcing the responsibility firewall against business Domain injection |
 | `pt-acceptance-engineering` | Deterministically add, complete, upgrade, or audit Acceptance contracts, runtime scenarios, gates, and evidence |
 | `pt-acceptance-gap-detector` | Enforce "No Silent Pass" iron law — detect 25+ bypass patterns (mocks, stale evidence, single-actor, hardcoded creds, downgraded gates) before marking any claim proven |
 | `pt-dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
 | `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
 | `pt-architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
 | `pt-branch-conflict-guardian` | Guide semantic conflict resolution across parallel branches: separate mechanical conflicts from ownership/behavior divergence, escalate unclear intent, and verify integrated behavior |
+| `pt-context-anchor` | Maintain the plan-owned Context Anchor and synchronize verified worktree, branch, stage, progress, evidence, blockers, and next action |
 | `pt-execution-plan-guardian` | Keep execution, continuation, merge, and readiness reports tied to plan sources, scope boundaries, gates, and evidence |
 | `pt-official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
 | `pt-desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
@@ -386,8 +399,8 @@ Any non-trivial development task (cross-module, new feature, architecture change
 | Stage | Entry condition | Skill(s) to invoke | Gate (exit condition) | Artifact |
 |-------|----------------|--------------------|-----------------------|----------|
 | **DESIGN** | New architecture / boundary / ownership decision needed | `pt-architecture-design-methodology` | Architecture review prompt generated → user initiates review → review passes | `docs/architecture/<module>/` |
-| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (analysis) → `pt-plan-and-document` (落盘 + review prompt) | Plan review prompt generated → user initiates review → review passes | `execution-plans/<plan>.md` |
-| **EXECUTE** | Plan accepted | `pt-execution-plan-guardian` | `pt-completion-auditor` passes OR completion criteria in plan all checked | Code + tests + evidence |
+| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (analysis) → `pt-plan-and-document` (落盘 + Context Anchor + review prompt) | Plan review prompt generated → user initiates review → review passes | `execution-plans/<plan>.md` |
+| **EXECUTE** | Plan accepted | `pt-context-anchor` → `pt-execution-plan-guardian` | `pt-completion-auditor` passes OR completion criteria in plan all checked | Code + tests + evidence + synchronized Context Anchor |
 | **DELIVER** | Code complete, tests pass | `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
 **Dispatch rules:**
@@ -397,6 +410,10 @@ Any non-trivial development task (cross-module, new feature, architecture change
 3. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN, enter directly at EXECUTE via `pt-small-fix-discipline`.
 4. **Stage detection**: check `active_work` in project memory → read the referenced execution plan status table → determine current stage.
 5. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?"
+6. **Acceptance ownership dispatch**:
+   - Core/runtime/planner/validator/runner/Evidence Store/framework optimization → `pt-acceptance-infra-engineering`.
+   - Domain/Feature/Capability/Registry rule/concrete Gate/Environment/Provisioner/Fixture/product proof → `pt-acceptance-engineering`.
+   - Mixed requests MUST be split. Infra reports business gaps as `BUSINESS_INJECTION_REQUIRED`; it does not implement them.
 
 ### 13.6 Session Continuity Protocol
 
@@ -405,16 +422,17 @@ Any non-trivial development task (cross-module, new feature, architecture change
 When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状态" / "resume" etc.):
 
 1. Read `project_memory.md` → check `active_work` registry.
-2. If one entry with `stage != complete`:
+2. Open the referenced plan and verify its `Context Anchor` through `pt-context-anchor`.
+3. If one entry with `stage != complete`:
    - Report in one sentence: current plan, stage, step.
    - Suggest the next action (which skill to invoke).
    - Wait for user confirmation.
-3. If multiple entries with `stage != complete`:
+4. If multiple entries with `stage != complete`:
    - List all active entries (plan name, stage, branch).
    - Ask: "Which work do you want to continue?"
    - Wait for user selection.
-4. If all entries are `complete` or registry is empty → offer to start new task.
-5. Dispatch to the correct stage skill per §13.5.
+5. If all entries are `complete` or registry is empty → offer to start new task.
+6. Dispatch to the correct stage skill per §13.5.
 
 **active_work registry schema** (maintained in `project_memory.md`):
 

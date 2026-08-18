@@ -40,7 +40,34 @@ PR review, but write scope remains bound to the active worktree.
 
 ---
 
-## 3) Use correct paths
+## 3) Route Acceptance work by ownership
+
+Before changing Acceptance code, classify responsibility:
+
+| Work | Required Skill | Ownership |
+|---|---|---|
+| Core contracts, planner, validator, runner, reporter, Evidence Store, generic lifecycle, registration mechanism, framework self-tests | `pt-acceptance-infra-engineering` | Acceptance Infra |
+| Domain, Feature, Capability, Registry rule, concrete Gate, Environment, Provisioner, Fixture, actor/client role, credential reference, product evidence | `pt-acceptance-engineering` | Business module injection |
+
+Rules:
+
+- Infra defines how business modules inject; business modules provide the
+  injected content.
+- A path under `tooling/acceptance/` is not automatically Infra-owned.
+- Missing business injection blocks only its Domain and is reported as
+  `BUSINESS_INJECTION_REQUIRED`.
+- Business Gate `FAILED`, `BLOCKED`, or `UNPROVEN` does not block Acceptance
+  Infra completion.
+- Mixed requests are split into separate work items and ownership contexts.
+- Infra Agents must not add placeholders, mocks, default identities, concrete
+  actor roles, or weakened product assertions to make framework checks pass.
+
+Architecture source:
+`docs/architecture/acceptance-framework/decisions.md` D-12.
+
+---
+
+## 4) Use correct paths
 
 - Desktop: `apps/desktop`
 - Mobile Android: `apps/mobile/android`
@@ -51,7 +78,7 @@ PR review, but write scope remains bound to the active worktree.
 
 ---
 
-## 4) Implementation sequence
+## 5) Implementation sequence
 
 1. Define/adjust contracts (`model/domain` or desktop tauri contracts)
 2. Implement backend/station or tauri command layer
@@ -61,7 +88,7 @@ PR review, but write scope remains bound to the active worktree.
 
 ---
 
-## 5) Verification commands
+## 6) Verification commands
 
 ### Desktop
 
@@ -97,7 +124,7 @@ go test ./...
 
 ---
 
-## 6) Completion criteria
+## 7) Completion criteria
 
 Only mark task done when:
 - Implementation is complete

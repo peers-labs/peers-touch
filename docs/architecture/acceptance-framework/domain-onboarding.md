@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-06-03 | **Updated**: 2026-08-16
+> **Created**: 2026-06-03 | **Updated**: 2026-08-17
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -57,6 +57,62 @@ Agent 收到“新增、补齐、升级或审计 Acceptance”的请求时，必
 - `tooling/acceptance/templates/domain.yaml`
 - `tooling/acceptance/templates/capability.yaml`
 - `tooling/acceptance/templates/feature.yaml`
+
+---
+
+## 2.1 Gate Environment Wiring
+
+Gate catalog、environment contract 和 Provisioner 必须形成一个可执行闭包。
+`acceptance-run.py` 直接从 `gates.yaml` 发现 Gate；独立 Make target 是可选的人机
+入口，不是 Gate discovery 的前置条件。
+
+### All Gates
+
+| Step | File | Required change |
+|------|------|-----------------|
+| Stable command | `tooling/acceptance/gates.yaml` | `command` 必须能从 repo root 执行；优先 `python3 -m <module>`，直接执行文件时由 runner 自行完成 import bootstrap |
+| Gate tier | `tooling/acceptance/gates.yaml` | 声明 `ci-structure`、`ci-cheap`、`local-evidence`、`env-evidence`、`nightly` 或 `release` |
+| Optional Make entry | `tooling/make/acceptance.mk` | 仅当该 Gate 需要稳定的人类/CI 快捷入口时添加；普通 plan/run discovery 不要求逐 Gate Make target |
+
+### Non-Local Gates
+
+每个 `environment != "local"` 的 Gate 还必须完成：
+
+| Step | File | Required change |
+|------|------|-----------------|
+| Provisioner binding | `tooling/acceptance/gates.yaml` | 设置 `"provisioner": "<environment-id>"`，且必须与 `environment` 完全一致 |
+| Environment contract | `tooling/acceptance/environments/<environment-id>.yaml` | 文件存在、可解析，且 contract `id` 与文件名/environment 一致 |
+| Provisioner registration | `tooling/acceptance/provisioners/__init__.py` | `_PROVISIONERS` 能按 environment ID 解析 Provisioner class |
+| Gate roles | Domain Provisioner | 注册 Gate 所需 actor、client、Fixture 和 credential roles；不需要的资源必须显式为空而不是由 Gate 猜测 |
+| Runtime consumption | Gate runner | 只消费 Provisioner 生成的 immutable Runtime Manifest，不自行部署、猜测身份或回退环境变量 |
+
+Native Tauri Gate 还必须通过 `acceptance-driver-build` 产出专用 binary，并通过
+`tooling/acceptance/drivers/tauri.py` 的公开入口解析 binary。具体路径属于 Driver
+contract，不应复制到业务 runner。
+
+### Structural Verification
+
+`make acceptance-validate DOMAIN=<domain>` 只检查所选 Domain 的 Capability /
+Feature / Gate closure，并 fail closed：
+
+- `STRUCTURAL_GAP`：Feature、Capability 或 Domain validation Gate 引用了不存在的
+  Gate；
+- `PROVISIONING_WIRING_MISSING`：非 local Gate 未声明
+  `provisioner == environment`；
+- `ENVIRONMENT_CONTRACT_MISSING`：缺少 environment contract；
+- `ENVIRONMENT_CONTRACT_INVALID`：contract 无法解析或 ID 不一致；
+- `PROVISIONER_UNREGISTERED`：contract 无法从 Provisioner registry 解析。
+
+这些校验没有 bypass 参数。某业务 Domain 的注入缺口只阻塞该 Domain，不得阻塞
+无关 Domain。
+
+验证闭环：
+
+1. `make acceptance-validate DOMAIN=<domain>` 通过结构校验。
+2. `make acceptance-plan ACCEPTANCE_RANGE=HEAD` 能从 owned paths 选择 Gate。
+3. `python3 tooling/scripts/acceptance-run.py --gate <gate-id>` 在资源缺失时产生
+   structured `BLOCKED/UNPROVEN`，资源就绪时产生真实 `PASS/FAIL`。
+4. 若存在可选 Make target，其行为必须等价于同一 `acceptance-run --gate` 入口。
 
 ---
 

@@ -555,6 +555,48 @@ Desktop Rust receipt/decrypt path
 - symlink、dual-write或legacy compatibility owner；
 - 迁移旧report作为当前产品proof。
 
+### 4.11 Acceptance Infra 与业务注入责任防火墙
+
+Acceptance Infra 与业务 Domain 使用两个独立责任平面。责任按语义判断，不按目录
+判断：
+
+| Acceptance Infra | 业务模块注入 |
+|---|---|
+| Contract schema、extension interface、typed error | Domain / Feature / Capability 实例 |
+| Planner、Validator、Runner、Reporter | 产品 assertion、negative constraint、truth source |
+| Evidence Store 与 artifact lifecycle | 产品 evidence 与 proof state |
+| Provisioner / Driver / Fixture / Harness 抽象 | 具体 Environment、Provisioner、Fixture、角色与凭据 |
+| Registry / Gate / Environment 注册机制与结构校验 | Registry rules、Gate entries 与 Gate implementations |
+| 通用 timeout、cancel、cleanup、isolation、concurrency | 产品失败修复与 receiver-visible proof |
+| synthetic fixtures 与 framework self-validation | 真实业务 runtime 和数据集 |
+
+Infra 可以验证注入是否符合 contract，但不得替业务模块创建、修复、降级或伪造注入。
+缺失注入使用：
+
+```text
+BUSINESS_INJECTION_REQUIRED
+  owner domain
+  missing contract slot
+  expected schema/interface
+  affected Domain
+  Infra impact: non-blocking
+```
+
+Readiness 规则：
+
+- `acceptance_core_self_validation` 是 Infra merge readiness 的权威 capability。
+- `product_domain_validates_acceptance` 是附加反向证据，默认只报告，不阻塞每次
+  Infra PR。
+- `acceptance_validates_product` 与具体业务 Gate 的状态只约束对应业务 Domain。
+- 业务 `FAILED`、`BLOCKED` 或 `UNPROVEN` 不能转换成 Infra failure。
+- 只有通用注入机制、schema、validator、runner 或 evidence lifecycle 本身有缺陷时，
+  才能阻塞 Infra readiness。
+
+Agent 对 Acceptance Infra 的优化和审计必须使用
+[`pt-acceptance-infra-engineering`](../../../tooling/skills/pt-acceptance-infra-engineering/SKILL.md)。
+业务接入与产品证明继续使用
+[`pt-acceptance-engineering`](../../../tooling/skills/pt-acceptance-engineering/SKILL.md)。
+
 ---
 
 ## 5. 端点 / API
@@ -566,6 +608,7 @@ make acceptance-plan
 make acceptance-run
 make acceptance PLAN=<plan-path>
 make acceptance-report
+make acceptance-infra-validate
 make acceptance-validate
 make acceptance-validate DOMAIN=chat
 make acceptance-validate DOMAIN=federation
@@ -577,15 +620,27 @@ make acceptance-federation-report
 make acceptance-federation-mutual-validation
 ```
 
-其中 `acceptance-validate` 是项目级 domain validation 入口；不传 `DOMAIN` 时验证 `tooling/acceptance/domains/index.yaml` 中所有 active domains。`acceptance-validate DOMAIN=<domain>` 验证单个 domain profile。默认模式验证结构自洽；加 `--require-proven` 时要求 latest run results 证明 required gates 已通过。它必须证明：
+其中 `acceptance-infra-validate` 只验证
+`acceptance_core_self_validation` capability 和通用 Infra closure，不读取业务 Domain
+注入作为完成条件。`acceptance-validate` 是项目级业务 domain validation 入口；不传
+`DOMAIN` 时验证 `tooling/acceptance/domains/index.yaml` 中所有 active domains。
+`acceptance-validate DOMAIN=<domain>` 验证单个 domain profile。默认模式验证结构自洽；
+加 `--require-proven` 时要求 latest run results 证明 required gates 已通过。它必须证明：
 
 - capability graph 自洽。
 - domain profile 引用的 capabilities 存在。
 - feature contracts 引用存在。
-- required gates 在 gate catalog 中存在。
+- 当前 domain 的 Capability、Feature 和 validation Gate 都在 gate catalog 中存在；
+  缺失时以 `STRUCTURAL_GAP` fail closed。
+- 当前 domain 的每个非 `local` Gate 都声明
+  `provisioner == environment`，对应 environment contract 存在、可解析、ID
+  一致且能从 Provisioner registry 解析。
 - synthetic paths 能通过 registry 命中期望 gates。
 - 在 `--require-proven` 模式下，最近 run results 中该 domain 的 required gates 通过。
 - report 能输出 proven / unproven scope。
+
+结构校验以当前 domain 的 Capability / Feature / Gate 闭包为边界，不扫描无关
+domain 的业务接入缺口，也不提供 bypass 参数。
 
 `make acceptance PLAN=<plan-path>` 是显式 gate bundle 的稳定入口。环境由调用前已激活的 profile / runtime 决定；plan 只声明要运行哪些 gates，gate 脚本只执行自身检查，不承载环境选择。Phase 型验收应新增或更新 plan 文件，而不是新增 phase-specific Make target。
 

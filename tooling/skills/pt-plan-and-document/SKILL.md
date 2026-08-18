@@ -3,8 +3,8 @@ name: "pt-plan-and-document"
 description: "规划落盘与计划追踪。当用户要求把讨论结果转为正式设计文档/执行计划/任务清单并落盘追踪时调用。教 agent 找到项目文档规范、选对落盘位置、按标准结构输出。"
 stage: "PLAN"
 requires: ["analysis output from pt-architecture-execution-methodology OR standalone planning request"]
-produces: ["execution plan file in correct location", "plan review prompt"]
-next: "pt-execution-plan-guardian"
+produces: ["execution plan file in correct location", "plan-owned Context Anchor", "plan review prompt"]
+next: "pt-context-anchor → pt-execution-plan-guardian"
 ---
 
 # 规划落盘与计划追踪（Plan & Document）
@@ -113,7 +113,19 @@ docs/architecture/<module>/
 ## 6. 验证方式
 ```
 
-### 4.3 设计文档推荐结构
+### 4.3 Context Anchor
+
+Every tracked execution plan must include exactly one `## Context Anchor`
+following `pt-context-anchor`. Initialize it from verified Git context and the
+plan status table:
+
+- persist Worktree as `<repo-root>`;
+- record the verified branch;
+- name one current workstream, current step, and next action;
+- distinguish `PASS`, `FAIL`, and `UNPROVEN` evidence;
+- update the Anchor with the detailed status table, never as a separate summary.
+
+### 4.4 设计文档推荐结构
 
 参照 `docs/global/architecture-document-standard.md` §5 各文件编写规范。
 
@@ -224,6 +236,7 @@ docs/architecture/<module>/
 - [ ] 文件命名遵循固定命名规则（不加模块前缀）
 - [ ] 顶部有完整元数据块
 - [ ] 结构清晰（背景/目标/方案/阶段/验收）
+- [ ] 执行计划包含一个与状态表一致的 `Context Anchor`
 - [ ] 最近 README.md 已更新链接
 - [ ] 已告知用户文档路径
 - [ ] 如有实施阶段，已标注当前状态

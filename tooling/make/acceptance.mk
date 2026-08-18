@@ -1,7 +1,7 @@
 # ─── Acceptance Framework ───────────────────────────────────────
 
 .PHONY: acceptance-plan acceptance-plan-self acceptance-run acceptance-run-ci acceptance-run-local-evidence \
-        acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate \
+        acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate acceptance-infra-validate \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-desktop-gateway \
         acceptance-chat-native-static acceptance-chat-native-two-client \
@@ -58,6 +58,9 @@ acceptance:
 
 acceptance-validate:
 	python3 tooling/scripts/acceptance-validate.py $(if $(DOMAIN),--domain $(DOMAIN),)
+
+acceptance-infra-validate:
+	python3 tooling/scripts/acceptance-validate.py --infra
 
 acceptance-coverage-report:
 	python3 tooling/scripts/acceptance-coverage-report.py

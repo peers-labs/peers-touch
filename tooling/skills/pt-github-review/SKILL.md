@@ -198,9 +198,11 @@ Treat these as blocking unless the user explicitly asks for exploratory review:
 | `logging-security` | logs tokens, passwords, secrets, or PII |
 | `architecture-boundary` | lower layer redefines architecture or platform ownership |
 | `duplicate-side-effect-import` | same dynamic import path appears 2+ times in a single file |
+| `user-home-absolute-path` | committed documentation-like text contains a developer or CI user-home absolute path instead of a repo-relative path or portable placeholder |
 
 Keywords intentionally present for freshness checks: hardcoded secrets, No mock,
-hardcoded-ui-string, silent error, generated, runtime projection, CODEOWNERS.
+hardcoded-ui-string, silent error, generated, runtime projection, CODEOWNERS,
+user-home-absolute-path.
 
 ## Operational Knowledge
 
@@ -222,6 +224,12 @@ Knowledge Delta Review:
 ## Acceptance Evidence
 
 Acceptance Framework proves product capability scope. It does not approve PRs.
+
+For Acceptance Infra PRs, judge merge readiness from
+`acceptance_core_self_validation` and framework evidence. Treat
+`product_domain_validates_acceptance` and business injection gaps as
+informational unless the generic injection mechanism itself is defective.
+Never require an Infra author to create or weaken business-owned injection.
 
 For impacted acceptance features:
 
