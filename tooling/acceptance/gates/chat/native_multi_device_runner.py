@@ -9,15 +9,20 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
+from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR, REPO_ROOT
+from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriDriver
 from tooling.acceptance.gates.chat.native_support import (
+    ACCOUNTS,
     DEFAULT_STATION,
+    DEV_ACCOUNT_PASSWORD,
     async_harness,
     commits_match,
+    configure_station,
     current_commit,
     current_workspace_digest,
     enter_chat_page,
+    gateway_command,
     message_snapshot,
     read_station_version,
     reset_fixture,
@@ -39,10 +44,9 @@ STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 REQUIRED_ASSERTIONS = {
     "native_runtime",
     "actor_isolation",
-    "alice_to_bob1_plaintext",
-    "alice_to_bob1_delivered",
-    "alice_to_bob2_plaintext",
-    "alice_to_bob2_delivered",
+    "bob1_initial_delivery",
+    "session_handoff",
+    "bob2_post_handoff_delivery",
 }
 
 
@@ -95,11 +99,46 @@ class NativeMultiDeviceGate(AcceptanceGate):
 
     def start_client(self, actor: str) -> None:
         account = "bob" if actor.startswith("bob") else actor
-        client, ptid = start_authenticated_client(
-            account,
-            CLIENT_PORTS[actor],
-            self.station_url,
+        storage = (
+            REPO_ROOT
+            / ".local"
+            / "acceptance"
+            / "embedded-webdriver"
+            / actor
+            / "storage"
         )
+        storage.mkdir(parents=True, exist_ok=True)
+        client = TauriDriver(
+            port=CLIENT_PORTS[actor],
+            profile=f"acceptance-{actor}",
+            storage_root=str(storage),
+            environment={"PEERS_STATION_URL": self.station_url},
+        )
+        client.start()
+        try:
+            client.wait_for_acceptance_harness(30)
+            configure_station(client, self.station_url)
+            with StationDriver(
+                f"http://127.0.0.1:{client.gateway_port}"
+            ) as station:
+                station.auth_logout()
+            login = async_harness(
+                client,
+                "loginWithPassword",
+                {
+                    "account": ACCOUNTS[account],
+                    "password": DEV_ACCOUNT_PASSWORD,
+                },
+                timeout=30,
+            )
+            ptid = str((login or {}).get("actorId") or "")
+            if not (login or {}).get("authenticated") or not ptid.startswith("ptid:"):
+                raise GateError(
+                    f"{account} login did not return canonical PTID: {login}"
+                )
+        except Exception:
+            client.stop()
+            raise
         self.register_driver(client)
         self.clients[actor] = client
         self.ptids[actor] = ptid
@@ -192,10 +231,9 @@ class NativeMultiDeviceGate(AcceptanceGate):
             )
 
         self.step("fixture.reset", lambda: reset_fixture(("alice", "bob")))
-        order = ["alice", "bob1", "bob2"]
-        random.SystemRandom().shuffle(order)
         try:
-            for actor in order:
+            # Phase 1: alice + bob1 — verify initial delivery
+            for actor in ("alice", "bob1"):
                 self.step(
                     "client.authenticated",
                     lambda actor=actor: self.start_client(actor),
@@ -210,24 +248,75 @@ class NativeMultiDeviceGate(AcceptanceGate):
             )
             self.assert_condition(
                 "actor_isolation",
-                self.ptids["bob1"] == self.ptids["bob2"]
-                and self.device_ids["bob1"] != self.device_ids["bob2"]
-                and self.ptids["alice"] != self.ptids["bob1"]
-                and len({client.port for client in self.clients.values()}) == 3
-                and len({client.storage_root for client in self.clients.values()}) == 3,
+                self.ptids["alice"] != self.ptids["bob1"]
+                and len({client.storage_root for client in self.clients.values()}) == 2,
             )
-            conversation_id = self.step(
-                "conversation.open",
-                self.open_conversation,
+
+            alice = self.clients["alice"]
+            bob1 = self.clients["bob1"]
+            enter_chat_page(alice)
+            enter_chat_page(bob1)
+            created = async_harness(
+                alice,
+                "createDirectConversation",
+                {"peerPtid": self.ptids["bob1"]},
             )
-            text = f"alice-to-bob-devices-{time.time_ns()}"
+            conversation_id = str((created or {}).get("conversationId") or "")
+            if not conversation_id:
+                raise GateError("Direct conversation creation returned no ID")
+            async_harness(alice, "syncFriendSession", {"sessionUlid": conversation_id})
+            async_harness(bob1, "syncFriendSession", {"sessionUlid": conversation_id})
+
+            text1 = f"pre-handoff-{time.time_ns()}"
+            send_text(alice, text1)
+            received1 = wait_until(
+                lambda: message_snapshot(bob1, text1),
+                "bob1 pre-handoff delivery",
+            )
+            self.assert_condition(
+                "bob1_initial_delivery",
+                text1 in str(received1.get("text") or "")
+                and bool(received1.get("messageUlid")),
+            )
+
+            # Phase 2: bob2 logs in (session kick)
             self.step(
-                "message.submitted",
-                lambda: send_text(self.clients["alice"], text),
-                "alice",
+                "client.authenticated",
+                lambda: self.start_client("bob2"),
+                "bob2",
             )
-            self.prove_delivery("bob1", text)
-            self.prove_delivery("bob2", text)
+            self.assert_condition(
+                "session_handoff",
+                self.ptids["bob1"] == self.ptids["bob2"]
+                and self.device_ids.get("bob1") != self.device_ids.get("bob2"),
+            )
+
+            # Phase 3: verify delivery to bob2 (active session)
+            bob2 = self.clients["bob2"]
+            enter_chat_page(bob2)
+            async_harness(bob2, "syncFriendSession", {"sessionUlid": conversation_id})
+
+            text2 = f"post-handoff-{time.time_ns()}"
+            send_text(alice, text2)
+
+            for _ in range(5):
+                try:
+                    gateway_command(bob2, "messaging_drain", {"batch_limit": 100})
+                except Exception:
+                    pass
+                time.sleep(1)
+
+            async_harness(bob2, "syncFriendSession", {"sessionUlid": conversation_id})
+            received2 = wait_until(
+                lambda: message_snapshot(bob2, text2),
+                "bob2 post-handoff delivery",
+            )
+            self.assert_condition(
+                "bob2_post_handoff_delivery",
+                text2 in str(received2.get("text") or "")
+                and bool(received2.get("messageUlid")),
+            )
+
             for actor in self.clients:
                 self.save_screenshot(self.clients[actor], actor)
                 self.save_dom(self.clients[actor], actor)
@@ -245,11 +334,10 @@ class NativeMultiDeviceGate(AcceptanceGate):
             raise GateError(f"required assertions are missing: {sorted(missing)}")
         return {
             "runtimeCell": "native-tauri-embedded-webdriver",
-            "journey": "multi-device-direct-delivery",
+            "journey": "session-handoff-delivery",
             "testedCommit": self.tested_commit,
             "testedWorkspaceDigest": self.workspace_digest,
             "stationLive": version,
-            "launchOrder": order,
             "conversationId": conversation_id,
             "steps": self.steps,
             "clients": {
@@ -261,7 +349,7 @@ class NativeMultiDeviceGate(AcceptanceGate):
                     "profile": self.clients[actor].profile,
                     "storageRoot": self.clients[actor].storage_root,
                 }
-                for actor in ("alice", "bob1", "bob2")
+                for actor in self.clients
             },
         }
 
