@@ -174,6 +174,7 @@ python3 tooling/scripts/acceptance-infra-boundary-test.py
 python3 tooling/scripts/quality-evidence-test.py
 python3 tooling/scripts/acceptance-validate-test.py
 tooling/scripts/review/skill-check.sh
+make acceptance-infra-validate
 make acceptance-plan-self
 git diff --check -- \
   AGENTS.md \
