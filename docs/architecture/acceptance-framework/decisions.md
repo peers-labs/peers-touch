@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-17
+> **Created**: 2026-06-03 | **Updated**: 2026-08-18
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -23,6 +23,7 @@
 | D-09 | Registry 按产品行为选择 receiver-proof Gate | proposed |
 | D-10 | Gap Detector 作为跨阶段只读守卫 | proposed |
 | D-11 | Runtime Evidence Store 位于 source tree 之外 | accepted |
+| D-12 | Acceptance Infra 与业务注入使用独立责任平面 | accepted |
 
 ---
 
@@ -506,3 +507,57 @@ ALLOCATED -> ACTIVE -> FINALIZING -> DURABLE -> PUBLISHED -> CLOSED
 
 若平台证明无法提供可靠atomic replace、directory durability或active-run locking，
 应设计平台专用backend并保持相同Evidence Store contract；不得回退source-tree写入。
+
+---
+
+## D-12: Acceptance Infra 与业务注入使用独立责任平面
+
+**Status**: accepted
+**Date**: 2026-08-18
+
+### Context
+
+Acceptance Framework 同时包含通用运行时、结构校验、Evidence Store 与业务 Domain
+注入。如果 Agent 只按文件路径判断责任，会把业务 Gate、Environment、Provisioner、
+Fixture 或产品证据缺口当成 Infra 交付条件，并越权替业务模块补内容。
+
+### Decision
+
+建立两个独立责任平面：
+
+- Acceptance Infra 定义 schema、扩展接口、planner、validator、runner、Evidence
+  Store、通用生命周期、结构校验和框架自证。
+- 业务模块注入 Domain、Feature、Capability、Registry rule、具体 Gate、
+  Environment、Provisioner、Fixture、角色、凭据引用与产品证据。
+
+Infra 发现注入缺口时输出 `BUSINESS_INJECTION_REQUIRED`，只阻塞对应业务 Domain。
+业务 `FAILED/BLOCKED/UNPROVEN` 不得反向阻塞 Infra readiness。
+
+Infra readiness 只消费 `acceptance_core_self_validation`。方向为
+`product_domain_validates_acceptance` 的 capability 只提供附加反向证据，默认不作为
+每次 Infra PR 的合并门。
+
+### Rationale
+
+- 保持框架 domain-neutral，避免 Federation、Chat 或其它业务成为隐式核心。
+- 防止 Agent 为了通过 Infra Gate 伪造业务注入或降低产品断言。
+- 让业务模块可以独立演进、独立失败、独立证明。
+- 让 Quality Evidence 对 Infra 与产品 readiness 使用不同责任口径。
+
+### Alternatives Considered
+
+- 由一个 Acceptance Skill 同时处理框架和业务：拒绝，责任边界会持续漂移。
+- 业务 Gate 未通过时阻塞所有 Infra PR：拒绝，把消费者状态错误地提升为框架状态。
+- Infra 自动补 placeholder environment/fixture：拒绝，产生不可审计的伪注入。
+
+### Consequences
+
+- 新增 `pt-acceptance-infra-engineering` 作为 Infra 专用入口。
+- `pt-acceptance-engineering` 保留业务接入、补齐和产品证明职责。
+- Quality Evidence 必须区分 blocking Infra scope 与 informational reverse evidence。
+- Agent 开发手册必须明确路由规则和禁止越权行为。
+
+### Review / Reversal Trigger
+
+若某项能力无法明确归入 Infra contract 或业务注入，必须先形成 ownership decision；
+不得以“代码位于 `tooling/acceptance/`”为由默认归属 Infra。

@@ -1,6 +1,6 @@
 # Runtime Provisioning Contract Implementation Plan
 
-> **Status**: active — EXECUTE (WS8 blocked by product identity lifecycle)
+> **Status**: complete — merged in PR #91; product proof remains separately UNPROVEN
 > **Version**: v1.0
 > **Created**: 2026-08-16 | **Updated**: 2026-08-17
 > **Owner**: Architecture Team
@@ -17,19 +17,19 @@
 | Main task | Complete the Runtime Provisioning Contract from EXECUTE through truthful Native proof, independent audit, PR review, and merge. |
 | Plan source | `docs/architecture/acceptance-framework/execution-plans/20260816-runtime-provisioning-contract-implementation.md` |
 | Tracking source | This plan's workstream table, acceptance scenarios, and Final Readiness Gate |
-| Worktree | `/Users/bytedance/Documents/Projects/peers-touch/peers-oss` |
+| Worktree | `<repo-root>` |
 | Branch | `design/acceptance-runtime-provisioning-contract` |
-| Stage | `EXECUTE` |
-| Current workstream | `WS8: Chat Native Validation` and final completion audit |
-| Current step | Preserve the current-source product failure, finish independent audits, and keep PR #91 Draft. |
-| Progress | WS1, WS3, WS4, WS5, WS7, and WS8-A/B/C DONE; WS2 and WS6 PARTIAL; WS8 FAILED/UNPROVEN. AS-01 through AS-05 PASSED. Direct Chat DELIVERED FAILED/UNPROVEN. |
-| Last completed | A source-bound Native run at `907c0fe94` passed provisioning, both logins, device/bundle readiness, direct conversation creation, sender submission, and Bob visible receive/decrypt. It failed only at Alice's `receipt.delivered` after 120 seconds. The same run kept Station source stable, released all processes/ports/storage, and scanned one high-entropy canary with zero leaked artifacts. |
-| Current action | Run Gap Detector, Quality Evidence, Completion Auditor, and PR review without converting the failed product assertion into framework success. |
-| Next action | Product/Messaging owner must fix Direct Chat DELIVERED semantics; then redeploy the resulting exact source and run all four Native Gates. |
-| Blockers | `PRODUCT_AMENDMENT_REQUIRED`: sender-visible DELIVERED never appears after Bob visibly receives and decrypts. Dependent multi-device, recovery, and group MLS Gates remain unrun. |
-| Decisions required | Product owner must define and implement the DELIVERED closure outside this framework plan. No Acceptance waiver or assertion downgrade is allowed. |
-| Evidence | `PASSED`: AS-01..AS-05, local Gates, strict identity login, remote source lease, final source stability, cleanup, and live canary scan. `FAILED/UNPROVEN`: `chat-native-two-client-e2e` at `receipt.delivered`. `UNPROVEN`: remaining three Native Gates and Direct Chat DELIVERED. |
-| Last updated | 2026-08-17 10:54 CST |
+| Stage | `complete` |
+| Current workstream | Framework delivery closed |
+| Current step | none |
+| Progress | Framework scope merged; WS2/WS6 successful-product cleanup proof remains `UNPROVEN`; WS8 product assertion remains `FAILED/UNPROVEN` and outside framework delivery |
+| Last completed | PR #91 merged the Runtime Provisioning and Evidence Store framework into `master` at `93691c088` |
+| Current action | none; this framework plan is closed under the owner-approved infrastructure/product evidence boundary |
+| Next action | Messaging product work owns Direct Chat DELIVERED repair and subsequent Native proof |
+| Blockers | none for this closed framework plan; product evidence remains explicitly `UNPROVEN` |
+| Decisions required | none |
+| Evidence | PR #91 merged; AS-01 through AS-05 and framework gates passed. `chat-native-two-client-e2e` remains `FAILED/UNPROVEN` at `receipt.delivered`; dependent product Gates remain unrun |
+| Last updated | 2026-08-17 |
 
 ---
 
