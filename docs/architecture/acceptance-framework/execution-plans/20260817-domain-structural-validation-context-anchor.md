@@ -26,7 +26,7 @@
 | Next action | Rerun exact-range Quality Evidence and PR checks, then request Owner review |
 | Blockers | Project memory namespace is contaminated with unrelated Big-A content; two unrelated Agent proto outputs remain untracked |
 | Decisions required | none; Owner approved the Skill name and responsibility model |
-| Evidence | Draft PR #93; Infra self-validation 112/112 PASS; boundary tests 5/5 PASS; Quality Evidence tests 10/10 PASS; validator 7/7 PASS; self-plan selects only `acceptance-plan-self` and `acceptance-runtime-provisioning-self`; canonical Skill is registered in `AGENTS.md` and `docs/global/workflow.md`; no business injection was added or modified |
+| Evidence | Draft PR #93; Infra self-validation 114/114 PASS; boundary tests 6/6 PASS; Quality Evidence tests 10/10 PASS; validator 8/8 PASS; `make acceptance-infra-validate` PASS; self-plan selects only `acceptance-plan-self`, `acceptance-infra-validation`, and `acceptance-runtime-provisioning-self`; canonical Skill is registered in `AGENTS.md` and `docs/global/workflow.md`; no business injection was added or modified |
 | Last updated | 2026-08-18 |
 
 ## 1. Goal
@@ -66,7 +66,7 @@ Out of scope:
 | `CAS-W3` | Context Anchor governance | complete | Canonical Skill, workflow references, path hard rule, and fixture added |
 | `CAS-W4` | Misplaced-edit cleanup | complete | Messaging worktree retains only its pre-existing Messaging changes |
 | `CAS-W5` | Review and delivery evidence | complete | Framework self-tests 105/105, Skill check, plan/run Gates, Gap Detector, diff checks, and worktree ownership audit complete |
-| `CAS-W6` | Acceptance Infra responsibility firewall | complete | Dedicated Skill, Agent handbook routing, D-12, Quality Evidence direction isolation, and deterministic anti-overreach tests; Infra self-validation 112/112 PASS |
+| `CAS-W6` | Acceptance Infra responsibility firewall | complete | Dedicated Skill, Agent handbook routing, D-12, Infra-only validator/submit routing, Quality Evidence direction isolation, and deterministic anti-overreach tests; Infra self-validation 114/114 PASS |
 
 ## 4. Dependency Order
 
