@@ -6,6 +6,7 @@
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-desktop-gateway \
         acceptance-chat-native-static acceptance-chat-native-two-client \
+        acceptance-chat-native-interactions acceptance-chat-native-typing \
         acceptance-chat-native-multi-device acceptance-chat-native-recovery \
         acceptance-chat-native-group-mls acceptance-chat-native-w8 \
         acceptance-station-dashboard acceptance-station-dashboard-domain-validation \
@@ -104,6 +105,12 @@ acceptance-chat-native-static:
 acceptance-chat-native-two-client:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-two-client-e2e
 
+acceptance-chat-native-interactions:
+	python3 tooling/scripts/acceptance-run.py --gate chat-native-interactions-e2e
+
+acceptance-chat-native-typing:
+	python3 tooling/scripts/acceptance-run.py --gate chat-native-typing-e2e
+
 acceptance-chat-native-multi-device:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-multi-device-e2e
 
@@ -116,6 +123,8 @@ acceptance-chat-native-group-mls:
 acceptance-chat-native-w8:
 	python3 tooling/scripts/acceptance-run.py \
 		--gate chat-native-two-client-e2e \
+		--gate chat-native-interactions-e2e \
+		--gate chat-native-typing-e2e \
 		--gate chat-native-multi-device-e2e \
 		--gate chat-native-recovery-e2e \
 		--gate chat-native-group-mls-e2e

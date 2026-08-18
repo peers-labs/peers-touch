@@ -5,12 +5,10 @@
   "status": "active",
   "owners": ["acceptance-framework", "chat"],
   "source_paths": [
-    "tooling/acceptance/gates/chat/native_visible_runner.py",
     "tooling/acceptance/gates/chat/native_*_runner.py",
     "tooling/acceptance/gates/chat/native_support.py",
     "tooling/acceptance/gates/chat/native_two_client_e2e.py",
-    "tooling/acceptance/gates/chat/native_visible_e2e.py",
-    "tooling/acceptance/gates/chat/native_visible_*_test.py",
+    "tooling/acceptance/gates/chat/*_test.py",
     "tooling/acceptance/playbooks/chat-native-visible-clients.md",
     "apps/desktop/src/acceptance/chat/**",
     "apps/desktop/src-tauri/src/application/profile/mod.rs",

@@ -27,17 +27,16 @@ from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     async_harness,
+    commits_match,
     configure_station,
+    current_commit,
+    current_workspace_digest,
     enter_chat_page,
+    gateway_command,
+    read_station_version,
     reset_fixture,
     start_authenticated_client,
     stop_client,
-)
-from tooling.acceptance.gates.chat.native_two_client_runner import (
-    commits_match,
-    current_commit,
-    current_workspace_digest,
-    read_station_version,
     wait_until,
 )
 
