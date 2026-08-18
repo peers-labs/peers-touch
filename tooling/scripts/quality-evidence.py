@@ -116,29 +116,42 @@ def selected_capability_evidence(root: Path, impacted_features: list[str]) -> di
     selected: list[dict[str, Any]] = []
     proven_scope: list[str] = []
     unproven_scope: list[str] = []
+    blocking_unproven_scope: list[str] = []
+    informational_unproven_scope: list[str] = []
 
     for capability in load_capabilities(root):
         features = set(capability.get("features", []))
         if not features & impacted:
             continue
         evidence = capability.get("evidence", {})
+        direction = str(capability.get("direction") or "")
+        capability_unproven_scope = evidence.get("unproven_scope", [])
         selected.append(
             {
                 "id": capability.get("id", ""),
                 "domain": capability.get("domain", ""),
+                "direction": direction,
                 "features": sorted(features & impacted),
                 "proven_by": evidence.get("proven_by", []),
                 "proven_scope": evidence.get("proven_scope", []),
-                "unproven_scope": evidence.get("unproven_scope", []),
+                "unproven_scope": capability_unproven_scope,
             }
         )
         proven_scope.extend(evidence.get("proven_scope", []))
-        unproven_scope.extend(evidence.get("unproven_scope", []))
+        unproven_scope.extend(capability_unproven_scope)
+        if direction == "product_domain_validates_acceptance":
+            informational_unproven_scope.extend(capability_unproven_scope)
+        else:
+            blocking_unproven_scope.extend(capability_unproven_scope)
 
     return {
         "selected_capabilities": selected,
         "proven_scope": sorted(set(proven_scope)),
         "unproven_scope": sorted(set(unproven_scope)),
+        "blocking_unproven_scope": sorted(set(blocking_unproven_scope)),
+        "informational_unproven_scope": sorted(
+            set(informational_unproven_scope)
+        ),
     }
 
 
@@ -225,7 +238,10 @@ def evidence_gaps(evidence: dict[str, Any]) -> list[dict[str, str]]:
             }
         )
 
-    for index, scope in enumerate(evidence["acceptance"]["unproven_scope"], start=1):
+    for index, scope in enumerate(
+        evidence["acceptance"]["blocking_unproven_scope"],
+        start=1,
+    ):
         gaps.append(
             {
                 "kind": f"unproven-product-scope:{index}",
@@ -312,9 +328,18 @@ def render_markdown(evidence: dict[str, Any]) -> str:
     if not acceptance["proven_scope"]:
         lines.append("- none")
 
-    lines.extend(["", "## Product Unproven Scope", ""])
-    lines.extend(f"- {item}" for item in acceptance["unproven_scope"])
-    if not acceptance["unproven_scope"]:
+    lines.extend(["", "## Blocking Unproven Scope", ""])
+    lines.extend(
+        f"- {item}" for item in acceptance["blocking_unproven_scope"]
+    )
+    if not acceptance["blocking_unproven_scope"]:
+        lines.append("- none")
+
+    lines.extend(["", "## Informational Reverse-Validation Scope", ""])
+    lines.extend(
+        f"- {item}" for item in acceptance["informational_unproven_scope"]
+    )
+    if not acceptance["informational_unproven_scope"]:
         lines.append("- none")
 
     lines.extend(["", "## Evidence Gaps", ""])

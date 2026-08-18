@@ -225,6 +225,12 @@ Knowledge Delta Review:
 
 Acceptance Framework proves product capability scope. It does not approve PRs.
 
+For Acceptance Infra PRs, judge merge readiness from
+`acceptance_core_self_validation` and framework evidence. Treat
+`product_domain_validates_acceptance` and business injection gaps as
+informational unless the generic injection mechanism itself is defective.
+Never require an Infra author to create or weaken business-owned injection.
+
 For impacted acceptance features:
 
 1. Read selected feature contracts under `tooling/acceptance/features/`.

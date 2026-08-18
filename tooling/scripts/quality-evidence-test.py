@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import tempfile
 import unittest
@@ -67,6 +68,79 @@ class ChangedPathsTests(unittest.TestCase):
 
 
 class ReadinessTests(unittest.TestCase):
+    def test_reverse_validation_scope_is_informational(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            capabilities = root / "capabilities"
+            capabilities.mkdir()
+            (capabilities / "test.yaml").write_text(
+                json.dumps(
+                    {
+                        "capabilities": [
+                            {
+                                "id": "core",
+                                "direction": "acceptance_core_self_validation",
+                                "features": ["acceptance-framework"],
+                                "evidence": {"unproven_scope": []},
+                            },
+                            {
+                                "id": "reverse",
+                                "direction": "product_domain_validates_acceptance",
+                                "features": ["acceptance-framework"],
+                                "evidence": {
+                                    "unproven_scope": [
+                                        "business domain injection is incomplete"
+                                    ]
+                                },
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            evidence = MODULE.selected_capability_evidence(
+                root,
+                ["acceptance-framework"],
+            )
+
+        self.assertEqual(evidence["blocking_unproven_scope"], [])
+        self.assertEqual(
+            evidence["informational_unproven_scope"],
+            ["business domain injection is incomplete"],
+        )
+        self.assertEqual(
+            {item["id"]: item["direction"] for item in evidence["selected_capabilities"]},
+            {
+                "core": "acceptance_core_self_validation",
+                "reverse": "product_domain_validates_acceptance",
+            },
+        )
+
+    def test_only_blocking_unproven_scope_creates_readiness_gap(self) -> None:
+        evidence = {
+            "route": {"ok": True},
+            "knowledge": {"ok": True},
+            "acceptance": {
+                "plan_ok": True,
+                "blocking_unproven_scope": ["framework self-proof missing"],
+                "informational_unproven_scope": [
+                    "business domain injection is incomplete"
+                ],
+                "latest_run": {"results": []},
+                "gate_buckets": {
+                    "environment_evidence_gates": [],
+                    "nightly_or_release_gates": [],
+                },
+            },
+            "head_commit": "current",
+        }
+
+        gaps = MODULE.evidence_gaps(evidence)
+
+        self.assertEqual(len(gaps), 1)
+        self.assertEqual(gaps[0]["impact"], "framework self-proof missing")
+
     def test_evidence_gaps_block_review_readiness(self) -> None:
         healthy = {"ok": True}
         self.assertFalse(

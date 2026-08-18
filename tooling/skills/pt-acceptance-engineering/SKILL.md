@@ -1,6 +1,6 @@
 ---
 name: "pt-acceptance-engineering"
-description: "Adds, completes, upgrades, or audits Peers-Touch Acceptance coverage. Invoke for any module/domain Acceptance onboarding, gate work, or framework change."
+description: "Adds, completes, or audits business-domain Acceptance injection and proof. Invoke for Domain, Feature, Gate, Environment, Fixture, or product evidence work."
 stage: "cross-stage"
 requires: ["Acceptance request or coverage gap", "governing product and architecture sources"]
 produces: ["classified Acceptance work", "contract and coverage gap matrix", "stage dispatch", "gates and evidence when execution is authorized"]
@@ -8,9 +8,9 @@ produces: ["classified Acceptance work", "contract and coverage gap matrix", "st
 
 # Acceptance Engineering
 
-Use this skill as the deterministic entry point for all Acceptance engineering.
-It translates "add, complete, upgrade, or audit Acceptance" into the correct
-product, architecture, planning, execution, runtime, and evidence workflow.
+Use this skill as the deterministic entry point for business-owned Acceptance
+injection and proof. Acceptance Infra optimization is owned by
+`pt-acceptance-infra-engineering`.
 
 It is governed by:
 
@@ -27,13 +27,20 @@ Invoke when the user asks to:
 
 - Add Acceptance for a new module, domain, feature, capability, or journey.
 - Complete missing, partial, stale, or unproven Acceptance coverage.
-- Upgrade Acceptance Core Runtime, Driver, Fixture, Harness, Evidence, planning,
-  validation, reporting, or environment lifecycle.
 - Audit whether a module is properly covered by Acceptance.
 - Add or change an Acceptance Gate, domain profile, capability contract,
-  feature contract, registry rule, or evidence report.
+  feature contract, registry rule, concrete Environment/Provisioner/Fixture, or
+  product evidence report.
+
+Do not use this Skill to optimize Acceptance Core, generic planner, validator,
+runner, Evidence Store, registration mechanism, lifecycle, or framework
+self-validation. Route those requests to `pt-acceptance-infra-engineering`.
 
 `pt-god-view` must route all such requests here before choosing a stage skill.
+
+If classification reveals an Infra concern, emit `ACCEPTANCE_INFRA_REQUIRED`
+with the generic contract/lifecycle defect and dispatch
+`pt-acceptance-infra-engineering`; do not repair Infra from this workflow.
 
 ## Core Rule
 
@@ -56,6 +63,9 @@ Product promise and receiver journey
 Never start from "write a Gate." A Gate is executable evidence for an accepted
 product assertion; it is not the source of product meaning.
 
+Business modules inject concrete content through Infra-defined contracts. This
+Skill must not modify Infra readiness semantics to make a Domain pass.
+
 ## Work Modes
 
 Classify the request before editing.
@@ -64,7 +74,7 @@ Classify the request before editing.
 |------|-----------------|--------------|------------|
 | `ADD` | A module/domain/feature has no Acceptance contract | Inventory product journeys and existing coverage | Missing journeys or receiver assertions -> `PRODUCT`; new runtime/ownership/contract boundary -> `DESIGN`; otherwise `PLAN` |
 | `COMPLETE` | Contracts exist but coverage is partial, stale, or unproven | Build a coverage gap matrix from current contracts and evidence | Undefined product assertion -> `PRODUCT_AMENDMENT_REQUIRED`; undefined architecture semantic -> `DESIGN_AMENDMENT_REQUIRED`; known closure -> `PLAN` or `EXECUTE` |
-| `UPGRADE` | Acceptance framework/core/schema/driver/environment behavior changes | Read framework architecture and inventory all consumers | Always enter `DESIGN` unless an accepted design and approved plan already cover the exact upgrade |
+| `UPGRADE` | A business Domain changes its concrete Gate, Environment, Provisioner, Fixture, or proof path | Inventory the Domain contract and accepted product assertion | Undefined product/architecture semantics require amendment; known injection closure enters PLAN/EXECUTE |
 | `AUDIT` | User asks what is covered, missing, valid, or proven | Run read-only structural and evidence audit | Stay in review/audit; do not edit unless the user asks to fix findings |
 
 Do not treat a new source file as a new Domain. Use the smallest valid scope:
@@ -230,8 +240,9 @@ Never:
   verification.
 - Hide missing environment, credentials, runtime cells, or evidence.
 - Add permanent compatibility paths during framework upgrades.
-- Modify Acceptance Core under `COMPLETE`; Core changes are `UPGRADE` and
-  require architecture review.
+- Modify Acceptance Core, generic lifecycle, validator, runner, Evidence Store,
+  or Infra readiness semantics; dispatch `pt-acceptance-infra-engineering`.
+- Make a business Domain pass by weakening Infra validation or self-evidence.
 - Claim a Domain `active` before its onboarding artifacts and structural
   validation pass.
 - Claim a Capability `PROVEN` before proof validation passes for every required

@@ -167,6 +167,10 @@ Check:
   table, tracking source, evidence, blockers, and next action.
 - `active_work`, todos, dashboards, and chat projections do not claim progress
   stronger than the plan-owned Anchor.
+- Acceptance Infra readiness is judged from `acceptance_core_self_validation`
+  and framework evidence. Business injection and reverse-validation gaps are
+  reported separately and do not block Infra unless the generic mechanism is
+  defective.
 - "Current state" and "remaining work" are explicit.
 - Terms like `done`, `ready`, `production`, `联调`, `真源`, `mock`,
   `projection`, and `runtime` are used accurately.
