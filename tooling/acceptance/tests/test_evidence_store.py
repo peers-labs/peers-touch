@@ -531,6 +531,63 @@ class EvidenceStoreTests(unittest.TestCase):
             self.store.resolve(reference)
         run.close()
 
+    def test_explicit_manifest_read_and_candidate_proof_cas(self) -> None:
+        candidate = self.store.begin_run("proof-gate", source={})
+        candidate.finalize(
+            result={"status": "passed", "proofStatus": "CANDIDATE"}
+        )
+        candidate_ref = candidate.manifest_ref
+        candidate.close()
+        manifest = self.store.read_run_manifest(
+            candidate_ref,
+            manifest_sha256=candidate_ref.sha256,
+            expected_gate_id="proof-gate",
+        )
+        self.assertEqual(manifest["runId"], candidate_ref.run_id)
+        with self.assertRaises(EvidenceManifestInvalid):
+            self.store.read_run_manifest(
+                candidate_ref,
+                manifest_sha256="0" * 64,
+            )
+
+        first = self.store.begin_run("proof-gate.validator", source={})
+        first_ref = first.write_json(
+            "proof/envelope.json",
+            {"proofStatus": "PROVEN"},
+            role="proof-envelope",
+        )
+        first.finalize(result={"status": "passed"})
+        first.close()
+        pointer = self.store.publish_candidate_proof(
+            candidate_manifest=candidate_ref,
+            proof_envelope=first_ref,
+        )
+        self.assertEqual(
+            json.loads(pointer.read_text())["proofEnvelope"],
+            first_ref.to_dict(),
+        )
+        self.assertEqual(
+            self.store.publish_candidate_proof(
+                candidate_manifest=candidate_ref,
+                proof_envelope=first_ref,
+            ),
+            pointer,
+        )
+
+        second = self.store.begin_run("proof-gate.validator", source={})
+        second_ref = second.write_json(
+            "proof/envelope.json",
+            {"proofStatus": "PROVEN", "other": True},
+            role="proof-envelope",
+        )
+        second.finalize(result={"status": "passed"})
+        second.close()
+        with self.assertRaises(EvidenceConflict):
+            self.store.publish_candidate_proof(
+                candidate_manifest=candidate_ref,
+                proof_envelope=second_ref,
+            )
+
     def test_active_and_latest_runs_are_cleanup_protected(self) -> None:
         active = self.store.begin_run("unit-gate", source={})
         with self.assertRaises(EvidenceRunActive):

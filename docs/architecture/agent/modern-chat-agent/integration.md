@@ -1,8 +1,8 @@
 # Modern Chat Agent — Integration
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-07-30
+> **Created**: 2026-07-30 | **Updated**: 2026-08-17
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -148,7 +148,7 @@ budget, and evaluation contracts defined here.
 The current execution plan remains blocked. After design acceptance it must be
 rewritten to:
 
-- Trace to `MCA-D01` through `MCA-D13`.
+- Trace to `MCA-D01` through `MCA-D18`.
 - Prioritize single-Agent context, continuity, budgets, capability, and
   evaluation before collaboration.
 - Remove multi-Agent implementation from the plan and use Agent Canvas as a
@@ -250,22 +250,26 @@ Architecture acceptance requires evidence plans for:
 If a runtime kind lacks evidence, the capability profile must mark it
 unsupported rather than silently partial.
 
-## 10. Integration Review Questions
+## 10. Resolved Integration Policies
 
-1. Is stateful external Agent runtime support required for the first accepted
-   capability profile, or should the first profile support Direct Model only?
-2. What event retention window and text-checkpoint compaction policy satisfy
-   replay without excessive storage?
-3. Which cost facts are authoritative when a provider does not report cost?
-4. Which local capabilities require mandatory approval regardless of user
-   preference?
-5. What retention policy applies to message branches, runtime homes, traces,
-   and diagnostic evidence?
-6. When multiple user devices are online, what explicit selection policy
-   chooses the client capability session for a privileged local request?
-
-These are review decisions. They must be resolved before execution planning,
-not silently chosen by implementation.
+1. Direct Model is required. Stateful external Agent runtime remains
+   optional-advertised and cannot block the required profile.
+2. Semantic events and terminal snapshots remain durable under their owning
+   Turn retention. Text deltas may compact after terminal snapshot; replay uses
+   snapshot plus retained semantic tail. No fixed time window may discard the
+   only reconstructable state.
+3. Provider-reported usage/cost is authoritative. Missing provider cost remains
+   `unknown`; estimates are optional labeled projections, never billing truth.
+4. Destructive writes, external side effects, credential/secret access,
+   privilege expansion, and high-risk local capabilities always require policy
+   approval. Read-only bounded calls may use an accepted allow-list policy.
+5. Message branches, traces, Evaluation results, runtime homes, bindings,
+   manifests, and Connector resources follow `data-model.md §6` lifecycle,
+   tombstone, and deletion rules.
+6. Privileged local work requires explicit device/session selection. The
+   selected capability session is pinned in the readiness snapshot and
+   ToolCall/operation. Low-risk work may auto-select only when exactly one
+   compatible session exists and policy explicitly allows it.
 
 ## 11. Measurement Protocol
 
@@ -314,6 +318,12 @@ product and architecture amendments.
 | MCA-A12 | Usage/feedback/diagnostics | Usage and feedback persist; redacted export reconstructs the turn |
 | MCA-A13 | Actor/device isolation | Two actors and two devices cannot cross-read state, credentials, runtime homes, or resource refs |
 | MCA-A14 | Future Mobile contract | Mobile can use all Station capabilities and cleanly reject unsupported Desktop-only local capabilities |
+| MCA-A15 | Home Chat/Task/restart | Home submits canonical Chat/Task commands and restores the same accepted work after restart |
+| MCA-A16 | Capability bind/reject | Binding reads back one manifest version; incompatible runtime rejects before execution |
+| MCA-A17 | MCP lifecycle | Install/test/invoke/cancel/reconnect cleans process, port, and secret state |
+| MCA-A18 | Connector invocation | OAuth resource becomes a manifest, binding, ToolCall, result, and expiry recovery |
+| MCA-A19 | Governed Tool loop | Decision/execution/result are exactly once under duplicate delivery and replay |
+| MCA-A20 | Evaluation lifecycle | Dataset/run/cancel/retry/result/metrics survive restart and remain actor-isolated |
 
 Surface evidence must include the visible interaction, Station readback, and
 trace/runtime evidence. A screenshot alone is not a pass.
@@ -334,18 +344,38 @@ This is the authoritative starting point for the next planning job.
 | MCA-C08 Attachments/resources | D04, D05, D13 | attachment/resource refs | Station storage/context plus client capability kernel | Upload/composer foundations exist | Opaque refs, extraction, auth, model gate | Metadata/local-path payload | A08, A13-A14 |
 | MCA-C09 Evaluation/evidence | D10, D12 | usage, feedback, diagnostic export | Station trace/evaluation | Trace/growth foundations exist | Unified outcomes, fixed cases, replay export | Screenshot-only claims | A12 |
 | MCA-C10 Client portability | D01, D05, D07, D13 | client capability session | Shared client contract plus platform kernels | Desktop and Mobile Tauri kernels exist | Portable bridge, platform capability registry, Mobile contract test | `desktop-rust` shared semantics | A11, A13-A14 |
+| MCA-C11 Home work projection | D14 | `HomeWorkProjection` | Station Home Projection + Desktop `homeRuntime` | Home pinned/recent UI and Station topic/task services exist | Revisioned partial/stale projection and canonical Chat/Task handoff | Page-derived recents/Brief truth | A15 |
+| MCA-C12 Capability manifest/binding | D15 | `CapabilityManifest`, `AgentCapabilityBinding`, readiness snapshot | Station capability catalog/binding/admission | Tool registry and source-specific stores/bindings exist | One versioned catalog, compatibility and atomic consumer cutover | Tool/MCP/Connector split inventories and config JSON truth | A16, A19 |
+| MCA-C13 Capability operation/MCP | D13, D16 | `CapabilityOperation`, client capability request/result | Station operation + Desktop capability manager | Desktop MCP CRUD/test/execute exists | Durable operation, leases, cancel/reconnect and cleanup | Client-only operation terminal state | A17, A19 |
+| MCA-C14 Connector resource tools | D15, D17 | `ConnectorResourceManifest`, Tool manifest/binding | OAuth owner + Station Connector Manifest/Tool services | OAuth mount/sync lifecycle exists | Scoped resource/version manifests, invocation and expiry recovery | enabled tool names as readiness | A18-A19 |
+| MCA-C15 Evaluation aggregate | D10, D18 | benchmark/dataset/case/run/attempt/result | Station Evaluation + canonical TurnService | Station dataset CRUD and Desktop Evaluation UI exist | Durable run/result/cancel/retry/metrics/restart | localStorage and `quickCompletion` Evaluation | A20 |
+
+### 13.1 V2 Deletion And Retention Closure
+
+| Closure | Delete/retire | Retain/replace |
+|---|---|---|
+| C11 | `HomePage`-owned durable recents/Brief/readiness aggregation | `homeRuntime` projection backed by Station revision |
+| C12 | Embedded Tool/Skill/Knowledge/MCP/Connector binding arrays as authoritative config; parallel readiness selectors | Versioned manifests, Agent bindings, readiness snapshots |
+| C13 | Client-only operation terminal/progress state and unleased executor dispatch | Station `CapabilityOperation`; local MCP configuration/process remains client-owned |
+| C14 | Connector `enabledTools`/labels as readiness or binding identity | OAuth connection owner + Connector resource manifests + Agent bindings |
+| C15 | Evaluation localStorage datasets/runs/results and Evaluation `quickCompletion` execution | Station Evaluation aggregate using canonical Turn/Trace |
+
+Entity deletion, tombstone, historical snapshot, and cleanup rules are governed
+by `data-model.md §6`; implementation plans must prove both tree-wide consumer
+cutover and runtime resource cleanup.
 
 Locator rules:
 
 1. The execution plan creates at least one internally complete closure for
-   every `MCA-Cxx` row.
+   every `MCA-C01` through `MCA-C15` row.
 2. Every task cites its `MCA-Cxx`, `MCA-Dxx`, target owner, deletion obligation,
    deterministic gate, and evidence path.
 3. Work not mapped to a locator row is out of scope or requires a design
    amendment.
 4. A row is complete only when its acceptance scenarios pass and its deletion
    obligation is proven by tree-wide search.
-5. The Agent module is complete only when all required `MCA-Cxx` rows are
+5. The Agent module is complete only when all required `MCA-C01` through
+   `MCA-C15` rows are
    complete; file counts or “code exists” do not count.
 
 ## 14. Planning Handoff Query
@@ -361,7 +391,7 @@ The next planning job must begin by reading:
 It must output a traceability report answering:
 
 ```text
-For each MCA-Cxx:
+For each MCA-C01 through MCA-C15:
   current repository assets
   target execution closure
   dependency predecessors

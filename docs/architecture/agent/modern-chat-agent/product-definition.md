@@ -1,8 +1,8 @@
 # Modern Chat Agent — Product Definition
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-07-30
+> **Created**: 2026-07-30 | **Updated**: 2026-08-17
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -47,6 +47,10 @@ Primary jobs:
    unsupported capability without losing confirmed work.
 6. Inspect usage, sources, tool activity, and failure details when confidence
    matters.
+7. Resume or start work from one Home command surface without reconstructing
+   Agent, topic, task, and capability context.
+8. Evaluate a configured Agent against durable test cases and inspect
+   authoritative results before trusting a change.
 
 ## 3. First And Recurring Value
 
@@ -126,11 +130,40 @@ scenario and Station readback pass.
 | MCA-P11 | Client portability | required | Desktop now and future Mobile share outcomes without pretending device parity |
 | MCA-P12 | Stateful external Agent runtime | optional-advertised | When enabled, runtime/device/session constraints and reset are explicit |
 | MCA-P13 | Generated artifacts | optional-advertised | When enabled, substantial output has a durable preview/export surface |
-| MCA-P14 | Voice, marketplace, sharing | deferred | Not part of the first readiness claim |
+| MCA-P14 | Advanced generation and commercial distribution | deferred | Server-side audio/video generation, commercial marketplace/community, and public sharing are outside the V2 claim |
 | MCA-P15 | Multi-Agent collaboration | deferred | Begins only after single-Agent readiness passes |
 
 `optional-advertised` means the product may ship without the capability, but it
 cannot advertise it until its complete journey and acceptance cells pass.
+
+### 5.1 V2 Required Capability Extension
+
+V2 extends the same product contract; it does not create a second completion
+ledger. The brain-map node remains the status source for each mapped capability.
+
+| ID | Brain-map nodes | Classification | Product claim |
+|---|---|---|---|
+| MCA-V2-H01 | P3 | required | Home restores or starts Chat/Task work with Agent/model readiness, recents, Brief/Needs You, task state, and capability status |
+| MCA-V2-T01 | R5, C6, C7, X1, X5 | required | One inventory explains Tool/MCP/Connector/Skill/Knowledge source, compatibility, readiness, and version |
+| MCA-V2-T02 | C3, C6, C7, X1, X5 | required | Agent capability binding and policy save through Station and read back authoritatively |
+| MCA-V2-T03 | C1, C2, C4 | required | Model/runtime compatibility is resolved before admission |
+| MCA-V2-T04 | R5, R6 | required | Tool proposal, policy, decision, execution, result, and replay form one governed lineage |
+| MCA-V2-M01 | X1, R5, R6 | required | MCP install/config/test/connect/invoke/cancel/recover is one visible lifecycle |
+| MCA-V2-C01 | C7, R5, R6 | required | OAuth Connector resources become governed Agent tools with expiry and recovery |
+| MCA-V2-O01 | R4, R5, R6 | required | Tool failures, timeout, denial, disconnect, replay, and redacted diagnostics are actionable |
+| MCA-V2-E01 | E1 | required | Evaluation Lab runs durable benchmark cases against a real Agent runtime and supports cancel, retry, result, metrics, and restart readback |
+
+V2 scope dispositions:
+
+- `G1 Image Generation`: unsupported.
+- `G2 Video Generation`: deferred.
+- `G3b` server-side TTS and other audio generation: deferred.
+- Existing `G3a` client read-aloud remains supported without expanding the
+  audio-generation claim.
+- Existing Peers package discovery (`X3`) remains supported; only hosted
+  commercial marketplace/community behavior is deferred.
+- Independent Custom HTTP Plugin product: rejected and merged into governed
+  Tool/MCP/Connector boundaries.
 
 ## 6. Trust, Privacy, And Portability Promises
 
@@ -164,5 +197,12 @@ cannot advertise it until its complete journey and acceptance cells pass.
 | Topic deletion | Archive is recoverable; permanent delete requires explicit destructive confirmation | 2026-07-30 | APPROVED |
 | Memory consent | Extracted memory must remain inspectable and removable; automatic approval policy deferred to beta tuning | 2026-07-30 | APPROVED |
 | Mobile claim | Contract compatibility is required now; Mobile UI delivery is deferred | 2026-07-30 | APPROVED |
+| V2 Home depth | Include pinned/favorite, Station recents, Agent/model readiness, Chat/Task composer, Brief/Needs You, Task state, Connector/Tool readiness, and recovery; exclude promotion, commercial recommendation, Community, and generation entry points | 2026-08-17 | APPROVED |
+| V2 Evaluation | User-visible Evaluation Lab is required; Station owns benchmark, dataset, test-case, run, result, and metrics truth | 2026-08-17 | APPROVED |
+| V2 generation scope | Image generation is unsupported; video and server-side audio generation are deferred | 2026-08-17 | APPROVED |
+| V2 platform claim | Desktop is the complete delivery; Browser preserves Station-backed outcomes with explicit device-capability degradation; Mobile contract compatibility is required while Mobile UI remains deferred | 2026-08-17 | APPROVED |
 
-All owner-level product decisions approved. Remaining gate for PRODUCT stage: prototype confirmation (L2 visual review + independent PRODUCT review).
+All owner-level scope decisions are approved. The Home/Tool/Evaluation
+prototype is Owner-confirmed, and the independent PRODUCT review passed on
+2026-08-17. Production behavior remains subject to the execution and
+receiver-perspective Acceptance Gates.

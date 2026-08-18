@@ -1,0 +1,787 @@
+version: 1
+guard_symbol: enforce_canvas_single_agent_readiness
+allowed_dispositions:
+  - guarded
+  - guarded-forwarder
+  - allowed-read
+  - allowed-read-stream
+  - allowed-cleanup
+  - allowed-nonexecution-mutation
+
+route_sets:
+  - id: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    prefix: /agent/
+  - id: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    prefix: /applets/atelier/v1/
+  - id: browser-gateway
+    source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+    prefix: agent_collaboration_
+  - id: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    prefix: agent_collaboration_
+
+entrypoints:
+  - id: canvas-web-run
+    surface: canvas-web
+    source: apps/desktop/src/pages/AgentCanvasPage.tsx
+    symbol: runCanvas
+    target: api.createAgentCollaborationTask
+    disposition: guarded
+    expected_fragments: ["const runCanvas = useCallback", "api.createAgentCollaborationTask"]
+    guard:
+      scope_source: apps/desktop/src/pages/AgentCanvasPage.tsx
+      scope_symbol: runCanvas
+      first_effect: "setRunState('running')"
+      current_state: absent
+
+  - id: collaboration-create
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleCreateCollaborationTask
+    route: /agent/collaboration/create
+    handler: HandleCreateCollaborationTask
+    target: CreateCollaborationTask
+    disposition: guarded
+    expected_fragments: ['"/agent/collaboration/create"', "HandleCreateCollaborationTask"]
+    guard: &guard_create
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: CreateCollaborationTask
+      first_effect: "db.WithContext(ctx).Transaction"
+      current_state: absent
+  - id: collaboration-get
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleGetCollaborationTask
+    route: /agent/collaboration/get
+    handler: HandleGetCollaborationTask
+    target: GetCollaborationTask
+    disposition: allowed-read
+    expected_fragments: ['"/agent/collaboration/get"', "HandleGetCollaborationTask"]
+  - id: collaboration-list
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleListCollaborationTasks
+    route: /agent/collaboration/list
+    handler: HandleListCollaborationTasks
+    target: ListCollaborationTasks
+    disposition: allowed-read
+    expected_fragments: ['"/agent/collaboration/list"', "HandleListCollaborationTasks"]
+  - id: collaboration-events-list
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleListTaskEvents
+    route: /agent/collaboration/events/list
+    handler: HandleListTaskEvents
+    target: ListTaskEvents
+    disposition: allowed-read
+    expected_fragments: ['"/agent/collaboration/events/list"', "HandleListTaskEvents"]
+  - id: collaboration-cancel
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleCancelCollaborationTask
+    route: /agent/collaboration/cancel
+    handler: HandleCancelCollaborationTask
+    target: CancelCollaborationTask
+    disposition: allowed-cleanup
+    expected_fragments: ['"/agent/collaboration/cancel"', "HandleCancelCollaborationTask"]
+  - id: collaboration-resume
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleResumeCollaborationTask
+    route: /agent/collaboration/resume
+    handler: HandleResumeCollaborationTask
+    target: ResumeCollaborationTask
+    disposition: guarded
+    expected_fragments: ['"/agent/collaboration/resume"', "HandleResumeCollaborationTask"]
+    guard: &guard_resume
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: ResumeCollaborationTask
+      first_effect: "db.WithContext(ctx).Transaction"
+      current_state: absent
+  - id: collaboration-submit-node-result
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleSubmitCollaborationNodeResult
+    route: /agent/collaboration/node/submit-result
+    handler: HandleSubmitCollaborationNodeResult
+    target: SubmitCollaborationNodeResult
+    disposition: guarded
+    expected_fragments: ['"/agent/collaboration/node/submit-result"', "HandleSubmitCollaborationNodeResult"]
+    guard: &guard_submit
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: SubmitCollaborationNodeResult
+      first_effect: "db.WithContext(ctx).Transaction"
+      current_state: absent
+  - id: collaboration-executor-claim
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleClaimDesktopExecutorTask
+    route: /agent/collaboration/executor/claim
+    handler: HandleClaimDesktopExecutorTask
+    target: ClaimDesktopExecutorTask
+    disposition: guarded
+    expected_fragments: ['"/agent/collaboration/executor/claim"', "HandleClaimDesktopExecutorTask"]
+    guard: &guard_claim
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: ClaimDesktopExecutorTask
+      first_effect: "db.WithContext(ctx).Transaction"
+      current_state: absent
+  - id: collaboration-executor-heartbeat
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleHeartbeatExecutorLease
+    route: /agent/collaboration/executor/heartbeat
+    handler: HandleHeartbeatExecutorLease
+    target: HeartbeatExecutorLease
+    disposition: guarded
+    expected_fragments: ['"/agent/collaboration/executor/heartbeat"', "HandleHeartbeatExecutorLease"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: HeartbeatExecutorLease
+      first_effect: "db.WithContext(ctx).Transaction"
+      current_state: absent
+  - id: collaboration-executor-release
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleReleaseExecutorLease
+    route: /agent/collaboration/executor/release
+    handler: HandleReleaseExecutorLease
+    target: ReleaseExecutorLease
+    disposition: allowed-cleanup
+    expected_fragments: ['"/agent/collaboration/executor/release"', "HandleReleaseExecutorLease"]
+
+  - id: atelier-workspace-load
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleLoadWorkspace
+    route: /agent/atelier/workspace/load
+    handler: HandleLoadWorkspace
+    target: LoadWorkspace
+    disposition: allowed-read
+    expected_fragments: ['"/agent/atelier/workspace/load"', "HandleLoadWorkspace"]
+  - id: atelier-project-create
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleCreateProjectFromGoal
+    route: /agent/atelier/project/create-from-goal
+    handler: HandleCreateProjectFromGoal
+    target: CreateProjectFromGoal
+    disposition: guarded
+    expected_fragments: ['"/agent/atelier/project/create-from-goal"', "HandleCreateProjectFromGoal"]
+    guard: &guard_atelier_create
+      scope_source: apps/station/app/subserver/agent/service/atelier_projection.go
+      scope_symbol: CreateProjectFromGoal
+      first_effect: "CreateCollaborationTask"
+      current_state: absent
+  - id: atelier-message-send
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleSendMessage
+    route: /agent/atelier/message/send
+    handler: HandleSendMessage
+    target: SendMessage
+    disposition: allowed-nonexecution-mutation
+    expected_fragments: ['"/agent/atelier/message/send"', "HandleSendMessage"]
+  - id: atelier-escalation-resolve
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleResolveDecision
+    route: /agent/atelier/escalation/resolve
+    handler: HandleResolveDecision
+    target: ResolveDecision
+    disposition: guarded
+    expected_fragments: ['"/agent/atelier/escalation/resolve"', "HandleResolveDecision"]
+    guard: &guard_atelier_resolve
+      scope_source: apps/station/app/subserver/agent/service/atelier_projection.go
+      scope_symbol: ResolveDecision
+      first_effect: "ResolveCollaborationInterrupt"
+      current_state: absent
+  - id: atelier-task-set-status
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleSetTaskStatus
+    route: /agent/atelier/task/set-status
+    handler: HandleSetTaskStatus
+    target: SetTaskStatus
+    disposition: allowed-nonexecution-mutation
+    expected_fragments: ['"/agent/atelier/task/set-status"', "HandleSetTaskStatus"]
+  - id: atelier-task-purge
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandlePurgeTask
+    route: /agent/atelier/task/purge
+    handler: HandlePurgeTask
+    target: PurgeTask
+    disposition: allowed-cleanup
+    expected_fragments: ['"/agent/atelier/task/purge"', "HandlePurgeTask"]
+  - id: atelier-provider-capabilities
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleProviderCapabilities
+    route: /agent/atelier/provider/capabilities
+    handler: HandleProviderCapabilities
+    target: ProviderCapabilities
+    disposition: allowed-nonexecution-mutation
+    expected_fragments: ['"/agent/atelier/provider/capabilities"', "HandleProviderCapabilities"]
+  - id: atelier-feedback-submit
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleSubmitFeedback
+    route: /agent/atelier/feedback/submit
+    handler: HandleSubmitFeedback
+    target: SubmitFeedback
+    disposition: allowed-nonexecution-mutation
+    expected_fragments: ['"/agent/atelier/feedback/submit"', "HandleSubmitFeedback"]
+  - id: atelier-memory-confirm
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleConfirmMemoryCandidate
+    route: /agent/atelier/memory/confirm-candidate
+    handler: HandleConfirmMemoryCandidate
+    target: ConfirmMemoryCandidate
+    disposition: allowed-nonexecution-mutation
+    expected_fragments: ['"/agent/atelier/memory/confirm-candidate"', "HandleConfirmMemoryCandidate"]
+  - id: atelier-feedback-confirm-rerun
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleConfirmRerun
+    route: /agent/atelier/feedback/confirm-rerun
+    handler: HandleConfirmRerun
+    target: ConfirmRerun
+    disposition: guarded
+    expected_fragments: ['"/agent/atelier/feedback/confirm-rerun"', "HandleConfirmRerun"]
+    guard: &guard_atelier_rerun
+      scope_source: apps/station/app/subserver/agent/service/atelier_projection.go
+      scope_symbol: ConfirmRerun
+      first_effect: "createConfirmedFeedbackRerun"
+      current_state: absent
+  - id: atelier-artifact-fetch
+    surface: station-generic
+    source: apps/station/app/subserver/agent/agent.go
+    symbol: HandleFetchArtifactBody
+    route: /agent/atelier/artifact/body/fetch
+    handler: HandleFetchArtifactBody
+    target: FetchArtifactBody
+    disposition: allowed-read
+    expected_fragments: ['"/agent/atelier/artifact/body/fetch"', "HandleFetchArtifactBody"]
+
+  - id: official-atelier-workspace
+    surface: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    symbol: handleWorkspace
+    route: /applets/atelier/v1/workspace
+    handler: handleWorkspace
+    target: LoadWorkspace
+    disposition: allowed-read
+    expected_fragments: ['atelierV1Prefix+"/workspace"', "s.handleWorkspace"]
+  - id: official-atelier-project-create
+    surface: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    symbol: handleCreateProject
+    route: /applets/atelier/v1/projects
+    handler: handleCreateProject
+    target: CreateProjectFromGoal
+    disposition: guarded
+    expected_fragments: ['atelierV1Prefix+"/projects"', "s.handleCreateProject"]
+    guard: *guard_atelier_create
+  - id: official-atelier-message-send
+    surface: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    symbol: handleSendMessage
+    route: /applets/atelier/v1/messages
+    handler: handleSendMessage
+    target: SendMessage
+    disposition: allowed-nonexecution-mutation
+    expected_fragments: ['atelierV1Prefix+"/messages"', "s.handleSendMessage"]
+  - id: official-atelier-escalation-resolve
+    surface: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    symbol: handleResolveDecision
+    route: /applets/atelier/v1/escalations:resolve
+    handler: handleResolveDecision
+    target: ResolveDecision
+    disposition: guarded
+    expected_fragments: ['atelierV1Prefix+"/escalations:resolve"', "s.handleResolveDecision"]
+    guard: *guard_atelier_resolve
+  - id: official-atelier-provider-capabilities
+    surface: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    symbol: handleProviderCapabilities
+    route: /applets/atelier/v1/provider/capabilities
+    handler: handleProviderCapabilities
+    target: ProviderCapabilities
+    disposition: allowed-nonexecution-mutation
+    expected_fragments: ['atelierV1Prefix+"/provider/capabilities"', "s.handleProviderCapabilities"]
+  - id: official-atelier-feedback-submit
+    surface: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    symbol: handleSubmitFeedback
+    route: /applets/atelier/v1/feedback/submit
+    handler: handleSubmitFeedback
+    target: SubmitFeedback
+    disposition: allowed-nonexecution-mutation
+    expected_fragments: ['atelierV1Prefix+"/feedback/submit"', "s.handleSubmitFeedback"]
+  - id: official-atelier-memory-confirm
+    surface: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    symbol: handleConfirmMemory
+    route: /applets/atelier/v1/memory/confirm-candidate
+    handler: handleConfirmMemory
+    target: ConfirmMemoryCandidate
+    disposition: allowed-nonexecution-mutation
+    expected_fragments: ['atelierV1Prefix+"/memory/confirm-candidate"', "s.handleConfirmMemory"]
+  - id: official-atelier-feedback-rerun
+    surface: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    symbol: handleConfirmRerun
+    route: /applets/atelier/v1/feedback/confirm-rerun
+    handler: handleConfirmRerun
+    target: ConfirmRerun
+    disposition: guarded
+    expected_fragments: ['atelierV1Prefix+"/feedback/confirm-rerun"', "s.handleConfirmRerun"]
+    guard: *guard_atelier_rerun
+  - id: official-atelier-artifact-fetch
+    surface: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    symbol: handleFetchArtifact
+    route: /applets/atelier/v1/artifact/body/fetch
+    handler: handleFetchArtifact
+    target: FetchArtifactBody
+    disposition: allowed-read
+    expected_fragments: ['atelierV1Prefix+"/artifact/body/fetch"', "s.handleFetchArtifact"]
+  - id: official-atelier-task-status
+    surface: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    symbol: handleSetTaskStatus
+    route: /applets/atelier/v1/tasks/:taskID/status
+    handler: handleSetTaskStatus
+    target: SetTaskStatus
+    disposition: allowed-nonexecution-mutation
+    expected_fragments: ['atelierV1Prefix+"/tasks/:taskID/status"', "s.handleSetTaskStatus"]
+  - id: official-atelier-task-purge
+    surface: station-official-atelier
+    source: apps/station/app/subserver/official_applets/atelier.go
+    symbol: handlePurgeTask
+    route: /applets/atelier/v1/tasks/:taskID
+    handler: handlePurgeTask
+    target: PurgeTask
+    disposition: allowed-cleanup
+    expected_fragments: ['atelierV1Prefix+"/tasks/:taskID"', "s.handlePurgeTask"]
+
+  - id: browser-collaboration-create
+    surface: browser-gateway
+    source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+    symbol: agent_collaboration_create
+    command: agent_collaboration_create
+    input_type: AgentCollaborationCreateInput
+    target: agent_collaboration_create
+    disposition: guarded-forwarder
+    expected_fragments: ['"agent_collaboration_create" =>', "parse_args::<AgentCollaborationCreateInput>", "app_agent_orchestration::agent_collaboration_create"]
+    guard: *guard_create
+  - id: browser-collaboration-get
+    surface: browser-gateway
+    source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+    symbol: agent_collaboration_get
+    command: agent_collaboration_get
+    input_type: AgentCollaborationGetInput
+    target: agent_collaboration_get
+    disposition: allowed-read
+    expected_fragments: ['"agent_collaboration_get" =>', "parse_args::<AgentCollaborationGetInput>", "app_agent_orchestration::agent_collaboration_get"]
+  - id: browser-collaboration-list
+    surface: browser-gateway
+    source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+    symbol: agent_collaboration_list
+    command: agent_collaboration_list
+    input_type: AgentCollaborationListInput
+    target: agent_collaboration_list
+    disposition: allowed-read
+    expected_fragments: ['"agent_collaboration_list" =>', "parse_args::<AgentCollaborationListInput>", "app_agent_orchestration::agent_collaboration_list"]
+  - id: browser-collaboration-list-events
+    surface: browser-gateway
+    source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+    symbol: agent_collaboration_list_events
+    command: agent_collaboration_list_events
+    input_type: AgentCollaborationListEventsInput
+    target: agent_collaboration_list_events
+    disposition: allowed-read
+    expected_fragments: ['"agent_collaboration_list_events" =>', "parse_args::<AgentCollaborationListEventsInput>", "app_agent_orchestration::agent_collaboration_list_events"]
+  - id: browser-collaboration-cancel
+    surface: browser-gateway
+    source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+    symbol: agent_collaboration_cancel_task
+    command: agent_collaboration_cancel_task
+    input_type: AgentCollaborationCancelTaskInput
+    target: agent_collaboration_cancel_task
+    disposition: allowed-cleanup
+    expected_fragments: ['"agent_collaboration_cancel_task" =>', "parse_args::<AgentCollaborationCancelTaskInput>", "app_agent_orchestration::agent_collaboration_cancel_task"]
+  - id: browser-collaboration-resume
+    surface: browser-gateway
+    source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+    symbol: agent_collaboration_resume_task
+    command: agent_collaboration_resume_task
+    input_type: AgentCollaborationResumeTaskInput
+    target: agent_collaboration_resume_task
+    disposition: guarded-forwarder
+    expected_fragments: ['"agent_collaboration_resume_task" =>', "parse_args::<AgentCollaborationResumeTaskInput>", "app_agent_orchestration::agent_collaboration_resume_task"]
+    guard: *guard_resume
+  - id: browser-collaboration-submit
+    surface: browser-gateway
+    source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+    symbol: agent_collaboration_submit_node_result
+    command: agent_collaboration_submit_node_result
+    input_type: AgentCollaborationSubmitNodeResultInput
+    target: agent_collaboration_submit_node_result
+    disposition: guarded-forwarder
+    expected_fragments: ['"agent_collaboration_submit_node_result" =>', "parse_args::<AgentCollaborationSubmitNodeResultInput>", "app_agent_orchestration::agent_collaboration_submit_node_result"]
+    guard: *guard_submit
+  - id: browser-collaboration-claim
+    surface: browser-gateway
+    source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+    symbol: agent_collaboration_claim_executor_task
+    command: agent_collaboration_claim_executor_task
+    input_type: AgentCollaborationClaimExecutorInput
+    target: agent_collaboration_claim_executor_task
+    disposition: guarded-forwarder
+    expected_fragments: ['"agent_collaboration_claim_executor_task" =>', "parse_args::<AgentCollaborationClaimExecutorInput>", "app_agent_orchestration::agent_collaboration_claim_executor_task"]
+    guard: *guard_claim
+  - id: browser-collaboration-heartbeat
+    surface: browser-gateway
+    source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+    symbol: agent_collaboration_heartbeat_executor_lease
+    command: agent_collaboration_heartbeat_executor_lease
+    input_type: AgentCollaborationHeartbeatLeaseInput
+    target: agent_collaboration_heartbeat_executor_lease
+    disposition: guarded-forwarder
+    expected_fragments: ['"agent_collaboration_heartbeat_executor_lease" =>', "parse_args::<AgentCollaborationHeartbeatLeaseInput>", "app_agent_orchestration::agent_collaboration_heartbeat_executor_lease"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: HeartbeatExecutorLease
+      first_effect: "db.WithContext(ctx).Transaction"
+      current_state: absent
+  - id: browser-collaboration-release
+    surface: browser-gateway
+    source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+    symbol: agent_collaboration_release_executor_lease
+    command: agent_collaboration_release_executor_lease
+    input_type: AgentCollaborationReleaseLeaseInput
+    target: agent_collaboration_release_executor_lease
+    disposition: allowed-cleanup
+    expected_fragments: ['"agent_collaboration_release_executor_lease" =>', "parse_args::<AgentCollaborationReleaseLeaseInput>", "app_agent_orchestration::agent_collaboration_release_executor_lease"]
+
+  - id: tauri-collaboration-create
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_create
+    command: agent_collaboration_create
+    input_type: AgentCollaborationCreateInput
+    target: agent_collaboration_create
+    disposition: guarded-forwarder
+    expected_fragments: ["pub fn agent_collaboration_create", "AgentCollaborationCreateInput", "application_agent_orchestration::agent_collaboration_create"]
+    guard: *guard_create
+  - id: tauri-collaboration-get
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_get
+    command: agent_collaboration_get
+    input_type: AgentCollaborationGetInput
+    target: agent_collaboration_get
+    disposition: allowed-read
+    expected_fragments: ["pub fn agent_collaboration_get", "AgentCollaborationGetInput", "application_agent_orchestration::agent_collaboration_get"]
+  - id: tauri-collaboration-list
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_list
+    command: agent_collaboration_list
+    input_type: AgentCollaborationListInput
+    target: agent_collaboration_list
+    disposition: allowed-read
+    expected_fragments: ["pub fn agent_collaboration_list", "AgentCollaborationListInput", "application_agent_orchestration::agent_collaboration_list"]
+  - id: tauri-collaboration-list-events
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_list_events
+    command: agent_collaboration_list_events
+    input_type: AgentCollaborationListEventsInput
+    target: agent_collaboration_list_events
+    disposition: allowed-read
+    expected_fragments: ["pub fn agent_collaboration_list_events", "AgentCollaborationListEventsInput", "application_agent_orchestration::agent_collaboration_list_events"]
+  - id: tauri-collaboration-subscribe
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_subscribe
+    command: agent_collaboration_subscribe
+    input_type: AgentCollaborationSubscribeInput
+    target: agent_collaboration_subscribe
+    disposition: allowed-read-stream
+    expected_fragments: ["pub fn agent_collaboration_subscribe", "AgentCollaborationSubscribeInput", "application_agent_orchestration::agent_collaboration_subscribe"]
+  - id: tauri-collaboration-cancel-stream
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_cancel_stream
+    command: agent_collaboration_cancel_stream
+    input_type: AgentCollaborationCancelInput
+    target: cancel_collaboration_stream
+    disposition: allowed-cleanup
+    expected_fragments: ["pub fn agent_collaboration_cancel_stream", "AgentCollaborationCancelInput", "application_agent_orchestration::cancel_collaboration_stream"]
+  - id: tauri-collaboration-cancel-task
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_cancel_task
+    command: agent_collaboration_cancel_task
+    input_type: AgentCollaborationCancelTaskInput
+    target: agent_collaboration_cancel_task
+    disposition: allowed-cleanup
+    expected_fragments: ["pub fn agent_collaboration_cancel_task", "AgentCollaborationCancelTaskInput", "application_agent_orchestration::agent_collaboration_cancel_task"]
+  - id: tauri-collaboration-resume
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_resume_task
+    command: agent_collaboration_resume_task
+    input_type: AgentCollaborationResumeTaskInput
+    target: agent_collaboration_resume_task
+    disposition: guarded-forwarder
+    expected_fragments: ["pub fn agent_collaboration_resume_task", "AgentCollaborationResumeTaskInput", "application_agent_orchestration::agent_collaboration_resume_task"]
+    guard: *guard_resume
+  - id: tauri-collaboration-submit
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_submit_node_result
+    command: agent_collaboration_submit_node_result
+    input_type: AgentCollaborationSubmitNodeResultInput
+    target: agent_collaboration_submit_node_result
+    disposition: guarded-forwarder
+    expected_fragments: ["pub fn agent_collaboration_submit_node_result", "AgentCollaborationSubmitNodeResultInput", "application_agent_orchestration::agent_collaboration_submit_node_result"]
+    guard: *guard_submit
+  - id: tauri-collaboration-claim
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_claim_executor_task
+    command: agent_collaboration_claim_executor_task
+    input_type: AgentCollaborationClaimExecutorInput
+    target: agent_collaboration_claim_executor_task
+    disposition: guarded-forwarder
+    expected_fragments: ["pub fn agent_collaboration_claim_executor_task", "AgentCollaborationClaimExecutorInput", "application_agent_orchestration::agent_collaboration_claim_executor_task"]
+    guard: *guard_claim
+  - id: tauri-collaboration-heartbeat
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_heartbeat_executor_lease
+    command: agent_collaboration_heartbeat_executor_lease
+    input_type: AgentCollaborationHeartbeatLeaseInput
+    target: agent_collaboration_heartbeat_executor_lease
+    disposition: guarded-forwarder
+    expected_fragments: ["pub fn agent_collaboration_heartbeat_executor_lease", "AgentCollaborationHeartbeatLeaseInput", "application_agent_orchestration::agent_collaboration_heartbeat_executor_lease"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: HeartbeatExecutorLease
+      first_effect: "db.WithContext(ctx).Transaction"
+      current_state: absent
+  - id: tauri-collaboration-release
+    surface: tauri-commands
+    source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
+    symbol: agent_collaboration_release_executor_lease
+    command: agent_collaboration_release_executor_lease
+    input_type: AgentCollaborationReleaseLeaseInput
+    target: agent_collaboration_release_executor_lease
+    disposition: allowed-cleanup
+    expected_fragments: ["pub fn agent_collaboration_release_executor_lease", "AgentCollaborationReleaseLeaseInput", "application_agent_orchestration::agent_collaboration_release_executor_lease"]
+
+  - id: boot-start-task-recovery
+    surface: station-recovery
+    source: apps/station/app/subserver/agent/service/orchestration_service.go
+    symbol: StartTaskRecovery
+    target: recoverRunningTasks
+    disposition: guarded
+    expected_fragments: ["func (s *OrchestrationService) StartTaskRecovery", "go s.recoverRunningTasks"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: StartTaskRecovery
+      first_effect: "go s.recoverRunningTasks"
+      current_state: absent
+  - id: boot-recover-running-tasks
+    surface: station-recovery
+    source: apps/station/app/subserver/agent/service/orchestration_service.go
+    symbol: recoverRunningTasks
+    target: startTaskExecution
+    disposition: guarded
+    expected_fragments: ["func (s *OrchestrationService) recoverRunningTasks", "s.startTaskExecution", "s.startDirectRunExecution"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: recoverRunningTasks
+      first_effect: "Find(&tasks)"
+      current_state: absent
+  - id: collaboration-interrupt-resolve
+    surface: station-service
+    source: apps/station/app/subserver/agent/service/orchestration_service.go
+    symbol: ResolveCollaborationInterrupt
+    target: resolveCollaborationInterruptWithLiveResumeTx
+    disposition: guarded
+    expected_fragments: ["func (s *OrchestrationService) ResolveCollaborationInterrupt", "resolveCollaborationInterruptWithLiveResumeTx"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: ResolveCollaborationInterrupt
+      first_effect: "db.WithContext(ctx).Transaction"
+      current_state: absent
+  - id: scheduler-dispatch
+    surface: station-scheduler
+    source: apps/station/app/subserver/agent/service/scheduler_service.go
+    symbol: executeCollaborationSupervisorSweep
+    target: RunCollaborationSupervisorSweep
+    disposition: guarded
+    expected_fragments: ["func (s *SchedulerService) executeCollaborationSupervisorSweep", "RunCollaborationSupervisorSweep"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/scheduler_service.go
+      scope_symbol: executeCollaborationSupervisorSweep
+      first_effect: "RunCollaborationSupervisorSweep"
+      current_state: absent
+  - id: supervisor-tick
+    surface: station-scheduler
+    source: apps/station/app/subserver/agent/service/orchestration_service.go
+    symbol: RunCollaborationSupervisorTick
+    target: runCollaborationSupervisorTickTx
+    disposition: guarded
+    expected_fragments: ["func (s *OrchestrationService) RunCollaborationSupervisorTick", "runCollaborationSupervisorTickTx"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: RunCollaborationSupervisorTick
+      first_effect: "db.WithContext(ctx).Transaction"
+      current_state: absent
+  - id: supervisor-sweep
+    surface: station-scheduler
+    source: apps/station/app/subserver/agent/service/orchestration_service.go
+    symbol: RunCollaborationSupervisorSweep
+    target: runCollaborationSupervisorTickTx
+    disposition: guarded
+    expected_fragments: ["func (s *OrchestrationService) RunCollaborationSupervisorSweep", "runCollaborationSupervisorTickTx"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: RunCollaborationSupervisorSweep
+      first_effect: "Find(&tasks)"
+      current_state: absent
+  - id: supervisor-tick-transaction
+    surface: station-scheduler
+    source: apps/station/app/subserver/agent/service/orchestration_service.go
+    symbol: runCollaborationSupervisorTickTx
+    target: collaborationSupervisorDecisionTx
+    disposition: guarded
+    expected_fragments: ["func runCollaborationSupervisorTickTx", "collaborationSupervisorDecisionTx"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: runCollaborationSupervisorTickTx
+      first_effect: "First(&task)"
+      current_state: absent
+  - id: shared-start-task-execution
+    surface: station-execution
+    source: apps/station/app/subserver/agent/service/orchestration_service.go
+    symbol: startTaskExecution
+    target: executeTaskNodes
+    disposition: guarded
+    expected_fragments: ["func (s *OrchestrationService) startTaskExecution", "s.executeTaskNodes"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: startTaskExecution
+      first_effect: "go func()"
+      current_state: absent
+  - id: shared-start-direct-run
+    surface: station-execution
+    source: apps/station/app/subserver/agent/service/orchestration_service.go
+    symbol: startDirectRunExecution
+    target: executePendingDirectRun
+    disposition: guarded
+    expected_fragments: ["func (s *OrchestrationService) startDirectRunExecution", "s.executePendingDirectRun"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: startDirectRunExecution
+      first_effect: "go func()"
+      current_state: absent
+  - id: shared-execute-pending-direct-run
+    surface: station-execution
+    source: apps/station/app/subserver/agent/service/orchestration_service.go
+    symbol: executePendingDirectRun
+    target: directRunProvider
+    disposition: guarded
+    expected_fragments: ["func (s *OrchestrationService) executePendingDirectRun", "claimPendingDirectRun"]
+    guard:
+      scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
+      scope_symbol: executePendingDirectRun
+      first_effect: "claimPendingDirectRun"
+      current_state: absent
+  - id: rust-worker-start
+    surface: desktop-rust-worker
+    source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
+    symbol: start
+    target: run_loop
+    disposition: guarded
+    expected_fragments: ["pub fn start", ".spawn(move || run_loop(state))"]
+    guard:
+      scope_source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
+      scope_symbol: start
+      first_effect: ".spawn(move || run_loop(state))"
+      current_state: absent
+  - id: rust-worker-loop
+    surface: desktop-rust-worker
+    source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
+    symbol: run_loop
+    target: claim_and_execute
+    disposition: guarded
+    expected_fragments: ["fn run_loop", "claim_and_execute(&session)"]
+    guard:
+      scope_source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
+      scope_symbol: run_loop
+      first_effect: "claim_and_execute(&session)"
+      current_state: absent
+  - id: rust-worker-claim-and-execute
+    surface: desktop-rust-worker
+    source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
+    symbol: claim_and_execute
+    target: agent_collaboration_claim_executor_task
+    disposition: guarded
+    expected_fragments: ["fn claim_and_execute", "agent_collaboration_claim_executor_task"]
+    guard:
+      scope_source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
+      scope_symbol: claim_and_execute
+      first_effect: "agent_collaboration_claim_executor_task"
+      current_state: absent
+
+atelier_aliases:
+  source: apps/desktop/src-tauri/src/application/applets/mod.rs
+  symbol: handle_atelier
+  expected_count: 31
+  entries:
+    - {alias: workspace.load, target: /sub-agent/agent/atelier/workspace/load, disposition: allowed-read}
+    - {alias: workspaceLoad, target: /sub-agent/agent/atelier/workspace/load, disposition: allowed-read}
+    - {alias: loadWorkspace, target: /sub-agent/agent/atelier/workspace/load, disposition: allowed-read}
+    - {alias: project.createFromGoal, target: /sub-agent/agent/atelier/project/create-from-goal, disposition: guarded-forwarder}
+    - {alias: project.create_from_goal, target: /sub-agent/agent/atelier/project/create-from-goal, disposition: guarded-forwarder}
+    - {alias: createProjectFromGoal, target: /sub-agent/agent/atelier/project/create-from-goal, disposition: guarded-forwarder}
+    - {alias: message.send, target: /sub-agent/agent/atelier/message/send, disposition: allowed-nonexecution-mutation}
+    - {alias: messageSend, target: /sub-agent/agent/atelier/message/send, disposition: allowed-nonexecution-mutation}
+    - {alias: escalation.resolve, target: /sub-agent/agent/atelier/escalation/resolve, disposition: guarded-forwarder}
+    - {alias: escalationResolve, target: /sub-agent/agent/atelier/escalation/resolve, disposition: guarded-forwarder}
+    - {alias: task.setStatus, target: /sub-agent/agent/atelier/task/set-status, disposition: allowed-nonexecution-mutation}
+    - {alias: task.set_status, target: /sub-agent/agent/atelier/task/set-status, disposition: allowed-nonexecution-mutation}
+    - {alias: setTaskStatus, target: /sub-agent/agent/atelier/task/set-status, disposition: allowed-nonexecution-mutation}
+    - {alias: task.purge, target: /sub-agent/agent/atelier/task/purge, disposition: allowed-cleanup}
+    - {alias: purgeTask, target: /sub-agent/agent/atelier/task/purge, disposition: allowed-cleanup}
+    - {alias: provider.capabilities, target: /sub-agent/agent/atelier/provider/capabilities, disposition: allowed-nonexecution-mutation}
+    - {alias: providerCapabilities, target: /sub-agent/agent/atelier/provider/capabilities, disposition: allowed-nonexecution-mutation}
+    - {alias: feedback.submit, target: /sub-agent/agent/atelier/feedback/submit, disposition: allowed-nonexecution-mutation}
+    - {alias: feedbackSubmit, target: /sub-agent/agent/atelier/feedback/submit, disposition: allowed-nonexecution-mutation}
+    - {alias: memory.confirmCandidate, target: /sub-agent/agent/atelier/memory/confirm-candidate, disposition: allowed-nonexecution-mutation}
+    - {alias: memoryConfirmCandidate, target: /sub-agent/agent/atelier/memory/confirm-candidate, disposition: allowed-nonexecution-mutation}
+    - {alias: feedback.confirmRerun, target: /sub-agent/agent/atelier/feedback/confirm-rerun, disposition: guarded-forwarder}
+    - {alias: feedbackConfirmRerun, target: /sub-agent/agent/atelier/feedback/confirm-rerun, disposition: guarded-forwarder}
+    - {alias: workspace.open, target: handle_atelier_workspace_open, disposition: allowed-nonexecution-mutation}
+    - {alias: workspaceOpen, target: handle_atelier_workspace_open, disposition: allowed-nonexecution-mutation}
+    - {alias: artifact.body.fetch, target: /sub-agent/agent/atelier/artifact/body/fetch, disposition: allowed-read}
+    - {alias: artifactBodyFetch, target: /sub-agent/agent/atelier/artifact/body/fetch, disposition: allowed-read}
+    - {alias: artifact.preview.open, target: handle_atelier_artifact_preview_open, disposition: allowed-read}
+    - {alias: artifactPreviewOpen, target: handle_atelier_artifact_preview_open, disposition: allowed-read}
+    - {alias: events.subscribe, target: start_atelier_projection_event_stream, disposition: allowed-read-stream}
+    - {alias: eventsSubscribe, target: start_atelier_projection_event_stream, disposition: allowed-read-stream}
+
+tooling_only:
+  - source: apps/station/app/subserver/official_applets/atelier_gate_server/main.go
+    forbidden_production_root: apps/station/app/subserver

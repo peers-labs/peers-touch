@@ -141,7 +141,7 @@ while IFS= read -r file; do
   fi
 
   if is_source_file "$file"; then
-    if rg -n 'console\.log[[:space:]]*\(|fmt\.Println[[:space:]]*\(|println![[:space:]]*\(|debugPrint[[:space:]]*\(|(^|[^[:alnum:]_])print\(' "$file" >/tmp/pt-review-match.$$ 2>/dev/null; then
+    if rg --pcre2 -n 'console\.log[[:space:]]*\(|fmt\.Println[[:space:]]*\(|println![[:space:]]*\((?![[:space:]]*"cargo:)|debugPrint[[:space:]]*\(|(^|[^[:alnum:]_])print\(' "$file" >/tmp/pt-review-match.$$ 2>/dev/null; then
       while IFS= read -r line; do
         report_failure "debug-statement" "$file:$line"
       done < /tmp/pt-review-match.$$

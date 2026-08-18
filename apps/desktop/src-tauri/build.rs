@@ -1,5 +1,14 @@
 use std::path::PathBuf;
 
+const AGENT_V2_PROTO_FILES: &[&str] = &[
+    "domain/agent/agent.proto",
+    "domain/agent/agent_config.proto",
+    "domain/agent/turn_stream.proto",
+    "domain/agent/home.proto",
+    "domain/agent/capability.proto",
+    "domain/agent/evaluation.proto",
+];
+
 fn main() {
     tauri_build::build();
     compile_protos();
@@ -12,6 +21,15 @@ fn compile_protos() {
     let proto_root = PathBuf::from("../../../model");
     if !proto_root.join("domain").exists() {
         return;
+    }
+
+    for proto_file in AGENT_V2_PROTO_FILES {
+        let path = proto_root.join(proto_file);
+        assert!(
+            path.is_file(),
+            "Required Modern Chat Agent V2 proto is missing: {}",
+            path.display()
+        );
     }
 
     let proto_files: Vec<PathBuf> = [
@@ -47,8 +65,6 @@ fn compile_protos() {
         "domain/social/poll.proto",
         "domain/social/relationship.proto",
         "domain/social/circle.proto",
-        "domain/agent/agent.proto",
-        "domain/agent/agent_config.proto",
         "domain/agent/skill.proto",
         "domain/agent/memory.proto",
         "domain/key_exchange/key_exchange.proto",
@@ -60,6 +76,7 @@ fn compile_protos() {
         "domain/federation/federation_projection_service.proto",
     ]
     .iter()
+    .chain(AGENT_V2_PROTO_FILES.iter())
     .map(|p| proto_root.join(p))
     .filter(|p| p.exists())
     .collect();

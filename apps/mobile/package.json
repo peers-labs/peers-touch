@@ -11,6 +11,7 @@
     "check:social-wire": "scripts/check-social-wire-contract.sh",
     "check:social-runtime-boundaries": "../../tooling/scripts/check-social-runtime-boundaries.sh",
     "check:web": "pnpm run check:social-wire && pnpm run check:social-runtime-boundaries && tsc --noEmit -p tsconfig.json",
+    "test:agent-contract": "vitest run src/contracts/agentV2Contract.test.ts",
     "check:rust": "cd src-tauri && cargo check --offline -q",
     "check:ios-project": "cd src-tauri/gen/apple && xcodebuild -list -project peers-touch-mobile.xcodeproj",
     "preview": "vite preview",
@@ -42,6 +43,7 @@
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^5.1.1",
     "typescript": "~5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
   }
 }

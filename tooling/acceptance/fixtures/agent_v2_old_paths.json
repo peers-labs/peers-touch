@@ -1,0 +1,122 @@
+{
+  "schema": "agent-v2-old-paths/v1",
+  "allowed_dispositions": [
+    "deleted-authority",
+    "retained-local-executor",
+    "retained-guarded-downstream",
+    "historical-migration-reader",
+    "test-fixture"
+  ],
+  "discovery": {
+    "pattern": "\\bChatStore\\b|executeAgentTurnOnce|decideToolApproval|tool_approval_registry|pendingCalls|chatConfig|enabledTools|useMCPStore|\\bMcpStore\\b|McpServerRecord|mcp_process|peers-eval-datasets|quickCompletion|CustomPluginsPage|useCustomPluginsStore|peers-ai-custom-plugins|ecosystem/plugin|ecosystem_custom_plugins",
+    "paths": [
+      "apps/desktop/src",
+      "apps/desktop/src-tauri/src",
+      "apps/station/app/subserver/agent",
+      "model/domain/agent",
+      "packages/locales"
+    ]
+  },
+  "entries": [
+    {
+      "id": "desktop-chat-store",
+      "closures": ["C01", "C02"],
+      "disposition": "deleted-authority",
+      "pattern": "\\bChatStore\\b",
+      "paths": ["apps/desktop/src-tauri/src/application/chat"]
+    },
+    {
+      "id": "browser-one-shot-agent-turn",
+      "closures": ["C03", "C05"],
+      "disposition": "deleted-authority",
+      "pattern": "executeAgentTurnOnce",
+      "paths": ["apps/desktop/src/services/desktop_api.ts"]
+    },
+    {
+      "id": "guarded-canvas-one-shot-reference",
+      "closures": ["C03", "D11"],
+      "disposition": "retained-guarded-downstream",
+      "pattern": "executeAgentTurnOnce",
+      "paths": ["apps/desktop/src/pages/AgentCanvasPage.tsx"]
+    },
+    {
+      "id": "legacy-approval-authority",
+      "closures": ["C07", "C09"],
+      "disposition": "deleted-authority",
+      "pattern": "decideToolApproval|tool_approval_registry|pendingCalls",
+      "paths": [
+        "apps/desktop/src",
+        "apps/desktop/src-tauri/src/application/agent_turn"
+      ]
+    },
+    {
+      "id": "embedded-agent-capability-bindings",
+      "closures": ["C12"],
+      "disposition": "deleted-authority",
+      "pattern": "chatConfig|enabledTools",
+      "paths": [
+        "apps/desktop/src",
+        "apps/desktop/src-tauri/src/application/agents"
+      ]
+    },
+    {
+      "id": "client-mcp-process-owner",
+      "closures": ["C13"],
+      "disposition": "retained-local-executor",
+      "pattern": "useMCPStore|McpStore|McpServerRecord|mcp_process",
+      "paths": [
+        "apps/desktop/src/store/mcp.ts",
+        "apps/desktop/src-tauri/src/application/mcp"
+      ]
+    },
+    {
+      "id": "client-mcp-projection-consumers",
+      "closures": ["C13"],
+      "disposition": "deleted-authority",
+      "pattern": "useMCPStore",
+      "paths": [
+        "apps/desktop/src/components/MCPTab.tsx",
+        "apps/desktop/src/runtimes/agentCapabilityRuntime.ts"
+      ]
+    },
+    {
+      "id": "connector-label-readiness",
+      "closures": ["C14"],
+      "disposition": "deleted-authority",
+      "pattern": "enabledTools",
+      "paths": [
+        "apps/desktop/src/store/agentConnectors.ts",
+        "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx"
+      ]
+    },
+    {
+      "id": "evaluation-local-authority",
+      "closures": ["C15"],
+      "disposition": "deleted-authority",
+      "pattern": "peers-eval-datasets|quickCompletion",
+      "paths": [
+        "apps/desktop/src/store/evaluation.ts",
+        "apps/desktop/src/pages/EvaluationPage.tsx"
+      ]
+    },
+    {
+      "id": "legacy-quick-completion",
+      "closures": ["C03", "C15"],
+      "disposition": "deleted-authority",
+      "pattern": "quickCompletion",
+      "paths": ["apps/desktop/src"]
+    },
+    {
+      "id": "rejected-custom-http-plugin",
+      "closures": ["C12", "C13", "C14"],
+      "disposition": "deleted-authority",
+      "pattern": "CustomPlugin|customPlugins|custom-plugins|peers-ai-custom-plugins|ecosystem/plugin|ecosystem_custom_plugins",
+      "paths": [
+        "apps/desktop/src",
+        "apps/station/app/subserver/agent",
+        "model/domain/agent/ecosystem.proto",
+        "packages/locales"
+      ]
+    }
+  ]
+}

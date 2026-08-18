@@ -4,24 +4,44 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import secrets
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core import (
+    ArtifactRef,
     ArtifactSession,
     EnvironmentContract,
     EvidenceStore,
     RUN_GATE_ENV,
+    source_identity,
+    validate_external_output_path,
 )
 from tooling.acceptance.core.errors import EvidenceManifestInvalid, ProvisioningError
 from tooling.acceptance.provisioners import get_provisioner
+
+AGENT_V2_SCHEMA_ROOT = REPO_ROOT / "tooling/acceptance/schemas/agent-v2"
+TUPLE_FIELDS = (
+    "gate",
+    "row",
+    "platform",
+    "runtime",
+    "cell",
+    "locale",
+    "ordering",
+    "sample_id",
+)
 
 ALLOWED_GATE_TIERS = {
     "ci-structure",
@@ -40,6 +60,1046 @@ ALLOWED_GATE_ENVIRONMENTS = {
     "local-desktop-web-gateway",
     "native-tauri-embedded-webdriver",
 }
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_agent_v2_contract() -> dict[str, Any]:
+    return load(AGENT_V2_SCHEMA_ROOT / "contract.json")
+
+
+def schema_descriptor(
+    contract: dict[str, Any],
+    schema_name: str,
+) -> dict[str, Any]:
+    definition = contract["schemas"][schema_name]
+    path = AGENT_V2_SCHEMA_ROOT / definition["file"]
+    return {
+        "id": definition["id"],
+        "version": definition["version"],
+        "sha256": sha256_file(path),
+    }
+
+
+def schema_document(contract: dict[str, Any], schema_name: str) -> dict[str, Any]:
+    definition = contract["schemas"][schema_name]
+    return load(AGENT_V2_SCHEMA_ROOT / definition["file"])
+
+
+def require_sha256(value: Any, label: str) -> None:
+    require(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value),
+        f"{label} must be a lowercase SHA-256",
+    )
+
+
+def require_semantic_value(value: Any, label: str) -> None:
+    if isinstance(value, str):
+        require(bool(value), f"{label} must be non-empty")
+    elif isinstance(value, (list, dict)):
+        require(bool(value), f"{label} must be non-empty")
+    else:
+        require(value is not None, f"{label} must be present")
+
+
+def validate_gate_evidence_semantics(
+    contract: dict[str, Any],
+    role: str,
+    artifact: dict[str, Any],
+    runtime_attestations: dict[str, dict[str, Any]],
+) -> None:
+    schema = schema_document(contract, "evidence-role")
+    role_contracts = schema.get("x-role-contracts")
+    require(
+        isinstance(role_contracts, dict) and role in role_contracts,
+        f"{role}: role-specific semantic contract is missing",
+    )
+    require_sha256(artifact.get("actorIdentityHash"), f"{role} actor identity")
+    artifact_actor = artifact["actorIdentityHash"]
+    runtime_refs = artifact.get("runtimeAttestationRefs")
+    require(
+        isinstance(runtime_refs, list)
+        and runtime_refs
+        and all(isinstance(item, str) and item for item in runtime_refs),
+        f"{role}: runtime attestation refs must be non-empty",
+    )
+    require(
+        len(runtime_refs) == len(set(runtime_refs))
+        and set(runtime_refs) == set(runtime_attestations),
+        f"{role}: runtime attestation coverage is incomplete or duplicated",
+    )
+    scenario_ids = artifact.get("scenarioIds")
+    require(
+        isinstance(scenario_ids, list)
+        and scenario_ids
+        and all(isinstance(item, str) and item for item in scenario_ids),
+        f"{role}: scenario IDs must be non-empty",
+    )
+    observations = artifact.get("observations")
+    require(
+        isinstance(observations, list) and observations,
+        f"{role}: observations must be non-empty",
+    )
+    require(
+        artifact.get("sampleCount") == len(observations),
+        f"{role}: sampleCount does not match observations",
+    )
+    require(
+        len(observations) == len(runtime_attestations),
+        f"{role}: observation count does not cover the runtime matrix",
+    )
+    required_fields = role_contracts[role].get(
+        "requiredObservationFields"
+    )
+    require(
+        isinstance(required_fields, list) and required_fields,
+        f"{role}: required observation fields are missing",
+    )
+    observed_runtime_keys: set[str] = set()
+    observed_scenarios: set[str] = set()
+    oracle = artifact.get("oracle")
+    require(isinstance(oracle, dict), f"{role}: oracle must be an object")
+    oracle_assertion_id = oracle.get("assertionId")
+    for index, observation in enumerate(observations):
+        require(
+            isinstance(observation, dict),
+            f"{role}: observation {index} must be an object",
+        )
+        missing = set(required_fields) - set(observation)
+        require(
+            not missing,
+            f"{role}: observation {index} missing semantic fields "
+            f"{sorted(missing)}",
+        )
+        for field in required_fields:
+            require_semantic_value(
+                observation[field],
+                f"{role} observation {index}.{field}",
+            )
+        for field, value in observation.items():
+            if field.lower().endswith("hash"):
+                require_sha256(
+                    value,
+                    f"{role} observation {index}.{field}",
+                )
+        for field in (
+            "runtimeTupleKey",
+            "scenarioId",
+            "sampleId",
+            "actorIdentityHash",
+            "oracleAssertionId",
+        ):
+            require_semantic_value(
+                observation.get(field),
+                f"{role} observation {index}.{field}",
+            )
+        runtime_key = observation["runtimeTupleKey"]
+        require(
+            runtime_key in runtime_attestations,
+            f"{role}: observation {index} references unknown runtime tuple",
+        )
+        require(
+            runtime_key not in observed_runtime_keys,
+            f"{role}: duplicate runtime tuple observation",
+        )
+        attestation = runtime_attestations[runtime_key]
+        require(
+            observation["sampleId"] == attestation["sample_id"]
+            and observation["scenarioId"] == attestation["cell"]
+            and observation["actorIdentityHash"]
+            == attestation["actorIdentityHash"]
+            == artifact_actor,
+            f"{role}: observation {index} is detached from runtime identity",
+        )
+        if "cellId" in observation:
+            require(
+                observation["cellId"] == attestation["cell"],
+                f"{role}: observation {index} cell ID mismatch",
+            )
+        tool_binding = attestation["toolCallBinding"]
+        if "toolCallId" in observation:
+            require(
+                observation["toolCallId"] == tool_binding["toolCallId"],
+                f"{role}: observation {index} ToolCall mismatch",
+            )
+        if "receiptId" in observation:
+            require(
+                observation["receiptId"]
+                == tool_binding["sideEffectReceiptId"],
+                f"{role}: observation {index} receipt mismatch",
+            )
+        if "turnId" in observation:
+            require(
+                observation["turnId"]
+                == attestation["turnAttempt"]["turnId"],
+                f"{role}: observation {index} Turn mismatch",
+            )
+        if "snapshotId" in observation:
+            require(
+                observation["snapshotId"]
+                == attestation["turnAttempt"][
+                    "capabilityReadinessSnapshotId"
+                ],
+                f"{role}: observation {index} readiness mismatch",
+            )
+        if "providerId" in observation:
+            require(
+                observation["providerId"]
+                == attestation["runtimeSnapshot"]["providerId"],
+                f"{role}: observation {index} provider mismatch",
+            )
+        require(
+            observation["oracleAssertionId"] == oracle_assertion_id,
+            f"{role}: observation {index} oracle binding mismatch",
+        )
+        observed_runtime_keys.add(runtime_key)
+        observed_scenarios.add(observation["scenarioId"])
+    require(
+        observed_runtime_keys == set(runtime_attestations),
+        f"{role}: runtime tuple observation set mismatch",
+    )
+    require(
+        set(scenario_ids) == observed_scenarios,
+        f"{role}: scenario ID set does not match observations",
+    )
+    require(
+        oracle.get("status") == "passed"
+        and isinstance(oracle.get("assertionId"), str)
+        and bool(oracle["assertionId"])
+        and isinstance(oracle.get("expected"), str)
+        and bool(oracle["expected"]),
+        f"{role}: oracle contract is incomplete or did not pass",
+    )
+    require_sha256(oracle.get("actualHash"), f"{role} oracle actualHash")
+    actual_hash = hashlib.sha256(
+        json.dumps(
+            observations,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    require(
+        oracle["actualHash"] == actual_hash,
+        f"{role}: oracle actualHash does not bind observations",
+    )
+    require(bool(artifact.get("observedAt")), f"{role}: timestamp missing")
+
+
+def validate_runtime_attestation(
+    item: dict[str, Any],
+    *,
+    label: str,
+) -> None:
+    require_sha256(item.get("actorIdentityHash"), f"{label} actor identity")
+    binding_fields = {
+        "runtimeKind",
+        "providerId",
+        "modelId",
+        "runtimeProfileId",
+        "externalSessionId",
+        "externalSessionEpoch",
+        "runtimeHomeRefHash",
+        "capabilitySnapshotHash",
+        "configSnapshotHash",
+        "boundAt",
+    }
+    binding = item.get("conversationRuntimeBinding")
+    require(
+        isinstance(binding, dict) and set(binding) == binding_fields,
+        f"{label} conversation runtime binding fields mismatch",
+    )
+    for field in (
+        "runtimeHomeRefHash",
+        "capabilitySnapshotHash",
+        "configSnapshotHash",
+    ):
+        require_sha256(binding[field], f"{label} binding {field}")
+    snapshot_fields = {
+        "runtimeKind",
+        "providerId",
+        "modelId",
+        "runtimeProfileId",
+        "capabilities",
+        "providerConfigVersion",
+        "agentConfigVersion",
+        "externalSessionId",
+        "externalSessionEpoch",
+    }
+    snapshot = item.get("runtimeSnapshot")
+    require(
+        isinstance(snapshot, dict) and set(snapshot) == snapshot_fields,
+        f"{label} runtime snapshot fields mismatch",
+    )
+    capability_fields = {
+        "input",
+        "output",
+        "runtime",
+        "agentic",
+        "limits",
+        "resolution",
+        "provenance",
+    }
+    capabilities = snapshot.get("capabilities")
+    require(
+        isinstance(capabilities, dict)
+        and set(capabilities) == capability_fields
+        and all(capabilities[field] for field in capability_fields),
+        f"{label} runtime capability snapshot fields mismatch",
+    )
+    require(
+        all(
+            binding[field] == snapshot[field]
+            for field in (
+                "runtimeKind",
+                "providerId",
+                "modelId",
+                "runtimeProfileId",
+                "externalSessionId",
+                "externalSessionEpoch",
+            )
+        ),
+        f"{label} runtime binding does not match runtime snapshot",
+    )
+    capability_snapshot_hash = hashlib.sha256(
+        json.dumps(
+            capabilities,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    require(
+        binding["capabilitySnapshotHash"] == capability_snapshot_hash,
+        f"{label} capability snapshot hash mismatch",
+    )
+    config_snapshot_hash = hashlib.sha256(
+        json.dumps(
+            {
+                "agentConfigVersion": snapshot["agentConfigVersion"],
+                "providerConfigVersion": snapshot[
+                    "providerConfigVersion"
+                ],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    require(
+        binding["configSnapshotHash"] == config_snapshot_hash,
+        f"{label} config snapshot hash mismatch",
+    )
+    client = item.get("clientSession")
+    require(
+        isinstance(client, dict)
+        and set(client)
+        == {
+            "capabilitySessionId",
+            "actorIdHash",
+            "deviceId",
+            "platform",
+            "capabilities",
+            "expiresAt",
+            "connectionId",
+            "leaseId",
+        }
+        and all(client.values()),
+        f"{label} client session fields mismatch",
+    )
+    require_sha256(client["actorIdHash"], f"{label} client actor identity")
+    client_capabilities = client["capabilities"]
+    require(
+        isinstance(client_capabilities, list) and client_capabilities,
+        f"{label} client capabilities must be non-empty",
+    )
+    for index, capability in enumerate(client_capabilities):
+        require(
+            isinstance(capability, dict)
+            and set(capability)
+            == {
+                "capabilityId",
+                "schemaVersion",
+                "permission",
+                "constraints",
+            }
+            and all(
+                capability[field]
+                for field in (
+                    "capabilityId",
+                    "schemaVersion",
+                    "permission",
+                )
+            ),
+            f"{label} client capability {index} fields mismatch",
+        )
+        constraints = capability["constraints"]
+        require(
+            isinstance(constraints, dict)
+            and set(constraints)
+            == {
+                "maxRequestBytes",
+                "maxResultBytes",
+                "allowedResourceKinds",
+            }
+            and isinstance(constraints["allowedResourceKinds"], list)
+            and bool(constraints["allowedResourceKinds"]),
+            f"{label} client capability {index} constraints mismatch",
+        )
+    require(
+        client["actorIdHash"] == item["actorIdentityHash"],
+        f"{label} client actor does not match attested actor",
+    )
+    for field in (
+        "stationProfile",
+        "desktopMode",
+        "networkPath",
+        "machine",
+        "observedAt",
+    ):
+        require_semantic_value(item.get(field), f"{label} {field}")
+    require(
+        item.get("coldWarmState")
+        in {"cold", "warm", "neutral", "contract"},
+        f"{label} cold/warm state is invalid",
+    )
+    turn_attempt = item.get("turnAttempt")
+    require(
+        isinstance(turn_attempt, dict)
+        and set(turn_attempt)
+        == {
+            "attemptId",
+            "turnId",
+            "index",
+            "contextLedgerId",
+            "capabilityReadinessSnapshotId",
+            "status",
+            "runtimeSnapshotHash",
+        }
+        and all(value is not None and value != "" for value in turn_attempt.values()),
+        f"{label} TurnAttempt fields mismatch",
+    )
+    require_sha256(
+        turn_attempt["runtimeSnapshotHash"],
+        f"{label} TurnAttempt runtime snapshot",
+    )
+    runtime_snapshot_hash = hashlib.sha256(
+        json.dumps(
+            snapshot,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    require(
+        turn_attempt["runtimeSnapshotHash"] == runtime_snapshot_hash,
+        f"{label} TurnAttempt runtime snapshot hash mismatch",
+    )
+    tool_binding = item.get("toolCallBinding")
+    require(
+        isinstance(tool_binding, dict)
+        and set(tool_binding)
+        == {
+            "toolCallId",
+            "turnId",
+            "attemptId",
+            "capabilityId",
+            "capabilityVersion",
+            "bindingId",
+            "bindingRevision",
+            "readinessSnapshotId",
+            "selectedDeviceId",
+            "selectedLeaseId",
+            "sideEffectReceiptId",
+        }
+        and all(value is not None and value != "" for value in tool_binding.values()),
+        f"{label} ToolCall binding fields mismatch",
+    )
+    require(
+        tool_binding["turnId"] == turn_attempt["turnId"]
+        and tool_binding["attemptId"] == turn_attempt["attemptId"]
+        and tool_binding["readinessSnapshotId"]
+        == turn_attempt["capabilityReadinessSnapshotId"]
+        and tool_binding["selectedDeviceId"] == client["deviceId"]
+        and tool_binding["selectedLeaseId"] == client["leaseId"],
+        f"{label} ToolCall binding is detached from TurnAttempt/client lease",
+    )
+    require(
+        any(
+            capability["capabilityId"] == tool_binding["capabilityId"]
+            and capability["schemaVersion"]
+            == tool_binding["capabilityVersion"]
+            for capability in client_capabilities
+        ),
+        f"{label} ToolCall capability is absent from the client lease",
+    )
+
+
+def matrix_identity(contract: dict[str, Any]) -> dict[str, Any]:
+    identity = dict(contract["matrix"])
+    source = REPO_ROOT / identity.pop("source")
+    require(source.is_file(), "reviewed Agent V2 runtime matrix is missing")
+    require(
+        sha256_file(source) == identity["sha256"],
+        "reviewed Agent V2 runtime matrix hash mismatch",
+    )
+    return identity
+
+
+def expanded_matrix_tuples(contract: dict[str, Any]) -> dict[str, set[str]]:
+    matrix_source = REPO_ROOT / contract["matrix"]["source"]
+    matrix = yaml.safe_load(matrix_source.read_text(encoding="utf-8"))
+    expansion = matrix["tuple_expansion"]
+    cell_sets = matrix["cell_sets"]
+    by_gate = {gate_id: set() for gate_id in contract["gates"]}
+    for row in matrix["rows"]:
+        cells: list[str] = []
+        for set_name in row.get("cell_sets", []):
+            require(set_name in cell_sets, f"unknown matrix cell set: {set_name}")
+            cells.extend(cell_sets[set_name])
+        cells.extend(row.get("cells", []))
+        for cell in dict.fromkeys(cells):
+            cell_rule: dict[str, Any] = {}
+            for rule in expansion["rules"]:
+                if cell in rule["cells"]:
+                    cell_rule.update(
+                        {key: value for key, value in rule.items() if key != "cells"}
+                    )
+            locales = cell_rule.get(
+                "locales",
+                row.get("locales", expansion["defaults"]["locales"]),
+            )
+            orderings = cell_rule.get(
+                "orderings",
+                row.get("orderings", expansion["defaults"]["orderings"]),
+            )
+            sample_set = cell_rule.get(
+                "sample_set",
+                row.get("sample_set", expansion["defaults"]["sample_set"]),
+            )
+            require(
+                sample_set in expansion["sample_sets"],
+                f"unknown matrix sample set: {sample_set}",
+            )
+            for locale in locales:
+                for ordering in orderings:
+                    for sample_id in expansion["sample_sets"][sample_set]:
+                        value = {
+                            "gate": row["gate"],
+                            "row": row["id"],
+                            "platform": row["platform"],
+                            "runtime": row["runtime"],
+                            "cell": cell,
+                            "locale": locale,
+                            "ordering": ordering,
+                            "sample_id": sample_id,
+                        }
+                        key = json.dumps(
+                            [value[field] for field in TUPLE_FIELDS],
+                            separators=(",", ":"),
+                        )
+                        require(
+                            key not in by_gate[row["gate"]],
+                            f"duplicate reviewed matrix tuple: {key}",
+                        )
+                        by_gate[row["gate"]].add(key)
+    require(
+        sum(len(values) for values in by_gate.values())
+        == contract["matrix"]["expandedTupleCount"],
+        "reviewed runtime matrix expanded tuple count mismatch",
+    )
+    for gate_id, gate_contract in contract["gates"].items():
+        require(
+            len(by_gate[gate_id]) == gate_contract["expectedTuples"],
+            f"{gate_id}: reviewed runtime matrix Gate count mismatch",
+        )
+    return by_gate
+
+
+def read_ref_file(path_value: str) -> ArtifactRef:
+    path = Path(path_value)
+    require(path.is_file(), f"ArtifactRef file is missing: {path}")
+    return ArtifactRef.from_dict(load(path))
+
+
+def write_explicit_ref(path_value: str, reference: ArtifactRef) -> None:
+    path = validate_external_output_path(path_value, repo_root=REPO_ROOT)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(reference.to_dict(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def require_exact_object(
+    actual: Any,
+    expected: dict[str, Any],
+    label: str,
+) -> None:
+    require(isinstance(actual, dict), f"{label} must be an object")
+    require(actual == expected, f"{label} mismatch")
+
+
+def artifact_for_role(
+    store: EvidenceStore,
+    manifest: dict[str, Any],
+    role: str,
+) -> tuple[ArtifactRef, dict[str, Any]]:
+    artifacts = manifest.get("artifacts")
+    require(isinstance(artifacts, dict), "candidate artifacts must be an object")
+    require(role in artifacts, f"candidate is missing mandatory role: {role}")
+    reference = ArtifactRef.from_dict(artifacts[role])
+    require(
+        reference.run_id == manifest["runId"]
+        and reference.gate_id == manifest["gateId"]
+        and reference.workspace_id == manifest["workspaceId"],
+        f"{role}: artifact identity mismatch",
+    )
+    require(
+        reference.media_type == "application/json",
+        f"{role}: artifact media type must be application/json",
+    )
+    return reference, store.read_json(reference)
+
+
+def validate_candidate(
+    store: EvidenceStore,
+    candidate_ref: ArtifactRef,
+    candidate_sha256: str,
+) -> dict[str, Any]:
+    contract = load_agent_v2_contract()
+    gate_id = candidate_ref.gate_id
+    require(gate_id in contract["gates"], f"unsupported Agent V2 Gate: {gate_id}")
+    candidate = store.read_run_manifest(
+        candidate_ref,
+        manifest_sha256=candidate_sha256,
+        expected_gate_id=gate_id,
+    )
+    result = candidate.get("result", {})
+    require(result.get("status") == "passed", "candidate Gate did not pass")
+    require(
+        result.get("proofStatus") == "CANDIDATE",
+        "runner manifest must be CANDIDATE, never PROVEN",
+    )
+    expected_source = source_identity(REPO_ROOT)
+    require_exact_object(candidate.get("source"), expected_source, "candidate source")
+    expected_matrix = matrix_identity(contract)
+    expected_tuples = expanded_matrix_tuples(contract)[gate_id]
+    required_roles = set(contract["gates"][gate_id]["roles"])
+    artifacts = candidate.get("artifacts", {})
+    require(
+        required_roles.issubset(set(artifacts)),
+        f"candidate missing roles: {sorted(required_roles - set(artifacts))}",
+    )
+
+    schema_ref, schema_report = artifact_for_role(
+        store, candidate, "role-schema-report"
+    )
+    del schema_ref
+    require(
+        schema_report.get("artifactKind") == "agent-v2-role-schema-report",
+        "invalid role-schema-report kind",
+    )
+    require_exact_object(
+        schema_report.get("schema"),
+        schema_descriptor(contract, "role-schema-report"),
+        "role-schema-report schema",
+    )
+    schemas = schema_report.get("schemas")
+    require(isinstance(schemas, dict), "role-schema-report schemas must be an object")
+    require(set(schemas) == required_roles, "role-schema-report role set mismatch")
+
+    validated_roles: dict[str, Any] = {}
+    runtime_attestations: dict[str, dict[str, Any]] = {}
+    ordered_roles = ["runtime-attestation-set", *sorted(
+        required_roles - {"runtime-attestation-set"}
+    )]
+    for role in ordered_roles:
+        reference, artifact = artifact_for_role(store, candidate, role)
+        schema_name = role if role in contract["schemas"] else "evidence-role"
+        expected_schema = schema_descriptor(contract, schema_name)
+        require_exact_object(schemas.get(role), expected_schema, f"{role} schema pin")
+        require_exact_object(
+            artifact.get("schema"), expected_schema, f"{role} artifact schema"
+        )
+        require(artifact.get("role") == role, f"{role}: wrong artifact role")
+        require(artifact.get("gateId") == gate_id, f"{role}: Gate mismatch")
+        require(
+            artifact.get("runId") == candidate_ref.run_id,
+            f"{role}: run mismatch",
+        )
+        if role not in {
+            "runner-attestation",
+            "role-schema-report",
+        }:
+            require_exact_object(
+                artifact.get("sourceIdentity"),
+                expected_source,
+                f"{role} source identity",
+            )
+            require_exact_object(
+                artifact.get("runtimeMatrix"),
+                expected_matrix,
+                f"{role} runtime matrix",
+            )
+        if role == "runtime-attestation-set":
+            require(
+                artifact.get("artifactKind")
+                == "agent-v2-runtime-attestation-set",
+                "invalid runtime-attestation-set kind",
+            )
+            tuples = artifact.get("tuples")
+            require(isinstance(tuples, list), "runtime tuples must be an array")
+            actual_tuples: set[str] = set()
+            for index, item in enumerate(tuples):
+                require(isinstance(item, dict), "runtime tuple must be an object")
+                require(
+                    set(TUPLE_FIELDS).issubset(set(item)),
+                    "runtime tuple fields mismatch",
+                )
+                validate_runtime_attestation(
+                    item,
+                    label=f"runtime tuple {index}",
+                )
+                key = json.dumps(
+                    [item[field] for field in TUPLE_FIELDS],
+                    separators=(",", ":"),
+                )
+                require(key not in actual_tuples, "duplicate runtime tuple")
+                actual_tuples.add(key)
+                runtime_attestations[key] = item
+            require(
+                actual_tuples == expected_tuples,
+                "runtime attestation matrix has missing or unexpected tuples",
+            )
+            oracle = artifact.get("oracle")
+            require(
+                isinstance(oracle, dict)
+                and oracle.get("status") == "passed"
+                and oracle.get("expectedTupleCount") == len(expected_tuples)
+                and isinstance(oracle.get("assertionId"), str)
+                and bool(oracle["assertionId"]),
+                "runtime attestation oracle is incomplete",
+            )
+        elif role == "source-identity":
+            require(
+                artifact.get("artifactKind") == "agent-v2-source-identity",
+                "invalid source-identity kind",
+            )
+        elif role == "runner-attestation":
+            require(
+                artifact.get("artifactKind") == "agent-v2-runner-attestation",
+                "invalid runner attestation kind",
+            )
+            require(artifact.get("candidateOnly") is True, "runner is not candidate-only")
+            producer = artifact.get("producer", {})
+            require(producer.get("kind") == "runner", "invalid runner producer")
+            require(
+                isinstance(producer.get("processId"), int),
+                "runner process identity is missing",
+            )
+            require(
+                isinstance(producer.get("invocationId"), str)
+                and producer["invocationId"],
+                "runner invocation identity is missing",
+            )
+        elif role not in {"source-identity", "role-schema-report"}:
+            require(
+                artifact.get("artifactKind") == "agent-v2-gate-evidence",
+                f"{role}: invalid evidence kind",
+            )
+            validate_gate_evidence_semantics(
+                contract,
+                role,
+                artifact,
+                runtime_attestations,
+            )
+        validated_roles[role] = {
+            "artifactRef": reference.to_dict(),
+            "schema": expected_schema,
+        }
+    return {
+        "contract": contract,
+        "candidate": candidate,
+        "candidateRef": candidate_ref,
+        "sourceIdentity": expected_source,
+        "runtimeMatrix": expected_matrix,
+        "roles": validated_roles,
+    }
+
+
+def prove_candidate(
+    store: EvidenceStore,
+    candidate_ref: ArtifactRef,
+    candidate_sha256: str,
+    proof_ref_out: str,
+    proof_sha_out: str | None,
+) -> ArtifactRef:
+    validated = validate_candidate(store, candidate_ref, candidate_sha256)
+    gate_id = candidate_ref.gate_id
+    runner_ref, runner = artifact_for_role(
+        store, validated["candidate"], "runner-attestation"
+    )
+    runner_producer = runner["producer"]
+    require(
+        runner_producer["processId"] != os.getpid(),
+        "runner and validator process identities must differ",
+    )
+    validation_run = store.begin_run(
+        f"{gate_id}.validator",
+        source=source_identity(REPO_ROOT),
+    )
+    try:
+        validator_schema = schema_descriptor(
+            validated["contract"], "validator-attestation"
+        )
+        validator_producer = {
+            "kind": "validator",
+            "processId": os.getpid(),
+            "invocationId": secrets.token_hex(16),
+        }
+        validator_ref = validation_run.write_json(
+            "proof/validator-attestation.json",
+            {
+                "artifactKind": "agent-v2-validator-attestation",
+                "schema": validator_schema,
+                "role": "validator-attestation",
+                "gateId": gate_id,
+                "runId": validation_run.run_id,
+                "producer": validator_producer,
+                "candidateManifest": candidate_ref.to_dict(),
+                "validatedAt": utc_now(),
+            },
+            role="validator-attestation",
+            redact=False,
+        )
+        require(
+            validation_run.run_id != candidate_ref.run_id,
+            "runner and validator run identities must differ",
+        )
+        validation_run.finalize(
+            result={
+                "status": "passed",
+                "completionStatus": "DONE",
+                "proofStatus": "PROVEN",
+            }
+        )
+        validator_manifest_ref = validation_run.manifest_ref
+        validation_run.close()
+        envelope_run = store.begin_run(
+            f"{gate_id}.proof",
+            source=source_identity(REPO_ROOT),
+        )
+        envelope = {
+            "artifactKind": "agent-v2-proof-envelope",
+            "schemaVersion": 1,
+            "proofStatus": "PROVEN",
+            "gateId": gate_id,
+            "candidateManifest": candidate_ref.to_dict(),
+            "candidateManifestSha256": candidate_sha256,
+            "runnerAttestation": runner_ref.to_dict(),
+            "runnerAttestationSha256": runner_ref.sha256,
+            "validatorRun": validator_manifest_ref.to_dict(),
+            "validatorRunSha256": validator_manifest_ref.sha256,
+            "validatorAttestation": validator_ref.to_dict(),
+            "validatorAttestationSha256": validator_ref.sha256,
+            "sourceIdentity": validated["sourceIdentity"],
+            "runtimeMatrix": validated["runtimeMatrix"],
+            "roleSchemas": {
+                role: value["schema"]
+                for role, value in validated["roles"].items()
+            },
+            "validatedAt": utc_now(),
+        }
+        envelope_ref = envelope_run.write_json(
+            "proof/proof-envelope.json",
+            envelope,
+            role="proof-envelope",
+            redact=False,
+        )
+        envelope_run.finalize(
+            result={
+                "status": "passed",
+                "completionStatus": "DONE",
+                "proofStatus": "PROVEN",
+            }
+        )
+        envelope_run.close()
+        store.publish_candidate_proof(
+            candidate_manifest=candidate_ref,
+            proof_envelope=envelope_ref,
+        )
+    except Exception:
+        validation_run.close()
+        if "envelope_run" in locals():
+            envelope_run.close()
+        raise
+    write_explicit_ref(proof_ref_out, envelope_ref)
+    if proof_sha_out:
+        sha_path = validate_external_output_path(
+            proof_sha_out, repo_root=REPO_ROOT
+        )
+        sha_path.parent.mkdir(parents=True, exist_ok=True)
+        sha_path.write_text(envelope_ref.sha256 + "\n", encoding="utf-8")
+    return envelope_ref
+
+
+def validate_proof_envelope(
+    store: EvidenceStore,
+    envelope_ref: ArtifactRef,
+    *,
+    expected_gate_id: str,
+) -> dict[str, Any]:
+    envelope = store.read_json(envelope_ref)
+    require(
+        envelope.get("artifactKind") == "agent-v2-proof-envelope",
+        "invalid proof envelope kind",
+    )
+    require(envelope.get("proofStatus") == "PROVEN", "proof envelope is not PROVEN")
+    require(
+        envelope.get("gateId") == expected_gate_id,
+        "proof envelope Gate mismatch",
+    )
+    candidate_ref = ArtifactRef.from_dict(envelope["candidateManifest"])
+    candidate_sha = envelope.get("candidateManifestSha256")
+    require(
+        candidate_ref.sha256 == candidate_sha,
+        "proof envelope candidate hash pin mismatch",
+    )
+    validated = validate_candidate(store, candidate_ref, candidate_sha)
+    require_exact_object(
+        envelope.get("sourceIdentity"),
+        validated["sourceIdentity"],
+        "proof envelope source identity",
+    )
+    require_exact_object(
+        envelope.get("runtimeMatrix"),
+        validated["runtimeMatrix"],
+        "proof envelope runtime matrix",
+    )
+    require_exact_object(
+        envelope.get("roleSchemas"),
+        {
+            role: value["schema"]
+            for role, value in validated["roles"].items()
+        },
+        "proof envelope role schemas",
+    )
+    runner_ref = ArtifactRef.from_dict(envelope["runnerAttestation"])
+    require(
+        runner_ref.sha256 == envelope.get("runnerAttestationSha256"),
+        "proof envelope runner attestation hash pin mismatch",
+    )
+    expected_runner_ref = ArtifactRef.from_dict(
+        validated["candidate"]["artifacts"]["runner-attestation"]
+    )
+    require(runner_ref == expected_runner_ref, "proof envelope runner ref mismatch")
+    runner = store.read_json(runner_ref)
+
+    validator_manifest_ref = ArtifactRef.from_dict(envelope["validatorRun"])
+    require(
+        validator_manifest_ref.sha256 == envelope.get("validatorRunSha256"),
+        "proof envelope validator run hash pin mismatch",
+    )
+    validator_manifest = store.read_run_manifest(
+        validator_manifest_ref,
+        manifest_sha256=validator_manifest_ref.sha256,
+    )
+    require(
+        validator_manifest.get("result", {}).get("proofStatus") == "PROVEN",
+        "validator run is not PROVEN",
+    )
+    validator_ref = ArtifactRef.from_dict(envelope["validatorAttestation"])
+    require(
+        validator_ref.sha256 == envelope.get("validatorAttestationSha256"),
+        "proof envelope validator attestation hash pin mismatch",
+    )
+    require(
+        ArtifactRef.from_dict(
+            validator_manifest["artifacts"]["validator-attestation"]
+        )
+        == validator_ref,
+        "validator attestation is not bound to validator run",
+    )
+    validator = store.read_json(validator_ref)
+    require(
+        validator.get("candidateManifest") == candidate_ref.to_dict(),
+        "validator attested a different candidate",
+    )
+    require(
+        runner["producer"]["kind"] == "runner"
+        and validator["producer"]["kind"] == "validator"
+        and runner["producer"]["processId"]
+        != validator["producer"]["processId"]
+        and runner["producer"]["invocationId"]
+        != validator["producer"]["invocationId"]
+        and candidate_ref.run_id != validator_manifest_ref.run_id,
+        "runner/validator producer, process, or run identity is not separate",
+    )
+    return envelope
+
+
+def validate_proof_set(
+    store: EvidenceStore,
+    proof_set_ref: ArtifactRef,
+    proof_set_sha256: str,
+) -> dict[str, Any]:
+    require(
+        proof_set_ref.sha256 == proof_set_sha256,
+        "proof-set SHA-256 does not match ArtifactRef",
+    )
+    proof_set = store.read_json(proof_set_ref)
+    require(
+        proof_set.get("artifactKind") == "agent-v2-proof-set",
+        "invalid proof-set kind",
+    )
+    require(proof_set.get("proofStatus") == "PROVEN", "proof set is not PROVEN")
+    contract = load_agent_v2_contract()
+    require_exact_object(
+        proof_set.get("sourceIdentity"),
+        source_identity(REPO_ROOT),
+        "proof-set source identity",
+    )
+    require_exact_object(
+        proof_set.get("runtimeMatrix"),
+        matrix_identity(contract),
+        "proof-set runtime matrix",
+    )
+    gate_proofs = proof_set.get("gateProofs")
+    require(isinstance(gate_proofs, list), "proof-set gateProofs must be an array")
+    gate_ids = [item.get("gateId") for item in gate_proofs if isinstance(item, dict)]
+    require(
+        len(gate_proofs) == 7
+        and len(set(gate_ids)) == 7
+        and set(gate_ids) == set(contract["gates"]),
+        "proof set must contain the exact seven Agent V2 Gates",
+    )
+    for item in gate_proofs:
+        envelope_ref = ArtifactRef.from_dict(item["proofEnvelope"])
+        require(
+            envelope_ref.sha256 == item.get("proofEnvelopeSha256"),
+            "proof envelope hash pin mismatch",
+        )
+        envelope = validate_proof_envelope(
+            store,
+            envelope_ref,
+            expected_gate_id=item["gateId"],
+        )
+        require_exact_object(
+            envelope.get("sourceIdentity"),
+            proof_set["sourceIdentity"],
+            "proof envelope source identity",
+        )
+        require_exact_object(
+            envelope.get("runtimeMatrix"),
+            proof_set["runtimeMatrix"],
+            "proof envelope runtime matrix",
+        )
+    return proof_set
 
 
 def load(path: Path) -> dict[str, Any]:
@@ -107,6 +1167,8 @@ def validate_gate_catalog(
         not missing_gate_ids,
         f"STRUCTURAL_GAP: required gates missing from gates.yaml: {missing_gate_ids}",
     )
+    agent_v2_contract = load_agent_v2_contract()
+    agent_v2_matrix = matrix_identity(agent_v2_contract)
     for gate_id in sorted(required_gate_ids):
         gate = gate_defs[gate_id]
         require(gate.get("command"), f"{gate_id}: gate command is required")
@@ -121,6 +1183,26 @@ def validate_gate_catalog(
             )
         if tier in {"ci-structure", "ci-cheap"}:
             require(environment == "local", f"{gate_id}: CI tier gates must use local environment")
+        if gate_id in agent_v2_contract["gates"]:
+            expected = agent_v2_contract["gates"][gate_id]
+            require(
+                gate.get("initial_proof_status") == "UNPROVEN",
+                f"{gate_id}: initial_proof_status must be UNPROVEN",
+            )
+            require(
+                gate.get("runtime_matrix")
+                == {
+                    "id": agent_v2_matrix["id"],
+                    "version": agent_v2_matrix["version"],
+                    "sha256": agent_v2_matrix["sha256"],
+                    "expected_tuple_count": expected["expectedTuples"],
+                },
+                f"{gate_id}: runtime_matrix does not match the reviewed matrix",
+            )
+            require(
+                gate.get("required_artifact_roles") == expected["roles"],
+                f"{gate_id}: required_artifact_roles do not match the proof contract",
+            )
 
 
 def validate_gate_inheritance(
@@ -490,10 +1572,21 @@ def validate_capability(
     require(evidence.get("proven_scope"), f"{capability_id}: evidence proven_scope is required")
 
     proven_by = set(evidence.get("proven_by", []))
-    missing_run_gates = proven_by - passed_gates
-    status = "proven" if not missing_run_gates else "unproven"
-    if not require_proven:
+    domain_proof_required = capability.get("domain_proof_required", True)
+    require(
+        isinstance(domain_proof_required, bool),
+        f"{capability_id}: domain_proof_required must be boolean",
+    )
+    dedicated_missing_gates = proven_by - passed_gates
+    missing_run_gates = (
+        dedicated_missing_gates if domain_proof_required else set()
+    )
+    if require_proven and not domain_proof_required:
+        status = "dedicated_proof_required"
+    elif not require_proven:
         status = "structurally_valid"
+    else:
+        status = "proven" if not missing_run_gates else "unproven"
     return {
         "id": capability_id,
         "domain": capability.get("domain"),
@@ -503,6 +1596,8 @@ def validate_capability(
         "required_gates": sorted(required_gates),
         "planned_gates": sorted(planned_gates),
         "missing_run_gates": sorted(missing_run_gates),
+        "dedicated_missing_gates": sorted(dedicated_missing_gates),
+        "domain_proof_required": domain_proof_required,
         "proven_scope": evidence.get("proven_scope", []),
         "unproven_scope": evidence.get("unproven_scope", []),
     }
@@ -525,6 +1620,7 @@ def validate_domain(
     domain_id: str,
     require_proven: bool,
     store: EvidenceStore,
+    proven_gates: set[str] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     domain = load(acceptance_root / "domains" / f"{domain_id}.yaml")
     require(domain.get("id") == domain_id, f"domain profile id mismatch: {domain_id}")
@@ -549,10 +1645,14 @@ def validate_domain(
     validate_gate_inheritance(repo_root, gate_defs, required_gates)
     validate_gate_import_isolation(repo_root, gate_defs, required_gates)
     validate_synthetic_paths(repo_root, selected, features)
-    passed_gates = latest_passed_gates(
-        store,
-        validation_gate_id,
-        require_proven,
+    passed_gates = (
+        set(proven_gates)
+        if require_proven and proven_gates is not None
+        else latest_passed_gates(
+            store,
+            validation_gate_id,
+            require_proven,
+        )
     )
 
     results = [
@@ -619,6 +1719,13 @@ def main() -> int:
     parser.add_argument("--domain", default="")
     parser.add_argument("--infra", action="store_true")
     parser.add_argument("--require-proven", action="store_true")
+    parser.add_argument("--candidate-ref-file")
+    parser.add_argument("--candidate-manifest-sha256")
+    parser.add_argument("--proof-envelope-ref-out")
+    parser.add_argument("--proof-envelope-sha-out")
+    parser.add_argument("--proof-set-ref-file")
+    parser.add_argument("--proof-set-manifest-sha256")
+    parser.add_argument("--validate-agent-v2-proof-set", action="store_true")
     args = parser.parse_args()
     require(
         not (args.infra and args.domain),
@@ -635,6 +1742,70 @@ def main() -> int:
     store = EvidenceStore.from_environment(
         repo_root=repo_root,
         worktree=repo_root,
+    )
+    if args.candidate_ref_file:
+        require(
+            bool(args.candidate_manifest_sha256),
+            "--candidate-manifest-sha256 is required",
+        )
+        require(
+            bool(args.proof_envelope_ref_out),
+            "--proof-envelope-ref-out is required",
+        )
+        require(
+            not args.domain
+            and not args.require_proven
+            and not args.proof_set_ref_file,
+            "candidate validation cannot be combined with domain validation",
+        )
+        envelope_ref = prove_candidate(
+            store,
+            read_ref_file(args.candidate_ref_file),
+            args.candidate_manifest_sha256,
+            args.proof_envelope_ref_out,
+            args.proof_envelope_sha_out,
+        )
+        print(
+            "proof-envelope: "
+            + json.dumps(envelope_ref.to_dict(), sort_keys=True)
+        )
+        return 0
+
+    if args.validate_agent_v2_proof_set:
+        require(
+            bool(args.proof_set_ref_file)
+            and bool(args.proof_set_manifest_sha256),
+            "--validate-agent-v2-proof-set requires "
+            "--proof-set-ref-file and --proof-set-manifest-sha256",
+        )
+        require(
+            not args.domain and not args.require_proven,
+            "Agent V2 proof-set validation cannot be combined with "
+            "domain validation",
+        )
+        proof_set = validate_proof_set(
+            store,
+            read_ref_file(args.proof_set_ref_file),
+            args.proof_set_manifest_sha256,
+        )
+        print(
+            "agent-v2-proof-set: "
+            + json.dumps(
+                {
+                    "proofStatus": proof_set["proofStatus"],
+                    "gateIds": [
+                        item["gateId"] for item in proof_set["gateProofs"]
+                    ],
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+
+    require(
+        not args.proof_set_ref_file
+        and not args.proof_set_manifest_sha256,
+        "proof-set inputs require --validate-agent-v2-proof-set",
     )
     if os.environ.get(RUN_GATE_ENV):
         gate_id = os.environ[RUN_GATE_ENV]
@@ -691,7 +1862,10 @@ def main() -> int:
                     print(f"  missing_run_gates: {', '.join(result['missing_run_gates'])}")
             if args.require_proven:
                 unproven.extend(
-                    result for result in results if result["status"] != "proven"
+                    result
+                    for result in results
+                    if result["domain_proof_required"]
+                    and result["status"] != "proven"
                 )
         status = "passed" if not unproven else "failed"
         session.complete(

@@ -1,0 +1,88 @@
+{
+  "artifactKind": "agent-v2-proof-contract",
+  "schemaVersion": 1,
+  "matrix": {
+    "id": "modern-chat-agent-v2-runtime-matrix",
+    "version": "2026-08-17.3",
+    "source": "docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml",
+    "sha256": "8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6",
+    "expandedTupleCount": 742
+  },
+  "generatedRoles": [
+    "source-identity",
+    "role-schema-report",
+    "runner-attestation"
+  ],
+  "schemas": {
+    "evidence-role": {
+      "id": "peers-touch.agent-v2.evidence-role",
+      "version": 1,
+      "file": "evidence-role.schema.json"
+    },
+    "runtime-attestation-set": {
+      "id": "peers-touch.agent-v2.runtime-attestation-set",
+      "version": 1,
+      "file": "runtime-attestation-set.schema.json"
+    },
+    "source-identity": {
+      "id": "peers-touch.agent-v2.source-identity",
+      "version": 1,
+      "file": "source-identity.schema.json"
+    },
+    "role-schema-report": {
+      "id": "peers-touch.agent-v2.role-schema-report",
+      "version": 1,
+      "file": "role-schema-report.schema.json"
+    },
+    "runner-attestation": {
+      "id": "peers-touch.agent-v2.runner-attestation",
+      "version": 1,
+      "file": "runner-attestation.schema.json"
+    },
+    "validator-attestation": {
+      "id": "peers-touch.agent-v2.validator-attestation",
+      "version": 1,
+      "file": "validator-attestation.schema.json"
+    },
+    "proof-envelope": {
+      "id": "peers-touch.agent-v2.proof-envelope",
+      "version": 1,
+      "file": "proof-envelope.schema.json"
+    },
+    "proof-set": {
+      "id": "peers-touch.agent-v2.proof-set",
+      "version": 1,
+      "file": "proof-set.schema.json"
+    }
+  },
+  "gates": {
+    "agent-v2-kernel-foundation-e2e": {
+      "expectedTuples": 419,
+      "roles": ["cell-results", "receiver-dom", "station-readback", "runtime-events", "runtime-attestation-set", "measurement-report", "side-effect-count", "replay", "cleanup", "source-identity", "role-schema-report", "runner-attestation"]
+    },
+    "agent-v2-home-command-center-e2e": {
+      "expectedTuples": 33,
+      "roles": ["receiver-dom", "station-readback", "command-ids", "projection-revisions", "runtime-attestation-set", "measurement-report", "side-effect-count", "replay", "cleanup", "source-identity", "role-schema-report", "runner-attestation"]
+    },
+    "agent-v2-capability-binding-e2e": {
+      "expectedTuples": 69,
+      "roles": ["receiver-dom", "station-readback", "readiness-snapshots", "zero-execution", "runtime-attestation-set", "measurement-report", "side-effect-count", "replay", "cleanup", "source-identity", "role-schema-report", "runner-attestation"]
+    },
+    "agent-v2-governed-tool-loop-e2e": {
+      "expectedTuples": 86,
+      "roles": ["receiver-dom", "station-readback", "executor-receipts", "runtime-attestation-set", "measurement-report", "side-effect-count", "cleanup", "replay", "source-identity", "role-schema-report", "runner-attestation"]
+    },
+    "agent-v2-mcp-lifecycle-e2e": {
+      "expectedTuples": 41,
+      "roles": ["receiver-dom", "station-readback", "executor-receipts", "process-port-secret-canary", "runtime-attestation-set", "measurement-report", "side-effect-count", "cleanup", "replay", "source-identity", "role-schema-report", "runner-attestation"]
+    },
+    "agent-v2-connector-invocation-e2e": {
+      "expectedTuples": 37,
+      "roles": ["receiver-dom", "station-readback", "oauth-resource-manifest", "provider-revoke", "runtime-attestation-set", "measurement-report", "side-effect-count", "cleanup", "replay", "source-identity", "role-schema-report", "runner-attestation"]
+    },
+    "agent-v2-evaluation-lab-e2e": {
+      "expectedTuples": 57,
+      "roles": ["receiver-dom", "station-readback", "turn-trace", "metrics-lineage", "runtime-attestation-set", "measurement-report", "side-effect-count", "cleanup", "replay", "source-identity", "role-schema-report", "runner-attestation"]
+    }
+  }
+}

@@ -32,7 +32,7 @@
 
 | 文档 | 定位 |
 |---|---|
-| [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent draft product + architecture** — LobeHub/AgentBox benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前 `PRODUCT_DESIGN_INCOMPLETE` |
+| [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent accepted product + architecture** — LobeHub/AgentBox benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前处于正式 execution-plan review |
 | [agent-canvas-orchestration.md](./agent-canvas-orchestration.md) | **当前 Agent 编排正式设计** — 以 Agent Canvas 为入口、GoalKeeper 为目标锚点、EngineMatcher/RunPlan/AutonomyController 为运行内核的多 Agent 编排架构 |
 | [provider-station-ownership/](./provider-station-ownership/) | **Provider Station Ownership** — Station 是所有 AI Provider 的唯一执行者和配置所有者；Desktop/Mobile 是编辑入口 + SSE 消费端；per-actor 凭证隔离；版本号防脑裂 |
 | [agent-lobehub-blueprint.md](./agent-lobehub-blueprint.md) | **当前 Agent 重构正式设计** — 以 LobeHub 为蓝本的 UI/UX、Tool、MCP、Skill、后端能力映射与目标架构 |
@@ -53,7 +53,7 @@
 
 | 优先级 | 状态 | 文档 | 定位 |
 |---|---|---|---|
-| V2 | draft / product-review | [Modern Chat Agent V2](./execution-plans/20260817-modern-chat-agent-v2.md) | **下一轮产品级迭代讨论稿** — Home Command Center、统一 Tool/MCP/Connector capability plane、真实 tool invocation、审批/恢复/审计；G1/G2 长期不支持，G3b/E1 待产品决策；未通过 PRODUCT/DESIGN gate 前不授权实施 |
+| V2 | plan-ready / execute-approval | [Modern Chat Agent V2](./execution-plans/20260817-modern-chat-agent-v2.md) · [Formal execution DAG](./execution-plans/20260817-modern-chat-agent-v2-execution.md) | PRODUCT、DESIGN 与第十九轮独立 PLAN review 已通过；W0/F1-F4/W1-W9 dependency DAG、atomic cutovers、Native/Station Gates 已落盘，等待 Owner EXECUTE approval；生产能力仍 0/9 PROVEN |
 | V1 | active / functional-first | [First Useful Answer](./execution-plans/20260815-v1-first-useful-answer.md) | **当前最高优先执行入口** — 以 Settings 配置 Direct Model → Agent Profile 保存 provider+model → New Topic → 真实流式回复 → Desktop 重启读回为一个原子产品切换；先关闭功能与运行态，像素级收口由 deferred [Visual Replica Contract](./execution-plans/20260815-v1-visual-replica-contract.md) 后置执行 |
 | P0-P2 | draft / design-blocked | [modern-chat-agent](./execution-plans/20260730-modern-chat-agent.md) | Station 单一真源下的现代 Agent Chat 集成、所有权切换与端到端验收计划 |
 | P0-P4 | capability inventory | [agent-lobehub-rebuild](./execution-plans/20260616-agent-lobehub-rebuild.md) | LobeHub Agent 广度能力库存；不得再以模块/文件存在替代产品旅程完成，V1 完成前不启动新的横向能力批次 |

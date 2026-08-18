@@ -788,6 +788,96 @@ class EvidenceStore:
             raise EvidenceManifestInvalid("JSON artifact must be an object")
         return value
 
+    def read_run_manifest(
+        self,
+        reference: ArtifactRef,
+        *,
+        manifest_sha256: str,
+        expected_gate_id: str | None = None,
+    ) -> dict[str, Any]:
+        if reference.path != "manifest.json":
+            raise EvidenceManifestInvalid(
+                "run manifest reference must target manifest.json"
+            )
+        if not SHA256_PATTERN.fullmatch(manifest_sha256):
+            raise EvidenceManifestInvalid("invalid manifest SHA-256")
+        if reference.sha256 != manifest_sha256:
+            raise EvidenceManifestInvalid(
+                "explicit manifest SHA-256 does not match ArtifactRef"
+            )
+        if expected_gate_id is not None and reference.gate_id != expected_gate_id:
+            raise EvidenceManifestInvalid("run manifest Gate mismatch")
+        manifest = self.read_json(reference)
+        if manifest.get("artifactKind") != "acceptance-run-manifest":
+            raise EvidenceManifestInvalid("invalid run manifest kind")
+        if manifest.get("state") != "DURABLE":
+            raise EvidenceManifestInvalid("run manifest is not durable")
+        if (
+            manifest.get("workspaceId") != reference.workspace_id
+            or manifest.get("gateId") != reference.gate_id
+            or manifest.get("runId") != reference.run_id
+        ):
+            raise EvidenceManifestInvalid("run manifest identity mismatch")
+        return manifest
+
+    def publish_candidate_proof(
+        self,
+        *,
+        candidate_manifest: ArtifactRef,
+        proof_envelope: ArtifactRef,
+    ) -> Path:
+        if candidate_manifest.path != "manifest.json":
+            raise EvidenceManifestInvalid(
+                "candidate proof publication requires a manifest reference"
+            )
+        if (
+            candidate_manifest.workspace_id != self.workspace_id
+            or proof_envelope.workspace_id != self.workspace_id
+        ):
+            raise EvidenceManifestInvalid("candidate proof workspace mismatch")
+        self.read_run_manifest(
+            candidate_manifest,
+            manifest_sha256=candidate_manifest.sha256,
+        )
+        self.resolve(proof_envelope)
+        gate_dir = self.workspace_dir / _validate_gate_id(
+            candidate_manifest.gate_id
+        )
+        proof_dir = gate_dir / ".candidate-proofs"
+        _private_directory(proof_dir, "candidate-proof")
+        target = proof_dir / f"{candidate_manifest.run_id}.json"
+        payload = {
+            "artifactKind": "acceptance-candidate-proof-pointer",
+            "schemaVersion": 1,
+            "workspaceId": self.workspace_id,
+            "gateId": candidate_manifest.gate_id,
+            "candidateRunId": candidate_manifest.run_id,
+            "candidateManifest": candidate_manifest.to_dict(),
+            "candidateManifestSha256": candidate_manifest.sha256,
+            "proofEnvelope": proof_envelope.to_dict(),
+            "proofEnvelopeSha256": proof_envelope.sha256,
+        }
+        encoded = (
+            json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+        lock = _FileLock(gate_dir / ".candidate-proof.lock")
+        lock.acquire(blocking=True)
+        try:
+            if target.is_file():
+                if target.read_bytes() != encoded:
+                    raise EvidenceConflict(
+                        "candidate already has a different proof envelope"
+                    )
+                return target
+            _atomic_write(
+                target,
+                encoded,
+                path_role="candidate-proof-pointer",
+            )
+            return target
+        finally:
+            lock.release()
+
     def _latest_pointer(
         self,
         gate_id: str,

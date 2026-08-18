@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +23,122 @@ sys.path.insert(0, str(REPO_ROOT))
 RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
 RESULT_TRACEABILITY_FIELDS = ("sourceArtifact", "sourceArtifactKind", "sourcePhase", "sourceBom", "sourceSpec", "sourceGate")
+AGENT_V2_SCHEMA_ROOT = REPO_ROOT / "tooling/acceptance/schemas/agent-v2"
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_agent_v2_contract() -> dict[str, Any]:
+    return json.loads(
+        (AGENT_V2_SCHEMA_ROOT / "contract.json").read_text(encoding="utf-8")
+    )
+
+
+def schema_descriptor(
+    contract: dict[str, Any],
+    schema_name: str,
+) -> dict[str, Any]:
+    definition = contract["schemas"][schema_name]
+    schema_path = AGENT_V2_SCHEMA_ROOT / definition["file"]
+    return {
+        "id": definition["id"],
+        "version": definition["version"],
+        "sha256": sha256_file(schema_path),
+    }
+
+
+def matrix_identity(contract: dict[str, Any]) -> dict[str, Any]:
+    matrix = dict(contract["matrix"])
+    source_path = REPO_ROOT / matrix.pop("source")
+    if not source_path.is_file() or sha256_file(source_path) != matrix["sha256"]:
+        raise RuntimeError("reviewed Agent V2 runtime matrix hash mismatch")
+    return matrix
+
+
+def write_explicit_json(path_value: str, value: dict[str, Any]) -> None:
+    from tooling.acceptance.core import validate_external_output_path
+
+    path = validate_external_output_path(path_value, repo_root=REPO_ROOT)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def emit_agent_v2_candidate_metadata(
+    gate_run: Any,
+    gate_id: str,
+    source: dict[str, Any],
+) -> None:
+    contract = load_agent_v2_contract()
+    gate_contract = contract["gates"].get(gate_id)
+    if gate_contract is None:
+        raise RuntimeError(f"{gate_id}: missing Agent V2 proof contract")
+    matrix = matrix_identity(contract)
+    source_schema = schema_descriptor(contract, "source-identity")
+    runner_schema = schema_descriptor(contract, "runner-attestation")
+    gate_run.write_json(
+        "proof/source-identity.json",
+        {
+            "artifactKind": "agent-v2-source-identity",
+            "schema": source_schema,
+            "role": "source-identity",
+            "gateId": gate_id,
+            "runId": gate_run.run_id,
+            "sourceIdentity": source,
+            "runtimeMatrix": matrix,
+        },
+        role="source-identity",
+        redact=False,
+    )
+    gate_run.write_json(
+        "proof/runner-attestation.json",
+        {
+            "artifactKind": "agent-v2-runner-attestation",
+            "schema": runner_schema,
+            "role": "runner-attestation",
+            "gateId": gate_id,
+            "runId": gate_run.run_id,
+            "producer": {
+                "kind": "runner",
+                "processId": os.getpid(),
+                "invocationId": secrets.token_hex(16),
+            },
+            "candidateOnly": True,
+            "attestedAt": utc_now(),
+        },
+        role="runner-attestation",
+        redact=False,
+    )
+    role_schemas: dict[str, Any] = {}
+    for role in gate_contract["roles"]:
+        schema_name = (
+            role
+            if role in contract["schemas"]
+            else "evidence-role"
+        )
+        role_schemas[role] = schema_descriptor(contract, schema_name)
+    report_schema = schema_descriptor(contract, "role-schema-report")
+    gate_run.write_json(
+        "proof/role-schema-report.json",
+        {
+            "artifactKind": "agent-v2-role-schema-report",
+            "schema": report_schema,
+            "role": "role-schema-report",
+            "gateId": gate_id,
+            "runId": gate_run.run_id,
+            "schemas": role_schemas,
+        },
+        role="role-schema-report",
+        redact=False,
+    )
 
 
 @contextlib.contextmanager
@@ -154,11 +273,27 @@ def redact_runtime_artifacts(
 ) -> tuple[list[str], list[str]]:
     redacted_paths: list[str] = []
     leaked_paths: list[str] = []
+    protected_paths: set[str] = set()
+    role_directory = run_dir / ".artifact-roles"
+    if role_directory.is_dir():
+        for metadata_path in role_directory.glob("*.json"):
+            try:
+                metadata = json.loads(
+                    metadata_path.read_text(encoding="utf-8")
+                )
+                artifact_path = metadata["artifact"]["path"]
+            except (OSError, KeyError, TypeError, json.JSONDecodeError):
+                continue
+            if isinstance(artifact_path, str):
+                protected_paths.add(artifact_path)
     high_entropy_values = tuple(
         value for value in secret_values if len(value) >= 16
     )
     for path in run_dir.rglob("*"):
-        if not path.is_file() or path.name.startswith("."):
+        if (
+            not path.is_file()
+            or any(part.startswith(".") for part in path.relative_to(run_dir).parts)
+        ):
             continue
         try:
             original = path.read_text(encoding="utf-8")
@@ -167,6 +302,8 @@ def redact_runtime_artifacts(
         relative_path = path.relative_to(run_dir).as_posix()
         if any(value in original for value in high_entropy_values):
             leaked_paths.append(relative_path)
+        if relative_path in protected_paths:
+            continue
         try:
             payload = json.loads(original)
         except json.JSONDecodeError:
@@ -463,10 +600,24 @@ def result_traceability(result: dict[str, Any]) -> dict[str, Any]:
     return trace
 
 
-def standardize_result(result: dict[str, Any], plan_path: Any) -> dict[str, Any]:
+def standardize_result(
+    result: dict[str, Any],
+    plan_path: Any,
+    *,
+    candidate_mode: bool = False,
+) -> dict[str, Any]:
     standardized = dict(result)
     gate_id = str(standardized.get("id") or "unknown")
     status = str(standardized.get("status") or "")
+    if candidate_mode:
+        declared_proof = standardized.get("proofStatus")
+        if (
+            standardized.get("status") == "passed"
+            and declared_proof != "UNPROVEN"
+        ):
+            standardized["proofStatus"] = "CANDIDATE"
+        elif declared_proof == "PROVEN":
+            standardized["proofStatus"] = "UNPROVEN"
     standardized.setdefault("artifactKind", RESULT_ARTIFACT_KIND)
     standardized.setdefault(
         "artifactPath",
@@ -586,7 +737,11 @@ def missing_result_traceability_count(results: list[dict[str, Any]]) -> int:
     )
 
 
-def result_traceability_state(results: list[dict[str, Any]]) -> dict[str, Any]:
+def result_traceability_state(
+    results: list[dict[str, Any]],
+    *,
+    candidate_mode: bool = False,
+) -> dict[str, Any]:
     missing = [
         {
             "acceptanceGateId": result.get("id"),
@@ -602,15 +757,31 @@ def result_traceability_state(results: list[dict[str, Any]]) -> dict[str, Any]:
         "artifactKind": "acceptance-run-result-traceability-state",
         "status": status,
         "completionStatus": "DONE" if status == "pass" else "PARTIAL",
-        "proofStatus": "PROVEN" if status == "pass" else "UNPROVEN",
+        "proofStatus": (
+            "CANDIDATE" if candidate_mode else "PROVEN"
+        )
+        if status == "pass"
+        else "UNPROVEN",
         "sampleEmissionAllowed": False,
         "missingTraceabilityCount": len(missing),
         "missingTraceability": missing,
     }
 
 
-def build_run_report(plan_path: Any, results: list[dict[str, Any]]) -> dict[str, Any]:
-    results = [standardize_result(result, plan_path) for result in results]
+def build_run_report(
+    plan_path: Any,
+    results: list[dict[str, Any]],
+    *,
+    candidate_mode: bool = False,
+) -> dict[str, Any]:
+    results = [
+        standardize_result(
+            result,
+            plan_path,
+            candidate_mode=candidate_mode,
+        )
+        for result in results
+    ]
     blocked = [result for result in results if result.get("status") == "blocked"]
     failed = [result for result in results if result.get("status") not in {"passed", "dry-run", "blocked"}]
     dry_run = [result for result in results if result.get("status") == "dry-run"]
@@ -649,9 +820,16 @@ def build_run_report(plan_path: Any, results: list[dict[str, Any]]) -> dict[str,
             "sampleEmissionAllowed": sample_emission_allowed,
         },
         "completionStatus": "BLOCKED" if blocked else ("DONE" if not incomplete else "PARTIAL"),
-        "proofStatus": "PROVEN" if not failed and not blocked and not unproven else "UNPROVEN",
+        "proofStatus": (
+            ("CANDIDATE" if candidate_mode else "PROVEN")
+            if not failed and not blocked and not unproven and not dry_run
+            else "UNPROVEN"
+        ),
         "sampleEmissionAllowed": sample_emission_allowed,
-        "resultTraceabilityState": result_traceability_state(results),
+        "resultTraceabilityState": result_traceability_state(
+            results,
+            candidate_mode=candidate_mode,
+        ),
         "results": results,
     }
     source_phases = aggregate_source_values(results, "sourcePhase")
@@ -714,14 +892,19 @@ def write_run_report(output: Path, report: dict[str, Any]) -> None:
     output.with_suffix(".md").write_text(render_markdown(report), encoding="utf-8")
 
 
-def acceptance_exit_code(report: dict[str, Any]) -> int:
+def acceptance_exit_code(
+    report: dict[str, Any],
+    *,
+    candidate_mode: bool = False,
+) -> int:
     if report.get("completionStatus") == "BLOCKED":
         return 2
     if report.get("completionStatus") != "DONE":
         return 1
-    if report.get("proofStatus") != "PROVEN":
+    expected_proof = "CANDIDATE" if candidate_mode else "PROVEN"
+    if report.get("proofStatus") != expected_proof:
         return 1
-    if report.get("sampleEmissionAllowed") is not True:
+    if not candidate_mode and report.get("sampleEmissionAllowed") is not True:
         return 1
     return 0
 
@@ -731,6 +914,7 @@ def main() -> int:
         EvidenceError,
         EvidenceStore,
         source_identity,
+        validate_external_output_path,
     )
 
     parser = argparse.ArgumentParser()
@@ -739,7 +923,23 @@ def main() -> int:
     parser.add_argument("--gate", action="append", default=[])
     parser.add_argument("--tier", action="append", default=[])
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--candidate-ref-out")
+    parser.add_argument("--candidate-manifest-sha-out")
     args = parser.parse_args()
+    candidate_mode = bool(
+        args.candidate_ref_out or args.candidate_manifest_sha_out
+    )
+    if candidate_mode and not (
+        args.candidate_ref_out and args.candidate_manifest_sha_out
+    ):
+        raise SystemExit(
+            "candidate handoff requires both --candidate-ref-out and "
+            "--candidate-manifest-sha-out"
+        )
+    if candidate_mode and (args.dry_run or len(args.gate) != 1):
+        raise SystemExit(
+            "candidate handoff requires exactly one --gate and forbids --dry-run"
+        )
 
     try:
         store = EvidenceStore.from_environment(
@@ -776,6 +976,7 @@ def main() -> int:
     gates = filter_gates_by_tier(gates, args.tier)
 
     results: list[dict[str, Any]] = []
+    candidate_manifest_ref = None
     print("Acceptance Run")
     print("==============")
     if args.tier:
@@ -982,9 +1183,36 @@ def main() -> int:
                 result["status"] = "failed"
 
             result = enrich_result_with_run_artifacts(result, gate_run)
+            result = standardize_result(
+                result,
+                plan_source,
+                candidate_mode=candidate_mode,
+            )
+            if candidate_mode:
+                contract = load_agent_v2_contract()
+                source = source_identity(REPO_ROOT)
+                emit_agent_v2_candidate_metadata(
+                    gate_run,
+                    gate_id,
+                    source,
+                )
+                artifacts = gate_run.collect_existing_artifacts()
+                missing_roles = sorted(
+                    set(contract["gates"][gate_id]["roles"]) - set(artifacts)
+                )
+                if missing_roles:
+                    result["status"] = "failed"
+                    result["completionStatus"] = "PARTIAL"
+                    result["proofStatus"] = "UNPROVEN"
+                    result["reason"] = (
+                        "candidate is missing mandatory artifact roles: "
+                        + ", ".join(missing_roles)
+                    )
             gate_run.finalize(result=result, runtime=manifest or {})
             gate_run.publish_latest()
             result["runManifest"] = gate_run.manifest_ref.to_dict()
+            if candidate_mode and result.get("status") == "passed":
+                candidate_manifest_ref = gate_run.manifest_ref
             gate_run.close()
             active_gate_run = None
             results.append(result)
@@ -993,7 +1221,11 @@ def main() -> int:
                 f"duration={duration}s run={gate_run.run_id}"
             )
 
-        report = build_run_report(plan_source, results)
+        report = build_run_report(
+            plan_source,
+            results,
+            candidate_mode=candidate_mode,
+        )
         run_ref = aggregate_run.write_json(
             "reports/run.json",
             report,
@@ -1008,7 +1240,13 @@ def main() -> int:
         aggregate_run.finalize(
             result={
                 "status": (
-                    "passed" if acceptance_exit_code(report) == 0 else "failed"
+                    "passed"
+                    if acceptance_exit_code(
+                        report,
+                        candidate_mode=candidate_mode,
+                    )
+                    == 0
+                    else "failed"
                 ),
                 "completionStatus": report.get("completionStatus"),
                 "proofStatus": report.get("proofStatus"),
@@ -1017,7 +1255,27 @@ def main() -> int:
         )
         aggregate_run.publish_latest()
         print(f"run: {json.dumps(run_ref.to_dict(), sort_keys=True)}")
-        return acceptance_exit_code(report)
+        exit_code = acceptance_exit_code(
+            report,
+            candidate_mode=candidate_mode,
+        )
+        if candidate_mode:
+            if exit_code != 0 or candidate_manifest_ref is None:
+                return exit_code or 1
+            write_explicit_json(
+                args.candidate_ref_out,
+                candidate_manifest_ref.to_dict(),
+            )
+            sha_path = validate_external_output_path(
+                args.candidate_manifest_sha_out,
+                repo_root=REPO_ROOT,
+            )
+            sha_path.parent.mkdir(parents=True, exist_ok=True)
+            sha_path.write_text(
+                candidate_manifest_ref.sha256 + "\n",
+                encoding="utf-8",
+            )
+        return exit_code
     except EvidenceError as error:
         print(
             f"Acceptance evidence failed: {type(error).__name__}: {error}",

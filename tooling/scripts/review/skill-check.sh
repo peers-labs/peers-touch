@@ -206,6 +206,17 @@ else
   rm -rf "$debug_literal_fixture"
   rm -f /tmp/pt-debug-literal.$$
 
+  cargo_directive_fixture="$(mktemp -d)"
+  printf 'fn main() { println!("cargo:rerun-if-changed={}", "model.proto"); }\n' \
+    > "$cargo_directive_fixture/build.rs"
+  if ! tooling/scripts/review/hard-rules.sh \
+    --fixture-dir "$cargo_directive_fixture" >/tmp/pt-cargo-directive.$$ 2>&1; then
+    cat /tmp/pt-cargo-directive.$$
+    fail "hard-rules.sh must not treat Cargo build directives as debug statements"
+  fi
+  rm -rf "$cargo_directive_fixture"
+  rm -f /tmp/pt-cargo-directive.$$
+
   growth_fixture_count="$(find "$fixtures_dir" -mindepth 1 -maxdepth 1 -type d -name 'growth-*' | wc -l | tr -d ' ')"
   if [[ "$growth_fixture_count" -lt 4 ]]; then
     fail "expected at least 4 growth fixtures, found $growth_fixture_count"

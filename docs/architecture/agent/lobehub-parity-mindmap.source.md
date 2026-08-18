@@ -32,6 +32,7 @@
 | 决策 | 含义 |
 |---|---|
 | `当前闭环` | V1 已交付并跑通 |
+| `当前阶段必做` | 已进入当前产品 required scope，但实现或运行证据尚未闭环 |
 | `后续阶段` | 确认要对齐但当前阶段不做（仍保留在脑图中对比） |
 | `能力对齐/拓扑不同` | 能力要，但按 Peers-Touch 边界重做（Station 单一真源） |
 | `候选待确认` | 是否作为产品能力尚未拍板 |
@@ -189,13 +190,13 @@ mindmap
 |---|---|---|---|---|---|---|---|
 | P1 | ✅  Notebook / Pages CRUD | 已闭环 | `store/notebook.ts`：`createPage#L50`/`updatePage#L51`/`deletePage#L52`（乐观更新，替代 NotesPage 内 useState） | 已闭环 | `store/notebook`（`createDocument`/`updateDocument`）+ `store/page/slices/crud` | 当前闭环 |
 | P2 | ✅  Portal 侧栏 | 已闭环 · Native `PROVEN` | client-side Portal 状态机已由 `agent-native-portal-navigation-e2e` 在 Native Tauri 完成 push 两视图→Back→collapse/reopen 保栈→explicit close 清栈；验收发现并修复 `DraggablePanel.onExpandChange(false)` 误调用 `close()` 的状态机缺陷，新增明确 `collapse()` 转移。证据 `tooling/acceptance/reports/agent-native/p2.json`、截图 `p2.png`（2026-08-17） | 已闭环 | `store/chat/slices/portal`：`portalStack` + `pushPortalView`/`popPortalView`/`goBack`/`goHome`/`replacePortalView`；`features/Portal/*` | 能力对齐/拓扑不同 |
-| P3 | ⬜（候选）  Home Page | 部分闭环 | `pages/HomePage.tsx` + `HomePageContainer.tsx`（存在，能力深度未逐项核） | 已闭环 | `store<home>/*`（agentList/recent/homeInput/sidebarUI） | 候选待确认 |
+| P3 | 🟨  Home Command Center（MCA-V2-H01） | 部分闭环 | `HomePage.tsx` 已有 pinned Agents、跨 Agent recent topics 与快捷入口；`AgentSidebar` 已有 pin/favorite；Station-backed `tasks.ts`、Connector panel 与 Chat readiness 可复用，但 Home 尚无 Chat/Task composer、Brief/Needs You、authoritative recents/readiness/recovery；V2 execution `Phase 2` 负责产品闭环 | 已闭环 | `features/Home/*` + `store/home/*`：pinned Agent、recents、Chat/Task input、Brief/Needs You、loading/error/empty/retry | 当前阶段必做 |
 
 ### 2.6 能力域：观测与评估
 
 | # | 对齐 | 操作节点 | Peers 状态 | Peers 源码锚点 | Lobe 状态 | Lobe 源码锚点 | 范围决策 |
 |---|---|---|---|---|---|---|---|
-| E1 | ⬜（候选）  Evaluation run 取消 | 部分闭环 | `store/evaluation.ts#L231`（`cancelRun`：`running→failed` `#L233`，本地态） | 已闭环 | `store/eval/slices/run`（`abortRun`/`createRun`/`retryRunCase`） | 候选待确认 |
+| E1 | 🟨  Evaluation Lab（MCA-V2-E01） | 部分闭环 | 用户入口与 UI 已存在：`EvaluationPage.tsx` + descriptor；`store/evaluation.ts` 有 dataset CRUD、真实 `quickCompletion` loop 与 cancel，但 dataset 仍在 localStorage、run/result 非 Station truth；Station 已有 `EcosystemEvalDataset`、proto 与 CRUD API；V2 execution `Phase 7` 负责产品闭环 | 已闭环 | `routes/(main)/eval/*` + `store/eval/*` + `services/agentEval.ts`；benchmark/dataset/test-case/run/experiment 全链，支持 `abortRun`/`retryRunCase`/`resumeRunCase` | 当前阶段必做 |
 | E2 | ✅  User Memory | 已闭环 | `store/memory.ts#L93`（`deleteMemory`→`api.deleteMemory`）/`#L106`（`updateMemory` impl）/`#L60`（`api.listMemories`），Station-backed；UI `pages/MemoryPage.tsx#L280`（`api.listMemories`）/`#L297`（`api.deleteMemory`）/`#L152`（`api.getMemoryStats`） | 已闭环 | `store/userMemory/slices/*`（base/identity/activity/context/experience/preference） | 当前闭环 |
 | E3 | ✅  Session/Topic 增删改 | 已闭环 | `store/agentTopics.ts`：`deleteTopic#L231`/`renameTopic#L242`（Station-backed） | 已闭环 | `store/chat/slices/topic` + `store/session/slices/session` | 当前闭环 |
 
@@ -204,9 +205,9 @@ mindmap
 | # | 对齐 | 操作节点 | Peers 状态 | Peers 源码锚点 | Lobe 状态 | Lobe 源码锚点 | 范围决策 |
 |---|---|---|---|---|---|---|---|
 | G1 | ⛔  Image Generation | 长期不支持 | 无 store / page；Owner 2026-08-17 决定长期不纳入 Peers Chat Agent 产品，不保留空入口或完成度债务 | 已闭环 | `store/image/slices/*`（`createImage`/generationBatch/generationConfig） | 明确不采用 |
-| G2 | ⛔  Video Generation | 长期不支持 | 无 store / page；Owner 2026-08-17 决定长期不纳入 Peers Chat Agent 产品，不保留空入口或完成度债务 | 已闭环 | `store/video/slices/*`（`createVideo`/`recreateVideo`） | 明确不采用 |
+| G2 | ⏸  Video Generation | 缺失 | 无 store / page；Owner 2026-08-17 决定当前 V2 不做音视频生成，后续如重新立项需重新经过 PRODUCT gate | 已闭环 | `store/video/slices/*`（`createVideo`/`recreateVideo`） | 后续阶段 |
 | G3a | ✅  TTS 朗读（客户端 read-aloud） | 已闭环 | `store/tts.ts#L51`（`speak`）/`#L108`（`getSynthesis`→`window.speechSynthesis`），Web Speech API；UI `modules/tts/index.tsx#L75`（`getVoices`） | 已闭环 | `store/chat/slices/tts/action.ts#L24`（`updateMessageTTS` 落库播放） | 当前闭环 |
-| G3b | ⬜（候选）  TTS 服务端合成（synthesis） | 代码存在未接线 | `src-tauri/src/application/tts/mod.rs#L16-22`：`tts_synthesize` 返回 stub `data:audio/wav;base64,`（空）；命令注册 `main.rs#L476`，无真实合成 | 已闭环 | `store/file/slices/tts`（`uploadTTSByArrayBuffers`） | 候选待确认 |
+| G3b | ⏸  TTS 服务端合成（synthesis） | 代码存在未接线 | `src-tauri/src/application/tts/mod.rs#L16-22`：`tts_synthesize` 返回 stub `data:audio/wav;base64,`（空）；命令注册 `main.rs#L476`，无真实合成；Owner 2026-08-17 决定当前 V2 不新增音视频生成能力 | 已闭环 | `store/file/slices/tts`（`uploadTTSByArrayBuffers`） | 后续阶段 |
 
 ### 2.8 能力域：扩展生态
 
@@ -222,22 +223,19 @@ mindmap
 
 ## 3. 候选待确认（是否作为产品能力尚未拍板）
 
-| 模块 | 节点号 | 现状 | 待确认问题 |
-|---|---|---|---|
-| Home Page | P3 | Peers 有页面，深度未对齐 | 是否对齐 Lobe 的 recents/agentList/多输入模式 |
-| Evaluation | E1 | Peers 本地态取消 | 是否纳入 Station 评估体系 |
-| TTS 服务端合成 | G3b | Peers 服务端为 stub（客户端朗读 G3a 已闭环） | 是否落地真实服务端语音合成 |
+当前无候选节点。P3/E1 已进入 V2 required，G2/G3b 已明确 deferred。
 
 ---
 
-## 4. 明确不采用 / 合并（不作 1:1 对齐）
+## 4. 明确不采用 / 合并 / 后续阶段（不作当前阶段 1:1 对齐）
 
 | 项 | 类型 | 处置 | 理由 |
 |---|---|---|---|
 | localstorage-migration | 工程债 | 明确不采用 | 属技术迁移，非产品能力 |
 | custom-plugins（独立 HTTP endpoint + localStorage 凭证） | 重复能力 | 合并进 `Tool + MCP + Connector` | 避免重复与本地凭证存储 |
 | Image Generation（G1） | 非目标能力 | 长期不支持 | Chat Agent 产品不承诺图片生成；Owner 2026-08-17 明确不做 |
-| Video Generation（G2） | 非目标能力 | 长期不支持 | Chat Agent 产品不承诺视频生成；Owner 2026-08-17 明确不做 |
+| Video Generation（G2） | 当前阶段延后 | 后续阶段 | Owner 2026-08-17 决定当前 V2 不做视频生成；不计入当前 readiness claim |
+| TTS 服务端合成（G3b） | 当前阶段延后 | 后续阶段 | Owner 2026-08-17 决定当前 V2 不新增音视频生成能力；G3a 客户端朗读继续保留 |
 | LobeHub 客户端 Agent Loop（`agents/transports/Client*`） | 架构分歧 | 架构不同 | Peers 由 Station 持有 Turn 状态机 |
 | LobeHub Cloud Gateway / WebSocket 拓扑 | 架构分歧 | 架构不同 | Peers 用 Station SSE + durable event + cursor replay |
 | Skill Store 托管 / 计费 / 订阅 / Composio 托管 | 商业专有 | 明确不采用 | LobeHub 商业生态，非本项目范围 |
@@ -250,7 +248,8 @@ mindmap
 
 | 节点 | 缺口 | 下一步 |
 |---|---|---|
-| P3 Home Page | 仅确认页面存在 | 逐操作核 recents/agentList/多输入模式 |
+| P3 Home Command Center | pinned/recent 基础存在，但 Chat/Task composer、Brief/Needs You、readiness 与恢复未闭环 | 补 MCA-V2-H01 / V2-J01 / Phase 2 产品闭环与 Native/Station evidence |
+| E1 Evaluation Lab | UI 与 Station dataset CRUD 已有，但 run/result 仍为 Desktop 本地态 | 补 Station benchmark/test-case/run/result、真实 Agent runtime、cancel/retry/readback/restart proof |
 
 ---
 
@@ -258,18 +257,44 @@ mindmap
 
 - **能力域**：8（对话运行时 / Agent 配置 / 多 Agent·编排 / 输入与内容 / 资源与页面 / 观测与评估 / 生成能力 / 扩展生态）
 - **操作节点总数**：**45**（R1–R16=16、C1–C7=7、O1–O3=3、I1–I4=4、P1–P3=3、E1–E3=3、G1·G2·G3a·G3b=4、X1–X5=5）
-- **状态分布（Peers 侧 · 对齐 icon）**：✅ 已对齐 39 · ⬜ 候选 3（P3/E1/G3b）· ⛔ 3（X2/G1/G2）= 45。历史证据分布（落地前基线）：已闭环 23 · 部分闭环 12 · 代码存在未接线 7 · 缺失 3 · 未证实 0，随落地推进逐步转 ✅。
+- **状态分布（Peers 侧 · 对齐 icon）**：✅ 已对齐 39 · 🟨 当前阶段必做 2（P3/E1）· ⬜ 候选 0 · ⏸ 后续阶段 2（G2/G3b）· ⛔ 2（X2/G1）= 45。历史证据分布（落地前基线）：已闭环 23 · 部分闭环 12 · 代码存在未接线 7 · 缺失 3 · 未证实 0，随落地推进逐步转 ✅。
 - 历史口径演变：初版「87 操作 / 8 未证实」（旧 widget）→ 二版 40 节点（补 Skill 拆 TTS）→ **三版 45 节点**（补 R12–R16 message action bar 操作），均已作废旧值，以本表 45 / 0 为准。
 
 ---
 
-## 7. 渲染与交接
+## 7. V2 Product Closure Overlay
+
+§2 的 `✅` 表示原子源码/行为节点已经闭环，不代表跨节点组合成的 V2
+产品能力已经完成。V2 composite completion 由本表承担；它与 §2 共同构成
+本文件的唯一完成度账本。
+
+| V2 capability | 原子节点 | Journey | Phase | Required Gate | V2 状态 |
+|---|---|---|---|---|---|
+| MCA-V2-H01 | P3 | V2-J01 | Phase 2 | `agent-v2-home-command-center-e2e` | 🟨 required / `UNPROVEN` |
+| MCA-V2-T01 | R5、C6、C7、X1、X5 | V2-J02 | Phase 3 | `agent-v2-capability-binding-e2e` | 🟨 required / `UNPROVEN` |
+| MCA-V2-T02 | C3、C6、C7、X1、X5 | V2-J02 | Phase 3 | `agent-v2-capability-binding-e2e` | 🟨 required / `UNPROVEN` |
+| MCA-V2-T03 | C1、C2、C4 | V2-J01/J02 | Phase 3 | Home + binding Gates | 🟨 required / `UNPROVEN` |
+| MCA-V2-T04 | R5、R6 | V2-J03 | Phase 6 | `agent-v2-governed-tool-loop-e2e` | 🟨 required / `UNPROVEN` |
+| MCA-V2-M01 | X1、R5、R6 | V2-J04 | Phase 4 | `agent-v2-mcp-lifecycle-e2e` | 🟨 required / `UNPROVEN` |
+| MCA-V2-C01 | C7、R5、R6 | V2-J05 | Phase 5 | `agent-v2-connector-invocation-e2e` | 🟨 required / `UNPROVEN` |
+| MCA-V2-O01 | R4、R5、R6 | V2-J03/J04/J05 | Phase 4/5/6 | Tool/MCP/Connector Gates | 🟨 required / `UNPROVEN` |
+| MCA-V2-E01 | E1 | V2-J06 | Phase 7 | `agent-v2-evaluation-lab-e2e` | 🟨 required / `UNPROVEN` |
+
+Overlay summary: **0/9 V2 required capabilities PROVEN**. Prototype review,
+static checks, or an atomic node's historical `✅` cannot change this count.
+Execution foundation status: **W0 complete; F1 in progress**. W0 proves the
+proto/evidence/Gate foundation only; it does not change any product capability
+from `UNPROVEN`.
+
+---
+
+## 8. 渲染与交接
 
 - **可解析源（本文件）**：`docs/architecture/agent/lobehub-parity-mindmap.source.md`（含 mermaid 脑图 + §2 全节点表：`对齐` icon / 文本 / 状态 / 双侧源码引用）。
 - **SVG（项目内）**：`docs/architecture/agent/lobehub-parity-mindmap.svg`，从本文件同一数据集确定性渲染；本文件为其权威源。
 - **审计入口**：reviewer 从 §2 矩阵逐行核 `Peers 源码锚点` / `Lobe 源码锚点` 是否真实存在，再判状态标签是否夸大。
 
-### 7.1 本文件已升级为「活进度看板」
+### 8.1 本文件已升级为「活进度看板」
 
 §2 每节点新增 `对齐` 列，追踪对齐 LobeHub 的落地进度：
 
@@ -286,9 +311,9 @@ mindmap
 
 ---
 
-## 8. Review 修正记录
+## 9. Review 修正记录
 
-### 8.1 第二轮修正（2026-08-16）
+### 9.1 第二轮修正（2026-08-16）
 
 | 项 | 修正前 | 修正后 | 依据 |
 |---|---|---|---|

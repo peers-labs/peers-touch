@@ -239,6 +239,111 @@
       "tier": "env-evidence",
       "description": "Prove Native Agent Portal push, Back, collapse/reopen preservation, and explicit close semantics."
     },
+    "agent-v2-kernel-foundation-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-kernel-foundation-e2e",
+      "timeout_seconds": 7200,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "initial_proof_status": "UNPROVEN",
+      "runtime_matrix": {
+        "id": "modern-chat-agent-v2-runtime-matrix",
+        "version": "2026-08-17.3",
+        "sha256": "8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6",
+        "expected_tuple_count": 419
+      },
+      "required_artifact_roles": ["cell-results", "receiver-dom", "station-readback", "runtime-events", "runtime-attestation-set", "measurement-report", "side-effect-count", "replay", "cleanup", "source-identity", "role-schema-report", "runner-attestation"],
+      "description": "Fail closed until the exact reviewed C01-C10 foundation matrix produces every mandatory candidate artifact role; registration alone remains UNPROVEN."
+    },
+    "agent-v2-home-command-center-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-home-command-center-e2e",
+      "timeout_seconds": 3600,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "initial_proof_status": "UNPROVEN",
+      "runtime_matrix": {
+        "id": "modern-chat-agent-v2-runtime-matrix",
+        "version": "2026-08-17.3",
+        "sha256": "8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6",
+        "expected_tuple_count": 33
+      },
+      "required_artifact_roles": ["receiver-dom", "station-readback", "command-ids", "projection-revisions", "runtime-attestation-set", "measurement-report", "side-effect-count", "replay", "cleanup", "source-identity", "role-schema-report", "runner-attestation"],
+      "description": "Fail closed until the Home Command Center scenario produces every mandatory candidate artifact role; registration alone remains UNPROVEN."
+    },
+    "agent-v2-capability-binding-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-capability-binding-e2e",
+      "timeout_seconds": 3600,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "initial_proof_status": "UNPROVEN",
+      "runtime_matrix": {
+        "id": "modern-chat-agent-v2-runtime-matrix",
+        "version": "2026-08-17.3",
+        "sha256": "8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6",
+        "expected_tuple_count": 69
+      },
+      "required_artifact_roles": ["receiver-dom", "station-readback", "readiness-snapshots", "zero-execution", "runtime-attestation-set", "measurement-report", "side-effect-count", "replay", "cleanup", "source-identity", "role-schema-report", "runner-attestation"],
+      "description": "Fail closed until capability inventory, binding, readiness, and rejection scenarios produce every mandatory candidate artifact role."
+    },
+    "agent-v2-governed-tool-loop-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-governed-tool-loop-e2e",
+      "timeout_seconds": 3600,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "initial_proof_status": "UNPROVEN",
+      "runtime_matrix": {
+        "id": "modern-chat-agent-v2-runtime-matrix",
+        "version": "2026-08-17.3",
+        "sha256": "8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6",
+        "expected_tuple_count": 86
+      },
+      "required_artifact_roles": ["receiver-dom", "station-readback", "executor-receipts", "runtime-attestation-set", "measurement-report", "side-effect-count", "cleanup", "replay", "source-identity", "role-schema-report", "runner-attestation"],
+      "description": "Fail closed until governed ToolCall decision, execution, replay, and cleanup scenarios produce every mandatory candidate artifact role."
+    },
+    "agent-v2-mcp-lifecycle-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-mcp-lifecycle-e2e",
+      "timeout_seconds": 3600,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "initial_proof_status": "UNPROVEN",
+      "runtime_matrix": {
+        "id": "modern-chat-agent-v2-runtime-matrix",
+        "version": "2026-08-17.3",
+        "sha256": "8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6",
+        "expected_tuple_count": 41
+      },
+      "required_artifact_roles": ["receiver-dom", "station-readback", "executor-receipts", "process-port-secret-canary", "runtime-attestation-set", "measurement-report", "side-effect-count", "cleanup", "replay", "source-identity", "role-schema-report", "runner-attestation"],
+      "description": "Fail closed until MCP lifecycle, fencing, and process-port-secret cleanup scenarios produce every mandatory candidate artifact role."
+    },
+    "agent-v2-connector-invocation-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-connector-invocation-e2e",
+      "timeout_seconds": 3600,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "initial_proof_status": "UNPROVEN",
+      "runtime_matrix": {
+        "id": "modern-chat-agent-v2-runtime-matrix",
+        "version": "2026-08-17.3",
+        "sha256": "8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6",
+        "expected_tuple_count": 37
+      },
+      "required_artifact_roles": ["receiver-dom", "station-readback", "oauth-resource-manifest", "provider-revoke", "runtime-attestation-set", "measurement-report", "side-effect-count", "cleanup", "replay", "source-identity", "role-schema-report", "runner-attestation"],
+      "description": "Fail closed until Connector OAuth resource, invocation, provider revoke, replay, and cleanup scenarios produce every mandatory candidate artifact role."
+    },
+    "agent-v2-evaluation-lab-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-evaluation-lab-e2e",
+      "timeout_seconds": 3600,
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "initial_proof_status": "UNPROVEN",
+      "runtime_matrix": {
+        "id": "modern-chat-agent-v2-runtime-matrix",
+        "version": "2026-08-17.3",
+        "sha256": "8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6",
+        "expected_tuple_count": 57
+      },
+      "required_artifact_roles": ["receiver-dom", "station-readback", "turn-trace", "metrics-lineage", "runtime-attestation-set", "measurement-report", "side-effect-count", "cleanup", "replay", "source-identity", "role-schema-report", "runner-attestation"],
+      "description": "Fail closed until Evaluation run, cancellation, retry, restart, metrics lineage, replay, and cleanup scenarios produce every mandatory candidate artifact role."
+    },
     "applet-desktop-lifecycle-smoothness": {
       "command": "pnpm applet:desktop-lifecycle-smoothness-gate",
       "timeout_seconds": 600,

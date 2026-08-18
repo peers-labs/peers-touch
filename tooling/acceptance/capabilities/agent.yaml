@@ -75,6 +75,125 @@
         "proven_scope": ["Native visible push, Back, collapse/reopen preservation, and explicit close stack clearing"],
         "unproven_scope": ["Portal view types not exercised by the selected fixture"]
       }
+    },
+    {
+      "id": "agent-v2-kernel-foundation",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "domain_proof_required": false,
+      "initial_proof_status": "UNPROVEN",
+      "features": ["agent-v2-kernel-foundation"],
+      "required_gates": ["agent-v2-kernel-foundation-e2e"],
+      "synthetic_paths": ["model/domain/agent/agent.proto"],
+      "evidence": {
+        "truth_sources": ["Station C01-C10 Agent authorities", "Versioned runtime and capability snapshots"],
+        "surfaces": ["Desktop App", "Browser", "Mobile semantic contracts", "Station D11 guards"],
+        "proven_by": ["agent-v2-kernel-foundation-e2e"],
+        "proven_scope": ["C01-C10 foundation behavior across the exact reviewed 419-cell Gate matrix"],
+        "unproven_scope": ["Initial state: UNPROVEN until a real scenario emits all mandatory roles and separate validation publishes proof"]
+      }
+    },
+    {
+      "id": "agent-v2-home-command-center",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "domain_proof_required": false,
+      "initial_proof_status": "UNPROVEN",
+      "features": ["agent-v2-home-command-center"],
+      "required_gates": ["agent-v2-home-command-center-e2e"],
+      "synthetic_paths": ["model/domain/agent/home.proto"],
+      "evidence": {
+        "truth_sources": ["Station Home projection", "Station Agent topics and tasks"],
+        "surfaces": ["Native Home Command Center", "Station readback"],
+        "proven_by": ["agent-v2-home-command-center-e2e"],
+        "proven_scope": ["MCA-V2-H01/T03 Home submission, projection, restart, stale, and recovery assertions"],
+        "unproven_scope": ["Initial state: UNPROVEN; prototype and registration evidence do not prove production Home behavior"]
+      }
+    },
+    {
+      "id": "agent-v2-capability-binding",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "domain_proof_required": false,
+      "initial_proof_status": "UNPROVEN",
+      "features": ["agent-v2-capability-binding"],
+      "required_gates": ["agent-v2-capability-binding-e2e"],
+      "synthetic_paths": ["model/domain/agent/capability.proto"],
+      "evidence": {
+        "truth_sources": ["Station capability manifest, binding, readiness, and compatibility revisions"],
+        "surfaces": ["Native capability inventory and binding", "Station readback"],
+        "proven_by": ["agent-v2-capability-binding-e2e"],
+        "proven_scope": ["MCA-V2-T01/T02/T03 inventory, binding, compatibility, deletion, and zero-execution rejection"],
+        "unproven_scope": ["Initial state: UNPROVEN until all 69 reviewed matrix tuples and mandatory roles are validated"]
+      }
+    },
+    {
+      "id": "agent-v2-governed-tool-loop",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "domain_proof_required": false,
+      "initial_proof_status": "UNPROVEN",
+      "features": ["agent-v2-governed-tool-loop"],
+      "required_gates": ["agent-v2-governed-tool-loop-e2e"],
+      "synthetic_paths": ["model/domain/agent/turn_stream.proto"],
+      "evidence": {
+        "truth_sources": ["Station ToolCall decision, claim, receipt, result, and fence revisions"],
+        "surfaces": ["Native Tool approval and result cards", "Station ToolCall lineage"],
+        "proven_by": ["agent-v2-governed-tool-loop-e2e"],
+        "proven_scope": ["MCA-V2-T04/O01 exactly-once approval, execution, terminal, replay, and recovery behavior"],
+        "unproven_scope": ["Initial state: UNPROVEN until executor receipts, side-effect counts, replay, and cleanup are proven"]
+      }
+    },
+    {
+      "id": "agent-v2-mcp-lifecycle",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "domain_proof_required": false,
+      "initial_proof_status": "UNPROVEN",
+      "features": ["agent-v2-mcp-lifecycle"],
+      "required_gates": ["agent-v2-mcp-lifecycle-e2e"],
+      "synthetic_paths": ["apps/desktop/src/store/mcp.ts"],
+      "evidence": {
+        "truth_sources": ["Station capability operation lifecycle", "Fenced client executor receipts"],
+        "surfaces": ["Native MCP lifecycle", "Station operation readback"],
+        "proven_by": ["agent-v2-mcp-lifecycle-e2e"],
+        "proven_scope": ["MCA-V2-M01/O01 install, test, invoke, cancel, reconnect, race, and cleanup behavior"],
+        "unproven_scope": ["Initial state: UNPROVEN until the process-port-secret canary and all mandatory roles pass"]
+      }
+    },
+    {
+      "id": "agent-v2-connector-invocation",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "domain_proof_required": false,
+      "initial_proof_status": "UNPROVEN",
+      "features": ["agent-v2-connector-invocation"],
+      "required_gates": ["agent-v2-connector-invocation-e2e"],
+      "synthetic_paths": ["apps/station/app/subserver/agent/service/connector_resource_manifest.go"],
+      "evidence": {
+        "truth_sources": ["OAuth resource revision", "Station Connector resource manifest, binding, ToolCall, and TurnTrace"],
+        "surfaces": ["Native Connector invocation and recovery", "Station readback"],
+        "proven_by": ["agent-v2-connector-invocation-e2e"],
+        "proven_scope": ["MCA-V2-C01/O01 OAuth resource-to-manifest-to-governed-invocation lifecycle"],
+        "unproven_scope": ["Initial state: UNPROVEN until approved OAuth fixture, provider revoke, invocation, replay, and cleanup evidence pass"]
+      }
+    },
+    {
+      "id": "agent-v2-evaluation-lab",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "domain_proof_required": false,
+      "initial_proof_status": "UNPROVEN",
+      "features": ["agent-v2-evaluation-lab"],
+      "required_gates": ["agent-v2-evaluation-lab-e2e"],
+      "synthetic_paths": ["model/domain/agent/evaluation.proto"],
+      "evidence": {
+        "truth_sources": ["Station Evaluation benchmark, dataset, run, attempt, result, cancellation, and metrics records"],
+        "surfaces": ["Native Evaluation Lab", "Station Evaluation readback"],
+        "proven_by": ["agent-v2-evaluation-lab-e2e"],
+        "proven_scope": ["MCA-V2-E01 durable run, cancellation, retry, restart, metrics lineage, retention, and isolation"],
+        "unproven_scope": ["Initial state: UNPROVEN until all 57 reviewed matrix tuples and mandatory roles are validated"]
+      }
     }
   ]
 }

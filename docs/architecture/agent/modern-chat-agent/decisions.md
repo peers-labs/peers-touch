@@ -2,7 +2,7 @@
 
 > **Status**: approved
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-07-30
+> **Created**: 2026-07-30 | **Updated**: 2026-08-17
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -24,6 +24,11 @@
 | MCA-D11 | Keep multi-Agent orchestration downstream of single-Agent readiness | approved |
 | MCA-D12 | Use one product capability profile instead of reusing conflicting P0-P2 labels | approved |
 | MCA-D13 | Route device-local work through a platform-neutral client capability session | approved |
+| MCA-D14 | Project Home from Station-owned work state | approved |
+| MCA-D15 | Use one versioned capability manifest and Agent binding contract | approved |
+| MCA-D16 | Model MCP lifecycle as Station operations executed by client capability managers | approved |
+| MCA-D17 | Separate Connector OAuth/resources from Agent tool manifests and bindings | approved |
+| MCA-D18 | Make Evaluation a Station aggregate using the canonical Turn kernel | approved |
 
 ---
 
@@ -526,3 +531,204 @@ inside the correct client runtime.
 Revisit transport and lease lifetime after Mobile implementation evidence, but
 retain opaque references, typed capabilities, and platform-neutral Station
 semantics.
+
+## MCA-D14: Station-Owned Home Work Projection
+
+**Status**: approved
+
+### Context
+
+Home combines Agent readiness, topics, tasks, Brief/Needs You, and capability
+status. Deriving these independently in a page creates stale and contradictory
+work state.
+
+### Decision
+
+Station owns actor-scoped Home work facts. Desktop `homeRuntime` reconciles one
+revisioned projection; `HomePage` is a pure renderer.
+
+### Rationale
+
+Home can survive restart/account switch and expose partial/stale failure without
+becoming a second source of truth.
+
+### Alternatives Considered
+
+- Aggregate stores in `HomePage`: rejected because page lifetime cannot own
+  durable freshness.
+- Persist a Desktop Home cache as truth: rejected because Browser/Mobile and
+  multi-device state diverge.
+
+### Consequences
+
+- A Home projection contract and runtime descriptor are required.
+- Partial source failures need slice-level freshness.
+- Chat/Task commands remain canonical services, not Home-specific writes.
+
+### Review Condition
+
+Revisit projection batching only with measured payload/latency evidence.
+
+## MCA-D15: Unified Capability Manifest And Binding
+
+**Status**: approved
+
+### Context
+
+Builtin tools, Skills, MCP, Connectors, and local capabilities currently expose
+different stores, IDs, readiness, and binding paths.
+
+### Decision
+
+Station owns one versioned `CapabilityManifest` catalog and one
+`AgentCapabilityBinding`/policy contract. Admission resolves an immutable
+`CapabilityReadinessSnapshot`.
+
+### Rationale
+
+One catalog prevents UI labels, installed records, or `config_json` from being
+misrepresented as executable readiness.
+
+### Alternatives Considered
+
+- Keep source-specific inventories and merge in Web: rejected due to
+  split-brain readiness.
+- Treat all capabilities as MCP: rejected because ownership, secrets, and
+  transport differ.
+
+### Consequences
+
+- Existing Tool/MCP/Connector/Skill/Knowledge consumers migrate atomically.
+- Manifest IDs and versions become trace and binding references.
+- Unknown/stale compatibility fails before execution.
+- ToolCall execution uses one decision/claim/result plus a fenced durable
+  PREPARED/APPLIED receipt; non-idempotent ambiguity becomes
+  `UNKNOWN_SIDE_EFFECT`, never automatic replay.
+
+### Review Condition
+
+Adding a source type requires manifest schema and owner semantics, not a new
+parallel registry.
+
+## MCA-D16: Station Capability Operations, Client MCP Execution
+
+**Status**: approved
+
+### Context
+
+Desktop Rust correctly owns local MCP processes and secrets, but client-only
+operation state cannot support replay, cancellation, or cross-device control.
+
+### Decision
+
+Station owns `CapabilityOperation` lifecycle and idempotency. The selected
+client capability manager executes local MCP work and reports typed progress,
+terminal intent, and cleanup. Every outcome settles cleanup before Station
+commits terminal state. Lease takeover uses attempt fencing; unknown
+non-idempotent side effects forbid automatic repeat execution.
+
+### Rationale
+
+This preserves the local security boundary while making product state durable
+and auditable.
+
+### Alternatives Considered
+
+- Move stdio MCP to Station: rejected because device-local process/resources
+  may not exist remotely.
+- Keep all lifecycle state in Desktop: rejected because disconnect/restart
+  loses authority.
+
+### Consequences
+
+- Operation lease, attempt sequence, cancel acknowledgement, timeout, and
+  reconnect/cleanup settlement contracts are required.
+- Every outcome passes through cleanup settlement. Cleanup uses an independent
+  takeover fence and deadline so an unreachable executor cannot hang forever.
+- Process/port/secret leak canaries become acceptance evidence.
+
+### Review Condition
+
+Remote MCP may use a Station executor, but must preserve the same operation
+contract.
+
+## MCA-D17: Connector Resource To Tool Manifest
+
+**Status**: approved
+
+### Context
+
+OAuth connection, resource discovery, tool synchronization, Agent binding, and
+turn invocation are distinct states but are currently compressed into
+Connector config labels.
+
+### Decision
+
+OAuth subsystem owns credentials/connection. A Connector adapter publishes
+scope-bound `ConnectorResourceManifest` entries into the capability catalog.
+Agent binding references resulting manifest IDs without storing tokens.
+
+### Rationale
+
+This makes expiry, scope loss, resource removal, and tool-version change
+explicit and recoverable.
+
+### Alternatives Considered
+
+- Store enabled tool names in Agent JSON: rejected due to stale scopes and no
+  version identity.
+- Copy OAuth tokens into Agent config: rejected as a secret boundary violation.
+
+### Consequences
+
+- Resource/version/scope changes invalidate readiness snapshots.
+- Connector invocation uses normal ToolCall policy and trace lineage.
+- Disconnect linearizes by connection revision; force security revoke has
+  stricter fencing than normal user disconnect.
+
+### Review Condition
+
+Provider-specific metadata stays behind the adapter; shared manifests remain
+provider-neutral.
+
+## MCA-D18: Station Evaluation Aggregate
+
+**Status**: approved
+
+### Context
+
+Peers has Station dataset CRUD but Desktop still owns run/result and calls
+`quickCompletion`; this cannot provide authoritative cancellation, retry,
+metrics, or restart recovery.
+
+### Decision
+
+Station Evaluation Service owns benchmarks, datasets, cases, runs, attempts,
+results, and metrics. Every case executes through canonical Turn admission,
+runtime, tool policy, trace, and cancellation.
+
+### Rationale
+
+Evaluation becomes reproducible, actor-isolated, and comparable to production
+behavior rather than a parallel completion path.
+
+### Alternatives Considered
+
+- Keep local Evaluation and upload results later: rejected because terminal
+  truth and cancellation remain client-inferred.
+- Build a second evaluator runtime: rejected because it can diverge from the
+  Agent kernel being measured.
+
+### Consequences
+
+- Existing localStorage/run state and `quickCompletion` Evaluation path are
+  deleted at cutover.
+- Retry creates a linked child run; terminal parent status/metrics remain
+  immutable. Metrics use transactionally frozen terminal results only.
+- Cancel-intent CAS blocks completion before cancellation fanout; child retry
+  records exact source attempt/result lineage.
+
+### Review Condition
+
+Experiment orchestration and import formats can be added later without changing
+run authority.

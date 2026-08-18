@@ -1,8 +1,8 @@
 # Modern Chat Agent — Module Layout
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-07-30
+> **Created**: 2026-07-30 | **Updated**: 2026-08-17
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -17,6 +17,9 @@ model/domain/agent/
 ├── client_capability.proto      # Platform-neutral local capability lease
 ├── context.proto               # ContextLedger and source attribution
 ├── tool.proto                  # Tool request/result/approval/audit
+├── capability.proto            # Manifest, binding, readiness, operation
+├── evaluation.proto            # Benchmark, dataset, case, run, result
+├── home.proto                  # Revisioned Home work projection
 ├── memory.proto                # Existing memory contracts
 ├── skill.proto                 # Existing skill contracts
 └── orchestration.proto         # Multi-Agent, downstream of turn kernel
@@ -34,6 +37,9 @@ apps/station/app/subserver/agent/
 │   ├── conversation_handler.go
 │   ├── turn_handler.go
 │   ├── tool_handler.go
+│   ├── capability_handler.go
+│   ├── evaluation_handler.go
+│   ├── home_handler.go
 │   └── trace_handler.go
 ├── service/
 │   ├── turn_admission_service.go
@@ -43,6 +49,10 @@ apps/station/app/subserver/agent/
 │   ├── provider_service.go
 │   ├── external_runtime_service.go
 │   ├── tool_registry_service.go
+│   ├── capability_binding_service.go
+│   ├── capability_operation_service.go
+│   ├── connector_manifest_service.go
+│   ├── home_projection_service.go
 │   ├── local_tool_broker.go
 │   ├── memory_service.go
 │   ├── skill_service.go
@@ -59,6 +69,7 @@ apps/station/app/subserver/agent/
 apps/desktop/src-tauri/src/application/
 ├── agent_turn/                 # Station command/SSE bridge only
 ├── agent_local_capability/     # Client capability session implementation
+├── capability_operation/      # Leased operation execution/reporting
 ├── mcp/                        # Local MCP transport/execution
 ├── tools/                      # Local builtin execution
 ├── workspace/                  # Device-local workspace/file policy
@@ -70,6 +81,9 @@ apps/desktop/src/
 │   ├── chatRuntime.ts
 │   ├── agentTopicRuntime.ts
 │   ├── toolRuntime.ts
+│   ├── homeRuntime.ts
+│   ├── capabilityRuntime.ts
+│   ├── evaluationRuntime.ts
 │   ├── skillRuntime.ts
 │   └── knowledgeRuntime.ts
 ├── services/agent/
@@ -106,6 +120,11 @@ mechanical file creation.
 | Provider/model/runtime capabilities | Station catalog/runtime resolver |
 | Turn state machine | Station TurnService |
 | Tool schemas and execution owner | Station ToolRegistryService |
+| Capability manifest/binding/readiness | Station Capability Manifest/Binding services |
+| Capability operation lifecycle | Station operation service; selected executor reports progress |
+| Connector resource manifests | Station Connector Manifest service; OAuth owner supplies scoped resources |
+| Home work projection | Station Home Projection service |
+| Evaluation run/result | Station Evaluation service |
 | Direct model adapters | Station runtime registry |
 | External Agent adapters | Station external runtime registry |
 | Client-local capabilities | Shared capability contract; platform registry projected to Station |
@@ -148,8 +167,14 @@ Station turn event -> client bridge/gateway -> client runtime -> page
 | `runtime/direct` | Stateless model execution | Retain conversation state |
 | `runtime/external` | Conversation-bound external runtime lifecycle | Share writable homes |
 | `tool_registry_service` | Tool schema, owner, policy, audit contract | Execute device APIs |
+| `capability_binding_service` | Versioned Agent capability bindings/policy | Store credentials or infer readiness |
+| `capability_operation_service` | Durable install/test/connect/cancel/reconnect lifecycle | Spawn local processes |
+| `connector_manifest_service` | Scope-bound Connector resource→tool manifests | Own OAuth tokens |
+| `home_projection_service` | Revisioned Agent/topic/task/capability projection | Become a write model |
+| `evaluation_service` | Benchmark/case/run/result/metrics aggregate | Use a parallel model execution path |
 | `local_tool_broker` | Await typed client result | Decide turn completion |
 | Client `agent_turn` | Bridge commands/events/cancel | Execute AI providers |
+| Client `capability_operation` | Execute leased local operation and report progress/cleanup | Decide Station terminal truth |
 | Client local capability | Enforce local permissions/approval and execute | Persist Station turn truth |
 | `chatRuntime` | Stream/replay/reconcile message projection | Mutate durable truth locally |
 | `agentTopicRuntime` | Conversation and branch projection | Own messages or provider runtime |
@@ -164,6 +189,9 @@ Station turn event -> client bridge/gateway -> client runtime -> page
 - External runtime adapters must not derive ownership from Agent name alone.
 - Agent Canvas must not call provider adapters directly.
 - Tool executors must not mutate turn state outside TurnService.
+- Home pages/stores must not aggregate durable truth outside `homeRuntime`.
+- Source-specific Tool/MCP/Connector stores must not claim global readiness.
+- Evaluation client code must not execute `quickCompletion` or infer terminal run state.
 - Generated contract files must not be edited manually.
 
 ## 6. Lifecycle Ownership
@@ -176,6 +204,11 @@ Station turn event -> client bridge/gateway -> client runtime -> page
 | Direct provider request | Station Direct Runtime |
 | External runtime home/session/process | Station External Runtime Manager |
 | Local MCP/tool/native process | Owning client capability manager |
+| Capability operation | Station lifecycle; selected client executor owns local resources |
+| Connector OAuth credential | OAuth subsystem |
+| Connector resource manifest | Station Connector Manifest service |
+| Home work projection | Station projection service; client runtime owns cached projection only |
+| Evaluation run/case result | Station Evaluation service |
 | Web subscriptions/timers | Owning client runtime descriptor |
 | Trace and feedback | Station trace/evaluation services |
 

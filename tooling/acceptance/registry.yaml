@@ -326,6 +326,93 @@
       "require": ["desktop-check", "agent-native-portal-navigation-e2e"]
     },
     {
+      "id": "agent-v2-kernel-foundation",
+      "features": ["agent-v2-kernel-foundation"],
+      "when": {
+        "paths": [
+          "model/domain/agent/**"
+        ]
+      },
+      "require": ["agent-v2-kernel-foundation-e2e"]
+    },
+    {
+      "id": "agent-v2-home-command-center",
+      "features": ["agent-v2-home-command-center"],
+      "when": {
+        "paths": [
+          "model/domain/agent/home.proto",
+          "apps/station/app/subserver/agent/**/home*",
+          "apps/desktop/src/pages/HomePage.tsx",
+          "apps/desktop/src/runtimes/homeRuntime.ts"
+        ]
+      },
+      "require": ["agent-v2-home-command-center-e2e"]
+    },
+    {
+      "id": "agent-v2-capability-binding",
+      "features": ["agent-v2-capability-binding"],
+      "when": {
+        "paths": [
+          "model/domain/agent/capability.proto",
+          "apps/station/app/subserver/agent/**/capability*",
+          "apps/desktop/src/runtimes/agentCapabilityRuntime.ts"
+        ]
+      },
+      "require": ["agent-v2-capability-binding-e2e"]
+    },
+    {
+      "id": "agent-v2-governed-tool-loop",
+      "features": ["agent-v2-governed-tool-loop"],
+      "when": {
+        "paths": [
+          "model/domain/agent/turn_stream.proto",
+          "apps/station/app/subserver/agent/**/tool*",
+          "apps/desktop/src/components/messages/ToolCallCard.tsx",
+          "apps/desktop/src/runtimes/toolRuntime.ts"
+        ]
+      },
+      "require": ["agent-v2-governed-tool-loop-e2e"]
+    },
+    {
+      "id": "agent-v2-mcp-lifecycle",
+      "features": ["agent-v2-mcp-lifecycle"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/store/mcp.ts",
+          "apps/desktop/src/services/mcp-service.ts",
+          "apps/desktop/src-tauri/src/application/mcp/**",
+          "apps/station/app/subserver/agent/**/capability_operation*"
+        ]
+      },
+      "require": ["agent-v2-mcp-lifecycle-e2e"]
+    },
+    {
+      "id": "agent-v2-connector-invocation",
+      "features": ["agent-v2-connector-invocation"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/store/agentConnectors.ts",
+          "apps/desktop/src/store/oauth2.ts",
+          "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+          "apps/station/app/subserver/agent/**/connector*"
+        ]
+      },
+      "require": ["agent-v2-connector-invocation-e2e"]
+    },
+    {
+      "id": "agent-v2-evaluation-lab",
+      "features": ["agent-v2-evaluation-lab"],
+      "when": {
+        "paths": [
+          "model/domain/agent/evaluation.proto",
+          "apps/station/app/subserver/agent/**/evaluation*",
+          "apps/desktop/src/store/evaluation.ts",
+          "apps/desktop/src/pages/EvaluationPage.tsx"
+        ]
+      },
+      "require": ["agent-v2-evaluation-lab-e2e"]
+    },
+    {
       "id": "acceptance-framework",
       "features": ["acceptance-framework"],
       "when": {

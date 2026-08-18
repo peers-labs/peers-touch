@@ -71,3 +71,18 @@ message HideModelResponse { bool ok = 1; }
 message GetHiddenModelsRequest { string provider_id = 1; }
 message GetHiddenModelsResponse { repeated string hidden_models = 1; }
 
+// Station-authoritative approval command. Actor identity is derived from the
+// authenticated request context and is intentionally absent from this message.
+message SubmitToolApprovalDecisionRequest {
+  string approval_id = 1;
+  string tool_call_id = 2;
+  string decision_id = 3;
+  uint64 expected_revision = 4;
+  bool approved = 5;
+  string idempotency_key = 6;
+}
+
+message SubmitToolApprovalDecisionResponse {
+  bool accepted = 1;
+  uint64 decision_revision = 2;
+}

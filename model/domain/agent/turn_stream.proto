@@ -5,6 +5,8 @@ package peers_touch.model.agent.v1;
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
 
 import "domain/agent/agent.proto";
+import "domain/actor/actor.proto";
+import "google/protobuf/timestamp.proto";
 
 enum TurnStreamEventType {
   TURN_STREAM_EVENT_TYPE_UNSPECIFIED = 0;
@@ -27,6 +29,9 @@ message TurnStreamEvent {
   string turn_id = 2;
   string conversation_id = 3;
   string agent_id = 4;
+  uint64 sequence = 5;
+  string event_id = 6;
+  google.protobuf.Timestamp occurred_at = 7;
 
   oneof payload {
     TextPayload text = 10;
@@ -39,6 +44,7 @@ message TurnStreamEvent {
     ConversationCreatedPayload conversation_created = 17;
     ErrorPayload error = 18;
     DonePayload done = 19;
+    ToolApprovalDecisionPayload tool_approval_decision = 20;
   }
 }
 
@@ -68,6 +74,21 @@ message ToolApprovalRequiredPayload {
   string server_name = 3;
   string arguments = 4;
   string source = 5;
+  string tool_call_id = 6;
+  string decision_id = 7;
+  uint64 decision_revision = 8;
+  google.protobuf.Timestamp expires_at = 9;
+}
+
+message ToolApprovalDecisionPayload {
+  string approval_id = 1;
+  string tool_call_id = 2;
+  string decision_id = 3;
+  uint64 decision_revision = 4;
+  bool approved = 5;
+  peers_touch.model.actor.v1.ActorRef actor_ref = 6;
+  google.protobuf.Timestamp decided_at = 7;
+  string idempotency_key = 8;
 }
 
 message ProgressPayload {

@@ -132,6 +132,11 @@ message Conversation {
   map<string, string> meta = 11;
   google.protobuf.Timestamp created_at = 12;
   google.protobuf.Timestamp updated_at = 13;
+  string ptid = 14;
+  string active_branch_message_id = 15;
+  ConversationRuntimeBinding runtime_binding = 16;
+  uint32 queued_turn_count = 17;
+  uint64 version = 18;
 }
 
 // AgentThread is a durable sub-conversation forked from a source message
@@ -336,6 +341,9 @@ message AgentMessage {
   // thread_id assigns this message to a durable sub-conversation (Thread)
   // forked from a source message. Empty = main conversation timeline.
   optional string thread_id = 16;
+  AgentMessageStatus message_status = 17;
+  string parent_message_id = 18;
+  repeated AgentAttachmentRef attachments = 19;
 }
 
 message ExecuteTurnRequest {
@@ -411,6 +419,12 @@ message ClientCapabilitySession {
   string platform = 2;
   map<string, string> capabilities = 3;
   string client_version = 4;
+  string ptid = 5;
+  string device_id = 6;
+  ClientPlatform platform_kind = 7;
+  repeated ClientCapability typed_capabilities = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  string connection_id = 10;
 }
 
 // ============================================================================
@@ -560,6 +574,452 @@ message SubmitLocalToolResultRequest {
 
 message SubmitLocalToolResultResponse {
   bool success = 1;
+}
+
+// ============================================================================
+// Modern Chat Agent V2 canonical kernel contracts (MCA-C01 through MCA-C10)
+// ============================================================================
+
+enum RuntimeKind {
+  RUNTIME_KIND_UNSPECIFIED = 0;
+  RUNTIME_KIND_DIRECT_MODEL = 1;
+  RUNTIME_KIND_EXTERNAL_AGENT = 2;
+}
+
+enum AgentTurnStatus {
+  AGENT_TURN_STATUS_UNSPECIFIED = 0;
+  AGENT_TURN_STATUS_SUBMITTED = 1;
+  AGENT_TURN_STATUS_QUEUED = 2;
+  AGENT_TURN_STATUS_ADMITTED = 3;
+  AGENT_TURN_STATUS_CONTEXT_BUILDING = 4;
+  AGENT_TURN_STATUS_RUNNING = 5;
+  AGENT_TURN_STATUS_WAITING_APPROVAL = 6;
+  AGENT_TURN_STATUS_WAITING_LOCAL_TOOL = 7;
+  AGENT_TURN_STATUS_COMPRESSING = 8;
+  AGENT_TURN_STATUS_RETRYING = 9;
+  AGENT_TURN_STATUS_FALLING_BACK = 10;
+  AGENT_TURN_STATUS_COMPLETED = 11;
+  AGENT_TURN_STATUS_FAILED = 12;
+  AGENT_TURN_STATUS_CANCELLED = 13;
+  AGENT_TURN_STATUS_INTERRUPTED = 14;
+  AGENT_TURN_STATUS_REJECTED = 15;
+}
+
+enum AgentMessageStatus {
+  AGENT_MESSAGE_STATUS_UNSPECIFIED = 0;
+  AGENT_MESSAGE_STATUS_PENDING = 1;
+  AGENT_MESSAGE_STATUS_STREAMING = 2;
+  AGENT_MESSAGE_STATUS_COMPLETED = 3;
+  AGENT_MESSAGE_STATUS_PARTIAL = 4;
+  AGENT_MESSAGE_STATUS_FAILED = 5;
+  AGENT_MESSAGE_STATUS_CANCELLED = 6;
+}
+
+enum RuntimeCapabilityResolution {
+  RUNTIME_CAPABILITY_RESOLUTION_UNSPECIFIED = 0;
+  RUNTIME_CAPABILITY_RESOLUTION_NATIVE = 1;
+  RUNTIME_CAPABILITY_RESOLUTION_BRIDGED = 2;
+  RUNTIME_CAPABILITY_RESOLUTION_DEGRADED = 3;
+  RUNTIME_CAPABILITY_RESOLUTION_REJECTED = 4;
+}
+
+enum ContextSegmentType {
+  CONTEXT_SEGMENT_TYPE_UNSPECIFIED = 0;
+  CONTEXT_SEGMENT_TYPE_IDENTITY = 1;
+  CONTEXT_SEGMENT_TYPE_POLICY = 2;
+  CONTEXT_SEGMENT_TYPE_MODEL_FACTS = 3;
+  CONTEXT_SEGMENT_TYPE_MEMORY = 4;
+  CONTEXT_SEGMENT_TYPE_SKILL_INDEX = 5;
+  CONTEXT_SEGMENT_TYPE_SKILL_BODY = 6;
+  CONTEXT_SEGMENT_TYPE_HISTORY = 7;
+  CONTEXT_SEGMENT_TYPE_SUMMARY = 8;
+  CONTEXT_SEGMENT_TYPE_KNOWLEDGE = 9;
+  CONTEXT_SEGMENT_TYPE_WORKSPACE_REFERENCE = 10;
+  CONTEXT_SEGMENT_TYPE_ATTACHMENT = 11;
+  CONTEXT_SEGMENT_TYPE_TOOL_SCHEMA = 12;
+  CONTEXT_SEGMENT_TYPE_CURRENT_INPUT = 13;
+}
+
+enum ContextSegmentDecision {
+  CONTEXT_SEGMENT_DECISION_UNSPECIFIED = 0;
+  CONTEXT_SEGMENT_DECISION_INCLUDED = 1;
+  CONTEXT_SEGMENT_DECISION_TRUNCATED = 2;
+  CONTEXT_SEGMENT_DECISION_SUMMARIZED = 3;
+  CONTEXT_SEGMENT_DECISION_REJECTED = 4;
+}
+
+enum ToolExecutionOwner {
+  TOOL_EXECUTION_OWNER_UNSPECIFIED = 0;
+  TOOL_EXECUTION_OWNER_STATION = 1;
+  TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY = 2;
+}
+
+enum ToolCallStatus {
+  TOOL_CALL_STATUS_UNSPECIFIED = 0;
+  TOOL_CALL_STATUS_PROPOSED = 1;
+  TOOL_CALL_STATUS_WAITING_APPROVAL = 2;
+  TOOL_CALL_STATUS_APPROVED = 3;
+  TOOL_CALL_STATUS_DENIED = 4;
+  TOOL_CALL_STATUS_CLAIMED = 5;
+  TOOL_CALL_STATUS_RUNNING = 6;
+  TOOL_CALL_STATUS_SUCCEEDED = 7;
+  TOOL_CALL_STATUS_FAILED = 8;
+  TOOL_CALL_STATUS_CANCELLED = 9;
+  TOOL_CALL_STATUS_EXPIRED = 10;
+  TOOL_CALL_STATUS_UNKNOWN_SIDE_EFFECT = 11;
+}
+
+enum ClientPlatform {
+  CLIENT_PLATFORM_UNSPECIFIED = 0;
+  CLIENT_PLATFORM_DESKTOP = 1;
+  CLIENT_PLATFORM_BROWSER = 2;
+  CLIENT_PLATFORM_MOBILE = 3;
+}
+
+enum CapabilityPermissionState {
+  CAPABILITY_PERMISSION_STATE_UNSPECIFIED = 0;
+  CAPABILITY_PERMISSION_STATE_GRANTED = 1;
+  CAPABILITY_PERMISSION_STATE_DENIED = 2;
+  CAPABILITY_PERMISSION_STATE_PROMPT = 3;
+  CAPABILITY_PERMISSION_STATE_UNAVAILABLE = 4;
+}
+
+message AgentDefinition {
+  string agent_id = 1;
+  string ptid = 2;
+  string name = 3;
+  string description = 4;
+  string avatar_ref = 5;
+  string identity_prompt = 6;
+  string agent_config_prompt = 7;
+  string default_runtime_ref = 8;
+  string memory_policy = 9;
+  RuntimeBudget runtime_budget_policy = 10;
+  uint64 version = 11;
+}
+
+message ConversationRuntimeBinding {
+  RuntimeKind runtime_kind = 1;
+  string provider_id = 2;
+  string model_id = 3;
+  string runtime_profile_id = 4;
+  string external_session_id = 5;
+  uint64 external_session_epoch = 6;
+  string runtime_home_ref = 7;
+  string capability_snapshot_hash = 8;
+  string config_snapshot_hash = 9;
+  google.protobuf.Timestamp bound_at = 10;
+}
+
+message RuntimeCapability {
+  string capability_id = 1;
+  RuntimeCapabilityResolution resolution = 2;
+  string reason_code = 3;
+}
+
+message RuntimeInputCapabilities {
+  bool text = 1;
+  bool image = 2;
+  bool file = 3;
+  bool audio = 4;
+}
+
+message RuntimeOutputCapabilities {
+  bool text = 1;
+  bool image = 2;
+  bool structured = 3;
+}
+
+message RuntimeExecutionCapabilities {
+  bool streaming = 1;
+  bool reasoning = 2;
+  bool prompt_cache = 3;
+  bool external_resume = 4;
+}
+
+message RuntimeAgenticCapabilities {
+  bool native_tools = 1;
+  bool parallel_tools = 2;
+  bool local_bridge = 3;
+}
+
+message RuntimeCapabilityLimits {
+  uint64 context_tokens = 1;
+  uint64 output_tokens = 2;
+  uint32 attachment_count = 3;
+  uint64 attachment_bytes = 4;
+}
+
+message RuntimeCapabilityProvenance {
+  string discovery_source = 1;
+  string source_version = 2;
+  google.protobuf.Timestamp observed_at = 3;
+}
+
+message RuntimeCapabilitySnapshot {
+  string snapshot_id = 1;
+  RuntimeInputCapabilities input = 2;
+  RuntimeOutputCapabilities output = 3;
+  RuntimeExecutionCapabilities runtime = 4;
+  RuntimeAgenticCapabilities agentic = 5;
+  RuntimeCapabilityLimits limits = 6;
+  repeated RuntimeCapability resolution = 7;
+  RuntimeCapabilityProvenance provenance = 8;
+}
+
+message RuntimeSnapshot {
+  RuntimeKind runtime_kind = 1;
+  string provider_id = 2;
+  string model_id = 3;
+  string runtime_profile_id = 4;
+  RuntimeCapabilitySnapshot capabilities = 5;
+  string provider_config_version = 6;
+  string agent_config_version = 7;
+  string external_session_id = 8;
+  uint64 external_session_epoch = 9;
+}
+
+message RuntimeBudget {
+  uint32 max_attempts = 1;
+  uint32 max_agent_steps = 2;
+  uint32 max_tool_calls = 3;
+  uint32 max_identical_tool_calls = 4;
+  uint32 max_delegation_depth = 5;
+  uint64 wall_time_ms = 6;
+  uint64 max_input_tokens = 7;
+  uint64 max_output_tokens = 8;
+  uint64 max_attachment_bytes = 9;
+  optional double max_cost = 10;
+}
+
+message AgentAttachmentRef {
+  string attachment_id = 1;
+  string object_ref = 2;
+  string mime_type = 3;
+  uint64 size_bytes = 4;
+  string checksum = 5;
+  string filename = 6;
+  string authorization_scope = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  string extracted_content_ref = 9;
+}
+
+message CanonicalAgentMessage {
+  string message_id = 1;
+  string conversation_id = 2;
+  string turn_id = 3;
+  MessageRole role = 4;
+  AgentMessageStatus status = 5;
+  string content = 6;
+  string parent_message_id = 7;
+  string replaces_message_id = 8;
+  repeated AgentAttachmentRef attachments = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message AgentTurn {
+  string turn_id = 1;
+  string conversation_id = 2;
+  string ptid = 3;
+  string agent_id = 4;
+  string client_idempotency_key = 5;
+  AgentTurnStatus status = 6;
+  string user_message_id = 7;
+  string assistant_message_id = 8;
+  uint32 active_attempt = 9;
+  RuntimeSnapshot runtime_snapshot = 10;
+  RuntimeBudget budget = 11;
+  string terminal_reason = 12;
+  google.protobuf.Timestamp submitted_at = 13;
+  google.protobuf.Timestamp started_at = 14;
+  google.protobuf.Timestamp ended_at = 15;
+}
+
+message TurnAttempt {
+  string attempt_id = 1;
+  string turn_id = 2;
+  uint32 index = 3;
+  RuntimeSnapshot runtime_snapshot = 4;
+  string context_ledger_id = 5;
+  AgentTurnStatus status = 6;
+  string error_code = 7;
+  TurnUsage usage = 8;
+  string provider_request_ref = 9;
+  google.protobuf.Timestamp started_at = 10;
+  google.protobuf.Timestamp ended_at = 11;
+  string capability_readiness_snapshot_id = 12;
+}
+
+message ContextSegment {
+  string segment_id = 1;
+  ContextSegmentType type = 2;
+  repeated string source_refs = 3;
+  string content_hash = 4;
+  uint64 estimated_tokens = 5;
+  ContextSegmentDecision decision = 6;
+  string decision_reason = 7;
+  string trust_metadata_ref = 8;
+}
+
+message ContextLedger {
+  string context_ledger_id = 1;
+  string turn_id = 2;
+  string attempt_id = 3;
+  repeated ContextSegment segments = 4;
+  uint64 estimated_input_tokens = 5;
+  uint64 reserved_output_tokens = 6;
+  uint64 model_context_window = 7;
+  string prompt_hash = 8;
+  string prompt_version = 9;
+}
+
+message CapabilityConstraints {
+  uint64 max_request_bytes = 1;
+  uint64 max_result_bytes = 2;
+  repeated string allowed_resource_kinds = 3;
+}
+
+message ClientCapability {
+  string capability_id = 1;
+  string schema_version = 2;
+  CapabilityPermissionState permission = 3;
+  CapabilityConstraints constraints = 4;
+}
+
+message ClientCapabilityLease {
+  string capability_session_id = 1;
+  string ptid = 2;
+  string device_id = 3;
+  ClientPlatform platform = 4;
+  repeated ClientCapability capabilities = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  string connection_id = 7;
+  string lease_id = 8;
+}
+
+message ClientResourceRef {
+  string resource_ref = 1;
+  string ptid = 2;
+  string device_id = 3;
+  string capability_session_id = 4;
+  string capability_id = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+message ClientCapabilityRequest {
+  string request_id = 1;
+  string turn_id = 2;
+  string tool_call_id = 3;
+  string capability_session_id = 4;
+  string capability_id = 5;
+  string schema_version = 6;
+  repeated ClientResourceRef resource_refs = 7;
+  bytes bounded_arguments = 8;
+  string approval_id = 9;
+  uint64 sequence = 10;
+}
+
+message ClientCapabilityResult {
+  string request_id = 1;
+  string turn_id = 2;
+  string tool_call_id = 3;
+  string capability_session_id = 4;
+  string capability_id = 5;
+  bytes bounded_result = 6;
+  string error_code = 7;
+  uint64 sequence = 8;
+}
+
+message ToolCall {
+  string tool_call_id = 1;
+  string turn_id = 2;
+  string attempt_id = 3;
+  string tool_name = 4;
+  string schema_version = 5;
+  ToolExecutionOwner execution_owner = 6;
+  string arguments_hash = 7;
+  string redacted_arguments = 8;
+  string risk_class = 9;
+  string approval_policy = 10;
+  string manifest_id = 11;
+  string manifest_version = 12;
+  string binding_id = 13;
+  uint64 binding_revision = 14;
+  string readiness_snapshot_id = 15;
+  string approval_id = 16;
+  string decision_id = 17;
+  bool approved = 18;
+  string execution_claim_id = 19;
+  string executor_lease_id = 20;
+  uint64 fencing_token = 21;
+  string side_effect_receipt_id = 22;
+  string external_idempotency_key = 23;
+  uint64 dispatch_sequence = 24;
+  google.protobuf.Timestamp dispatch_committed_at = 25;
+  string payload_hash = 26;
+  google.protobuf.Timestamp deadline = 27;
+  ToolCallStatus status = 28;
+  string result_id = 29;
+  string result_ref = 30;
+  string error_code = 31;
+  google.protobuf.Timestamp cancel_requested_at = 32;
+  google.protobuf.Timestamp cancel_ack_at = 33;
+  string cleanup_outcome = 34;
+  google.protobuf.Timestamp started_at = 35;
+  google.protobuf.Timestamp ended_at = 36;
+}
+
+message TurnUsage {
+  string turn_id = 1;
+  string attempt_id = 2;
+  uint64 input_tokens = 3;
+  uint64 output_tokens = 4;
+  uint64 cache_tokens = 5;
+  uint64 reasoning_tokens = 6;
+  uint64 tool_definition_tokens = 7;
+  uint32 provider_call_count = 8;
+  uint32 tool_call_count = 9;
+  uint64 provider_latency_ms = 10;
+  uint64 tool_latency_ms = 11;
+  optional double cost = 12;
+  string currency = 13;
+}
+
+message TurnFeedback {
+  string feedback_id = 1;
+  string turn_id = 2;
+  string assistant_message_id = 3;
+  string ptid = 4;
+  string source = 5;
+  int32 rating = 6;
+  repeated string categories = 7;
+  string comment = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message SubmitTurnRequest {
+  string conversation_id = 1;
+  string client_idempotency_key = 2;
+  string user_input = 3;
+  repeated AgentAttachmentRef attachments = 4;
+  optional string runtime_profile_id = 5;
+  optional string model_id = 6;
+  RuntimeBudget requested_budget = 7;
+  optional string client_capability_session_id = 8;
+}
+
+message SubmitTurnResponse {
+  AgentTurn turn = 1;
+}
+
+message CancelTurnRequest {
+  string turn_id = 1;
+  string idempotency_key = 2;
+}
+
+message CancelTurnResponse {
+  AgentTurn turn = 1;
 }
 
 // ============================================================================

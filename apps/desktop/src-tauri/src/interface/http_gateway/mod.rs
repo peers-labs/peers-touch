@@ -3290,7 +3290,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ))
         }
         "agent_collaboration_resume_task" => {
-            let input = match parse_args::<AgentCollaborationCancelTaskInput>(args) {
+            let input = match parse_args::<AgentCollaborationResumeTaskInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
@@ -3298,7 +3298,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_orchestration::agent_collaboration_cancel_task(
+            to_json(app_agent_orchestration::agent_collaboration_resume_task(
                 input, &token,
             ))
         }

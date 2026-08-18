@@ -1,8 +1,8 @@
 # Modern Chat Agent — Architecture Design
 
-> **Status**: draft
+> **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-07-30
+> **Created**: 2026-07-30 | **Updated**: 2026-08-17
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
 
@@ -296,5 +296,151 @@ Forbidden:
 Measurement covers App/browser, Mobile contract compatibility, and every runtime kind.
 ## 17. Review Boundary
 
-This document is `DESIGN_READY_FOR_REVIEW`, not accepted architecture.
-Planning stays blocked until all proposed decisions are accepted or revised.
+Independent DESIGN review passed on 2026-08-17. D14-D18 and C11-C15 are
+accepted planning inputs. Production implementation and Gates remain
+`UNPROVEN`.
+
+## 18. V2 Ownership Reconciliation
+
+| Concern | Durable authority | Runtime projection/executor | Forbidden duplicate |
+|---|---|---|---|
+| Home work projection | Station Agent/topic/task/capability services | Desktop `homeRuntime` | Page-derived durable recents/Brief truth |
+| Capability catalog | Station Capability Manifest Registry | Desktop capability projection | Separate Tool/MCP/Connector inventories claiming readiness |
+| Agent binding/policy | Station Agent Capability Binding Service | Desktop configuration UI | `config_json` or local store as portable binding truth |
+| Runtime compatibility | Station admission snapshot plus active client capability lease | Client reports signed/typed local capability facts | Provider-name or UI-label inference |
+| MCP operation | Station operation/turn lineage | Owning client capability manager | Client-only terminal operation state |
+| Connector resource tools | Station Connector Manifest Projection | OAuth owner/resource adapter | Connector display label as tool readiness |
+| Evaluation | Station Evaluation Service | Desktop Evaluation projection | localStorage dataset/run/result and `quickCompletion` terminal truth |
+
+## 19. Home Projection Contract
+
+Home reads one actor-scoped `HomeWorkProjection` containing:
+
+- pinned/favorite Agent references;
+- accepted recent topics and tasks;
+- selected Agent/model readiness;
+- Brief/Needs You items derived from durable Task/approval state;
+- Connector/Tool readiness summaries;
+- projection revision and freshness state.
+
+Desktop `homeRuntime` owns subscription, reconciliation, and store projection.
+The page renders only. Chat/Task submission uses canonical Station commands and
+retains the local draft until acceptance.
+
+Failure semantics:
+
+- stale keeps the last accepted projection and disables new commitments;
+- partial source failure identifies the missing slice without erasing valid
+  slices;
+- reconnect reloads by revision and must not overwrite newer local projection;
+- account/Station switch clears the prior actor scope before rendering ready.
+
+## 20. Unified Capability Contract
+
+`CapabilityManifest` is the sole catalog entry for builtin, Skill, MCP,
+Connector, and client-local capabilities. It includes:
+
+- stable capability ID and version;
+- source type and source instance;
+- input/output schema references;
+- execution owner and required client/runtime capabilities;
+- risk, approval default, secret boundary, and availability.
+
+`AgentCapabilityBinding` refers to the manifest ID/version and owns enabled
+state, approval policy, expected Agent version, and binding revision.
+
+`CapabilityReadinessSnapshot` is immutable for one admission decision and
+combines manifest, Agent binding, model/runtime compatibility, connection state,
+and selected client capability lease. Unknown or stale facts reject or degrade
+before provider/tool execution.
+
+ToolCall side-effect protocol:
+
+1. Station commits one decision and one execution claim.
+2. Executor durably records a fenced `PREPARED` receipt before side effects.
+3. Externally idempotent tools use `tool_call_id` as the idempotency key.
+4. Executor records `APPLIED` and reports the unique result.
+5. If a non-idempotent tool crashes after `PREPARED`, state becomes
+   `UNKNOWN_SIDE_EFFECT`; automatic redispatch/takeover is forbidden.
+6. Cancel/revoke/delete linearizes against `dispatch_committed_at`; old-fence
+   reports are audit-only except scoped cleanup acknowledgement.
+
+## 21. MCP And Connector Operation Semantics
+
+Install, configure, test, connect, reconnect, and cancel are represented by a
+Station-owned `CapabilityOperation`. Desktop Rust executes local steps and
+reports typed progress/results with operation ID and attempt sequence.
+
+Turn-time invocation is not a capability operation. It is a canonical
+`ToolCall` pinned to manifest/binding/readiness snapshots. This keeps install/
+connection lifecycle idempotency separate from exactly-once model tool
+execution.
+
+Rules:
+
+- idempotency key prevents duplicate lifecycle mutations;
+- operation idempotency covers install/configure/test/connect/reconnect/
+  uninstall; ToolCall ID covers turn-time invoke;
+- cancellation is requested at Station and acknowledged by the executor;
+- process/port/secret cleanup is owned by the client capability manager;
+- terminal result is not inferred from process exit or Web state;
+- disconnect leaves the operation reconcilable, never silently successful;
+- actor/device/session/lease/payload mismatch rejects executor events;
+- first committed cancellation/result/timeout fence wins;
+- success commits only after required cleanup; cleanup failure commits failure;
+- late old-fence terminal/progress events are audit-only.
+
+Connector OAuth connection remains owned by the OAuth subsystem.
+`ConnectorResourceManifest` maps an authorized resource and scopes to versioned
+tool manifests. Agent binding never stores OAuth tokens.
+
+## 22. Evaluation Authority
+
+Station Evaluation Service owns benchmark, dataset, test case, run, case
+attempt/result, target Agent/runtime/config snapshot, cancellation, and metrics.
+Evaluation invokes the canonical Turn kernel with an evaluation context; it
+does not bypass admission, tool policy, trace, or actor isolation.
+
+Run semantics:
+
+- create allocates a durable run in `pending`;
+- start transitions to `running` and schedules bounded case attempts;
+- cancel transitions through `cancelling` to authoritative `cancelled`, or to
+  typed `partial` when cancellation/cleanup acknowledgement misses its deadline;
+- retry creates a child run containing selected failed/incomplete cases and
+  never transitions or overwrites the terminal parent;
+- final metrics derive only from terminal case results;
+- restart/readback reconstructs the same state from Station.
+
+## 23. V2 Architecture Gates
+
+| Gate | Architecture assertion |
+|---|---|
+| `agent-v2-home-command-center-e2e` | Home projection revision, duplicate Chat/Task submission idempotency, stale/partial/restart recovery, actor/account isolation |
+| `agent-v2-capability-binding-e2e` | One manifest/binding/readiness source; expected-version conflict; incompatible/stale requests reject before execution; manifest/Agent deletion behavior |
+| `agent-v2-mcp-lifecycle-e2e` | All-state settlement, lease/session takeover fencing, duplicate event replay, timeout/cancel race, late result rejection, secret/process/port cleanup and cleanup-failure visibility |
+| `agent-v2-connector-invocation-e2e` | OAuth resource→manifest→binding→turn result, scope/version expiry, disconnect/resource removal, actor isolation |
+| `agent-v2-governed-tool-loop-e2e` | Unique decision/claim/result, PREPARED/APPLIED crash points, idempotent replay or UNKNOWN_SIDE_EFFECT, timeout/cancel/revoke and replay equality |
+| `agent-v2-evaluation-lab-e2e` | Durable run/case attempt/result/metrics, duplicate scheduler/mutation idempotency, cancel propagation/ack, retry uniqueness, restart, deletion/retention and actor isolation |
+
+All gates fail closed when receiver DOM, Station readback, or required runtime
+evidence is missing.
+
+### 23.1 Mandatory Race And Revocation Cells
+
+| Race/revocation | Deterministic barrier | Required oracle |
+|---|---|---|
+| MCP lease takeover vs old result | Pause after PREPARED and after lease expiry | New fence accepts no old business result; old cleanup-only receipt allowed; side-effect count <=1; unknown side effect blocks repeat |
+| Cleanup lease expiry vs settlement | Pause in `settling_cleanup`, expire cleanup lease | Same-scope cleanup takeover increments cleanup fence; old cleanup rejected; deadline yields `cleanup_failed`, never hangs |
+| Capability cancel vs result | Pause before each fence CAS | Winner is deterministic by committed fence; every ordering settles cleanup exactly once |
+| Capability timeout vs reconnect | Pause before timeout fence and reconnect CAS | Timeout-first never returns running; reconnect-first still respects deadline/cleanup |
+| Device revoke vs ToolCall | Pause before/after outbox commit and PREPARED/APPLIED; revoke session and optionally trust key | Before dispatch: 0 side effects; after dispatch: APPLIED/cancelled/UNKNOWN only; recovery credential scope/expiry/nonce/signature enforced; APPLIED CAS globally unique |
+| OAuth disconnect vs Connector invoke | Pause around connection-revision/outbox commit; inject provider revoke reject/timeout | Disconnect-first: 0 dispatch; dispatch-first: pinned revision may finish; local stays disabled when provider revoke unconfirmed; retries reuse idempotency key |
+| Manifest/binding delete vs active ToolCall | Pause before/after dispatch commit | New admission count 0; prior claim either settles or explicitly cancels; historical snapshots unchanged |
+| Evaluation duplicate scheduler | Pause after scheduler claim and Turn create | One attempt, one Turn, one result; duplicate returns existing IDs |
+| Evaluation cancel vs case completion | Pause before cancel-intent/completion CAS; drop one cancellation ACK and advance deadline | Cancel-intent-first blocks completion; completion-first freezes metrics; missing ACK yields bounded partial/CANCEL_ACK_TIMEOUT, never hangs |
+| Evaluation retry vs metrics | Pause after parent terminal transaction and child creation | Parent status/metrics/revision unchanged; child has new ID and exact source attempt/result lineage |
+| Home duplicate Chat/Task submit | Pause after idempotency claim and object creation | Same payload returns original IDs with count 1; mismatch returns conflict |
+
+Each corresponding Gate must inject both orderings of the race and prove
+Station state, executor side-effect count, cleanup outcome, and replay equality.
