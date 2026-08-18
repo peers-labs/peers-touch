@@ -41,6 +41,8 @@ CHAT_TABLES = (
     "messaging_federation_outbox",
     "messaging_read_cursors",
     "messaging_recovery_revisions",
+    "mls_key_packages",
+    "federated_mls_key_package_claims",
 )
 
 

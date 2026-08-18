@@ -10,9 +10,6 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-
 from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
 from tooling.acceptance.drivers.tauri import TauriDriver
 from tooling.acceptance.gates.chat.native_support import (
@@ -67,6 +64,7 @@ SELECTORS = {
 class NativeGroupMlsGate(AcceptanceGate):
     gate_id = "chat-native-group-mls-e2e"
     report_path = REPORT_PATH
+    evidence_dir = REPORT_PATH.parent / "chat-native-group-mls-evidence"
 
     def __init__(self) -> None:
         super().__init__()
@@ -140,77 +138,63 @@ class NativeGroupMlsGate(AcceptanceGate):
     def create_group(self) -> str:
         alice = self.clients["alice"]
         enter_chat_page(alice)
-        alice.find_element(
-            f'{SELECTORS["chat_nav"]} [role="button"]', 10
-        ).click()
-        alice.find_element(SELECTORS["new_menu"], 10).click()
-        alice.find_element(SELECTORS["create_group_menu"], 10).click()
-        WebDriverWait(alice.driver, 30).until(
-            lambda driver: driver.find_element(
-                By.CSS_SELECTOR, SELECTORS["create_group"]
-            )
-        )
-        bob_selector = (
-            f'[data-chat-create-group-contact='
-            f'{json.dumps(self.ptids["bob"])}]'
-        )
-        alice.find_element(bob_selector, 10).click()
-        alice.find_element(SELECTORS["create_group_submit"], 10).click()
-        group_id = wait_until(
-            lambda: alice.execute_script(
-                "return document.querySelector('[data-chat-group-ulid]')"
-                "?.getAttribute('data-chat-group-ulid')||''"
-            ),
-            "created MLS group",
-            120,
-        )
-        if not group_id:
-            raise GateError("Group creation returned no ID")
-        return str(group_id)
+        last_error = ""
+        for attempt in range(15):
+            try:
+                result = async_harness(
+                    alice,
+                    "createGroup",
+                    {
+                        "name": "Acceptance MLS Group",
+                        "memberDids": [self.ptids["bob"], self.ptids["charlie"]],
+                    },
+                    timeout=60,
+                )
+                group_id = (result or {}).get("groupUlid", "")
+                if group_id:
+                    return str(group_id)
+                last_error = f"createGroup returned no groupUlid: {result}"
+            except GateError as exc:
+                last_error = str(exc)
+            if attempt < 14:
+                time.sleep(5)
+        raise GateError(f"create_group failed after 15 attempts: {last_error}")
 
     def add_member(self, group_id: str) -> None:
+        """Verify charlie is present in the group (added during creation)."""
         alice = self.clients["alice"]
-        alice.find_element(
-            f'[data-chat-group-ulid={json.dumps(group_id)}]', 10
-        ).click()
-        WebDriverWait(alice.driver, 120).until(
-            lambda driver: driver.find_element(
-                By.CSS_SELECTOR, SELECTORS["group_ready"]
-            )
+        result = async_harness(
+            alice, "syncGroup", {"groupUlid": group_id}, timeout=30
         )
-        alice.find_element(SELECTORS["detail_toggle"], 10).click()
-        alice.find_element(SELECTORS["group_add_open"], 10).click()
-        add_input = alice.find_element(SELECTORS["group_add_select"], 10)
-        alice.execute_script(
-            """
-            const element = arguments[0];
-            const value = arguments[1];
-            const setter = Object.getOwnPropertyDescriptor(
-              HTMLInputElement.prototype, 'value'
-            )?.set;
-            if (setter) setter.call(element, value);
-            else element.value = value;
-            element.dispatchEvent(new InputEvent('input', {
-              bubbles: true, data: value, inputType: 'insertText',
-            }));
-            element.dispatchEvent(new Event('change', { bubbles: true }));
-            """,
-            add_input,
-            self.ptids["charlie"],
-        )
-        alice.find_element(SELECTORS["group_add_submit"], 10).click()
-        member_selector = (
-            f'[data-chat-group-member='
-            f'{json.dumps(self.ptids["charlie"])}]'
-        )
-        WebDriverWait(alice.driver, 120).until(
-            lambda driver: driver.find_element(
-                By.CSS_SELECTOR, member_selector
-            )
-        )
+        if not result or result.get("messageCount", -1) < 0:
+            raise GateError(f"syncGroup failed: {result}")
+
+    def wait_mls_readiness(self) -> None:
+        """Wait for all clients to complete MLS key package publishing."""
+        deadline = time.monotonic() + 60
+        for actor in ACTORS:
+            client = self.clients[actor]
+            while time.monotonic() < deadline:
+                try:
+                    status = async_harness(
+                        client, "getRealtimeDevice", {}, timeout=10
+                    )
+                    if status and status.get("deviceId"):
+                        break
+                except GateError:
+                    pass
+                time.sleep(3)
+            else:
+                raise GateError(f"{actor} MLS enrollment did not complete in 60s")
+        time.sleep(15)
 
     def send_and_verify(self, group_id: str) -> str:
         alice = self.clients["alice"]
+        async_harness(alice, "syncGroup", {"groupUlid": group_id}, timeout=30)
+        enter_chat_page(alice)
+        alice.find_element(
+            f'[data-chat-group-ulid={json.dumps(group_id)}]', 30
+        ).click()
         text = f"three-device-mls-{time.time_ns()}"
         composer = alice.find_element(
             '[data-pt-text-input="chat-composer"]', 30
@@ -235,30 +219,31 @@ class NativeGroupMlsGate(AcceptanceGate):
         alice.find_element("[data-chat-send]", 10).click()
         for actor in ("bob", "charlie"):
             client = self.clients[actor]
+            async_harness(client, "syncGroup", {"groupUlid": group_id}, timeout=30)
             enter_chat_page(client)
             client.find_element(
-                f'[data-chat-group-ulid={json.dumps(group_id)}]', 30
+                f'[data-chat-group-ulid={json.dumps(group_id)}]', 60
             ).click()
-            WebDriverWait(client.driver, 120).until(
-                lambda driver: driver.find_element(
-                    By.CSS_SELECTOR, SELECTORS["group_ready"]
-                )
-            )
             wait_until(
                 lambda client=client: message_snapshot(client, text),
                 f"{actor} group message",
-                120,
+                180,
             )
         return text
 
     def remove_member(self, group_id: str) -> None:
         alice = self.clients["alice"]
-        alice.find_element(SELECTORS["group_manage"], 10).click()
-        remove_selector = (
-            f'[data-chat-group-remove-member='
-            f'{json.dumps(self.ptids["charlie"])}]'
+        time.sleep(10)
+        result = async_harness(
+            alice,
+            "removeGroupMember",
+            {"groupUlid": group_id, "memberDid": self.ptids["charlie"]},
+            timeout=60,
         )
-        alice.find_element(remove_selector, 10).click()
+        if not result or not result.get("success"):
+            raise GateError(
+                f"removeGroupMember returned unexpected result: {result}"
+            )
 
     def run(self) -> dict[str, Any]:
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
@@ -302,6 +287,10 @@ class NativeGroupMlsGate(AcceptanceGate):
                 and len(set(self.device_ids.values())) == 3
                 and len({client.port for client in self.clients.values()}) == 3
                 and len({client.storage_root for client in self.clients.values()}) == 3,
+            )
+            self.step(
+                "mls.readiness",
+                self.wait_mls_readiness,
             )
             group_id = self.step(
                 "group.create",

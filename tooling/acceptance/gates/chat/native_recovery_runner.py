@@ -51,6 +51,7 @@ REQUIRED_ASSERTIONS = {
 
 SELECTORS = {
     "settings_nav": '[data-pt-primary-nav="settings"]',
+    "security_section": '[data-pt-section-item="security"]',
     "recovery_generate": "[data-recovery-generate]",
     "recovery_reveal": "[data-recovery-reveal]",
     "recovery_backup": "[data-recovery-backup-create]",
@@ -63,6 +64,7 @@ SELECTORS = {
 class NativeRecoveryGate(AcceptanceGate):
     gate_id = "chat-native-recovery-e2e"
     report_path = REPORT_PATH
+    evidence_dir = REPORT_PATH.parent / "chat-native-recovery-evidence"
 
     def __init__(self) -> None:
         super().__init__()
@@ -204,6 +206,7 @@ class NativeRecoveryGate(AcceptanceGate):
     def generate_recovery_phrase(self) -> str:
         bob = self.clients["bob"]
         bob.find_element(SELECTORS["settings_nav"], 30).click()
+        bob.find_element(SELECTORS["security_section"], 10).click()
         WebDriverWait(bob.driver, 30).until(
             lambda driver: driver.find_element(
                 By.CSS_SELECTOR,
@@ -228,7 +231,7 @@ class NativeRecoveryGate(AcceptanceGate):
         bob.find_element(SELECTORS["recovery_backup"], 10).click()
         return phrase
 
-    def reinstall_and_restore(self, phrase: str, text: str) -> None:
+    def reinstall_and_restore(self, phrase: str, text: str, conversation_id: str = "") -> None:
         bob = self.clients["bob"]
         bob_storage = bob.storage_root
         stop_client(bob)
@@ -243,6 +246,7 @@ class NativeRecoveryGate(AcceptanceGate):
             raise GateError("Bob identity changed after reinstall")
         self.clients["bob"] = new_bob
         new_bob.find_element(SELECTORS["settings_nav"], 30).click()
+        new_bob.find_element(SELECTORS["security_section"], 10).click()
         WebDriverWait(new_bob.driver, 30).until(
             lambda driver: driver.find_element(
                 By.CSS_SELECTOR,
@@ -274,11 +278,18 @@ class NativeRecoveryGate(AcceptanceGate):
         )
         new_bob.find_element(SELECTORS["recovery_restore_submit"], 10).click()
         enter_chat_page(new_bob)
-        async_harness(
-            new_bob,
-            "syncFriendSession",
-            {"sessionUlid": ""},
-        )
+        for attempt in range(8):
+            try:
+                async_harness(
+                    new_bob,
+                    "syncFriendSession",
+                    {"sessionUlid": conversation_id},
+                )
+                break
+            except GateError:
+                if attempt == 7:
+                    raise
+                time.sleep(3)
         restored = wait_until(
             lambda: message_snapshot(new_bob, text),
             "restored exact plaintext after reinstall",
@@ -350,7 +361,7 @@ class NativeRecoveryGate(AcceptanceGate):
             )
             self.step(
                 "recovery.reinstall_restore",
-                lambda: self.reinstall_and_restore(phrase, text),
+                lambda: self.reinstall_and_restore(phrase, text, conversation_id),
                 "bob",
             )
             for actor in ("alice", "bob"):

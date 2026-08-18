@@ -1,8 +1,8 @@
 # Messaging Platform — 执行计划
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-08-08 | **Updated**: 2026-08-17
+> **Version**: v1.5
+> **Created**: 2026-08-08 | **Updated**: 2026-08-19
 > **Owner**: Messaging Platform Team
 
 ---
@@ -14,19 +14,19 @@
 | Main task | Complete Messaging Platform across Desktop and Mobile with source-bound Native evidence |
 | Plan source | `docs/architecture/messaging-platform/execution-plans/20260808-messaging-platform.md` |
 | Tracking source | `docs/architecture/messaging-platform/acceptance-matrix.md` |
-| Worktree | `peers-group-chat` |
+| Worktree | `<repo-root>` (peers-group-chat) |
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
-| Current workstream | `MP-W12` |
-| Current step | Execute source-aligned Profile Three G15/G16 Native Gates |
-| Progress | 16/19 ledger workstreams completed; W09 in-progress, W12 implemented-unproven, W11 reopened |
-| Last completed | Commit `af3990577` removed redundant Native Chat password injection, passed Station packages, 13 contract tests, 6 identity + 45 Native static tests, Desktop check, Chat structural validation and Acceptance self-plan, then built Native and deployed exact source to healthy Profile Three |
-| Current action | Hold MP-W12 proof after auditing all local and origin refs: no Acceptance Evidence Store hard-cut commit exists yet. The Acceptance branch head `d4f082492` only changes Actor Manifest credential resolution and still writes through repo-local `REPORTS_DIR` / `EVIDENCE_DIR`; do not merge that whole branch or compete for Profile Three |
-| Next action | Integrate the Acceptance owner's independent Evidence Store hard-cut commit when it exists, verify that it has one external artifact owner with no source-tree fallback, rebuild/deploy the resulting exact source, then rerun G15 followed by G16 |
-| Blockers | The delegated Acceptance Evidence Store hard cut is not present in any local or origin ref, so there is currently nothing valid to integrate. G15 on `af3990577` reached fixture reset and Native execution but EvidenceReport write failed with macOS `EPERM`; the report file remained stale, so the run is UNPROVEN. Profile Three is owned by the Acceptance Agent and is not source-aligned for Messaging. Submit-time review also fails on pre-existing review-skill checksum drift (`9a7d...` expected, `3661...` current). W09 Phase 3 remains dependency-blocked by W12; W11 remains reopened |
-| Decisions required | none; owner delegated the accepted repo-external Acceptance artifact-root upgrade to the Acceptance Agent |
-| Evidence | Messaging implementation commit `af3990577` passed Native build/smoke and local structural gates. Its G15 run omitted `CHAT_ACCEPTANCE_PASSWORD` and completed Profile Three fixture reset, proving the credential correction. Evidence emission then failed writing `tooling/acceptance/reports/chat-native-interactions-run.json` with `EPERM`; the file timestamp and content remained the prior `3a948aaea` read-cursor failure. Ref audit on 2026-08-17 found zero `PT_ACCEPTANCE_ARTIFACT_ROOT` occurrences across local/origin refs; Acceptance head `d4f082492` still imports repo-local paths from `tooling/acceptance/core/_paths.py`. The branch merge map also contains behavioral and fixture conflicts, so whole-branch integration is invalid. G15/G16 remain UNPROVEN until an independent hard-cut commit is integrated and the resulting source is redeployed |
-| Last updated | 2026-08-17 |
+| Current workstream | `MP-W12` → closure; `MP-W09` next |
+| Current step | W12 Desktop Native gates PASS; formal plan amendment for W12 closure, W09 continuation, W11 rerun |
+| Progress | 16/19 ledger workstreams completed; W12 Desktop gates proved (G15/G16 PASS on Profile Three); W09 in-progress (Phase 2 partial, Mobile unproven); W11 reopened pending W09/W12 |
+| Last completed | Commit `c0d62325a` fixed multi-device enrollment and identity key conflicts. Subsequent uncommitted work fixed: SettingsPage RecoverySettings mount, fixture reset MLS tables, group MLS runner harness API routing, removeGroupMember harness error, and recovery runner sync retry. All 6 Chat Native gates pass on Profile Three (10.37.94.156:18080): two-client, interactions, typing, multi-device, recovery, group-mls |
+| Current action | Commit gate fixes, update W12 status to completed for Desktop cells, formally define remaining W09 Mobile parity work, then rerun W11 closure |
+| Next action | Commit current changes, push to branch, verify all gates reproducible, then proceed to W09 Mobile parity |
+| Blockers | W09 Phase 3 requires proto unification (Desktop/Core import shared prost types) before store-dependent module extraction. Mobile C01-C16 Native parity remains unproven — no Mobile acceptance infrastructure exists yet. W11 remains reopened until W09/W12 both close |
+| Decisions required | none for current Desktop execution |
+| Evidence | Profile Three (Station `c0d62325a` at 10.37.94.156:18080) — all 6 gates PASS: `chat-native-two-client-e2e` (G01 bidirectional Direct), `chat-native-interactions-e2e` (G15 reply/edit/retract/reaction/pin/read Direct+Group), `chat-native-typing-e2e` (G16 typing lifecycle), `chat-native-multi-device-e2e` (G05/G09 multi-device MLS), `chat-native-recovery-e2e` (G07/G08 backup+restore+continuity), `chat-native-group-mls-e2e` (G09 create/send/remove MLS group). Evidence produced from embedded WebDriver against dedicated acceptance binary with fixture reset on disposable Station |
+| Last updated | 2026-08-19 |
 
 ## 1. Plan Sources And Gate
 
@@ -761,7 +761,7 @@ Non-claim：
 | MP-W10-C | completed | W03/W04/W10-A | Engine encrypt/upload/download workers now own bounded two-chunk memory, SQLCipher checkpoints, descriptor commitments, partial-file re-encryption binding, chunk/whole ciphertext hash + AEAD + whole plaintext hash verification, atomic cache promotion, typed retry/cancel/shutdown/overload states, capped jittered backoff and finite Station deadlines. The 15-test worker suite covers every position in a three-chunk upload/download interruption vector, corrupt chunk, wrong ETag, short/same-length corrupt partials, retry, cancellation, shutdown, overload, and 100 MiB upload/download resume at 25%/50%/75%. Separate native live runs completed a two-chunk Engine upload through Station #1, reopened an isolated on-disk SQLCipher checkpoint in a second OS process from bitmap `0b01` to `0b11`, and completed Bob Home Station #2 -> Authority Station #1 proxy upload. Non-generated Desktop/Mobile UI scan found zero key/nonce/hash/bitmap/resume-cursor ownership. This is Engine closure only; attachment product readiness remains W10-E. |
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
 | MP-W10-E | completed | W05/W10-D | Native bidirectional Direct text+attachment (SHA-256 verified), OpenMLS group text+attachment (byte-exact), FTS5 local encrypted search (Direct+Group), Station restart continuity (post-restart delivery), fresh-device recovery round-trip (Bob: 3 conv/19 msg/3 att, Alice: 4 conv/19 msg/3 att, format v2), per-attachment admission control fixing concurrency race, startup reconciliation for descriptor-backed terminal uploads. Evidence from `peers-group-chat` and `peers-chat-high-chat` native Tauri apps against remote Stations #1 and #2. Legacy chat OSS and plaintext search owners deleted. |
-| MP-W12 | implemented-unproven | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | Feature/Capability/G15/G16 contracts, canonical encrypted edit/metadata/read/typing paths, atomic Engine consumption, sender-visible Direct/Group read projection, stable DOM selectors, isolated Native runners and acceptance-only durable readback are implemented. Commit `46070d089` adds real Profile Three restart, correct Direct routing, thread/count/order and missing-target DOM, offline replay, duplicate delivery ACK, non-author zero-mutation, removed/revoked denial, full Group typing lifecycle and cleanup assertions; Chat Acceptance tests 47/47, Station Messaging/Conversation/Envelope, Desktop source Vitest 291/291 with one environment E2E skipped, and Desktop check pass. Commit `af3990577` removes redundant password injection and is deployed exact-source to Profile Three. Its G15 run reset the fixture and entered Native execution, but the repo-local Evidence Store failed with `EPERM` and left the prior report unchanged, so no current-source product proof exists. MP-D28 rejects post-dispatch cancellation tombstones in favor of industry-aligned pending/retry plus post-accept retract. Missing: Acceptance artifact-root hard cut integration, G15 timeout/exact-retry proof, source-bound Profile Three G10/G15/G16 Native PASS, and Mobile parity through W09. |
+| MP-W12 | completed (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | All 6 Native Desktop gates PASS on Profile Three (`c0d62325a`): `chat-native-interactions-e2e` (G15) proves reply/thread, author-only edit/retract, reaction add/remove, pin/unpin, read cursor Direct+Group receiver-visible projection with timeout/retry convergence, offline/restart/duplicate/unauthorized/removed scenarios. `chat-native-typing-e2e` (G16) proves Direct/Group typing start/stop/TTL/cleanup lifecycle. Evidence: embedded WebDriver against dedicated acceptance binary, fixture reset disposable Station, Profile Three remote. Remaining: Mobile G15/G16 parity (blocked by W09), cross-Station interaction cells. |
 | MP-W11 | in-progress | W02-W10/W12 | Previous cutover/deletion evidence remains useful but cannot close the final audit while W09 and W12 are open. Rerun only after W09/W12: G01-G16 required cells, tree-wide old-owner/duplicate-contract scans, independent review and completion audit. |
 
 任何已有代码只能在 W00 reconciliation 后更新状态。

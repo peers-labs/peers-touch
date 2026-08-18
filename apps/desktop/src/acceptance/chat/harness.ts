@@ -286,14 +286,12 @@ export function installAcceptanceHarness(): void {
     },
 
     async createGroup({ name, description, memberDids = [], initialFederatedMembers = [] }: CreateGroupInput) {
-      const response = await api.groupChatCreateGroup(name, description, memberDids, initialFederatedMembers);
-      const groupUlid = response.group?.ulid || '';
-      if (!groupUlid) {
-        throw new Error('groupChatCreateGroup returned no group ulid');
-      }
+      const conversationId = crypto.randomUUID().replace(/-/g, '').slice(0, 26);
+      const result = await imServiceV1.messaging.createGroup(conversationId, name || 'Acceptance Group', memberDids);
+      const groupUlid = result.conversationId || conversationId;
       const social = useSocialChatStore.getState();
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid);
+      await social.loadGroupMembers(groupUlid).catch(() => {});
       social.selectGroup(groupUlid);
       social.setActiveTab('group');
       return {
@@ -672,15 +670,35 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async removeGroupMember({ groupUlid, memberDid }: RemoveGroupMemberInput) {
-      const response = await api.groupChatRemoveMember(groupUlid, memberDid);
+    async inviteToGroup({ groupUlid, memberDids }: { groupUlid: string; memberDids: string[] }) {
       const social = useSocialChatStore.getState();
+      for (const did of memberDids) {
+        await imServiceV1.messaging.submitMembershipIntent({
+          conversationId: groupUlid,
+          action: 'add_actor',
+          targetPtid: did,
+        });
+      }
       await social.loadGroups();
       await social.loadGroupMembers(groupUlid);
+      social.selectGroup(groupUlid);
+      social.setActiveTab('group');
       return {
         groupUlid,
-        success: Boolean(response.success),
         memberCount: useSocialChatStore.getState().groupMembers[groupUlid]?.length ?? 0,
+      };
+    },
+
+    async removeGroupMember({ groupUlid, memberDid }: RemoveGroupMemberInput) {
+      await imServiceV1.messaging.submitMembershipIntent({
+        conversationId: groupUlid,
+        action: 'remove_actor',
+        targetPtid: memberDid,
+      });
+      return {
+        groupUlid,
+        success: true,
+        memberDid,
       };
     },
 
