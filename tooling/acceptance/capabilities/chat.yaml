@@ -160,7 +160,9 @@
         "chat-native-group-mls-e2e"
       ],
       "synthetic_paths": [
-        "tooling/acceptance/gates/chat/native_visible_runner.py",
+        "tooling/acceptance/gates/chat/native_multi_device_runner.py",
+        "tooling/acceptance/gates/chat/native_recovery_runner.py",
+        "tooling/acceptance/gates/chat/native_group_mls_runner.py",
         "apps/desktop/src/acceptance/chat/identity.ts",
         "apps/desktop/src/components/chat/ChatComposer.tsx",
         "apps/desktop/src/components/settings/RecoverySettings.tsx"
