@@ -2,7 +2,7 @@
 
 > **Status**: implementation complete — DELIVER
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-08-17
+> **Created**: 2026-08-17 | **Updated**: 2026-08-18
 > **Owner**: Acceptance Architecture
 > **Module**: `tooling/acceptance/`, `tooling/skills/`
 
@@ -19,15 +19,15 @@
 | Branch | `fix/acceptance-domain-structural-validation` |
 | Stage | `DELIVER` |
 | Current workstream | All implementation workstreams complete |
-| Current step | Hold Draft PR #93 for owner review and terminal CI evidence |
-| Progress | `CAS-W1` through `CAS-W5` complete |
-| Last completed | Pushed commit `96688acf9` and opened Draft PR #93 with the complete evidence gaps and non-claims |
-| Current action | Keep PR #93 Draft while Quality Evidence remains fail closed and the external build rerun is queued |
-| Next action | Owner reviews the two declared coverage gaps; rerun or inspect external CI when GitHub scheduling recovers |
-| Blockers | Quality Evidence reports two intentional out-of-scope coverage gaps; labeler lacks integration permission; GitHub returned 429 for Buildx download and its rerun remains queued; project memory namespace is contaminated with unrelated Big-A content |
-| Decisions required | none for repository delivery; memory namespace ownership requires external repair |
-| Evidence | Draft PR #93; implementation commit `96688acf9`; framework self-tests 105/105 PASS; validator 7/7 PASS; Skill check PASS; Applet, Station Dashboard, and Chat structural validation PASS; Federation reports only missing `fedp5` wiring/contract; source-bound Acceptance Gates PASS and Gap Detector `PROVEN`; static review found no P0-P2 defects; commitlint/title/description PASS; review-framework fail closed on two out-of-scope gaps; labeler failed on token permission; pr-build initial run failed on GitHub 429 and rerun is queued; Messaging Infra subset restored to HEAD; full hard-rules blocked only by two pre-existing Agent generated files |
-| Last updated | 2026-08-17 |
+| Current step | Commit CAS-W6 and update Draft PR #93 |
+| Progress | `CAS-W1` through `CAS-W6` complete |
+| Last completed | Added the Infra-only Skill, Agent handbook routing, D-12 responsibility boundary, direction-aware Quality Evidence, and deterministic boundary tests |
+| Current action | Verify final Skill freshness, commit the Infra firewall, and update PR #93 without touching business injection |
+| Next action | Rerun exact-range Quality Evidence and PR checks, then request Owner review |
+| Blockers | Project memory namespace is contaminated with unrelated Big-A content; two unrelated Agent proto outputs remain untracked |
+| Decisions required | none; Owner approved the Skill name and responsibility model |
+| Evidence | Draft PR #93; Infra self-validation 112/112 PASS; boundary tests 5/5 PASS; Quality Evidence tests 10/10 PASS; validator 7/7 PASS; self-plan selects only `acceptance-plan-self` and `acceptance-runtime-provisioning-self`; canonical Skill is registered in `AGENTS.md` and `docs/global/workflow.md`; no business injection was added or modified |
+| Last updated | 2026-08-18 |
 
 ## 1. Goal
 
@@ -66,6 +66,7 @@ Out of scope:
 | `CAS-W3` | Context Anchor governance | complete | Canonical Skill, workflow references, path hard rule, and fixture added |
 | `CAS-W4` | Misplaced-edit cleanup | complete | Messaging worktree retains only its pre-existing Messaging changes |
 | `CAS-W5` | Review and delivery evidence | complete | Framework self-tests 105/105, Skill check, plan/run Gates, Gap Detector, diff checks, and worktree ownership audit complete |
+| `CAS-W6` | Acceptance Infra responsibility firewall | complete | Dedicated Skill, Agent handbook routing, D-12, Quality Evidence direction isolation, and deterministic anti-overreach tests; Infra self-validation 112/112 PASS |
 
 ## 4. Dependency Order
 
