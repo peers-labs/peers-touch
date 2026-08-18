@@ -59,9 +59,28 @@ if ! git diff --name-only "$diff_range" -- >/dev/null; then
   exit 1
 fi
 
+scope_plan="$(mktemp)"
+trap 'rm -f "$scope_plan"' EXIT
+python3 tooling/scripts/acceptance-plan.py \
+  --root tooling/acceptance \
+  --range "$diff_range" \
+  --output "$scope_plan" >/dev/null
+infra_only="$(
+  python3 - "$scope_plan" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    plan = json.load(handle)
+features = set(plan.get("impacted_features", []))
+print("1" if features == {"acceptance-framework"} else "0")
+PY
+)"
+
 echo "Submit-Time Review Pipeline"
 echo "==========================="
 echo "range: $diff_range"
+echo "acceptance_scope: $([[ "$infra_only" == "1" ]] && echo infra || echo business-or-mixed)"
 
 echo
 echo "== Quality evidence =="
@@ -73,7 +92,11 @@ tooling/scripts/review/run.sh --range "$diff_range" --strict-knowledge
 
 echo
 echo "== Acceptance structure =="
-make acceptance-validate
+if [[ "$infra_only" == "1" ]]; then
+  make acceptance-infra-validate
+else
+  make acceptance-validate
+fi
 make acceptance-coverage-report
 make acceptance-plan ACCEPTANCE_RANGE="$diff_range"
 
