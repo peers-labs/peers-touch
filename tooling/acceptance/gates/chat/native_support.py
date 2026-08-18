@@ -93,19 +93,21 @@ def start_authenticated_client(
     account: str,
     port: int,
     station_url: str,
+    instance: str = "",
 ) -> tuple[TauriDriver, str]:
+    label = instance or account
     storage = (
         REPO_ROOT
         / ".local"
         / "acceptance"
         / "embedded-webdriver"
-        / account
+        / label
         / "storage"
     )
     storage.mkdir(parents=True, exist_ok=True)
     client = TauriDriver(
         port=port,
-        profile=f"acceptance-{account}",
+        profile=f"acceptance-{label}",
         storage_root=str(storage),
         environment={"PEERS_STATION_URL": station_url},
     )
