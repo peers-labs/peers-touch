@@ -242,6 +242,7 @@ async function hydrateSocialForActiveActor(): Promise<void> {
 }
 
 export function installAcceptanceHarness(): void {
+  (window as any).__PT_ACCEPTANCE_STORE__ = useSocialChatStore;
   registerAcceptanceHarness('chat', {
     async loginWithPassword({ account, password }: LoginInput) {
       await waitForIdentityState(

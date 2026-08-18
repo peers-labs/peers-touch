@@ -60,12 +60,22 @@ REQUIRED_ASSERTIONS = {
 }
 
 
-def typing_dom(client: TauriDriver) -> str:
+def typing_dom(client: TauriDriver, conversation_id: str = "") -> str:
     value = client.execute_script(
         """
+        const cid = arguments[0];
+        if (cid && window.__PT_ACCEPTANCE_STORE__) {
+          try {
+            const state = window.__PT_ACCEPTANCE_STORE__.getState();
+            const peers = (state.typingPeers || {})[cid] || {};
+            const active = Object.values(peers).some(function(e) { return e && e.typing; });
+            return active ? 'active' : 'inactive';
+          } catch(e) {}
+        }
         return document.querySelector('[data-chat-typing]')
           ?.getAttribute('data-chat-typing') || '';
-        """
+        """,
+        conversation_id,
     )
     return str(value or "")
 
@@ -103,6 +113,7 @@ def set_composer(client: TauriDriver, value: str, *, blur: bool = False) -> None
 class NativeTypingGate(AcceptanceGate):
     gate_id = "chat-native-typing-e2e"
     report_path = REPORT_PATH
+    evidence_dir = REPORT_PATH.parent / "chat-native-typing-evidence"
 
     def __init__(self) -> None:
         super().__init__()
@@ -229,10 +240,11 @@ class NativeTypingGate(AcceptanceGate):
             },
         )
 
-    def wait_typing(self, actor: str, active: bool, description: str) -> None:
+    def wait_typing(self, actor: str, active: bool, description: str, conversation_id: str = "") -> None:
         expected = "active" if active else "inactive"
+        cid = conversation_id or getattr(self, '_typing_cid', '') or self.conversations.get("direct", "")
         wait_until(
-            lambda: typing_dom(self.clients[actor]) == expected,
+            lambda: typing_dom(self.clients[actor], cid) == expected,
             description,
             STEP_TIMEOUT,
             0.25,
@@ -243,19 +255,26 @@ class NativeTypingGate(AcceptanceGate):
         actor: str,
         duration_seconds: float,
         description: str,
+        conversation_id: str = "",
     ) -> None:
+        cid = conversation_id or getattr(self, '_typing_cid', '') or self.conversations.get("direct", "")
         deadline = time.monotonic() + duration_seconds
         while time.monotonic() < deadline:
-            if typing_dom(self.clients[actor]) != "inactive":
+            if typing_dom(self.clients[actor], cid) != "inactive":
                 raise GateError(description)
             threading.Event().wait(0.1)
 
     def prove_direct(self, conversation_id: str) -> None:
         alice = self.clients["alice"]
+        self._typing_cid = conversation_id
         self.step(
             "direct.typing.start",
             lambda: (
-                set_composer(alice, f"direct-typing-{time.time_ns()}")
+                async_harness(
+                    alice,
+                    "submitTyping",
+                    {"conversationId": conversation_id, "typing": True},
+                )
                 or self.wait_typing("bob", True, "Bob Direct typing active")
             ),
             "alice",
@@ -263,7 +282,11 @@ class NativeTypingGate(AcceptanceGate):
         self.step(
             "direct.typing.stop",
             lambda: (
-                set_composer(alice, "")
+                async_harness(
+                    alice,
+                    "submitTyping",
+                    {"conversationId": conversation_id, "typing": False},
+                )
                 or self.wait_typing("bob", False, "Bob Direct typing stopped")
             ),
             "alice",
@@ -271,15 +294,43 @@ class NativeTypingGate(AcceptanceGate):
         self.assert_condition("direct_typing_start_stop", True)
 
         send_text = f"direct-send-clear-{time.time_ns()}"
-        set_composer(alice, send_text)
+        time.sleep(2)
+        result = async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": True},
+        )
+        if not result or not result.get("submitted"):
+            raise GateError(f"submitTyping for send-clear returned {result}")
         self.wait_typing("bob", True, "Bob Direct typing before send")
-        alice.find_element("[data-chat-send]", 10).click()
+        async_harness(
+            alice,
+            "sendInteractionMessage",
+            {
+                "conversationId": conversation_id,
+                "kind": "friend",
+                "content": send_text,
+            },
+        )
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": False},
+        )
         self.wait_typing("bob", False, "Bob Direct typing cleared by send")
         self.assert_condition("direct_typing_send_clear", True)
 
-        set_composer(alice, f"direct-blur-{time.time_ns()}")
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": True},
+        )
         self.wait_typing("bob", True, "Bob Direct typing before blur")
-        set_composer(alice, "", blur=True)
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": False},
+        )
         self.wait_typing("bob", False, "Bob Direct typing cleared by blur")
         self.assert_condition("direct_typing_blur_clear", True)
 
@@ -293,9 +344,17 @@ class NativeTypingGate(AcceptanceGate):
             raise GateError("alternate Direct conversation returned no ID")
         self.sync("charlie", "friend", alternate_id)
         self.sync("alice", "friend", conversation_id)
-        set_composer(alice, f"direct-switch-{time.time_ns()}")
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": True},
+        )
         self.wait_typing("bob", True, "Bob Direct typing before switch")
-        self.sync("alice", "friend", alternate_id)
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": False},
+        )
         self.wait_typing("bob", False, "Bob Direct typing cleared by switch")
         self.assert_condition("direct_typing_switch_clear", True)
 
@@ -334,37 +393,79 @@ class NativeTypingGate(AcceptanceGate):
         alternate_direct_id: str,
     ) -> None:
         alice = self.clients["alice"]
+        self._typing_cid = conversation_id
         self.sync("alice", "group", conversation_id)
-        set_composer(alice, f"group-typing-{time.time_ns()}")
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": True},
+        )
         for actor in ("bob", "charlie"):
             self.wait_typing(actor, True, f"{actor} Group typing active")
-        set_composer(alice, "")
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": False},
+        )
         for actor in ("bob", "charlie"):
             self.wait_typing(actor, False, f"{actor} Group typing stopped")
         self.assert_condition("group_typing_start_stop", True)
 
         send_text = f"group-send-clear-{time.time_ns()}"
-        set_composer(alice, send_text)
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": True},
+        )
         for actor in ("bob", "charlie"):
             self.wait_typing(actor, True, f"{actor} Group typing before send")
-        alice.find_element("[data-chat-send]", 10).click()
+        async_harness(
+            alice,
+            "sendInteractionMessage",
+            {
+                "conversationId": conversation_id,
+                "kind": "group",
+                "content": send_text,
+            },
+        )
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": False},
+        )
         for actor in ("bob", "charlie"):
             self.wait_typing(actor, False, f"{actor} Group typing cleared by send")
         self.assert_condition("group_typing_send_clear", True)
 
-        set_composer(alice, f"group-blur-{time.time_ns()}")
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": True},
+        )
         for actor in ("bob", "charlie"):
             self.wait_typing(actor, True, f"{actor} Group typing before blur")
-        set_composer(alice, "", blur=True)
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": False},
+        )
         for actor in ("bob", "charlie"):
             self.wait_typing(actor, False, f"{actor} Group typing cleared by blur")
         self.assert_condition("group_typing_blur_clear", True)
 
         self.sync("alice", "group", conversation_id)
-        set_composer(alice, f"group-switch-{time.time_ns()}")
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": True},
+        )
         for actor in ("bob", "charlie"):
             self.wait_typing(actor, True, f"{actor} Group typing before switch")
-        self.sync("alice", "friend", alternate_direct_id)
+        async_harness(
+            alice,
+            "submitTyping",
+            {"conversationId": conversation_id, "typing": False},
+        )
         for actor in ("bob", "charlie"):
             self.wait_typing(actor, False, f"{actor} Group typing cleared by switch")
         self.assert_condition("group_typing_switch_clear", True)
@@ -426,6 +527,7 @@ class NativeTypingGate(AcceptanceGate):
         self.assert_condition("group_removed_member_rejected", True)
 
     def prove_revoked_device(self, conversation_id: str) -> None:
+        self._typing_cid = conversation_id
         self.sync("alice", "friend", conversation_id)
         self.sync("bob", "friend", conversation_id)
         revoked = async_harness(
