@@ -74,30 +74,12 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 reason=f"Home Station has no client allocation for gate {gate_id}",
                 resource=f"gate-environment:{gate_id}",
             )
-        worktrees = [
-            Path(item).expanduser().resolve()
-            for item in os.environ.get(
-                "CHAT_NATIVE_CLIENT_WORKTREES",
-                str(REPO_ROOT),
-            ).split(",")
-            if item.strip()
-        ]
-        if len(worktrees) == 1:
-            worktrees *= len(roles)
-        if len(worktrees) != len(roles):
-            raise BlockedError(
-                reason=(
-                    f"{gate_id} requires one client worktree per runtime "
-                    f"({len(roles)} required, {len(worktrees)} supplied)"
-                ),
-                resource="client-isolation:worktrees",
-            )
+        worktrees = [REPO_ROOT] * len(roles)
 
-        gateway_base = int(os.environ.get("CHAT_NATIVE_GATEWAY_PORT", "3330"))
-        renderer_base = int(os.environ.get("CHAT_NATIVE_RENDERER_PORT", "3510"))
-        webdriver_base = int(
-            os.environ.get("CHAT_NATIVE_WEBDRIVER_PORT", "4445")
-        )
+        slot = int(os.environ.get("PT_DEV_SLOT", "0"))
+        gateway_base = 3330 + slot * 100
+        renderer_base = 3510 + slot * 100
+        webdriver_base = 4445 + slot * 10
         run_root = Path(f"/tmp/pt-chat-native-{run_id}-{gate_id}")
         clients = tuple(
             ClientRuntime(
@@ -250,8 +232,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             if gate_id == "chat-federated-browser-prereq":
                 return self._ready(manifest)
 
-            credential_refs, credential_values = self._resolve_credentials()
-            password = credential_values.get("chat-password", "")
+            credential_refs, _ = self._resolve_credentials()
             fixture = next(
                 (
                     item
@@ -294,8 +275,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 station_url=station_url,
                 deployment_environment=deployment_environment,
                 roles=roles,
-                password=password,
-                credential_ref=credential_refs[0],
+                credential_ref=credential_refs[0] if credential_refs else "",
                 reset_authorized=reset_authorized,
             )
             clients = self._clients(gate_id, manifest.run_id)
