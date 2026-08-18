@@ -19,14 +19,14 @@
 | Branch | `fix/acceptance-domain-structural-validation` |
 | Stage | `DELIVER` |
 | Current workstream | All implementation workstreams complete |
-| Current step | Hold Draft PR #93 for Owner review and terminal CI evidence |
+| Current step | PR #93 ready for Owner review |
 | Progress | `CAS-W1` through `CAS-W6` complete |
-| Last completed | Exact-range submit pipeline passed with `acceptance_scope: infra`; all three Infra Gates passed and Gap Detector returned `PROVEN` with zero gaps |
-| Current action | Publish final traceability and keep PR #93 focused on Acceptance Infra only |
-| Next action | Inspect terminal PR checks, then request Owner review/merge |
-| Blockers | Project memory namespace is contaminated with unrelated Big-A content; two unrelated Agent proto outputs remain untracked |
-| Decisions required | none; Owner approved the Skill name and responsibility model |
-| Evidence | Draft PR #93; exact-range Quality Evidence `Ready for pt-github-review: yes` with zero gaps; review framework PASS; Infra self-validation 114/114 PASS; boundary tests 6/6 PASS; Quality Evidence tests 10/10 PASS; validator 8/8 PASS; `acceptance-plan-self`, `acceptance-infra-validation`, and `acceptance-runtime-provisioning-self` PASS; Gap Detector `PROVEN`; canonical Skill registered in `AGENTS.md` and `docs/global/workflow.md`; no business injection added or modified |
+| Last completed | Exact-range submit pipeline and all project-owned PR checks passed; only the external Vercel Hobby-plan deployment check failed |
+| Current action | Keep PR #93 Ready and focused on Acceptance Infra only |
+| Next action | Owner reviews and merges PR #93 |
+| Blockers | No code blocker; external Vercel Hobby-plan limitation remains non-product; project memory namespace is contaminated with unrelated Big-A content; two unrelated Agent proto outputs remain untracked |
+| Decisions required | Owner merge approval |
+| Evidence | PR #93; exact-range Quality Evidence `Ready for pt-github-review: yes` with zero gaps; review-framework, pr-build, commitlint, labeler, title, and description checks PASS; Infra self-validation 114/114 PASS; boundary tests 6/6 PASS; Quality Evidence tests 10/10 PASS; validator 8/8 PASS; all three Infra Gates PASS; Gap Detector `PROVEN`; canonical Skill registered in `AGENTS.md` and `docs/global/workflow.md`; no business injection added or modified |
 | Last updated | 2026-08-18 |
 
 ## 1. Goal
