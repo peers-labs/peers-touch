@@ -67,15 +67,15 @@ fn main() {
             let resource_dir = app.path()
                 .resource_dir()
                 .unwrap_or_else(|e| {
-                    #[cfg(debug_assertions)]
+                    #[cfg(any(debug_assertions, feature = "acceptance-webdriver"))]
                     {
                         tracing::warn!(
                             error = %e,
-                            "Resource directory unavailable in dev; falling back to src-tauri resources path"
+                            "Resource directory unavailable; falling back to src-tauri resources path"
                         );
                         return PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources");
                     }
-                    #[cfg(not(debug_assertions))]
+                    #[cfg(not(any(debug_assertions, feature = "acceptance-webdriver")))]
                     panic!("[setup] Failed to resolve resource directory: {e}");
                 });
             let state = app.state::<Arc<state::AppState>>();

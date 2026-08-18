@@ -82,6 +82,9 @@ def set_composer(client: TauriDriver, value: str, *, blur: bool = False) -> None
           'value',
         )?.set;
         if (!setter) throw new Error('textarea setter missing');
+        // Reset React's internal value tracker so it detects the change.
+        const tracker = element._valueTracker;
+        if (tracker) tracker.setValue(element.value);
         setter.call(element, value);
         element.dispatchEvent(new InputEvent('input', {
           bubbles: true,
@@ -170,7 +173,22 @@ class NativeTypingGate(AcceptanceGate):
         )
         enter_chat_page(client)
 
+    def drain(self, actor: str) -> None:
+        try:
+            gateway_command(
+                self.clients[actor], "messaging_dispatch", {"batch_limit": 50}
+            )
+        except Exception:
+            pass
+        try:
+            gateway_command(
+                self.clients[actor], "messaging_drain", {"batch_limit": 100}
+            )
+        except Exception:
+            pass
+
     def sync(self, actor: str, kind: str, conversation_id: str) -> None:
+        self.drain(actor)
         method = "syncFriendSession" if kind == "friend" else "syncGroup"
         key = "sessionUlid" if kind == "friend" else "groupUlid"
         async_harness(self.clients[actor], method, {key: conversation_id})
@@ -383,16 +401,16 @@ class NativeTypingGate(AcceptanceGate):
         alice = replacement
         self.assert_condition("group_typing_disconnect_ttl_clear", True)
 
-        removed = async_harness(
+        removed = gateway_command(
             alice,
-            "removeGroupMember",
+            "messaging_membership_transition",
             {
-                "groupUlid": conversation_id,
-                "memberDid": self.ptids["charlie"],
+                "conversation_id": conversation_id,
+                "action": "remove_actor",
+                "target_ptid": self.ptids["charlie"],
             },
-            timeout=120,
         )
-        if not (removed or {}).get("success"):
+        if not removed:
             raise GateError("Charlie removal did not succeed")
         try:
             async_harness(
@@ -527,18 +545,17 @@ class NativeTypingGate(AcceptanceGate):
             direct_after_station = station_readback(direct_id, direct_seed)
             direct_after_engine = self.engine_snapshot("bob", direct_id, direct_seed)
 
-            group = async_harness(
+            group = gateway_command(
                 self.clients["alice"],
-                "createGroup",
+                "messaging_create_group",
                 {
                     "name": f"typing-{time.time_ns()}",
-                    "memberDids": [self.ptids["bob"], self.ptids["charlie"]],
+                    "member_ptids": [self.ptids["bob"], self.ptids["charlie"]],
                 },
-                timeout=120,
             )
-            group_id = str((group or {}).get("groupUlid") or "")
+            group_id = str((group or {}).get("conversation_id") or "")
             if not group_id:
-                raise GateError("Group creation returned no ID")
+                raise GateError("Group creation returned no conversation_id")
             self.conversations["group"] = group_id
             for actor in ACTORS:
                 self.sync(actor, "group", group_id)

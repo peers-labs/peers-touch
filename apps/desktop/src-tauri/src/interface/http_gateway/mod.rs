@@ -2299,7 +2299,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     match actor_ptid {
                         Some(ptid) => to_json(app_profile::sync_user_profile(
                             &token,
-                            &account_id,
                             &ptid,
                         )),
                         None => to_json(AppResult::<StubPayload>::fail(
@@ -7615,11 +7614,80 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let conversation_id = format!("g-{}", ulid::Ulid::new().to_string().to_lowercase());
             match engine.create_group_conversation(&token, &conversation_id, &name, &member_ptids) {
                 Ok(id) => {
+                    let now_unix_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as i64;
+                    let retry_policy = crate::messaging::CommandRetryPolicy {
+                        initial_delay_ms: 1000,
+                        maximum_delay_ms: 30000,
+                    };
+                    let _ = engine.dispatch_command_once(&token, now_unix_ms, retry_policy);
                     let _ = engine.drain_once(&token, 100);
                     let _ = state.messaging_engines.wake_profile(&account_id);
                     to_json(AppResult::success(json!({
                         "conversation_id": id,
                         "state": "created",
+                    })))
+                }
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        "messaging_membership_transition" => {
+            let guard = state.session.lock().map_err(|_| ()).ok();
+            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
+            let token = guard.as_ref().and_then(|g| g.token.clone()).unwrap_or_default();
+            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            drop(guard);
+            if actor_id.is_empty() || token.is_empty() {
+                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+            }
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(e)) => e,
+                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+            };
+            let conversation_id = args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let action_str = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+            let target_ptid = args.get("target_ptid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let target_device_id = args.get("target_device_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let role = args.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if conversation_id.is_empty() || target_ptid.is_empty() {
+                return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "conversation_id and target_ptid required", None));
+            }
+            let action = match action_str {
+                "add_actor" => crate::model::chat::MessagingMembershipAction::AddActor,
+                "remove_actor" => crate::model::chat::MessagingMembershipAction::RemoveActor,
+                "add_device" => crate::model::chat::MessagingMembershipAction::AddDevice,
+                "remove_device" => crate::model::chat::MessagingMembershipAction::RemoveDevice,
+                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "unsupported action", None)),
+            };
+            match engine.prepare_membership_transition(
+                &token,
+                &crate::messaging::MembershipTransitionIntentInput {
+                    conversation_id,
+                    action,
+                    target_ptid,
+                    target_device_id,
+                    role,
+                },
+            ) {
+                Ok(command) => {
+                    let command_id = command.command_id.clone();
+                    let now_unix_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as i64;
+                    let retry_policy = crate::messaging::CommandRetryPolicy {
+                        initial_delay_ms: 1000,
+                        maximum_delay_ms: 30000,
+                    };
+                    let _ = engine.dispatch_command_once(&token, now_unix_ms, retry_policy);
+                    let _ = engine.drain_once(&token, 100);
+                    let _ = state.messaging_engines.wake_profile(&account_id);
+                    to_json(AppResult::success(json!({
+                        "command_id": command_id,
+                        "state": "pending",
                     })))
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
