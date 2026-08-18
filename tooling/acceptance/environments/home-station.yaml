@@ -22,13 +22,8 @@
   ],
   "credentials": [
     {
-      "id": "chat-password",
-      "source_ref": "env:CHAT_NATIVE_DEMO_PASSWORD",
-      "required": true
-    },
-    {
       "id": "evidence-leak-canary",
-      "source_ref": "env:CHAT_ACCEPTANCE_LEAK_CANARY",
+      "source_ref": "auto:uuid",
       "required": true,
       "generated_if_missing": true
     }

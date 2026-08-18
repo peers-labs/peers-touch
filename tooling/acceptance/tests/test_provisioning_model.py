@@ -133,14 +133,9 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertTrue(contract.profile.identity_match)
         self.assertIn("station", contract.services)
         self.assertTrue(contract.services["station"].required)
-        self.assertEqual(len(contract.credentials), 2)
-        self.assertEqual(contract.credentials[0].id, "chat-password")
-        self.assertTrue(contract.credentials[0].required)
-        self.assertEqual(
-            contract.credentials[1].id,
-            "evidence-leak-canary",
-        )
-        self.assertTrue(contract.credentials[1].generated_if_missing)
+        self.assertEqual(len(contract.credentials), 1)
+        self.assertEqual(contract.credentials[0].id, "evidence-leak-canary")
+        self.assertTrue(contract.credentials[0].generated_if_missing)
         self.assertIn("processes", contract.cleanup.resources)
 
     def test_load_local_desktop_gateway_contract(self):
@@ -180,7 +175,7 @@ class EnvironmentContractTests(unittest.TestCase):
             try:
                 with self.assertRaisesRegex(
                     ProvisioningError,
-                    "generated credentials require an env: source_ref",
+                    "generated credentials require an env: or auto: source_ref",
                 ):
                     EnvironmentContract.from_yaml(Path(f.name))
             finally:
@@ -350,7 +345,7 @@ class RuntimeManifestTests(unittest.TestCase):
         m = dataclasses.replace(
             self._base_manifest(),
             clients=(alice,),
-            credential_refs=("env:CHAT_NATIVE_DEMO_PASSWORD",),
+            credential_refs=("auto:uuid",),
             cleanup_registered=True,
             cleanup_resources=("processes", "ports"),
         )
@@ -359,7 +354,7 @@ class RuntimeManifestTests(unittest.TestCase):
         self.assertEqual(d["clients"][0]["actor"], "alice")
         self.assertEqual(d["clients"][0]["gateway_port"], 3030)
         self.assertEqual(d["clients"][0]["webdriver_port"], 4445)
-        self.assertEqual(d["credentialRefs"], ["env:CHAT_NATIVE_DEMO_PASSWORD"])
+        self.assertEqual(d["credentialRefs"], ["auto:uuid"])
         self.assertTrue(d["cleanup"]["registered"])
 
     def test_manifest_redacts_credentials_in_dict(self):
