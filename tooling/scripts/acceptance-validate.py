@@ -428,22 +428,81 @@ def validate_domain(
     return {"domain": domain_id, "capabilities": results}, results
 
 
+def validate_infra(
+    repo_root: Path,
+    acceptance_root: Path,
+    require_proven: bool,
+    store: EvidenceStore,
+    current_gate_id: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    capabilities = load_capabilities(acceptance_root)
+    selected = [
+        capability
+        for capability in capabilities.values()
+        if capability.get("direction") == "acceptance_core_self_validation"
+    ]
+    require(selected, "no acceptance_core_self_validation capabilities found")
+
+    features = [
+        load(path)
+        for path in sorted((acceptance_root / "features").glob("*.yaml"))
+    ]
+    gate_defs = load(acceptance_root / "gates.yaml").get("gates", {})
+    validate_domain_contract_closure(
+        acceptance_root,
+        "acceptance-infra",
+        selected,
+        features,
+        gate_defs,
+        current_gate_id,
+    )
+    passed_gates = latest_passed_gates(
+        store,
+        current_gate_id,
+        require_proven,
+    )
+    results = [
+        validate_capability(
+            repo_root,
+            acceptance_root,
+            capability,
+            features,
+            gate_defs,
+            passed_gates,
+            require_proven,
+        )
+        for capability in selected
+    ]
+    return {"scope": "acceptance-infra", "capabilities": results}, results
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default="tooling/acceptance")
     parser.add_argument("--domain", default="")
+    parser.add_argument("--infra", action="store_true")
     parser.add_argument("--require-proven", action="store_true")
     args = parser.parse_args()
+    require(
+        not (args.infra and args.domain),
+        "--infra and --domain are mutually exclusive",
+    )
 
     repo_root = REPO_ROOT
     acceptance_root = repo_root / args.root
-    domain_ids = [args.domain] if args.domain else active_domain_ids(acceptance_root)
+    domain_ids = (
+        []
+        if args.infra
+        else [args.domain] if args.domain else active_domain_ids(acceptance_root)
+    )
     store = EvidenceStore.from_environment(
         repo_root=repo_root,
         worktree=repo_root,
     )
     if os.environ.get(RUN_GATE_ENV):
         gate_id = os.environ[RUN_GATE_ENV]
+    elif args.infra:
+        gate_id = "acceptance-infra-validation"
     elif len(domain_ids) == 1:
         profile = load(acceptance_root / "domains" / f"{domain_ids[0]}.yaml")
         gate_id = str(profile.get("validation_gate_id") or "acceptance-validate")
@@ -454,21 +513,39 @@ def main() -> int:
     print("============================")
     unproven: list[dict[str, Any]] = []
     with ArtifactSession(repo_root=repo_root, gate_id=gate_id) as session:
-        for domain_id in domain_ids:
-            report, results = validate_domain(
+        if args.infra:
+            report, results = validate_infra(
                 repo_root,
                 acceptance_root,
-                domain_id,
                 args.require_proven,
                 store,
+                gate_id,
             )
-            role = "validation" if len(domain_ids) == 1 else f"validation:{domain_id}"
+            validation_items = [("acceptance-infra", report, results)]
+        else:
+            validation_items = []
+            for domain_id in domain_ids:
+                report, results = validate_domain(
+                    repo_root,
+                    acceptance_root,
+                    domain_id,
+                    args.require_proven,
+                    store,
+                )
+                validation_items.append((domain_id, report, results))
+
+        for target_id, report, results in validation_items:
+            role = (
+                "validation"
+                if len(validation_items) == 1
+                else f"validation:{target_id}"
+            )
             reference = session.write_json(
-                f"reports/{domain_id}-validation.json",
+                f"reports/{target_id}-validation.json",
                 report,
                 role=role,
             )
-            print(f"[OK] domain: {domain_id}")
+            print(f"[OK] scope: {target_id}")
             print(f"[OK] capabilities: {len(results)}")
             print(f"[OK] report: {json.dumps(reference.to_dict(), sort_keys=True)}")
             for result in results:

@@ -8,6 +8,13 @@
       "tier": "ci-structure",
       "description": "Validate that the acceptance registry can plan the current diff."
     },
+    "acceptance-infra-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --infra",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection."
+    },
     "acceptance-run-static-gate": {
       "command": "python3 tooling/scripts/acceptance-run-test.py",
       "timeout_seconds": 30,

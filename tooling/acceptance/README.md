@@ -51,6 +51,9 @@ This creates a two-way proof:
 
 ## Project Coverage
 
+- `make acceptance-infra-validate` validates only Acceptance Infra
+  self-consistency and never consumes business Domain injection as a framework
+  completion condition.
 - `make acceptance-validate` validates every active domain structure in `tooling/acceptance/domains/index.yaml`.
 - `make acceptance-validate DOMAIN=chat` validates the Chat managed-domain profile structure.
 - `make acceptance-validate DOMAIN=federation` validates one domain profile structure.

@@ -167,6 +167,7 @@
       },
       "require": [
         "acceptance-plan-self",
+        "acceptance-infra-validation",
         "acceptance-runtime-provisioning-self"
       ]
     }

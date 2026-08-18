@@ -19,6 +19,31 @@ SPEC.loader.exec_module(MODULE)
 
 
 class DomainContractClosureTests(unittest.TestCase):
+    def test_infra_validation_selects_only_core_self_validation(self) -> None:
+        with mock.patch.object(
+            MODULE,
+            "latest_passed_gates",
+            return_value=set(),
+        ):
+            report, results = MODULE.validate_infra(
+                MODULE.REPO_ROOT,
+                MODULE.REPO_ROOT / "tooling/acceptance",
+                False,
+                object(),
+                "acceptance-infra-validation",
+            )
+
+        self.assertEqual(report["scope"], "acceptance-infra")
+        self.assertTrue(results)
+        self.assertEqual(
+            {result["direction"] for result in results},
+            {"acceptance_core_self_validation"},
+        )
+        self.assertNotIn(
+            "federation-validates-acceptance-framework",
+            {result["id"] for result in results},
+        )
+
     def test_synthetic_plan_loads_sibling_script_dependencies(self) -> None:
         result = MODULE.run_plan_for_paths(
             MODULE.REPO_ROOT,

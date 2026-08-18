@@ -6,7 +6,11 @@
       "domain": "delivery-quality",
       "direction": "acceptance_core_self_validation",
       "features": ["acceptance-framework"],
-      "required_gates": ["acceptance-plan-self"],
+      "required_gates": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-runtime-provisioning-self"
+      ],
       "synthetic_paths": [
         "tooling/acceptance/registry.yaml",
         "tooling/acceptance/gates.yaml",
@@ -21,11 +25,16 @@
           "tooling/acceptance/features/*.yaml",
           "evidence-store:acceptance-run:latest:run"
         ],
-        "proven_by": ["acceptance-plan-self"],
+        "proven_by": [
+          "acceptance-plan-self",
+          "acceptance-infra-validation",
+          "acceptance-runtime-provisioning-self"
+        ],
         "proven_scope": [
           "changed paths select gates through registry rules",
           "feature contracts and gate definitions are machine-readable",
-          "capability graph links product capabilities to features gates evidence and unproven scope"
+          "capability graph links product capabilities to features gates evidence and unproven scope",
+          "Acceptance Infra readiness is isolated from business Domain injection and reverse-validation evidence"
         ],
         "unproven_scope": []
       }

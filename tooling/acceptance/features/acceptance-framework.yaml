@@ -20,7 +20,11 @@
     "tooling/acceptance/features/*.yaml",
     "evidence-store:acceptance-run:latest:run"
   ],
-  "required_gates": ["acceptance-plan-self"],
+  "required_gates": [
+    "acceptance-plan-self",
+    "acceptance-infra-validation",
+    "acceptance-runtime-provisioning-self"
+  ],
   "acceptance": {
     "framework": [
       "capability graph links product capabilities to features gates evidence and unproven scope",

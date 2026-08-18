@@ -608,6 +608,7 @@ make acceptance-plan
 make acceptance-run
 make acceptance PLAN=<plan-path>
 make acceptance-report
+make acceptance-infra-validate
 make acceptance-validate
 make acceptance-validate DOMAIN=chat
 make acceptance-validate DOMAIN=federation
@@ -619,7 +620,12 @@ make acceptance-federation-report
 make acceptance-federation-mutual-validation
 ```
 
-其中 `acceptance-validate` 是项目级 domain validation 入口；不传 `DOMAIN` 时验证 `tooling/acceptance/domains/index.yaml` 中所有 active domains。`acceptance-validate DOMAIN=<domain>` 验证单个 domain profile。默认模式验证结构自洽；加 `--require-proven` 时要求 latest run results 证明 required gates 已通过。它必须证明：
+其中 `acceptance-infra-validate` 只验证
+`acceptance_core_self_validation` capability 和通用 Infra closure，不读取业务 Domain
+注入作为完成条件。`acceptance-validate` 是项目级业务 domain validation 入口；不传
+`DOMAIN` 时验证 `tooling/acceptance/domains/index.yaml` 中所有 active domains。
+`acceptance-validate DOMAIN=<domain>` 验证单个 domain profile。默认模式验证结构自洽；
+加 `--require-proven` 时要求 latest run results 证明 required gates 已通过。它必须证明：
 
 - capability graph 自洽。
 - domain profile 引用的 capabilities 存在。
