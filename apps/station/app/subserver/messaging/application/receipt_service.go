@@ -281,7 +281,12 @@ func (s *ReceiptService) handleActorRead(
 
 			if _, err := repositories.Queue.Enqueue(ctx, &chat.DeviceQueueItem{
 				Recipient: device.Endpoint,
-				EventId: fmt.Sprintf("read:%s:%d", cursor.ReaderPtid, cursor.LastReadSequence),
+				EventId: "read:" + receiptTupleDigest(
+					"read-event",
+					cursor.ConversationId,
+					cursor.ReaderPtid,
+					fmt.Sprintf("%d", cursor.LastReadSequence),
+				)[:56],
 				ConversationId: cursor.ConversationId,
 				IdempotencyKey: receiptQueueIdempotencyKey(
 					"read",

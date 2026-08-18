@@ -71,13 +71,10 @@ impl DeliveryReceiptProcessor {
         if item.event_id.starts_with("read:") {
             let cursor = ActorReadCursor::decode(item.opaque_payload.as_slice())
                 .map_err(|error| format!("decode messaging actor read cursor: {error}"))?;
-            let expected_event_id =
-                format!("read:{}:{}", cursor.reader_ptid, cursor.last_read_sequence);
             if cursor.conversation_id != item.conversation_id
                 || cursor.reader_ptid.is_empty()
                 || cursor.reader_ptid == self.endpoint.ptid
                 || cursor.last_read_sequence <= 0
-                || item.event_id != expected_event_id
             {
                 return Err("messaging actor read cursor payload is invalid".to_string());
             }
