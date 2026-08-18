@@ -71,7 +71,7 @@ def reset_station_messaging_state(environment_name: str) -> None:
             f"{environment_name} must define PT_DEPLOY_HOST and PT_DEPLOY_USER"
         )
     container = os.environ.get(
-        "CHAT_ACCEPTANCE_POSTGRES_CONTAINER", "pt-station-a-postgres-1"
+        "PT_STATION_POSTGRES_CONTAINER", "pt-station-a-postgres-1"
     )
     sql = f"TRUNCATE TABLE {', '.join(CHAT_TABLES)} CASCADE;\n"
     remote = (

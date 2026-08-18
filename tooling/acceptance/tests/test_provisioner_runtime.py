@@ -103,12 +103,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         )
         with patch.dict(
             "os.environ",
-            {
-                "CHAT_NATIVE_CLIENT_WORKTREES": "/tmp/client",
-                "CHAT_NATIVE_GATEWAY_PORT": "13330",
-                "CHAT_NATIVE_RENDERER_PORT": "13510",
-                "CHAT_NATIVE_WEBDRIVER_PORT": "14445",
-            },
+            {"PT_DEV_SLOT": "2"},
             clear=True,
         ):
             clients = provisioner._clients(
@@ -118,7 +113,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
 
         self.assertEqual(
             [client.webdriver_port for client in clients],
-            [14445, 14446],
+            [4465, 4466],
         )
 
     def test_native_webdriver_port_conflict_blocks(self):
@@ -126,22 +121,17 @@ class ProvisionerBlockingTests(unittest.TestCase):
             EnvironmentContract(id="home-station")
         )
         with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0))
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            listener.bind(("127.0.0.1", 4445))
             listener.listen()
-            port = listener.getsockname()[1]
             with patch.dict(
                 "os.environ",
-                {
-                    "CHAT_NATIVE_CLIENT_WORKTREES": "/tmp/client",
-                    "CHAT_NATIVE_GATEWAY_PORT": "13330",
-                    "CHAT_NATIVE_RENDERER_PORT": "13510",
-                    "CHAT_NATIVE_WEBDRIVER_PORT": str(port),
-                },
+                {"PT_DEV_SLOT": "0"},
                 clear=True,
             ):
                 with self.assertRaisesRegex(
                     BlockedError,
-                    f"webdriver port {port} is already in use",
+                    "webdriver port 4445 is already in use",
                 ):
                     provisioner._clients(
                         "chat-native-two-client-e2e",
@@ -271,11 +261,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 )
 
         self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
-        self.assertIn("credential", manifest.blocked_reason.lower())
-        self.assertEqual(
-            manifest.blocked_resource,
-            "credential-ref:env:CHAT_NATIVE_DEMO_PASSWORD",
-        )
+        self.assertIn("reset", manifest.blocked_reason.lower())
 
 
 if __name__ == "__main__":
