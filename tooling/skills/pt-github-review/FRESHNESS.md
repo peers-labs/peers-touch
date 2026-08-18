@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-08-17
-covered_docs_hash: d846a7d46902acf2c8d34fda2cff35f784f68b41863c059f68058d7d54a4886d
+covered_docs_hash: 87c9caec2cfb0f14f7435098f39eb026ddc56d7d29ed2cc156ec2b6cd5cb3000
 
 covered_docs:
   - AGENTS.md
