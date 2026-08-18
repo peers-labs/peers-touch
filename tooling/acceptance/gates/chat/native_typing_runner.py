@@ -14,23 +14,19 @@ from typing import Any, Callable
 from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
 from tooling.acceptance.drivers.tauri import TauriDriver
 from tooling.acceptance.fixtures.chat_native_reset import profile_three_environment
-from tooling.acceptance.gates.chat.native_interactions_runner import (
-    gateway_command,
-    station_readback,
-)
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     async_harness,
-    enter_chat_page,
-    reset_fixture,
-    start_authenticated_client,
-    stop_client,
-)
-from tooling.acceptance.gates.chat.native_two_client_runner import (
     commits_match,
     current_commit,
     current_workspace_digest,
+    enter_chat_page,
+    gateway_command,
     read_station_version,
+    reset_fixture,
+    start_authenticated_client,
+    station_readback,
+    stop_client,
     wait_until,
 )
 
