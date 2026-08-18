@@ -66,7 +66,7 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | 文档 | 说明 |
 |------|------|
 | [design.md](./design.md) | 架构原则、分层模型、核心契约、Core Runtime 抽象和执行闭环 |
-| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-11） |
+| [decisions.md](./decisions.md) | 关键设计决策与替代方案（D-01 ~ D-12） |
 | [data-model.md](./data-model.md) | Provisioning、Evidence Store、ArtifactRef、Run Manifest 与状态机 |
 | [module-layout.md](./module-layout.md) | Core Runtime 与 Environment Provisioning 的目标目录、职责和禁止依赖 |
 | [integration.md](./integration.md) | 现有变量/Profile/Fixture/Gate 到 runtime manifest 的映射与影响面 |
@@ -76,6 +76,7 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | [execution-plans/20260815-tauri-driver-desktop-ui-gate.md](./execution-plans/20260815-tauri-driver-desktop-ui-gate.md) | macOS native Tauri embedded WebDriver DOM Gate 执行计划 |
 | [execution-plans/20260816-runtime-provisioning-contract-implementation.md](./execution-plans/20260816-runtime-provisioning-contract-implementation.md) | Runtime Provisioning Contract 实现计划（No Silent Pass 落地） |
 | [execution-plans/20260817-acceptance-evidence-store.md](./execution-plans/20260817-acceptance-evidence-store.md) | Runtime evidence source-tree外迁与atomic Evidence Store执行计划 |
+| [execution-plans/20260817-domain-structural-validation-context-anchor.md](./execution-plans/20260817-domain-structural-validation-context-anchor.md) | Domain structural closure 与 Context Anchor 治理修复计划 |
 
 当前Evidence Store architecture由`D-11`约束：
 
@@ -92,4 +93,5 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 - [Federation Architecture](../federation/README.md) — 双边互验证的首个复杂产品域。
 - [Federation Phase 2 Plan](../federation/execution-plans/phase-2-product-governance-trust.md) — Federation 当前产品治理与验收计划。
 - [Project Docs Entry](../../README.md) — 文档层级与当前真源规则。
+- [`pt-acceptance-infra-engineering`](../../../tooling/skills/pt-acceptance-infra-engineering/SKILL.md) — Acceptance Infra 优化、审计与责任防火墙入口。
 - [`pt-acceptance-engineering`](../../../tooling/skills/pt-acceptance-engineering/SKILL.md) — Acceptance 补齐、升级与审计入口。
