@@ -14,8 +14,14 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from tooling.acceptance.core import ArtifactSession, EvidenceStore, RUN_GATE_ENV
-from tooling.acceptance.core.errors import EvidenceManifestInvalid
+from tooling.acceptance.core import (
+    ArtifactSession,
+    EnvironmentContract,
+    EvidenceStore,
+    RUN_GATE_ENV,
+)
+from tooling.acceptance.core.errors import EvidenceManifestInvalid, ProvisioningError
+from tooling.acceptance.provisioners import get_provisioner
 
 ALLOWED_GATE_TIERS = {
     "ci-structure",
@@ -62,7 +68,8 @@ def load_capabilities(root: Path) -> dict[str, dict[str, Any]]:
 def run_plan_for_paths(repo_root: Path, acceptance_root: Path, paths: list[str]) -> dict[str, Any]:
     script = repo_root / "tooling/scripts/acceptance-plan.py"
     code = (
-        "import importlib.util, json, pathlib\n"
+        "import importlib.util, json, pathlib, sys\n"
+        f"sys.path.insert(0, {str(script.parent)!r})\n"
         f"spec = importlib.util.spec_from_file_location('acceptance_plan', {str(script)!r})\n"
         "module = importlib.util.module_from_spec(spec)\n"
         "spec.loader.exec_module(module)\n"
@@ -89,9 +96,18 @@ def flatten_feature_gates(features: list[dict[str, Any]], feature_ids: list[str]
     return gates
 
 
-def validate_gate_catalog(gate_defs: dict[str, Any]) -> None:
+def validate_gate_catalog(
+    gate_defs: dict[str, Any],
+    required_gate_ids: set[str],
+) -> None:
     require(gate_defs, "gates.yaml has no gates")
-    for gate_id, gate in gate_defs.items():
+    missing_gate_ids = sorted(required_gate_ids - gate_defs.keys())
+    require(
+        not missing_gate_ids,
+        f"STRUCTURAL_GAP: required gates missing from gates.yaml: {missing_gate_ids}",
+    )
+    for gate_id in sorted(required_gate_ids):
+        gate = gate_defs[gate_id]
         require(gate.get("command"), f"{gate_id}: gate command is required")
         environment = gate.get("environment", "local")
         tier = gate.get("tier")
@@ -104,6 +120,159 @@ def validate_gate_catalog(gate_defs: dict[str, Any]) -> None:
             )
         if tier in {"ci-structure", "ci-cheap"}:
             require(environment == "local", f"{gate_id}: CI tier gates must use local environment")
+
+
+def collect_domain_gate_closure(
+    capabilities: list[dict[str, Any]],
+    features: list[dict[str, Any]],
+    validation_gate_id: str,
+) -> tuple[set[str], dict[str, set[str]]]:
+    features_by_id = {feature.get("id"): feature for feature in features}
+    required_gates: set[str] = set()
+    gate_sources: dict[str, set[str]] = {}
+
+    for capability in capabilities:
+        capability_id = str(capability.get("id") or "<missing>")
+        for gate_id in capability.get("required_gates", []):
+            required_gates.add(gate_id)
+            gate_sources.setdefault(gate_id, set()).add(
+                f"capability:{capability_id}"
+            )
+        for feature_id in capability.get("features", []):
+            feature = features_by_id.get(feature_id)
+            if feature is None:
+                continue
+            for gate_id in feature.get("required_gates", []):
+                required_gates.add(gate_id)
+                gate_sources.setdefault(gate_id, set()).add(
+                    f"feature:{feature_id}"
+                )
+
+    if validation_gate_id:
+        required_gates.add(validation_gate_id)
+        gate_sources.setdefault(validation_gate_id, set()).add(
+            "domain:validation_gate_id"
+        )
+    return required_gates, gate_sources
+
+
+def validate_domain_contract_closure(
+    acceptance_root: Path,
+    domain_id: str,
+    capabilities: list[dict[str, Any]],
+    features: list[dict[str, Any]],
+    gate_defs: dict[str, Any],
+    validation_gate_id: str,
+) -> set[str]:
+    required_gates, gate_sources = collect_domain_gate_closure(
+        capabilities,
+        features,
+        validation_gate_id,
+    )
+    failures: list[str] = []
+
+    missing_gates = sorted(required_gates - gate_defs.keys())
+    if missing_gates:
+        failures.append(
+            f"STRUCTURAL_GAP domain {domain_id!r}: required gates missing "
+            "from gates.yaml: "
+            + json.dumps(
+                [
+                    {
+                        "gate": gate_id,
+                        "sources": sorted(gate_sources.get(gate_id, set())),
+                    }
+                    for gate_id in missing_gates
+                ],
+                sort_keys=True,
+            )
+        )
+
+    environment_gates: dict[str, set[str]] = {}
+    provisioning_wiring: list[dict[str, str]] = []
+    for gate_id in sorted(required_gates & gate_defs.keys()):
+        gate = gate_defs[gate_id]
+        environment = str(gate.get("environment") or "local")
+        if environment == "local":
+            continue
+        environment_gates.setdefault(environment, set()).add(gate_id)
+        provisioner_id = str(gate.get("provisioner") or "")
+        if provisioner_id != environment:
+            provisioning_wiring.append(
+                {
+                    "environment": environment,
+                    "gate": gate_id,
+                    "provisioner": provisioner_id or "<missing>",
+                }
+            )
+    if provisioning_wiring:
+        failures.append(
+            f"PROVISIONING_WIRING_MISSING domain {domain_id!r}: non-local "
+            "gates require provisioner == environment: "
+            f"{json.dumps(provisioning_wiring, sort_keys=True)}"
+        )
+
+    missing_environments: dict[str, list[str]] = {}
+    invalid_environments: list[dict[str, str]] = []
+    unregistered_environments: list[dict[str, str]] = []
+    for environment, gate_ids in sorted(environment_gates.items()):
+        contract_path = (
+            acceptance_root / "environments" / f"{environment}.yaml"
+        )
+        if not contract_path.is_file():
+            missing_environments[environment] = sorted(gate_ids)
+            continue
+        try:
+            contract = EnvironmentContract.from_yaml(contract_path)
+        except ProvisioningError as error:
+            invalid_environments.append(
+                {
+                    "environment": environment,
+                    "error": str(error),
+                }
+            )
+            continue
+        if contract.id != environment:
+            invalid_environments.append(
+                {
+                    "environment": environment,
+                    "error": (
+                        f"contract id {contract.id!r} does not match "
+                        f"environment {environment!r}"
+                    ),
+                }
+            )
+            continue
+        try:
+            get_provisioner(contract)
+        except ProvisioningError as error:
+            unregistered_environments.append(
+                {
+                    "environment": environment,
+                    "error": str(error),
+                }
+            )
+
+    if missing_environments:
+        failures.append(
+            f"ENVIRONMENT_CONTRACT_MISSING domain {domain_id!r}: "
+            "non-local gates require environments/<environment-id>.yaml: "
+            f"{json.dumps(missing_environments, sort_keys=True)}"
+        )
+    if invalid_environments:
+        failures.append(
+            f"ENVIRONMENT_CONTRACT_INVALID domain {domain_id!r}: "
+            f"{json.dumps(invalid_environments, sort_keys=True)}"
+        )
+    if unregistered_environments:
+        failures.append(
+            f"PROVISIONER_UNREGISTERED domain {domain_id!r}: "
+            f"{json.dumps(unregistered_environments, sort_keys=True)}"
+        )
+
+    require(not failures, "\n".join(failures))
+    validate_gate_catalog(gate_defs, required_gates)
+    return required_gates
 
 
 def latest_passed_gates(
@@ -231,18 +400,26 @@ def validate_domain(
     capabilities = load_capabilities(acceptance_root)
     features = [load(path) for path in sorted((acceptance_root / "features").glob("*.yaml"))]
     gate_defs = load(acceptance_root / "gates.yaml").get("gates", {})
-    validate_gate_catalog(gate_defs)
-    passed_gates = latest_passed_gates(
-        store,
-        domain.get("validation_gate_id", ""),
-        require_proven,
-    )
 
     selected = []
     for capability_id in domain.get("capabilities", []):
         require(capability_id in capabilities, f"domain {domain_id}: capability {capability_id} is missing")
         selected.append(capabilities[capability_id])
     require(selected, f"domain {domain_id}: no capabilities selected")
+    validation_gate_id = str(domain.get("validation_gate_id") or "")
+    validate_domain_contract_closure(
+        acceptance_root,
+        domain_id,
+        selected,
+        features,
+        gate_defs,
+        validation_gate_id,
+    )
+    passed_gates = latest_passed_gates(
+        store,
+        validation_gate_id,
+        require_proven,
+    )
 
     results = [
         validate_capability(repo_root, acceptance_root, capability, features, gate_defs, passed_gates, require_proven)
@@ -251,22 +428,81 @@ def validate_domain(
     return {"domain": domain_id, "capabilities": results}, results
 
 
+def validate_infra(
+    repo_root: Path,
+    acceptance_root: Path,
+    require_proven: bool,
+    store: EvidenceStore,
+    current_gate_id: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    capabilities = load_capabilities(acceptance_root)
+    selected = [
+        capability
+        for capability in capabilities.values()
+        if capability.get("direction") == "acceptance_core_self_validation"
+    ]
+    require(selected, "no acceptance_core_self_validation capabilities found")
+
+    features = [
+        load(path)
+        for path in sorted((acceptance_root / "features").glob("*.yaml"))
+    ]
+    gate_defs = load(acceptance_root / "gates.yaml").get("gates", {})
+    validate_domain_contract_closure(
+        acceptance_root,
+        "acceptance-infra",
+        selected,
+        features,
+        gate_defs,
+        current_gate_id,
+    )
+    passed_gates = latest_passed_gates(
+        store,
+        current_gate_id,
+        require_proven,
+    )
+    results = [
+        validate_capability(
+            repo_root,
+            acceptance_root,
+            capability,
+            features,
+            gate_defs,
+            passed_gates,
+            require_proven,
+        )
+        for capability in selected
+    ]
+    return {"scope": "acceptance-infra", "capabilities": results}, results
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default="tooling/acceptance")
     parser.add_argument("--domain", default="")
+    parser.add_argument("--infra", action="store_true")
     parser.add_argument("--require-proven", action="store_true")
     args = parser.parse_args()
+    require(
+        not (args.infra and args.domain),
+        "--infra and --domain are mutually exclusive",
+    )
 
     repo_root = REPO_ROOT
     acceptance_root = repo_root / args.root
-    domain_ids = [args.domain] if args.domain else active_domain_ids(acceptance_root)
+    domain_ids = (
+        []
+        if args.infra
+        else [args.domain] if args.domain else active_domain_ids(acceptance_root)
+    )
     store = EvidenceStore.from_environment(
         repo_root=repo_root,
         worktree=repo_root,
     )
     if os.environ.get(RUN_GATE_ENV):
         gate_id = os.environ[RUN_GATE_ENV]
+    elif args.infra:
+        gate_id = "acceptance-infra-validation"
     elif len(domain_ids) == 1:
         profile = load(acceptance_root / "domains" / f"{domain_ids[0]}.yaml")
         gate_id = str(profile.get("validation_gate_id") or "acceptance-validate")
@@ -277,21 +513,39 @@ def main() -> int:
     print("============================")
     unproven: list[dict[str, Any]] = []
     with ArtifactSession(repo_root=repo_root, gate_id=gate_id) as session:
-        for domain_id in domain_ids:
-            report, results = validate_domain(
+        if args.infra:
+            report, results = validate_infra(
                 repo_root,
                 acceptance_root,
-                domain_id,
                 args.require_proven,
                 store,
+                gate_id,
             )
-            role = "validation" if len(domain_ids) == 1 else f"validation:{domain_id}"
+            validation_items = [("acceptance-infra", report, results)]
+        else:
+            validation_items = []
+            for domain_id in domain_ids:
+                report, results = validate_domain(
+                    repo_root,
+                    acceptance_root,
+                    domain_id,
+                    args.require_proven,
+                    store,
+                )
+                validation_items.append((domain_id, report, results))
+
+        for target_id, report, results in validation_items:
+            role = (
+                "validation"
+                if len(validation_items) == 1
+                else f"validation:{target_id}"
+            )
             reference = session.write_json(
-                f"reports/{domain_id}-validation.json",
+                f"reports/{target_id}-validation.json",
                 report,
                 role=role,
             )
-            print(f"[OK] domain: {domain_id}")
+            print(f"[OK] scope: {target_id}")
             print(f"[OK] capabilities: {len(results)}")
             print(f"[OK] report: {json.dumps(reference.to_dict(), sort_keys=True)}")
             for result in results:
