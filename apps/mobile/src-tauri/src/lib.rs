@@ -1,6 +1,7 @@
 mod commands;
 pub mod domain;
 pub mod error;
+pub mod messaging;
 mod platform;
 
 use platform::MobilePlatform;
