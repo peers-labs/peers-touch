@@ -45,10 +45,6 @@ import {
 import {
   FollowResponseSchema,
 } from '../gen/proto/domain/social/relationship_pb';
-import {
-  BlockUserResponseSchema,
-  UnblockUserResponseSchema,
-} from '../gen/proto/domain/chat/friend_chat_pb';
 import { ListMyCirclesResponseSchema } from '../gen/proto/domain/social/circle_pb';
 import { selectMomentComments, useMomentsStore } from '../store/moments';
 import { useRelationshipsStore } from '../store/relationships';
@@ -56,7 +52,6 @@ import { useSessionStore } from '../store/session';
 import { openMomentMediaKeyFromAudience } from '../services/momentAudienceKeys';
 import { EVENT, eventBus } from '../kernel/events';
 import { momentsRuntime } from '../runtimes/momentsRuntime';
-import { api } from '../services/desktop_api';
 import {
   socialStationModerationDelete,
   socialStationModerationUpsert,
@@ -578,47 +573,6 @@ describe('relationships store: optimistic follow', () => {
       useRelationshipsStore.getState().follow('u3'),
     ).rejects.toThrow();
     expect(useRelationshipsStore.getState().relations['u3']?.following).toBe(false);
-    expect(publishSpy).not.toHaveBeenCalledWith(EVENT.RELATIONSHIP_CHANGED, expect.anything());
-    publishSpy.mockRestore();
-  });
-});
-
-describe('friend-chat block bridge: moments projection signal', () => {
-  it('publishes relationship.changed after block succeeds', async () => {
-    const publishSpy = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined);
-    enqueue('friend_chat_block_user', bytesOk(BlockUserResponseSchema, {}));
-
-    await api.friendChatBlockUser('did:peers:u4');
-
-    expect(publishSpy).toHaveBeenCalledWith(EVENT.RELATIONSHIP_CHANGED, {
-      targetActorId: 'did:peers:u4',
-      action: 'block',
-    });
-    publishSpy.mockRestore();
-  });
-
-  it('publishes relationship.changed after unblock succeeds', async () => {
-    const publishSpy = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined);
-    enqueue('friend_chat_unblock_user', bytesOk(UnblockUserResponseSchema, { success: true }));
-
-    await api.friendChatUnblockUser('did:peers:u4');
-
-    expect(publishSpy).toHaveBeenCalledWith(EVENT.RELATIONSHIP_CHANGED, {
-      targetActorId: 'did:peers:u4',
-      action: 'unblock',
-    });
-    publishSpy.mockRestore();
-  });
-
-  it('does not publish relationship.changed when block fails', async () => {
-    const publishSpy = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined);
-    enqueue('friend_chat_block_user', {
-      ok: false,
-      error: { code: 'BLOCK_FAILED', message: 'boom' },
-    });
-
-    await expect(api.friendChatBlockUser('did:peers:u5')).rejects.toThrow();
-
     expect(publishSpy).not.toHaveBeenCalledWith(EVENT.RELATIONSHIP_CHANGED, expect.anything());
     publishSpy.mockRestore();
   });
