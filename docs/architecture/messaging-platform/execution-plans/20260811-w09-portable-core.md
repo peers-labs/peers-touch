@@ -60,20 +60,27 @@ Steps:
 - ✅ `codec/private_content` + `codec/attachment_validation` + `codec/verification`
 - ✅ `identity/keys` + `identity/enrollment`
 - ✅ `inbox/drain` (queue FSM)
-- ✅ `inbox/conversation_state` (ConversationStateProcessor — generic over MessagingRepository)
-- ✅ `inbox/receipt` (DeliveryReceiptProcessor — delivery + actor read cursor)
-- ✅ `inbox/public_event` (PublicEventProcessor — message committed, edit, retract, reaction, pin)
+- ✅ `inbox/conversation_state` (ConversationStateProcessor<R> — generic over MessagingRepository)
+- ✅ `inbox/receipt` (DeliveryReceiptProcessor<R> — delivery + actor read cursor)
+- ✅ `inbox/public_event` (PublicEventProcessor<R> — message committed, edit, retract, reaction, pin)
+- ✅ `inbox/direct` (DirectMessageProcessor<R> — full validation, DR decrypt, session establishment, commit)
+- ✅ `inbox/consumer` (MessagingItemConsumer<R, M> — generic dispatcher, MlsItemConsumer port trait)
 - ✅ `outbox/dispatch` (command outbox worker)
+- ✅ `outbox/send` (encrypt_direct_fan_out — portable Direct encryption fan-out)
 - ✅ `recovery/codec` (AES-GCM sectioned archive with KDF port)
-- ✅ `store/repository` trait (MessagingRepository boundary — expanded with conversation state, public event, interaction, receipt methods)
-- ✅ `contracts/` (ConversationProjection, all ReceiveCommit types, InteractionMutation, ReceiveCommitResult)
+- ✅ `store/repository` trait (MessagingRepository — queue, conversation, events, receipts, direct sessions, prekeys)
+- ✅ `contracts/` (all domain types including DirectMessageContent, DirectReceiveCommit, DirectEditCommit)
+- ✅ `crypto/double_ratchet` (full Signal DR: X25519 DH, HKDF-SHA256, AES-256-GCM — 8 tests)
+- ✅ `crypto/identity` (IdentityKeyPair, X25519KeyPair, DeviceSigningKey — 14 tests)
+- ✅ `crypto/x3dh` (sender + receiver X3DH key agreement — 3 tests)
+- ✅ `crypto/session` (DirectSession, DirectSessionKey, establish_receiver_session — 5 tests)
+- ✅ `ports/mls_crypto` (MlsCrypto trait — OpenMLS stays in adapter)
 - ✅ Proto unification complete (Phase 3 prerequisite resolved 2026-08-19):
   - Core owns all chat + common protos; Desktop re-exports via `messaging_core::proto::*`
-  - Desktop `build.rs` uses `extern_path` to map `.peers_touch.model.chat.v1` / `.peers_touch.model.common.v1` to Core's types
+  - Desktop `build.rs` uses `extern_path` to map proto packages to Core's types
   - Both `cargo check -p messaging-core` and `cargo check` (Desktop) pass
-- ✅ `crypto/double_ratchet` (full Signal DR: X25519 DH, HKDF-SHA256, AES-256-GCM — 8 tests)
-- ❌ Remaining: X3DH key exchange (partial — keychain stays in adapter), MLS (OpenMLS), send command, engine orchestrator, consumer dispatcher
-- Gate: 27 tests pass, `cargo check` clean on both crates, 4049 LOC in Core
+- ⬜ Remaining: MLS processors stay in Desktop adapter (OpenMLS-specific); engine orchestrator stays in adapter (Tauri-specific)
+- Gate: 30 tests pass, `cargo check` clean on both crates, ~5,485 LOC in Core
 
 Module mapping:
 | Desktop source | Core destination |
