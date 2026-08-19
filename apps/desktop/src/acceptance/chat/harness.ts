@@ -285,7 +285,7 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async createGroup({ name, description, memberDids = [], initialFederatedMembers = [] }: CreateGroupInput) {
+    async createGroup({ name, description: _description, memberDids = [], initialFederatedMembers: _initialFederatedMembers = [] }: CreateGroupInput) {
       const conversationId = crypto.randomUUID().replace(/-/g, '').slice(0, 26);
       const result = await imServiceV1.messaging.createGroup(conversationId, name || 'Acceptance Group', memberDids);
       const groupUlid = result.conversationId || conversationId;
