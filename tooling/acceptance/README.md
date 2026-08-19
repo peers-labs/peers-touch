@@ -70,6 +70,19 @@ launching a live journey. Live targets are
 `acceptance-chat-native-recovery`, and `acceptance-chat-native-group-mls`;
 `acceptance-chat-native-w8` runs all four.
 
+### W11 Closure
+
+`make acceptance-chat-w11` runs the fixed W11 closure plan
+(`tooling/acceptance/plans/chat-w11-closure.json`) — 10 gates in sequence:
+forbidden-path scan, duplicate-implementation scan, visible-static checks, all
+six native E2E journeys (two-client, interactions, typing, multi-device,
+recovery, group-MLS), and a mechanical completion-audit that verifies every
+report exists with PASS status before emitting `chat-w11-closure-verdict.json`.
+The gate list is fixed in the plan JSON — there is no AI-driven gate selection.
+Required environment: `CHAT_ACCEPTANCE_RESET=1`, `CHAT_ACCEPTANCE_PASSWORD=1`,
+`CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1`, and a Station whose build commit
+matches the client HEAD.
+
 The two-client Direct journey uses the Core embedded-WebDriver runner. It
 requires `CHAT_NATIVE_STATION_URL` and `CHAT_ACCEPTANCE_RESET=1`. It uses the
 committed disposable dev-account fixture from `apps/station/app/conf/actor.yml`

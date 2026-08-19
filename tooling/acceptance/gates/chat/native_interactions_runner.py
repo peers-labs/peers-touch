@@ -1859,8 +1859,22 @@ class NativeInteractionsGate(AcceptanceGate):
         except Exception:
             pass
         self.drain("bob")
-        time.sleep(2)
-        self.drain("bob")
+
+        def denied_reaction_absent_after_settle() -> bool:
+            self.drain("bob")
+            snapshot = station_readback(conversation_id, message_id)
+            events = snapshot.get("events") or []
+            for event in events:
+                command_id = str(event.get("commandId") or "")
+                if "denied" in command_id or "🚫" in command_id:
+                    return False
+            return len(events) >= len(before_denied.get("events") or [])
+
+        wait_until(
+            denied_reaction_absent_after_settle,
+            "revoked-device denied reaction produces no Authority event",
+            STEP_TIMEOUT,
+        )
         after_denied = station_readback(conversation_id, message_id)
 
         async_harness(

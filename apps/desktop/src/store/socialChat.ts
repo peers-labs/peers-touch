@@ -586,7 +586,6 @@ interface SocialChatState {
   ) => Promise<void>;
   hideConversation: (kind: 'friend' | 'group', ulid: string, keepHistory: boolean) => Promise<void>;
   restoreConversation: (kind: 'friend' | 'group', ulid: string) => void;
-  deleteFriendContact: (sessionUlid: string) => Promise<void>;
   deleteGroupContact: (groupUlid: string) => Promise<void>;
 
   getUnifiedConversations: () => UnifiedConversation[];
@@ -1600,7 +1599,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   loadFriendRequests: async (status, limit, offset) => {
     if (!hasAuthenticatedActor()) return;
     try {
-      const data = await api.friendChatListFriendRequests(status, limit, offset);
+      const data = await api.socialFriendRequestList(status, limit, offset);
       const requests = normalizeFriendRequests(
         (data as Record<string, unknown>)?.requests ?? [],
       );
@@ -1616,7 +1615,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   sendFriendRequest: async (receiverDid, message) => {
     try {
-      await api.friendChatSendFriendRequest(receiverDid, message);
+      await api.socialFriendRequestSend(receiverDid, message);
       await get().loadFriendRequests();
     } catch (error) {
       log.error('socialChat', 'sendFriendRequest failed', error);
@@ -1626,7 +1625,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   acceptFriendRequest: async (requestId) => {
     try {
-      const data = await api.friendChatAcceptFriendRequest(requestId);
+      const data = await api.socialFriendRequestAccept(requestId);
       const acceptedRequest = normalizeFriendRequestData(data?.request);
       set((state) => ({
         friendRequests: state.friendRequests.map((request) =>
@@ -1659,7 +1658,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   rejectFriendRequest: async (requestId) => {
     try {
-      const data = await api.friendChatRejectFriendRequest(requestId);
+      const data = await api.socialFriendRequestReject(requestId);
       const rejectedRequest = normalizeFriendRequestData(data?.request);
       set((state) => ({
         friendRequests: state.friendRequests.map((request) =>
@@ -1793,43 +1792,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       saveConversationLocalState(state.currentUserDid, nextLocalState);
       return { conversationLocalState: nextLocalState };
     });
-  },
-
-  deleteFriendContact: async (sessionUlid) => {
-    const state = get();
-    const session = state.sessions.find((item) => item.ulid === sessionUlid);
-    const peerDid = session ? peerOfSession(session, state.currentUserDid).did : '';
-    if (!peerDid) throw new Error('Cannot delete friend without peer DID');
-
-    try {
-      await api.friendChatBlockUser(peerDid);
-      set((prev) => {
-        const nextLocalState = { ...prev.conversationLocalState };
-        delete nextLocalState[conversationKey('friend', sessionUlid)];
-        const nextMessages = { ...prev.messages };
-        const nextPreviews = { ...prev.lastPreviews };
-        delete nextMessages[sessionUlid];
-        delete nextPreviews[sessionUlid];
-        saveConversationLocalState(prev.currentUserDid, nextLocalState);
-        return {
-          sessions: prev.sessions.filter((item) => item.ulid !== sessionUlid),
-          friendRequests: prev.friendRequests.filter((request) => (
-            !(
-              (request.senderId === peerDid || request.receiverId === peerDid)
-              && (request.senderId === prev.currentUserDid || request.receiverId === prev.currentUserDid)
-            )
-          )),
-          conversationLocalState: nextLocalState,
-          messages: nextMessages,
-          lastPreviews: nextPreviews,
-          ...(prev.activeSessionUlid === sessionUlid ? { activeSessionUlid: null } : {}),
-        };
-      });
-      await Promise.allSettled([get().loadSessions(), get().loadFriendRequests()]);
-    } catch (error) {
-      log.error('socialChat', 'deleteFriendContact failed', error);
-      throw error;
-    }
   },
 
   deleteGroupContact: async (groupUlid) => {

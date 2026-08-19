@@ -9,6 +9,7 @@
         acceptance-chat-native-interactions acceptance-chat-native-typing \
         acceptance-chat-native-multi-device acceptance-chat-native-recovery \
         acceptance-chat-native-group-mls acceptance-chat-native-w8 \
+        acceptance-chat-w11 \
         acceptance-station-dashboard acceptance-station-dashboard-domain-validation \
         acceptance-federation acceptance-federation-mutual-validation acceptance-federation-report \
         acceptance-desktop-performance-preflight-static acceptance-desktop-performance-preflight \
@@ -128,6 +129,14 @@ acceptance-chat-native-w8:
 		--gate chat-native-multi-device-e2e \
 		--gate chat-native-recovery-e2e \
 		--gate chat-native-group-mls-e2e
+
+acceptance-chat-w11:
+	python3 tooling/scripts/acceptance-closure-gen.py \
+		--contract tooling/acceptance/closures/messaging-w11.yaml \
+		--output tooling/acceptance/plans/chat-w11-closure.json \
+		--manifest-output tooling/acceptance/reports/w11-contract-manifest.json
+	python3 tooling/scripts/acceptance-run.py \
+		--plan tooling/acceptance/plans/chat-w11-closure.json
 
 acceptance-desktop-anchor-inventory:
 	python3 tooling/scripts/acceptance-run.py --gate desktop-anchor-inventory-gate
