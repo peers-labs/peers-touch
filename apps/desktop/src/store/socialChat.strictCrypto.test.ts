@@ -37,10 +37,6 @@ const rustMainSource = readFileSync(
   new URL('../../src-tauri/src/main.rs', import.meta.url),
   'utf8',
 );
-const rustFriendChatSource = readFileSync(
-  new URL('../../src-tauri/src/interface/tauri_commands/friend_chat.rs', import.meta.url),
-  'utf8',
-);
 const rustPresenceSource = readFileSync(
   new URL('../../src-tauri/src/application/presence/mod.rs', import.meta.url),
   'utf8',
@@ -127,7 +123,6 @@ describe('strict chat encryption source contract', () => {
   it('exposes one Messaging send and actor-read path with no friend-chat fallback', () => {
     for (const source of [
       desktopApiSource,
-      rustFriendChatSource,
       rustGatewaySource,
       rustMainSource,
       rustPresenceSource,
