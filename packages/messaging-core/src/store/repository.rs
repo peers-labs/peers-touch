@@ -1,6 +1,7 @@
 use crate::contracts::{
     ActorReadReceiveCommit, ConversationProjection, ConversationStateReceiveCommit,
-    DeliveryReceiptReceiveCommit, ReceiveCommitResult,
+    DeliveryReceiptReceiveCommit, InteractionReceiveCommit, PublicEventReceiveCommit,
+    ReceiveCommitResult,
 };
 use crate::outbox::CommandOutboxEntry;
 
@@ -35,6 +36,18 @@ pub trait MessagingRepository: Send + Sync {
     ) -> Result<ReceiveCommitResult, String>;
 
     fn conversation_projections(&self) -> Result<Vec<ConversationProjection>, String>;
+
+    // --- Public events ---
+
+    fn commit_public_event(
+        &self,
+        commit: &PublicEventReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String>;
+
+    fn commit_interaction_event(
+        &self,
+        commit: &InteractionReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String>;
 
     // --- Receipts ---
 
