@@ -60,15 +60,19 @@ Steps:
 - ✅ `codec/private_content` + `codec/attachment_validation` + `codec/verification`
 - ✅ `identity/keys` + `identity/enrollment`
 - ✅ `inbox/drain` (queue FSM)
+- ✅ `inbox/conversation_state` (ConversationStateProcessor — generic over MessagingRepository)
+- ✅ `inbox/receipt` (DeliveryReceiptProcessor — delivery + actor read cursor)
+- ✅ `inbox/public_event` (PublicEventProcessor — message committed, edit, retract, reaction, pin)
 - ✅ `outbox/dispatch` (command outbox worker)
 - ✅ `recovery/codec` (AES-GCM sectioned archive with KDF port)
-- ✅ `store/repository` trait (MessagingRepository boundary)
+- ✅ `store/repository` trait (MessagingRepository boundary — expanded with conversation state, public event, interaction, receipt methods)
+- ✅ `contracts/` (ConversationProjection, all ReceiveCommit types, InteractionMutation, ReceiveCommitResult)
 - ✅ Proto unification complete (Phase 3 prerequisite resolved 2026-08-19):
   - Core owns all chat + common protos; Desktop re-exports via `messaging_core::proto::*`
   - Desktop `build.rs` uses `extern_path` to map `.peers_touch.model.chat.v1` / `.peers_touch.model.common.v1` to Core's types
   - Both `cargo check -p messaging-core` and `cargo check` (Desktop) pass
-- ❌ Remaining: store-dependent module extraction (direct, mls, engine, recovery orchestration)
-- Gate: 19 tests pass, `cargo clippy` clean, Desktop `cargo check` clean with Core dependency
+- ❌ Remaining: Direct crypto (Double Ratchet), MLS (OpenMLS), send command, engine orchestrator, consumer dispatcher
+- Gate: 19 tests pass, `cargo check` clean on both crates, 3017 LOC in Core
 
 Module mapping:
 | Desktop source | Core destination |
