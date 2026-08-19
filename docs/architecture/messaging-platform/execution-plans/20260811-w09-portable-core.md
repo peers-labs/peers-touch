@@ -117,9 +117,19 @@ Steps:
 3. ✅ Desktop's `crate::model::chat` module becomes a re-export of Core's types.
 4. ✅ Non-chat protos (actor, social, auth, etc.) remain Desktop-generated.
 
-Steps:
-1. ✅ Proto unification (prerequisite above).
-2. `adapter.rs` — implements all port traits using:
+**Codec delegation**: ✅ COMPLETE (2026-08-19)
+1. ✅ `private_content.rs` → re-export from `messaging_core::codec::private_content`.
+2. ✅ `verification.rs` → re-export from `messaging_core::codec::verification`.
+3. ✅ `attachment.rs` validation → re-export from `messaging_core::codec::attachment_validation`.
+
+**Crypto delegation**: ✅ COMPLETE (2026-08-19)
+1. ✅ `identity.rs` types → re-export from `messaging_core::crypto::identity` (platform persistence retained).
+2. ✅ `double_ratchet.rs` → thin wrappers calling `messaging_core::crypto::double_ratchet` with `From<DrError> for CryptoError` mapping.
+3. ✅ `x3dh.rs` → thin wrappers calling `messaging_core::crypto::x3dh` with error classification.
+4. ✅ Net reduction: -993 LOC in crypto, -160 LOC in codec. All 34 crypto + 92 messaging tests pass.
+
+**Remaining steps** (store-level processor wiring):
+1. `adapter.rs` — implements all port traits using:
    - SQLCipher connection pool (`rusqlite`)
    - `reqwest` HTTP client for Station transport
    - Tauri filesystem for attachment blob paths
@@ -128,8 +138,7 @@ Steps:
    - Tauri event emit for projection sink
 2. `lifecycle.rs` — unchanged (manages Engine worker lifecycle via Tauri state).
 3. `commands.rs` — thin Tauri command wrappers calling `messaging_core::Engine`.
-4. Add `messaging-core` as workspace dependency in Desktop's `Cargo.toml`.
-5. Gate: `cargo test` in Desktop passes. Native E2E (Direct + Group + attachment + recovery
+4. Gate: `cargo test` in Desktop passes. Native E2E (Direct + Group + attachment + recovery
    + receipts + interactions + typing) passes.
 
 ### Phase 4: Mobile Adapter
