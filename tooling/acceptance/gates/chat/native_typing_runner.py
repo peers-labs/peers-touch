@@ -294,7 +294,16 @@ class NativeTypingGate(AcceptanceGate):
         self.assert_condition("direct_typing_start_stop", True)
 
         send_text = f"direct-send-clear-{time.time_ns()}"
-        time.sleep(2)
+
+        def typing_settled_inactive() -> bool:
+            self.drain("bob")
+            return typing_dom(self.clients["bob"], conversation_id) == "inactive"
+
+        wait_until(
+            typing_settled_inactive,
+            "Bob Direct typing settled inactive before send-clear",
+            STEP_TIMEOUT,
+        )
         result = async_harness(
             alice,
             "submitTyping",
@@ -646,9 +655,23 @@ class NativeTypingGate(AcceptanceGate):
             self.prove_group(group_id, direct_id)
             for actor in ACTORS:
                 self.drain(actor)
-            time.sleep(3)
-            for actor in ACTORS:
-                self.drain(actor)
+
+            def group_drain_settled() -> bool:
+                for actor in ACTORS:
+                    self.drain(actor)
+                first = station_readback(group_id, group_seed)
+                for actor in ACTORS:
+                    self.drain(actor)
+                second = station_readback(group_id, group_seed)
+                first_count = len(first.get("authorityEvents") or [])
+                second_count = len(second.get("authorityEvents") or [])
+                return first_count == second_count
+
+            wait_until(
+                group_drain_settled,
+                "Group drain settled before zero-write snapshot",
+                STEP_TIMEOUT,
+            )
             group_before_station = station_readback(group_id, group_seed)
             group_before_engine = self.engine_snapshot("bob", group_id, group_seed)
             async_harness(
