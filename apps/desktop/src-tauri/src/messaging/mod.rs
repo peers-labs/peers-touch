@@ -72,7 +72,7 @@ pub use mls_key_packages::{
 pub use mls_retirement::MlsRetirementProcessor;
 pub use mls_sender::MlsSenderTransitionProcessor;
 pub use prekeys::{PreKeyPublisher, PreKeyTransport, StationPreKeyTransport};
-pub use private_content::{
+pub use messaging_core::codec::private_content::{
     decode_message_private_content, encode_message_private_content,
     validate_attachment_plaintext_metadata, validate_message_private_content,
     MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
