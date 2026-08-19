@@ -17,11 +17,11 @@
 | Worktree | `<repo-root>` (peers-group-chat) |
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
-| Current workstream | `MP-W09` Phase 2 near-complete, Phase 3 Desktop adapter in progress |
-| Current step | Phase 2: all portable protocol logic extracted (5,485 LOC, 32 tests). Phase 3: Desktop proto unification done; Direct/MLS/Engine adapter wiring next |
-| Progress | 16/19 ledger workstreams completed; W12 Desktop PASS (G15/G16); W09 Phase 2 near-complete (2026-08-19); Core owns all protocol logic with independent integration tests |
-| Last completed | Direct processor + consumer dispatcher + send encryption extracted to Core; integration tests prove independent operation (8115840a6) |
-| Current action | Phase 3 Desktop adapter — make Desktop consume Core processors instead of parallel implementations |
+| Current workstream | `MP-W09` Phase 3 Desktop adapter — crypto delegation complete |
+| Current step | Phase 3: Desktop crypto (double_ratchet, x3dh, identity) delegated to Core (993 LOC removed). Codec + attachment validation delegated. Store-level processor wiring pending |
+| Progress | 16/19 ledger workstreams completed; W12 Desktop PASS (G15/G16); W09 Phase 2 complete, Phase 3 in progress (2026-08-19); Desktop crypto, codec, verification, attachment validation all delegate to Core |
+| Last completed | Desktop crypto modules (double_ratchet, x3dh, identity) replaced with thin wrappers over messaging-core re-exports. Net -993 LOC. All 34 crypto + 92 messaging tests pass (0084ab01c) |
+| Current action | Phase 3 remaining: inbox processor delegation requires Desktop MessagingStore to implement Core MessagingRepository trait (complex refactoring). Phase 4 Mobile adapter blocked on acceptance infrastructure |
 | Next action | Mobile adapter (Phase 4) blocked; W11 final closure after W09/W12 |
 | Blockers | Mobile acceptance infrastructure does not exist — W09 Phase 4/5 and Mobile W12 cells cannot be proven. No genuine Mobile runtime available for Native evidence |
 | Decisions required | none for current Desktop execution |
