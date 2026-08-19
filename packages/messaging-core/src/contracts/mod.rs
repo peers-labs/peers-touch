@@ -67,6 +67,31 @@ pub enum ReceiveCommitResult {
 }
 
 #[derive(Debug, Clone)]
+pub struct DeliveryReceiptReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub message_id: &'a str,
+    pub conversation_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub delivery_state: &'a str,
+    pub consumed_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ActorReadReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub reader_ptid: &'a str,
+    pub last_read_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone)]
 pub struct MessageProjection {
     pub message_id: MessageId,
     pub conversation_id: ConversationId,
