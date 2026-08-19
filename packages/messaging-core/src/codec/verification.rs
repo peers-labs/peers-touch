@@ -1,5 +1,5 @@
 use crate::proto::chat::{
-    ConversationEvent, DeviceEventDelivery, DeviceQueueItem, PreparedEndpointPayloadKind,
+    DeviceEventDelivery, DeviceQueueItem, PreparedEndpointPayloadKind,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -120,7 +120,9 @@ fn write_string(target: &mut Vec<u8>, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::proto::chat::{conversation_event, CryptoEndpoint, MessageCommittedFact};
+    use crate::proto::chat::{
+        conversation_event, ConversationEvent, CryptoEndpoint, MessageCommittedFact,
+    };
 
     fn queue_item() -> DeviceQueueItem {
         let recipient = CryptoEndpoint {
