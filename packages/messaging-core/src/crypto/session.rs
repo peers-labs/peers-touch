@@ -1,4 +1,6 @@
-use super::double_ratchet::DrSessionState;
+use super::double_ratchet::{self, DrSessionState};
+use super::identity::{IdentityKeyPair, X25519KeyPair};
+use super::x3dh::{self, X3dhReceiverInput};
 use crate::contracts::CryptoEndpoint;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -55,4 +57,28 @@ pub struct DirectSession {
     pub peer_identity_key: [u8; 32],
     pub ratchet: DrSessionState,
     pub updated_at_unix_ms: i64,
+}
+
+pub fn establish_receiver_session(
+    session_id: String,
+    key: DirectSessionKey,
+    protocol_version: u32,
+    our_identity: &IdentityKeyPair,
+    our_spk: &X25519KeyPair,
+    our_opk: Option<&X25519KeyPair>,
+    input: &X3dhReceiverInput,
+    now_unix_ms: i64,
+) -> Result<DirectSession, String> {
+    key.validate()?;
+    let shared_secret = x3dh::x3dh_receiver(our_identity, our_spk, our_opk, input)?;
+    let ratchet = double_ratchet::init_responder(&session_id, &shared_secret, our_spk.private_bytes());
+    Ok(DirectSession {
+        session_id,
+        key,
+        protocol_version,
+        established: true,
+        peer_identity_key: input.sender_ik_pub,
+        ratchet,
+        updated_at_unix_ms: now_unix_ms,
+    })
 }
