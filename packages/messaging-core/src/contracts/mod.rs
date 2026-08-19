@@ -5,7 +5,7 @@ pub type DeviceId = String;
 pub type Ptid = String;
 pub type CachePath = String;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CryptoEndpoint {
     pub ptid: Ptid,
     pub device_id: DeviceId,
