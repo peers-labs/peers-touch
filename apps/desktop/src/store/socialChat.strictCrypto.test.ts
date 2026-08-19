@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { create, toBinary } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
@@ -11,7 +11,6 @@ import {
 } from './socialChat';
 
 const socialChatSource = readFileSync(new URL('./socialChat.ts', import.meta.url), 'utf8');
-const imRuntimeSource = readFileSync(new URL('../runtimes/imRuntime.ts', import.meta.url), 'utf8');
 const imServiceSource = readFileSync(new URL('../services/im-service.ts', import.meta.url), 'utf8');
 const appRuntimeSource = readFileSync(new URL('../services/appRuntime.ts', import.meta.url), 'utf8');
 const featureFlagsSource = readFileSync(
@@ -88,6 +87,8 @@ describe('strict chat encryption source contract', () => {
   it('does not let dormant frontend runtimes enroll another active device', () => {
     expect(appRuntimeSource).not.toContain("from '../runtimes/cryptoRuntime'");
     expect(appRuntimeSource).not.toContain("from '../runtimes/imRuntime'");
+    expect(existsSync(new URL('../runtimes/cryptoRuntime.ts', import.meta.url))).toBe(false);
+    expect(existsSync(new URL('../runtimes/imRuntime.ts', import.meta.url))).toBe(false);
   });
 
   it('reads Direct plaintext and attachments only from Engine projections', () => {
@@ -106,7 +107,6 @@ describe('strict chat encryption source contract', () => {
     const cryptoServiceSource = readFileSync(new URL('../services/crypto-service.ts', import.meta.url), 'utf8');
     expect(cryptoServiceSource).toContain('supported_versions');
     expect(socialChatSource).not.toContain('cryptoDrEnabled');
-    expect(imRuntimeSource).not.toContain('cryptoDrEnabled');
     expect(featureFlagsSource).not.toContain('cryptoDrEnabled');
     expect(rustCryptoSource).toContain('if negotiated_version != 1');
     expect(rustKeyExchangeSource).toContain('supported_versions: vec![1]');
