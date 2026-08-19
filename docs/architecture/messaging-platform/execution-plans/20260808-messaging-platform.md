@@ -17,15 +17,15 @@
 | Worktree | `<repo-root>` (peers-group-chat) |
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
-| Current workstream | `MP-W11` Final Closure — Desktop rerun |
-| Current step | Rerun all Desktop gates (G01-G16), tree-wide owner/duplicate scans, completion audit |
-| Progress | 17/19 ledger workstreams completed (W09 Desktop closed, W12 Desktop closed); W11 final rerun ready |
-| Last completed | W09 closed (Desktop): Core owns protocol, Desktop delegates crypto/codec/proto, Mobile skeleton compiles, legacy Sender Keys deleted. 6a5b8a08c |
-| Current action | W11 Desktop rerun: tree-wide forbidden-owner scan, duplicate-contract scan, then rerun native gates |
-| Next action | Completion audit after all gates pass |
+| Current workstream | `MP-W11` Final Closure — closure gates PASS, independent review pending |
+| Current step | Independent review (pt-github-review) |
+| Progress | 17/19 ledger workstreams completed (W09 Desktop closed, W12 Desktop closed); W11 closure verdict PASS/DONE/PROVEN |
+| Last completed | `make acceptance-chat-w11` 10/10 gates PASS (forbidden-scan, duplicate-scan, visible-static, 6 native E2E, completion-audit) at Station `b02714977` |
+| Current action | Independent review of W11 closure |
+| Next action | PR merge |
 | Blockers | none |
 | Decisions required | none for current Desktop execution |
-| Evidence | Profile Three (Station `c0d62325a` at 10.37.94.156:18080) — all 6 gates PASS: `chat-native-two-client-e2e` (G01 bidirectional Direct), `chat-native-interactions-e2e` (G15 reply/edit/retract/reaction/pin/read Direct+Group), `chat-native-typing-e2e` (G16 typing lifecycle), `chat-native-multi-device-e2e` (G05/G09 multi-device MLS), `chat-native-recovery-e2e` (G07/G08 backup+restore+continuity), `chat-native-group-mls-e2e` (G09 create/send/remove MLS group). Evidence produced from embedded WebDriver against dedicated acceptance binary with fixture reset on disposable Station |
+| Evidence | Profile Three (Station `b02714977` at 10.37.94.156:18080) — `make acceptance-chat-w11` 10/10 gates PASS. Native: G01 (33.3s), G15 (284.7s), G16 (100.8s), G05/G09 (44.2s), G07/G08 (36.3s), G09 (62.3s). Closure gates: forbidden-scan, duplicate-scan, visible-static, completion-audit all PASS. Verdict: `tooling/acceptance/reports/chat-w11-closure-verdict.json` (PASS/DONE/PROVEN). |
 | Last updated | 2026-08-19 |
 
 ## 1. Plan Sources And Gate
@@ -733,6 +733,15 @@ Non-claim：
 - G01-G16 evidence bundle；
 - `pt-completion-auditor` 和 independent review。
 
+Closure enforcement (deterministic):
+
+- Fixed plan: `tooling/acceptance/plans/chat-w11-closure.json` — 10 gates, no AI selection.
+- Make target: `make acceptance-chat-w11` — single command runs all gates.
+- `chat-w11-forbidden-scan`: deleted paths must not reappear; no `console.log`/`println!`/`fmt.Println` in production code.
+- `chat-w11-duplicate-scan`: crypto/codec algorithm single-owner (messaging-core only).
+- `chat-w11-completion-audit`: mechanically verifies all 6 native reports + validation exist with PASS status and zero failed assertions. Outputs `chat-w11-closure-verdict.json`.
+- The completion-audit gate makes it impossible to claim W11 complete without every evidence file present and valid — no AI discretion over "what counts as done".
+
 完成标准：
 
 - 一个 contract root、一个 Station messaging domain、每 profile 一个 Engine；
@@ -762,7 +771,7 @@ Non-claim：
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
 | MP-W10-E | completed | W05/W10-D | Native bidirectional Direct text+attachment (SHA-256 verified), OpenMLS group text+attachment (byte-exact), FTS5 local encrypted search (Direct+Group), Station restart continuity (post-restart delivery), fresh-device recovery round-trip (Bob: 3 conv/19 msg/3 att, Alice: 4 conv/19 msg/3 att, format v2), per-attachment admission control fixing concurrency race, startup reconciliation for descriptor-backed terminal uploads. Evidence from `peers-group-chat` and `peers-chat-high-chat` native Tauri apps against remote Stations #1 and #2. Legacy chat OSS and plaintext search owners deleted. |
 | MP-W12 | completed (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | All 6 Native Desktop gates PASS on Profile Three (`c0d62325a`): `chat-native-interactions-e2e` (G15) proves reply/thread, author-only edit/retract, reaction add/remove, pin/unpin, read cursor Direct+Group receiver-visible projection with timeout/retry convergence, offline/restart/duplicate/unauthorized/removed scenarios. `chat-native-typing-e2e` (G16) proves Direct/Group typing start/stop/TTL/cleanup lifecycle. Evidence: embedded WebDriver against dedicated acceptance binary, fixture reset disposable Station, Profile Three remote. Mobile G15/G16 parity deferred to follow-up workstream. |
-| MP-W11 | in-progress | W02-W10/W12 | W09 and W12 are now completed (Desktop). Ready for final Desktop closure: rerun G01-G16 required cells, tree-wide old-owner/duplicate-contract scans, independent review and completion audit. Mobile cells deferred. |
+| MP-W11 | completed (Desktop) | W02-W10/W12 | `make acceptance-chat-w11` 10/10 gates PASS at Station `b02714977`. Closure enforcement: fixed plan `tooling/acceptance/plans/chat-w11-closure.json` with three deterministic gates (`w11_forbidden_scan`, `w11_duplicate_scan`, `w11_completion_audit`) eliminates AI discretion over which gates run or what counts as done. 6/6 native E2E PASS (73 assertions, 0 failed), forbidden-paths/duplicate-impl scans PASS, visible-static PASS. Verdict: `tooling/acceptance/reports/chat-w11-closure-verdict.json` (PASS/DONE/PROVEN). Remaining: independent review. Mobile parity deferred. |
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 

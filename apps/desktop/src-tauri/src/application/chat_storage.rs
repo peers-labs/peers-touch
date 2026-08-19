@@ -75,92 +75,6 @@ fn json_to_optional_timestamp(v: &Value, keys: &[&str]) -> Option<prost_types::T
     Some(millis_to_timestamp(ms))
 }
 
-fn friend_attachment_to_json(a: &model::chat::FriendMessageAttachment) -> Value {
-    json!({
-        "cid": a.cid,
-        "filename": a.filename,
-        "mimeType": a.mime_type,
-        "size": a.size,
-        "thumbnailCid": a.thumbnail_cid,
-        "visibility": a.visibility,
-    })
-}
-
-/// Friend message JSON: camelCase proto fields plus snake_case keys required by local ingest (`ingest_friend_payload`).
-fn friend_chat_message_to_json(m: &model::chat::FriendChatMessage) -> Value {
-    let sent_ms = ts_millis_i64(&m.sent_at);
-    json!({
-        "ulid": m.ulid,
-        "sessionUlid": m.session_ulid,
-        "senderDid": m.sender_did,
-        "receiverDid": m.receiver_did,
-        "type": m.r#type,
-        "content": m.content,
-        "attachments": m.attachments.iter().map(friend_attachment_to_json).collect::<Vec<_>>(),
-        "replyToUlid": m.reply_to_ulid,
-        "threadRootUlid": m.thread_root_ulid,
-        "status": m.status,
-        "sentAt": ts_millis(&m.sent_at),
-        "deliveredAt": ts_millis(&m.delivered_at),
-        "readAt": ts_millis(&m.read_at),
-        "createdAt": ts_millis(&m.created_at),
-        "updatedAt": ts_millis(&m.updated_at),
-        "encryptedPayload": bytes_to_b64(&m.encrypted_payload),
-        "session_ulid": m.session_ulid,
-        "sender_did": m.sender_did,
-        "reply_to_ulid": m.reply_to_ulid,
-        "thread_root_ulid": m.thread_root_ulid,
-        "sent_at": sent_ms,
-    })
-}
-
-fn friend_chat_session_to_json(s: &model::chat::FriendChatSession) -> Value {
-    json!({
-        "ulid": s.ulid,
-        "participantADid": s.participant_a_did,
-        "participantBDid": s.participant_b_did,
-        "participantADisplayName": s.participant_a_display_name,
-        "participantAAvatar": s.participant_a_avatar,
-        "participantBDisplayName": s.participant_b_display_name,
-        "participantBAvatar": s.participant_b_avatar,
-        "lastMessageUlid": s.last_message_ulid,
-        "lastMessageAt": ts_millis(&s.last_message_at),
-        "unreadCountA": s.unread_count_a,
-        "unreadCountB": s.unread_count_b,
-        "createdAt": ts_millis(&s.created_at),
-        "updatedAt": ts_millis(&s.updated_at),
-    })
-}
-
-fn get_sessions_response_to_value(resp: &model::chat::GetSessionsResponse) -> Value {
-    json!({
-        "sessions": resp.sessions.iter().map(friend_chat_session_to_json).collect::<Vec<_>>(),
-        "total": resp.total,
-    })
-}
-
-fn create_session_response_to_value(resp: &model::chat::CreateSessionResponse) -> Value {
-    json!({
-        "session": resp.session.as_ref().map(friend_chat_session_to_json),
-        "created": resp.created,
-    })
-}
-
-fn get_messages_response_to_value(resp: &model::chat::GetMessagesResponse) -> Value {
-    json!({
-        "messages": resp.messages.iter().map(friend_chat_message_to_json).collect::<Vec<_>>(),
-        "hasMore": resp.has_more,
-        "nextCursor": resp.next_cursor,
-    })
-}
-
-fn sync_messages_response_to_value(resp: &model::chat::SyncMessagesResponse) -> Value {
-    json!({
-        "synced": resp.synced,
-        "failed": resp.failed,
-    })
-}
-
 fn presence_update_response_to_value(resp: &model::presence::PresenceUpdateResponse) -> Value {
     json!({
         "actorId": resp.actor_id,
@@ -491,20 +405,8 @@ pub struct SyncResult {
     pub cursor_after: Option<String>,
 }
 
-pub fn ingest_friend_messages(user_scope: &str, payload: &Value) -> Result<(), String> {
-    local_chat_store::ingest_friend_payload(user_scope, payload)
-}
-
 pub fn ingest_group_messages(user_scope: &str, payload: &Value) -> Result<(), String> {
     local_chat_store::ingest_group_payload(user_scope, payload)
-}
-
-pub fn search_friend_messages(
-    user_scope: &str,
-    query: &str,
-    limit: usize,
-) -> Result<Vec<LocalChatRecord>, String> {
-    local_chat_store::search_local(user_scope, Some("friend"), None, query, limit)
 }
 
 pub fn search_group_messages(
@@ -529,58 +431,6 @@ pub fn get_chat_key_version(user_scope: &str) -> Result<Option<i32>, String> {
 
 pub fn rotate_chat_key(user_scope: &str, next_version: i32) -> Result<i32, String> {
     local_chat_store::rotate_chat_key(user_scope, next_version)
-}
-
-pub fn list_friend_sessions(token: &str, limit: u32, offset: u32) -> StationResult<Value> {
-    let query = vec![("limit", limit.to_string()), ("offset", offset.to_string())];
-    let resp = station_client::request_proto::<(), model::chat::GetSessionsResponse>(
-        Method::GET,
-        "/friend-chat/sessions",
-        token,
-        Some(&query),
-        None::<&()>,
-    )?;
-    Ok(get_sessions_response_to_value(&resp))
-}
-
-pub fn create_friend_session(token: &str, participant_did: &str) -> StationResult<Value> {
-    let req = model::chat::CreateSessionRequest {
-        participant_did: participant_did.to_string(),
-    };
-    let resp = station_client::request_proto::<
-        model::chat::CreateSessionRequest,
-        model::chat::CreateSessionResponse,
-    >(
-        Method::POST,
-        "/friend-chat/session/create",
-        token,
-        None,
-        Some(&req),
-    )?;
-    Ok(create_session_response_to_value(&resp))
-}
-
-pub fn list_friend_messages(
-    token: &str,
-    session_ulid: &str,
-    limit: u32,
-    before_ulid: Option<&str>,
-) -> StationResult<Value> {
-    let mut query = vec![
-        ("session_ulid", session_ulid.to_string()),
-        ("limit", limit.to_string()),
-    ];
-    if let Some(before) = before_ulid {
-        query.push(("before_ulid", before.to_string()));
-    }
-    let resp = station_client::request_proto::<(), model::chat::GetMessagesResponse>(
-        Method::GET,
-        "/friend-chat/messages",
-        token,
-        Some(&query),
-        None::<&()>,
-    )?;
-    Ok(get_messages_response_to_value(&resp))
 }
 
 fn message_ulid(value: &Value) -> &str {
@@ -648,70 +498,6 @@ fn thread_payload(root_ulid: &str, mut collected: Vec<Value>, hit_page_cap: bool
         "replyCount": reply_count,
         "hitPageCap": hit_page_cap,
     })
-}
-
-pub fn list_friend_thread_messages(
-    token: &str,
-    session_ulid: &str,
-    root_ulid: &str,
-    page_limit: u32,
-    after_ulid: Option<&str>,
-    _max_pages: u32,
-) -> StationResult<Value> {
-    let limit = page_limit.clamp(1, 100);
-    let mut query = vec![
-        ("session_ulid", session_ulid.to_string()),
-        ("root_ulid", root_ulid.to_string()),
-        ("limit", limit.to_string()),
-    ];
-    if let Some(after) = after_ulid {
-        if !after.is_empty() {
-            query.push(("after_ulid", after.to_string()));
-        }
-    }
-    station_client::request_json(
-        Method::GET,
-        "/friend-chat/thread/messages",
-        token,
-        Some(&query),
-        None,
-    )
-}
-
-pub fn friend_thread_counts(
-    token: &str,
-    session_ulid: &str,
-    root_ulids: &[String],
-) -> StationResult<Value> {
-    station_client::request_json(
-        Method::POST,
-        "/friend-chat/thread/counts",
-        token,
-        None,
-        Some(json!({
-            "session_ulid": session_ulid,
-            "root_ulids": root_ulids,
-        })),
-    )
-}
-
-pub fn mark_friend_thread_read(
-    token: &str,
-    session_ulid: &str,
-    root_ulid: &str,
-    last_read_ulid: Option<&str>,
-) -> StationResult<Value> {
-    station_client::request_json(
-        Method::POST,
-        "/friend-chat/thread/read",
-        token,
-        None,
-        Some(json!({
-            "session_ulid": session_ulid,
-            "root_ulid": root_ulid,
-            "last_read_ulid": last_read_ulid.unwrap_or_default(),
-        })),
-    )
 }
 
 pub fn list_groups(token: &str, limit: u32, offset: u32) -> StationResult<Value> {
@@ -918,91 +704,6 @@ pub fn filter_incremental_messages(
     (filtered_payload, synced_count, latest)
 }
 
-pub fn sync_friend_from_station(
-    token: &str,
-    user_scope: &str,
-    session_ulid: &str,
-    page_limit: u32,
-    max_pages: u32,
-) -> StationResult<SyncResult> {
-    let scope_key = format!("friend:{session_ulid}");
-    let cursor = get_scope_cursor(user_scope, &scope_key).map_err(invalid_response_err)?;
-    let mut current_cursor = cursor.clone();
-    let mut total_synced = 0usize;
-    let mut pages_fetched = 0u32;
-    for _ in 0..max_pages {
-        let before = current_cursor
-            .as_deref()
-            .filter(|s| !s.trim().is_empty())
-            .map(|c| format!("since:{c}"));
-        let data = list_friend_messages(token, session_ulid, page_limit, before.as_deref())?;
-        pages_fetched += 1;
-        let (payload, count, latest) =
-            filter_incremental_messages(&data, current_cursor.as_deref());
-        let _ = ingest_friend_messages(user_scope, &payload);
-        total_synced += count;
-        let server_cursor = data
-            .get("nextCursor")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
-        let next = server_cursor
-            .or(latest)
-            .or_else(|| extract_latest_ulid(&data));
-        if let Some(ref nc) = next {
-            let _ = set_scope_cursor(user_scope, &scope_key, nc);
-            current_cursor = Some(nc.clone());
-        }
-        let has_more = data
-            .get("hasMore")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if !has_more {
-            break;
-        }
-    }
-    Ok(SyncResult {
-        synced_count: total_synced,
-        pages_fetched,
-        cursor_before: cursor,
-        cursor_after: current_cursor,
-    })
-}
-
-pub fn sync_friend_messages(
-    token: &str,
-    session_ulid: &str,
-    messages_json: &str,
-) -> StationResult<Value> {
-    let body: Value = serde_json::from_str(messages_json)
-        .map_err(|e| invalid_response_err(format!("invalid json: {e}")))?;
-    let items_val = if let Some(a) = body.as_array() {
-        a.clone()
-    } else if let Some(a) = body.get("messages").and_then(|v| v.as_array()) {
-        a.clone()
-    } else {
-        return Err(invalid_response_err(
-            "expected JSON array of messages or { \"messages\": [...] }",
-        ));
-    };
-    let mut items = Vec::with_capacity(items_val.len());
-    for v in &items_val {
-        items.push(sync_message_item_from_value(v, session_ulid).map_err(invalid_response_err)?);
-    }
-    let req = model::chat::SyncMessagesRequest { messages: items };
-    let resp = station_client::request_proto::<
-        model::chat::SyncMessagesRequest,
-        model::chat::SyncMessagesResponse,
-    >(
-        Method::POST,
-        "/friend-chat/message/sync",
-        token,
-        None,
-        Some(&req),
-    )?;
-    Ok(sync_messages_response_to_value(&resp))
-}
-
 pub fn presence_heartbeat(token: &str, reason: &str) -> StationResult<Value> {
     let req = model::presence::PresenceHeartbeatRequest {
         reason: reason.to_string(),
@@ -1023,17 +724,6 @@ pub fn presence_offline(token: &str, reason: &str) -> StationResult<Value> {
         model::presence::PresenceUpdateResponse,
     >(Method::POST, "/presence/offline", token, None, Some(&req))?;
     Ok(presence_update_response_to_value(&resp))
-}
-
-pub fn friend_chat_stats(token: &str) -> StationResult<Value> {
-    let resp = station_client::request_proto::<(), model::chat::GetStatsResponse>(
-        Method::GET,
-        "/friend-chat/stats",
-        token,
-        None,
-        None::<&()>,
-    )?;
-    Ok(get_stats_response_to_value(&resp))
 }
 
 pub fn create_group(

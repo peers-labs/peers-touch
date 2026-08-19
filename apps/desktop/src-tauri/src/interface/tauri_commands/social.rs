@@ -12,7 +12,7 @@
 //     bespoke JSON shapes (the StubPayload route used by older modules)
 //     creates a parallel schema that drifts. Proto bytes preserve the
 //     contract exactly.
-//   - Matches the chat / friend_chat / group_chat module pattern that
+//   - Matches the chat / group_chat module pattern that
 //     the desktop frontend has already standardised on for typed wire
 //     responses.
 //
@@ -26,11 +26,13 @@ use crate::contracts::{
     SocialCircleAddMembersInput, SocialCircleCreateInput, SocialCircleDeleteInput,
     SocialCircleListMembersInput, SocialCircleRemoveMembersInput, SocialCircleRenameInput,
     SocialCreateCommentInput, SocialCreateMomentInput, SocialDeleteCommentInput,
-    SocialDeleteMomentInput, SocialFollowInput, SocialGetCommentsInput, SocialGetFollowersInput,
-    SocialGetFollowingInput, SocialGetMomentInput, SocialGetRelationshipInput,
-    SocialGetTimelineInput, SocialListByAuthorInput, SocialReactInput,
-    SocialStationModerationDeleteInput, SocialStationModerationListInput,
-    SocialStationModerationUpsertInput, SocialSyncMomentsProjectionInput, SocialUnreactInput,
+    SocialDeleteMomentInput, SocialFollowInput, SocialFriendRequestAcceptInput,
+    SocialFriendRequestListInput, SocialFriendRequestRejectInput, SocialFriendRequestSendInput,
+    SocialGetCommentsInput, SocialGetFollowersInput, SocialGetFollowingInput,
+    SocialGetMomentInput, SocialGetRelationshipInput, SocialGetTimelineInput,
+    SocialListByAuthorInput, SocialReactInput, SocialStationModerationDeleteInput,
+    SocialStationModerationListInput, SocialStationModerationUpsertInput,
+    SocialSyncMomentsProjectionInput, SocialUnreactInput,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -45,10 +47,7 @@ use tauri::{State, Window};
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Extract the bearer token tied to the calling window. Mirrors the
-/// helper used by `friend_chat.rs` so error semantics line up across
-/// modules — TS gets `UNAUTHORIZED` with a stable message and can
-/// route the user to the login flow uniformly.
+/// Extract the bearer token tied to the calling window.
 fn token_from_state_proto(
     state: &State<'_, Arc<AppState>>,
     window: &Window,
@@ -934,5 +933,102 @@ pub fn social_circle_list_members(
         Ok(r) => r,
         Err(e) => return station_error_proto(e, "list circle members failed"),
     };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn social_friend_request_send(
+    input: SocialFriendRequestSendInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    if input.receiver_did.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "receiver_did is required", None);
+    }
+    let req = model::chat::SendFriendRequestRequest {
+        receiver_did: input.receiver_did,
+        message: input.message.unwrap_or_default(),
+    };
+    let resp: model::chat::SendFriendRequestResponse =
+        match post_proto("/api/v1/social/friend-request/send", &token, &req) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "send friend request failed"),
+        };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn social_friend_request_accept(
+    input: SocialFriendRequestAcceptInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    if input.request_id.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
+    }
+    let req = model::chat::AcceptFriendRequestRequest {
+        request_id: input.request_id,
+    };
+    let resp: model::chat::AcceptFriendRequestResponse =
+        match post_proto("/api/v1/social/friend-request/accept", &token, &req) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "accept friend request failed"),
+        };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn social_friend_request_reject(
+    input: SocialFriendRequestRejectInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    if input.request_id.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "request_id is required", None);
+    }
+    let req = model::chat::RejectFriendRequestRequest {
+        request_id: input.request_id,
+    };
+    let resp: model::chat::RejectFriendRequestResponse =
+        match post_proto("/api/v1/social/friend-request/reject", &token, &req) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "reject friend request failed"),
+        };
+    AppResult::success(resp.encode_to_vec())
+}
+
+#[tauri::command]
+pub fn social_friend_request_list(
+    input: SocialFriendRequestListInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let mut query = Vec::new();
+    if let Some(status) = input.status {
+        query.push(("status", status.to_string()));
+    }
+    query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
+    query.push(("offset", input.offset.unwrap_or(0).to_string()));
+    let resp: model::chat::ListFriendRequestsResponse =
+        match get_proto("/api/v1/social/friend-requests", &token, Some(&query)) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "list friend requests failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
