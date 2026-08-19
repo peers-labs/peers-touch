@@ -71,8 +71,9 @@ Steps:
   - Core owns all chat + common protos; Desktop re-exports via `messaging_core::proto::*`
   - Desktop `build.rs` uses `extern_path` to map `.peers_touch.model.chat.v1` / `.peers_touch.model.common.v1` to Core's types
   - Both `cargo check -p messaging-core` and `cargo check` (Desktop) pass
-- ❌ Remaining: Direct crypto (Double Ratchet), MLS (OpenMLS), send command, engine orchestrator, consumer dispatcher
-- Gate: 19 tests pass, `cargo check` clean on both crates, 3017 LOC in Core
+- ✅ `crypto/double_ratchet` (full Signal DR: X25519 DH, HKDF-SHA256, AES-256-GCM — 8 tests)
+- ❌ Remaining: X3DH key exchange (partial — keychain stays in adapter), MLS (OpenMLS), send command, engine orchestrator, consumer dispatcher
+- Gate: 27 tests pass, `cargo check` clean on both crates, 4049 LOC in Core
 
 Module mapping:
 | Desktop source | Core destination |
