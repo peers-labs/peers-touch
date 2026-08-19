@@ -1,7 +1,7 @@
 use crate::contracts::{
     ActorReadReceiveCommit, ConversationProjection, ConversationStateReceiveCommit,
-    DeliveryReceiptReceiveCommit, InteractionReceiveCommit, PublicEventReceiveCommit,
-    ReceiveCommitResult,
+    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit,
+    InteractionReceiveCommit, PublicEventReceiveCommit, ReceiveCommitResult,
 };
 use crate::crypto::double_ratchet::DrSkippedMessageKey;
 use crate::crypto::session::DirectSession;
@@ -110,6 +110,22 @@ pub trait MessagingRepository: Send + Sync {
         &self,
         session_id: &str,
     ) -> Result<Vec<DrSkippedMessageKey>, String>;
+
+    fn commit_direct_receive(
+        &self,
+        commit: &DirectReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String>;
+
+    fn commit_direct_edit(
+        &self,
+        commit: &DirectEditCommit,
+    ) -> Result<ReceiveCommitResult, String>;
+
+    // --- Prekeys ---
+
+    fn load_signed_prekey(&self, id: i32) -> Result<[u8; 32], String>;
+
+    fn load_one_time_prekey(&self, id: i32) -> Result<[u8; 32], String>;
 
     // --- Lifecycle ---
 

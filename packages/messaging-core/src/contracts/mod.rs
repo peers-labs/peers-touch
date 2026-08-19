@@ -194,3 +194,63 @@ pub enum AttachmentAvailability {
     Downloading,
     Failed,
 }
+
+#[derive(Debug, Clone)]
+pub struct DirectMessageContent {
+    pub conversation_id: ConversationId,
+    pub event_id: String,
+    pub event_sequence: i64,
+    pub message_id: MessageId,
+    pub sender_ptid: Ptid,
+    pub sender_device_id: DeviceId,
+    pub plaintext: String,
+    pub attachments: Vec<crate::proto::chat::AttachmentPlaintextMetadata>,
+    pub committed_at_unix_ms: i64,
+    pub reply_to_message_id: Option<String>,
+    pub thread_root_message_id: Option<String>,
+}
+
+pub struct DirectReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub session: &'a crate::crypto::session::DirectSession,
+    pub new_skipped: &'a [crate::crypto::double_ratchet::DrSkippedMessageKey],
+    pub consumed_skipped: Option<([u8; 32], u32)>,
+    pub consumed_one_time_prekey_id: Option<i32>,
+    pub projection: &'a DirectMessageContent,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub delivery_receipt_id: &'a str,
+    pub delivery_receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+pub struct DirectEditCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub event_sequence: i64,
+    pub session: &'a crate::crypto::session::DirectSession,
+    pub new_skipped: &'a [crate::crypto::double_ratchet::DrSkippedMessageKey],
+    pub consumed_skipped: Option<([u8; 32], u32)>,
+    pub consumed_one_time_prekey_id: Option<i32>,
+    pub message_id: &'a str,
+    pub edited_text: &'a str,
+    pub edited_at_unix_ms: i64,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub delivery_receipt_id: &'a str,
+    pub delivery_receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
