@@ -1,3 +1,4 @@
+use crate::contracts::{ConversationProjection, ConversationStateReceiveCommit, ReceiveCommitResult};
 use crate::outbox::CommandOutboxEntry;
 
 pub trait MessagingRepository: Send + Sync {
@@ -22,6 +23,15 @@ pub trait MessagingRepository: Send + Sync {
     ) -> Result<bool, String>;
 
     fn lane_checkpoint(&self) -> Result<(i64, u64), String>;
+
+    // --- Conversation state ---
+
+    fn commit_conversation_state(
+        &self,
+        commit: &ConversationStateReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String>;
+
+    fn conversation_projections(&self) -> Result<Vec<ConversationProjection>, String>;
 
     // --- Command outbox ---
 

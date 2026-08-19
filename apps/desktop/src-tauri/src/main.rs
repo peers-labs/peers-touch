@@ -20,6 +20,16 @@ pub mod peers_touch {
                 pub use crate::model::actor::v1::*;
             }
         }
+        pub mod chat {
+            pub mod v1 {
+                pub use crate::model::chat::v1::*;
+            }
+        }
+        pub mod common {
+            pub mod v1 {
+                pub use crate::model::common::v1::*;
+            }
+        }
     }
 }
 
