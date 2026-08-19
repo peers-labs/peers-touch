@@ -1,8 +1,8 @@
 # MP-W09: Portable Rust Messaging Core — Execution Plan
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-11 | **Updated**: 2026-08-16
+> **Version**: v1.2
+> **Created**: 2026-08-11 | **Updated**: 2026-08-19
 > **Owner**: Messaging Platform Team
 > Accepted architecture: MP-D16 (2026-08-09)
 > Module layout: `docs/architecture/messaging-platform/module-layout.md`
@@ -55,15 +55,19 @@ Steps:
 
 **Deliverable**: All protocol logic moved from `apps/desktop/src-tauri/src/messaging/` into `packages/messaging-core/src/`
 
-**Progress (2026-08-11)**:
-- ✅ Proto generation (`build.rs`, 13 .proto files)
+**Progress (2026-08-19)**:
+- ✅ Proto generation (`build.rs`, 20 chat + 1 common .proto files — full coverage)
 - ✅ `codec/private_content` + `codec/attachment_validation` + `codec/verification`
 - ✅ `identity/keys` + `identity/enrollment`
 - ✅ `inbox/drain` (queue FSM)
 - ✅ `outbox/dispatch` (command outbox worker)
 - ✅ `recovery/codec` (AES-GCM sectioned archive with KDF port)
 - ✅ `store/repository` trait (MessagingRepository boundary)
-- ❌ Remaining: store-dependent modules blocked by proto-unification (Phase 3 prerequisite)
+- ✅ Proto unification complete (Phase 3 prerequisite resolved 2026-08-19):
+  - Core owns all chat + common protos; Desktop re-exports via `messaging_core::proto::*`
+  - Desktop `build.rs` uses `extern_path` to map `.peers_touch.model.chat.v1` / `.peers_touch.model.common.v1` to Core's types
+  - Both `cargo check -p messaging-core` and `cargo check` (Desktop) pass
+- ❌ Remaining: store-dependent module extraction (direct, mls, engine, recovery orchestration)
 - Gate: 19 tests pass, `cargo clippy` clean, Desktop `cargo check` clean with Core dependency
 
 Module mapping:
@@ -91,18 +95,18 @@ Steps:
 5. Gate per module: `cargo check -p messaging-core` passes after each module move.
 6. Final gate: `cargo test -p messaging-core` — all unit tests from Desktop migrate to Core.
 
-### Phase 3: Desktop Adapter
+### Phase 3: Desktop Adapter — 🔶 IN PROGRESS
 
 **Deliverable**: `apps/desktop/src-tauri/src/messaging/` shrinks to adapter + lifecycle + commands.
 
-**Proto unification prerequisite**: Desktop currently generates its own chat proto types via `prost-build` in its `build.rs`. Core also generates the same protos. These are separate Rust types at compile time. Phase 3 MUST first unify proto generation:
-1. Remove chat proto compilation from Desktop's `build.rs`.
-2. Desktop imports `messaging_core::proto::chat::*` for all chat types.
-3. Desktop's `crate::model::chat` module becomes a re-export of Core's types.
-4. Non-chat protos (actor, social, auth, etc.) remain Desktop-generated.
+**Proto unification prerequisite**: ✅ COMPLETE (2026-08-19)
+1. ✅ Remove chat proto compilation from Desktop's `build.rs`.
+2. ✅ Desktop imports `messaging_core::proto::chat::*` for all chat types.
+3. ✅ Desktop's `crate::model::chat` module becomes a re-export of Core's types.
+4. ✅ Non-chat protos (actor, social, auth, etc.) remain Desktop-generated.
 
 Steps:
-1. Proto unification (prerequisite above).
+1. ✅ Proto unification (prerequisite above).
 2. `adapter.rs` — implements all port traits using:
    - SQLCipher connection pool (`rusqlite`)
    - `reqwest` HTTP client for Station transport

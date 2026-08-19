@@ -17,13 +17,13 @@
 | Worktree | `<repo-root>` (peers-group-chat) |
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
-| Current workstream | `MP-W12` → closure; `MP-W09` next |
-| Current step | W12 Desktop Native gates PASS; formal plan amendment for W12 closure, W09 continuation, W11 rerun |
-| Progress | 16/19 ledger workstreams completed; W12 Desktop gates proved (G15/G16 PASS on Profile Three); W09 in-progress (Phase 2 partial, Mobile unproven); W11 reopened pending W09/W12 |
-| Last completed | Commit `c0d62325a` fixed multi-device enrollment and identity key conflicts. Subsequent uncommitted work fixed: SettingsPage RecoverySettings mount, fixture reset MLS tables, group MLS runner harness API routing, removeGroupMember harness error, and recovery runner sync retry. All 6 Chat Native gates pass on Profile Three (10.37.94.156:18080): two-client, interactions, typing, multi-device, recovery, group-mls |
-| Current action | Commit gate fixes, update W12 status to completed for Desktop cells, formally define remaining W09 Mobile parity work, then rerun W11 closure |
-| Next action | Commit current changes, push to branch, verify all gates reproducible, then proceed to W09 Mobile parity |
-| Blockers | W09 Phase 3 requires proto unification (Desktop/Core import shared prost types) before store-dependent module extraction. Mobile C01-C16 Native parity remains unproven — no Mobile acceptance infrastructure exists yet. W11 remains reopened until W09/W12 both close |
+| Current workstream | `MP-W09` Phase 2/3 (proto unification done, store modules next) |
+| Current step | W09 Phase 3 proto unification complete; Phase 2 store-dependent module extraction unblocked |
+| Progress | 16/19 ledger workstreams completed; W12 Desktop gates proved (G15/G16 PASS); W09 proto unification resolved (2026-08-19); store-dependent extraction next |
+| Last completed | Proto unification: Core owns 20 chat + 1 common protos, Desktop re-exports. Both crates compile. All 6 Chat Native gates remain PASS on Profile Three (dc6f4adac) |
+| Current action | Extract store-dependent modules (direct, mls, engine) from Desktop into messaging-core |
+| Next action | Complete Phase 2 module extraction, then Phase 3 adapter implementation |
+| Blockers | Mobile acceptance infrastructure does not exist — W09 Phase 4/5 and Mobile W12 cells cannot be proven. No genuine Mobile runtime available for Native evidence |
 | Decisions required | none for current Desktop execution |
 | Evidence | Profile Three (Station `c0d62325a` at 10.37.94.156:18080) — all 6 gates PASS: `chat-native-two-client-e2e` (G01 bidirectional Direct), `chat-native-interactions-e2e` (G15 reply/edit/retract/reaction/pin/read Direct+Group), `chat-native-typing-e2e` (G16 typing lifecycle), `chat-native-multi-device-e2e` (G05/G09 multi-device MLS), `chat-native-recovery-e2e` (G07/G08 backup+restore+continuity), `chat-native-group-mls-e2e` (G09 create/send/remove MLS group). Evidence produced from embedded WebDriver against dedicated acceptance binary with fixture reset on disposable Station |
 | Last updated | 2026-08-19 |
@@ -677,7 +677,7 @@ Non-claim：
 - **Failure variant**: Missing local target renders `reply_target_unavailable`; it is not
   silently flattened into an ordinary message.
 - **Evidence**: Native DOM + Station message event + Engine projection/readback.
-- **Status**: pending
+- **Status**: PASS (Desktop) — `chat-native-interactions-e2e` G15 on Profile Three (dc6f4adac). Mobile pending W09.
 
 ##### AS-W12-02: Direct edit and retract authorization
 - **Precondition**: Alice owns one committed message; Bob is an active member.
@@ -687,7 +687,7 @@ Non-claim：
 - **Failure variant**: submit timeout preserves original content and pending/retrying intent;
   exact retry converges to one authority fact and one receiver-visible result.
 - **Evidence**: Native DOM + authority sequence/event + queue + Engine transaction.
-- **Status**: pending
+- **Status**: PASS (Desktop) — `chat-native-interactions-e2e` G15 on Profile Three (dc6f4adac). Mobile pending W09.
 
 ##### AS-W12-03: Direct reaction, pin and read
 - **Precondition**: Both clients display the same Direct message.
@@ -695,7 +695,7 @@ Non-claim：
 - **Expected**: one reaction tuple, one current pin state and monotonic read projection converge.
 - **Failure variant**: duplicate replay and older read cursor do not duplicate or regress state.
 - **Evidence**: Native DOM + Station authority/read cursor + Engine SQLCipher projection.
-- **Status**: pending
+- **Status**: PASS (Desktop) — `chat-native-interactions-e2e` G15 on Profile Three (dc6f4adac). Mobile pending W09.
 
 ##### AS-W12-04: Group durable interactions
 - **Precondition**: Alice/Bob/Carol isolated Native clients are active MLS members.
@@ -704,7 +704,7 @@ Non-claim：
 - **Failure variant**: removed member/device receives no future interaction event and cannot
   submit one.
 - **Evidence**: Three Native DOMs + MLS/authority sequence + per-device lanes + projections.
-- **Status**: pending
+- **Status**: PASS (Desktop) — `chat-native-interactions-e2e` G15 + `chat-native-group-mls-e2e` G09 on Profile Three (dc6f4adac). Mobile pending W09.
 
 ##### AS-W12-05: Offline and replay recovery
 - **Precondition**: Bob is offline after the base message is committed.
@@ -712,7 +712,7 @@ Non-claim：
 - **Expected**: Bob consumes each interaction once in sequence and restart preserves result.
 - **Failure variant**: duplicate queue delivery is acknowledged without duplicate visible state.
 - **Evidence**: queue item/attempt/ACK + consumption marker + Native DOM before/after restart.
-- **Status**: pending
+- **Status**: PASS (Desktop) — `chat-native-interactions-e2e` G15 convergence + `chat-native-recovery-e2e` restart continuity on Profile Three (dc6f4adac). Mobile pending W09.
 
 ##### AS-W12-06: Direct and Group typing presence
 - **Precondition**: active Direct pair and active three-member Group.
@@ -721,7 +721,7 @@ Non-claim：
 - **Failure variant**: non-member/removed endpoint is rejected; dropped stop clears by TTL.
 - **Evidence**: Native DOM timing + authenticated ephemeral fan-out trace + durable lane/history
   zero-item scan.
-- **Status**: pending
+- **Status**: PASS (Desktop) — `chat-native-typing-e2e` G16 on Profile Three (dc6f4adac). Mobile pending W09.
 
 ### MP-W11: Atomic Cutover And Completion Audit
 
@@ -755,7 +755,7 @@ Non-claim：
 | MP-W07 | completed | W02/W03/W04 + accepted MP-D18/MP-D20/MP-D21 | Hidden genesis, actor/device add/remove, one-device-one-leaf, removal isolation, safe rejoin, bidirectional exact plaintext and cold restart pass. Native transition crash gate kills Alice during REMOVE_DEVICE at sequence 23; durable recovery commits sequence 24 exactly once with one event/receipt/item per endpoint. Legacy owner deletion is tracked separately by MP-W11 |
 | MP-W11-R | completed | W03/W04 | Recovery Settings now reads only the session-scoped Messaging Engine recovery projection; canonical create/status/restore commands resolve the active Engine and old `cryptoRuntime` backup/recovery ownership has zero live references. Native high-chat created revision `01KZNF6YXN5WS7R8WVM1R5JSW9`. Valid wrong phrase, fetched-copy corruption and injected pre-replace SQLCipher failure each preserved the exact device/fingerprint, 8 conversations and 29 messages. The failed-replace path restored the prior Engine, notifier and lifecycle worker; cross-Station Direct then delivered Alice message `01KZNH8KMM4N82P2CTHACFR2YJ` and Bob reply `01KZNHJC553N9P70P9QE42BMXC` with exact plaintext. |
 | MP-W08 | completed | W03/W04 + accepted MP-D15/MP-D22 + W11-R + W10-D | Canonical Messaging archive hard-cut replaces active legacy command path. Native 24-word revision, fresh-profile Actor IK recovery, atomic SQLCipher history restore, fresh cross-signed device enrollment, 5 KeyPackages, ADD_DEVICE Welcome reconciliation, bidirectional exact plaintext and cold-restart continuity pass through sequence 23. Native wrong-phrase, corrupt fetched revision and local pre-replace failure now prove zero partial restore and post-failure messaging continuity. Attachment/trust product recovery journeys wait for W10-D. W10-D completed — attachment recovery journeys verified via native E2E (SHA-256 byte-exact Direct+Group attachments restored through format v2 recovery). Trust product recovery verified via wrong-phrase/corrupt-revision/pre-replace failure gates. |
-| MP-W09 | in-progress | W01/W03/W04/W12 + accepted MP-D16 | Phase 1 (ports/contracts skeleton) complete. Phase 2 partial: 6 pure-logic modules extracted to `packages/messaging-core/` (27 files, 2352 LOC, 19 tests, zero platform deps). Desktop depends on Core (Cargo.toml wired, compiles). Proto-unification prerequisite documented — Desktop/Core generate separate prost types from same .proto files; Phase 3 requires Desktop to import chat types from Core before module deletion can proceed. Store-dependent modules (direct, mls, engine, recovery orchestration) remain in Desktop pending proto unification. Mobile C01-C16 Native parity remains unproven. |
+| MP-W09 | in-progress | W01/W03/W04/W12 + accepted MP-D16 | Phase 1 (ports/contracts skeleton) complete. Phase 2 partial: 6 pure-logic modules extracted to `packages/messaging-core/` (27 files, 2352 LOC, 19 tests, zero platform deps). **Proto unification complete (2026-08-19)**: Core owns all 20 chat + 1 common protos; Desktop re-exports via `messaging_core::proto::{chat,common}`; extern_path maps chat/common in Desktop build.rs; both `cargo check -p messaging-core` and Desktop `cargo check` pass. Store-dependent module extraction (direct, mls, engine, recovery orchestration) now unblocked. Phase 3 Desktop adapter in progress. Mobile C01-C16 Native parity remains unproven — no Mobile acceptance infrastructure exists yet. |
 | MP-W10-A | completed | W01 + accepted MP-D23/MP-D24 | `attachment.proto` now owns typed private content, encryption/nonce enums, whole/per-chunk commitments, authority/conversation-bound upload/status/part/complete/cancel/download metadata, transfer checkpoint states and typed errors. `model/build.sh` plus Mobile Web TS generation produced matching Go/Desktop TS/Mobile TS outputs in both worktrees; Desktop prost generation compiled the Rust bindings. Go/Rust descriptor limit vectors, TS/Rust fixed-material AES-GCM vector, contract gate and generated digest comparison pass. The obsolete Kotlin/Swift branches of `proto-gen-mobile.sh` target directories that no longer exist in the Tauri Mobile tree and are not counted as generated evidence. |
 | MP-W10-B | completed | W02/W06/W10-A | Authority upload/session/part/object/grant UOW, replay/conflict/expiry/cancel/finalize/orphan-GC, event-bound grants, ranged download, signed Home-to-Authority proxy, bounded admission, durable audit, redacted logs and Prometheus metrics pass. SQLite and deployed PostgreSQL competing part/finalize/grant gates pass; removed-member historical grant and later denial pass. Native `group-chat` Home Station #2 -> Authority Station #1 upload persisted bitmap `01` and its 1,048,592-byte encrypted chunk through `make station-restart`, reopened the same SQLCipher profile, resumed to bitmap `03`, and finalized exactly once. Both deployed Stations expose the privacy-safe 14-column audit schema and runtime scans show zero filename/key/nonce/plaintext-hash/decrypted-byte, resource-ID, or SQL-text leakage. |
 | MP-W10-C | completed | W03/W04/W10-A | Engine encrypt/upload/download workers now own bounded two-chunk memory, SQLCipher checkpoints, descriptor commitments, partial-file re-encryption binding, chunk/whole ciphertext hash + AEAD + whole plaintext hash verification, atomic cache promotion, typed retry/cancel/shutdown/overload states, capped jittered backoff and finite Station deadlines. The 15-test worker suite covers every position in a three-chunk upload/download interruption vector, corrupt chunk, wrong ETag, short/same-length corrupt partials, retry, cancellation, shutdown, overload, and 100 MiB upload/download resume at 25%/50%/75%. Separate native live runs completed a two-chunk Engine upload through Station #1, reopened an isolated on-disk SQLCipher checkpoint in a second OS process from bitmap `0b01` to `0b11`, and completed Bob Home Station #2 -> Authority Station #1 proxy upload. Non-generated Desktop/Mobile UI scan found zero key/nonce/hash/bitmap/resume-cursor ownership. This is Engine closure only; attachment product readiness remains W10-E. |
