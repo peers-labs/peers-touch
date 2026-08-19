@@ -3,6 +3,8 @@ use crate::contracts::{
     DeliveryReceiptReceiveCommit, InteractionReceiveCommit, PublicEventReceiveCommit,
     ReceiveCommitResult,
 };
+use crate::crypto::double_ratchet::DrSkippedMessageKey;
+use crate::crypto::session::DirectSession;
 use crate::outbox::CommandOutboxEntry;
 
 pub trait MessagingRepository: Send + Sync {
@@ -99,6 +101,15 @@ pub trait MessagingRepository: Send + Sync {
     // --- Authority state ---
 
     fn authority_head(&self, conversation_id: &str) -> Result<(i64, Vec<u8>), String>;
+
+    // --- Direct sessions ---
+
+    fn load_direct_session(&self, session_id: &str) -> Result<Option<DirectSession>, String>;
+
+    fn load_direct_skipped_keys(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<DrSkippedMessageKey>, String>;
 
     // --- Lifecycle ---
 
