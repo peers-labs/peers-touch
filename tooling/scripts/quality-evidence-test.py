@@ -138,8 +138,72 @@ class ReadinessTests(unittest.TestCase):
 
         gaps = MODULE.evidence_gaps(evidence)
 
-        self.assertEqual(len(gaps), 1)
-        self.assertEqual(gaps[0]["impact"], "framework self-proof missing")
+        self.assertEqual(len(gaps["blocking"]), 1)
+        self.assertEqual(gaps["blocking"][0]["impact"], "framework self-proof missing")
+        self.assertEqual(gaps["deferred"], [])
+
+    def test_ci_mode_defers_environment_gates_and_unproven_scope(self) -> None:
+        evidence = {
+            "route": {"ok": True},
+            "knowledge": {"ok": True},
+            "acceptance": {
+                "plan_ok": True,
+                "blocking_unproven_scope": ["native scope unproven"],
+                "informational_unproven_scope": [],
+                "latest_run": {"results": []},
+                "gate_buckets": {
+                    "environment_evidence_gates": [
+                        {
+                            "id": "chat-native-e2e",
+                            "tier": "env-evidence",
+                            "environment": "home-station",
+                            "provisioner": "home-station",
+                            "command": "python3 runner.py",
+                        }
+                    ],
+                    "nightly_or_release_gates": [],
+                },
+            },
+            "head_commit": "current",
+        }
+
+        gaps = MODULE.evidence_gaps(evidence, ci_mode=True)
+
+        self.assertEqual(gaps["blocking"], [])
+        self.assertEqual(len(gaps["deferred"]), 2)
+        deferred_kinds = {g["kind"] for g in gaps["deferred"]}
+        self.assertIn("unproven-product-scope:1", deferred_kinds)
+        self.assertIn("environment-gate:chat-native-e2e", deferred_kinds)
+
+    def test_local_mode_blocks_environment_gates(self) -> None:
+        evidence = {
+            "route": {"ok": True},
+            "knowledge": {"ok": True},
+            "acceptance": {
+                "plan_ok": True,
+                "blocking_unproven_scope": [],
+                "informational_unproven_scope": [],
+                "latest_run": {"results": []},
+                "gate_buckets": {
+                    "environment_evidence_gates": [
+                        {
+                            "id": "chat-native-e2e",
+                            "tier": "env-evidence",
+                            "environment": "home-station",
+                            "provisioner": "home-station",
+                            "command": "python3 runner.py",
+                        }
+                    ],
+                    "nightly_or_release_gates": [],
+                },
+            },
+            "head_commit": "current",
+        }
+
+        gaps = MODULE.evidence_gaps(evidence, ci_mode=False)
+
+        self.assertEqual(len(gaps["blocking"]), 1)
+        self.assertEqual(gaps["blocking"][0]["kind"], "environment-gate:chat-native-e2e")
 
     def test_evidence_gaps_block_review_readiness(self) -> None:
         healthy = {"ok": True}
