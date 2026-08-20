@@ -132,6 +132,8 @@ export function ChatMessageArea() {
     pinMessage: s.pinMessage,
   }));
   const [inputValue, setInputValue] = useState('');
+  const draftsRef = useRef<Record<string, string>>({});
+  const prevActiveRef = useRef<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
   const [replyToUlid, setReplyToUlid] = useState<string | null>(null);
@@ -239,6 +241,10 @@ export function ChatMessageArea() {
   }, [mainTimelineMessages.length]);
 
   useEffect(() => {
+    const prev = prevActiveRef.current;
+    if (prev) draftsRef.current[prev] = inputValue;
+    setInputValue(activeUlid ? (draftsRef.current[activeUlid] ?? '') : '');
+    prevActiveRef.current = activeUlid ?? null;
     setReplyToUlid(null);
     setDeleteTarget(null);
     setDeletingMessage(false);
