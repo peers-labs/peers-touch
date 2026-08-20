@@ -66,16 +66,6 @@ func (s *eventsSubServer) Handlers() []server.Handler {
 		// plus the sender's stream for multi-device echo. Station
 		// never inspects the payload.
 		server.NewHertzHandler("realtime-signal", "/realtime/signal", server.POST, s.handlePostSignal, hertzJWTWrapper),
-
-		// Typing-state ingress. The sender publishes a typing=true
-		// pulse on input and a typing=false on idle / blur / send;
-		// Station fan-outs it onto the recipient's SSE stream so the
-		// receiver's UI can show "X is typing…" in real time. Typing
-		// is ephemeral — Station never persists it — so this endpoint
-		// is best-effort: bus errors are logged but the caller still
-		// receives a 204 because there is nothing useful for the
-		// caller to do about a typing-frame that didn't land.
-		server.NewHertzHandler("realtime-typing", "/realtime/typing", server.POST, s.handlePostTyping, hertzJWTWrapper),
 	}
 }
 
@@ -334,71 +324,6 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 			// got a 204 from us. Don't fail the request.
 			logger.DefaultHelper.Warnf("events: signal echo to sender failed actor=%s: %v", senderActorID, err)
 		}
-	}
-
-	c.SetStatusCode(204)
-}
-
-// typingIngressRequest is the JSON body of POST /realtime/typing.
-//
-// Typing is purely advisory metadata — there is no payload, no
-// encryption, no persistence. Misrouting it is a privacy issue (a
-// peer would learn that the actor is talking to someone) but not a
-// confidentiality one (no message content leaks).
-type typingIngressRequest struct {
-	RecipientActorID string `json:"recipient_actor_id"`
-	SessionULID      string `json:"session_ulid"`
-	Typing           bool   `json:"typing"`
-}
-
-// handlePostTyping ingests a single typing-state update from the
-// caller and fan-outs a TypingState frame onto the recipient's SSE
-// stream. Unlike signaling, we do NOT echo to other sender devices —
-// only the peer needs to know the actor is typing.
-//
-// Bus errors are logged at warn level but the caller still receives
-// a 204; typing frames are ephemeral and the next frame (e.g. the
-// auto-fire typing=false on send) will heal the state regardless.
-func (s *eventsSubServer) handlePostTyping(ctx context.Context, c *app.RequestContext) {
-	subject := hertzadapter.GetSubject(c)
-	if subject == nil {
-		c.JSON(401, map[string]string{"error": "unauthorized"})
-		return
-	}
-	senderActorID := subject.ID
-
-	var req typingIngressRequest
-	if err := json.Unmarshal(c.Request.Body(), &req); err != nil {
-		c.JSON(400, map[string]string{"error": "invalid json: " + err.Error()})
-		return
-	}
-
-	if req.RecipientActorID == "" || req.SessionULID == "" {
-		c.JSON(400, map[string]string{"error": "recipient_actor_id, session_ulid are required"})
-		return
-	}
-
-	bus := GetBus()
-	if bus == nil {
-		// Typing without a bus is a no-op, but the *caller* still
-		// did its job. Return 204 so the client doesn't retry.
-		logger.DefaultHelper.Warnf("events: typing ingress dropped (bus down) actor=%s", senderActorID)
-		c.SetStatusCode(204)
-		return
-	}
-
-	ev := &realtime.StreamEvent{
-		Kind: &realtime.StreamEvent_Typing{
-			Typing: &realtime.TypingState{
-				SessionUlid: req.SessionULID,
-				FromActorId: senderActorID,
-				Typing:      req.Typing,
-			},
-		},
-	}
-
-	if _, err := bus.Publish(req.RecipientActorID, ev); err != nil {
-		logger.DefaultHelper.Warnf("events: typing publish to recipient failed actor=%s: %v", req.RecipientActorID, err)
 	}
 
 	c.SetStatusCode(204)

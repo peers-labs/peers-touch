@@ -466,6 +466,7 @@ def result_traceability(result: dict[str, Any]) -> dict[str, Any]:
 def standardize_result(result: dict[str, Any], plan_path: Any) -> dict[str, Any]:
     standardized = dict(result)
     gate_id = str(standardized.get("id") or "unknown")
+    status = str(standardized.get("status") or "")
     standardized.setdefault("artifactKind", RESULT_ARTIFACT_KIND)
     standardized.setdefault(
         "artifactPath",
@@ -474,6 +475,12 @@ def standardize_result(result: dict[str, Any], plan_path: Any) -> dict[str, Any]
         or {"plan": plan_path, "resultGateId": gate_id},
     )
     standardized.setdefault("sampleEmissionAllowed", False)
+    if status == "passed":
+        standardized.setdefault("completionStatus", "DONE")
+        standardized.setdefault("proofStatus", "PROVEN")
+    elif status not in {"dry-run", "blocked"}:
+        standardized.setdefault("completionStatus", "PARTIAL")
+        standardized.setdefault("proofStatus", "UNPROVEN")
     standardized["traceability"] = result_traceability(standardized)
     return standardized
 

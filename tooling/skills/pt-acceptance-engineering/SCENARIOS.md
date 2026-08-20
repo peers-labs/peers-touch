@@ -46,7 +46,8 @@ Use God View to complete native Chat delivery Acceptance.
    - Separate WebDriver ports, Gateway ports, profiles, storage roots, and
      device identities.
    - Approved disposable Station.
-   - Password from an environment variable; no value in reports.
+   - Committed disposable dev-account fixture from
+     `apps/station/app/conf/actor.yml`; no credential environment variable.
    - Reset requires explicit authorization.
    - Evidence: runner/validator JSON, screenshots, DOM, redacted logs, message
      ID, runtime metadata, bounded timing.
@@ -77,18 +78,15 @@ Use God View to complete native Chat delivery Acceptance.
 
    ```bash
    test "${CHAT_ACCEPTANCE_RESET:-0}" = "1"
-   test -n "${CHAT_ACCEPTANCE_PASSWORD:-}"
    ```
 
-   Verify the Station is the approved disposable target without printing the
-   password.
+   Verify the Station is the approved disposable target.
 
 8. **Execute and judge**
 
    ```bash
    make acceptance-chat-native-static
    CHAT_ACCEPTANCE_RESET=1 \
-   CHAT_ACCEPTANCE_PASSWORD="$CHAT_ACCEPTANCE_PASSWORD" \
    make acceptance-chat-native-two-client
    python3 tooling/scripts/acceptance-validate.py \
      --domain chat \

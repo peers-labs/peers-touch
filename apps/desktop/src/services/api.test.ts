@@ -145,6 +145,67 @@ describe('api group admin bridge', () => {
   })
 })
 
+describe('api messaging interaction bridge', () => {
+  it('returns direct command data for an encrypted edit', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command_id: 'command-edit-1',
+        state: 'pending',
+      },
+    })
+
+    const result = await api.messagingEditMessage(
+      'conversation-1',
+      'message-1',
+      'edited text',
+    )
+
+    expect(result).toEqual({
+      command_id: 'command-edit-1',
+      state: 'pending',
+    })
+    expect(invoke).toHaveBeenCalledWith('messaging_submit_edit', {
+      input: {
+        conversation_id: 'conversation-1',
+        message_id: 'message-1',
+        plaintext: 'edited text',
+      },
+    })
+  })
+
+  it('returns direct command data for metadata interactions', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command_id: 'command-reaction-1',
+        state: 'pending',
+      },
+    })
+
+    const result = await api.messagingMetadataInteraction(
+      'conversation-1',
+      'message-1',
+      'reaction',
+      { reaction: 'ok', remove: true },
+    )
+
+    expect(result.command_id).toBe('command-reaction-1')
+    expect(invoke).toHaveBeenCalledWith(
+      'messaging_submit_metadata_interaction',
+      {
+        input: {
+          conversation_id: 'conversation-1',
+          message_id: 'message-1',
+          kind: 'reaction',
+          reaction: 'ok',
+          remove: true,
+        },
+      },
+    )
+  })
+})
+
 describe('api.listApplets', () => {
   it('returns applets array', async () => {
     vi.mocked(invoke).mockResolvedValue({
