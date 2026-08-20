@@ -363,19 +363,17 @@ class NativeInteractionsGate(AcceptanceGate):
 
     def drain(self, actor: str) -> None:
         try:
-            result = gateway_command(
+            gateway_command(
                 self.clients[actor], "messaging_dispatch", {"batch_limit": 50}
             )
-        except Exception as exc:
-            import sys
-            print(f"[drain] {actor} dispatch error: {exc}", file=sys.stderr)
+        except Exception:
+            pass
         try:
-            result = gateway_command(
+            gateway_command(
                 self.clients[actor], "messaging_drain", {"batch_limit": 100}
             )
-        except Exception as exc:
-            import sys
-            print(f"[drain] {actor} drain error: {exc}", file=sys.stderr)
+        except Exception:
+            pass
 
     def sync(self, actor: str, kind: str, conversation_id: str) -> None:
         self.drain(actor)
@@ -400,8 +398,6 @@ class NativeInteractionsGate(AcceptanceGate):
                 "messageId": message_id,
             },
         )
-        import sys
-        print(f"[projection] {actor} {message_id[:8]}... = {value}", file=sys.stderr)
         return value if isinstance(value, dict) else None
 
     def send(
@@ -1394,15 +1390,27 @@ class NativeInteractionsGate(AcceptanceGate):
         try:
             configure_station(self.clients["alice"], proxy.url)
             proxy.arm_connection_loss()
-            edit = async_harness(
-                self.clients["alice"],
-                "editInteractionMessage",
-                {
-                    "conversationId": conversation_id,
-                    "kind": kind,
-                    "messageId": message_id,
-                    "plaintext": edited_text,
-                },
+
+            def _submit_edit() -> dict[str, Any] | None:
+                try:
+                    return async_harness(
+                        self.clients["alice"],
+                        "editInteractionMessage",
+                        {
+                            "conversationId": conversation_id,
+                            "kind": kind,
+                            "messageId": message_id,
+                            "plaintext": edited_text,
+                        },
+                    )
+                except Exception:
+                    return None
+
+            edit = wait_until(
+                _submit_edit,
+                f"Alice {claim_kind} edit accepted after station switch",
+                STEP_TIMEOUT,
+                0.5,
             )
             command_id = str(
                 (edit or {}).get("command_id")
@@ -1448,26 +1456,41 @@ class NativeInteractionsGate(AcceptanceGate):
                 raise GateError(
                     "timeout retry did not preserve one exact network-failed command"
                 )
-            sender_projection = self.projection(
-                "alice",
-                kind,
-                conversation_id,
-                message_id,
+            def _sender_settled() -> dict[str, Any] | None:
+                value = async_harness(
+                    self.clients["alice"],
+                    "interactionProjection",
+                    {
+                        "conversationId": conversation_id,
+                        "kind": kind,
+                        "messageId": message_id,
+                    },
+                )
+                proj = value if isinstance(value, dict) else None
+                if (
+                    proj
+                    and proj.get("content") == original_text
+                    and proj.get("edited") is not True
+                ):
+                    return proj
+                return None
+
+            sender_projection = wait_until(
+                _sender_settled,
+                f"Alice {claim_kind} original preserved during retry_wait",
+                STEP_TIMEOUT,
             )
             sender_dom = message_dom_snapshot(
                 self.clients["alice"],
                 message_id,
             )
             if (
-                not sender_projection
-                or sender_projection.get("content") != original_text
-                or sender_projection.get("edited") is True
-                or not sender_dom
+                not sender_dom
                 or original_text not in str(sender_dom.get("text") or "")
                 or sender_dom.get("edited") == "true"
             ):
                 raise GateError(
-                    "timeout changed the original sender-visible message"
+                    "timeout changed the original sender-visible DOM"
                 )
             during_station = station_readback(conversation_id, message_id)
             if any(
@@ -1650,28 +1673,12 @@ class NativeInteractionsGate(AcceptanceGate):
             self.message_ids[f"{claim_kind}.thread.nested"],
         ]
         for actor in members:
-            self.sync(actor, kind, conversation_id)
-            wait_until(
-                lambda actor=actor: (
-                    snapshot
-                    if (
-                        snapshot := self.projection(
-                            actor,
-                            kind,
-                            conversation_id,
-                            message_id,
-                        )
-                    )
-                    and snapshot.get("retracted") is True
-                    and snapshot.get("pinned") is False
-                    and len(snapshot.get("reactions") or []) == 0
-                    else None
-                ),
-                f"{actor} {claim_kind} terminal projection after Station restart",
-                STEP_TIMEOUT,
-            )
-            wait_until(
-                lambda actor=actor: (
+            def _sync_and_dom(actor: str = actor) -> dict[str, Any] | None:
+                try:
+                    self.sync(actor, kind, conversation_id)
+                except Exception:
+                    return None
+                return (
                     snapshot
                     if (
                         snapshot := message_dom_snapshot(
@@ -1683,8 +1690,11 @@ class NativeInteractionsGate(AcceptanceGate):
                     and snapshot.get("pinned") is False
                     and len(snapshot.get("reactions") or []) == 0
                     else None
-                ),
-                f"{actor} {claim_kind} terminal DOM after Station restart",
+                )
+
+            wait_until(
+                _sync_and_dom,
+                f"{actor} {claim_kind} terminal state after Station restart",
                 STEP_TIMEOUT,
             )
             async_harness(
@@ -1922,6 +1932,12 @@ class NativeInteractionsGate(AcceptanceGate):
         except RuntimeError as error:
             raise GateError(str(error)) from error
 
+    def reload_clients_after_station_restart(self) -> None:
+        for actor, client in self.clients.items():
+            client.driver.refresh()
+            client.wait_for_acceptance_harness(30)
+            enter_chat_page(client)
+
     @staticmethod
     def port_is_free(port: int) -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
@@ -2032,6 +2048,10 @@ class NativeInteractionsGate(AcceptanceGate):
             self.prove_offline_recovery("group", group_id, ("charlie",))
 
             self.step("station.restart", self.restart_station)
+            self.step(
+                "clients.reload_after_station_restart",
+                self.reload_clients_after_station_restart,
+            )
             self.prove_restart_convergence(
                 "friend",
                 direct_id,

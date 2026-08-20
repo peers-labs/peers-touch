@@ -1,7 +1,7 @@
 // Call surface — renders the ringing modal AND the in-call HUD.
 //
 // Mounting strategy: this component subscribes to the
-// `friendChatP2p` manager's call-snapshot stream once at the page
+// `callP2p` manager's call-snapshot stream once at the page
 // level (see SocialChatPage.tsx). It is intentionally peer-aware
 // rather than per-conversation: a user can be on chat A while
 // receiving a call from peer B, and the modal needs to surface the
@@ -23,11 +23,11 @@ import {
   Camera, CameraOff, Mic, MicOff, Phone, PhoneIncoming, PhoneOff, Settings, Video,
 } from 'lucide-react';
 import {
-  friendChatP2p,
+  callP2p,
   type CallEndReason,
   type CallMediaDevices,
   type CallSnapshot,
-} from '../../modules/p2p/friendChatP2p';
+} from '../../modules/p2p/callP2p';
 import { log } from '../../utils/logger';
 import { toast } from '@lobehub/ui';
 
@@ -78,7 +78,7 @@ export function CallSurface() {
   // Subscribe once. Snapshot in == snapshot in state; we filter
   // terminal states (idle/ended) by clearing `active`.
   useEffect(() => {
-    friendChatP2p.setOnCall((myDid, peerDid, snapshot) => {
+    callP2p.setOnCall((myDid, peerDid, snapshot) => {
       if (snapshot.state === 'idle' || snapshot.state === 'ended') {
         // Surface a distinct, localized result for non-trivial endings
         // (declined / missed / busy / permission / network). A clean
@@ -93,7 +93,7 @@ export function CallSurface() {
       setActive({ myDid, peerDid, snapshot });
     });
     return () => {
-      friendChatP2p.setOnCall(null);
+      callP2p.setOnCall(null);
     };
   }, [t]);
 
@@ -114,7 +114,7 @@ export function CallSurface() {
     if (!hasMediaPlane || !navigator.mediaDevices) return;
     let cancelled = false;
     const refresh = () => {
-      friendChatP2p.listMediaDevices().then((d) => {
+      callP2p.listMediaDevices().then((d) => {
         if (!cancelled) setDevices(d);
       });
     };
@@ -153,7 +153,7 @@ export function CallSurface() {
 
   const handleAccept = async () => {
     try {
-      await friendChatP2p.acceptCall(myDid, peerDid);
+      await callP2p.acceptCall(myDid, peerDid);
     } catch (error) {
       log.warn('callSurface', 'accept failed', error);
       toast.error(t('chat.social.call.mediaDenied'));
@@ -161,22 +161,22 @@ export function CallSurface() {
   };
 
   const handleDecline = () => {
-    friendChatP2p.rejectCall(myDid, peerDid).catch(() => {});
+    callP2p.rejectCall(myDid, peerDid).catch(() => {});
   };
 
   const handleHangup = () => {
-    friendChatP2p.endCall(myDid, peerDid).catch(() => {});
+    callP2p.endCall(myDid, peerDid).catch(() => {});
   };
 
   const handleSwitchAudio = (deviceId: string) => {
-    friendChatP2p.switchAudioDevice(myDid, peerDid, deviceId).catch((error) => {
+    callP2p.switchAudioDevice(myDid, peerDid, deviceId).catch((error) => {
       log.warn('callSurface', 'switch mic failed', error);
       toast.error(t('chat.social.call.deviceSwitchFailed'));
     });
   };
 
   const handleSwitchVideo = (deviceId: string) => {
-    friendChatP2p.switchVideoDevice(myDid, peerDid, deviceId).catch((error) => {
+    callP2p.switchVideoDevice(myDid, peerDid, deviceId).catch((error) => {
       log.warn('callSurface', 'switch camera failed', error);
       toast.error(t('chat.social.call.deviceSwitchFailed'));
     });
@@ -398,7 +398,7 @@ export function CallSurface() {
                 shape="circle"
                 size="large"
                 icon={snapshot.micMuted ? <MicOff size={18} /> : <Mic size={18} />}
-                onClick={() => friendChatP2p.toggleMic(myDid, peerDid, !snapshot.micMuted)}
+                onClick={() => callP2p.toggleMic(myDid, peerDid, !snapshot.micMuted)}
               />
             </Tooltip>
           )}
@@ -409,7 +409,7 @@ export function CallSurface() {
                 shape="circle"
                 size="large"
                 icon={snapshot.cameraOff ? <CameraOff size={18} /> : <Camera size={18} />}
-                onClick={() => friendChatP2p.toggleCamera(myDid, peerDid, !snapshot.cameraOff)}
+                onClick={() => callP2p.toggleCamera(myDid, peerDid, !snapshot.cameraOff)}
               />
             </Tooltip>
           )}

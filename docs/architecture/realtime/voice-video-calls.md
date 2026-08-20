@@ -38,7 +38,7 @@ formalizes it rather than building from scratch.
 | Realtime contract | `docs/architecture/realtime/event-stream.md` | Single SSE stream; WebRTC reserved for media only; `CallSignal signaling = 15` and `PresenceFlip presence = 14` live in the same `StreamEvent` oneof. |
 | Wire model | `model/domain/realtime/event.proto` | `CallSignal` is stable: `OFFER / ANSWER / CANDIDATE / HANGUP / CALL_REQUEST / CALL_ACCEPT / CALL_REJECT / CALL_END`. The post-merge `event.proto` additions are `MomentEvent`, unrelated to calls. |
 | Station ingress | `apps/station/app/subserver/events/handler.go` | `POST /realtime/signal` decodes `{recipient_actor_id, session_ulid, kind, payload_b64}`, treats payload as opaque (64 KiB cap), fans out to recipient, and echoes to sender for multi-device. No per-feature SSE endpoint. |
-| Desktop media manager | `apps/desktop/src/modules/p2p/friendChatP2p.ts` | Owns `RTCPeerConnection`, sealed signaling (`signalingEnvelopeSeal/Open`), candidate buffering, `CallSnapshot` state machine (`idle/outgoing/incoming/active/ended`), `startCall/acceptCall/rejectCall/endCall/toggleMic/toggleCamera`, and `direct`/`relay` transport probing via `getStats()`. |
+| Desktop media manager | `apps/desktop/src/modules/p2p/callP2p.ts` | Owns `RTCPeerConnection`, sealed signaling (`signalingEnvelopeSeal/Open`), candidate buffering, `CallSnapshot` state machine (`idle/outgoing/incoming/active/ended`), `startCall/acceptCall/rejectCall/endCall/toggleMic/toggleCamera`, and `direct`/`relay` transport probing via `getStats()`. |
 | Desktop surface | `apps/desktop/src/components/chat/CallSurface.tsx` | Renders ringing modal and in-call HUD, subscribes to the call snapshot; consumed by chat page / message area. |
 | TURN subserver | `apps/station/frame/core/plugin/native/subserver/turn/` | Pion TURN with RFC-5766 short-term credentials (24h TTL); historical password==username bug already fixed. |
 | ICE discovery | `apps/station/.../turn/ice_handler.go` | `/api/v1/turn/ice-servers` returns TURN UDP+TCP URLs from config plus ephemeral credentials. |
@@ -75,7 +75,7 @@ no longer supports:
   so Phase 1 is mostly hardening (TURN productionization, signal authorization,
   runtime ownership), not green-field construction.
 - `eventStream.ts` as the only "signaling bridge" is an oversimplification; the
-  actual media/signaling orchestration lives in `friendChatP2p.ts`. The
+  actual media/signaling orchestration lives in `callP2p.ts`. The
   signaling bridge merely decodes `StreamEvent.signaling` into typed events.
 - The presence subsystem is a new, callable precondition source that the
   previous draft did not account for.
@@ -546,7 +546,7 @@ branch `high-chat`:
 
 | Gap | Area | Status | Where |
 | --- | --- | --- | --- |
-| Runtime ownership | Desktop | Done | Active calls survive friend-chat session switches; only idle connections are torn down (`closeIdleConnections`), and all are closed on page unmount (`friendChatP2p.ts`, `SocialChatPage.tsx`). |
+| Runtime ownership | Desktop | Done | Active calls survive friend-chat session switches; only idle connections are torn down (`closeIdleConnections`), and all are closed on page unmount (`callP2p.ts`, `SocialChatPage.tsx`). |
 | Signal authorization | Station | Done | `handlePostSignal` enforces fail-closed friend-relationship authorization via a registered `SignalAuthorizer`; "is friend" = DID-pair session exists (`SessionExistsForPair`) and not blocked (`IsBlockedBetween`). Missing authorizer returns 503. |
 | Unanswered timeout | Desktop | Done | 45s ring timer with a `CallEndReason` state machine; terminal reasons map to localized result toasts. |
 | TURN configurability | Station | Done | `/api/v1/turn/ice-servers` STUN URL list, credential TTL, and credential username are config-backed (`stun-urls` / `credential-ttl` / `credential-username`) with backward-compatible defaults. |

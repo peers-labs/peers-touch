@@ -540,9 +540,9 @@ particular:
 
 ### 4.4 What goes away on the client
 
-- `apps/desktop/src/modules/p2p/friendChatP2p.ts::sendMessageHint` —
+- `apps/desktop/src/modules/p2p/callP2p.ts::sendMessageHint` —
   removed entirely. Text never enters the WebRTC code path.
-- `apps/desktop/src/modules/p2p/friendChatP2p.ts::setOnEnvelope` — text
+- `apps/desktop/src/modules/p2p/callP2p.ts::setOnEnvelope` — text
   branch removed; the file remains as scaffolding for future
   voice/video and may be renamed to clarify scope.
 - `apps/desktop/src/pages/SocialChatPage.tsx`'s 60-second polling
@@ -550,7 +550,7 @@ particular:
 - Feature-specific presence bridges and SSE endpoints are removed;
   presence flips arrive only through `realtime.presence` on the unified
   bus.
-- `friendChatP2p.ts`'s HTTP-polling signaling
+- `callP2p.ts`'s HTTP-polling signaling
   (`pollCandidates`, `iceSessionAnswerGet` retry loops) — replaced by
   `CallSignal` events.
 
@@ -675,7 +675,7 @@ endpoints remain the same.
 5. Migrate presence: `events` subserver publishes `PresenceFlip`,
    delete the dedicated presence SSE endpoint and standalone client
    listener.
-6. Delete WebRTC text data plane code; rename `friendChatP2p.ts` to
+6. Delete WebRTC text data plane code; rename `callP2p.ts` to
    reflect its future media-only scope (or leave the file empty until
    voice/video lands).
 7. Migrate WebRTC signaling onto `CallSignal` events; delete HTTP

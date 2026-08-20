@@ -16,7 +16,6 @@ pub mod cron;
 pub mod desktop_executor_worker;
 pub mod error_resolver;
 pub mod federation;
-pub mod friend_chat;
 pub mod group_chat;
 pub mod host_events;
 pub mod key_exchange;

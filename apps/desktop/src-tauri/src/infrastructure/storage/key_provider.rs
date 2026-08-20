@@ -33,9 +33,9 @@ impl PlatformKeyProvider {
     ///
     /// Background: the previous implementation built a fresh provider with
     /// an empty cache on every `open_connection`, causing 3+ keychain RPCs
-    /// per friend-chat sync × N sessions × every 5s polling cycle. Under
+    /// per messaging sync × N sessions × every 5s polling cycle. Under
     /// load macOS would intermittently fail these calls, surfacing as
-    /// "get cursor failed" in `friend_chat_sync_from_station_scoped`.
+    /// keychain lookup errors during message sync.
     pub fn shared() -> &'static Self {
         static INSTANCE: OnceLock<PlatformKeyProvider> = OnceLock::new();
         INSTANCE.get_or_init(PlatformKeyProvider::default)

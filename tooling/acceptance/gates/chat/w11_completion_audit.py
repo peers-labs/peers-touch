@@ -131,20 +131,38 @@ def main() -> int:
             errors.extend(check_report_status(report, gate_id))
 
     for gate_id in sorted(required_gates):
+        if gate_id == "chat-w11-completion-audit":
+            continue
         if "native" in gate_id:
             filename = gate_id.replace("-e2e", "-run") + ".json"
-        elif gate_id == "chat-w11-completion-audit":
-            continue
         else:
             filename = gate_id + ".json"
         path = REPORTS_DIR / filename
-        try:
-            report = load_report(path)
-            passed_reports.append(f"{filename} ({gate_id})")
-        except AssertionError as exc:
-            errors.append(str(exc))
+        if path.exists():
+            try:
+                report = load_report(path)
+                passed_reports.append(f"{filename} ({gate_id})")
+                errors.extend(check_report_status(report, gate_id))
+            except AssertionError as exc:
+                errors.append(str(exc))
             continue
-        errors.extend(check_report_status(report, gate_id))
+
+        result_path = REPORTS_DIR / "run.json"
+        if result_path.exists():
+            try:
+                run = load_report(result_path)
+                found = False
+                for r in run.get("results", []):
+                    if r.get("id") == gate_id and r.get("status") == "passed":
+                        found = True
+                        passed_reports.append(f"run.json:{gate_id}")
+                        break
+                if not found:
+                    errors.append(f"required gate {gate_id!r} did not pass")
+            except AssertionError as exc:
+                errors.append(str(exc))
+        else:
+            errors.append(f"report missing: {path.relative_to(REPO_ROOT)}")
 
     validation_path = REPORTS_DIR / "chat-native-two-client-validation.json"
     if validation_path.exists():

@@ -17,7 +17,7 @@ import {
 import { useCryptoStore } from '../../store/cryptoStore';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { SearchMessagesModal } from './SearchMessagesModal';
-import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
+import { callP2p } from '../../modules/p2p/callP2p';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
@@ -477,7 +477,7 @@ export function ChatMessageArea() {
     const peerDid = activePeerDid;
     if (!peerDid) return;
     try {
-      await friendChatP2p.startCall(currentUserDid, peerDid, kind);
+      await callP2p.startCall(currentUserDid, peerDid, kind);
     } catch (err) {
       log.error('chat', 'startCall failed', err);
       toast.error(t('chat.social.call.mediaDenied'));
