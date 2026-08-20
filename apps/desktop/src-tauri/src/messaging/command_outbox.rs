@@ -232,6 +232,8 @@ mod tests {
                     sender_ptid: "ptid:alice",
                     sender_device_id: "alice-device",
                     plaintext: "draft survives",
+                    reply_to_message_id: "",
+                    thread_root_message_id: "",
                     attachments: &[],
                     private_content: &private_content,
                     delivery_plan_sha256: &[1; 32],

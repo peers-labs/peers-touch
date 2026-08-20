@@ -55,13 +55,15 @@ func (*AuthorityMemberDeviceModel) TableName() string {
 }
 
 type AuthorityEventModel struct {
-	EventID        string    `gorm:"column:event_id;size:64;primaryKey"`
-	ConversationID string    `gorm:"column:conversation_id;size:128;uniqueIndex:uidx_messaging_event_sequence"`
-	Sequence       int64     `gorm:"column:sequence;uniqueIndex:uidx_messaging_event_sequence"`
-	CommandID      string    `gorm:"column:command_id;size:128;uniqueIndex:uidx_messaging_event_command"`
-	EventHash      []byte    `gorm:"column:event_hash;type:bytea;not null"`
-	EventBytes     []byte    `gorm:"column:event_bytes;type:bytea;not null"`
-	CommittedAt    time.Time `gorm:"column:committed_at;not null"`
+	EventID           string    `gorm:"column:event_id;size:64;primaryKey"`
+	ConversationID    string    `gorm:"column:conversation_id;size:128;uniqueIndex:uidx_messaging_event_sequence;index:idx_messaging_event_message,priority:1"`
+	Sequence          int64     `gorm:"column:sequence;uniqueIndex:uidx_messaging_event_sequence"`
+	CommandID         string    `gorm:"column:command_id;size:128;uniqueIndex:uidx_messaging_event_command"`
+	MessageID         string    `gorm:"column:message_id;size:128;index:idx_messaging_event_message,priority:2"`
+	MessageAuthorPTID string    `gorm:"column:message_author_ptid;size:255"`
+	EventHash         []byte    `gorm:"column:event_hash;type:bytea;not null"`
+	EventBytes        []byte    `gorm:"column:event_bytes;type:bytea;not null"`
+	CommittedAt       time.Time `gorm:"column:committed_at;not null"`
 }
 
 func (*AuthorityEventModel) TableName() string {
@@ -356,6 +358,9 @@ func (r *AuthorityRepository) AutoMigrate() error {
 	); err != nil {
 		return err
 	}
+	if err := r.backfillMessageIdentity(); err != nil {
+		return err
+	}
 	if !r.db.Migrator().HasTable("messaging_member_devices") {
 		return nil
 	}
@@ -406,6 +411,35 @@ func (r *AuthorityRepository) AutoMigrate() error {
 		}
 		return tx.Migrator().DropTable("messaging_member_devices")
 	})
+}
+
+func (r *AuthorityRepository) backfillMessageIdentity() error {
+	var models []AuthorityEventModel
+	if err := r.db.
+		Where("message_id = '' OR message_id IS NULL").
+		Order("conversation_id ASC, sequence ASC").
+		Find(&models).Error; err != nil {
+		return err
+	}
+	for _, model := range models {
+		event := &chat.ConversationEvent{}
+		if err := proto.Unmarshal(model.EventBytes, event); err != nil {
+			return fmt.Errorf("messaging: decode authority event for message identity: %w", err)
+		}
+		message := event.GetMessageCommitted()
+		if message == nil || message.MessageId == "" || message.Sender == nil {
+			continue
+		}
+		if err := r.db.Model(&AuthorityEventModel{}).
+			Where("event_id = ?", model.EventID).
+			Updates(map[string]any{
+				"message_id":          message.MessageId,
+				"message_author_ptid": message.Sender.Ptid,
+			}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *AuthorityRepository) LockConversation(
@@ -474,6 +508,29 @@ func (r *AuthorityRepository) GetLastEvent(
 	return event, nil
 }
 
+func (r *AuthorityRepository) GetMessageIdentity(
+	ctx context.Context,
+	conversationID string,
+	messageID string,
+) (*messaging.AuthorityMessageIdentity, error) {
+	if conversationID == "" || messageID == "" {
+		return nil, messaging.ErrNotFound
+	}
+	var model AuthorityEventModel
+	if err := r.db.WithContext(ctx).
+		Where("conversation_id = ? AND message_id = ?", conversationID, messageID).
+		First(&model).Error; err != nil {
+		return nil, mapNotFound(err)
+	}
+	return &messaging.AuthorityMessageIdentity{
+		ConversationID: model.ConversationID,
+		MessageID:      model.MessageID,
+		AuthorPTID:     model.MessageAuthorPTID,
+		EventID:        model.EventID,
+		Sequence:       model.Sequence,
+	}, nil
+}
+
 func (r *AuthorityRepository) GetCommandReceipt(
 	ctx context.Context,
 	conversationID string,
@@ -502,14 +559,24 @@ func (r *AuthorityRepository) AppendEvent(
 	if err != nil {
 		return err
 	}
+	var messageID string
+	var messageAuthorPTID string
+	if message := event.GetMessageCommitted(); message != nil {
+		messageID = message.MessageId
+		if message.Sender != nil {
+			messageAuthorPTID = message.Sender.Ptid
+		}
+	}
 	if err := r.db.WithContext(ctx).Create(&AuthorityEventModel{
-		EventID:        event.EventId,
-		ConversationID: event.ConversationId,
-		Sequence:       event.Sequence,
-		CommandID:      event.CommandId,
-		EventHash:      event.EventHash,
-		EventBytes:     eventBytes,
-		CommittedAt:    event.CommittedAt.AsTime(),
+		EventID:           event.EventId,
+		ConversationID:    event.ConversationId,
+		Sequence:          event.Sequence,
+		CommandID:         event.CommandId,
+		MessageID:         messageID,
+		MessageAuthorPTID: messageAuthorPTID,
+		EventHash:         event.EventHash,
+		EventBytes:        eventBytes,
+		CommittedAt:       event.CommittedAt.AsTime(),
 	}).Error; err != nil {
 		return err
 	}

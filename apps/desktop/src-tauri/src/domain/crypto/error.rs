@@ -109,3 +109,17 @@ impl From<std::io::Error> for CryptoError {
         Self::IoError(e.to_string())
     }
 }
+
+impl From<messaging_core::crypto::double_ratchet::DrError> for CryptoError {
+    fn from(e: messaging_core::crypto::double_ratchet::DrError) -> Self {
+        use messaging_core::crypto::double_ratchet::DrError;
+        match e {
+            DrError::UninitializedReceive => Self::RatchetUninitializedReceive,
+            DrError::AeadFailure => Self::RatchetAeadFailure,
+            DrError::BadWireFormat(msg) => Self::RatchetBadWireFormat(msg),
+            DrError::SkipTooFar => Self::RatchetSkipTooFar,
+            DrError::SkipBudgetExhausted => Self::RatchetSkipBudgetExhausted,
+            DrError::CounterRegression => Self::RatchetCounterRegression,
+        }
+    }
+}

@@ -1,14 +1,23 @@
 // Proto types — generated at build time by prost-build (see build.rs).
 // Source definitions live in model/domain/**/*.proto (single source of truth).
 //
-// The `v1` submodule mirrors the protobuf package hierarchy so that
-// cross-package `super::` references resolve correctly.
+// Chat proto types are generated and owned by messaging-core; Desktop re-exports them.
+// Non-chat protos remain Desktop-generated.
 
 pub mod chat {
+    pub use messaging_core::proto::chat::*;
+
     pub mod v1 {
-        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.chat.v1.rs"));
+        pub use messaging_core::proto::chat::*;
     }
-    pub use v1::*;
+}
+
+pub mod common {
+    pub use messaging_core::proto::common::*;
+
+    pub mod v1 {
+        pub use messaging_core::proto::common::*;
+    }
 }
 
 pub mod notification {
@@ -42,12 +51,7 @@ pub mod auth {
     pub use v1::*;
 }
 
-pub mod common {
-    pub mod v1 {
-        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.common.v1.rs"));
-    }
-    pub use v1::*;
-}
+
 
 pub mod core {
     pub mod v1 {
