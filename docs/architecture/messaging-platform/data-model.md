@@ -1,8 +1,8 @@
 # Messaging Platform — 数据模型
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-08-10
+> **Version**: v1.2
+> **Created**: 2026-08-08 | **Updated**: 2026-08-17
 > **Owner**: Messaging Platform Team
 
 ---
@@ -221,6 +221,14 @@ device_queue_items(
 `conversation_events` 与全部 required `device_queue_items` 必须由同一 Station database
 transaction 提交。
 
+包含 PTID、device ID 或其他可变长度 identity tuple 的 queue `idempotency_key`
+必须先做 length-prefixed canonical encoding，再存储固定长度 SHA-256 digest。禁止把
+完整 identity tuple 直接拼接进 bounded varchar，也禁止截断 identity。
+
+不对应 Authority committed fact 的 synthetic receipt/read queue reference 也必须
+使用 length-prefixed canonical tuple 的固定 64 字符 SHA-256 hex 作为 `event_id`。
+它只提供 bounded transport correlation，不得伪装或替换真正的 Authority event ID。
+
 ### 3.3 Federation
 
 ```sql
@@ -344,6 +352,27 @@ command_attempt(command_id, message_id, delivery_plan_sha256, state, exact_bytes
 
 stale attempt转`SUPERSEDED`；logical message保持 pending并创建新 attempt。已推进的
 ratchet/MLS state不回滚。
+
+### 3.6 Outbound Timeout And Cancellation Boundary
+
+> **Status**: accepted by `MP-D28`
+
+```text
+local draft --cancel before prepare--> discarded
+
+local_commands / command_outbox
+  pending -> retry_wait -> pending
+  pending/retry_wait -> submitted -> committed
+  pending/retry_wait -> failed
+```
+
+- `cancelled` 不属于 durable command/outbox/interaction intent 状态。
+- Station 不持久化 command cancellation tombstone；Model 不定义 pending-command
+  cancellation request/response。
+- transport timeout 只进入 `retry_wait`，并保留 exact command bytes、logical intent
+  和原始 visible content。
+- accepted 之后的撤回由新的 `RetractMessage` command 与 Authority event 表达。
+- ratchet/MLS state在任何 timeout、retry 或 terminal failure中都不回滚。
 
 ## 4. Device SQLCipher Persistence
 

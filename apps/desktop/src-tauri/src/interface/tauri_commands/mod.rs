@@ -15,7 +15,6 @@ pub mod cron;
 pub mod crypto;
 pub mod desktop_capture;
 pub mod federation;
-pub mod friend_chat;
 pub mod frontend_log;
 pub mod frontend_telemetry;
 pub mod group_chat;

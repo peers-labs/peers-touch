@@ -53,6 +53,10 @@ type EventBus interface {
 	// multi-device echo) safely.
 	Publish(actorID string, ev *realtime.StreamEvent) (string, error)
 
+	// PublishEphemeral stamps and fans out an event only to current live
+	// subscribers. It does not persist or enter the replay ring.
+	PublishEphemeral(actorID string, ev *realtime.StreamEvent) (string, error)
+
 	// PublishToDevice is the per-device variant of Publish. It stamps and
 	// buffers the event on the actor stream, but live fan-out and cursor
 	// replay are restricted to subscribers whose DeviceID matches deviceID.
@@ -252,6 +256,40 @@ func (b *eventBus) getOrCreateActor(actorID string) *actorState {
 // Publish — see EventBus.
 func (b *eventBus) Publish(actorID string, ev *realtime.StreamEvent) (string, error) {
 	return b.publish(actorID, "", ev)
+}
+
+func (b *eventBus) PublishEphemeral(
+	actorID string,
+	ev *realtime.StreamEvent,
+) (string, error) {
+	if actorID == "" {
+		return "", fmt.Errorf("events: empty actorID")
+	}
+	if ev == nil {
+		return "", fmt.Errorf("events: nil event")
+	}
+	b.mu.RLock()
+	if b.closed {
+		b.mu.RUnlock()
+		return "", ErrBusClosed
+	}
+	b.mu.RUnlock()
+
+	cloned := proto.Clone(ev).(*realtime.StreamEvent)
+	cloned.EventId = b.cfg.idGen()
+	cloned.TsUnixMs = b.cfg.now().UnixMilli()
+
+	a := b.getOrCreateActor(actorID)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for sub := range a.subs {
+		select {
+		case sub.send <- cloned:
+		default:
+			b.dropLocked(a, sub)
+		}
+	}
+	return cloned.EventId, nil
 }
 
 // PublishToDevice — see EventBus.

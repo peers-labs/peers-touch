@@ -90,3 +90,4 @@ apps/mobile/android/gradle/wrapper/gradle-wrapper.jar
 # Deprecated Flutter app — local build artifacts only.
 apps/mobile/flutter/
 packages/messaging-core/target/
+tooling/acceptance/reports/

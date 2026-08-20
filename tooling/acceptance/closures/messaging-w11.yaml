@@ -1,0 +1,179 @@
+version: 1
+workstream: MP-W11
+plan_source: docs/architecture/messaging-platform/execution-plans/20260808-messaging-platform.md
+description: >
+  Machine-readable closure contract for MP-W11 Atomic Cutover And Completion Audit.
+  Every deliverable here must be mechanically verified. No AI discretion over
+  what counts as done.
+
+deliverables:
+  - id: deleted-owner-files-absent
+    verify:
+      type: path-absent
+      paths:
+        - apps/desktop/src/runtimes/cryptoRuntime.ts
+        - apps/desktop/src/runtimes/imRuntime.ts
+        - apps/mobile/src-tauri/src/domain/crypto/sender_keys.rs
+        - apps/mobile/src-tauri/src/domain/crypto/sender_key_store.rs
+        - apps/mobile/src-tauri/src/commands/group_crypto.rs
+        - model/domain/chat/key_exchange.proto
+        - apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs
+        - apps/desktop/src-tauri/src/application/friend_chat/mod.rs
+        - apps/desktop/src/modules/p2p/friendChatP2p.ts
+        - qa/station/api_tests/friend_chat_test.sh
+
+  - id: no-debug-instrumentation
+    verify:
+      type: source-scan
+      include_dirs:
+        - apps/desktop/src
+        - apps/desktop/src-tauri/src
+        - apps/mobile/src-tauri/src
+        - apps/station/app
+        - apps/station/frame
+        - packages/messaging-core/src
+      skip_dirs:
+        - node_modules
+        - target
+        - .git
+        - dist
+        - build
+        - __pycache__
+        - .local
+        - gen
+        - example
+        - examples
+      allowed_file_prefixes:
+        - logger
+        - log.
+        - telemetry
+        - logging
+      patterns:
+        - suffix: ".ts"
+          regex: "\\bconsole\\.log\\s*\\("
+        - suffix: ".tsx"
+          regex: "\\bconsole\\.log\\s*\\("
+        - suffix: ".rs"
+          regex: "\\bprintln!\\s*\\("
+        - suffix: ".go"
+          regex: "\\bfmt\\.Println\\s*\\("
+
+  - id: single-crypto-codec-owner
+    verify:
+      type: no-duplicate-symbol
+      owner_dir: packages/messaging-core/src
+      check_dirs:
+        - apps/desktop/src-tauri/src
+        - apps/mobile/src-tauri/src
+      skip_dirs:
+        - target
+        - node_modules
+        - .git
+        - build
+        - dist
+        - gen
+        - __pycache__
+      functions:
+        - "fn kdf_rk"
+        - "fn kdf_ck"
+        - "fn dh_bytes"
+        - "fn root_from_shared_secret"
+        - "fn materialize_skipped"
+      types:
+        - "struct DrSessionState"
+        - "struct DrSkippedMessageKey"
+        - "struct DrCiphertextWire"
+        - "struct PreKeyBundle"
+        - "struct X3dhSenderResult"
+        - "struct X3dhReceiverInput"
+      duplicate_struct_check:
+        - "ConversationEvent"
+
+  - id: dead-friend-chat-routes-absent
+    verify:
+      type: http-route-absent
+      description: >
+        Station /friend-chat/* routes were deleted when messaging moved to
+        /messaging/* and /conversation/*. Desktop must not call dead endpoints.
+      route_prefixes:
+        - "/friend-chat/"
+      search_dirs:
+        - apps/desktop/src-tauri/src
+      skip_dirs:
+        - target
+        - gen
+      exempt_files: []
+
+  - id: dead-tauri-commands-absent
+    verify:
+      type: tauri-command-absent
+      description: >
+        Old friend_chat messaging Tauri commands must not be registered.
+        Friend-request commands are renamed to social_friend_request_*.
+      commands:
+        - friend_chat_get_settings
+        - friend_chat_update_settings
+        - friend_chat_list_sessions
+        - friend_chat_create_session
+        - friend_chat_list_messages
+        - friend_chat_list_thread_messages
+        - friend_chat_thread_counts
+        - friend_chat_thread_mark_read
+        - friend_chat_local_search
+        - friend_chat_local_search_scoped
+        - friend_chat_set_cursor_scoped
+        - friend_chat_get_cursor_scoped
+        - friend_chat_get_key_version_scoped
+        - friend_chat_rotate_key_scoped
+        - friend_chat_sync_from_station_scoped
+        - friend_chat_sync_messages
+        - friend_chat_get_pending
+        - friend_chat_get_stats
+        - friend_chat_block_user
+        - friend_chat_unblock_user
+        - friend_chat_list_blocked_users
+        - friend_chat_get_friendship_status
+        - friend_chat_recall_message
+        - friend_chat_edit_message
+        - friend_chat_delete_message
+        - friend_chat_send_friend_request
+        - friend_chat_accept_friend_request
+        - friend_chat_reject_friend_request
+        - friend_chat_list_friend_requests
+      search_files:
+        - apps/desktop/src-tauri/src/main.rs
+        - apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
+
+  - id: native-evidence-bundle
+    verify:
+      type: gates-passed
+      gates:
+        - chat-native-two-client-e2e
+        - chat-native-interactions-e2e
+        - chat-native-typing-e2e
+        - chat-native-multi-device-e2e
+        - chat-native-recovery-e2e
+        - chat-native-group-mls-e2e
+
+  - id: static-contract-gates
+    verify:
+      type: gates-passed
+      gates:
+        - chat-native-visible-static
+
+  - id: completion-audit
+    verify:
+      type: gate-passed
+      gate: chat-w11-completion-audit
+
+gate_order:
+  - chat-w11-forbidden-scan
+  - chat-w11-duplicate-scan
+  - chat-native-visible-static
+  - chat-native-two-client-e2e
+  - chat-native-interactions-e2e
+  - chat-native-typing-e2e
+  - chat-native-multi-device-e2e
+  - chat-native-recovery-e2e
+  - chat-native-group-mls-e2e
+  - chat-w11-completion-audit

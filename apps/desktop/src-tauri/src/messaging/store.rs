@@ -28,6 +28,12 @@ pub struct CommandOutboxEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeliveryReceiptOutboxEntry {
+    pub receipt_id: String,
+    pub receipt_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageProjection {
     pub conversation_id: String,
     pub event_id: String,
@@ -40,6 +46,7 @@ pub struct MessageProjection {
     pub committed_at_unix_ms: i64,
     /// The message_id of the parent message this is replying to, if any.
     pub reply_to_message_id: Option<String>,
+    pub thread_root_message_id: Option<String>,
     /// Latest edited plaintext content (None if never edited).
     pub edited_text: Option<String>,
     /// Timestamp of last edit in unix milliseconds (None if never edited).
@@ -56,6 +63,8 @@ pub struct PendingSenderProjection<'a> {
     pub sender_ptid: &'a str,
     pub sender_device_id: &'a str,
     pub plaintext: &'a str,
+    pub reply_to_message_id: &'a str,
+    pub thread_root_message_id: &'a str,
     pub attachments: &'a [AttachmentPlaintextMetadata],
     pub private_content: &'a [u8],
     pub delivery_plan_sha256: &'a [u8],
@@ -70,6 +79,8 @@ pub struct PendingMessageDraft {
     pub sender_ptid: String,
     pub sender_device_id: String,
     pub plaintext: String,
+    pub reply_to_message_id: String,
+    pub thread_root_message_id: String,
     pub attachments: Vec<AttachmentPlaintextMetadata>,
     pub attempt_count: u32,
     pub created_at_unix_ms: i64,
@@ -142,12 +153,17 @@ pub struct ConversationMessageProjection {
     pub timestamp_unix_ms: i64,
     /// The message_id of the parent message this is replying to, if any.
     pub reply_to_message_id: Option<String>,
+    pub thread_root_message_id: Option<String>,
     /// Latest edited plaintext content (None if never edited).
     pub edited_text: Option<String>,
     /// Timestamp of last edit in unix milliseconds (None if never edited).
     pub edited_at_unix_ms: Option<i64>,
     /// Whether the message has been retracted/deleted.
     pub retracted: bool,
+    pub reactions: Vec<(String, String, i64)>,
+    pub pinned_by_ptid: Option<String>,
+    pub pinned_at_unix_ms: Option<i64>,
+    pub read_by_ptids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -206,6 +222,17 @@ pub struct MlsTransitionSendCommit<'a> {
     pub created_at_unix_ms: i64,
 }
 
+pub struct InteractionCommandCommit<'a> {
+    pub command_id: &'a str,
+    pub conversation_id: &'a str,
+    pub target_message_id: &'a str,
+    pub interaction_kind: &'a str,
+    pub edited_text: Option<&'a str>,
+    pub command_bytes: &'a [u8],
+    pub delivery_plan_sha256: &'a [u8],
+    pub created_at_unix_ms: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingMembershipIntent {
     pub intent_id: String,
@@ -259,7 +286,49 @@ pub struct PublicEventReceiveCommit<'a> {
     pub sender_ptid: &'a str,
     pub sender_device_id: &'a str,
     pub attachments: &'a [EncryptedObjectDescriptor],
+    pub reply_to_message_id: Option<&'a str>,
+    pub thread_root_message_id: Option<&'a str>,
     pub committed_at_unix_ms: i64,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+pub enum InteractionMutation<'a> {
+    Edit {
+        edited_text: &'a str,
+        edited_at_unix_ms: i64,
+    },
+    Retract,
+    Reaction {
+        actor_ptid: &'a str,
+        reaction: &'a str,
+        removed: bool,
+        created_at_unix_ms: i64,
+    },
+    Pin {
+        actor_ptid: &'a str,
+        removed: bool,
+        pinned_at_unix_ms: i64,
+    },
+}
+
+pub struct InteractionReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub command_id: &'a str,
+    pub conversation_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub message_id: &'a str,
+    pub mutation: InteractionMutation<'a>,
+    pub mls_session_state: Option<&'a [u8]>,
+    pub membership_epoch: i64,
+    pub mls_epoch: i64,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
@@ -280,8 +349,34 @@ pub struct DirectReceiveCommit<'a> {
     pub consumed_one_time_prekey_id: Option<i32>,
     pub projection: &'a MessageProjection,
     pub reply_to_message_id: Option<&'a str>,
+    pub thread_root_message_id: Option<&'a str>,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
+    pub delivery_receipt_id: &'a str,
+    pub delivery_receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+pub struct DeliveryReceiptReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub message_id: &'a str,
+    pub conversation_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub delivery_state: &'a str,
+    pub consumed_at_unix_ms: i64,
+}
+
+pub struct ActorReadReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub reader_ptid: &'a str,
+    pub last_read_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
     pub consumed_at_unix_ms: i64,
 }
 
@@ -308,6 +403,8 @@ pub struct DirectEditCommit<'a> {
     pub edited_at_unix_ms: i64,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
+    pub delivery_receipt_id: &'a str,
+    pub delivery_receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
 }
 
@@ -325,6 +422,7 @@ pub struct MlsReceiveCommit<'a> {
     pub mls_epoch: i64,
     pub projection: &'a MessageProjection,
     pub reply_to_message_id: Option<&'a str>,
+    pub thread_root_message_id: Option<&'a str>,
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
@@ -628,6 +726,106 @@ impl MessagingStore {
         transaction.commit().map_err(|error| error.to_string())
     }
 
+    pub fn persist_interaction_command(
+        &self,
+        input: &InteractionCommandCommit<'_>,
+    ) -> Result<(), String> {
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        persist_interaction_command(&transaction, input)?;
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    pub fn persist_direct_interaction_command(
+        &self,
+        input: &InteractionCommandCommit<'_>,
+        advanced_sessions: &[DirectSession],
+        session_inits: &[(String, Vec<u8>)],
+    ) -> Result<(), String> {
+        if advanced_sessions.is_empty() {
+            return Err("messaging Direct interaction requires sessions".to_string());
+        }
+        let mut session_ids = HashSet::with_capacity(advanced_sessions.len());
+        for session in advanced_sessions {
+            session.key.validate().map_err(|error| error.to_string())?;
+            if !session.established
+                || session.key.conversation_id != input.conversation_id
+                || !session_ids.insert(session.session_id.as_str())
+            {
+                return Err("messaging Direct interaction session binding mismatch".to_string());
+            }
+        }
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        persist_interaction_command(&transaction, input)?;
+        for session in advanced_sessions {
+            upsert_direct_session(&transaction, session)?;
+        }
+        for (session_id, init_bytes) in session_inits {
+            if !session_ids.contains(session_id.as_str()) || init_bytes.is_empty() {
+                return Err("messaging Direct interaction session init mismatch".to_string());
+            }
+            let changed = transaction
+                .execute(
+                    "INSERT INTO direct_session_bootstraps(session_id, init_bytes)
+                     VALUES (?1, ?2)
+                     ON CONFLICT(session_id) DO UPDATE SET init_bytes=excluded.init_bytes
+                     WHERE direct_session_bootstraps.init_bytes = excluded.init_bytes",
+                    params![session_id, init_bytes],
+                )
+                .map_err(|error| error.to_string())?;
+            if changed != 1 {
+                return Err(
+                    "messaging Direct interaction session init conflicts with stored bytes"
+                        .to_string(),
+                );
+            }
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    pub fn persist_mls_interaction_command(
+        &self,
+        input: &InteractionCommandCommit<'_>,
+        session_state: &[u8],
+        membership_epoch: i64,
+        mls_epoch: i64,
+    ) -> Result<(), String> {
+        if session_state.is_empty() || membership_epoch < 0 || mls_epoch < 0 {
+            return Err("messaging MLS interaction state is incomplete".to_string());
+        }
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        persist_interaction_command(&transaction, input)?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_mls_groups(
+                    conversation_id, session_state, membership_epoch,
+                    mls_epoch, updated_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(conversation_id) DO UPDATE SET
+                    session_state=excluded.session_state,
+                    membership_epoch=excluded.membership_epoch,
+                    mls_epoch=excluded.mls_epoch,
+                    updated_at_unix_ms=excluded.updated_at_unix_ms",
+                params![
+                    input.conversation_id,
+                    session_state,
+                    membership_epoch,
+                    mls_epoch,
+                    input.created_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
     pub fn create_membership_intent(&self, intent: &PendingMembershipIntent) -> Result<(), String> {
         if intent.intent_id.trim().is_empty()
             || intent.conversation_id.trim().is_empty()
@@ -733,6 +931,49 @@ impl MessagingStore {
             .map_err(|error| error.to_string())
     }
 
+    pub fn next_delivery_receipt(&self) -> Result<Option<DeliveryReceiptOutboxEntry>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT receipt_id, receipt_bytes
+                 FROM messaging_receipt_outbox
+                 WHERE state = 'pending'
+                   AND receipt_id LIKE 'message-delivered:%'
+                 ORDER BY created_at_unix_ms ASC, receipt_id ASC
+                 LIMIT 1",
+                [],
+                |row| {
+                    Ok(DeliveryReceiptOutboxEntry {
+                        receipt_id: row.get(0)?,
+                        receipt_bytes: row.get(1)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn mark_delivery_receipt_submitted(
+        &self,
+        receipt_id: &str,
+        receipt_bytes: &[u8],
+    ) -> Result<(), String> {
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE messaging_receipt_outbox
+                 SET state = 'submitted'
+                 WHERE receipt_id = ?1
+                   AND receipt_bytes = ?2
+                   AND state = 'pending'",
+                params![receipt_id, receipt_bytes],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging delivery receipt transition mismatch".to_string());
+        }
+        Ok(())
+    }
+
     pub fn mark_command_submitted(
         &self,
         command_id: &str,
@@ -794,10 +1035,22 @@ impl MessagingStore {
                 params![command_id],
             )
             .map_err(|error| error.to_string())?;
+        let interaction_changed = transaction
+            .execute(
+                "UPDATE messaging_interaction_intents SET state = 'submitted'
+                 WHERE command_id = ?1 AND state IN ('prepared', 'submitted')",
+                params![command_id],
+            )
+            .map_err(|error| error.to_string())?;
         if local_changed != 1
             || outbox_changed != 1
             || attempt_changed != 1
-            || !pending_owner_transition_is_valid(&transaction, command_id, pending_changed)?
+            || !pending_owner_transition_is_valid(
+                &transaction,
+                command_id,
+                pending_changed,
+                interaction_changed,
+            )?
         {
             return Err("messaging command submission was not fenced".to_string());
         }
@@ -866,8 +1119,20 @@ impl MessagingStore {
                 params![command_id],
             )
             .map_err(|error| error.to_string())?;
+        let interaction_changed = transaction
+            .execute(
+                "UPDATE messaging_interaction_intents SET state = 'retry_wait'
+                 WHERE command_id = ?1 AND state IN ('prepared', 'retry_wait')",
+                params![command_id],
+            )
+            .map_err(|error| error.to_string())?;
         if attempt_changed != 1
-            || !pending_owner_transition_is_valid(&transaction, command_id, pending_changed)?
+            || !pending_owner_transition_is_valid(
+                &transaction,
+                command_id,
+                pending_changed,
+                interaction_changed,
+            )?
         {
             return Err("messaging command retry projection was not fenced".to_string());
         }
@@ -931,10 +1196,22 @@ impl MessagingStore {
                 params![command_id],
             )
             .map_err(|error| error.to_string())?;
+        let interaction_changed = transaction
+            .execute(
+                "UPDATE messaging_interaction_intents SET state = 'failed'
+                 WHERE command_id = ?1 AND state IN ('prepared', 'retry_wait')",
+                params![command_id],
+            )
+            .map_err(|error| error.to_string())?;
         if local_changed != 1
             || outbox_changed != 1
             || attempt_changed != 1
-            || !pending_owner_transition_is_valid(&transaction, command_id, pending_changed)?
+            || !pending_owner_transition_is_valid(
+                &transaction,
+                command_id,
+                pending_changed,
+                interaction_changed,
+            )?
         {
             return Err("messaging command failure was not fenced".to_string());
         }
@@ -1003,6 +1280,13 @@ impl MessagingStore {
                 params![command_id],
             )
             .map_err(|error| error.to_string())?;
+        let interaction_changed = transaction
+            .execute(
+                "UPDATE messaging_interaction_intents SET state = 'superseded'
+                 WHERE command_id = ?1 AND state IN ('prepared', 'retry_wait')",
+                params![command_id],
+            )
+            .map_err(|error| error.to_string())?;
         let pending_transition_deleted = transaction
             .execute(
                 "DELETE FROM messaging_mls_pending_transitions
@@ -1013,8 +1297,12 @@ impl MessagingStore {
         if local_changed != 1
             || outbox_changed != 1
             || attempt_changed != 1
-            || !(pending_owner_transition_is_valid(&transaction, command_id, pending_changed)?
-                || (membership_intent_changed == 1 && pending_transition_deleted == 1))
+            || !(pending_owner_transition_is_valid(
+                &transaction,
+                command_id,
+                pending_changed,
+                interaction_changed,
+            )? || (membership_intent_changed == 1 && pending_transition_deleted == 1))
         {
             return Err("messaging command supersede was not fenced".to_string());
         }
@@ -1305,7 +1593,8 @@ impl MessagingStore {
             .query_row(
                 "SELECT event_id, event_sequence, sender_ptid, sender_device_id,
                         plaintext, delivery_state, committed_at_unix_ms,
-                        reply_to_message_id, edited_text, edited_at_unix_ms, retracted
+                        reply_to_message_id, thread_root_message_id,
+                        edited_text, edited_at_unix_ms, retracted
                  FROM messaging_message_projections
                  WHERE conversation_id = ?1 AND message_id = ?2",
                 params![conversation_id, message_id],
@@ -1323,9 +1612,10 @@ impl MessagingStore {
                             attachments: Vec::new(),
                             committed_at_unix_ms: row.get(6)?,
                             reply_to_message_id: row.get(7)?,
-                            edited_text: row.get(8)?,
-                            edited_at_unix_ms: row.get(9)?,
-                            retracted: row.get::<_, i64>(10).unwrap_or(0) != 0,
+                            thread_root_message_id: row.get(8)?,
+                            edited_text: row.get(9)?,
+                            edited_at_unix_ms: row.get(10)?,
+                            retracted: row.get::<_, i64>(11).unwrap_or(0) != 0,
                         },
                         delivery_state,
                     ))
@@ -1381,6 +1671,354 @@ impl MessagingStore {
         Ok(Some((projection, delivery_state)))
     }
 
+    #[cfg(test)]
+    pub(crate) fn insert_test_message_projection(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        delivery_state: &str,
+    ) -> Result<(), String> {
+        self.connection()?
+            .execute(
+                "INSERT INTO messaging_message_projections(
+                    conversation_id, event_id, event_sequence, message_id,
+                    sender_ptid, sender_device_id, plaintext,
+                    delivery_state, committed_at_unix_ms
+                 ) VALUES (?1, ?2, 1, ?3, 'ptid:alice', 'alice-device', 'hello', ?4, 100)",
+                params![
+                    conversation_id,
+                    format!("event:{message_id}"),
+                    message_id,
+                    delivery_state
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    pub fn commit_delivery_receipt(
+        &self,
+        input: &DeliveryReceiptReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        let target_rank = match input.delivery_state {
+            "delivered" => 1,
+            "read" => 2,
+            _ => return Err("messaging delivery state is invalid".to_string()),
+        };
+        if input.item_id.trim().is_empty()
+            || input.message_id.trim().is_empty()
+            || input.conversation_id.trim().is_empty()
+            || input.lane_sequence <= 0
+            || input.consumer_epoch == 0
+            || input.payload_sha256.len() != 32
+            || input.consumed_at_unix_ms <= 0
+        {
+            return Err("messaging delivery receipt commit is incomplete".to_string());
+        }
+
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let existing_hash = transaction
+            .query_row(
+                "SELECT payload_sha256 FROM messaging_consumption_markers WHERE item_id = ?1",
+                params![input.item_id],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if let Some(existing_hash) = existing_hash {
+            if existing_hash == input.payload_sha256 {
+                return Ok(ReceiveCommitResult::AlreadyCommitted);
+            }
+            return Err("messaging consumption marker payload hash mismatch".to_string());
+        }
+
+        let claimed = transaction
+            .query_row(
+                "SELECT event_id, conversation_id, lane_sequence, consumer_epoch, payload_sha256
+                 FROM messaging_inbox_items WHERE item_id = ?1 AND state = 'claimed'",
+                params![input.item_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging claimed inbox item is unavailable".to_string())?;
+        if claimed.0 != input.message_id
+            || claimed.1 != input.conversation_id
+            || claimed.2 != input.lane_sequence
+            || claimed.3
+                != i64::try_from(input.consumer_epoch).map_err(|_| "consumer epoch exceeds i64")?
+            || claimed.4 != input.payload_sha256
+        {
+            return Err("messaging claimed inbox item binding mismatch".to_string());
+        }
+
+        let cursor = transaction
+            .query_row(
+                "SELECT lane_sequence, consumer_epoch FROM messaging_lane_cursor WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let expected_sequence = cursor.map(|value| value.0 + 1).unwrap_or(1);
+        if input.lane_sequence != expected_sequence
+            || cursor
+                .map(|value| i64::try_from(input.consumer_epoch).unwrap_or(i64::MAX) < value.1)
+                .unwrap_or(false)
+        {
+            return Err("messaging receive is not the next fenced lane item".to_string());
+        }
+
+        let changed = transaction
+            .execute(
+                "UPDATE messaging_message_projections
+                 SET delivery_state = ?1
+                 WHERE conversation_id = ?2
+                   AND message_id = ?3
+                   AND CASE delivery_state
+                         WHEN 'read' THEN 2
+                         WHEN 'delivered' THEN 1
+                         ELSE 0
+                       END < ?4",
+                params![
+                    input.delivery_state,
+                    input.conversation_id,
+                    input.message_id,
+                    target_rank
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed == 0 {
+            let exists = transaction
+                .query_row(
+                    "SELECT 1
+                     FROM messaging_message_projections
+                     WHERE conversation_id = ?1 AND message_id = ?2",
+                    params![input.conversation_id, input.message_id],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .is_some();
+            if !exists {
+                return Err("messaging delivery receipt references an unknown message".to_string());
+            }
+        }
+
+        transaction
+            .execute(
+                "INSERT INTO messaging_consumption_markers(
+                    item_id, event_id, conversation_id, payload_sha256, consumed_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    input.item_id,
+                    input.message_id,
+                    input.conversation_id,
+                    input.payload_sha256,
+                    input.consumed_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_lane_cursor(id, lane_sequence, consumer_epoch, updated_at_unix_ms)
+                 VALUES (1, ?1, ?2, ?3)
+                 ON CONFLICT(id) DO UPDATE SET
+                    lane_sequence=excluded.lane_sequence,
+                    consumer_epoch=excluded.consumer_epoch,
+                    updated_at_unix_ms=excluded.updated_at_unix_ms",
+                params![
+                    input.lane_sequence,
+                    i64::try_from(input.consumer_epoch).map_err(|_| "consumer epoch exceeds i64")?,
+                    input.consumed_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let consumed = transaction
+            .execute(
+                "UPDATE messaging_inbox_items SET state = 'consumed'
+                 WHERE item_id = ?1 AND state = 'claimed'",
+                params![input.item_id],
+            )
+            .map_err(|error| error.to_string())?;
+        if consumed != 1 {
+            return Err("messaging delivery receipt inbox transition mismatch".to_string());
+        }
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(ReceiveCommitResult::Committed)
+    }
+
+    pub fn commit_actor_read_cursor(
+        &self,
+        input: &ActorReadReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        if input.item_id.trim().is_empty()
+            || input.event_id.trim().is_empty()
+            || input.conversation_id.trim().is_empty()
+            || input.reader_ptid.trim().is_empty()
+            || input.last_read_sequence <= 0
+            || input.lane_sequence <= 0
+            || input.consumer_epoch == 0
+            || input.payload_sha256.len() != 32
+            || input.consumed_at_unix_ms <= 0
+        {
+            return Err("messaging actor read commit is incomplete".to_string());
+        }
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let existing_hash = transaction
+            .query_row(
+                "SELECT payload_sha256 FROM messaging_consumption_markers WHERE item_id = ?1",
+                params![input.item_id],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if let Some(existing_hash) = existing_hash {
+            if existing_hash == input.payload_sha256 {
+                return Ok(ReceiveCommitResult::AlreadyCommitted);
+            }
+            return Err("messaging consumption marker payload hash mismatch".to_string());
+        }
+        let claimed = transaction
+            .query_row(
+                "SELECT event_id, conversation_id, lane_sequence, consumer_epoch, payload_sha256
+                 FROM messaging_inbox_items WHERE item_id = ?1 AND state = 'claimed'",
+                params![input.item_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging claimed inbox item is unavailable".to_string())?;
+        if claimed.0 != input.event_id
+            || claimed.1 != input.conversation_id
+            || claimed.2 != input.lane_sequence
+            || claimed.3
+                != i64::try_from(input.consumer_epoch).map_err(|_| "consumer epoch exceeds i64")?
+            || claimed.4 != input.payload_sha256
+        {
+            return Err("messaging claimed inbox item binding mismatch".to_string());
+        }
+        let cursor = transaction
+            .query_row(
+                "SELECT lane_sequence, consumer_epoch FROM messaging_lane_cursor WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let expected_sequence = cursor.map(|value| value.0 + 1).unwrap_or(1);
+        if input.lane_sequence != expected_sequence
+            || cursor
+                .map(|value| i64::try_from(input.consumer_epoch).unwrap_or(i64::MAX) < value.1)
+                .unwrap_or(false)
+        {
+            return Err("messaging receive is not the next fenced lane item".to_string());
+        }
+        transaction
+            .execute(
+                "INSERT INTO read_cursors(
+                    conversation_id, actor_ptid, last_read_sequence, updated_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(conversation_id, actor_ptid) DO UPDATE SET
+                    last_read_sequence = MAX(
+                        read_cursors.last_read_sequence,
+                        excluded.last_read_sequence
+                    ),
+                    updated_at_unix_ms = CASE
+                        WHEN excluded.last_read_sequence > read_cursors.last_read_sequence
+                        THEN excluded.updated_at_unix_ms
+                        ELSE read_cursors.updated_at_unix_ms
+                    END",
+                params![
+                    input.conversation_id,
+                    input.reader_ptid,
+                    input.last_read_sequence,
+                    input.consumed_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE messaging_message_projections
+                 SET delivery_state = 'read'
+                 WHERE conversation_id = ?1
+                   AND event_sequence <= ?2
+                   AND sender_ptid <> ?3
+                   AND delivery_state <> 'failed'",
+                params![
+                    input.conversation_id,
+                    input.last_read_sequence,
+                    input.reader_ptid
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_consumption_markers(
+                    item_id, event_id, conversation_id, payload_sha256, consumed_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    input.item_id,
+                    input.event_id,
+                    input.conversation_id,
+                    input.payload_sha256,
+                    input.consumed_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_lane_cursor(
+                    id, lane_sequence, consumer_epoch, updated_at_unix_ms
+                 ) VALUES (1, ?1, ?2, ?3)
+                 ON CONFLICT(id) DO UPDATE SET
+                    lane_sequence=excluded.lane_sequence,
+                    consumer_epoch=excluded.consumer_epoch,
+                    updated_at_unix_ms=excluded.updated_at_unix_ms",
+                params![
+                    input.lane_sequence,
+                    i64::try_from(input.consumer_epoch)
+                        .map_err(|_| "consumer epoch exceeds i64")?,
+                    input.consumed_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let consumed = transaction
+            .execute(
+                "UPDATE messaging_inbox_items SET state = 'consumed'
+                 WHERE item_id = ?1 AND state = 'claimed'",
+                params![input.item_id],
+            )
+            .map_err(|error| error.to_string())?;
+        if consumed != 1 {
+            return Err("messaging actor read inbox transition mismatch".to_string());
+        }
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(ReceiveCommitResult::Committed)
+    }
+
     pub fn conversation_message_projections(
         &self,
         conversation_id: &str,
@@ -1394,14 +2032,17 @@ impl MessagingStore {
                 "SELECT event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext,
                         delivery_state, committed_at_unix_ms,
-                        reply_to_message_id, edited_text, edited_at_unix_ms, retracted
+                        reply_to_message_id, thread_root_message_id,
+                        edited_text, edited_at_unix_ms, retracted
                  FROM messaging_message_projections
                  WHERE conversation_id = ?1
                  UNION ALL
                  SELECT NULL, NULL, pending.message_id,
                         pending.sender_ptid, pending.sender_device_id,
                         pending.plaintext, pending.state, pending.created_at_unix_ms,
-                        NULL, NULL, NULL, 0
+                        NULLIF(pending.reply_to_message_id, ''),
+                        NULLIF(pending.thread_root_message_id, ''),
+                        NULL, NULL, 0
                  FROM messaging_pending_messages pending
                  WHERE pending.conversation_id = ?1
                    AND NOT EXISTS (
@@ -1425,16 +2066,36 @@ impl MessagingStore {
                     state: row.get(6)?,
                     timestamp_unix_ms: row.get(7)?,
                     reply_to_message_id: row.get(8)?,
-                    edited_text: row.get(9)?,
-                    edited_at_unix_ms: row.get(10)?,
-                    retracted: row.get::<_, i64>(11).unwrap_or(0) != 0,
+                    thread_root_message_id: row.get(9)?,
+                    edited_text: row.get(10)?,
+                    edited_at_unix_ms: row.get(11)?,
+                    retracted: row.get::<_, i64>(12).unwrap_or(0) != 0,
+                    reactions: Vec::new(),
+                    pinned_by_ptid: None,
+                    pinned_at_unix_ms: None,
+                    read_by_ptids: Vec::new(),
                 })
             })
             .map_err(|error| error.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| error.to_string())?;
+        let pins = load_pins_for_conversation(&connection, conversation_id)?;
         for row in &mut rows {
             row.attachments = load_visible_message_attachments(&connection, &row.message_id)?;
+            row.reactions = load_reactions_for_message(&connection, &row.message_id)?;
+            row.read_by_ptids = load_readers_for_message(
+                &connection,
+                conversation_id,
+                row.event_sequence,
+                &row.sender_ptid,
+            )?;
+            if let Some((_, actor_ptid, pinned_at_unix_ms)) = pins
+                .iter()
+                .find(|(message_id, _, _)| message_id == &row.message_id)
+            {
+                row.pinned_by_ptid = Some(actor_ptid.clone());
+                row.pinned_at_unix_ms = Some(*pinned_at_unix_ms);
+            }
         }
         Ok(rows)
     }
@@ -1464,8 +2125,8 @@ impl MessagingStore {
                 "SELECT message.event_id, message.event_sequence, message.message_id,
                         message.sender_ptid, message.sender_device_id, message.plaintext,
                         message.delivery_state, message.committed_at_unix_ms,
-                        message.reply_to_message_id, message.edited_text,
-                        message.edited_at_unix_ms, message.retracted
+                        message.reply_to_message_id, message.thread_root_message_id,
+                        message.edited_text, message.edited_at_unix_ms, message.retracted
                  FROM messaging_message_search_fts
                  JOIN messaging_message_projections message
                    ON message.conversation_id = messaging_message_search_fts.conversation_id
@@ -1504,17 +2165,37 @@ impl MessagingStore {
                         state: row.get(6)?,
                         timestamp_unix_ms: row.get(7)?,
                         reply_to_message_id: row.get(8)?,
-                        edited_text: row.get(9)?,
-                        edited_at_unix_ms: row.get(10)?,
-                        retracted: row.get::<_, i64>(11).unwrap_or(0) != 0,
+                        thread_root_message_id: row.get(9)?,
+                        edited_text: row.get(10)?,
+                        edited_at_unix_ms: row.get(11)?,
+                        retracted: row.get::<_, i64>(12).unwrap_or(0) != 0,
+                        reactions: Vec::new(),
+                        pinned_by_ptid: None,
+                        pinned_at_unix_ms: None,
+                        read_by_ptids: Vec::new(),
                     })
                 },
             )
             .map_err(|error| error.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| error.to_string())?;
+        let pins = load_pins_for_conversation(&connection, conversation_id)?;
         for row in &mut rows {
             row.attachments = load_attachment_metadata(&connection, &row.message_id)?;
+            row.reactions = load_reactions_for_message(&connection, &row.message_id)?;
+            row.read_by_ptids = load_readers_for_message(
+                &connection,
+                conversation_id,
+                row.event_sequence,
+                &row.sender_ptid,
+            )?;
+            if let Some((_, actor_ptid, pinned_at_unix_ms)) = pins
+                .iter()
+                .find(|(message_id, _, _)| message_id == &row.message_id)
+            {
+                row.pinned_by_ptid = Some(actor_ptid.clone());
+                row.pinned_at_unix_ms = Some(*pinned_at_unix_ms);
+            }
         }
         Ok(rows)
     }
@@ -1714,10 +2395,11 @@ impl MessagingStore {
             .execute(
                 "INSERT INTO messaging_pending_messages(
                     conversation_id, conversation_kind, message_id,
-                    sender_ptid, sender_device_id, plaintext, state,
+                    sender_ptid, sender_device_id, plaintext,
+                    reply_to_message_id, thread_root_message_id, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
                     created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'draft', 0, ?7, '', ?7)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'draft', 0, ?9, '', ?9)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
@@ -1726,6 +2408,8 @@ impl MessagingStore {
                     draft.sender_ptid,
                     draft.sender_device_id,
                     draft.plaintext,
+                    draft.reply_to_message_id,
+                    draft.thread_root_message_id,
                     draft.created_at_unix_ms
                 ],
             )
@@ -1788,10 +2472,11 @@ impl MessagingStore {
             .execute(
                 "INSERT INTO messaging_pending_messages(
                     conversation_id, conversation_kind, message_id,
-                    sender_ptid, sender_device_id, plaintext, state,
+                    sender_ptid, sender_device_id, plaintext,
+                    reply_to_message_id, thread_root_message_id, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
                     created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'draft', 0, ?7, '', ?7)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'draft', 0, ?9, '', ?9)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
@@ -1800,6 +2485,8 @@ impl MessagingStore {
                     draft.sender_ptid,
                     draft.sender_device_id,
                     draft.plaintext,
+                    draft.reply_to_message_id,
+                    draft.thread_root_message_id,
                     draft.created_at_unix_ms
                 ],
             )
@@ -2600,6 +3287,7 @@ impl MessagingStore {
             .query_row(
                 "SELECT conversation_id, conversation_kind, message_id,
                         sender_ptid, sender_device_id, plaintext,
+                        reply_to_message_id, thread_root_message_id,
                         attempt_count, created_at_unix_ms
                  FROM messaging_pending_messages pending
                  WHERE state = 'draft'
@@ -2620,9 +3308,11 @@ impl MessagingStore {
                         sender_ptid: row.get(3)?,
                         sender_device_id: row.get(4)?,
                         plaintext: row.get(5)?,
+                        reply_to_message_id: row.get(6)?,
+                        thread_root_message_id: row.get(7)?,
                         attachments: Vec::new(),
-                        attempt_count: row.get(6)?,
-                        created_at_unix_ms: row.get(7)?,
+                        attempt_count: row.get(8)?,
+                        created_at_unix_ms: row.get(9)?,
                     })
                 },
             )
@@ -2648,6 +3338,7 @@ impl MessagingStore {
             .query_row(
                 "SELECT conversation_id, conversation_kind, message_id,
                         sender_ptid, sender_device_id, plaintext,
+                        reply_to_message_id, thread_root_message_id,
                         attempt_count, created_at_unix_ms
                  FROM messaging_pending_messages pending
                  WHERE message_id = ?1
@@ -2666,9 +3357,11 @@ impl MessagingStore {
                         sender_ptid: row.get(3)?,
                         sender_device_id: row.get(4)?,
                         plaintext: row.get(5)?,
+                        reply_to_message_id: row.get(6)?,
+                        thread_root_message_id: row.get(7)?,
                         attachments: Vec::new(),
-                        attempt_count: row.get(6)?,
-                        created_at_unix_ms: row.get(7)?,
+                        attempt_count: row.get(8)?,
+                        created_at_unix_ms: row.get(9)?,
                     })
                 },
             )
@@ -2937,6 +3630,7 @@ impl MessagingStore {
                  DELETE FROM messaging_lane_cursor;
                  DELETE FROM messaging_authority_heads;
                  DELETE FROM messaging_command_outbox;
+                 DELETE FROM messaging_interaction_intents;
                  DELETE FROM messaging_command_attempts;
                  DELETE FROM messaging_pending_messages;
                  DELETE FROM messaging_local_commands;
@@ -3207,6 +3901,13 @@ impl MessagingStore {
                     )
                     .map_err(|error| error.to_string())?;
             }
+            insert_delivery_receipt(
+                transaction,
+                input.delivery_receipt_id,
+                input.event_id,
+                input.delivery_receipt_bytes,
+                input.consumed_at_unix_ms,
+            )?;
             Ok(())
         })
     }
@@ -3219,7 +3920,9 @@ impl MessagingStore {
         input: &DirectEditCommit<'_>,
     ) -> Result<ReceiveCommitResult, String> {
         if input.message_id.trim().is_empty() || input.edited_at_unix_ms <= 0 {
-            return Err("messaging direct edit requires message_id and valid timestamp".to_string());
+            return Err(
+                "messaging direct edit requires message_id and valid timestamp".to_string(),
+            );
         }
         let core = ReceiveCommitCore {
             item_id: input.item_id,
@@ -3293,6 +3996,13 @@ impl MessagingStore {
             if changed == 0 {
                 return Err("messaging direct edit target message not found".to_string());
             }
+            insert_delivery_receipt(
+                transaction,
+                input.delivery_receipt_id,
+                input.event_id,
+                input.delivery_receipt_bytes,
+                input.consumed_at_unix_ms,
+            )?;
             Ok(())
         })
     }
@@ -3361,9 +4071,10 @@ impl MessagingStore {
                         conversation_id, event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext,
                         delivery_state, committed_at_unix_ms,
-                        reply_to_message_id, edited_text, edited_at_unix_ms, retracted
+                        reply_to_message_id, thread_root_message_id,
+                        edited_text, edited_at_unix_ms, retracted
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'accepted', ?8,
-                               NULL, NULL, NULL, 0)",
+                               ?9, ?10, NULL, NULL, 0)",
                     params![
                         input.conversation_id,
                         input.event_id,
@@ -3372,7 +4083,9 @@ impl MessagingStore {
                         input.sender_ptid,
                         input.sender_device_id,
                         pending.4,
-                        input.committed_at_unix_ms
+                        input.committed_at_unix_ms,
+                        input.reply_to_message_id,
+                        input.thread_root_message_id
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -3410,6 +4123,209 @@ impl MessagingStore {
                 .map_err(|error| error.to_string())?;
             if deleted != 1 || attempt_updated != 1 || command_updated != 1 || outbox_updated != 1 {
                 return Err("messaging public-event command transition mismatch".to_string());
+            }
+            Ok(())
+        })
+    }
+
+    pub fn commit_interaction_event(
+        &self,
+        input: &InteractionReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        if input.message_id.trim().is_empty() {
+            return Err("messaging interaction target message is required".to_string());
+        }
+        let core = ReceiveCommitCore {
+            item_id: input.item_id,
+            event_id: input.event_id,
+            conversation_id: input.conversation_id,
+            lane_sequence: input.lane_sequence,
+            consumer_epoch: input.consumer_epoch,
+            payload_sha256: input.payload_sha256,
+            event_hash: input.event_hash,
+            previous_event_hash: input.previous_event_hash,
+            event_sequence: input.event_sequence,
+            allow_join_checkpoint: false,
+            projection: None,
+            receipt_id: input.receipt_id,
+            receipt_bytes: input.receipt_bytes,
+            consumed_at_unix_ms: input.consumed_at_unix_ms,
+        };
+        self.commit_receive_core(&core, ReceiveFailPoint::None, |transaction| {
+            if let Some(session_state) = input.mls_session_state {
+                if session_state.is_empty() || input.membership_epoch < 0 || input.mls_epoch < 0 {
+                    return Err("messaging interaction MLS state is incomplete".to_string());
+                }
+                transaction
+                    .execute(
+                        "INSERT INTO messaging_mls_groups(
+                            conversation_id, session_state, membership_epoch,
+                            mls_epoch, updated_at_unix_ms
+                         ) VALUES (?1, ?2, ?3, ?4, ?5)
+                         ON CONFLICT(conversation_id) DO UPDATE SET
+                            session_state=excluded.session_state,
+                            membership_epoch=excluded.membership_epoch,
+                            mls_epoch=excluded.mls_epoch,
+                            updated_at_unix_ms=excluded.updated_at_unix_ms",
+                        params![
+                            input.conversation_id,
+                            session_state,
+                            input.membership_epoch,
+                            input.mls_epoch,
+                            input.consumed_at_unix_ms
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
+            let message_exists = transaction
+                .query_row(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM messaging_message_projections
+                        WHERE conversation_id = ?1 AND message_id = ?2
+                    )",
+                    params![input.conversation_id, input.message_id],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(|error| error.to_string())?;
+            if !message_exists {
+                return Err("messaging interaction target message not found".to_string());
+            }
+            match &input.mutation {
+                InteractionMutation::Edit {
+                    edited_text,
+                    edited_at_unix_ms,
+                } => {
+                    if *edited_at_unix_ms <= 0 {
+                        return Err("messaging edit timestamp is invalid".to_string());
+                    }
+                    let durable_edited_text = if edited_text.is_empty() {
+                        transaction
+                            .query_row(
+                                "SELECT edited_text FROM messaging_interaction_intents
+                                 WHERE command_id = ?1 AND interaction_kind = 'edit'",
+                                params![input.command_id],
+                                |row| row.get::<_, Option<String>>(0),
+                            )
+                            .optional()
+                            .map_err(|error| error.to_string())?
+                            .flatten()
+                    } else {
+                        Some((*edited_text).to_string())
+                    };
+                    let edited_text = durable_edited_text.ok_or_else(|| {
+                        "messaging sender edit content is unavailable".to_string()
+                    })?;
+                    transaction
+                        .execute(
+                            "UPDATE messaging_message_projections
+                             SET edited_text = ?1, edited_at_unix_ms = ?2
+                             WHERE conversation_id = ?3 AND message_id = ?4",
+                            params![
+                                edited_text,
+                                edited_at_unix_ms,
+                                input.conversation_id,
+                                input.message_id
+                            ],
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+                InteractionMutation::Retract => {
+                    transaction
+                        .execute(
+                            "UPDATE messaging_message_projections
+                             SET retracted = 1
+                             WHERE conversation_id = ?1 AND message_id = ?2",
+                            params![input.conversation_id, input.message_id],
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+                InteractionMutation::Reaction {
+                    actor_ptid,
+                    reaction,
+                    removed,
+                    created_at_unix_ms,
+                } => {
+                    if actor_ptid.trim().is_empty()
+                        || reaction.trim().is_empty()
+                        || *created_at_unix_ms <= 0
+                    {
+                        return Err("messaging reaction is incomplete".to_string());
+                    }
+                    if *removed {
+                        transaction.execute(
+                            "DELETE FROM message_reactions
+                             WHERE message_id = ?1 AND actor_ptid = ?2 AND reaction = ?3",
+                            params![input.message_id, actor_ptid, reaction],
+                        )
+                    } else {
+                        transaction.execute(
+                            "INSERT OR IGNORE INTO message_reactions(
+                                message_id, actor_ptid, reaction, created_at_unix_ms
+                             ) VALUES (?1, ?2, ?3, ?4)",
+                            params![input.message_id, actor_ptid, reaction, created_at_unix_ms],
+                        )
+                    }
+                    .map_err(|error| error.to_string())?;
+                }
+                InteractionMutation::Pin {
+                    actor_ptid,
+                    removed,
+                    pinned_at_unix_ms,
+                } => {
+                    if actor_ptid.trim().is_empty() || *pinned_at_unix_ms <= 0 {
+                        return Err("messaging pin is incomplete".to_string());
+                    }
+                    if *removed {
+                        transaction.execute(
+                            "DELETE FROM message_pins
+                             WHERE conversation_id = ?1 AND message_id = ?2",
+                            params![input.conversation_id, input.message_id],
+                        )
+                    } else {
+                        transaction.execute(
+                            "INSERT OR REPLACE INTO message_pins(
+                                conversation_id, message_id, actor_ptid, pinned_at_unix_ms
+                             ) VALUES (?1, ?2, ?3, ?4)",
+                            params![
+                                input.conversation_id,
+                                input.message_id,
+                                actor_ptid,
+                                pinned_at_unix_ms
+                            ],
+                        )
+                    }
+                    .map_err(|error| error.to_string())?;
+                }
+            }
+            let local_command_exists = transaction
+                .query_row(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM messaging_interaction_intents
+                        WHERE command_id = ?1
+                    )",
+                    params![input.command_id],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(|error| error.to_string())?;
+            if local_command_exists {
+                for table in [
+                    "messaging_local_commands",
+                    "messaging_command_outbox",
+                    "messaging_command_attempts",
+                    "messaging_interaction_intents",
+                ] {
+                    let changed = transaction
+                        .execute(
+                            &format!(
+                                "UPDATE {table} SET state = 'committed' WHERE command_id = ?1"
+                            ),
+                            params![input.command_id],
+                        )
+                        .map_err(|error| error.to_string())?;
+                    if changed != 1 {
+                        return Err("messaging interaction command transition mismatch".to_string());
+                    }
+                }
             }
             Ok(())
         })
@@ -4572,9 +5488,10 @@ impl MessagingStore {
                         conversation_id, event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext,
                         delivery_state, committed_at_unix_ms,
-                        reply_to_message_id, edited_text, edited_at_unix_ms, retracted
+                        reply_to_message_id, thread_root_message_id,
+                        edited_text, edited_at_unix_ms, retracted
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'consumed', ?8,
-                               ?9, NULL, NULL, 0)
+                               ?9, ?10, NULL, NULL, 0)
                      ON CONFLICT(conversation_id, event_id) DO NOTHING",
                     params![
                         projection.conversation_id,
@@ -4585,7 +5502,8 @@ impl MessagingStore {
                         projection.sender_device_id,
                         projection.plaintext,
                         projection.committed_at_unix_ms,
-                        projection.reply_to_message_id
+                        projection.reply_to_message_id,
+                        projection.thread_root_message_id
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -4733,114 +5651,6 @@ impl MessagingStore {
         Ok(ReceiveCommitResult::Committed)
     }
 
-    // --- Edit, Retract, Reactions, Pins, Read Cursors ---
-
-    /// Apply an edit to a previously committed message projection.
-    /// Returns Ok(()) even if no row matched (idempotent).
-    pub fn apply_message_edit(
-        &self,
-        message_id: &str,
-        edited_text: &str,
-        edited_at_unix_ms: i64,
-    ) -> Result<(), String> {
-        let connection = self.connection()?;
-        if edited_text.is_empty() {
-            connection
-                .execute(
-                    "UPDATE messaging_message_projections
-                     SET edited_at_unix_ms = ?1
-                     WHERE message_id = ?2",
-                    params![edited_at_unix_ms, message_id],
-                )
-                .map_err(|error| format!("messaging store apply_message_edit: {error}"))?;
-        } else {
-            connection
-                .execute(
-                    "UPDATE messaging_message_projections
-                     SET edited_text = ?1, edited_at_unix_ms = ?2
-                     WHERE message_id = ?3",
-                    params![edited_text, edited_at_unix_ms, message_id],
-                )
-                .map_err(|error| format!("messaging store apply_message_edit: {error}"))?;
-        }
-        Ok(())
-    }
-
-    /// Mark a message as retracted/deleted.
-    /// Returns Ok(()) even if no row matched (idempotent).
-    pub fn apply_message_retract(&self, message_id: &str) -> Result<(), String> {
-        let connection = self.connection()?;
-        connection
-            .execute(
-                "UPDATE messaging_message_projections
-                 SET retracted = 1
-                 WHERE message_id = ?1",
-                params![message_id],
-            )
-            .map_err(|error| format!("messaging store apply_message_retract: {error}"))?;
-        Ok(())
-    }
-
-    /// Add or remove a reaction on a message.
-    pub fn apply_reaction(
-        &self,
-        message_id: &str,
-        actor_ptid: &str,
-        reaction: &str,
-        removed: bool,
-        created_at_unix_ms: i64,
-    ) -> Result<(), String> {
-        let connection = self.connection()?;
-        if removed {
-            connection
-                .execute(
-                    "DELETE FROM message_reactions
-                     WHERE message_id = ?1 AND actor_ptid = ?2 AND reaction = ?3",
-                    params![message_id, actor_ptid, reaction],
-                )
-                .map_err(|error| format!("messaging store apply_reaction delete: {error}"))?;
-        } else {
-            connection
-                .execute(
-                    "INSERT OR REPLACE INTO message_reactions(message_id, actor_ptid, reaction, created_at_unix_ms)
-                     VALUES (?1, ?2, ?3, ?4)",
-                    params![message_id, actor_ptid, reaction, created_at_unix_ms],
-                )
-                .map_err(|error| format!("messaging store apply_reaction insert: {error}"))?;
-        }
-        Ok(())
-    }
-
-    /// Add or remove a pin on a message within a conversation.
-    pub fn apply_pin(
-        &self,
-        conversation_id: &str,
-        message_id: &str,
-        actor_ptid: &str,
-        removed: bool,
-        pinned_at_unix_ms: i64,
-    ) -> Result<(), String> {
-        let connection = self.connection()?;
-        if removed {
-            connection
-                .execute(
-                    "DELETE FROM message_pins
-                     WHERE conversation_id = ?1 AND message_id = ?2",
-                    params![conversation_id, message_id],
-                )
-                .map_err(|error| format!("messaging store apply_pin delete: {error}"))?;
-        } else {
-            connection
-                .execute(
-                    "INSERT OR REPLACE INTO message_pins(conversation_id, message_id, actor_ptid, pinned_at_unix_ms)
-                     VALUES (?1, ?2, ?3, ?4)",
-                    params![conversation_id, message_id, actor_ptid, pinned_at_unix_ms],
-                )
-                .map_err(|error| format!("messaging store apply_pin insert: {error}"))?;
-        }
-        Ok(())
-    }
-
     /// Update the read cursor for a participant in a conversation.
     /// Uses MAX to ensure the cursor only advances forward.
     pub fn update_read_cursor(
@@ -4864,6 +5674,22 @@ impl MessagingStore {
         Ok(())
     }
 
+    pub fn read_cursor(
+        &self,
+        conversation_id: &str,
+        actor_ptid: &str,
+    ) -> Result<Option<i64>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT last_read_sequence FROM read_cursors
+                 WHERE conversation_id = ?1 AND actor_ptid = ?2",
+                params![conversation_id, actor_ptid],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| format!("messaging store read_cursor: {error}"))
+    }
+
     /// Returns all reactions for a message as (actor_ptid, reaction, created_at_unix_ms).
     pub fn reactions_for_message(
         &self,
@@ -4873,22 +5699,7 @@ impl MessagingStore {
             return Err("messaging reactions query requires message_id".to_string());
         }
         let connection = self.connection()?;
-        let mut statement = connection
-            .prepare(
-                "SELECT actor_ptid, reaction, created_at_unix_ms
-                 FROM message_reactions
-                 WHERE message_id = ?1
-                 ORDER BY created_at_unix_ms ASC",
-            )
-            .map_err(|error| error.to_string())?;
-        let rows = statement
-            .query_map(params![message_id], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        Ok(rows)
+        load_reactions_for_message(&connection, message_id)
     }
 
     /// Returns all pins for a conversation as (message_id, actor_ptid, pinned_at_unix_ms).
@@ -4900,58 +5711,332 @@ impl MessagingStore {
             return Err("messaging pins query requires conversation_id".to_string());
         }
         let connection = self.connection()?;
-        let mut statement = connection
-            .prepare(
-                "SELECT message_id, actor_ptid, pinned_at_unix_ms
-                 FROM message_pins
-                 WHERE conversation_id = ?1
-                 ORDER BY pinned_at_unix_ms ASC",
-            )
-            .map_err(|error| error.to_string())?;
-        let rows = statement
-            .query_map(params![conversation_id], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        Ok(rows)
+        load_pins_for_conversation(&connection, conversation_id)
     }
 
-    /// Mark a claimed item as consumed after successful processing.
-    /// Returns Ok(()) even if no row matched (idempotent).
-    pub fn mark_consumed(
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn acceptance_interaction_snapshot(
         &self,
-        item_id: &str,
-        event_id: &str,
         conversation_id: &str,
-        payload_sha256: &[u8],
-        now: i64,
-    ) -> Result<(), String> {
+        message_id: &str,
+        command_id: &str,
+    ) -> Result<serde_json::Value, String> {
+        if conversation_id.trim().is_empty() || message_id.trim().is_empty() {
+            return Err("acceptance interaction snapshot requires conversation and message".into());
+        }
         let connection = self.connection()?;
-        connection
-            .execute(
-                "UPDATE messaging_inbox_items
-                 SET state = 'consumed'
-                 WHERE item_id = ?1 AND payload_sha256 = ?2",
-                params![item_id, payload_sha256],
+        let projection = connection
+            .query_row(
+                "SELECT event_id, event_sequence, delivery_state,
+                        reply_to_message_id, thread_root_message_id,
+                        edited_text, edited_at_unix_ms, retracted
+                 FROM messaging_message_projections
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params![conversation_id, message_id],
+                |row| {
+                    Ok(serde_json::json!({
+                        "eventId": row.get::<_, String>(0)?,
+                        "eventSequence": row.get::<_, i64>(1)?,
+                        "deliveryState": row.get::<_, String>(2)?,
+                        "replyToMessageId": row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                        "threadRootMessageId": row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                        "editedTextSha256": row
+                            .get::<_, Option<String>>(5)?
+                            .map(|value| hex::encode(Sha256::digest(value.as_bytes())))
+                            .unwrap_or_default(),
+                        "editedAtUnixMs": row.get::<_, Option<i64>>(6)?.unwrap_or_default(),
+                        "retracted": row.get::<_, i64>(7)? != 0,
+                    }))
+                },
             )
-            .map_err(|error| format!("messaging store mark_consumed: {error}"))?;
-        connection
-            .execute(
-                "INSERT OR IGNORE INTO messaging_consumption_markers(
-                    item_id, event_id, conversation_id, payload_sha256, consumed_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![item_id, event_id, conversation_id, payload_sha256, now],
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let intent = if command_id.trim().is_empty() {
+            None
+        } else {
+            connection
+                .query_row(
+                    "SELECT intent.interaction_kind, intent.state, command.command_bytes
+                     FROM messaging_interaction_intents intent
+                     JOIN messaging_local_commands command USING(command_id)
+                     WHERE intent.command_id = ?1",
+                    params![command_id],
+                    |row| {
+                        Ok(serde_json::json!({
+                            "commandId": command_id,
+                            "kind": row.get::<_, String>(0)?,
+                            "state": row.get::<_, String>(1)?,
+                            "commandSha256": hex::encode(Sha256::digest(
+                                row.get::<_, Vec<u8>>(2)?.as_slice()
+                            )),
+                        }))
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+        };
+        let outbox = if command_id.trim().is_empty() {
+            None
+        } else {
+            connection
+                .query_row(
+                    "SELECT state, attempt_count, next_attempt_at_unix_ms,
+                            last_error_code, command_bytes
+                     FROM messaging_command_outbox
+                     WHERE command_id = ?1",
+                    params![command_id],
+                    |row| {
+                        Ok(serde_json::json!({
+                            "state": row.get::<_, String>(0)?,
+                            "attemptCount": row.get::<_, i64>(1)?,
+                            "nextAttemptAtUnixMs": row.get::<_, i64>(2)?,
+                            "lastErrorCode": row.get::<_, String>(3)?,
+                            "commandSha256": hex::encode(Sha256::digest(
+                                row.get::<_, Vec<u8>>(4)?.as_slice()
+                            )),
+                        }))
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+        };
+        let direct_sessions = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT session_id, generation, self_public_key,
+                            peer_ratchet_public_key, root_key,
+                            send_chain_key, receive_chain_key,
+                            send_counter, receive_counter, previous_counter,
+                            updated_at_unix_ms
+                     FROM direct_sessions
+                     WHERE conversation_id = ?1
+                     ORDER BY generation DESC, session_id",
+                )
+                .map_err(|error| error.to_string())?;
+            let sessions = statement
+                .query_map(params![conversation_id], |row| {
+                    let digest = |value: Option<Vec<u8>>| {
+                        value
+                            .map(|bytes| hex::encode(Sha256::digest(bytes)))
+                            .unwrap_or_default()
+                    };
+                    Ok(serde_json::json!({
+                        "sessionId": row.get::<_, String>(0)?,
+                        "generation": row.get::<_, i64>(1)?,
+                        "selfPublicKey": hex::encode(row.get::<_, Vec<u8>>(2)?),
+                        "peerPublicKey": row
+                            .get::<_, Option<Vec<u8>>>(3)?
+                            .map(hex::encode)
+                            .unwrap_or_default(),
+                        "rootKeySha256": digest(Some(row.get::<_, Vec<u8>>(4)?)),
+                        "sendChainSha256": digest(row.get::<_, Option<Vec<u8>>>(5)?),
+                        "receiveChainSha256": digest(row.get::<_, Option<Vec<u8>>>(6)?),
+                        "sendCounter": row.get::<_, i64>(7)?,
+                        "receiveCounter": row.get::<_, i64>(8)?,
+                        "previousCounter": row.get::<_, i64>(9)?,
+                        "updatedAtUnixMs": row.get::<_, i64>(10)?,
+                    }))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            sessions
+        };
+        let command_ledger = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT attempt.command_id, attempt.message_id, attempt.state,
+                            local.state, outbox.state, outbox.attempt_count,
+                            outbox.last_error_code, pending.state,
+                            pending.attempt_count, pending.last_error_code,
+                            pending.next_attempt_at_unix_ms
+                     FROM messaging_command_attempts attempt
+                     JOIN messaging_local_commands local USING(command_id)
+                     JOIN messaging_command_outbox outbox USING(command_id)
+                     LEFT JOIN messaging_pending_messages pending
+                       ON pending.conversation_id = attempt.conversation_id
+                      AND pending.message_id = attempt.message_id
+                     WHERE attempt.conversation_id = ?1
+                     ORDER BY attempt.created_at_unix_ms, attempt.command_id",
+                )
+                .map_err(|error| error.to_string())?;
+            let commands = statement
+                .query_map(params![conversation_id], |row| {
+                    Ok(serde_json::json!({
+                        "commandId": row.get::<_, String>(0)?,
+                        "messageId": row.get::<_, String>(1)?,
+                        "attemptState": row.get::<_, String>(2)?,
+                        "localState": row.get::<_, String>(3)?,
+                        "outboxState": row.get::<_, String>(4)?,
+                        "outboxAttemptCount": row.get::<_, i64>(5)?,
+                        "outboxErrorCode": row.get::<_, String>(6)?,
+                        "draftState": row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+                        "draftAttemptCount": row.get::<_, Option<i64>>(8)?.unwrap_or_default(),
+                        "draftErrorCode": row.get::<_, Option<String>>(9)?.unwrap_or_default(),
+                        "draftNextAttemptAtUnixMs": row
+                            .get::<_, Option<i64>>(10)?
+                            .unwrap_or_default(),
+                    }))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            commands
+        };
+        let reactions = load_reactions_for_message(&connection, message_id)?
+            .into_iter()
+            .map(|(actor_ptid, reaction, created_at_unix_ms)| {
+                serde_json::json!({
+                    "actorPtid": actor_ptid,
+                    "reaction": reaction,
+                    "createdAtUnixMs": created_at_unix_ms,
+                })
+            })
+            .collect::<Vec<_>>();
+        let pins = load_pins_for_conversation(&connection, conversation_id)?
+            .into_iter()
+            .filter(|(candidate, _, _)| candidate == message_id)
+            .map(|(_, actor_ptid, pinned_at_unix_ms)| {
+                serde_json::json!({
+                    "actorPtid": actor_ptid,
+                    "pinnedAtUnixMs": pinned_at_unix_ms,
+                })
+            })
+            .collect::<Vec<_>>();
+        let read_cursors = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT actor_ptid, last_read_sequence
+                     FROM read_cursors
+                     WHERE conversation_id = ?1
+                     ORDER BY actor_ptid",
+                )
+                .map_err(|error| error.to_string())?;
+            let cursors = statement
+                .query_map(params![conversation_id], |row| {
+                    Ok(serde_json::json!({
+                        "actorPtid": row.get::<_, String>(0)?,
+                        "lastReadSequence": row.get::<_, i64>(1)?,
+                    }))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            cursors
+        };
+        let consumption_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_consumption_markers
+                 WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| row.get::<_, i64>(0),
             )
-            .map_err(|error| format!("messaging store mark_consumed marker: {error}"))?;
-        Ok(())
+            .map_err(|error| error.to_string())?;
+        let (lane_sequence, consumer_epoch) = connection
+            .query_row(
+                "SELECT lane_sequence, consumer_epoch
+                 FROM messaging_lane_cursor WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .unwrap_or_default();
+        Ok(serde_json::json!({
+            "conversationId": conversation_id,
+            "messageId": message_id,
+            "projection": projection,
+            "intent": intent,
+            "outbox": outbox,
+            "directSessions": direct_sessions,
+            "commandLedger": command_ledger,
+            "reactions": reactions,
+            "pins": pins,
+            "readCursors": read_cursors,
+            "consumptionCount": consumption_count,
+            "laneSequence": lane_sequence,
+            "consumerEpoch": consumer_epoch,
+        }))
     }
 
     #[cfg(test)]
     pub(super) fn in_memory() -> Result<Self, String> {
         Self::from_connection(Connection::open_in_memory().map_err(|error| error.to_string())?)
     }
+}
+
+fn load_reactions_for_message(
+    connection: &Connection,
+    message_id: &str,
+) -> Result<Vec<(String, String, i64)>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT actor_ptid, reaction, created_at_unix_ms
+             FROM message_reactions
+             WHERE message_id = ?1
+             ORDER BY created_at_unix_ms ASC",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![message_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    Ok(rows)
+}
+
+fn load_readers_for_message(
+    connection: &Connection,
+    conversation_id: &str,
+    event_sequence: Option<i64>,
+    sender_ptid: &str,
+) -> Result<Vec<String>, String> {
+    let Some(event_sequence) = event_sequence else {
+        return Ok(Vec::new());
+    };
+    let mut statement = connection
+        .prepare(
+            "SELECT actor_ptid
+             FROM read_cursors
+             WHERE conversation_id = ?1
+               AND last_read_sequence >= ?2
+               AND actor_ptid <> ?3
+             ORDER BY actor_ptid",
+        )
+        .map_err(|error| error.to_string())?;
+    let readers = statement
+        .query_map(
+            params![conversation_id, event_sequence, sender_ptid],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    Ok(readers)
+}
+
+fn load_pins_for_conversation(
+    connection: &Connection,
+    conversation_id: &str,
+) -> Result<Vec<(String, String, i64)>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT message_id, actor_ptid, pinned_at_unix_ms
+             FROM message_pins
+             WHERE conversation_id = ?1
+             ORDER BY pinned_at_unix_ms ASC",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![conversation_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    Ok(rows)
 }
 
 fn commit_subsumed_receive(
@@ -5026,6 +6111,31 @@ fn direct_receive_core<'a>(input: &'a DirectReceiveCommit<'a>) -> ReceiveCommitC
         receipt_bytes: input.receipt_bytes,
         consumed_at_unix_ms: input.consumed_at_unix_ms,
     }
+}
+
+fn insert_delivery_receipt(
+    transaction: &Transaction<'_>,
+    receipt_id: &str,
+    event_id: &str,
+    receipt_bytes: &[u8],
+    created_at_unix_ms: i64,
+) -> Result<(), String> {
+    if !receipt_id.starts_with("message-delivered:")
+        || event_id.trim().is_empty()
+        || receipt_bytes.is_empty()
+        || created_at_unix_ms <= 0
+    {
+        return Err("messaging delivery receipt is incomplete".to_string());
+    }
+    transaction
+        .execute(
+            "INSERT INTO messaging_receipt_outbox(
+                receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, 'pending', ?4)",
+            params![receipt_id, event_id, receipt_bytes, created_at_unix_ms],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn public_event_receive_core<'a>(input: &'a PublicEventReceiveCommit<'a>) -> ReceiveCommitCore<'a> {
@@ -5335,6 +6445,7 @@ fn pending_owner_transition_is_valid(
     transaction: &Transaction<'_>,
     command_id: &str,
     pending_message_changes: usize,
+    interaction_changes: usize,
 ) -> Result<bool, String> {
     let transition_count = transaction
         .query_row(
@@ -5345,8 +6456,12 @@ fn pending_owner_transition_is_valid(
         )
         .map_err(|error| error.to_string())?;
     Ok(matches!(
-        (pending_message_changes, transition_count),
-        (1, 0) | (0, 1)
+        (
+            pending_message_changes,
+            transition_count,
+            interaction_changes
+        ),
+        (1, 0, 0) | (0, 1, 0) | (0, 0, 1)
     ))
 }
 
@@ -5653,16 +6768,19 @@ fn persist_prepared_command(
         .execute(
             "INSERT INTO messaging_pending_messages(
                 conversation_id, conversation_kind, message_id, sender_ptid,
-                sender_device_id, plaintext, state, attempt_count,
+                sender_device_id, plaintext, reply_to_message_id,
+                thread_root_message_id, state, attempt_count,
                 next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', 0, ?7, '', ?7)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', 0, ?9, '', ?9)
              ON CONFLICT(conversation_id, message_id) DO UPDATE SET
                 state='pending',
                 conversation_kind=excluded.conversation_kind,
                 last_error_code=''
              WHERE messaging_pending_messages.sender_ptid = excluded.sender_ptid
                AND messaging_pending_messages.sender_device_id = excluded.sender_device_id
-               AND messaging_pending_messages.plaintext = excluded.plaintext",
+               AND messaging_pending_messages.plaintext = excluded.plaintext
+               AND messaging_pending_messages.reply_to_message_id = excluded.reply_to_message_id
+               AND messaging_pending_messages.thread_root_message_id = excluded.thread_root_message_id",
             params![
                 projection.conversation_id,
                 projection.conversation_kind,
@@ -5670,6 +6788,8 @@ fn persist_prepared_command(
                 projection.sender_ptid,
                 projection.sender_device_id,
                 projection.plaintext,
+                projection.reply_to_message_id,
+                projection.thread_root_message_id,
                 projection.created_at_unix_ms
             ],
         )
@@ -5716,6 +6836,87 @@ fn persist_prepared_command(
                 projection.message_id,
                 projection.delivery_plan_sha256,
                 projection.created_at_unix_ms
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn persist_interaction_command(
+    transaction: &Transaction<'_>,
+    input: &InteractionCommandCommit<'_>,
+) -> Result<(), String> {
+    if input.command_id.trim().is_empty()
+        || input.conversation_id.trim().is_empty()
+        || input.target_message_id.trim().is_empty()
+        || input.interaction_kind.trim().is_empty()
+        || input.command_bytes.is_empty()
+        || input.delivery_plan_sha256.len() != 32
+        || input.created_at_unix_ms <= 0
+        || (input.interaction_kind == "edit"
+            && input
+                .edited_text
+                .is_none_or(|value| value.trim().is_empty()))
+        || (input.interaction_kind != "edit" && input.edited_text.is_some())
+    {
+        return Err("messaging interaction command is incomplete".to_string());
+    }
+    transaction
+        .execute(
+            "INSERT INTO messaging_local_commands(
+                command_id, conversation_id, command_bytes, state, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, 'prepared', ?4)",
+            params![
+                input.command_id,
+                input.conversation_id,
+                input.command_bytes,
+                input.created_at_unix_ms
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO messaging_command_outbox(
+                command_id, conversation_id, command_bytes, state,
+                attempt_count, next_attempt_at_unix_ms,
+                last_error_code, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, 'pending', 0, ?4, '', ?4)",
+            params![
+                input.command_id,
+                input.conversation_id,
+                input.command_bytes,
+                input.created_at_unix_ms
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO messaging_command_attempts(
+                command_id, conversation_id, message_id,
+                delivery_plan_sha256, state, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, 'prepared', ?5)",
+            params![
+                input.command_id,
+                input.conversation_id,
+                input.target_message_id,
+                input.delivery_plan_sha256,
+                input.created_at_unix_ms
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO messaging_interaction_intents(
+                command_id, conversation_id, target_message_id,
+                interaction_kind, edited_text, state, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, 'prepared', ?6)",
+            params![
+                input.command_id,
+                input.conversation_id,
+                input.target_message_id,
+                input.interaction_kind,
+                input.edited_text,
+                input.created_at_unix_ms
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -6109,6 +7310,8 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 sender_ptid TEXT NOT NULL,
                 sender_device_id TEXT NOT NULL,
                 plaintext TEXT NOT NULL,
+                reply_to_message_id TEXT NOT NULL DEFAULT '',
+                thread_root_message_id TEXT NOT NULL DEFAULT '',
                 state TEXT NOT NULL,
                 attempt_count INTEGER NOT NULL,
                 next_attempt_at_unix_ms INTEGER NOT NULL,
@@ -6121,6 +7324,16 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 conversation_id TEXT NOT NULL,
                 message_id TEXT NOT NULL,
                 delivery_plan_sha256 BLOB NOT NULL CHECK(length(delivery_plan_sha256) = 32),
+                state TEXT NOT NULL,
+                created_at_unix_ms INTEGER NOT NULL,
+                FOREIGN KEY(command_id) REFERENCES messaging_local_commands(command_id)
+             );
+             CREATE TABLE IF NOT EXISTS messaging_interaction_intents (
+                command_id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                target_message_id TEXT NOT NULL,
+                interaction_kind TEXT NOT NULL,
+                edited_text TEXT,
                 state TEXT NOT NULL,
                 created_at_unix_ms INTEGER NOT NULL,
                 FOREIGN KEY(command_id) REFERENCES messaging_local_commands(command_id)
@@ -6181,6 +7394,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 delivery_state TEXT NOT NULL,
                 committed_at_unix_ms INTEGER NOT NULL,
                 reply_to_message_id TEXT,
+                thread_root_message_id TEXT,
                 edited_text TEXT,
                 edited_at_unix_ms INTEGER,
                 retracted INTEGER NOT NULL DEFAULT 0,
@@ -6326,6 +7540,8 @@ fn migrate(connection: &Connection) -> Result<(), String> {
         ("attempt_count", "INTEGER NOT NULL DEFAULT 0"),
         ("next_attempt_at_unix_ms", "INTEGER NOT NULL DEFAULT 0"),
         ("last_error_code", "TEXT NOT NULL DEFAULT ''"),
+        ("reply_to_message_id", "TEXT NOT NULL DEFAULT ''"),
+        ("thread_root_message_id", "TEXT NOT NULL DEFAULT ''"),
     ] {
         if !pending_columns.iter().any(|existing| existing == column) {
             connection
@@ -6362,6 +7578,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     for (column, definition) in [
         ("reply_to_message_id", "TEXT"),
+        ("thread_root_message_id", "TEXT"),
         ("edited_text", "TEXT"),
         ("edited_at_unix_ms", "INTEGER"),
         ("retracted", "INTEGER NOT NULL DEFAULT 0"),
@@ -6376,6 +7593,24 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 )
                 .map_err(|error| error.to_string())?;
         }
+    }
+    let interaction_columns = connection
+        .prepare("PRAGMA table_info(messaging_interaction_intents)")
+        .map_err(|error| error.to_string())?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    if !interaction_columns
+        .iter()
+        .any(|existing| existing == "edited_text")
+    {
+        connection
+            .execute(
+                "ALTER TABLE messaging_interaction_intents ADD COLUMN edited_text TEXT",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
     }
 
     Ok(())
@@ -6462,6 +7697,8 @@ mod tests {
                 sender_ptid: "ptid:alice",
                 sender_device_id: "alice-device",
                 plaintext: "sender plaintext",
+                reply_to_message_id: "",
+                thread_root_message_id: "",
                 attachments: &[],
                 private_content: &private_content,
                 delivery_plan_sha256: &[1; 32],
@@ -6482,6 +7719,7 @@ mod tests {
             attachments: Vec::new(),
             committed_at_unix_ms: 100,
             reply_to_message_id: None,
+            thread_root_message_id: None,
             edited_text: None,
             edited_at_unix_ms: None,
             retracted: false,
@@ -6553,6 +7791,46 @@ mod tests {
                 })
                 .unwrap();
             assert_eq!(count, 1, "table {table}");
+        }
+    }
+
+    #[test]
+    fn interaction_command_uses_the_shared_durable_outbox_owner() {
+        let store = MessagingStore::in_memory().unwrap();
+        store
+            .persist_interaction_command(&InteractionCommandCommit {
+                command_id: "interaction-1",
+                conversation_id: "conversation-1",
+                target_message_id: "message-1",
+                interaction_kind: "reaction-add",
+                edited_text: None,
+                command_bytes: b"exact interaction bytes",
+                delivery_plan_sha256: &[7; 32],
+                created_at_unix_ms: 10,
+            })
+            .unwrap();
+        let next = store.next_command(10).unwrap().unwrap();
+        assert_eq!(next.command_id, "interaction-1");
+        assert_eq!(next.command_bytes, b"exact interaction bytes");
+
+        store
+            .mark_command_submitted("interaction-1", b"exact interaction bytes", 0)
+            .unwrap();
+        let connection = store.connection().unwrap();
+        for table in [
+            "messaging_local_commands",
+            "messaging_command_outbox",
+            "messaging_command_attempts",
+            "messaging_interaction_intents",
+        ] {
+            let state: String = connection
+                .query_row(
+                    &format!("SELECT state FROM {table} WHERE command_id = 'interaction-1'"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(state, "submitted", "table {table}");
         }
     }
 
@@ -6659,6 +7937,8 @@ mod tests {
                 sender_ptid: "ptid:alice",
                 sender_device_id: "alice-device",
                 plaintext: "must roll back",
+                reply_to_message_id: "",
+                thread_root_message_id: "",
                 attachments: &[],
                 private_content: &private_content,
                 delivery_plan_sha256: &[1; 32],
@@ -6702,6 +7982,8 @@ mod tests {
                     sender_ptid: "ptid:alice",
                     sender_device_id: "alice-device",
                     plaintext: "group plaintext",
+                    reply_to_message_id: "",
+                    thread_root_message_id: "",
                     attachments: &[],
                     private_content: &private_content,
                     delivery_plan_sha256: &[1; 32],
@@ -6739,6 +8021,8 @@ mod tests {
             sender_ptid: "ptid:alice".to_string(),
             sender_device_id: "alice-device".to_string(),
             plaintext: "survives prepare failure".to_string(),
+            reply_to_message_id: String::new(),
+            thread_root_message_id: String::new(),
             attachments: Vec::new(),
             attempt_count: 0,
             created_at_unix_ms: 100,
@@ -6922,8 +8206,11 @@ mod tests {
             consumed_one_time_prekey_id: None,
             projection: &projection,
             reply_to_message_id: None,
+            thread_root_message_id: None,
             receipt_id: "receipt-1",
             receipt_bytes: b"receipt",
+            delivery_receipt_id: "message-delivered:event-1:device-1",
+            delivery_receipt_bytes: b"delivery-receipt",
             consumed_at_unix_ms: 100,
         };
         assert_eq!(
@@ -6951,7 +8238,12 @@ mod tests {
                     row.get(0)
                 })
                 .unwrap();
-            assert_eq!(count, 1, "table {table}");
+            let expected = if table == "messaging_receipt_outbox" {
+                2
+            } else {
+                1
+            };
+            assert_eq!(count, expected, "table {table}");
         }
         let state: String = connection
             .query_row(
@@ -7014,8 +8306,11 @@ mod tests {
                 consumed_one_time_prekey_id: Some(7),
                 projection: &projection,
                 reply_to_message_id: None,
+                thread_root_message_id: None,
                 receipt_id: "receipt-1",
                 receipt_bytes: b"receipt",
+                delivery_receipt_id: "message-delivered:event-1:device-1",
+                delivery_receipt_bytes: b"delivery-receipt",
                 consumed_at_unix_ms: 100,
             };
             assert!(store
@@ -7101,8 +8396,11 @@ mod tests {
             consumed_one_time_prekey_id: None,
             projection: &projection,
             reply_to_message_id: None,
+            thread_root_message_id: None,
             receipt_id: "subsumed-receipt-1",
             receipt_bytes: b"receipt",
+            delivery_receipt_id: "message-delivered:event-1:device-1",
+            delivery_receipt_bytes: b"delivery-receipt",
             consumed_at_unix_ms: 100,
         };
 
@@ -7173,6 +8471,7 @@ mod tests {
             mls_epoch: 3,
             projection: &projection,
             reply_to_message_id: None,
+            thread_root_message_id: None,
             receipt_id: "mls-receipt-1",
             receipt_bytes: b"receipt",
             consumed_at_unix_ms: 100,
@@ -7225,6 +8524,7 @@ mod tests {
             mls_epoch: 3,
             projection: &projection,
             reply_to_message_id: None,
+            thread_root_message_id: None,
             receipt_id: "mls-receipt-1",
             receipt_bytes: b"receipt",
             consumed_at_unix_ms: 100,

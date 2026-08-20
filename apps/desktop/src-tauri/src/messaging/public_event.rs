@@ -1,6 +1,7 @@
+use super::store::{InteractionMutation, InteractionReceiveCommit};
 use super::{
     verify_device_event_delivery, ClaimedItemConsumer, EngineEndpoint, MessagingStore,
-    PublicEventReceiveCommit,
+    PublicEventReceiveCommit, ReceiveCommitResult,
 };
 use crate::model::chat::{
     conversation_event, CryptoEndpoint, DeviceConsumptionReceipt, DeviceQueueItem,
@@ -82,15 +83,33 @@ impl PublicEventProcessor {
             .unwrap_or(now);
 
         match event.payload.as_ref() {
-            Some(conversation_event::Payload::MessageCommitted(message)) => {
-                self.process_message_committed(item, event, message, &delivery, consumer_epoch, now, committed_at_unix_ms)
-            }
-            Some(conversation_event::Payload::MessageEdited(fact)) => {
-                self.process_message_edited(item, event, fact, consumer_epoch, now, committed_at_unix_ms)
-            }
-            Some(conversation_event::Payload::MessageRetracted(fact)) => {
-                self.process_message_retracted(item, event, fact, consumer_epoch, now, committed_at_unix_ms)
-            }
+            Some(conversation_event::Payload::MessageCommitted(message)) => self
+                .process_message_committed(
+                    item,
+                    event,
+                    message,
+                    &delivery,
+                    consumer_epoch,
+                    now,
+                    committed_at_unix_ms,
+                ),
+            Some(conversation_event::Payload::MessageEdited(fact)) => self.process_message_edited(
+                item,
+                event,
+                fact,
+                consumer_epoch,
+                now,
+                committed_at_unix_ms,
+            ),
+            Some(conversation_event::Payload::MessageRetracted(fact)) => self
+                .process_message_retracted(
+                    item,
+                    event,
+                    fact,
+                    consumer_epoch,
+                    now,
+                    committed_at_unix_ms,
+                ),
             Some(conversation_event::Payload::ReactionCommitted(fact)) => {
                 self.process_reaction(item, event, fact, consumer_epoch, now, committed_at_unix_ms)
             }
@@ -138,6 +157,10 @@ impl PublicEventProcessor {
             sender_ptid: &self.endpoint.ptid,
             sender_device_id: &self.endpoint.device_id,
             attachments: &message.attachments,
+            reply_to_message_id: (!message.reply_to_message_id.is_empty())
+                .then_some(message.reply_to_message_id.as_str()),
+            thread_root_message_id: (!message.thread_root_message_id.is_empty())
+                .then_some(message.thread_root_message_id.as_str()),
             committed_at_unix_ms,
             receipt_id: &receipt.receipt_id,
             receipt_bytes: &receipt_bytes,
@@ -151,15 +174,24 @@ impl PublicEventProcessor {
         item: &DeviceQueueItem,
         event: &crate::model::chat::ConversationEvent,
         fact: &MessageEditedFact,
-        _consumer_epoch: u64,
+        consumer_epoch: u64,
         now: i64,
         committed_at_unix_ms: i64,
     ) -> Result<(), String> {
         if fact.message_id.trim().is_empty() {
             return Err("messaging public-event edit has no message ID".to_string());
         }
-        self.store.apply_message_edit(&fact.message_id, "", committed_at_unix_ms)?;
-        self.store.mark_consumed(&item.item_id, &event.event_id, &event.conversation_id, &item.payload_sha256, now)?;
+        self.commit_interaction(
+            item,
+            event,
+            consumer_epoch,
+            &fact.message_id,
+            InteractionMutation::Edit {
+                edited_text: "",
+                edited_at_unix_ms: committed_at_unix_ms,
+            },
+            now,
+        )?;
         Ok(())
     }
 
@@ -168,15 +200,21 @@ impl PublicEventProcessor {
         item: &DeviceQueueItem,
         event: &crate::model::chat::ConversationEvent,
         fact: &MessageRetractedFact,
-        _consumer_epoch: u64,
+        consumer_epoch: u64,
         now: i64,
         _committed_at_unix_ms: i64,
     ) -> Result<(), String> {
         if fact.message_id.trim().is_empty() {
             return Err("messaging public-event retract has no message ID".to_string());
         }
-        self.store.apply_message_retract(&fact.message_id)?;
-        self.store.mark_consumed(&item.item_id, &event.event_id, &event.conversation_id, &item.payload_sha256, now)?;
+        self.commit_interaction(
+            item,
+            event,
+            consumer_epoch,
+            &fact.message_id,
+            InteractionMutation::Retract,
+            now,
+        )?;
         Ok(())
     }
 
@@ -185,7 +223,7 @@ impl PublicEventProcessor {
         item: &DeviceQueueItem,
         event: &crate::model::chat::ConversationEvent,
         fact: &ReactionCommittedFact,
-        _consumer_epoch: u64,
+        consumer_epoch: u64,
         now: i64,
         committed_at_unix_ms: i64,
     ) -> Result<(), String> {
@@ -197,14 +235,19 @@ impl PublicEventProcessor {
             .as_ref()
             .map(|endpoint| endpoint.ptid.as_str())
             .unwrap_or(&self.endpoint.ptid);
-        self.store.apply_reaction(
+        self.commit_interaction(
+            item,
+            event,
+            consumer_epoch,
             &fact.message_id,
-            actor_ptid,
-            &fact.reaction,
-            fact.removed,
-            committed_at_unix_ms,
+            InteractionMutation::Reaction {
+                actor_ptid,
+                reaction: &fact.reaction,
+                removed: fact.removed,
+                created_at_unix_ms: committed_at_unix_ms,
+            },
+            now,
         )?;
-        self.store.mark_consumed(&item.item_id, &event.event_id, &event.conversation_id, &item.payload_sha256, now)?;
         Ok(())
     }
 
@@ -213,7 +256,7 @@ impl PublicEventProcessor {
         item: &DeviceQueueItem,
         event: &crate::model::chat::ConversationEvent,
         fact: &MessagePinCommittedFact,
-        _consumer_epoch: u64,
+        consumer_epoch: u64,
         now: i64,
         committed_at_unix_ms: i64,
     ) -> Result<(), String> {
@@ -225,18 +268,61 @@ impl PublicEventProcessor {
             .as_ref()
             .map(|endpoint| endpoint.ptid.as_str())
             .unwrap_or(&self.endpoint.ptid);
-        self.store.apply_pin(
-            &event.conversation_id,
+        self.commit_interaction(
+            item,
+            event,
+            consumer_epoch,
             &fact.message_id,
-            actor_ptid,
-            fact.removed,
-            committed_at_unix_ms,
+            InteractionMutation::Pin {
+                actor_ptid,
+                removed: fact.removed,
+                pinned_at_unix_ms: committed_at_unix_ms,
+            },
+            now,
         )?;
-        self.store.mark_consumed(&item.item_id, &event.event_id, &event.conversation_id, &item.payload_sha256, now)?;
         Ok(())
     }
 
-    fn build_receipt(&self, item: &DeviceQueueItem, event: &crate::model::chat::ConversationEvent, now: i64) -> DeviceConsumptionReceipt {
+    fn commit_interaction(
+        &self,
+        item: &DeviceQueueItem,
+        event: &crate::model::chat::ConversationEvent,
+        consumer_epoch: u64,
+        message_id: &str,
+        mutation: InteractionMutation<'_>,
+        now: i64,
+    ) -> Result<ReceiveCommitResult, String> {
+        let receipt = self.build_receipt(item, event, now);
+        let receipt_bytes = receipt.encode_to_vec();
+        self.store
+            .commit_interaction_event(&InteractionReceiveCommit {
+                item_id: &item.item_id,
+                event_id: &event.event_id,
+                command_id: &event.command_id,
+                conversation_id: &event.conversation_id,
+                event_sequence: event.sequence,
+                lane_sequence: item.lane_sequence,
+                consumer_epoch,
+                payload_sha256: &item.payload_sha256,
+                event_hash: &event.event_hash,
+                previous_event_hash: &event.previous_hash,
+                message_id,
+                mutation,
+                mls_session_state: None,
+                membership_epoch: event.membership_epoch,
+                mls_epoch: event.mls_epoch,
+                receipt_id: &receipt.receipt_id,
+                receipt_bytes: &receipt_bytes,
+                consumed_at_unix_ms: now,
+            })
+    }
+
+    fn build_receipt(
+        &self,
+        item: &DeviceQueueItem,
+        event: &crate::model::chat::ConversationEvent,
+        now: i64,
+    ) -> DeviceConsumptionReceipt {
         DeviceConsumptionReceipt {
             receipt_id: format!("device-consumed:{}", item.item_id),
             conversation_id: event.conversation_id.clone(),
@@ -431,6 +517,8 @@ mod tests {
                     sender_ptid: "ptid:alice",
                     sender_device_id: "alice-device",
                     plaintext: "exact sender plaintext",
+                    reply_to_message_id: "",
+                    thread_root_message_id: "",
                     attachments,
                     private_content: &private_content,
                     delivery_plan_sha256: &[1; 32],

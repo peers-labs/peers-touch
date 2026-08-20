@@ -171,7 +171,7 @@ async function distributeSenderKey(
 ) {
   const selfDid = actorDidForSession(session);
   const peerDids = members
-    .map((member) => member.actorDid)
+    .map((member) => member.ptid)
     .filter((did): did is string => Boolean(did && did !== selfDid));
   if (!peerDids.length) return;
 

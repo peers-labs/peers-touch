@@ -39,6 +39,13 @@ func (u *AuthorityUnitOfWork) AutoMigrate() error {
 	if err := NewAttachmentRepository(u.db).AutoMigrate(); err != nil {
 		return err
 	}
+	readCursors, err := NewReadCursorRepository(u.db)
+	if err != nil {
+		return err
+	}
+	if err := readCursors.AutoMigrate(); err != nil {
+		return err
+	}
 	if err := NewFederationRepository(u.db).AutoMigrate(); err != nil {
 		return err
 	}
@@ -69,6 +76,10 @@ func (u *AuthorityUnitOfWork) Execute(
 		if err != nil {
 			return err
 		}
+		readCursors, err := NewReadCursorRepository(tx)
+		if err != nil {
+			return err
+		}
 		return fn(messaging.AuthorityRepositories{
 			Authority:         NewAuthorityRepository(tx),
 			Devices:           NewDeviceDirectory(tx),
@@ -78,6 +89,7 @@ func (u *AuthorityUnitOfWork) Execute(
 			KeyPackages:       NewMlsKeyPackageStore(tx),
 			Plans:             NewAuthorityPlanRepository(tx),
 			Attachments:       NewAttachmentRepository(tx),
+			ReadCursors:       readCursors,
 		})
 	})
 }

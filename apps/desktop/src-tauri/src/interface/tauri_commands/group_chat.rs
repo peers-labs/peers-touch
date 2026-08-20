@@ -5,8 +5,8 @@ use crate::contracts::{
     GroupAckOfflineInput, GroupAddFederatedMemberInput, GroupChatCreateGroupInput,
     GroupChatEditInput, GroupChatFederatedActorInput, GroupChatLeaveGroupInput, GroupChatListInput,
     GroupChatListMessagesInput, GroupChatMarkReadInput, GroupChatSyncInput,
-    GroupChatThreadCountsInput, GroupChatThreadInput, GroupChatThreadReadInput,
-    GroupChatUnreadInput, GroupInviteInput, GroupJoinInput, GroupMembersInput,
+    GroupChatThreadCountsInput, GroupChatThreadInput, GroupChatUnreadInput, GroupInviteInput,
+    GroupJoinInput, GroupMembersInput,
     GroupMessageActionInput, GroupOfflineMessagesInput, GroupRemoveMemberInput,
     GroupSearchMessagesInput, GroupTransferOwnershipInput, GroupUlidInput, GroupUpdateInput,
     GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
@@ -255,35 +255,6 @@ pub fn group_chat_thread_counts(
         Err(error) => return error.into_app_result("station request failed"),
     };
     to_stub("group_chat_thread_counts", data)
-}
-
-#[tauri::command]
-pub fn group_chat_thread_mark_read(
-    input: GroupChatThreadReadInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
-        Ok(token) => token,
-        Err(error) => return error,
-    };
-    if input.group_ulid.trim().is_empty() || input.root_ulid.trim().is_empty() {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "group_ulid and root_ulid are required",
-            None,
-        );
-    }
-    let data = match chat_storage::mark_group_thread_read(
-        &token,
-        input.group_ulid.as_str(),
-        input.root_ulid.as_str(),
-        input.last_read_ulid.as_deref(),
-    ) {
-        Ok(data) => data,
-        Err(error) => return error.into_app_result("station request failed"),
-    };
-    to_stub("group_chat_thread_mark_read", data)
 }
 
 #[tauri::command]

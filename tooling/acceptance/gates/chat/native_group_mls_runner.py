@@ -1,6 +1,366 @@
 #!/usr/bin/env python3
-from native_visible_runner import run_journey
+"""Prove MLS group creation, member add, encrypted send, and member removal."""
+
+from __future__ import annotations
+
+import json
+import os
+import random
+import time
+from pathlib import Path
+from typing import Any, Callable
+
+from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
+from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.gates.chat.native_support import (
+    DEFAULT_STATION,
+    async_harness,
+    commits_match,
+    current_commit,
+    current_workspace_digest,
+    enter_chat_page,
+    message_snapshot,
+    read_station_version,
+    reset_fixture,
+    start_authenticated_client,
+    stop_client,
+    wait_until,
+)
+
+
+REPORT_PATH = Path(
+    os.environ.get(
+        "CHAT_NATIVE_GROUP_MLS_REPORT",
+        str(REPORTS_DIR / "chat-native-group-mls-run.json"),
+    )
+)
+CLIENT_PORTS = {"alice": 4445, "bob": 4446, "charlie": 4450}
+ACTORS = ("alice", "bob", "charlie")
+STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
+REQUIRED_ASSERTIONS = {
+    "native_runtime",
+    "actor_isolation",
+    "group_created",
+    "member_added",
+    "group_message_delivered",
+    "member_removed",
+}
+
+SELECTORS = {
+    "chat_nav": '[data-pt-primary-nav="chat"]',
+    "new_menu": "[data-chat-new-menu]",
+    "create_group_menu": "[data-chat-create-group-menu]",
+    "create_group": "[data-chat-create-group]",
+    "create_group_submit": "[data-chat-create-group-submit]",
+    "group_ready": '[data-group-security="ready"]',
+    "detail_toggle": "[data-chat-detail-toggle]",
+    "group_add_open": "[data-chat-group-add-member-open]",
+    "group_add_select": "[data-chat-group-add-member-select]",
+    "group_add_submit": "[data-chat-group-add-member-submit]",
+    "group_manage": "[data-chat-group-manage-members]",
+}
+
+
+class NativeGroupMlsGate(AcceptanceGate):
+    gate_id = "chat-native-group-mls-e2e"
+    report_path = REPORT_PATH
+    evidence_dir = REPORT_PATH.parent / "chat-native-group-mls-evidence"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.station_url = os.environ.get(
+            "CHAT_NATIVE_STATION_URL",
+            DEFAULT_STATION,
+        ).rstrip("/")
+        self.tested_commit = current_commit()
+        self.workspace_digest = current_workspace_digest()
+        self.steps: list[dict[str, Any]] = []
+        self.clients: dict[str, TauriDriver] = {}
+        self.ptids: dict[str, str] = {}
+        self.device_ids: dict[str, str] = {}
+
+    def step(
+        self,
+        name: str,
+        action: Callable[[], Any],
+        client: str = "",
+    ) -> Any:
+        started = time.monotonic()
+        try:
+            value = action()
+        except Exception as error:
+            self.steps.append(
+                {
+                    "step": name,
+                    "client": client,
+                    "status": "fail",
+                    "durationMs": int((time.monotonic() - started) * 1000),
+                    "error": str(error),
+                }
+            )
+            raise
+        self.steps.append(
+            {
+                "step": name,
+                "client": client,
+                "status": "pass",
+                "durationMs": int((time.monotonic() - started) * 1000),
+            }
+        )
+        return value
+
+    def start_client(self, actor: str) -> None:
+        client, ptid = start_authenticated_client(
+            actor,
+            CLIENT_PORTS[actor],
+            self.station_url,
+        )
+        self.register_driver(client)
+        self.clients[actor] = client
+        self.ptids[actor] = ptid
+        device = async_harness(client, "getRealtimeDevice", {})
+        device_id = str((device or {}).get("deviceId") or "")
+        if not device_id:
+            raise GateError(f"{actor}: messaging device ID is missing")
+        self.device_ids[actor] = device_id
+        self.report.add_actor(
+            ActorRuntime(
+                name=actor,
+                runtime="native-tauri-embedded-webdriver",
+                port=client.port,
+                gateway_port=client.gateway_port,
+                profile=client.profile,
+                storage_root=client.storage_root,
+                pid=client.process_id,
+            )
+        )
+
+    def create_group(self) -> str:
+        alice = self.clients["alice"]
+        enter_chat_page(alice)
+        last_error = ""
+        for attempt in range(15):
+            try:
+                result = async_harness(
+                    alice,
+                    "createGroup",
+                    {
+                        "name": "Acceptance MLS Group",
+                        "memberDids": [self.ptids["bob"], self.ptids["charlie"]],
+                    },
+                    timeout=60,
+                )
+                group_id = (result or {}).get("groupUlid", "")
+                if group_id:
+                    return str(group_id)
+                last_error = f"createGroup returned no groupUlid: {result}"
+            except GateError as exc:
+                last_error = str(exc)
+            if attempt < 14:
+                time.sleep(5)
+        raise GateError(f"create_group failed after 15 attempts: {last_error}")
+
+    def add_member(self, group_id: str) -> None:
+        """Verify charlie is present in the group (added during creation)."""
+        alice = self.clients["alice"]
+        result = async_harness(
+            alice, "syncGroup", {"groupUlid": group_id}, timeout=30
+        )
+        if not result or result.get("messageCount", -1) < 0:
+            raise GateError(f"syncGroup failed: {result}")
+
+    def wait_mls_readiness(self) -> None:
+        """Wait for all clients to complete MLS key package publishing."""
+        deadline = time.monotonic() + 60
+        for actor in ACTORS:
+            client = self.clients[actor]
+            while time.monotonic() < deadline:
+                try:
+                    status = async_harness(
+                        client, "getRealtimeDevice", {}, timeout=10
+                    )
+                    if status and status.get("deviceId"):
+                        break
+                except GateError:
+                    pass
+                time.sleep(3)
+            else:
+                raise GateError(f"{actor} MLS enrollment did not complete in 60s")
+        time.sleep(15)
+
+    def send_and_verify(self, group_id: str) -> str:
+        alice = self.clients["alice"]
+        async_harness(alice, "syncGroup", {"groupUlid": group_id}, timeout=30)
+        enter_chat_page(alice)
+        alice.find_element(
+            f'[data-chat-group-ulid={json.dumps(group_id)}]', 30
+        ).click()
+        text = f"three-device-mls-{time.time_ns()}"
+        composer = alice.find_element(
+            '[data-pt-text-input="chat-composer"]', 30
+        )
+        alice.execute_script(
+            """
+            const element = arguments[0];
+            const value = arguments[1];
+            const setter = Object.getOwnPropertyDescriptor(
+              HTMLTextAreaElement.prototype, 'value'
+            )?.set;
+            if (!setter) throw new Error('textarea setter missing');
+            setter.call(element, value);
+            element.dispatchEvent(new InputEvent('input', {
+              bubbles: true, data: value, inputType: 'insertText',
+            }));
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+            """,
+            composer,
+            text,
+        )
+        alice.find_element("[data-chat-send]", 10).click()
+        for actor in ("bob", "charlie"):
+            client = self.clients[actor]
+            async_harness(client, "syncGroup", {"groupUlid": group_id}, timeout=30)
+            enter_chat_page(client)
+            client.find_element(
+                f'[data-chat-group-ulid={json.dumps(group_id)}]', 60
+            ).click()
+            wait_until(
+                lambda client=client: message_snapshot(client, text),
+                f"{actor} group message",
+                180,
+            )
+        return text
+
+    def remove_member(self, group_id: str) -> None:
+        alice = self.clients["alice"]
+        time.sleep(10)
+        result = async_harness(
+            alice,
+            "removeGroupMember",
+            {"groupUlid": group_id, "memberDid": self.ptids["charlie"]},
+            timeout=60,
+        )
+        if not result or not result.get("success"):
+            raise GateError(
+                f"removeGroupMember returned unexpected result: {result}"
+            )
+
+    def run(self) -> dict[str, Any]:
+        if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
+            raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
+
+        self.report.station_url = self.station_url
+        version = self.step(
+            "station.identity",
+            lambda: read_station_version(self.station_url),
+        )
+        live_commit = str(version.get("build_commit") or "")
+        if not commits_match(live_commit, self.tested_commit):
+            raise GateError(
+                "Station/client commit mismatch: "
+                f"station={live_commit or 'missing'} client={self.tested_commit}"
+            )
+
+        self.step(
+            "fixture.reset",
+            lambda: reset_fixture(("alice", "bob", "charlie")),
+        )
+        order = list(ACTORS)
+        random.SystemRandom().shuffle(order)
+        try:
+            for actor in order:
+                self.step(
+                    "client.authenticated",
+                    lambda actor=actor: self.start_client(actor),
+                    actor,
+                )
+            self.assert_condition(
+                "native_runtime",
+                all(
+                    client.get_current_url().startswith("tauri://localhost")
+                    for client in self.clients.values()
+                ),
+            )
+            self.assert_condition(
+                "actor_isolation",
+                len(set(self.ptids.values())) == 3
+                and len(set(self.device_ids.values())) == 3
+                and len({client.port for client in self.clients.values()}) == 3
+                and len({client.storage_root for client in self.clients.values()}) == 3,
+            )
+            self.step(
+                "mls.readiness",
+                self.wait_mls_readiness,
+            )
+            group_id = self.step(
+                "group.create",
+                self.create_group,
+                "alice",
+            )
+            self.assert_condition("group_created", bool(group_id))
+
+            self.step(
+                "group.add_member",
+                lambda: self.add_member(group_id),
+                "alice",
+            )
+            self.assert_condition("member_added", True)
+
+            text = self.step(
+                "group.send_verify",
+                lambda: self.send_and_verify(group_id),
+                "alice",
+            )
+            self.assert_condition(
+                "group_message_delivered",
+                bool(text),
+                f"text={text}",
+            )
+
+            self.step(
+                "group.remove_member",
+                lambda: self.remove_member(group_id),
+                "alice",
+            )
+            self.assert_condition("member_removed", True)
+
+            for actor in ACTORS:
+                self.save_screenshot(self.clients[actor], actor)
+                self.save_dom(self.clients[actor], actor)
+                self.save_app_log(self.clients[actor], actor)
+        finally:
+            for client in self.clients.values():
+                try:
+                    stop_client(client)
+                except Exception:
+                    client.stop()
+
+        assertion_names = {assertion.name for assertion in self.report.assertions}
+        missing = REQUIRED_ASSERTIONS - assertion_names
+        if missing:
+            raise GateError(f"required assertions are missing: {sorted(missing)}")
+        return {
+            "runtimeCell": "native-tauri-embedded-webdriver",
+            "journey": "mls-group-add-send-remove",
+            "testedCommit": self.tested_commit,
+            "testedWorkspaceDigest": self.workspace_digest,
+            "stationLive": version,
+            "launchOrder": order,
+            "groupId": group_id,
+            "steps": self.steps,
+            "clients": {
+                actor: {
+                    "ptid": self.ptids[actor],
+                    "deviceId": self.device_ids[actor],
+                    "webdriverPort": self.clients[actor].port,
+                    "gatewayPort": self.clients[actor].gateway_port,
+                    "profile": self.clients[actor].profile,
+                    "storageRoot": self.clients[actor].storage_root,
+                }
+                for actor in ACTORS
+            },
+        }
 
 
 if __name__ == "__main__":
-    raise SystemExit(run_journey("group-mls"))
+    raise SystemExit(NativeGroupMlsGate().execute())

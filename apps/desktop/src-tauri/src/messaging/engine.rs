@@ -7,11 +7,12 @@ use super::{
     AttachmentTransferControl, AttachmentTransferProgress, AttachmentTransferRecord,
     AttachmentTransferWorker, CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy,
     ConversationMessageProjection, ConversationProjection, DirectSessionBootstrapper,
-    DrainProgress, GroupGenesisPreparer, MembershipTransitionIntentInput,
-    MembershipTransitionPreparer, MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore,
-    MlsKeyPackagePublisher, PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft,
-    PreKeyPublisher, QueueDrain, SendPreparer, SendTextIntent, StationAttachmentTransferTransport,
-    StationCommandTransport, StationDeviceTransport, StationGroupGenesisTransport,
+    DrainProgress, EditTextIntent, GroupGenesisPreparer, InteractionCommandCommit,
+    MembershipTransitionIntentInput, MembershipTransitionPreparer, MessagingItemConsumer,
+    MessagingLifecycleWorker, MessagingStore, MlsKeyPackagePublisher, PendingAttachmentUpload,
+    PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer,
+    SendTextIntent, StationAttachmentTransferTransport, StationCommandTransport,
+    StationDeliveryReceiptTransport, StationDeviceTransport, StationGroupGenesisTransport,
     StationKeyBundleTransport, StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
     StationPreKeyTransport, StationQueueTransport,
 };
@@ -19,11 +20,15 @@ use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::domain::crypto::IdentityKeyPair;
 use crate::domain::mls_group::MlsGroupManager;
 use crate::model::chat::{
-    AttachmentTransferState, ChatCommand, ConversationKind,
-    CreateMessagingDirectConversationRequest, CreateMessagingDirectConversationResponse,
-    CryptoEndpoint, EnrollMessagingDeviceRequest, MessagingDevice, MessagingDeviceStatus,
-    MessagingMembershipAction, PrepareMessagingSendRequest, PrepareMessagingSendResponse,
+    chat_command, ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationCommand,
+    ConversationKind, CreateMessagingDirectConversationRequest,
+    CreateMessagingDirectConversationResponse, CryptoEndpoint, EnrollMessagingDeviceRequest,
+    MessageReceipt, MessagingDevice, MessagingDeviceStatus, MessagingMembershipAction,
+    MessagingReceiptKind, PinMessageIntent, PrepareMessagingSendRequest,
+    PrepareMessagingSendResponse, ReactionIntent, ReceiptType, RetractMessageIntent,
+    SubmitMessagingReceiptRequest, SubmitMessagingReceiptResponse, TypingCommand,
 };
+use prost::Message;
 use reqwest::Method;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -35,12 +40,20 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use ulid::Ulid;
 
+const INTERACTION_PREFLIGHT_DRAIN_LIMIT: u32 = 100;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessagingProjectionChange {
     pub profile_id: String,
     pub conversation_id: String,
     pub event_id: String,
     pub lane_sequence: i64,
+}
+
+pub enum MetadataInteraction<'a> {
+    Retract,
+    Reaction { reaction: &'a str, remove: bool },
+    Pin { remove: bool },
 }
 
 pub type MessagingProjectionNotifier = Arc<dyn Fn(MessagingProjectionChange) + Send + Sync>;
@@ -452,6 +465,27 @@ impl MessagingEngine {
         drain.drain_once(cursor, consumer_epoch)
     }
 
+    pub fn dispatch_delivery_receipt_once(&self, token: &str) -> Result<bool, String> {
+        let Some(entry) = self.store.next_delivery_receipt()? else {
+            return Ok(false);
+        };
+        let receipt = MessageReceipt::decode(entry.receipt_bytes.as_slice())
+            .map_err(|error| format!("decode messaging delivery receipt: {error}"))?;
+        if receipt.receipt_type != ReceiptType::Delivered as i32 {
+            return Err("messaging delivery receipt has invalid type".to_string());
+        }
+        StationDeliveryReceiptTransport::new(token.to_string(), self.endpoint.device_id.clone())?
+            .submit(&receipt)?;
+        self.store
+            .mark_delivery_receipt_submitted(&entry.receipt_id, &entry.receipt_bytes)?;
+        tracing::info!(
+            message_id = %receipt.message_id,
+            receipt_type = receipt.receipt_type,
+            "messaging delivery receipt submitted"
+        );
+        Ok(true)
+    }
+
     pub fn set_projection_notifier(
         &self,
         notifier: Option<MessagingProjectionNotifier>,
@@ -556,6 +590,8 @@ impl MessagingEngine {
         conversation_id: &str,
         conversation_kind: ConversationKind,
         plaintext: &str,
+        reply_to_message_id: &str,
+        thread_root_message_id: &str,
         attachment_intents: &[LocalAttachmentIntent],
     ) -> Result<SubmitMessageOutcome, String> {
         let _guard = self
@@ -619,6 +655,8 @@ impl MessagingEngine {
             sender_ptid: self.endpoint.ptid.clone(),
             sender_device_id: self.endpoint.device_id.clone(),
             plaintext: plaintext.to_string(),
+            reply_to_message_id: reply_to_message_id.to_string(),
+            thread_root_message_id: thread_root_message_id.to_string(),
             attachments: Vec::new(),
             attempt_count: 0,
             created_at_unix_ms,
@@ -724,6 +762,8 @@ impl MessagingEngine {
             message_id: &draft.message_id,
             conversation_id: &draft.conversation_id,
             plaintext: &draft.plaintext,
+            reply_to_message_id: &draft.reply_to_message_id,
+            thread_root_message_id: &draft.thread_root_message_id,
             attachments: &draft.attachments,
             client_timestamp_unix_ms: draft.created_at_unix_ms,
         };
@@ -825,8 +865,269 @@ impl MessagingEngine {
             .ok_or_else(|| "messaging Station returned no direct conversation".to_string())
     }
 
+    pub fn submit_edit(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        message_id: &str,
+        plaintext: &str,
+    ) -> Result<String, String> {
+        let _guard = self
+            .send_intent_lock
+            .lock()
+            .map_err(|_| "messaging send intent lock poisoned".to_string())?;
+        if conversation_id.trim().is_empty()
+            || message_id.trim().is_empty()
+            || plaintext.trim().is_empty()
+        {
+            return Err("messaging edit intent is incomplete".to_string());
+        }
+        let (projection, _) = self
+            .store
+            .message_projection(conversation_id, message_id)?
+            .ok_or_else(|| "messaging edit target projection is unavailable".to_string())?;
+        if projection.sender_ptid != self.endpoint.ptid {
+            return Err("messaging edit target is not authored by this actor".to_string());
+        }
+        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
+        let plan = self.prepare_send_plan(token, conversation_id)?;
+        let conversation_kind = ConversationKind::try_from(plan.conversation_kind)
+            .map_err(|_| "messaging edit conversation kind is invalid".to_string())?;
+        let command_id = Ulid::new().to_string();
+        let now = now_unix_ms();
+        let intent = EditTextIntent {
+            command_id: &command_id,
+            message_id,
+            conversation_id,
+            plaintext: plaintext.trim(),
+            client_timestamp_unix_ms: now,
+        };
+        let preparer = SendPreparer::new(
+            self.store.clone(),
+            self.endpoint.clone(),
+            self.mls_manager.clone(),
+        )?;
+        match conversation_kind {
+            ConversationKind::Direct => {
+                let actor_identity = self.actor_identity.clone().ok_or_else(|| {
+                    "messaging Direct bootstrap requires profile actor identity".to_string()
+                })?;
+                let bootstraps = DirectSessionBootstrapper::new(
+                    self.store.clone(),
+                    self.endpoint.clone(),
+                    actor_identity,
+                )?
+                .prepare_missing(
+                    conversation_id,
+                    &plan.required_endpoints,
+                    now,
+                    &StationKeyBundleTransport::new(
+                        token.to_string(),
+                        self.endpoint.device_id.clone(),
+                    )?,
+                )?;
+                preparer.prepare_direct_edit_with_bootstraps(&plan, &intent, &bootstraps)?;
+            }
+            ConversationKind::Group => {
+                preparer.prepare_group_edit(&plan, &intent)?;
+            }
+            ConversationKind::Unspecified => {
+                return Err("messaging edit conversation kind is required".to_string());
+            }
+        }
+        Ok(command_id)
+    }
+
+    pub fn submit_metadata_interaction(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        message_id: &str,
+        interaction: MetadataInteraction<'_>,
+    ) -> Result<String, String> {
+        if conversation_id.trim().is_empty() || message_id.trim().is_empty() {
+            return Err("messaging interaction target is required".to_string());
+        }
+        let (projection, _) = self
+            .store
+            .message_projection(conversation_id, message_id)?
+            .ok_or_else(|| {
+                "messaging interaction target projection is unavailable".to_string()
+            })?;
+        if matches!(interaction, MetadataInteraction::Retract)
+            && projection.sender_ptid != self.endpoint.ptid
+        {
+            return Err("messaging retract target is not authored by this actor".to_string());
+        }
+        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
+        let plan = self.prepare_send_plan(token, conversation_id)?;
+        let (local_sequence, local_hash) = self.store.authority_head(conversation_id)?;
+        if local_sequence != plan.authority_sequence || local_hash != plan.authority_hash {
+            return Err("messaging local authority head is behind interaction plan".to_string());
+        }
+        let (payload, interaction_kind) = match interaction {
+            MetadataInteraction::Retract => (
+                chat_command::Payload::RetractMessage(RetractMessageIntent {
+                    message_id: message_id.to_string(),
+                }),
+                "retract",
+            ),
+            MetadataInteraction::Reaction { reaction, remove } => {
+                if reaction.trim().is_empty() {
+                    return Err("messaging reaction value is required".to_string());
+                }
+                (
+                    chat_command::Payload::Reaction(ReactionIntent {
+                        message_id: message_id.to_string(),
+                        reaction: reaction.to_string(),
+                        remove,
+                    }),
+                    if remove {
+                        "reaction-remove"
+                    } else {
+                        "reaction-add"
+                    },
+                )
+            }
+            MetadataInteraction::Pin { remove } => (
+                chat_command::Payload::PinMessage(PinMessageIntent {
+                    message_id: message_id.to_string(),
+                    remove,
+                }),
+                if remove { "unpin" } else { "pin" },
+            ),
+        };
+        let command_id = Ulid::new().to_string();
+        let now = now_unix_ms();
+        let command = ChatCommand {
+            command_id: command_id.clone(),
+            conversation_id: conversation_id.to_string(),
+            sender: Some(CryptoEndpoint {
+                ptid: self.endpoint.ptid.clone(),
+                device_id: self.endpoint.device_id.clone(),
+            }),
+            observed_membership_epoch: plan.membership_epoch,
+            observed_mls_epoch: plan.mls_epoch,
+            client_timestamp: Some(prost_types::Timestamp {
+                seconds: now.div_euclid(1_000),
+                nanos: (now.rem_euclid(1_000) * 1_000_000) as i32,
+            }),
+            delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
+            authority_station_id: plan.authority_station_id,
+            payload: Some(payload),
+        };
+        let command_bytes = command.encode_to_vec();
+        self.store
+            .persist_interaction_command(&InteractionCommandCommit {
+                command_id: &command_id,
+                conversation_id,
+                target_message_id: message_id,
+                interaction_kind,
+                edited_text: None,
+                command_bytes: &command_bytes,
+                delivery_plan_sha256: &plan.delivery_plan_sha256,
+                created_at_unix_ms: now,
+            })?;
+        Ok(command_id)
+    }
+
+    pub fn submit_typing(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        is_typing: bool,
+    ) -> Result<(), String> {
+        if conversation_id.trim().is_empty() {
+            return Err("messaging typing conversation ID is required".to_string());
+        }
+        let now = now_unix_ms();
+        crate::infrastructure::station_client::request_proto_for_device::<
+            ConversationCommand,
+            SubmitMessagingReceiptResponse,
+        >(
+            Method::POST,
+            "/messaging/typing/submit",
+            token,
+            None,
+            Some(&ConversationCommand {
+                command_id: Ulid::new().to_string(),
+                conversation_id: conversation_id.to_string(),
+                sender_ptid: self.endpoint.ptid.clone(),
+                sender_device_id: self.endpoint.device_id.clone(),
+                client_ts: Some(prost_types::Timestamp {
+                    seconds: now.div_euclid(1_000),
+                    nanos: (now.rem_euclid(1_000) * 1_000_000) as i32,
+                }),
+                payload: Some(crate::model::chat::conversation_command::Payload::Typing(
+                    TypingCommand { is_typing },
+                )),
+                ..Default::default()
+            }),
+            &self.endpoint.device_id,
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    pub fn submit_read_cursor(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        last_read_sequence: i64,
+    ) -> Result<(), String> {
+        if conversation_id.trim().is_empty() || last_read_sequence <= 0 {
+            return Err("messaging read cursor is incomplete".to_string());
+        }
+        let (authority_sequence, _) = self.store.authority_head(conversation_id)?;
+        if last_read_sequence > authority_sequence {
+            return Err("messaging read cursor exceeds local authority head".to_string());
+        }
+        let now = now_unix_ms();
+        crate::infrastructure::station_client::request_proto_for_device::<
+            SubmitMessagingReceiptRequest,
+            SubmitMessagingReceiptResponse,
+        >(
+            Method::POST,
+            "/messaging/receipt/submit",
+            token,
+            None,
+            Some(&SubmitMessagingReceiptRequest {
+                kind: MessagingReceiptKind::ActorRead as i32,
+                device_consumed: None,
+                actor_read: Some(ActorReadCursor {
+                    conversation_id: conversation_id.to_string(),
+                    reader_ptid: self.endpoint.ptid.clone(),
+                    last_read_sequence,
+                    updated_at: Some(prost_types::Timestamp {
+                        seconds: now.div_euclid(1_000),
+                        nanos: (now.rem_euclid(1_000) * 1_000_000) as i32,
+                    }),
+                }),
+            }),
+            &self.endpoint.device_id,
+        )
+        .map_err(|error| error.to_string())?;
+        self.store.update_read_cursor(
+            conversation_id,
+            &self.endpoint.ptid,
+            last_read_sequence,
+            now,
+        )
+    }
+
     pub fn conversations(&self) -> Result<Vec<ConversationProjection>, String> {
         self.store.conversation_projections()
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn acceptance_interaction_snapshot(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        command_id: &str,
+    ) -> Result<serde_json::Value, String> {
+        self.store
+            .acceptance_interaction_snapshot(conversation_id, message_id, command_id)
     }
 
     pub fn create_group_conversation(

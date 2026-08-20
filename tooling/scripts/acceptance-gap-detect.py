@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Fail-closed read-only detector for Acceptance evidence gaps."""
+"""Fail-closed read-only detector for Acceptance evidence gaps.
+
+Validates two layers:
+  1. Plan↔run consistency: changed paths match plan, required gates ran
+     and produced DONE/PROVEN evidence.
+  2. Closure contract deliverables: when a --contract YAML is supplied,
+     every declared deliverable must have corresponding mechanical
+     evidence (scan reports or gate results). This eliminates AI
+     discretion over what counts as 'done'.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +32,14 @@ RECEIVER_VISIBLE_PATHS = {
     "apps/desktop/src/store/socialProjection.ts",
     "apps/station/app/subserver/messaging/application/receipt_service.go",
     "apps/station/app/subserver/messaging/interface/http/receipt_handler.go",
+}
+
+SCAN_TYPE_TO_GATE = {
+    "path-absent": "chat-w11-forbidden-scan",
+    "source-scan": "chat-w11-forbidden-scan",
+    "http-route-absent": "chat-w11-forbidden-scan",
+    "tauri-command-absent": "chat-w11-forbidden-scan",
+    "no-duplicate-symbol": "chat-w11-duplicate-scan",
 }
 
 
@@ -125,6 +142,131 @@ def gap(
     ).to_dict()
 
 
+def _load_contract(path: Path) -> dict[str, Any]:
+    try:
+        import yaml
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except ImportError:
+        pass
+    sys.path.insert(0, str(REPO_ROOT / "tooling" / "scripts"))
+    from importlib import import_module
+    gen = import_module("acceptance-closure-gen".replace("-", "_"))
+    return gen.load_yaml(path)
+
+
+def validate_contract_deliverables(
+    contract: dict[str, Any],
+    results: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    gaps: list[dict[str, Any]] = []
+    deliverables = contract.get("deliverables", [])
+    if not isinstance(deliverables, list):
+        return gaps
+
+    for d in deliverables:
+        if not isinstance(d, dict):
+            continue
+        did = str(d.get("id", "?"))
+        verify = d.get("verify", {})
+        if not isinstance(verify, dict):
+            continue
+        vtype = verify.get("type", "")
+
+        if vtype in SCAN_TYPE_TO_GATE:
+            gate_id = SCAN_TYPE_TO_GATE[vtype]
+            result = results.get(gate_id)
+            if result is None:
+                gaps.append(
+                    gap(
+                        gap_type="CONTRACT_SCAN_GATE_NOT_RUN",
+                        claim=f"contract deliverable {did}",
+                        owner_stage="EXECUTE",
+                        required_closure=f"Run {gate_id} to verify {did}",
+                        evidence=[{
+                            "deliverableId": did,
+                            "verifyType": vtype,
+                            "requiredGate": gate_id,
+                        }],
+                    )
+                )
+            elif str(result.get("status") or "") != "passed":
+                gaps.append(
+                    gap(
+                        gap_type="CONTRACT_SCAN_GATE_FAILED",
+                        claim=f"contract deliverable {did}",
+                        owner_stage="EXECUTE",
+                        required_closure=f"Fix violations found by {gate_id}",
+                        evidence=[{
+                            "deliverableId": did,
+                            "verifyType": vtype,
+                            "gateId": gate_id,
+                            "gateStatus": result.get("status"),
+                        }],
+                    )
+                )
+
+        elif vtype == "gates-passed":
+            for gid in verify.get("gates", []):
+                result = results.get(gid)
+                if result is None:
+                    gaps.append(
+                        gap(
+                            gap_type="CONTRACT_GATE_NOT_RUN",
+                            claim=f"contract deliverable {did}",
+                            owner_stage="EXECUTE",
+                            required_closure=f"Run gate {gid}",
+                            evidence=[{"deliverableId": did, "gateId": gid}],
+                        )
+                    )
+                elif str(result.get("status") or "") != "passed":
+                    gaps.append(
+                        gap(
+                            gap_type="CONTRACT_GATE_FAILED",
+                            claim=f"contract deliverable {did}",
+                            owner_stage="EXECUTE",
+                            required_closure=f"Gate {gid} must pass",
+                            evidence=[{
+                                "deliverableId": did,
+                                "gateId": gid,
+                                "gateStatus": result.get("status"),
+                            }],
+                        )
+                    )
+
+        elif vtype == "gate-passed":
+            gid = verify.get("gate", "")
+            if not gid:
+                continue
+            result = results.get(gid)
+            if result is None:
+                gaps.append(
+                    gap(
+                        gap_type="CONTRACT_GATE_NOT_RUN",
+                        claim=f"contract deliverable {did}",
+                        owner_stage="EXECUTE",
+                        required_closure=f"Run gate {gid}",
+                        evidence=[{"deliverableId": did, "gateId": gid}],
+                    )
+                )
+            elif str(result.get("status") or "") != "passed":
+                gaps.append(
+                    gap(
+                        gap_type="CONTRACT_GATE_FAILED",
+                        claim=f"contract deliverable {did}",
+                        owner_stage="EXECUTE",
+                        required_closure=f"Gate {gid} must pass",
+                        evidence=[{
+                            "deliverableId": did,
+                            "gateId": gid,
+                            "gateStatus": result.get("status"),
+                        }],
+                    )
+                )
+
+    return gaps
+
+
 def detect(
     *,
     claim: str,
@@ -134,11 +276,15 @@ def detect(
     required_gates: list[str],
     source_commit: str = "",
     workspace_digest: str = "",
+    contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     gaps: list[dict[str, Any]] = []
     selected = gate_entries(plan)
     results = result_entries(run)
     obligations = set(required_gates)
+
+    if contract:
+        gaps.extend(validate_contract_deliverables(contract, results))
 
     planned_paths = plan.get("changed_paths")
     if isinstance(planned_paths, list):
@@ -351,6 +497,10 @@ def main() -> int:
     parser.add_argument("--plan")
     parser.add_argument("--run")
     parser.add_argument("--require-gate", action="append", default=[])
+    parser.add_argument(
+        "--contract",
+        help="Path to closure contract YAML for deliverable validation",
+    )
     args = parser.parse_args()
 
     try:
@@ -372,6 +522,13 @@ def main() -> int:
                 store.latest_artifact_ref("acceptance-run", "run")
             )
         )
+        contract = None
+        if args.contract:
+            contract_path = Path(args.contract)
+            if not contract_path.is_absolute():
+                contract_path = REPO_ROOT / contract_path
+            if contract_path.exists():
+                contract = _load_contract(contract_path)
         source_commit, workspace_digest = current_source_identity()
         report = detect(
             claim=args.claim,
@@ -381,6 +538,7 @@ def main() -> int:
             required_gates=args.require_gate,
             source_commit=source_commit,
             workspace_digest=workspace_digest,
+            contract=contract,
         )
     except DetectorError as error:
         sys.stderr.write(f"acceptance gap detector failed closed: {error}\n")

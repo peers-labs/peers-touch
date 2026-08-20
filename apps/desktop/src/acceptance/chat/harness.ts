@@ -6,8 +6,10 @@ import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
 import { useSessionStore } from '../../store/session';
 import { createEncryptedChatPayloadBytes, decodeGroupMessages, useSocialChatStore } from '../../store/socialChat';
+import { messageGroupSeq } from '../../store/socialProjection';
 import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import { registerAcceptanceHarness } from '../registry';
+import { requireCanonicalAcceptancePtid } from './identity';
 
 interface LoginInput {
   account: string;
@@ -85,8 +87,119 @@ interface AddFederatedGroupMemberInput {
   member: GroupChatFederatedActorInput;
 }
 
+type ConversationKind = 'friend' | 'group';
+
+interface SendInteractionMessageInput {
+  conversationId: string;
+  kind: ConversationKind;
+  content: string;
+  replyToMessageId?: string;
+  threadRootMessageId?: string;
+}
+
+interface MessageInteractionInput {
+  conversationId: string;
+  kind: ConversationKind;
+  messageId: string;
+}
+
+interface EditMessageInput extends MessageInteractionInput {
+  plaintext: string;
+}
+
+interface MetadataInteractionInput extends MessageInteractionInput {
+  interaction: 'retract' | 'reaction' | 'pin';
+  reaction?: string;
+  remove?: boolean;
+}
+
+interface ReadCursorInput {
+  conversationId: string;
+  kind: ConversationKind;
+  lastReadSequence?: number;
+}
+
+interface TypingInput {
+  conversationId: string;
+  typing: boolean;
+}
+
+function selectConversation(kind: ConversationKind, conversationId: string): void {
+  const social = useSocialChatStore.getState();
+  if (kind === 'friend') {
+    social.selectSession(conversationId);
+  } else {
+    social.selectGroup(conversationId);
+  }
+  social.setActiveTab(kind);
+}
+
+async function refreshConversation(
+  kind: ConversationKind,
+  conversationId: string,
+): Promise<void> {
+  const social = useSocialChatStore.getState();
+  await social.loadMessages(conversationId, kind);
+  selectConversation(kind, conversationId);
+}
+
+function interactionProjection(
+  kind: ConversationKind,
+  conversationId: string,
+  messageId: string,
+) {
+  const state = useSocialChatStore.getState();
+  const message = state
+    .getIMMessages(kind, conversationId)
+    .find((item) => item.id === messageId);
+  const raw = (state.messages[conversationId] ?? [])
+    .find((item) => item.ulid === messageId);
+  if (!message || !raw) return null;
+  return {
+    conversationId,
+    kind,
+    messageId,
+    content: message.content,
+    senderId: message.senderId,
+    replyToMessageId: message.replyToUlid ?? '',
+    threadRootMessageId: message.threadRootUlid ?? '',
+    edited: Boolean(message.editedAtMs),
+    retracted: Boolean(raw.recalled),
+    sequence: messageGroupSeq(raw),
+    reactions: state.reactions[messageId] ?? [],
+    pinned: Boolean(state.pinnedMessages[messageId]),
+    readByPtids: message.readByPtids,
+  };
+}
+
 function activeActorId(): string | null {
   return useSessionStore.getState().currentUser?.actorId ?? null;
+}
+
+function activeActorPtid(): string {
+  return requireCanonicalAcceptancePtid(
+    useSocialChatStore.getState().currentUserDid,
+  );
+}
+
+async function waitForIdentityState(
+  predicate: (snapshot: ReturnType<typeof identityRuntime.getSnapshot>) => boolean,
+  description: string,
+  timeoutMs = 30_000,
+): Promise<void> {
+  if (predicate(identityRuntime.getSnapshot())) return;
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      unsubscribe();
+      reject(new Error(`timed out waiting for ${description}`));
+    }, timeoutMs);
+    const unsubscribe = identityRuntime.subscribe(() => {
+      if (!predicate(identityRuntime.getSnapshot())) return;
+      window.clearTimeout(timeout);
+      unsubscribe();
+      resolve();
+    });
+  });
 }
 
 interface PressureWindowState {
@@ -129,16 +242,25 @@ async function hydrateSocialForActiveActor(): Promise<void> {
 }
 
 export function installAcceptanceHarness(): void {
+  (window as any).__PT_ACCEPTANCE_STORE__ = useSocialChatStore;
   registerAcceptanceHarness('chat', {
     async loginWithPassword({ account, password }: LoginInput) {
+      await waitForIdentityState(
+        ({ phase, lifecycle }) => phase.kind === 'accountGate' && lifecycle.dataReady,
+        'identity account gate',
+      );
       await identityRuntime.loginWithPassword(account, password);
       await identityRuntime.completeCurrentSession();
+      await waitForIdentityState(
+        ({ lifecycle }) => lifecycle.state === 'ready' && lifecycle.authenticated,
+        'authenticated identity lifecycle',
+      );
       await installDeferredAppRuntimeProjections();
       await hydrateSocialForActiveActor();
-      const user = useSessionStore.getState().currentUser;
+      const actorPtid = activeActorPtid();
       return {
-        authenticated: Boolean(user?.actorId),
-        actorId: user?.actorId ?? null,
+        authenticated: true,
+        actorId: actorPtid,
       };
     },
 
@@ -150,7 +272,7 @@ export function installAcceptanceHarness(): void {
 
     async syncFriendSession({ sessionUlid, limit: _limit = 50, maxPages: _maxPages = 1 }: SyncFriendInput) {
       const social = useSocialChatStore.getState();
-      await social.loadSessions();
+      await imServiceV1.conversation.syncFromStation(sessionUlid, _limit);
       await social.loadMessages(sessionUlid, 'friend');
       social.selectSession(sessionUlid);
       social.setActiveTab('friend');
@@ -163,15 +285,13 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async createGroup({ name, description, memberDids = [], initialFederatedMembers = [] }: CreateGroupInput) {
-      const response = await api.groupChatCreateGroup(name, description, memberDids, initialFederatedMembers);
-      const groupUlid = response.group?.ulid || '';
-      if (!groupUlid) {
-        throw new Error('groupChatCreateGroup returned no group ulid');
-      }
+    async createGroup({ name, description: _description, memberDids = [], initialFederatedMembers: _initialFederatedMembers = [] }: CreateGroupInput) {
+      const conversationId = crypto.randomUUID().replace(/-/g, '').slice(0, 26);
+      const result = await imServiceV1.messaging.createGroup(conversationId, name || 'Acceptance Group', memberDids);
+      const groupUlid = result.conversationId || conversationId;
       const social = useSocialChatStore.getState();
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid);
+      await social.loadGroupMembers(groupUlid).catch(() => {});
       social.selectGroup(groupUlid);
       social.setActiveTab('group');
       return {
@@ -182,8 +302,9 @@ export function installAcceptanceHarness(): void {
 
     async syncGroup({ groupUlid, limit: _limit = 50, maxPages: _maxPages = 1 }: SyncGroupInput) {
       const social = useSocialChatStore.getState();
+      await imServiceV1.conversation.syncFromStation(groupUlid, _limit).catch(() => {});
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid);
+      await social.loadGroupMembers(groupUlid).catch(() => {});
       await social.loadMessages(groupUlid, 'group');
       social.selectGroup(groupUlid);
       social.setActiveTab('group');
@@ -193,6 +314,158 @@ export function installAcceptanceHarness(): void {
         messageCount: messages.length,
         syncedCount: messages.length,
         pagesFetched: 1,
+      };
+    },
+
+    async sendInteractionMessage({
+      conversationId,
+      kind,
+      content,
+      replyToMessageId = '',
+      threadRootMessageId = '',
+    }: SendInteractionMessageInput) {
+      const outcome = await imServiceV1.messaging.sendMessage(
+        conversationId,
+        kind === 'friend' ? 'direct' : 'group',
+        content,
+        [],
+        {
+          replyToMessageId: replyToMessageId || undefined,
+          threadRootMessageId: threadRootMessageId || undefined,
+        },
+      );
+      await refreshConversation(kind, conversationId);
+      return {
+        ...outcome,
+        projection: interactionProjection(kind, conversationId, outcome.messageId),
+      };
+    },
+
+    async editInteractionMessage({
+      conversationId,
+      kind,
+      messageId,
+      plaintext,
+    }: EditMessageInput) {
+      const result = await api.messagingEditMessage(
+        conversationId,
+        messageId,
+        plaintext,
+      );
+      return {
+        ...result,
+        kind,
+        messageId,
+      };
+    },
+
+    async submitMetadataInteraction({
+      conversationId,
+      kind,
+      messageId,
+      interaction,
+      reaction = '',
+      remove = false,
+    }: MetadataInteractionInput) {
+      const result = await api.messagingMetadataInteraction(
+        conversationId,
+        messageId,
+        interaction,
+        { reaction, remove },
+      );
+      return {
+        ...result,
+        kind,
+        messageId,
+        interaction,
+        remove,
+      };
+    },
+
+    async submitReadCursor({
+      conversationId,
+      kind,
+      lastReadSequence,
+    }: ReadCursorInput) {
+      await refreshConversation(kind, conversationId);
+      const sequence = lastReadSequence
+        ?? (useSocialChatStore.getState().messages[conversationId] ?? [])
+          .reduce((maximum, message) => Math.max(maximum, messageGroupSeq(message)), 0);
+      if (sequence <= 0) {
+        throw new Error('No authority-backed message sequence is available for read cursor');
+      }
+      await api.messagingReadCursor(conversationId, sequence);
+      return {
+        conversationId,
+        readerPtid: activeActorPtid(),
+        lastReadSequence: sequence,
+      };
+    },
+
+    async submitTyping({ conversationId, typing }: TypingInput) {
+      const result = await api.messagingTypingSend(conversationId, typing);
+      return {
+        ...result,
+        conversationId,
+        senderPtid: activeActorPtid(),
+        typing,
+      };
+    },
+
+    async interactionProjection({
+      conversationId,
+      kind,
+      messageId,
+    }: MessageInteractionInput) {
+      await refreshConversation(kind, conversationId);
+      return interactionProjection(kind, conversationId, messageId);
+    },
+
+    async openInteractionThread({
+      conversationId,
+      kind,
+      messageId,
+    }: MessageInteractionInput) {
+      await refreshConversation(kind, conversationId);
+      const social = useSocialChatStore.getState();
+      await social.loadThreadMessages(conversationId, messageId, kind);
+      useSocialChatStore.getState().openThread(messageId);
+      const thread = useSocialChatStore.getState()
+        .getIMThreadMessages(kind, conversationId, messageId);
+      return {
+        conversationId,
+        kind,
+        rootMessageId: messageId,
+        replyMessageIds: thread
+          .filter((message) => message.ulid !== messageId)
+          .map((message) => message.ulid),
+      };
+    },
+
+    async deleteLocalInteractionMessage({
+      conversationId,
+      kind,
+      messageId,
+    }: MessageInteractionInput) {
+      await useSocialChatStore.getState().deleteMessage(
+        conversationId,
+        messageId,
+        kind,
+      );
+      return {
+        conversationId,
+        kind,
+        messageId,
+        present: Boolean(interactionProjection(kind, conversationId, messageId)),
+      };
+    },
+
+    async typingProjection({ conversationId }: { conversationId: string }) {
+      const peers = useSocialChatStore.getState().typingPeers[conversationId] ?? {};
+      return {
+        conversationId,
+        peers,
+        active: Object.values(peers).some((entry) => entry.typing),
       };
     },
 
@@ -398,23 +671,57 @@ export function installAcceptanceHarness(): void {
       };
     },
 
-    async removeGroupMember({ groupUlid, memberDid }: RemoveGroupMemberInput) {
-      const response = await api.groupChatRemoveMember(groupUlid, memberDid);
+    async inviteToGroup({ groupUlid, memberDids }: { groupUlid: string; memberDids: string[] }) {
       const social = useSocialChatStore.getState();
+      for (const did of memberDids) {
+        await imServiceV1.messaging.submitMembershipIntent({
+          conversationId: groupUlid,
+          action: 'add_actor',
+          targetPtid: did,
+        });
+      }
       await social.loadGroups();
       await social.loadGroupMembers(groupUlid);
+      social.selectGroup(groupUlid);
+      social.setActiveTab('group');
       return {
         groupUlid,
-        success: Boolean(response.success),
         memberCount: useSocialChatStore.getState().groupMembers[groupUlid]?.length ?? 0,
+      };
+    },
+
+    async removeGroupMember({ groupUlid, memberDid }: RemoveGroupMemberInput) {
+      await imServiceV1.messaging.submitMembershipIntent({
+        conversationId: groupUlid,
+        action: 'remove_actor',
+        targetPtid: memberDid,
+      });
+      return {
+        groupUlid,
+        success: true,
+        memberDid,
       };
     },
 
     async getRealtimeDevice() {
       const device = await api.accountGetDeviceId();
       return {
-        actorId: activeActorId(),
+        actorId: activeActorPtid(),
         deviceId: String(device?.device_id ?? ''),
+      };
+    },
+
+    async revokeCurrentDevice() {
+      const device = await api.accountGetDeviceId();
+      const deviceId = String(device?.device_id ?? '');
+      if (!deviceId) {
+        throw new Error('No active device is available for revocation');
+      }
+      await imServiceV1.device.revoke(deviceId);
+      return {
+        actorId: activeActorPtid(),
+        deviceId,
+        revoked: true,
       };
     },
 

@@ -1,7 +1,8 @@
 use super::{
-    ClaimedItemConsumer, ConversationStateProcessor, DirectMessageProcessor, EngineEndpoint,
-    MessagingStore, MlsApplicationProcessor, MlsRetirementProcessor, MlsSenderTransitionProcessor,
-    MlsTransitionProcessor, PublicEventProcessor,
+    ClaimedItemConsumer, ConversationStateProcessor, DeliveryReceiptProcessor,
+    DirectMessageProcessor, EngineEndpoint, MessagingStore, MlsApplicationProcessor,
+    MlsRetirementProcessor, MlsSenderTransitionProcessor, MlsTransitionProcessor,
+    PublicEventProcessor,
 };
 use crate::domain::crypto::IdentityKeyPair;
 use crate::domain::mls_group::MlsGroupManager;
@@ -20,6 +21,7 @@ pub struct MessagingItemConsumer {
     public_event: PublicEventProcessor,
     conversation_state: ConversationStateProcessor,
     mls_sender_transition: MlsSenderTransitionProcessor,
+    delivery_receipt: DeliveryReceiptProcessor,
 }
 
 impl MessagingItemConsumer {
@@ -70,16 +72,19 @@ impl MessagingItemConsumer {
                 endpoint.clone(),
                 clock,
             )?,
+            delivery_receipt: DeliveryReceiptProcessor::new(store, endpoint, clock)?,
         })
     }
 }
 
 impl ClaimedItemConsumer for MessagingItemConsumer {
     fn consume(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String> {
-        if DeviceQueuePayloadType::try_from(item.payload_type)
-            .map_err(|_| "messaging queue payload type is invalid".to_string())?
-            != DeviceQueuePayloadType::ConversationEvent
-        {
+        let payload_type = DeviceQueuePayloadType::try_from(item.payload_type)
+            .map_err(|_| "messaging queue payload type is invalid".to_string())?;
+        if payload_type == DeviceQueuePayloadType::DeviceReceipt {
+            return self.delivery_receipt.consume(item, consumer_epoch);
+        }
+        if payload_type != DeviceQueuePayloadType::ConversationEvent {
             return Err("messaging consumer received unsupported queue payload type".to_string());
         }
         let delivery = DeviceEventDelivery::decode(item.opaque_payload.as_slice())

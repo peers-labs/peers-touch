@@ -1003,66 +1003,6 @@ pub fn conversation_thread_counts(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationSetReadCursorInput {
-    pub conversation_id: String,
-    pub last_read_seq: i64,
-}
-
-#[tauri::command]
-pub fn conversation_set_read_cursor(
-    input: ConversationSetReadCursorInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
-    let token = match get_token(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let body = json!({
-        "conversation_id": input.conversation_id,
-        "last_read_seq": input.last_read_seq,
-    });
-    match station_client::request_json_auth(
-        Method::POST,
-        "/conversation/read-cursor",
-        &token,
-        None,
-        Some(&body),
-    ) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => station_err(e, "set read cursor failed"),
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationGetUnreadInput {
-    pub conversation_id: String,
-}
-
-#[tauri::command]
-pub fn conversation_get_unread(
-    input: ConversationGetUnreadInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
-    let token = match get_token(&state, &window) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let query = vec![("conversation_id", input.conversation_id)];
-    match station_client::request_json_auth(
-        Method::GET,
-        "/conversation/unread",
-        &token,
-        Some(&query),
-        None,
-    ) {
-        Ok(resp) => AppResult::success(resp),
-        Err(e) => station_err(e, "get unread failed"),
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationMemberSettingsInput {
     pub conversation_id: String,
 }

@@ -131,6 +131,7 @@ mod tests {
             attachments: Vec::new(),
             committed_at_unix_ms: 100,
             reply_to_message_id: None,
+            thread_root_message_id: None,
             edited_text: None,
             edited_at_unix_ms: None,
             retracted: false,
@@ -151,8 +152,11 @@ mod tests {
             consumed_one_time_prekey_id: None,
             projection: &projection,
             reply_to_message_id: None,
+            thread_root_message_id: None,
             receipt_id: "receipt-1",
             receipt_bytes: b"receipt",
+            delivery_receipt_id: "message-delivered:event-1:bob-device",
+            delivery_receipt_bytes: b"delivery-receipt",
             consumed_at_unix_ms: 100,
         };
         let worker = InboxWorker::new(store, AckSpy::default());
@@ -195,6 +199,7 @@ mod tests {
             attachments: Vec::new(),
             committed_at_unix_ms: 100,
             reply_to_message_id: None,
+            thread_root_message_id: None,
             edited_text: None,
             edited_at_unix_ms: None,
             retracted: false,
@@ -215,8 +220,11 @@ mod tests {
             consumed_one_time_prekey_id: None,
             projection: &projection,
             reply_to_message_id: None,
+            thread_root_message_id: None,
             receipt_id: "receipt-2",
             receipt_bytes: b"receipt",
+            delivery_receipt_id: "message-delivered:event-2:bob-device",
+            delivery_receipt_bytes: b"delivery-receipt",
             consumed_at_unix_ms: 100,
         };
         let worker = InboxWorker::new(store, AckSpy::default());

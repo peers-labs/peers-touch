@@ -109,10 +109,12 @@ export function ChatPage() {
   const [editingMessage, setEditingMessage] = useState<EditingMessage | null>(null);
   const [localActionError, setLocalActionError] = useState('');
   const activeSessionUlid = useSocialStore((state) => state.activeSessionUlid);
+  const activeGroupUlid = useGroupStore((state) => state.activeGroupUlid);
+  const activeConversationId = activeGroupUlid || activeSessionUlid || '';
   const authSession = useAuthStore((state) => state.session);
   const messages = useSocialStore((state) => (activeSessionUlid ? state.messages[activeSessionUlid] ?? EMPTY_MESSAGES : EMPTY_MESSAGES));
   const currentUserDid = useSocialStore((state) => state.currentUserDid);
-  const typingPeers = useSocialStore((state) => (activeSessionUlid ? state.typingPeers[activeSessionUlid] ?? EMPTY_TYPING_PEERS : EMPTY_TYPING_PEERS));
+  const typingPeers = useSocialStore((state) => (activeConversationId ? state.typingPeers[activeConversationId] ?? EMPTY_TYPING_PEERS : EMPTY_TYPING_PEERS));
   const loading = useSocialStore((state) => state.loading);
   const error = useSocialStore((state) => state.error);
   const peerProfiles = useSocialStore((state) => state.peerProfiles);
@@ -132,7 +134,6 @@ export function ChatPage() {
   const clearSocialError = useSocialStore((state) => state.clearError);
   const friendConversationSettings = useSocialStore((state) => state.conversationSettings);
   const updateFriendConversationSettings = useSocialStore((state) => state.updateConversationSettings);
-  const activeGroupUlid = useGroupStore((state) => state.activeGroupUlid);
   const groupMessages = useGroupStore((state) => (activeGroupUlid ? state.messages[activeGroupUlid] ?? EMPTY_GROUP_MESSAGES : EMPTY_GROUP_MESSAGES));
   const groupMembers = useGroupStore((state) => (activeGroupUlid ? state.members[activeGroupUlid] ?? EMPTY_GROUP_MEMBERS : EMPTY_GROUP_MEMBERS));
   const groupSettingsByUlid = useGroupStore((state) => state.settings);
@@ -161,6 +162,7 @@ export function ChatPage() {
   const lastCompositionEndRef = useRef(0);
   const lastTypingPulseRef = useRef(0);
   const typingIdleTimerRef = useRef<number | null>(null);
+  const typingConversationRef = useRef('');
   const sessions = useSocialStore((state) => state.sessions);
   const sessionMessages = useSocialStore((state) => state.messages);
   const peerOnline = useSocialStore((state) => state.peerOnline);
@@ -210,10 +212,12 @@ export function ChatPage() {
   const activeGroupConversation = groupConversations.find((conversation) => conversation.group.ulid === activeGroupUlid);
   const activeConversationKey = activeGroupUlid ? `group:${activeGroupUlid}` : activeSessionUlid ? `friend:${activeSessionUlid}` : '';
   activeConversationKeyRef.current = activeConversationKey;
-  const peerTyping = activeConversation ? Boolean(typingPeers[activeConversation.peerDid]?.typing) : false;
-  const groupMemberDids = useMemo(() => new Set(groupMembers.map((member) => member.actorDid).filter(Boolean)), [groupMembers]);
+  const peerTyping = activeConversation
+    ? Boolean(typingPeers[activeConversation.peerDid]?.typing)
+    : Object.entries(typingPeers).some(([ptid, entry]) => ptid !== currentUserDid && entry.typing);
+  const groupMemberDids = useMemo(() => new Set(groupMembers.map((member) => member.ptid).filter(Boolean)), [groupMembers]);
   const groupMemberByDid = useMemo(
-    () => new Map(groupMembers.map((member) => [member.actorDid, member])),
+    () => new Map(groupMembers.map((member) => [member.ptid, member])),
     [groupMembers],
   );
   const groupInviteCandidates = useMemo(
@@ -224,17 +228,11 @@ export function ChatPage() {
     ),
     [conversations, friendshipStatus, groupMemberDids],
   );
-  const myGroupMember = groupMembers.find((member) => member.actorDid === currentUserDid);
+  const myGroupMember = groupMembers.find((member) => member.ptid === currentUserDid);
   const myGroupRole = activeGroupConversation?.group.ownerDid === currentUserDid
     ? GroupRole.OWNER
     : Number(myGroupMember?.role ?? 0);
   const canManageGroupMembers = myGroupRole >= GroupRole.ADMIN;
-
-  useEffect(() => {
-    return () => {
-      if (typingIdleTimerRef.current) window.clearTimeout(typingIdleTimerRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     setThreadSearchQuery('');
@@ -269,7 +267,7 @@ export function ChatPage() {
     const dids = new Set<string>();
     if (activeConversation?.peerDid) dids.add(activeConversation.peerDid);
     groupMembers.forEach((member) => {
-      if (member.actorDid && member.actorDid !== currentUserDid) dids.add(member.actorDid);
+      if (member.ptid && member.ptid !== currentUserDid) dids.add(member.ptid);
     });
     chatMessageSenderDids(activeGroupConversation ? groupMessages : messages, currentUserDid).forEach((did) => dids.add(did));
     dids.forEach((did) => {
@@ -290,13 +288,27 @@ export function ChatPage() {
   }, [activeGroupConversation]);
 
   const emitTypingState = async (typing: boolean) => {
-    if (!activeConversation) return;
-    await sendTypingState(activeConversation.session.ulid, typing);
+    if (!activeConversationId) return;
+    await sendTypingState(activeConversationId, typing);
   };
+
+  useEffect(() => {
+    typingConversationRef.current = activeConversationId;
+    return () => {
+      if (typingIdleTimerRef.current) {
+        window.clearTimeout(typingIdleTimerRef.current);
+        typingIdleTimerRef.current = null;
+      }
+      if (lastTypingPulseRef.current > 0 && typingConversationRef.current) {
+        void sendTypingState(typingConversationRef.current, false);
+      }
+      lastTypingPulseRef.current = 0;
+    };
+  }, [activeConversationId, sendTypingState]);
 
   const handleDraftChange = (value: string) => {
     setDraft(value);
-    if (!activeConversation) return;
+    if (!activeConversationId) return;
     const now = Date.now();
     if (value.trim() && now - lastTypingPulseRef.current > TYPING_TRUE_INTERVAL_MS) {
       lastTypingPulseRef.current = now;
@@ -489,10 +501,10 @@ export function ChatPage() {
   };
 
   const confirmTransferGroupOwnership = (member: GroupMember) => {
-    if (!activeGroupUlid || !member.actorDid) return;
+    if (!activeGroupUlid || !member.ptid) return;
     const groupUlid = activeGroupUlid;
-    const profile = peerProfiles[member.actorDid];
-    const memberName = member.nickname || profile?.displayName || profile?.username || member.actorDid;
+    const profile = peerProfiles[member.ptid];
+    const memberName = member.nickname || profile?.displayName || profile?.username || member.ptid;
     Modal.confirm({
       title: t('mobile.group.transferOwnerConfirmTitle'),
       content: t('mobile.group.transferOwnerConfirmBody', { name: memberName }),
@@ -500,7 +512,7 @@ export function ChatPage() {
       cancelText: t('common.action.cancel'),
       okButtonProps: { danger: true },
       onOk: () => runChatOperation(
-        () => transferGroupOwnership(groupUlid, member.actorDid),
+        () => transferGroupOwnership(groupUlid, member.ptid),
         'mobile.group.operationTransferOwnerFailed',
       ),
     });
@@ -637,7 +649,9 @@ export function ChatPage() {
     const peerMessageAvatar = activeGroupConversation ? '' : (peerProfile?.avatar || activeConversation?.peerAvatar);
     const stationName = stationHostFromUrl(authSession?.stationUrl);
     const subtitle = activeGroupConversation
-      ? t('mobile.group.memberCount', { count: activeGroupConversation.group.memberCount })
+      ? peerTyping
+        ? t('mobile.chat.typing')
+        : t('mobile.group.memberCount', { count: activeGroupConversation.group.memberCount })
       : peerTyping
         ? t('mobile.chat.typing')
         : t('mobile.chat.peerAtStation', { station: stationName });
@@ -1038,12 +1052,12 @@ export function ChatPage() {
                 <List
                   dataSource={groupMembers}
                   renderItem={(member) => {
-                    const profile = peerProfiles[member.actorDid];
-                    const memberName = member.nickname || profile?.displayName || profile?.username || member.actorDid;
+                    const profile = peerProfiles[member.ptid];
+                    const memberName = member.nickname || profile?.displayName || profile?.username || member.ptid;
                     const memberRole = Number(member.role ?? GroupRole.MEMBER);
                     const memberControls = getMobileGroupMemberControlState({
                       canManageGroupMembers,
-                      isSelf: member.actorDid === currentUserDid,
+                      isSelf: member.ptid === currentUserDid,
                       myGroupRole,
                       targetRole: memberRole,
                     });
@@ -1054,7 +1068,7 @@ export function ChatPage() {
                             <Button
                               key="role"
                               size="small"
-                              onClick={() => updateMemberInGroup(member.actorDid, {
+                              onClick={() => updateMemberInGroup(member.ptid, {
                                 role: memberRole === GroupRole.ADMIN ? GroupRole.MEMBER : GroupRole.ADMIN,
                               })}
                             >
@@ -1074,7 +1088,7 @@ export function ChatPage() {
                             <Button
                               key="mute"
                               size="small"
-                              onClick={() => updateMemberInGroup(member.actorDid, { muted: !member.muted })}
+                              onClick={() => updateMemberInGroup(member.ptid, { muted: !member.muted })}
                             >
                               {member.muted ? t('mobile.group.unmuteMember') : t('mobile.group.muteMember')}
                             </Button>
@@ -1084,7 +1098,7 @@ export function ChatPage() {
                               key="remove"
                               size="small"
                               danger
-                              onClick={() => removeMemberFromGroup(member.actorDid)}
+                              onClick={() => removeMemberFromGroup(member.ptid)}
                             >
                               {t('mobile.group.removeMember')}
                             </Button>
@@ -1094,7 +1108,7 @@ export function ChatPage() {
                         <List.Item.Meta
                           avatar={<MobileAvatar src={profile?.avatar}>{memberName.slice(0, 1)}</MobileAvatar>}
                           title={<Text strong>{memberName}</Text>}
-                          description={<Text type="secondary" copyable>{member.actorDid}</Text>}
+                          description={<Text type="secondary" copyable>{member.ptid}</Text>}
                         />
                         <Tag>{groupRoleLabel(memberRole, t)}</Tag>
                         {member.muted ? <Tag color="warning">{t('mobile.group.memberMuted')}</Tag> : null}

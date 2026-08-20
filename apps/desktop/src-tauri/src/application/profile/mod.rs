@@ -326,8 +326,8 @@ fn canonical_profile_ptid(profile: &ActorProfile) -> Option<&str> {
         .filter(|ptid| ptid.starts_with("ptid:"))
 }
 
-fn profile_matches_ptid(profile: &ActorProfile, actor_ptid: &str) -> bool {
-    actor_ptid.starts_with("ptid:") && canonical_profile_ptid(profile) == Some(actor_ptid)
+fn profile_matches_actor(profile: &ActorProfile, actor_id: &str) -> bool {
+    profile.id == actor_id || canonical_profile_ptid(profile) == Some(actor_id)
 }
 
 fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
@@ -419,18 +419,17 @@ fn map_error(command: &str, error: ProfileError) -> AppResult<StubPayload> {
 
 /// Fetch the user's profile from Station and sync metadata + avatar to local storage.
 ///
-/// `account_id`, `actor_ptid`, and `token` MUST come from the same bound
-/// window session. The PTID validates the remote actor while the local account
-/// ID selects the destination without consulting the process-global pointer.
-pub fn sync_user_profile(
-    token: &str,
-    account_id: &str,
-    actor_ptid: &str,
-) -> AppResult<StubPayload> {
-    if account_id.trim().is_empty() || !actor_ptid.starts_with("ptid:") {
+/// `actor_id` MUST be the actor whose token is being used for this call. We
+/// intentionally do NOT consult `identities.json::active_account_id` to pick
+/// the destination record — under multi-window dev (`make dev-dual`) and right
+/// after PIN unlock, `active_account_id` may lag behind the per-window session
+/// and would cause us to write actor X's profile into actor Y's record (the
+/// "both rows show User B" bug).
+pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> {
+    if actor_id.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::Unauthorized,
-            "sync_user_profile: caller has no complete bound identity",
+            "sync_user_profile: caller has no bound actor",
             None,
         );
     }
@@ -452,9 +451,10 @@ pub fn sync_user_profile(
     // Cross-check the canonical PTID. Legacy Station profile responses may
     // still carry their storage ID in `profile.id`; `peers_touch.network_id`
     // is the canonical identity in that response shape.
-    if !profile_matches_ptid(&profile, actor_ptid) {
+    if !profile_matches_actor(&profile, actor_id) {
         tracing::error!(
-            caller_ptid = %actor_ptid,
+            caller_actor = %actor_id,
+            station_storage_actor = %profile.id,
             station_actor = ?canonical_profile_ptid(&profile),
             "sync_user_profile: actor mismatch between caller token and Station response; refusing to write"
         );
@@ -472,9 +472,28 @@ pub fn sync_user_profile(
         profile.avatar.clone()
     };
 
+    // Pick the LocalAccount whose `provider_user_id` matches `actor_id`. This
+    // is the only correct destination — `active_account_id` is a UI/router
+    // hint and is not authoritative for token-bound writes.
+    let account_id =
+        match crate::infrastructure::auth_identity::find_account_id_by_actor_id(actor_id) {
+            Some(id) => id,
+            None => {
+                tracing::error!(
+                    actor_id = %actor_id,
+                    "sync_user_profile: no LocalAccount matches caller actor_id; refusing to write"
+                );
+                return AppResult::fail(
+                    ErrorCode::NotFound,
+                    "sync_user_profile: caller actor has no local account record",
+                    None,
+                );
+            }
+        };
+
     // Sync all profile data + download avatar to local cache.
     let avatar_local = crate::infrastructure::auth_identity::sync_profile_locally(
-        account_id,
+        &account_id,
         Some(&profile.display_name),
         None, // email is not in ActorProfile
         if avatar_url.is_empty() {
@@ -560,7 +579,7 @@ pub fn account_sync_avatar(input: &AccountSyncAvatarInput, token: &str) -> AppRe
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_profile_ptid, profile_matches_ptid};
+    use super::{canonical_profile_ptid, profile_matches_actor};
     use crate::model::actor::{ActorProfile, PeersTouchInfo};
 
     #[test]
@@ -603,7 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn profile_match_requires_canonical_ptid() {
+    fn profile_actor_match_accepts_storage_id_or_canonical_ptid() {
         let profile = ActorProfile {
             id: "350519971299721219".to_string(),
             peers_touch: Some(PeersTouchInfo {
@@ -612,14 +631,11 @@ mod tests {
             ..ActorProfile::default()
         };
 
-        assert!(profile_matches_ptid(
+        assert!(profile_matches_actor(&profile, "350519971299721219"));
+        assert!(profile_matches_actor(
             &profile,
             "ptid:v1:actor:peers:p:alice:1220abc"
         ));
-        assert!(!profile_matches_ptid(&profile, "350519971299721219"));
-        assert!(!profile_matches_ptid(
-            &profile,
-            "ptid:v1:actor:peers:p:bob:1220def"
-        ));
+        assert!(!profile_matches_actor(&profile, "350519971299721220"));
     }
 }

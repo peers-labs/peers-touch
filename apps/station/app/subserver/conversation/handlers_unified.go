@@ -48,23 +48,6 @@ type threadCountsResponse struct {
 	Counts []threadCountEntry `json:"counts"`
 }
 
-type setReadCursorRequest struct {
-	ConversationID string `json:"conversation_id"`
-	LastReadSeq    int64  `json:"last_read_seq"`
-}
-
-type setReadCursorResponse struct {
-	Success bool `json:"success"`
-}
-
-type getUnreadRequest struct {
-	ConversationID string `json:"conversation_id" query:"conversation_id"`
-}
-
-type getUnreadResponse struct {
-	UnreadCount int64 `json:"unread_count"`
-}
-
 type getMemberSettingsRequest struct {
 	ConversationID string `json:"conversation_id" query:"conversation_id"`
 }
@@ -151,41 +134,6 @@ func (s *subServer) handleGetThreadCounts(ctx context.Context, req *threadCounts
 		})
 	}
 	return &threadCountsResponse{Counts: counts}, nil
-}
-
-func (s *subServer) handleSetReadCursor(ctx context.Context, req *setReadCursorRequest) (*setReadCursorResponse, error) {
-	subject := coreauth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	if req.ConversationID == "" {
-		return nil, server.BadRequest("conversation_id is required")
-	}
-	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
-		return nil, err
-	}
-	if err := s.service.SetReadCursor(ctx, req.ConversationID, subject.ID, req.LastReadSeq); err != nil {
-		return nil, server.InternalErrorWithCause("set read cursor failed", err)
-	}
-	return &setReadCursorResponse{Success: true}, nil
-}
-
-func (s *subServer) handleGetUnread(ctx context.Context, req *getUnreadRequest) (*getUnreadResponse, error) {
-	subject := coreauth.GetSubject(ctx)
-	if subject == nil {
-		return nil, server.Unauthorized("authentication required")
-	}
-	if req.ConversationID == "" {
-		return nil, server.BadRequest("conversation_id is required")
-	}
-	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
-		return nil, err
-	}
-	count, err := s.service.GetUnreadCount(ctx, req.ConversationID, subject.ID)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("get unread count failed", err)
-	}
-	return &getUnreadResponse{UnreadCount: count}, nil
 }
 
 func (s *subServer) handleGetMemberSettings(ctx context.Context, req *getMemberSettingsRequest) (*memberSettingsResponse, error) {

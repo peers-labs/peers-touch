@@ -1,110 +1,13 @@
-use super::attachment::{validate_encrypted_object_descriptor, ATTACHMENT_MAX_PLAINTEXT_SIZE};
-use crate::model::chat::{AttachmentPlaintextMetadata, MessagePrivateContent};
-use prost::Message;
-use std::collections::HashSet;
-
-pub const MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION: u32 = 1;
-pub const MESSAGE_MAX_ATTACHMENT_COUNT: usize = 10;
-
-pub fn encode_message_private_content(
-    text: &str,
-    attachments: &[AttachmentPlaintextMetadata],
-) -> Result<Vec<u8>, String> {
-    let content = MessagePrivateContent {
-        format_version: MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
-        text: text.to_string(),
-        attachments: attachments.to_vec(),
-    };
-    validate_message_private_content(&content)?;
-    Ok(content.encode_to_vec())
-}
-
-pub fn decode_message_private_content(bytes: &[u8]) -> Result<MessagePrivateContent, String> {
-    let content = MessagePrivateContent::decode(bytes)
-        .map_err(|_| "messaging private content protobuf is invalid".to_string())?;
-    validate_message_private_content(&content)?;
-    if content.encode_to_vec() != bytes {
-        return Err("messaging private content protobuf is not canonical".to_string());
-    }
-    Ok(content)
-}
-
-pub fn validate_message_private_content(content: &MessagePrivateContent) -> Result<(), String> {
-    if content.format_version != MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION {
-        return Err("messaging private content format version is unsupported".to_string());
-    }
-    if content.text.is_empty() && content.attachments.is_empty() {
-        return Err("messaging private content is empty".to_string());
-    }
-    if content.attachments.len() > MESSAGE_MAX_ATTACHMENT_COUNT {
-        return Err("messaging private content attachment count exceeds policy".to_string());
-    }
-
-    let mut attachment_ids = HashSet::with_capacity(content.attachments.len());
-    let mut previous_attachment_id: Option<&str> = None;
-    let mut total_plaintext_size = 0_u64;
-    for attachment in &content.attachments {
-        validate_attachment_plaintext_metadata(attachment)?;
-        if previous_attachment_id
-            .is_some_and(|previous| previous >= attachment.attachment_id.as_str())
-        {
-            return Err(
-                "messaging private content attachments are not strictly sorted".to_string(),
-            );
-        }
-        if !attachment_ids.insert(attachment.attachment_id.as_str()) {
-            return Err("messaging private content has duplicate attachment ID".to_string());
-        }
-        previous_attachment_id = Some(attachment.attachment_id.as_str());
-        total_plaintext_size = total_plaintext_size
-            .checked_add(attachment.plaintext_size)
-            .ok_or_else(|| "messaging attachment aggregate size exceeds policy".to_string())?;
-    }
-    if total_plaintext_size > ATTACHMENT_MAX_PLAINTEXT_SIZE {
-        return Err("messaging attachment aggregate size exceeds policy".to_string());
-    }
-    Ok(())
-}
-
-pub fn validate_attachment_plaintext_metadata(
-    attachment: &AttachmentPlaintextMetadata,
-) -> Result<(), String> {
-    let object = attachment
-        .object
-        .as_ref()
-        .ok_or_else(|| "messaging attachment object descriptor is missing".to_string())?;
-    if attachment.attachment_id.trim().is_empty()
-        || attachment.filename.trim().is_empty()
-        || attachment.filename.len() > 1024
-        || attachment.mime_type.trim().is_empty()
-        || attachment.mime_type.len() > 255
-        || attachment.plaintext_size == 0
-        || attachment.plaintext_size > ATTACHMENT_MAX_PLAINTEXT_SIZE
-        || attachment.plaintext_sha256.len() != 32
-        || attachment.object_key.len() != 32
-        || attachment.base_nonce.len() != 12
-        || attachment.base_nonce[8..] != [0, 0, 0, 0]
-        || attachment.mime_type != object.media_type
-    {
-        return Err("messaging attachment private metadata is invalid".to_string());
-    }
-    validate_encrypted_object_descriptor(object)?;
-    let expected_chunk_count = attachment
-        .plaintext_size
-        .div_ceil(u64::from(object.chunk_size));
-    if expected_chunk_count != u64::from(object.chunk_count)
-        || object.ciphertext_size
-            != attachment
-                .plaintext_size
-                .saturating_add(u64::from(object.tag_size) * u64::from(object.chunk_count))
-    {
-        return Err("messaging attachment private metadata does not match descriptor".to_string());
-    }
-    Ok(())
-}
+pub use messaging_core::codec::private_content::{
+    decode_message_private_content, encode_message_private_content,
+    validate_attachment_plaintext_metadata, validate_message_private_content,
+    MESSAGE_MAX_ATTACHMENT_COUNT, MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
+};
 
 #[cfg(test)]
-pub(super) fn test_attachment_metadata(attachment_id: &str) -> AttachmentPlaintextMetadata {
+pub(super) fn test_attachment_metadata(
+    attachment_id: &str,
+) -> crate::model::chat::AttachmentPlaintextMetadata {
     use super::attachment::{ATTACHMENT_CHUNK_SIZE, ATTACHMENT_TAG_SIZE};
     use crate::model::chat::{
         AttachmentEncryptionSuite, AttachmentNonceStrategy, EncryptedObjectDescriptor,
@@ -113,7 +16,7 @@ pub(super) fn test_attachment_metadata(attachment_id: &str) -> AttachmentPlainte
 
     let plaintext_size = 7_u64;
     let ciphertext = vec![3_u8; plaintext_size as usize + ATTACHMENT_TAG_SIZE as usize];
-    AttachmentPlaintextMetadata {
+    crate::model::chat::AttachmentPlaintextMetadata {
         attachment_id: attachment_id.to_string(),
         filename: "report.txt".to_string(),
         mime_type: "text/plain".to_string(),
@@ -140,6 +43,7 @@ pub(super) fn test_attachment_metadata(attachment_id: &str) -> AttachmentPlainte
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::chat::MessagePrivateContent;
 
     #[test]
     fn private_content_round_trips_canonical_protobuf() {

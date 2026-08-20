@@ -1,6 +1,6 @@
 # ─── Code Review Framework ─────────────────────────────────────
 
-.PHONY: review review-route review-hard-rules review-frontend-runtime-registry review-knowledge review-skill-check quality-evidence review-submit
+.PHONY: review review-route review-hard-rules review-frontend-runtime-registry review-knowledge review-skill-check quality-evidence review-submit acceptance-evidence-export acceptance-evidence-verify
 
 REVIEW_RANGE ?= HEAD
 REVIEW_BASE ?= origin/master
@@ -28,3 +28,9 @@ quality-evidence:
 
 review-submit:
 	tooling/scripts/review/submit-pipeline.sh --base "$(REVIEW_BASE)"
+
+acceptance-evidence-export:
+	python3 tooling/scripts/acceptance-evidence.py export
+
+acceptance-evidence-verify:
+	python3 tooling/scripts/acceptance-evidence.py verify --base "$(REVIEW_BASE)" --head HEAD

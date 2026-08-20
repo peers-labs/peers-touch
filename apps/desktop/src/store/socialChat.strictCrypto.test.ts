@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { create, toBinary } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
@@ -11,7 +11,6 @@ import {
 } from './socialChat';
 
 const socialChatSource = readFileSync(new URL('./socialChat.ts', import.meta.url), 'utf8');
-const imRuntimeSource = readFileSync(new URL('../runtimes/imRuntime.ts', import.meta.url), 'utf8');
 const imServiceSource = readFileSync(new URL('../services/im-service.ts', import.meta.url), 'utf8');
 const appRuntimeSource = readFileSync(new URL('../services/appRuntime.ts', import.meta.url), 'utf8');
 const featureFlagsSource = readFileSync(
@@ -36,10 +35,6 @@ const rustGatewaySource = readFileSync(
 );
 const rustMainSource = readFileSync(
   new URL('../../src-tauri/src/main.rs', import.meta.url),
-  'utf8',
-);
-const rustFriendChatSource = readFileSync(
-  new URL('../../src-tauri/src/interface/tauri_commands/friend_chat.rs', import.meta.url),
   'utf8',
 );
 const rustPresenceSource = readFileSync(
@@ -88,6 +83,8 @@ describe('strict chat encryption source contract', () => {
   it('does not let dormant frontend runtimes enroll another active device', () => {
     expect(appRuntimeSource).not.toContain("from '../runtimes/cryptoRuntime'");
     expect(appRuntimeSource).not.toContain("from '../runtimes/imRuntime'");
+    expect(existsSync(new URL('../runtimes/cryptoRuntime.ts', import.meta.url))).toBe(false);
+    expect(existsSync(new URL('../runtimes/imRuntime.ts', import.meta.url))).toBe(false);
   });
 
   it('reads Direct plaintext and attachments only from Engine projections', () => {
@@ -106,7 +103,6 @@ describe('strict chat encryption source contract', () => {
     const cryptoServiceSource = readFileSync(new URL('../services/crypto-service.ts', import.meta.url), 'utf8');
     expect(cryptoServiceSource).toContain('supported_versions');
     expect(socialChatSource).not.toContain('cryptoDrEnabled');
-    expect(imRuntimeSource).not.toContain('cryptoDrEnabled');
     expect(featureFlagsSource).not.toContain('cryptoDrEnabled');
     expect(rustCryptoSource).toContain('if negotiated_version != 1');
     expect(rustKeyExchangeSource).toContain('supported_versions: vec![1]');
@@ -124,10 +120,9 @@ describe('strict chat encryption source contract', () => {
     expect(localChatStoreSource).not.toContain('legacy_group_plaintext_wipe');
   });
 
-  it('exposes one Conversation send and receipt path with no friend-chat fallback', () => {
+  it('exposes one Messaging send and actor-read path with no friend-chat fallback', () => {
     for (const source of [
       desktopApiSource,
-      rustFriendChatSource,
       rustGatewaySource,
       rustMainSource,
       rustPresenceSource,
@@ -138,7 +133,8 @@ describe('strict chat encryption source contract', () => {
       expect(source).not.toContain('/friend-chat/message/ack');
     }
     expect(socialChatSource).toContain('messaging.sendMessage');
-    expect(socialChatSource).toContain('conversation.submitReceipt');
+    expect(socialChatSource).toContain('messagingReadCursor');
+    expect(socialChatSource).not.toContain('conversation.submitReceipt');
   });
 
   it('retires every Desktop Sender Keys command surface', () => {
@@ -155,7 +151,7 @@ describe('strict chat encryption source contract', () => {
     expect(identityHandlersSource).not.toContain('crypto.sender-key-ledger');
   });
 
-  it('delegates text send to the Engine while legacy group mutations remain device-bound', () => {
+  it('delegates send and every durable message mutation to the Engine', () => {
     const section = (start: string, end: string) => {
       const offset = socialChatSource.indexOf(start);
       return socialChatSource.slice(offset, socialChatSource.indexOf(end, offset));
@@ -163,15 +159,19 @@ describe('strict chat encryption source contract', () => {
     const sendPath = section('sendGroupMessage: async', 'loadGroupMembers: async');
     const recallPath = section('recallGroupMessage: async', 'editGroupMessage: async');
     const editPath = section('editGroupMessage: async', 'applyMessageMutation:');
-    expect(sendPath).toContain("messaging.sendMessage(groupUlid, 'group', content, attachments)");
+    expect(sendPath).toContain("messaging.sendMessage(groupUlid, 'group', content, attachments, {");
     expect(sendPath).not.toContain('mlsGroup.encrypt');
     expect(sendPath).not.toContain('conversation.submitCommand');
     expect(sendPath).not.toContain('getLocalCryptoAddress()');
-    for (const path of [recallPath, editPath]) {
-      expect(path).toContain('const localAddress = getLocalCryptoAddress()');
-      expect(path).toContain('sender_device_id: localAddress.deviceId');
-      expect(path).not.toContain("localStorage.getItem('peers_im_device_id')");
-    }
+    expect(recallPath).toContain("messagingMetadataInteraction(groupUlid, messageUlid, 'retract')");
+    expect(recallPath).not.toContain('conversation.submitCommand');
+    expect(editPath).toContain(
+      'messagingEditMessage(groupUlid, messageUlid, newContent.trim())',
+    );
+    expect(editPath).not.toContain('mlsGroup.encrypt');
+    expect(editPath).not.toContain('conversation.submitCommand');
+    expect(editPath).not.toContain('getLocalCryptoAddress()');
+    expect(editPath).not.toContain('applyMessageMutation(');
     expect(imServiceSource).not.toContain("'mls_group_status'");
   });
 });

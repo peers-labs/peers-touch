@@ -3,8 +3,10 @@ use crate::infrastructure::station_client::{self, StationClientErrorKind};
 use crate::model::chat::{
     AcknowledgeDeviceQueueItemRequest, AcknowledgeDeviceQueueItemResponse, ChatCommand,
     ClaimDeviceQueueRequest, ClaimDeviceQueueResponse, EnrollMessagingDeviceRequest,
-    EnrollMessagingDeviceResponse, MessagingCommandRejectCode, PrepareMessagingSendRequest,
-    PrepareMessagingSendResponse, SubmitMessagingCommandRequest, SubmitMessagingCommandResponse,
+    EnrollMessagingDeviceResponse, MessageReceipt, MessagingCommandRejectCode,
+    PrepareMessagingSendRequest, PrepareMessagingSendResponse, SubmitConversationReceiptRequest,
+    SubmitConversationReceiptResponse, SubmitMessagingCommandRequest,
+    SubmitMessagingCommandResponse,
 };
 use prost::Message;
 use reqwest::Method;
@@ -31,6 +33,50 @@ pub struct StationDeviceTransport {
 pub struct StationCommandTransport {
     token: String,
     device_id: String,
+}
+
+pub struct StationDeliveryReceiptTransport {
+    token: String,
+    device_id: String,
+}
+
+impl StationDeliveryReceiptTransport {
+    pub fn new(token: String, device_id: String) -> Result<Self, String> {
+        if token.trim().is_empty() || device_id.trim().is_empty() {
+            return Err(
+                "messaging delivery receipt transport requires token and device ID".to_string(),
+            );
+        }
+        Ok(Self { token, device_id })
+    }
+
+    pub fn submit(&self, receipt: &MessageReceipt) -> Result<(), String> {
+        if receipt.conversation_id.trim().is_empty()
+            || receipt.message_id.trim().is_empty()
+            || receipt.ptid.trim().is_empty()
+            || receipt.device_id != self.device_id
+        {
+            return Err("messaging delivery receipt endpoint mismatch".to_string());
+        }
+        station_client::request_proto_for_device::<
+            SubmitConversationReceiptRequest,
+            SubmitConversationReceiptResponse,
+        >(
+            Method::POST,
+            "/messaging/receipt/delivery",
+            &self.token,
+            None,
+            Some(&SubmitConversationReceiptRequest {
+                conversation_id: receipt.conversation_id.clone(),
+                message_id: receipt.message_id.clone(),
+                device_id: receipt.device_id.clone(),
+                receipt_type: receipt.receipt_type,
+            }),
+            &self.device_id,
+        )
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+    }
 }
 
 impl StationCommandTransport {

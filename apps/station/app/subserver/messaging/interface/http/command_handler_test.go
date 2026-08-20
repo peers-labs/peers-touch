@@ -14,13 +14,16 @@ type authorityServiceSpy struct {
 	command     *chat.ChatCommand
 	submitError error
 	plan        *chat.PrepareMessagingSendResponse
+	planError   error
+	planRequest *chat.PrepareMessagingSendRequest
 }
 
 func (s *authorityServiceSpy) PrepareSend(
 	_ context.Context,
-	_ *chat.PrepareMessagingSendRequest,
+	request *chat.PrepareMessagingSendRequest,
 ) (*chat.PrepareMessagingSendResponse, error) {
-	return s.plan, nil
+	s.planRequest = request
+	return s.plan, s.planError
 }
 
 func (s *authorityServiceSpy) Submit(
@@ -108,8 +111,9 @@ func TestCommandHandlerReturnsTypedStalePlanWithoutTransportError(t *testing.T) 
 		"ptid:alice",
 		"alice-device",
 		&chat.SubmitMessagingCommandRequest{Command: &chat.ChatCommand{
-			CommandId:      "command-1",
-			ConversationId: "conversation-1",
+			CommandId:          "command-1",
+			ConversationId:     "conversation-1",
+			AuthorityStationId: "station-local",
 			Sender: &chat.CryptoEndpoint{
 				Ptid:     "ptid:alice",
 				DeviceId: "alice-device",
@@ -122,5 +126,41 @@ func TestCommandHandlerReturnsTypedStalePlanWithoutTransportError(t *testing.T) 
 	if response.RejectCode != chat.MessagingCommandRejectCode_MESSAGING_COMMAND_REJECT_CODE_STALE_DELIVERY_PLAN ||
 		response.CurrentSendPlan != plan {
 		t.Fatalf("response=%+v, want typed stale plan", response)
+	}
+	if spy.planRequest == nil ||
+		spy.planRequest.ConversationId != "conversation-1" ||
+		spy.planRequest.AuthorityStationId != "station-local" ||
+		spy.planRequest.Sender.GetPtid() != "ptid:alice" ||
+		spy.planRequest.Sender.GetDeviceId() != "alice-device" {
+		t.Fatalf("prepare request=%+v, want complete command identity", spy.planRequest)
+	}
+}
+
+func TestCommandHandlerPropagatesStalePlanPreparationFailure(t *testing.T) {
+	prepareError := errors.New("prepare current plan")
+	spy := &authorityServiceSpy{
+		submitError: domain.ErrStaleDeliveryPlan,
+		planError:   prepareError,
+	}
+	handler, err := NewCommandHandler(spy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := handler.Submit(
+		context.Background(),
+		"ptid:alice",
+		"alice-device",
+		&chat.SubmitMessagingCommandRequest{Command: &chat.ChatCommand{
+			CommandId:          "command-1",
+			ConversationId:     "conversation-1",
+			AuthorityStationId: "station-local",
+			Sender: &chat.CryptoEndpoint{
+				Ptid:     "ptid:alice",
+				DeviceId: "alice-device",
+			},
+		}},
+	)
+	if !errors.Is(err, prepareError) || response != nil {
+		t.Fatalf("response=%+v error=%v, want prepare error", response, err)
 	}
 }

@@ -7,7 +7,10 @@
     "chat-proto-service-contract",
     "chat-realtime-contract",
     "desktop-chat-typed-surface",
-    "chat-native-visible-clients"
+    "chat-direct-delivery-receipt",
+    "chat-native-visible-clients",
+    "chat-message-interactions",
+    "chat-typing-presence"
   ],
   "validation_gate_id": "chat-domain-validation"
 }

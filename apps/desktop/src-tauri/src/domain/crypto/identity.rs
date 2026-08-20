@@ -1,280 +1,23 @@
-//! Identity Key (IK) and Device Signing Key (DSK) management.
-//!
-//! - IK: Per-actor Ed25519 signing key. Stored in OS keyring (primary)
-//!   with a filesystem fallback under `$PEERS_STORAGE_ROOT`. Also stored
-//!   in the encrypted backup blob.
-//! - DSK: Per-device Ed25519 signing key, cross-signed by IK to prove
-//!   that the device belongs to the actor.
-//!
-//! All secret key bytes implement `Zeroize` on drop via wrapper types.
+pub use messaging_core::crypto::identity::{
+    DeviceSigningKey, IdentityKeyPair, X25519KeyPair, fingerprint_hex, fingerprint_numeric,
+};
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use keyring::Entry;
-use rand::rngs::OsRng;
-use sha2::{Digest, Sha256, Sha512};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
-use zeroize::Zeroize;
+
+use ed25519_dalek::VerifyingKey;
+use sha2::{Digest, Sha256};
+use x25519_dalek::PublicKey as X25519Public;
 
 use super::error::CryptoError;
 
-// ---------------------------------------------------------------------------
-// Key types
-// ---------------------------------------------------------------------------
-
-/// Ed25519 identity keypair. The signing key is zeroized on drop.
-#[derive(Clone)]
-pub struct IdentityKeyPair {
-    pub signing_key: SigningKey,
-    pub verifying_key: VerifyingKey,
-}
-
-impl Drop for IdentityKeyPair {
-    fn drop(&mut self) {
-        // SigningKey holds 32 secret bytes internally. We overwrite via
-        // the public to_bytes → from_bytes round-trip with zeros.
-        let mut zeros = [0u8; 32];
-        self.signing_key = SigningKey::from_bytes(&zeros);
-        zeros.zeroize();
-    }
-}
-
-impl IdentityKeyPair {
-    pub fn generate() -> Self {
-        let signing_key = SigningKey::generate(&mut OsRng);
-        let verifying_key = signing_key.verifying_key();
-        Self {
-            signing_key,
-            verifying_key,
-        }
-    }
-
-    pub fn from_seed(seed: &[u8; 32]) -> Self {
-        let signing_key = SigningKey::from_bytes(seed);
-        let verifying_key = signing_key.verifying_key();
-        Self {
-            signing_key,
-            verifying_key,
-        }
-    }
-
-    pub fn signing_key(&self) -> &SigningKey {
-        &self.signing_key
-    }
-
-    pub fn verifying_key(&self) -> &VerifyingKey {
-        &self.verifying_key
-    }
-
-    pub fn seed_bytes(&self) -> [u8; 32] {
-        self.signing_key.to_bytes()
-    }
-
-    /// Sign arbitrary data with this identity key.
-    pub fn sign(&self, msg: &[u8]) -> Signature {
-        self.signing_key.sign(msg)
-    }
-
-    /// Derive the X25519 static secret from this Ed25519 signing key
-    /// (Edwards → Montgomery conversion using SHA-512 clamping per RFC 8032).
-    pub fn to_x25519_secret(&self) -> StaticSecret {
-        let seed = self.signing_key.to_bytes();
-        let digest = Sha512::digest(seed);
-        let mut scalar = [0u8; 32];
-        scalar.copy_from_slice(&digest[..32]);
-        scalar[0] &= 248;
-        scalar[31] &= 127;
-        scalar[31] |= 64;
-        StaticSecret::from(scalar)
-    }
-
-    /// X25519 public key derived from the identity key.
-    pub fn to_x25519_public(&self) -> X25519Public {
-        X25519Public::from(&self.to_x25519_secret())
-    }
-}
-
-/// Device Signing Key — per-device Ed25519, cross-signed by IK.
-#[derive(Clone)]
-pub struct DeviceSigningKey {
-    signing_key: SigningKey,
-    verifying_key: VerifyingKey,
-    /// Signature of the canonical MessagingDeviceCertificate by the actor's IK.
-    cross_signature: Signature,
-    device_id: String,
-}
-
-impl Drop for DeviceSigningKey {
-    fn drop(&mut self) {
-        let mut zeros = [0u8; 32];
-        self.signing_key = SigningKey::from_bytes(&zeros);
-        zeros.zeroize();
-    }
-}
-
-impl DeviceSigningKey {
-    /// Generate a new DSK and cross-sign caller-provided canonical certificate bytes.
-    pub fn generate_cross_signed<F>(
-        ik: &IdentityKeyPair,
-        device_id: &str,
-        certificate_bytes: F,
-    ) -> Self
-    where
-        F: FnOnce(&VerifyingKey) -> Vec<u8>,
-    {
-        let signing_key = SigningKey::generate(&mut OsRng);
-        let verifying_key = signing_key.verifying_key();
-        let cross_signature = ik.sign(&certificate_bytes(&verifying_key));
-        Self {
-            signing_key,
-            verifying_key,
-            cross_signature,
-            device_id: device_id.to_string(),
-        }
-    }
-
-    /// Reconstruct from stored components.
-    pub fn from_parts(seed: &[u8; 32], cross_signature: Signature, device_id: String) -> Self {
-        let signing_key = SigningKey::from_bytes(seed);
-        let verifying_key = signing_key.verifying_key();
-        Self {
-            signing_key,
-            verifying_key,
-            cross_signature,
-            device_id,
-        }
-    }
-
-    pub fn verifying_key(&self) -> &VerifyingKey {
-        &self.verifying_key
-    }
-
-    pub fn seed_bytes(&self) -> [u8; 32] {
-        self.signing_key.to_bytes()
-    }
-
-    pub fn cross_signature(&self) -> &Signature {
-        &self.cross_signature
-    }
-
-    pub fn device_id(&self) -> &str {
-        &self.device_id
-    }
-
-    pub fn sign(&self, msg: &[u8]) -> Signature {
-        self.signing_key.sign(msg)
-    }
-
-    pub fn verify_cross_signature(
-        &self,
-        ik_verifying: &VerifyingKey,
-        certificate_bytes: &[u8],
-    ) -> Result<(), CryptoError> {
-        ik_verifying
-            .verify(certificate_bytes, &self.cross_signature)
-            .map_err(|e| CryptoError::SignatureVerification(e.to_string()))
-    }
-}
-
-// ---------------------------------------------------------------------------
-// X25519 keypair (used for SPK/OPK)
-// ---------------------------------------------------------------------------
-
-/// X25519 keypair with zeroize on drop for the private component.
-pub struct X25519KeyPair {
-    pub private: StaticSecret,
-    pub public: X25519Public,
-}
-
-impl X25519KeyPair {
-    pub fn generate() -> Self {
-        let private = StaticSecret::random_from_rng(OsRng);
-        let public = X25519Public::from(&private);
-        Self { private, public }
-    }
-
-    pub fn from_private_bytes(bytes: [u8; 32]) -> Self {
-        let private = StaticSecret::from(bytes);
-        let public = X25519Public::from(&private);
-        Self { private, public }
-    }
-
-    pub fn private(&self) -> &StaticSecret {
-        &self.private
-    }
-
-    pub fn public(&self) -> &X25519Public {
-        &self.public
-    }
-
-    pub fn private_bytes(&self) -> [u8; 32] {
-        self.private.to_bytes()
-    }
-
-    pub fn public_bytes(&self) -> [u8; 32] {
-        self.public.to_bytes()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Fingerprint computation
-// ---------------------------------------------------------------------------
-
-/// Compute the SHA-256 fingerprint of an Ed25519 verifying key (hex-encoded, 64 chars).
-pub fn fingerprint_hex(verifying_key: &VerifyingKey) -> String {
-    let mut h = Sha256::new();
-    h.update(verifying_key.as_bytes());
-    hex::encode(h.finalize())
-}
-
-/// Compute a human-readable fingerprint for safety-number comparison.
-/// Returns a 60-digit numeric string grouped into 12 groups of 5 digits.
-pub fn fingerprint_numeric(vk_a: &VerifyingKey, vk_b: &VerifyingKey) -> String {
-    let mut h = Sha256::new();
-    // Lexicographic ordering ensures both parties derive the same value.
-    let (first, second) = if vk_a.as_bytes() <= vk_b.as_bytes() {
-        (vk_a, vk_b)
-    } else {
-        (vk_b, vk_a)
-    };
-    h.update(b"peers-touch:safety-number:v1:");
-    h.update(first.as_bytes());
-    h.update(second.as_bytes());
-    let digest = h.finalize();
-
-    // Take 30 bytes (240 bits) and convert to 60 decimal digits via
-    // chunking into 5-byte (40-bit) groups → each yields 5 digits.
-    let mut digits = String::with_capacity(72);
-    for (i, chunk) in digest[..30].chunks(5).enumerate() {
-        let mut val: u64 = 0;
-        for &b in chunk {
-            val = (val << 8) | (b as u64);
-        }
-        let group = format!("{:05}", val % 100000);
-        if i > 0 {
-            digits.push(' ');
-        }
-        digits.push_str(&group);
-    }
-    digits
-}
-
-/// Convert an Ed25519 verifying key (Edwards form) to an X25519 public
-/// key (Montgomery form) for use in DH computations.
 pub fn ed25519_verifying_to_x25519_public(
     verifying_key: &VerifyingKey,
 ) -> Result<X25519Public, CryptoError> {
-    use curve25519_dalek::edwards::CompressedEdwardsY;
-    let bytes = verifying_key.to_bytes();
-    let comp = CompressedEdwardsY(bytes);
-    let edwards = comp.decompress().ok_or_else(|| {
-        CryptoError::KeyConversion("cannot decompress Ed25519 point to Montgomery".into())
-    })?;
-    let mont = edwards.to_montgomery();
-    Ok(X25519Public::from(mont.to_bytes()))
+    messaging_core::crypto::identity::ed25519_verifying_to_x25519_public(verifying_key)
+        .map_err(|msg| CryptoError::KeyConversion(msg))
 }
 
 // ---------------------------------------------------------------------------
@@ -283,13 +26,11 @@ pub fn ed25519_verifying_to_x25519_public(
 
 const CRYPTO_SERVICE: &str = "peers-touch.desktop.crypto";
 
-/// In-process cache of loaded identity seeds to avoid repeated keyring access.
 fn identity_cache() -> &'static Mutex<HashMap<String, [u8; 32]>> {
     static CACHE: OnceLock<Mutex<HashMap<String, [u8; 32]>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Scoped file path for identity key storage when `PEERS_STORAGE_ROOT` is set.
 fn scoped_identity_file(identity_key_ref: &str) -> Option<PathBuf> {
     let root = std::env::var("PEERS_STORAGE_ROOT").ok()?;
     let root = root.trim();
@@ -311,9 +52,10 @@ fn scoped_identity_file(identity_key_ref: &str) -> Option<PathBuf> {
     )
 }
 
-fn keyring_entry(identity_key_ref: &str) -> Result<Entry, CryptoError> {
+fn keyring_entry(identity_key_ref: &str) -> Result<keyring::Entry, CryptoError> {
     let user = format!("identity-key:{identity_key_ref}");
-    Entry::new(CRYPTO_SERVICE, &user).map_err(|e| CryptoError::KeyringAccess(e.to_string()))
+    keyring::Entry::new(CRYPTO_SERVICE, &user)
+        .map_err(|e| CryptoError::KeyringAccess(e.to_string()))
 }
 
 #[cfg(unix)]
@@ -332,8 +74,6 @@ fn harden_path(_path: &Path) -> Result<(), CryptoError> {
     Ok(())
 }
 
-/// Store an identity key seed. Prefers filesystem under `PEERS_STORAGE_ROOT`,
-/// falls back to OS keyring.
 pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(), CryptoError> {
     let hex_seed: String = seed.iter().map(|b| format!("{b:02x}")).collect();
 
@@ -359,17 +99,13 @@ pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(),
     Ok(())
 }
 
-/// Load an identity keypair from cache, filesystem, or OS keyring.
-/// Returns `Ok(None)` if no key exists yet.
 pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPair>, CryptoError> {
-    // Check in-process cache first.
     if let Ok(cache) = identity_cache().lock() {
         if let Some(seed) = cache.get(identity_key_ref) {
             return Ok(Some(IdentityKeyPair::from_seed(seed)));
         }
     }
 
-    // Try filesystem.
     if let Some(path) = scoped_identity_file(identity_key_ref) {
         match fs::read_to_string(&path) {
             Ok(content) => {
@@ -381,7 +117,6 @@ pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPai
         }
     }
 
-    // Try OS keyring.
     let entry = keyring_entry(identity_key_ref)?;
     match entry.get_password() {
         Ok(pw) => parse_hex_seed(identity_key_ref, &pw),
@@ -390,7 +125,6 @@ pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPai
     }
 }
 
-/// Get or create the identity keypair for the given reference.
 pub fn get_or_create_identity(identity_key_ref: &str) -> Result<IdentityKeyPair, CryptoError> {
     if let Some(kp) = load_identity_key(identity_key_ref)? {
         return Ok(kp);
@@ -401,7 +135,6 @@ pub fn get_or_create_identity(identity_key_ref: &str) -> Result<IdentityKeyPair,
     Ok(kp)
 }
 
-/// Delete identity key from all storage locations.
 pub fn delete_identity_key(identity_key_ref: &str) -> Result<(), CryptoError> {
     if let Ok(mut cache) = identity_cache().lock() {
         cache.remove(identity_key_ref);
@@ -438,10 +171,6 @@ fn parse_hex_seed(
     Ok(Some(IdentityKeyPair::from_seed(&seed)))
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -468,6 +197,7 @@ mod tests {
 
     #[test]
     fn device_signing_key_cross_signature_verifies() {
+        use ed25519_dalek::Signer;
         let ik = IdentityKeyPair::generate();
         let certificate = b"canonical certificate";
         let dsk =

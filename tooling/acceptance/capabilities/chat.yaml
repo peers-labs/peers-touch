@@ -107,6 +107,47 @@
       }
     },
     {
+      "id": "chat-direct-delivery-receipt",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-direct-delivered-receipt"],
+      "required_gates": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-two-client-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src-tauri/src/messaging/direct.rs",
+        "apps/desktop/src-tauri/src/messaging/receipt.rs",
+        "apps/desktop/src/store/socialChat.ts",
+        "apps/station/app/subserver/messaging/application/receipt_service.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Desktop Rust messaging receive transaction",
+          "Desktop durable receipt outbox",
+          "Station Messaging per-device receipt queue",
+          "Desktop Rust delivery receipt processor",
+          "Desktop social chat receipt projection"
+        ],
+        "surfaces": [
+          "Alice native Direct message row",
+          "Bob native Direct message row",
+          "DELIVERED receipt projection"
+        ],
+        "proven_by": ["chat-native-two-client-e2e"],
+        "proven_scope": [
+          "Direct decrypt produces a durable DELIVERED receipt and the sender observes it in a native Desktop message row"
+        ],
+        "unproven_scope": [
+          "Multi-device DELIVERED aggregation",
+          "MLS group receipts"
+        ]
+      }
+    },
+    {
       "id": "chat-native-visible-clients",
       "domain": "chat",
       "direction": "acceptance_validates_product",
@@ -119,7 +160,10 @@
         "chat-native-group-mls-e2e"
       ],
       "synthetic_paths": [
-        "tooling/acceptance/gates/chat/native_visible_runner.py",
+        "tooling/acceptance/gates/chat/native_multi_device_runner.py",
+        "tooling/acceptance/gates/chat/native_recovery_runner.py",
+        "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+        "apps/desktop/src/acceptance/chat/identity.ts",
         "apps/desktop/src/components/chat/ChatComposer.tsx",
         "apps/desktop/src/components/settings/RecoverySettings.tsx"
       ],
@@ -147,6 +191,88 @@
         ],
         "unproven_scope": [
           "W8 remains unproven until all four environment-evidence gates pass"
+        ]
+      }
+    },
+    {
+      "id": "chat-message-interactions",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-message-interactions"],
+      "required_gates": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-interactions-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/chat/command.proto",
+        "apps/station/app/subserver/messaging/application/authority_service.go",
+        "apps/desktop/src-tauri/src/messaging/public_event.rs",
+        "apps/desktop/src/store/socialChat.ts",
+        "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Messaging conversation authority events",
+          "Station actor read cursor",
+          "per-device ordered messaging queue",
+          "Device Messaging Engine SQLCipher interaction projection"
+        ],
+        "surfaces": [
+          "Direct native message rows and thread panel",
+          "Group native message rows and thread panel",
+          "reaction, pin and read projections"
+        ],
+        "proven_by": ["chat-native-interactions-e2e"],
+        "proven_scope": [
+          "Proto, Station, Engine and Desktop interaction contracts compile and pass their declared structural gates",
+          "Registry changes select the dedicated interaction Native Gate"
+        ],
+        "unproven_scope": [
+          "Direct and Group reply, thread, edit, retract, reaction, pin and read remain unproven until the dedicated source-bound Native Gate passes",
+          "Pending edit/reply timeout and exact retry convergence remains unproven until the dedicated G15 assertion passes",
+          "Mobile interaction parity remains unproven until MP-W09 Native cells pass"
+        ]
+      }
+    },
+    {
+      "id": "chat-typing-presence",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-typing-presence"],
+      "required_gates": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-typing-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/messaging/application/typing_service.go",
+        "apps/desktop/src/components/chat/ChatMessageArea.tsx",
+        "apps/desktop/src/store/socialChat.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "authenticated active conversation membership",
+          "fresh ephemeral typing pulse",
+          "receiver process-local typing TTL projection"
+        ],
+        "surfaces": [
+          "Direct native typing indicator",
+          "Group native typing indicator"
+        ],
+        "proven_by": ["chat-native-typing-e2e"],
+        "proven_scope": [
+          "Station and Desktop typing contracts compile and pass their declared structural gates",
+          "Registry changes select the dedicated typing Native Gate"
+        ],
+        "unproven_scope": [
+          "Direct start, stop, session-switch, disconnect and TTL behavior remains unproven",
+          "Group start, stop, send, blur, session-switch, disconnect, TTL, removed-member and revoked-device behavior remains unproven until G16 passes",
+          "Mobile typing parity remains unproven until MP-W09 Native cells pass"
         ]
       }
     }

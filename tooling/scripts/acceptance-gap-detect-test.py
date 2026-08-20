@@ -210,5 +210,128 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
         )
 
 
+class ContractDeliverableTests(unittest.TestCase):
+    def _contract(self, deliverables: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"deliverables": deliverables}
+
+    def test_scan_deliverable_gate_not_run(self) -> None:
+        contract = self._contract([{
+            "id": "deleted-files-absent",
+            "verify": {"type": "path-absent", "paths": ["foo.rs"]},
+        }])
+        report = MODULE.detect(
+            claim="contract closure",
+            paths=[],
+            plan={"selected_gates": []},
+            run={"results": []},
+            required_gates=[],
+            contract=contract,
+        )
+        self.assertEqual(report["proofState"], "UNPROVEN")
+        gap_types = {g["gapType"] for g in report["gaps"]}
+        self.assertIn("CONTRACT_SCAN_GATE_NOT_RUN", gap_types)
+
+    def test_scan_deliverable_gate_failed(self) -> None:
+        contract = self._contract([{
+            "id": "no-dup",
+            "verify": {"type": "no-duplicate-symbol"},
+        }])
+        report = MODULE.detect(
+            claim="contract closure",
+            paths=[],
+            plan={"selected_gates": []},
+            run={"results": [{
+                "id": "chat-w11-duplicate-scan",
+                "status": "failed",
+            }]},
+            required_gates=[],
+            contract=contract,
+        )
+        gap_types = {g["gapType"] for g in report["gaps"]}
+        self.assertIn("CONTRACT_SCAN_GATE_FAILED", gap_types)
+
+    def test_scan_deliverable_gate_passed_proven(self) -> None:
+        contract = self._contract([{
+            "id": "deleted-files-absent",
+            "verify": {"type": "path-absent", "paths": ["foo.rs"]},
+        }])
+        report = MODULE.detect(
+            claim="contract closure",
+            paths=[],
+            plan={"selected_gates": []},
+            run={"results": [proven_result("chat-w11-forbidden-scan")]},
+            required_gates=[],
+            contract=contract,
+        )
+        contract_gaps = [
+            g for g in report["gaps"]
+            if g["gapType"].startswith("CONTRACT_")
+        ]
+        self.assertEqual(contract_gaps, [])
+
+    def test_gates_passed_deliverable_not_run(self) -> None:
+        contract = self._contract([{
+            "id": "native-evidence",
+            "verify": {
+                "type": "gates-passed",
+                "gates": ["chat-native-two-client-e2e"],
+            },
+        }])
+        report = MODULE.detect(
+            claim="contract closure",
+            paths=[],
+            plan={"selected_gates": []},
+            run={"results": []},
+            required_gates=[],
+            contract=contract,
+        )
+        gap_types = {g["gapType"] for g in report["gaps"]}
+        self.assertIn("CONTRACT_GATE_NOT_RUN", gap_types)
+
+    def test_gate_passed_deliverable_failed(self) -> None:
+        contract = self._contract([{
+            "id": "completion-audit",
+            "verify": {
+                "type": "gate-passed",
+                "gate": "chat-w11-completion-audit",
+            },
+        }])
+        report = MODULE.detect(
+            claim="contract closure",
+            paths=[],
+            plan={"selected_gates": []},
+            run={"results": [{
+                "id": "chat-w11-completion-audit",
+                "status": "failed",
+            }]},
+            required_gates=[],
+            contract=contract,
+        )
+        gap_types = {g["gapType"] for g in report["gaps"]}
+        self.assertIn("CONTRACT_GATE_FAILED", gap_types)
+
+    def test_gate_passed_deliverable_passed(self) -> None:
+        contract = self._contract([{
+            "id": "completion-audit",
+            "verify": {
+                "type": "gate-passed",
+                "gate": "chat-w11-completion-audit",
+            },
+        }])
+        report = MODULE.detect(
+            claim="contract closure",
+            paths=[],
+            plan={"selected_gates": []},
+            run={"results": [proven_result("chat-w11-completion-audit")]},
+            required_gates=[],
+            contract=contract,
+        )
+        contract_gaps = [
+            g for g in report["gaps"]
+            if g["gapType"].startswith("CONTRACT_")
+        ]
+        self.assertEqual(contract_gaps, [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

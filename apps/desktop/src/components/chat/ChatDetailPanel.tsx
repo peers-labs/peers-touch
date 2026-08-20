@@ -8,9 +8,7 @@ import {
   chatMediaKindForAttachment,
   formatChatAttachmentSize,
 } from '@peers-touch/client-chat-core';
-import { FriendshipStatus } from '../../gen/proto/domain/chat/chat_pb';
 import {
-  Ban,
   BellOff,
   Camera,
   ChevronRight,
@@ -551,7 +549,7 @@ export function ChatDetailPanel() {
     activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, groupMembers,
     setShowDetail, loadSessions, loadGroupMembers, loadGroups, loadMessages,
-    loadConversationPreviews, selectSession, selectGroup,
+    loadConversationPreviews, selectGroup,
     conversationLocalState, updateConversationLocalState,
     getIMConversations,
     getIMMessages,
@@ -576,7 +574,6 @@ export function ChatDetailPanel() {
     loadGroups: s.loadGroups,
     loadMessages: s.loadMessages,
     loadConversationPreviews: s.loadConversationPreviews,
-    selectSession: s.selectSession,
     selectGroup: s.selectGroup,
     conversationLocalState: s.conversationLocalState,
     updateConversationLocalState: s.updateConversationLocalState,
@@ -612,7 +609,6 @@ export function ChatDetailPanel() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteDids, setInviteDids] = useState<string[]>([]);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
-  const [peerBlocked, setPeerBlocked] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
   const [editingMyNickname, setEditingMyNickname] = useState(false);
@@ -880,52 +876,6 @@ export function ChatDetailPanel() {
     });
   };
 
-  const confirmBlockUser = () => {
-    if (!peerDid) return;
-    Modal.confirm({
-      title: t('chat.social.detail.blockUserConfirmTitle'),
-      content: t('chat.social.detail.blockUserConfirmBody'),
-      okText: t('chat.social.detail.blockUser'),
-      cancelText: t('chat.social.messageArea.cancel'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          await api.friendChatBlockUser(peerDid);
-          await loadSessions();
-          selectSession('');
-          setShowDetail(false);
-          toast.success(t('chat.social.detail.blockUserSuccess'));
-        } catch (error) {
-          log.error('chat', 'block user failed', { peerDid, error });
-          toast.error(t('chat.social.detail.blockUserFailed'));
-          throw error;
-        }
-      },
-    });
-  };
-
-  const confirmUnblockUser = () => {
-    if (!peerDid) return;
-    Modal.confirm({
-      title: t('chat.social.detail.unblockUserConfirmTitle'),
-      content: t('chat.social.detail.unblockUserConfirmBody'),
-      okText: t('chat.social.detail.unblockUser'),
-      cancelText: t('chat.social.messageArea.cancel'),
-      onOk: async () => {
-        try {
-          await api.friendChatUnblockUser(peerDid);
-          setPeerBlocked(false);
-          await loadSessions();
-          toast.success(t('chat.social.detail.unblockUserSuccess'));
-        } catch (error) {
-          log.error('chat', 'unblock user failed', { peerDid, error });
-          toast.error(t('chat.social.detail.unblockUserFailed'));
-          throw error;
-        }
-      },
-    });
-  };
-
   const submitGroupInvites = async () => {
     if (!activeUlid || inviteDids.length === 0) return;
     setInviteSubmitting(true);
@@ -1169,25 +1119,6 @@ export function ChatDetailPanel() {
       void loadPeerProfile(peerDid);
     }
   }, [isGroup, peerDid, loadPeerProfile]);
-
-  useEffect(() => {
-    if (isGroup || !peerDid) {
-      setPeerBlocked(false);
-      return;
-    }
-    let cancelled = false;
-    void api.friendChatGetFriendshipStatus(peerDid)
-      .then((response) => {
-        if (!cancelled) setPeerBlocked(Number(response.friend?.status ?? 0) === FriendshipStatus.BLOCKED);
-      })
-      .catch((error) => {
-        log.warn('chat', 'friendship status load failed', { peerDid, error });
-        if (!cancelled) setPeerBlocked(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isGroup, peerDid]);
 
   const cachedPeerProfile = !isGroup && peerDid ? peerProfiles[peerDid] : undefined;
 
@@ -1623,19 +1554,7 @@ export function ChatDetailPanel() {
             >
               {isGroupOwner ? t('chat.social.detail.dissolveGroup') : t('chat.social.detail.leaveGroup')}
             </Button>
-          ) : (
-            <Button
-              type="text"
-              danger
-              icon={peerBlocked ? <RotateCcw size={14} /> : <Ban size={14} />}
-              style={{ justifyContent: 'flex-start', height: 36 }}
-              block
-              disabled={!peerDid}
-              onClick={peerBlocked ? confirmUnblockUser : confirmBlockUser}
-            >
-              {peerBlocked ? t('chat.social.detail.unblockUser') : t('chat.social.detail.blockUser')}
-            </Button>
-          )}
+          ) : null}
         </DetailSection>
 
         {/* Spacer for scroll padding */}

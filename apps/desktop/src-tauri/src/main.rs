@@ -20,13 +20,23 @@ pub mod peers_touch {
                 pub use crate::model::actor::v1::*;
             }
         }
+        pub mod chat {
+            pub mod v1 {
+                pub use crate::model::chat::v1::*;
+            }
+        }
+        pub mod common {
+            pub mod v1 {
+                pub use crate::model::common::v1::*;
+            }
+        }
     }
 }
 
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
     applets, auth, channels, chat, conversation, cron, crypto, desktop_capture, federation,
-    friend_chat, frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice,
+    frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice,
     key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery, mls,
     model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
     search, settings, skills, skills_market, social, station, system, tools, tts,
@@ -67,15 +77,15 @@ fn main() {
             let resource_dir = app.path()
                 .resource_dir()
                 .unwrap_or_else(|e| {
-                    #[cfg(debug_assertions)]
+                    #[cfg(any(debug_assertions, feature = "acceptance-webdriver"))]
                     {
                         tracing::warn!(
                             error = %e,
-                            "Resource directory unavailable in dev; falling back to src-tauri resources path"
+                            "Resource directory unavailable; falling back to src-tauri resources path"
                         );
                         return PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources");
                     }
-                    #[cfg(not(debug_assertions))]
+                    #[cfg(not(any(debug_assertions, feature = "acceptance-webdriver")))]
                     panic!("[setup] Failed to resolve resource directory: {e}");
                 });
             let state = app.state::<Arc<state::AppState>>();
@@ -468,25 +478,9 @@ fn main() {
             memory::memory_reembed,
             tts::tts_synthesize,
             tts::tts_voices,
-            friend_chat::friend_chat_list_sessions,
-            friend_chat::friend_chat_create_session,
-            friend_chat::friend_chat_get_settings,
-            friend_chat::friend_chat_update_settings,
-            friend_chat::friend_chat_list_messages,
-            friend_chat::friend_chat_list_thread_messages,
-            friend_chat::friend_chat_thread_counts,
-            friend_chat::friend_chat_thread_mark_read,
-            friend_chat::friend_chat_recall_message,
-            friend_chat::friend_chat_edit_message,
-            friend_chat::friend_chat_delete_message,
-            friend_chat::friend_chat_sync_messages,
             realtime::realtime_stream_start,
             realtime::realtime_stream_stop,
             realtime::realtime_signal_send,
-            realtime::realtime_typing_send,
-            friend_chat::friend_chat_get_pending,
-            friend_chat::friend_chat_get_stats,
-            friend_chat::friend_chat_local_search,
             key_exchange::key_exchange_upload_bundle,
             key_exchange::key_exchange_fetch_bundle,
             crypto::crypto_generate_identity,
@@ -511,26 +505,15 @@ fn main() {
             messaging_recovery::messaging_recovery_restore_latest,
             messaging_recovery::messaging_recovery_status,
             messaging_recovery::messaging_recovery_list_revisions,
-            friend_chat::friend_chat_local_search_scoped,
-            friend_chat::friend_chat_set_cursor_scoped,
-            friend_chat::friend_chat_get_cursor_scoped,
-            friend_chat::friend_chat_get_key_version_scoped,
-            friend_chat::friend_chat_rotate_key_scoped,
-            friend_chat::friend_chat_sync_from_station_scoped,
             ice::ice_get_servers,
-            friend_chat::friend_chat_send_friend_request,
-            friend_chat::friend_chat_accept_friend_request,
-            friend_chat::friend_chat_reject_friend_request,
-            friend_chat::friend_chat_list_friend_requests,
-            friend_chat::friend_chat_block_user,
-            friend_chat::friend_chat_unblock_user,
-            friend_chat::friend_chat_list_blocked_users,
-            friend_chat::friend_chat_get_friendship_status,
+            social::social_friend_request_send,
+            social::social_friend_request_accept,
+            social::social_friend_request_reject,
+            social::social_friend_request_list,
             group_chat::group_chat_list_groups,
             group_chat::group_chat_list_messages,
             group_chat::group_chat_list_thread_messages,
             group_chat::group_chat_thread_counts,
-            group_chat::group_chat_thread_mark_read,
             group_chat::group_chat_unread_count,
             group_chat::group_chat_mark_read,
             group_chat::group_chat_create_group,
@@ -594,6 +577,10 @@ fn main() {
             messaging_commands::messaging_discard_attachment_source,
             messaging_commands::messaging_capture_attachment_source,
             messaging_commands::messaging_send_message,
+            messaging_commands::messaging_submit_typing,
+            messaging_commands::messaging_submit_read_cursor,
+            messaging_commands::messaging_submit_edit,
+            messaging_commands::messaging_submit_metadata_interaction,
             messaging_commands::messaging_list_messages,
             messaging_commands::messaging_open_attachment,
             messaging_commands::messaging_search_messages,
@@ -611,8 +598,6 @@ fn main() {
             conversation::conversation_list_messages,
             conversation::conversation_list_thread_messages,
             conversation::conversation_thread_counts,
-            conversation::conversation_set_read_cursor,
-            conversation::conversation_get_unread,
             conversation::conversation_get_member_settings,
             conversation::conversation_update_member_settings,
             conversation::conversation_sync_from_station,

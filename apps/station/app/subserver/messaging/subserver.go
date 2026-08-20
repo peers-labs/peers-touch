@@ -406,6 +406,8 @@ func (s *subServer) Handlers() []server.Handler {
 			s.handleSubmitTyping, logID, deviceID, s.jwtWrapper),
 		server.NewTypedHandler("messaging-receipt-submit", "/messaging/receipt/submit", server.POST,
 			s.handleSubmitReceipt, logID, deviceID, s.jwtWrapper),
+		server.NewTypedHandler("messaging-delivery-receipt-submit", "/messaging/receipt/delivery", server.POST,
+			s.handleSubmitDeliveryReceipt, logID, deviceID, s.jwtWrapper),
 	}
 }
 
@@ -666,6 +668,26 @@ func (s *subServer) handleSubmitReceipt(
 		return nil, err
 	}
 	response, err := s.composition.ReceiptHandler.Submit(ctx, ptid, deviceID, request)
+	if err != nil {
+		return nil, mapMessagingError(err)
+	}
+	return response, nil
+}
+
+func (s *subServer) handleSubmitDeliveryReceipt(
+	ctx context.Context,
+	request *chat.SubmitConversationReceiptRequest,
+) (*chat.SubmitConversationReceiptResponse, error) {
+	ptid, deviceID, err := messagingEndpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.composition.ReceiptHandler.SubmitDelivery(
+		ctx,
+		ptid,
+		deviceID,
+		request,
+	)
 	if err != nil {
 		return nil, mapMessagingError(err)
 	}

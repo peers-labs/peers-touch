@@ -39,7 +39,6 @@ const mocks = vi.hoisted(() => ({
   ingestRealtimeMessage: vi.fn(),
   bumpChatUnread: vi.fn(),
   clearChatUnread: vi.fn(),
-  friendChatAckMessages: vi.fn(),
 }));
 
 const originalWindow = globalThis.window;
@@ -74,7 +73,6 @@ vi.mock('../store/socialChat', () => ({
       ingestRealtimeMessage: mocks.ingestRealtimeMessage,
       bumpChatUnread: mocks.bumpChatUnread,
       clearChatUnread: mocks.clearChatUnread,
-      friendChatAckMessages: mocks.friendChatAckMessages,
       sweepTypingPeers: vi.fn(),
     }),
   },
@@ -117,7 +115,6 @@ vi.mock('./eventStream', () => ({
 vi.mock('./desktop_api', () => ({
   api: {
     accountGetDeviceId: vi.fn(() => Promise.resolve({ device_id: 'self-device-1' })),
-    friendChatAckMessages: mocks.friendChatAckMessages,
   },
 }));
 
@@ -136,7 +133,6 @@ describe('social realtime group membership side effects', () => {
     }
     vi.clearAllMocks();
     mocks.ingestRealtimeMessage.mockResolvedValue(undefined);
-    mocks.friendChatAckMessages.mockResolvedValue(undefined);
     mocks.loadSessions.mockResolvedValue(undefined);
     mocks.loadGroups.mockResolvedValue(undefined);
     mocks.loadFriendRequests.mockResolvedValue(undefined);

@@ -635,17 +635,20 @@ recorded in the Gate report.
 
 #### 7.6 Inject Credentials Safely
 
-- Read credentials only from approved environment variables, profile sources,
-  or test fixtures.
+- Read real credentials only from approved environment variables or profile
+  sources.
+- Use committed disposable test-account fixtures directly when their
+  credentials are already public development data. Do not add redundant
+  secret-style environment indirection for those fixtures.
 - Check presence without printing values.
 - Never place passwords, tokens, PINs, keys, or private actor data in commands,
   reports, screenshots, DOM evidence, or logs.
 - Redact before evidence is persisted.
 
-Example presence check:
+Example presence check for a real secret:
 
 ```bash
-test -n "${CHAT_ACCEPTANCE_PASSWORD:-}" \
+test -n "${ACCEPTANCE_API_TOKEN:-}" \
   || { echo "required credential is missing" >&2; exit 1; }
 ```
 
