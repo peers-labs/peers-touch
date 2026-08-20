@@ -12,9 +12,9 @@ import { log } from '../../utils/logger';
 //
 // Until the realtime SSE EventBus landed (see
 // docs/architecture/realtime/event-stream.md), the WebRTC DataChannel
-// here doubled as a "fast path" for friend-chat text: the sender
+// here doubled as a "fast path" for direct-chat text: the sender
 // pushed a `MessageEnvelope` protobuf hint over the DC so the peer
-// could trigger an immediate `friendChatSync` without waiting for the
+// could trigger an immediate message sync without waiting for the
 // 60s safety-net poll. That path was inherently unreliable because:
 //
 //   1. WebRTC trickle-ICE on relay-only paths can take seconds to
@@ -63,7 +63,7 @@ import { log } from '../../utils/logger';
 // not enlarge the threat model.
 // ---------------------------------------------------------------------
 
-export type FriendChatP2pState = 'idle' | 'connecting' | 'connected' | 'failed' | 'closed';
+export type CallP2pState = 'idle' | 'connecting' | 'connected' | 'failed' | 'closed';
 
 /**
  * Which ICE candidate pair the established RTCPeerConnection is actually
@@ -77,13 +77,13 @@ export type FriendChatP2pState = 'idle' | 'connecting' | 'connected' | 'failed' 
  * messages are delivered by the canonical realtime SSE stream; WebRTC
  * here is only the call/signaling transport surface.
  */
-export type FriendChatP2pTransport = 'direct' | 'relay' | null;
+export type CallP2pTransport = 'direct' | 'relay' | null;
 
-export interface FriendChatP2pStatus {
-  state: FriendChatP2pState;
+export interface CallP2pStatus {
+  state: CallP2pState;
   detail?: string;
   signalingSessionId?: string;
-  transport?: FriendChatP2pTransport;
+  transport?: CallP2pTransport;
 }
 
 function normalizePair(a: string, b: string): [string, string] {
@@ -113,7 +113,7 @@ function deriveSignalingSessionId(myDid: string, peerDid: string): string {
  * `candidateType === 'relay'` means TURN relay; everything else
  * (`host`, `srflx`, `prflx`) is a direct path.
  */
-function pickTransportFromStats(stats: RTCStatsReport): FriendChatP2pTransport {
+function pickTransportFromStats(stats: RTCStatsReport): CallP2pTransport {
   let selectedPairId: string | null = null;
   const candidates = new Map<string, RTCStats & { candidateType?: string }>();
   for (const stat of stats.values()) {
@@ -353,7 +353,7 @@ interface Conn {
   isOfferer: boolean;
   pc: RTCPeerConnection;
   dc: RTCDataChannel | null;
-  status: FriendChatP2pStatus;
+  status: CallP2pStatus;
   /** Remote candidates that arrived before `setRemoteDescription` had
    *  finished. WebRTC will reject `addIceCandidate` until the remote
    *  description is in place; rather than dropping them silently
@@ -382,13 +382,13 @@ interface Conn {
   reconnectTimer: ReturnType<typeof setTimeout> | null;
 }
 
-class FriendChatP2pManager {
+class CallP2pManager {
   private conns = new Map<ConnKey, Conn>();
-  private onStatus: ((myDid: string, peerDid: string, status: FriendChatP2pStatus) => void) | null = null;
+  private onStatus: ((myDid: string, peerDid: string, status: CallP2pStatus) => void) | null = null;
   private onCall: ((myDid: string, peerDid: string, snapshot: CallSnapshot) => void) | null = null;
   private signalSubscription: (() => void) | null = null;
 
-  setOnStatus(handler: ((myDid: string, peerDid: string, status: FriendChatP2pStatus) => void) | null) {
+  setOnStatus(handler: ((myDid: string, peerDid: string, status: CallP2pStatus) => void) | null) {
     this.onStatus = handler;
   }
 
@@ -402,7 +402,7 @@ class FriendChatP2pManager {
     this.onCall = handler;
   }
 
-  private emitStatus(myDid: string, peerDid: string, status: FriendChatP2pStatus) {
+  private emitStatus(myDid: string, peerDid: string, status: CallP2pStatus) {
     this.onStatus?.(myDid, peerDid, status);
   }
 
@@ -577,7 +577,7 @@ class FriendChatP2pManager {
     this.ensureSignalSubscription();
   }
 
-  async ensureConnected(myDid: string, peerDid: string): Promise<FriendChatP2pStatus> {
+  async ensureConnected(myDid: string, peerDid: string): Promise<CallP2pStatus> {
     const key: ConnKey = `${myDid}::${peerDid}`;
     const existing = this.conns.get(key);
     if (existing && (existing.status.state === 'connecting' || existing.status.state === 'connected')) {
@@ -587,7 +587,7 @@ class FriendChatP2pManager {
     this.ensureSignalSubscription();
 
     const signalingSessionId = deriveSignalingSessionId(myDid, peerDid);
-    const status: FriendChatP2pStatus = { state: 'connecting', signalingSessionId };
+    const status: CallP2pStatus = { state: 'connecting', signalingSessionId };
     this.emitStatus(myDid, peerDid, status);
 
     const isOfferer = myDid === normalizePair(myDid, peerDid)[0];
@@ -609,7 +609,7 @@ class FriendChatP2pManager {
       await loadPeerIk(peerDid);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      const failed: FriendChatP2pStatus = {
+      const failed: CallP2pStatus = {
         state: 'failed',
         detail: `peer key unavailable: ${detail}`,
         signalingSessionId,
@@ -1409,7 +1409,7 @@ class FriendChatP2pManager {
     const probe = async () => {
       if (conn.transportProbeStopped) return;
       if (conn.pc.connectionState !== 'connected') return;
-      let transport: FriendChatP2pTransport = null;
+      let transport: CallP2pTransport = null;
       try {
         const stats = await conn.pc.getStats();
         transport = pickTransportFromStats(stats);
@@ -1441,4 +1441,4 @@ class FriendChatP2pManager {
 
 }
 
-export const friendChatP2p = new FriendChatP2pManager();
+export const callP2p = new CallP2pManager();

@@ -302,6 +302,7 @@ export function installAcceptanceHarness(): void {
 
     async syncGroup({ groupUlid, limit: _limit = 50, maxPages: _maxPages = 1 }: SyncGroupInput) {
       const social = useSocialChatStore.getState();
+      await imServiceV1.conversation.syncFromStation(groupUlid, _limit).catch(() => {});
       await social.loadGroups();
       await social.loadGroupMembers(groupUlid).catch(() => {});
       await social.loadMessages(groupUlid, 'group');
