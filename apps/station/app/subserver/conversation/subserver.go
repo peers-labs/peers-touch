@@ -89,6 +89,8 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		return err
 	}
 
+	repairMemberIndex(rds)
+
 	s.localStationID = conversationLocalAudience()
 	s.db = rds
 	repo := newPostgresConversationRepo(rds)

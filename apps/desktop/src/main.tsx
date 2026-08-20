@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ThemeProvider } from '@lobehub/ui';
+import { ThemeProvider, ToastHost } from '@lobehub/ui';
 import { I18nextProvider } from 'react-i18next';
 import { log } from './utils/logger';
 import { initI18n } from './i18n';
@@ -70,6 +70,7 @@ async function bootstrap() {
         <I18nextProvider i18n={i18n}>
           <ThemeProvider>
             {shareMatch ? <SharePage token={shareMatch[1]} /> : <App />}
+            <ToastHost />
           </ThemeProvider>
         </I18nextProvider>
       </ErrorBoundary>

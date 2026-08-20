@@ -218,6 +218,12 @@ export function SocialChatPage() {
             onSelectContact={(contact) => {
               setOwnedContactSelection({ actorId: currentUserDid || '', contact });
             }}
+            onStartChat={(contact) => {
+              setOwnedContactSelection({ actorId: currentUserDid || '', contact });
+              if (contact.conversationId) {
+                setSubPage('chats');
+              }
+            }}
           />
         </div>
       )}
