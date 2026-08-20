@@ -18,6 +18,9 @@ deliverables:
         - apps/mobile/src-tauri/src/commands/group_crypto.rs
         - model/domain/chat/key_exchange.proto
         - apps/desktop/src-tauri/src/interface/tauri_commands/friend_chat.rs
+        - apps/desktop/src-tauri/src/application/friend_chat/mod.rs
+        - apps/desktop/src/modules/p2p/friendChatP2p.ts
+        - qa/station/api_tests/friend_chat_test.sh
 
   - id: no-debug-instrumentation
     verify:
