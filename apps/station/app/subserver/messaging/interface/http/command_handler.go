@@ -76,13 +76,18 @@ func (h *CommandHandler) Submit(
 	}
 	response := &chat.SubmitMessagingCommandResponse{RejectCode: rejectCode}
 	if errors.Is(err, domain.ErrStaleDeliveryPlan) {
-		response.CurrentSendPlan, _ = h.service.PrepareSend(
+		currentPlan, prepareErr := h.service.PrepareSend(
 			ctx,
 			&chat.PrepareMessagingSendRequest{
-				ConversationId: command.ConversationId,
-				Sender:         command.Sender,
+				ConversationId:     command.ConversationId,
+				Sender:             command.Sender,
+				AuthorityStationId: command.AuthorityStationId,
 			},
 		)
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
+		response.CurrentSendPlan = currentPlan
 	}
 	return response, nil
 }

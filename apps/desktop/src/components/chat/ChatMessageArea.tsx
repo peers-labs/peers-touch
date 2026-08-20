@@ -17,7 +17,7 @@ import {
 import { useCryptoStore } from '../../store/cryptoStore';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { SearchMessagesModal } from './SearchMessagesModal';
-import { friendChatP2p } from '../../modules/p2p/friendChatP2p';
+import { callP2p } from '../../modules/p2p/callP2p';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
@@ -90,7 +90,10 @@ export function ChatMessageArea() {
     peerOnline,
     typingPeers,
     threadCounts,
+    reactions,
+    pinnedMessages,
     reactToMessage,
+    pinMessage,
   } = useActiveSocialChatSlice((s) => ({
     activeTab: s.activeTab,
     activeSessionUlid: s.activeSessionUlid,
@@ -123,7 +126,10 @@ export function ChatMessageArea() {
     peerOnline: s.peerOnline,
     typingPeers: s.typingPeers,
     threadCounts: s.threadCounts,
+    reactions: s.reactions,
+    pinnedMessages: s.pinnedMessages,
     reactToMessage: s.reactToMessage,
+    pinMessage: s.pinMessage,
   }));
   const [inputValue, setInputValue] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -247,8 +253,8 @@ export function ChatMessageArea() {
 
   // ---- Typing-state outbound pulses --------------------------------
   //
-  // Wire contract: see docs/architecture/realtime/event-stream.md
-  // §2.7 (TypingState). The sender emits *at most* one `typing=true`
+  // Wire contract: see docs/architecture/messaging-platform/design.md
+  // §8.2. The sender emits *at most* one `typing=true`
   // every 3s while the user is actively typing and a single
   // `typing=false` once they pause for 4s, send, blur, or change
   // session. The receiver's GC sweep (SocialChatPage) clears
@@ -259,21 +265,16 @@ export function ChatMessageArea() {
   // keystroke would re-render every message and tank typing
   // throughput on long conversations.
   //
-  // Group chats have no recipient_actor_id we can route to today:
-  // the realtime stream is per-actor, and group fan-out would need
-  // server-side per-member republish. We therefore only emit typing
-  // for friend chats; group typing is intentionally deferred to the
-  // group_chat fan-out work.
+  // Station Messaging validates active membership and fans the
+  // ephemeral pulse out to all other active conversation members.
   const typingThrottleRef = useRef<{ lastTrueAt: number; idleTimer: number | null }>({
     lastTrueAt: 0,
     idleTimer: null,
   });
 
-  const peerActorIdForTyping = activeTab === 'friend' ? activePeerDid : null;
-
   const fireTyping = (typing: boolean) => {
-    if (!activeUlid || !peerActorIdForTyping) return;
-    api.realtimeTypingSend(peerActorIdForTyping, activeUlid, typing).catch((err) => {
+    if (!activeUlid) return;
+    api.messagingTypingSend(activeUlid, typing).catch((err) => {
       // Typing is best-effort; debug-level only so a temporarily
       // unreachable station does not spam the user-visible log.
       log.debug('chat', 'typing pulse failed', { typing, error: err });
@@ -294,7 +295,7 @@ export function ChatMessageArea() {
 
   const handleInputChange = (value: string) => {
     setInputValue(value);
-    if (!activeUlid || !peerActorIdForTyping) return;
+    if (!activeUlid) return;
     if (!value.trim()) {
       // Empty input — treat as "stopped". Cancel the idle timer
       // and emit `typing=false` only if we previously emitted true.
@@ -319,36 +320,26 @@ export function ChatMessageArea() {
   };
 
   // Cleanup on unmount / session switch: emit `typing=false` so the
-  // peer's bubble clears immediately rather than waiting for the
+  // receivers' bubbles clear immediately rather than waiting for the
   // GC sweep TTL. We deliberately use a ref-captured "last
-  // session/peer" rather than the closure-captured ones below
+  // conversation" rather than the closure-captured value below
   // because by the time this teardown runs the activeUlid has
   // already changed.
-  const lastTypingTargetRef = useRef<{ sessionUlid: string; peerActorId: string } | null>(null);
+  const lastTypingConversationRef = useRef<string | null>(null);
   useEffect(() => {
-    if (activeUlid && peerActorIdForTyping) {
-      lastTypingTargetRef.current = {
-        sessionUlid: activeUlid,
-        peerActorId: peerActorIdForTyping,
-      };
-    } else {
-      lastTypingTargetRef.current = null;
-    }
+    lastTypingConversationRef.current = activeUlid;
     return () => {
       const ref = typingThrottleRef.current;
       if (ref.idleTimer != null) {
         window.clearTimeout(ref.idleTimer);
         ref.idleTimer = null;
       }
-      if (ref.lastTrueAt > 0 && lastTypingTargetRef.current) {
-        const target = lastTypingTargetRef.current;
-        api
-          .realtimeTypingSend(target.peerActorId, target.sessionUlid, false)
-          .catch(() => {});
+      if (ref.lastTrueAt > 0 && lastTypingConversationRef.current) {
+        api.messagingTypingSend(lastTypingConversationRef.current, false).catch(() => {});
         ref.lastTrueAt = 0;
       }
     };
-  }, [activeUlid, peerActorIdForTyping]);
+  }, [activeUlid]);
 
   // Receiver-side: derive whether the peer is composing in the
   // currently-active conversation. We also expose a list of typing
@@ -359,8 +350,8 @@ export function ChatMessageArea() {
     const map = typingPeers[activeUlid];
     if (!map) return false;
     if (activeTab === 'friend') {
-      if (!peerActorIdForTyping) return false;
-      const e = map[peerActorIdForTyping];
+      if (!activePeerDid) return false;
+      const e = map[activePeerDid];
       return Boolean(e?.typing);
     }
     // For groups, "any peer typing" until the per-member panel lands.
@@ -486,7 +477,7 @@ export function ChatMessageArea() {
     const peerDid = activePeerDid;
     if (!peerDid) return;
     try {
-      await friendChatP2p.startCall(currentUserDid, peerDid, kind);
+      await callP2p.startCall(currentUserDid, peerDid, kind);
     } catch (err) {
       log.error('chat', 'startCall failed', err);
       toast.error(t('chat.social.call.mediaDenied'));
@@ -606,6 +597,7 @@ export function ChatMessageArea() {
     <Flexbox
       data-session-security={activeTab === 'friend' ? directSecurityState : undefined}
       data-group-security={activeTab === 'group' ? groupSecurityState[activeUlid] || 'unknown' : undefined}
+      data-chat-typing={peerIsTyping ? 'active' : 'inactive'}
       flex={1}
       gap={0}
       style={{
@@ -749,20 +741,29 @@ export function ChatMessageArea() {
             scrollContainerRef={scrollContainerRef}
             getSenderProfile={getIMSenderProfile}
             highlightedMessageUlid={highlightedMessageUlid}
+            isPinned={(message) => Boolean(pinnedMessages[message.ulid])}
             messages={mainTimelineMessages}
             onDelete={confirmDeleteMessage}
             onEdit={handleStartEdit}
             onForward={setForwardTarget}
             onOpenThread={openThread}
+            onPin={(msg) => {
+              if (!activeUlid) return;
+              pinMessage(activeUlid, msg.ulid, Boolean(pinnedMessages[msg.ulid]));
+            }}
             onReact={(msg) => {
               if (!activeUlid) return;
-              reactToMessage(activeUlid, msg.ulid, '👍');
+              const remove = (reactions[msg.ulid] ?? []).some(
+                reaction => reaction.actorId === currentUserDid && reaction.emoji === '👍',
+              );
+              reactToMessage(activeUlid, msg.ulid, '👍', remove);
             }}
             onRecall={handleRecall}
             onReply={(messageUlid) => {
               setEditingUlid(null);
               setReplyToUlid(messageUlid);
             }}
+            resolveReactions={(message) => reactions[message.ulid] ?? []}
             resolveThreadStats={(message) => {
               const threadKey = socialThreadKey(activeKind, activeUlid, message.ulid);
               const threadSummary = threadCounts[threadKey];

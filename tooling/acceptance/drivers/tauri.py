@@ -29,21 +29,22 @@ APP_STARTUP_TIMEOUT = 20.0
 SCRIPT_TIMEOUT = 10.0
 EXPECTED_TITLE = "Peers Touch Desktop"
 EXPECTED_URL = "tauri://localhost"
+DEDICATED_APP_BINARY = ".local/acceptance/bin/peers-touch-desktop"
 
 
 def find_app_binary() -> str:
-    candidates = [
-        "apps/desktop/src-tauri/target/debug/peers-touch-desktop",
-        "apps/desktop/src-tauri/target/debug/Peers Touch",
-    ]
+    override = os.environ.get("PT_ACCEPTANCE_APP_BINARY", "").strip()
+    candidates = [override] if override else [DEDICATED_APP_BINARY]
     for candidate in candidates:
-        path = REPO_ROOT / candidate
+        path = Path(candidate)
+        if not path.is_absolute():
+            path = REPO_ROOT / path
         if path.exists():
             return str(path)
     raise FileNotFoundError(
-        f"Tauri debug binary not found. Build with: "
-        f"cd apps/desktop && cargo build --features acceptance-webdriver\n"
-        f"Searched: {[str(REPO_ROOT / c) for c in candidates]}"
+        "Dedicated Tauri Acceptance binary not found. "
+        "Run: make acceptance-driver-build\n"
+        f"Searched: {[str(REPO_ROOT / c) if not Path(c).is_absolute() else c for c in candidates]}"
     )
 
 
@@ -98,6 +99,10 @@ class TauriDriver(DomDriver):
             raise RuntimeError("TauriDriver not started — use as context manager or call start()")
         return self._driver
 
+    @property
+    def process_id(self) -> int | None:
+        return self._process.pid if self._process is not None else None
+
     def start(self) -> WebDriver:
         try:
             self._launch_app()
@@ -147,7 +152,8 @@ class TauriDriver(DomDriver):
                     """
                     return {
                       hasRoot: Boolean(document.querySelector('#root')),
-                      hasTauri: typeof window.__TAURI__ === 'object',
+                      hasTauri: typeof window.__TAURI_INTERNALS__ === 'object'
+                               || typeof window.__TAURI__ === 'object',
                       readyState: document.readyState,
                       title: document.title,
                       url: location.href,

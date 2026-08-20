@@ -144,61 +144,6 @@ pub struct ChatMessageInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatListInput {
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatCreateSessionInput {
-    pub participant_did: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendConversationSettingsInput {
-    pub session_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendConversationSettingsUpdateInput {
-    pub session_ulid: String,
-    pub is_muted: Option<bool>,
-    pub is_pinned: Option<bool>,
-    pub alert_enabled: Option<bool>,
-    pub background: Option<String>,
-    pub cleared_at_unix_ms: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatListMessagesInput {
-    pub session_ulid: String,
-    pub before_ulid: Option<String>,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatThreadInput {
-    pub session_ulid: String,
-    pub root_ulid: String,
-    pub after_ulid: Option<String>,
-    pub limit: Option<u32>,
-    pub max_pages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatThreadCountsInput {
-    pub session_ulid: String,
-    pub root_ulids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatThreadReadInput {
-    pub session_ulid: String,
-    pub root_ulid: String,
-    pub last_read_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttachmentInput {
     pub cid: String,
     pub filename: String,
@@ -215,37 +160,26 @@ pub struct AttachmentInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatSendFriendRequestInput {
+pub struct SocialFriendRequestSendInput {
     pub receiver_did: String,
     pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatAcceptFriendRequestInput {
+pub struct SocialFriendRequestAcceptInput {
     pub request_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatRejectFriendRequestInput {
+pub struct SocialFriendRequestRejectInput {
     pub request_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatListFriendRequestsInput {
+pub struct SocialFriendRequestListInput {
     pub status: Option<i32>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatBlockUserInput {
-    pub target_did: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatListBlockedUsersInput {
-    pub limit: Option<i32>,
-    pub offset: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -265,33 +199,6 @@ pub struct KeyExchangeFetchInput {
     pub did: String,
     pub device_id: Option<String>,
     pub home_station_peer_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatRecallInput {
-    pub session_ulid: String,
-    pub message_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatEditInput {
-    pub session_ulid: String,
-    pub message_ulid: String,
-    /// Plaintext replacement body. Mutually optional with
-    /// `new_encrypted_payload`; at least one must be non-empty.
-    /// Both can be set at once when the chat upgrades to E2EE
-    /// mid-edit and the client wants to keep the legacy index
-    /// hot.
-    pub new_content: Option<String>,
-    /// E2EE replacement body. The TS layer decodes from base64
-    /// before reaching this contract — we accept raw bytes here.
-    pub new_encrypted_payload: Option<Vec<u8>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatDeleteInput {
-    pub session_ulid: String,
-    pub message_ulid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -323,13 +230,6 @@ pub struct GroupChatThreadCountsInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatThreadReadInput {
-    pub group_ulid: String,
-    pub root_ulid: String,
-    pub last_read_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupChatUnreadInput {
     pub group_ulid: Option<String>,
 }
@@ -337,13 +237,6 @@ pub struct GroupChatUnreadInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupChatMarkReadInput {
     pub group_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatSyncInput {
-    pub session_ulid: String,
-    pub limit: Option<u32>,
-    pub max_pages: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1409,17 +1302,6 @@ pub struct ProviderModelToggleInput {
 pub struct ProviderModelToggleAllInput {
     pub provider_id: String,
     pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatSyncMessagesInput {
-    /// JSON stringified array of SyncMessageItem-like objects from the frontend.
-    pub messages_json: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FriendChatPendingInput {
-    pub limit: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

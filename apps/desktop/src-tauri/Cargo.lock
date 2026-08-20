@@ -3465,6 +3465,7 @@ dependencies = [
  "curve25519-dalek",
  "ed25519-dalek",
  "hex",
+ "hkdf",
  "prost",
  "prost-build",
  "prost-types",

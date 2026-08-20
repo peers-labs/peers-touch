@@ -3,6 +3,10 @@ import { encryptClientMediaBlob, encryptClientMediaBlobChunked, type ClientEncry
 
 import type { MobileAuthSession } from '../auth/authSession';
 import { FriendshipStatus as FriendshipStatusCode } from '../../gen/proto/domain/chat/chat_pb';
+import {
+  ConversationCommandSchema,
+  TypingCommandSchema,
+} from '../../gen/proto/domain/chat/conversation_pb';
 import { FriendMessageType } from '../../gen/proto/domain/chat/friend_chat_pb';
 import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
 import {
@@ -182,7 +186,7 @@ export interface SocialApiClient {
   deleteMessage: (sessionUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
   ackMessages: (ulids: string[], status: number) => Promise<Record<string, unknown>>;
   markMessageRead: (sessionUlid: string, lastReadUlid?: string) => Promise<Record<string, unknown>>;
-  sendTypingState: (recipientActorId: string, sessionUlid: string, typing: boolean) => Promise<Record<string, unknown>>;
+  sendTypingState: (conversationId: string, typing: boolean) => Promise<Record<string, unknown>>;
   listNotifications: (limit?: number, cursor?: string) => Promise<ListNotificationsPayload>;
   getUnreadCounts: () => Promise<UnreadCounts>;
   markNotificationsRead: (notificationIds: string[]) => Promise<Record<string, unknown>>;
@@ -259,6 +263,46 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
     const bytes = new Uint8Array(await response.arrayBuffer());
     const created: CreatePostResponse = fromBinary(CreatePostResponseSchema, bytes);
     return created.post;
+  }
+
+  async function sendTypingState(
+    conversationId: string,
+    typing: boolean,
+  ): Promise<Record<string, unknown>> {
+    const senderPtid = String(session.actor?.id ?? '').trim();
+    const deviceId = `mobile-web-${session.sessionId}`;
+    if (!senderPtid || !conversationId.trim()) {
+      throw new SocialApiError({
+        method: 'POST',
+        path: '/messaging/typing/submit',
+        message: 'authenticated actor and conversation are required',
+      });
+    }
+    const command = create(ConversationCommandSchema, {
+      conversationId,
+      senderPtid,
+      senderDeviceId: deviceId,
+      payload: {
+        case: 'typing',
+        value: create(TypingCommandSchema, { isTyping: typing }),
+      },
+    });
+    const response = await fetch(buildUrl(stationUrl, '/messaging/typing/submit'), {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/x-protobuf',
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/x-protobuf',
+        'X-Device-ID': deviceId,
+      },
+      body: toBinary(ConversationCommandSchema, command),
+    });
+    if (!response.ok) {
+      const payload = await readJson(response);
+      throw buildApiError('POST', '/messaging/typing/submit', response.status, payload);
+    }
+    return {};
   }
 
   return {
@@ -423,12 +467,7 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
         path: '/friend-chat/message/ack',
         body: { ulids, status },
       }),
-    sendTypingState: (recipientActorId, sessionUlid, typing) =>
-      request({
-        method: 'POST',
-        path: '/realtime/typing',
-        body: { recipient_actor_id: recipientActorId, session_ulid: sessionUlid, typing },
-      }),
+    sendTypingState,
     listNotifications: (limit = 30, cursor) =>
       request<ListNotificationsPayload>({
         method: 'GET',

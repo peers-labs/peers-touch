@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "plan": "closure-mp-w11",
+  "description": "Machine-readable closure contract for MP-W11 Atomic Cutover And Completion Audit. Every deliverable here must be mechanically verified. No AI discretion over what counts as done.\n",
+  "closure_contract": "MP-W11",
+  "selected_gates": [
+    {
+      "id": "chat-w11-forbidden-scan",
+      "command": "python3 -m tooling.acceptance.gates.chat.w11_forbidden_scan",
+      "timeout_seconds": 60,
+      "environment": "local",
+      "provisioner": "",
+      "tier": "ci-cheap",
+      "description": "W11 closure: tree-wide scan for deleted owners, dead code, and debug instrumentation.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    },
+    {
+      "id": "chat-w11-duplicate-scan",
+      "command": "python3 -m tooling.acceptance.gates.chat.w11_duplicate_scan",
+      "timeout_seconds": 60,
+      "environment": "local",
+      "provisioner": "",
+      "tier": "ci-cheap",
+      "description": "W11 closure: verify single-owner crypto/codec contracts with no duplicate implementations.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    },
+    {
+      "id": "chat-native-visible-static",
+      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "provisioner": "",
+      "tier": "ci-cheap",
+      "description": "Validate W8 native runner fail-closed evidence, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    },
+    {
+      "id": "chat-native-two-client-e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_runner && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
+      "timeout_seconds": 1800,
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "",
+      "tier": "env-evidence",
+      "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext plus DELIVERED receipt visibility.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    },
+    {
+      "id": "chat-native-interactions-e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_interactions_runner",
+      "timeout_seconds": 3600,
+      "environment": "home-station",
+      "provisioner": "",
+      "tier": "env-evidence",
+      "description": "Run isolated Native Direct and Group clients and prove reply/thread, author-only edit/retract, reaction, pin, read, offline, replay and restart convergence with Station and Engine durable readback.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    },
+    {
+      "id": "chat-native-typing-e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
+      "timeout_seconds": 1800,
+      "environment": "home-station",
+      "provisioner": "",
+      "tier": "env-evidence",
+      "description": "Run isolated Native Direct and Group clients and prove authenticated ephemeral typing start, stop, session switch, disconnect and TTL cleanup without durable lane or history writes.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    },
+    {
+      "id": "chat-native-multi-device-e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_multi_device_runner",
+      "timeout_seconds": 1800,
+      "environment": "home-station",
+      "provisioner": "",
+      "tier": "env-evidence",
+      "description": "Run visible native direct-message acceptance with one recipient actor on two isolated devices.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    },
+    {
+      "id": "chat-native-recovery-e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_recovery_runner",
+      "timeout_seconds": 2400,
+      "environment": "home-station",
+      "provisioner": "",
+      "tier": "env-evidence",
+      "description": "Run visible native reinstall and 24-word recovery history-restore acceptance.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    },
+    {
+      "id": "chat-native-group-mls-e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_group_mls_runner",
+      "timeout_seconds": 2400,
+      "environment": "home-station",
+      "provisioner": "",
+      "tier": "env-evidence",
+      "description": "Run visible native three-device MLS add, send, remove, restart, and recovery acceptance.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    },
+    {
+      "id": "chat-w11-completion-audit",
+      "command": "python3 -m tooling.acceptance.gates.chat.w11_completion_audit",
+      "timeout_seconds": 60,
+      "environment": "local",
+      "provisioner": "",
+      "tier": "ci-cheap",
+      "description": "W11 closure: mechanical audit that all native evidence reports exist and PASS.",
+      "required_by": [
+        "closure:MP-W11"
+      ]
+    }
+  ]
+}
