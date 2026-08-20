@@ -246,7 +246,6 @@ pub fn sync_user_profile(
     }
     application_profile::sync_user_profile(
         &session.jwt,
-        &session.account_id,
         &session.actor.ptid,
     )
 }

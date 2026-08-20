@@ -1,12 +1,15 @@
 # ─── Acceptance Framework ───────────────────────────────────────
 
-.PHONY: acceptance-plan acceptance-plan-self acceptance-run acceptance-run-ci acceptance-run-local-evidence \
-        acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate acceptance-infra-validate \
+.PHONY: acceptance-plan acceptance-run acceptance-run-ci acceptance-run-local-evidence \
+        acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate \
+        acceptance-driver-build acceptance-driver-smoke \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-desktop-gateway \
         acceptance-chat-native-static acceptance-chat-native-two-client \
+        acceptance-chat-native-interactions acceptance-chat-native-typing \
         acceptance-chat-native-multi-device acceptance-chat-native-recovery \
         acceptance-chat-native-group-mls acceptance-chat-native-w8 \
+        acceptance-chat-w11 \
         acceptance-station-dashboard acceptance-station-dashboard-domain-validation \
         acceptance-federation acceptance-federation-mutual-validation acceptance-federation-report \
         acceptance-desktop-performance-preflight-static acceptance-desktop-performance-preflight \
@@ -24,14 +27,25 @@
         federation-dashboard-operational-drilldown federation-desktop-gateway-smoke
 
 ACCEPTANCE_RANGE ?= HEAD
-ACCEPTANCE_PLAN_ARG = $(if $(ACCEPTANCE_PLAN),--output "$(ACCEPTANCE_PLAN)",)
-ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),$(if $(ACCEPTANCE_PLAN),--plan $(ACCEPTANCE_PLAN),))
+ACCEPTANCE_PLAN ?= tooling/acceptance/reports/latest-plan.json
+ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),--plan $(ACCEPTANCE_PLAN))
+ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
+
+acceptance-driver-build:
+	VITE_ACCEPTANCE_HARNESS=1 pnpm --dir apps/desktop run build
+	cd apps/desktop/src-tauri && \
+		TAURI_CONFIG='{"app":{"withGlobalTauri":true}}' \
+		cargo build --features acceptance-webdriver
+	@mkdir -p "$(dir $(ACCEPTANCE_DRIVER_BINARY))"
+	@cp apps/desktop/src-tauri/target/debug/peers-touch-desktop "$(ACCEPTANCE_DRIVER_BINARY).tmp"
+	@chmod 0755 "$(ACCEPTANCE_DRIVER_BINARY).tmp"
+	@mv "$(ACCEPTANCE_DRIVER_BINARY).tmp" "$(ACCEPTANCE_DRIVER_BINARY)"
+
+acceptance-driver-smoke:
+	python3 -m tooling.acceptance.drivers.tauri
 
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" $(ACCEPTANCE_PLAN_ARG)
-
-acceptance-plan-self:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)"
 
 acceptance-run:
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
@@ -52,15 +66,12 @@ acceptance-report:
 	python3 tooling/scripts/acceptance-report.py
 
 acceptance:
-	$(if $(PLAN),,$(if $(ACCEPTANCE_PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)"))
+	$(if $(PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)")
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 	python3 tooling/scripts/acceptance-report.py
 
 acceptance-validate:
 	python3 tooling/scripts/acceptance-validate.py $(if $(DOMAIN),--domain $(DOMAIN),)
-
-acceptance-infra-validate:
-	python3 tooling/scripts/acceptance-validate.py --infra
 
 acceptance-coverage-report:
 	python3 tooling/scripts/acceptance-coverage-report.py
@@ -95,6 +106,12 @@ acceptance-chat-native-static:
 acceptance-chat-native-two-client:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-two-client-e2e
 
+acceptance-chat-native-interactions:
+	python3 tooling/scripts/acceptance-run.py --gate chat-native-interactions-e2e
+
+acceptance-chat-native-typing:
+	python3 tooling/scripts/acceptance-run.py --gate chat-native-typing-e2e
+
 acceptance-chat-native-multi-device:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-multi-device-e2e
 
@@ -107,9 +124,19 @@ acceptance-chat-native-group-mls:
 acceptance-chat-native-w8:
 	python3 tooling/scripts/acceptance-run.py \
 		--gate chat-native-two-client-e2e \
+		--gate chat-native-interactions-e2e \
+		--gate chat-native-typing-e2e \
 		--gate chat-native-multi-device-e2e \
 		--gate chat-native-recovery-e2e \
 		--gate chat-native-group-mls-e2e
+
+acceptance-chat-w11:
+	python3 tooling/scripts/acceptance-closure-gen.py \
+		--contract tooling/acceptance/closures/messaging-w11.yaml \
+		--output tooling/acceptance/plans/chat-w11-closure.json \
+		--manifest-output tooling/acceptance/reports/w11-contract-manifest.json
+	python3 tooling/scripts/acceptance-run.py \
+		--plan tooling/acceptance/plans/chat-w11-closure.json
 
 acceptance-desktop-anchor-inventory:
 	python3 tooling/scripts/acceptance-run.py --gate desktop-anchor-inventory-gate
@@ -208,7 +235,8 @@ acceptance-federation-report: acceptance-federation-mutual-validation
 		--feature federation-dashboard-operations \
 		--feature federation-operational-observability \
 		--feature desktop-federation-surfaces \
-		--mutual-validation-gate federation-mutual-validation
+		--mutual-validation tooling/acceptance/reports/federation-mutual-validation.json \
+		--output tooling/acceptance/reports/federation-acceptance-report.md
 
 federation-surface-smoke:
 	python3 tooling/acceptance/gates/federation/surface_smoke.py

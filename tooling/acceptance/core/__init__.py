@@ -1,4 +1,4 @@
-from ._paths import REPO_ROOT, ENVIRONMENTS_DIR
+from ._paths import REPO_ROOT, ENVIRONMENTS_DIR, REPORTS_DIR
 from .errors import (
     GateError,
     DriverError,
@@ -88,6 +88,7 @@ __all__ = [
     "harness_ready",
     "REPO_ROOT",
     "ENVIRONMENTS_DIR",
+    "REPORTS_DIR",
     "ActorRuntime",
     "ProvisioningState",
     "CredentialRef",

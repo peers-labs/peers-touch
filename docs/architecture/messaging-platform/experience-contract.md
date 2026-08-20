@@ -1,8 +1,8 @@
 # Messaging Platform — 体验合同
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-08 | **Updated**: 2026-08-08
+> **Version**: v1.2
+> **Created**: 2026-08-08 | **Updated**: 2026-08-17
 > **Owner**: Messaging Platform Team
 
 ---
@@ -23,6 +23,8 @@
 | MP-J10 | Receipt 与 read cursor | C10 |
 | MP-J11 | 附件与本地搜索 | C13-C14 |
 | MP-J12 | 故障诊断与恢复 | C12 |
+| MP-J13 | Direct/Group 消息交互 | C10、C16 |
+| MP-J14 | Direct/Group typing presence | C15 |
 
 ## 2. MP-J01: Direct Messaging
 
@@ -122,3 +124,43 @@ Station 原子写入 device lanes。任一网络中断都通过 durable outbox �
 - revoked：重新认证并 enroll fresh device。
 
 Toast 不能作为唯一恢复界面。
+
+## 10. MP-J13: Message Interactions
+
+起点：Alice 与 Bob 是 active conversation members，双方已有同一条 committed message。
+Group 变体增加 Carol，并使用相同 authority sequence 语义。
+
+1. Alice 回复 Bob 的消息；Bob 看到相同 reply target，thread panel 显示相同 root 和
+   reply count。
+2. Alice 编辑自己的消息；所有 active endpoints 在同一 `message_id` 上看到新内容和
+   edited marker，重启后结果不变。
+3. Alice 撤回自己的消息；所有 active endpoints 保留该 row 并显示 retracted state，
+   plaintext 不再显示。
+4. Bob 添加并移除 reaction；重复提交不产生重复 reaction。
+5. Alice pin、Bob unpin；所有 active endpoints 的 conversation pin projection 收敛。
+6. Bob 的 read cursor 越过消息 sequence；Alice 的 row 只向前推进到 read。
+
+拒绝与恢复：
+
+- 非作者 edit/retract、非 member interaction、removed/revoked endpoint 均 fail closed，
+  不生成 authority event。
+- receiver offline 时 durable interaction event 保留在其 device lane，重连后按
+  authority sequence 应用一次。
+- Station/client restart 或 duplicate replay 后，message content、retracted state、
+  reactions、pins、reply/thread relation 和 read cursor 不回退、不重复。
+- 用户在触发网络发送前可取消 composer 中的本地 edit/reply draft。
+- command 进入 durable outbox 后，提交超时保留 pending/retrying intent 和原始可见
+  content；不得提供“取消发送”或本地伪终态，worker 使用 exact command bytes 重试。
+- command accepted 后的纠错通过新的 Authority edit/retract event 完成；retract 留下
+  可见撤回状态，不把历史伪装成从未发送。
+
+## 11. MP-J14: Typing Presence
+
+1. Alice 在 Direct 或 Group composer 输入时发送 bounded `typing=true` pulse。
+2. 其他 active members 在对应 conversation 内看到 Alice typing。
+3. Alice 停止输入、发送、失焦或切换会话时发送 `typing=false`。
+4. 即使 stop pulse 丢失，receiver 也在 TTL 到期后自动清除 typing。
+
+Typing 不进入消息历史、read cursor 或 durable message ordering。非 member、removed
+device、错误 conversation 和过期 pulse 不得显示。网络断开只允许 presence 消失，
+不得阻塞 durable message lane。

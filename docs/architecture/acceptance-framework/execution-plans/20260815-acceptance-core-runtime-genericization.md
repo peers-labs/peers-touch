@@ -111,9 +111,9 @@
 |------------|------|--------|---------------|
 | WS0 | done | actors/dataclass+mapping 序列化、结构化/文本脱敏、Driver ISP、cleanup failure、单一路径均有回归测试 | 无 |
 | WS1 | done | 30 个 Core tests 与含 actors/redaction 的 Chrome E2E 通过 | 不代表任何业务 Domain receiver proof |
-| WS2 | done | TauriDriver 继承 DomDriver；旧入口删除；native build 与连续 3 次 smoke 通过；端口/进程释放通过 | 不代表 Chat 登录/消息流程通过 |
+| WS2 | done | TauriDriver 继承 DomDriver；旧入口删除；Acceptance binary 发布到 `.local/acceptance/bin/peers-touch-desktop`，不再与普通 dev build 共用可执行文件；native build 与连续 3 次 smoke 通过；端口/进程释放通过 | 不代表 Chat 登录/消息流程通过 |
 | WS3 | partial | ChromeDriver、StationDriver 类已存在 | Dashboard/Desktop 无真实消费者；Chrome CDP 迁移未完成 |
-| WS4 | partial / frozen | 仅 `desktop_dom_message_visible.py` 作为样板迁移 | 其余 Chat Gates 未迁移；Core 与样板通过真实证据前禁止继续迁移 |
+| WS4 | partial | `native_two_client_runner.py` 已切换到 AcceptanceGate + Core TauriDriver；Direct DELIVERED Feature/Registry/Gate trace 与 validator 已补齐；Driver build/smoke PASS | multi-device、recovery、group-MLS 与其它 Chat Gates 尚未迁移 |
 | WS5 | pending | 无 | Dashboard/Desktop Gates 未迁移 |
 | WS6 | partial | Harness Registry 与 Chat namespace 通过 TypeScript check | 原生 Tauri Harness readiness 未证明 |
 | WS7 | pending | 现有 Applet Domain 契约和 MJS Gate 独立存在 | Python AcceptanceGate wrapper 未实现 |
@@ -191,8 +191,8 @@ WS4 + WS5 + WS7 + WS6 ──► WS8 (Final Validation)
 - **Failure behavior**: Gate failures produce automatic screenshot/DOM/log evidence
 - **Runtime scenario**: Full Chat domain validation
 - **Gates**:
-  - `CHAT_ACCEPTANCE_RESET=1 CHAT_ACCEPTANCE_PASSWORD=<pw> python3 tooling/acceptance/gates/chat/desktop_dom_message_visible.py`
-  - `CHAT_ACCEPTANCE_RESET=1 CHAT_ACCEPTANCE_PASSWORD=<pw> python3 tooling/acceptance/gates/chat/native_two_client_runner.py`
+  - `CHAT_ACCEPTANCE_RESET=1 python3 tooling/acceptance/gates/chat/desktop_dom_message_visible.py`
+  - `CHAT_ACCEPTANCE_RESET=1 python3 tooling/acceptance/gates/chat/native_two_client_runner.py`
   - `python3 -m unittest tooling.acceptance.gates.chat.native_visible_e2e_test tooling.acceptance.gates.chat.native_visible_static_test`
 - **Evidence**: `tooling/acceptance/reports/chat-desktop-dom-message-visible.json`, `chat-native-two-client-run.json`, `chat-validation.json` all PASS
 - **Done when**: `CHAT_ACCEPTANCE_RESET=1 make acceptance-chat-domain-validation` PASS; evidence conforms to schema

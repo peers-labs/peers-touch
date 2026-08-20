@@ -1,5 +1,9 @@
 # MP-W09: Portable Rust Messaging Core — Execution Plan
 
+> **Status**: active
+> **Version**: v1.2
+> **Created**: 2026-08-11 | **Updated**: 2026-08-19
+> **Owner**: Messaging Platform Team
 > Accepted architecture: MP-D16 (2026-08-09)
 > Module layout: `docs/architecture/messaging-platform/module-layout.md`
 > Parent plan: `20260808-messaging-platform.md`
@@ -20,6 +24,7 @@ Extract the Desktop Messaging Engine (20K LOC, 27 files) into `packages/messagin
 ```
 Phase 1: Ports + Contracts (leaf dependencies)
 Phase 2: Core modules (engine internals)
+Dependency gate: MP-W12 Desktop interaction semantics + G15/G16
 Phase 3: Desktop adapter (thin bridge)
 Phase 4: Mobile adapter (thin bridge + Sender Keys deletion)
 Phase 5: Verification closure
@@ -50,16 +55,32 @@ Steps:
 
 **Deliverable**: All protocol logic moved from `apps/desktop/src-tauri/src/messaging/` into `packages/messaging-core/src/`
 
-**Progress (2026-08-11)**:
-- ✅ Proto generation (`build.rs`, 13 .proto files)
+**Progress (2026-08-19)**:
+- ✅ Proto generation (`build.rs`, 20 chat + 1 common .proto files — full coverage)
 - ✅ `codec/private_content` + `codec/attachment_validation` + `codec/verification`
 - ✅ `identity/keys` + `identity/enrollment`
 - ✅ `inbox/drain` (queue FSM)
+- ✅ `inbox/conversation_state` (ConversationStateProcessor<R> — generic over MessagingRepository)
+- ✅ `inbox/receipt` (DeliveryReceiptProcessor<R> — delivery + actor read cursor)
+- ✅ `inbox/public_event` (PublicEventProcessor<R> — message committed, edit, retract, reaction, pin)
+- ✅ `inbox/direct` (DirectMessageProcessor<R> — full validation, DR decrypt, session establishment, commit)
+- ✅ `inbox/consumer` (MessagingItemConsumer<R, M> — generic dispatcher, MlsItemConsumer port trait)
 - ✅ `outbox/dispatch` (command outbox worker)
+- ✅ `outbox/send` (encrypt_direct_fan_out — portable Direct encryption fan-out)
 - ✅ `recovery/codec` (AES-GCM sectioned archive with KDF port)
-- ✅ `store/repository` trait (MessagingRepository boundary)
-- ❌ Remaining: store-dependent modules blocked by proto-unification (Phase 3 prerequisite)
-- Gate: 19 tests pass, `cargo clippy` clean, Desktop `cargo check` clean with Core dependency
+- ✅ `store/repository` trait (MessagingRepository — queue, conversation, events, receipts, direct sessions, prekeys)
+- ✅ `contracts/` (all domain types including DirectMessageContent, DirectReceiveCommit, DirectEditCommit)
+- ✅ `crypto/double_ratchet` (full Signal DR: X25519 DH, HKDF-SHA256, AES-256-GCM — 8 tests)
+- ✅ `crypto/identity` (IdentityKeyPair, X25519KeyPair, DeviceSigningKey — 14 tests)
+- ✅ `crypto/x3dh` (sender + receiver X3DH key agreement — 3 tests)
+- ✅ `crypto/session` (DirectSession, DirectSessionKey, establish_receiver_session — 5 tests)
+- ✅ `ports/mls_crypto` (MlsCrypto trait — OpenMLS stays in adapter)
+- ✅ Proto unification complete (Phase 3 prerequisite resolved 2026-08-19):
+  - Core owns all chat + common protos; Desktop re-exports via `messaging_core::proto::*`
+  - Desktop `build.rs` uses `extern_path` to map proto packages to Core's types
+  - Both `cargo check -p messaging-core` and `cargo check` (Desktop) pass
+- ⬜ Remaining: MLS processors stay in Desktop adapter (OpenMLS-specific); engine orchestrator stays in adapter (Tauri-specific)
+- Gate: 30 tests pass, `cargo check` clean on both crates, ~5,485 LOC in Core
 
 Module mapping:
 | Desktop source | Core destination |
@@ -86,19 +107,29 @@ Steps:
 5. Gate per module: `cargo check -p messaging-core` passes after each module move.
 6. Final gate: `cargo test -p messaging-core` — all unit tests from Desktop migrate to Core.
 
-### Phase 3: Desktop Adapter
+### Phase 3: Desktop Adapter — 🔶 IN PROGRESS
 
 **Deliverable**: `apps/desktop/src-tauri/src/messaging/` shrinks to adapter + lifecycle + commands.
 
-**Proto unification prerequisite**: Desktop currently generates its own chat proto types via `prost-build` in its `build.rs`. Core also generates the same protos. These are separate Rust types at compile time. Phase 3 MUST first unify proto generation:
-1. Remove chat proto compilation from Desktop's `build.rs`.
-2. Desktop imports `messaging_core::proto::chat::*` for all chat types.
-3. Desktop's `crate::model::chat` module becomes a re-export of Core's types.
-4. Non-chat protos (actor, social, auth, etc.) remain Desktop-generated.
+**Proto unification prerequisite**: ✅ COMPLETE (2026-08-19)
+1. ✅ Remove chat proto compilation from Desktop's `build.rs`.
+2. ✅ Desktop imports `messaging_core::proto::chat::*` for all chat types.
+3. ✅ Desktop's `crate::model::chat` module becomes a re-export of Core's types.
+4. ✅ Non-chat protos (actor, social, auth, etc.) remain Desktop-generated.
 
-Steps:
-1. Proto unification (prerequisite above).
-2. `adapter.rs` — implements all port traits using:
+**Codec delegation**: ✅ COMPLETE (2026-08-19)
+1. ✅ `private_content.rs` → re-export from `messaging_core::codec::private_content`.
+2. ✅ `verification.rs` → re-export from `messaging_core::codec::verification`.
+3. ✅ `attachment.rs` validation → re-export from `messaging_core::codec::attachment_validation`.
+
+**Crypto delegation**: ✅ COMPLETE (2026-08-19)
+1. ✅ `identity.rs` types → re-export from `messaging_core::crypto::identity` (platform persistence retained).
+2. ✅ `double_ratchet.rs` → thin wrappers calling `messaging_core::crypto::double_ratchet` with `From<DrError> for CryptoError` mapping.
+3. ✅ `x3dh.rs` → thin wrappers calling `messaging_core::crypto::x3dh` with error classification.
+4. ✅ Net reduction: -993 LOC in crypto, -160 LOC in codec. All 34 crypto + 92 messaging tests pass.
+
+**Remaining steps** (store-level processor wiring):
+1. `adapter.rs` — implements all port traits using:
    - SQLCipher connection pool (`rusqlite`)
    - `reqwest` HTTP client for Station transport
    - Tauri filesystem for attachment blob paths
@@ -107,8 +138,8 @@ Steps:
    - Tauri event emit for projection sink
 2. `lifecycle.rs` — unchanged (manages Engine worker lifecycle via Tauri state).
 3. `commands.rs` — thin Tauri command wrappers calling `messaging_core::Engine`.
-4. Add `messaging-core` as workspace dependency in Desktop's `Cargo.toml`.
-5. Gate: `cargo test` in Desktop passes. Native E2E (Direct + Group + attachment + recovery) passes.
+4. Gate: `cargo test` in Desktop passes. Native E2E (Direct + Group + attachment + recovery
+   + receipts + interactions + typing) passes.
 
 ### Phase 4: Mobile Adapter
 
@@ -121,7 +152,8 @@ Steps:
 4. Create `commands.rs` exposing Tauri Mobile commands.
 5. Delete Mobile Sender Keys (`apps/mobile/src-tauri/src/domain/` crypto modules).
 6. Gate: `cargo check` on Mobile. Mobile build succeeds.
-7. Gate: Mobile E2E — send/receive Direct + Group message.
+7. Gate: Mobile Native E2E — Direct + Group text, attachment, recovery, lifecycle,
+   background/foreground, restart, receipt, MP-C15 typing and MP-C16 interactions.
 
 ### Phase 5: Verification Closure
 
@@ -145,6 +177,7 @@ Steps:
 
 - `packages/messaging-core/` compiles independently with no platform dependencies.
 - Desktop and Mobile both pass native E2E (text + attachment + recovery).
+- Desktop and Mobile both pass MP-C01–MP-C16 contract and Native runtime parity.
 - Zero protocol logic in either adapter.
 - Zero Sender Keys code remaining.
 - Shared test suite runs identically against both platform adapters.

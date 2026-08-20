@@ -1185,6 +1185,116 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ),
             )
         }
+        "key_exchange_upload_bundle" => {
+            let input = match parse_args::<KeyExchangeUploadInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let actor_id = match actor_id_from_state(state) {
+                Some(id) if !id.trim().is_empty() => id,
+                Some(_) | None => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::Unauthorized,
+                        "authentication required",
+                        None,
+                    ));
+                }
+            };
+            let device_id = match device_install::get_or_create_device_id(actor_id.as_str()) {
+                Ok(id) => id,
+                Err(e) => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InternalError,
+                        format!("device_id: {e}"),
+                        None,
+                    ));
+                }
+            };
+            let req = model::key_exchange::UploadKeyBundleRequest {
+                ik_pub: input.ik_pub,
+                spk_id: input.spk_id,
+                spk_pub: input.spk_pub,
+                spk_sig: input.spk_sig,
+                opk_ids: input.opk_ids,
+                opk_pubs: input.opk_pubs,
+                device_id,
+                supported_versions: vec![1],
+            };
+            match station_client::request_proto::<
+                model::key_exchange::UploadKeyBundleRequest,
+                model::key_exchange::UploadKeyBundleResponse,
+            >(
+                Method::POST,
+                "/key-exchange/keys/bundle",
+                &token,
+                None,
+                Some(&req),
+            ) {
+                Ok(_r) => to_json(to_stub("key_exchange_upload_bundle", json!({}))),
+                Err(e) => to_json(e.into_app_result::<StubPayload>("Station request failed")),
+            }
+        }
+        "key_exchange_fetch_bundle" => {
+            let input = match parse_args::<KeyExchangeFetchInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            if input.did.trim().is_empty() {
+                return to_json(AppResult::<StubPayload>::fail(
+                    ErrorCode::InvalidArgument,
+                    "did is required",
+                    None,
+                ));
+            }
+            let req = model::key_exchange::FetchKeyBundleRequest {
+                did: input.did,
+                device_id: input.device_id.unwrap_or_default(),
+                home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
+            };
+            match station_client::request_proto::<
+                model::key_exchange::FetchKeyBundleRequest,
+                model::key_exchange::FetchKeyBundleResponse,
+            >(
+                Method::POST,
+                "/key-exchange/keys/bundle/fetch",
+                &token,
+                None,
+                Some(&req),
+            ) {
+                Ok(r) => {
+                    let bundles_json: Vec<Value> = r
+                        .bundles
+                        .iter()
+                        .map(|b| {
+                            json!({
+                                "did": b.did,
+                                "device_id": b.device_id,
+                                "ik_pub": b.ik_pub,
+                                "fingerprint": wire::identity_fingerprint_hex(&b.ik_pub),
+                                "spk_pub": b.spk_pub,
+                                "spk_sig": b.spk_sig,
+                                "opks": b.opks,
+                                "published_at_unix_ms": b.published_at_unix_ms,
+                                "supported_versions": b.supported_versions,
+                            })
+                        })
+                        .collect();
+                    to_json(to_stub(
+                        "key_exchange_fetch_bundle",
+                        json!({ "bundles": bundles_json }),
+                    ))
+                }
+                Err(e) => to_json(e.into_app_result::<StubPayload>("Station request failed")),
+            }
+        }
         "signaling_envelope_seal" => {
             let input = match parse_args::<SignalingEnvelopeSealInput>(args) {
                 Ok(v) => v,
@@ -2299,7 +2409,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     match actor_ptid {
                         Some(ptid) => to_json(app_profile::sync_user_profile(
                             &token,
-                            &account_id,
                             &ptid,
                         )),
                         None => to_json(AppResult::<StubPayload>::fail(
@@ -4398,766 +4507,118 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "tts_voices" => to_json(app_tts::tts_voices()),
 
-        // =================================================================
-        // Friend Chat (state-dependent, station JSON API)
-        // =================================================================
-        "friend_chat_list_sessions" => {
-            let input = match parse_args::<FriendChatListInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let query = vec![
-                ("limit", input.limit.unwrap_or(50).to_string()),
-                ("offset", input.offset.unwrap_or(0).to_string()),
-            ];
-            match station_request_json(
-                Method::GET,
-                "/friend-chat/sessions",
-                &token,
-                Some(&query),
-                None,
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_list_sessions", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_create_session" => {
-            let input = match parse_args::<FriendChatCreateSessionInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.participant_did.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "participant_did is required",
-                    None,
-                ));
-            }
-            match station_request_json(
-                Method::POST,
-                "/friend-chat/session/create",
-                &token,
-                None,
-                Some(json!({"participant_did": input.participant_did})),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_create_session", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_get_settings" => {
-            let input = match parse_args::<FriendConversationSettingsInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.session_ulid.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "session_ulid is required",
-                    None,
-                ));
-            }
-            let query = vec![("session_ulid", input.session_ulid)];
-            match station_request_json(
-                Method::GET,
-                "/friend-chat/settings",
-                &token,
-                Some(&query),
-                None,
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_get_settings", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_update_settings" => {
-            let input = match parse_args::<FriendConversationSettingsUpdateInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.session_ulid.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "session_ulid is required",
-                    None,
-                ));
-            }
-            let mut body = json!({"session_ulid": input.session_ulid});
-            if let Some(v) = input.is_muted {
-                body["is_muted"] = json!(v);
-            }
-            if let Some(v) = input.is_pinned {
-                body["is_pinned"] = json!(v);
-            }
-            if let Some(v) = input.alert_enabled {
-                body["alert_enabled"] = json!(v);
-            }
-            if let Some(v) = input.background {
-                body["background"] = json!(v);
-            }
-            if let Some(v) = input.cleared_at_unix_ms {
-                body["cleared_at_unix_ms"] = json!(v);
-            }
-            match station_request_json(
-                Method::PUT,
-                "/friend-chat/settings",
-                &token,
-                None,
-                Some(body),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_update_settings", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_list_messages" => {
-            let input = match parse_args::<FriendChatListMessagesInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.session_ulid.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "session_ulid is required",
-                    None,
-                ));
-            }
-            let mut query = vec![
-                ("session_ulid", input.session_ulid),
-                ("limit", input.limit.unwrap_or(50).to_string()),
-            ];
-            if let Some(before) = input.before_ulid {
-                query.push(("before_ulid", before));
-            }
-            let data = match station_request_json(
-                Method::GET,
-                "/friend-chat/messages",
-                &token,
-                Some(&query),
-                None,
-            ) {
-                Ok(d) => d,
-                Err(e) => return e,
-            };
-            let user_scope = user_scope_from_state(state);
-            let _ = chat_storage::ingest_friend_messages(user_scope.as_str(), &data);
-            to_json(to_stub("friend_chat_list_messages", data))
-        }
-        "friend_chat_list_thread_messages" => {
-            let input = match parse_args::<FriendChatThreadInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.session_ulid.trim().is_empty() || input.root_ulid.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "session_ulid and root_ulid are required",
-                    None,
-                ));
-            }
-            match chat_storage::list_friend_thread_messages(
-                &token,
-                input.session_ulid.as_str(),
-                input.root_ulid.as_str(),
-                input.limit.unwrap_or(100),
-                input.after_ulid.as_deref(),
-                input.max_pages.unwrap_or(50),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_list_thread_messages", data)),
-                Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
-            }
-        }
-        "friend_chat_thread_counts" => {
-            let input = match parse_args::<FriendChatThreadCountsInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.session_ulid.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "session_ulid is required",
-                    None,
-                ));
-            }
-            match chat_storage::friend_thread_counts(
-                &token,
-                input.session_ulid.as_str(),
-                input.root_ulids.as_slice(),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_thread_counts", data)),
-                Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
-            }
-        }
-        "friend_chat_thread_mark_read" => {
-            let input = match parse_args::<FriendChatThreadReadInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.session_ulid.trim().is_empty() || input.root_ulid.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "session_ulid and root_ulid are required",
-                    None,
-                ));
-            }
-            match chat_storage::mark_friend_thread_read(
-                &token,
-                input.session_ulid.as_str(),
-                input.root_ulid.as_str(),
-                input.last_read_ulid.as_deref(),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_thread_mark_read", data)),
-                Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
-            }
-        }
-        "friend_chat_sync_messages" => {
-            let input = match parse_args::<FriendChatSyncMessagesInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            match station_request_json(
-                Method::POST,
-                "/friend-chat/message/sync",
-                &token,
-                None,
-                Some(json!({"messages": input.messages_json})),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_sync_messages", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_get_pending" => {
-            let input = match parse_args::<FriendChatPendingInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let query = vec![("limit", input.limit.unwrap_or(50).to_string())];
-            match station_request_json(
-                Method::GET,
-                "/friend-chat/pending",
-                &token,
-                Some(&query),
-                None,
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_get_pending", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_get_stats" => {
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            match station_request_json(Method::GET, "/friend-chat/stats", &token, None, None) {
-                Ok(data) => to_json(to_stub("friend_chat_get_stats", data)),
-                Err(e) => e,
-            }
-        }
-        "key_exchange_upload_bundle" => {
-            let input = match parse_args::<KeyExchangeUploadInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let actor_id = match actor_id_from_state(state) {
-                Some(id) if !id.trim().is_empty() => id,
-                Some(_) | None => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::Unauthorized,
-                        "authentication required",
-                        None,
-                    ));
-                }
-            };
-            let device_id = match device_install::get_or_create_device_id(actor_id.as_str()) {
-                Ok(id) => id,
-                Err(e) => {
-                    return to_json(AppResult::<StubPayload>::fail(
-                        ErrorCode::InternalError,
-                        format!("device_id: {e}"),
-                        None,
-                    ));
-                }
-            };
-            let req = model::key_exchange::UploadKeyBundleRequest {
-                ik_pub: input.ik_pub,
-                spk_id: input.spk_id,
-                spk_pub: input.spk_pub,
-                spk_sig: input.spk_sig,
-                opk_ids: input.opk_ids,
-                opk_pubs: input.opk_pubs,
-                device_id,
-                supported_versions: vec![1],
-            };
-            match station_client::request_proto::<
-                model::key_exchange::UploadKeyBundleRequest,
-                model::key_exchange::UploadKeyBundleResponse,
-            >(
-                Method::POST,
-                "/key-exchange/keys/bundle",
-                &token,
-                None,
-                Some(&req),
-            ) {
-                Ok(_r) => to_json(to_stub("key_exchange_upload_bundle", json!({}))),
-                Err(e) => to_json(e.into_app_result::<StubPayload>("Station request failed")),
-            }
-        }
-        "key_exchange_fetch_bundle" => {
-            let input = match parse_args::<KeyExchangeFetchInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.did.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "did is required",
-                    None,
-                ));
-            }
-            let req = model::key_exchange::FetchKeyBundleRequest {
-                did: input.did,
-                device_id: input.device_id.unwrap_or_default(),
-                home_station_peer_id: input.home_station_peer_id.unwrap_or_default(),
-            };
-            match station_client::request_proto::<
-                model::key_exchange::FetchKeyBundleRequest,
-                model::key_exchange::FetchKeyBundleResponse,
-            >(
-                Method::POST,
-                "/key-exchange/keys/bundle/fetch",
-                &token,
-                None,
-                Some(&req),
-            ) {
-                Ok(r) => {
-                    let bundles_json: Vec<Value> = r
-                        .bundles
-                        .iter()
-                        .map(|b| {
-                            json!({
-                                "did": b.did,
-                                "device_id": b.device_id,
-                                "ik_pub": b.ik_pub,
-                                "fingerprint": wire::identity_fingerprint_hex(&b.ik_pub),
-                                "spk_pub": b.spk_pub,
-                                "spk_sig": b.spk_sig,
-                                "opks": b.opks,
-                                "published_at_unix_ms": b.published_at_unix_ms,
-                                "supported_versions": b.supported_versions,
-                            })
-                        })
-                        .collect();
-                    to_json(to_stub(
-                        "key_exchange_fetch_bundle",
-                        json!({ "bundles": bundles_json }),
-                    ))
-                }
-                Err(e) => to_json(e.into_app_result::<StubPayload>("Station request failed")),
-            }
-        }
-        "friend_chat_local_search" => {
-            let input = match parse_args::<ChatLocalSearchInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            if input.query.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "query is required",
-                    None,
-                ));
-            }
-            let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
-            match chat_storage::search_friend_messages("__default__", &input.query, limit) {
-                Ok(items) => to_json(to_stub(
-                    "friend_chat_local_search",
-                    json!({"messages": items}),
-                )),
-                Err(reason) => to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InternalError,
-                    "local search failed",
-                    Some(json!({"reason": reason})),
-                )),
-            }
-        }
-        "friend_chat_local_search_scoped" => {
-            let input = match parse_args::<ChatLocalSearchInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            if input.query.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "query is required",
-                    None,
-                ));
-            }
-            let user_scope = user_scope_from_state(state);
-            let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
-            match chat_storage::search_friend_messages(&user_scope, &input.query, limit) {
-                Ok(items) => to_json(to_stub(
-                    "friend_chat_local_search_scoped",
-                    json!({"messages": items}),
-                )),
-                Err(reason) => to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InternalError,
-                    "local search failed",
-                    Some(json!({"reason": reason})),
-                )),
-            }
-        }
-        "friend_chat_set_cursor_scoped" => {
-            let input = match parse_args::<ChatScopeCursorSetInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let user_scope = user_scope_from_state(state);
-            if input.scope.trim().is_empty() || input.cursor.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "scope and cursor are required",
-                    None,
-                ));
-            }
-            if let Err(reason) =
-                chat_storage::set_scope_cursor(&user_scope, &input.scope, &input.cursor)
-            {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InternalError,
-                    "set cursor failed",
-                    Some(json!({"reason": reason})),
-                ));
-            }
-            to_json(to_stub(
-                "friend_chat_set_cursor_scoped",
-                json!({"ok": true}),
-            ))
-        }
-        "friend_chat_get_cursor_scoped" => {
-            let input = match parse_args::<ChatScopeCursorGetInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let user_scope = user_scope_from_state(state);
-            if input.scope.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "scope is required",
-                    None,
-                ));
-            }
-            match chat_storage::get_scope_cursor(&user_scope, &input.scope) {
-                Ok(cursor) => to_json(to_stub(
-                    "friend_chat_get_cursor_scoped",
-                    json!({"cursor": cursor}),
-                )),
-                Err(reason) => to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InternalError,
-                    "get cursor failed",
-                    Some(json!({"reason": reason})),
-                )),
-            }
-        }
-        "friend_chat_get_key_version_scoped" => {
-            let user_scope = user_scope_from_state(state);
-            match chat_storage::get_chat_key_version(&user_scope) {
-                Ok(v) => to_json(to_stub(
-                    "friend_chat_get_key_version_scoped",
-                    json!({"key_version": v}),
-                )),
-                Err(reason) => to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InternalError,
-                    "get key version failed",
-                    Some(json!({"reason": reason})),
-                )),
-            }
-        }
-        "friend_chat_rotate_key_scoped" => {
-            let input = match parse_args::<ChatKeyRotateInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            if input.next_version <= 0 {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "next_version must be positive",
-                    None,
-                ));
-            }
-            let user_scope = user_scope_from_state(state);
-            match chat_storage::rotate_chat_key(&user_scope, input.next_version) {
-                Ok(v) => to_json(to_stub(
-                    "friend_chat_rotate_key_scoped",
-                    json!({"key_version": v}),
-                )),
-                Err(reason) => to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InternalError,
-                    "rotate key failed",
-                    Some(json!({"reason": reason})),
-                )),
-            }
-        }
-        "friend_chat_sync_from_station_scoped" => dispatch_friend_sync_from_station(args, state),
-        "friend_chat_send_friend_request" => {
-            let input = match parse_args::<FriendRequestSendInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            match station_request_json(
-                Method::POST,
-                "/api/v1/social/friend-request/send",
-                &token,
-                None,
-                Some(json!({
-                    "receiver_did": input.receiver_did,
-                    "message": input.message.unwrap_or_default(),
-                })),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_send_friend_request", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_accept_friend_request" => {
-            let input = match parse_args::<FriendRequestActionInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            match station_request_json(
-                Method::POST,
-                "/api/v1/social/friend-request/accept",
-                &token,
-                None,
-                Some(json!({"request_id": input.request_id})),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_accept_friend_request", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_reject_friend_request" => {
-            let input = match parse_args::<FriendRequestActionInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            match station_request_json(
-                Method::POST,
-                "/api/v1/social/friend-request/reject",
-                &token,
-                None,
-                Some(json!({"request_id": input.request_id})),
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_reject_friend_request", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_list_friend_requests" => {
-            let input = match parse_args::<FriendRequestListInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let mut query: Vec<(&str, String)> = Vec::new();
-            if let Some(st) = input.status {
-                query.push(("status", st.to_string()));
-            }
-            let limit = input.limit.unwrap_or(20);
-            query.push(("limit", limit.to_string()));
-            let offset = input.offset.unwrap_or(0);
-            query.push(("offset", offset.to_string()));
-            match station_request_json(
-                Method::GET,
-                "/api/v1/social/friend-requests",
-                &token,
-                Some(&query),
-                None,
-            ) {
-                Ok(data) => to_json(to_stub("friend_chat_list_friend_requests", data)),
-                Err(e) => e,
-            }
-        }
-        "friend_chat_block_user" => {
-            let input = match parse_args::<FriendChatBlockUserInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            if input.target_did.trim().is_empty() {
-                return to_json(AppResult::<Vec<u8>>::fail(
-                    ErrorCode::InvalidArgument,
-                    "target_did is required",
-                    None,
-                ));
-            }
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let req = model::chat::BlockUserRequest {
-                target_did: input.target_did,
-            };
-            let resp = match station_client::request_proto::<
-                model::chat::BlockUserRequest,
-                model::chat::BlockUserResponse,
-            >(
-                Method::POST, "/friend-chat/block", &token, None, Some(&req)
-            ) {
-                Ok(r) => r,
-                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
-            };
-            to_json(AppResult::success(resp.encode_to_vec()))
-        }
-        "friend_chat_unblock_user" => {
-            let input = match parse_args::<FriendChatBlockUserInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            if input.target_did.trim().is_empty() {
-                return to_json(AppResult::<Vec<u8>>::fail(
-                    ErrorCode::InvalidArgument,
-                    "target_did is required",
-                    None,
-                ));
-            }
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let req = model::chat::UnblockUserRequest {
-                target_did: input.target_did,
-            };
-            let resp = match station_client::request_proto::<
-                model::chat::UnblockUserRequest,
-                model::chat::UnblockUserResponse,
-            >(
-                Method::DELETE,
-                "/friend-chat/block",
-                &token,
-                None,
-                Some(&req),
-            ) {
-                Ok(r) => r,
-                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
-            };
-            to_json(AppResult::success(resp.encode_to_vec()))
-        }
-        "friend_chat_list_blocked_users" => {
-            let input = match parse_args::<FriendChatListBlockedUsersInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let limit = input.limit.unwrap_or(100).clamp(1, 100);
-            let offset = input.offset.unwrap_or(0).max(0);
-            let query = vec![("limit", limit.to_string()), ("offset", offset.to_string())];
-            let resp = match station_client::request_proto::<
-                (),
-                model::chat::ListBlockedUsersResponse,
-            >(
-                Method::GET,
-                "/friend-chat/blocked",
-                &token,
-                Some(&query),
-                None::<&()>,
-            ) {
-                Ok(r) => r,
-                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
-            };
-            to_json(AppResult::success(resp.encode_to_vec()))
-        }
-        "friend_chat_get_friendship_status" => {
-            let input = match parse_args::<FriendChatBlockUserInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            if input.target_did.trim().is_empty() {
-                return to_json(AppResult::<Vec<u8>>::fail(
-                    ErrorCode::InvalidArgument,
-                    "target_did is required",
-                    None,
-                ));
-            }
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            let query = vec![("target_did", input.target_did)];
-            let resp = match station_client::request_proto::<
-                (),
-                model::chat::GetFriendshipStatusResponse,
-            >(
-                Method::GET,
-                "/friend-chat/friendship/status",
-                &token,
-                Some(&query),
-                None::<&()>,
-            ) {
-                Ok(r) => r,
-                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
-            };
-            to_json(AppResult::success(resp.encode_to_vec()))
-        }
 
+        // =================================================================
+        // Social Friend Requests (state-dependent, station proto API)
+        // =================================================================
+        "social_friend_request_send" => {
+            let input = match parse_args::<SocialFriendRequestSendInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            if input.receiver_did.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument,
+                    "receiver_did is required",
+                    None,
+                ));
+            }
+            let req = model::chat::SendFriendRequestRequest {
+                receiver_did: input.receiver_did,
+                message: input.message.unwrap_or_default(),
+            };
+            let resp = match station_client::request_proto::<
+                model::chat::SendFriendRequestRequest,
+                model::chat::SendFriendRequestResponse,
+            >(
+                Method::POST, "/api/v1/social/friend-request/send", &token, None, Some(&req),
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_friend_request_accept" => {
+            let input = match parse_args::<SocialFriendRequestAcceptInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            if input.request_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument, "request_id is required", None,
+                ));
+            }
+            let req = model::chat::AcceptFriendRequestRequest { request_id: input.request_id };
+            let resp = match station_client::request_proto::<
+                model::chat::AcceptFriendRequestRequest,
+                model::chat::AcceptFriendRequestResponse,
+            >(
+                Method::POST, "/api/v1/social/friend-request/accept", &token, None, Some(&req),
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_friend_request_reject" => {
+            let input = match parse_args::<SocialFriendRequestRejectInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            if input.request_id.trim().is_empty() {
+                return to_json(AppResult::<Vec<u8>>::fail(
+                    ErrorCode::InvalidArgument, "request_id is required", None,
+                ));
+            }
+            let req = model::chat::RejectFriendRequestRequest { request_id: input.request_id };
+            let resp = match station_client::request_proto::<
+                model::chat::RejectFriendRequestRequest,
+                model::chat::RejectFriendRequestResponse,
+            >(
+                Method::POST, "/api/v1/social/friend-request/reject", &token, None, Some(&req),
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
+        "social_friend_request_list" => {
+            let input = match parse_args::<SocialFriendRequestListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match token_from_state(state) {
+                Ok(t) => t,
+                Err(e) => return e,
+            };
+            let mut query = Vec::new();
+            if let Some(status) = input.status {
+                query.push(("status", status.to_string()));
+            }
+            query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
+            query.push(("offset", input.offset.unwrap_or(0).to_string()));
+            let resp = match station_client::request_proto::<
+                (), model::chat::ListFriendRequestsResponse,
+            >(
+                Method::GET, "/api/v1/social/friend-requests", &token, Some(&query), None::<&()>,
+            ) {
+                Ok(r) => r,
+                Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
+            };
+            to_json(AppResult::success(resp.encode_to_vec()))
+        }
         // =================================================================
         // Group Chat (state-dependent, station JSON API + proto)
         // =================================================================
@@ -5267,32 +4728,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 input.root_ulids.as_slice(),
             ) {
                 Ok(data) => to_json(to_stub("group_chat_thread_counts", data)),
-                Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
-            }
-        }
-        "group_chat_thread_mark_read" => {
-            let input = match parse_args::<GroupChatThreadReadInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(t) => t,
-                Err(e) => return e,
-            };
-            if input.group_ulid.trim().is_empty() || input.root_ulid.trim().is_empty() {
-                return to_json(AppResult::<StubPayload>::fail(
-                    ErrorCode::InvalidArgument,
-                    "group_ulid and root_ulid are required",
-                    None,
-                ));
-            }
-            match chat_storage::mark_group_thread_read(
-                &token,
-                input.group_ulid.as_str(),
-                input.root_ulid.as_str(),
-                input.last_read_ulid.as_deref(),
-            ) {
-                Ok(data) => to_json(to_stub("group_chat_thread_mark_read", data)),
                 Err(e) => to_json(e.into_app_result::<StubPayload>("station request failed")),
             }
         }
@@ -7288,31 +6723,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             })),
             "conversation thread counts",
         ),
-        "conversation_set_read_cursor" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::POST,
-            "/conversation/read-cursor",
-            None,
-            Some(json!({
-                "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
-                "last_read_seq": args.get("last_read_seq").and_then(|v| v.as_i64()).unwrap_or(0),
-            })),
-            "conversation set read cursor",
-        ),
-        "conversation_get_unread" => proxy_authenticated_station_json(
-            state,
-            reqwest::Method::GET,
-            "/conversation/unread",
-            Some(vec![(
-                "conversation_id",
-                args.get("conversation_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            )]),
-            None,
-            "conversation get unread",
-        ),
         "conversation_get_member_settings" => proxy_authenticated_station_json(
             state,
             reqwest::Method::GET,
@@ -7407,10 +6817,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 _ => crate::model::chat::ConversationKind::Direct,
             };
             let plaintext = args.get("plaintext").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let reply_to_message_id = args.get("reply_to_message_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let thread_root_message_id = args.get("thread_root_message_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
             if conversation_id.is_empty() || plaintext.is_empty() {
                 return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "conversation_id and plaintext required", None));
             }
-            match engine.submit_message(&token, &conversation_id, conversation_kind, &plaintext, &[]) {
+            match engine.submit_message(
+                &token,
+                &conversation_id,
+                conversation_kind,
+                &plaintext,
+                &reply_to_message_id,
+                &thread_root_message_id,
+                &[],
+            ) {
                 Ok(outcome) => {
                     let _ = state.messaging_engines.wake_profile(&account_id);
                     to_json(AppResult::success(json!({
@@ -7508,6 +6928,62 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
         }
+        #[cfg(feature = "acceptance-webdriver")]
+        "messaging_acceptance_interaction_snapshot" => {
+            let guard = state.session.lock().map_err(|_| ()).ok();
+            let actor_id = guard
+                .as_ref()
+                .and_then(|session| session.actor_id.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|session| session.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
+            drop(guard);
+            if actor_id.is_empty() {
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
+            }
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            let conversation_id = args
+                .get("conversation_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let message_id = args
+                .get("message_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let command_id = args
+                .get("command_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            match engine.acceptance_interaction_snapshot(
+                conversation_id,
+                message_id,
+                command_id,
+            ) {
+                Ok(snapshot) => to_json(AppResult::success(snapshot)),
+                Err(error) => to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError,
+                    error,
+                    None,
+                )),
+            }
+        }
         "messaging_debug" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
             let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
@@ -7600,11 +7076,80 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let conversation_id = format!("g-{}", ulid::Ulid::new().to_string().to_lowercase());
             match engine.create_group_conversation(&token, &conversation_id, &name, &member_ptids) {
                 Ok(id) => {
+                    let now_unix_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as i64;
+                    let retry_policy = crate::messaging::CommandRetryPolicy {
+                        initial_delay_ms: 1000,
+                        maximum_delay_ms: 30000,
+                    };
+                    let _ = engine.dispatch_command_once(&token, now_unix_ms, retry_policy);
                     let _ = engine.drain_once(&token, 100);
                     let _ = state.messaging_engines.wake_profile(&account_id);
                     to_json(AppResult::success(json!({
                         "conversation_id": id,
                         "state": "created",
+                    })))
+                }
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        "messaging_membership_transition" => {
+            let guard = state.session.lock().map_err(|_| ()).ok();
+            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
+            let token = guard.as_ref().and_then(|g| g.token.clone()).unwrap_or_default();
+            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            drop(guard);
+            if actor_id.is_empty() || token.is_empty() {
+                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+            }
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(e)) => e,
+                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+            };
+            let conversation_id = args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let action_str = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+            let target_ptid = args.get("target_ptid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let target_device_id = args.get("target_device_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let role = args.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if conversation_id.is_empty() || target_ptid.is_empty() {
+                return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "conversation_id and target_ptid required", None));
+            }
+            let action = match action_str {
+                "add_actor" => crate::model::chat::MessagingMembershipAction::AddActor,
+                "remove_actor" => crate::model::chat::MessagingMembershipAction::RemoveActor,
+                "add_device" => crate::model::chat::MessagingMembershipAction::AddDevice,
+                "remove_device" => crate::model::chat::MessagingMembershipAction::RemoveDevice,
+                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "unsupported action", None)),
+            };
+            match engine.prepare_membership_transition(
+                &token,
+                &crate::messaging::MembershipTransitionIntentInput {
+                    conversation_id,
+                    action,
+                    target_ptid,
+                    target_device_id,
+                    role,
+                },
+            ) {
+                Ok(command) => {
+                    let command_id = command.command_id.clone();
+                    let now_unix_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as i64;
+                    let retry_policy = crate::messaging::CommandRetryPolicy {
+                        initial_delay_ms: 1000,
+                        maximum_delay_ms: 30000,
+                    };
+                    let _ = engine.dispatch_command_once(&token, now_unix_ms, retry_policy);
+                    let _ = engine.drain_once(&token, 100);
+                    let _ = state.messaging_engines.wake_profile(&account_id);
+                    to_json(AppResult::success(json!({
+                        "command_id": command_id,
+                        "state": "pending",
                     })))
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
@@ -7746,92 +7291,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
 // -------------------------------------------------------------------------
 // Complex multi-page sync dispatchers (extracted for readability)
 // -------------------------------------------------------------------------
-
-fn dispatch_friend_sync_from_station(args: Value, state: &AppState) -> Value {
-    let input = match parse_args::<FriendChatSyncInput>(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let token = match token_from_state(state) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    if input.session_ulid.trim().is_empty() {
-        return to_json(AppResult::<StubPayload>::fail(
-            ErrorCode::InvalidArgument,
-            "session_ulid is required",
-            None,
-        ));
-    }
-    let user_scope = user_scope_from_state(state);
-    let scope_key = format!("friend:{}", input.session_ulid);
-    let cursor = match chat_storage::get_scope_cursor(&user_scope, &scope_key) {
-        Ok(c) => c,
-        Err(reason) => {
-            return to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::InternalError,
-                "get cursor failed",
-                Some(json!({"reason": reason})),
-            ));
-        }
-    };
-    let page_limit = input.limit.unwrap_or(100);
-    let max_pages = input.max_pages.unwrap_or(10);
-    let mut current_cursor = cursor.clone();
-    let mut total_synced = 0usize;
-    let mut pages_fetched = 0u32;
-    for _ in 0..max_pages {
-        let mut query = vec![
-            ("session_ulid", input.session_ulid.clone()),
-            ("limit", page_limit.to_string()),
-        ];
-        if let Some(ref existing) = current_cursor {
-            if !existing.trim().is_empty() {
-                query.push(("before_ulid", format!("since:{existing}")));
-            }
-        }
-        let data = match station_request_json(
-            Method::GET,
-            "/friend-chat/messages",
-            &token,
-            Some(&query),
-            None,
-        ) {
-            Ok(d) => d,
-            Err(e) => return e,
-        };
-        pages_fetched += 1;
-        let (incremental, synced_count, latest) =
-            filter_incremental_messages(&data, current_cursor.as_deref());
-        let _ = chat_storage::ingest_friend_messages(&user_scope, &incremental);
-        total_synced += synced_count;
-        let server_cursor = data
-            .get("next_cursor")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
-        let fallback = extract_latest_ulid(&data);
-        let next = server_cursor.or(latest).or(fallback);
-        if let Some(ref new_cursor) = next {
-            let _ = chat_storage::set_scope_cursor(&user_scope, &scope_key, new_cursor);
-            current_cursor = Some(new_cursor.clone());
-        }
-        if !data
-            .get("has_more")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
-            break;
-        }
-    }
-    to_json(to_stub(
-        "friend_chat_sync_from_station_scoped",
-        json!({
-            "synced_count": total_synced, "pages_fetched": pages_fetched,
-            "cursor_before": cursor, "cursor_after": current_cursor,
-        }),
-    ))
-}
 
 fn dispatch_group_sync_from_station(args: Value, state: &AppState) -> Value {
     let input = match parse_args::<GroupChatSyncInput>(args) {
