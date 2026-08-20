@@ -288,5 +288,391 @@ class NativeInteractionContractsTest(unittest.TestCase):
         )
 
 
+class ContactMessageResilienceTest(unittest.TestCase):
+    def source(self, path: str) -> str:
+        return (ROOT / path).read_text(encoding="utf-8")
+
+    def test_message_button_navigates_before_create_direct_resolves(self) -> None:
+        src = self.source(
+            "apps/desktop/src/components/chat/ChatContactsDetailPanel.tsx"
+        )
+        create_direct_pos = src.find("createDirect(peerDid)")
+        self.assertGreater(
+            create_direct_pos, 0,
+            "handleMessage must call imServiceV1.messaging.createDirect",
+        )
+        set_opening_pos = src.rfind("setOpeningConversation(true)", 0, create_direct_pos)
+        on_message_before_create = src.rfind("onMessage()", set_opening_pos, create_direct_pos)
+        self.assertGreater(
+            on_message_before_create, set_opening_pos,
+            "onMessage() must be called BEFORE createDirect resolves; "
+            "navigation must not be blocked by async API failure",
+        )
+        try_block_start = src.find("try {", on_message_before_create)
+        self.assertGreater(try_block_start, on_message_before_create)
+        self.assertGreater(create_direct_pos, try_block_start)
+        catch_block = src.find("} catch", create_direct_pos)
+        self.assertGreater(catch_block, create_direct_pos)
+        self.assertIn(
+            "presentError", src[create_direct_pos:catch_block + 200],
+            "errors must be presented within the already-open chat view",
+        )
+
+    def test_engine_has_stale_enrollment_recovery(self) -> None:
+        src = self.source("apps/desktop/src-tauri/src/messaging/engine.rs")
+        self.assertIn(
+            "recover_stale_enrollment", src,
+            "engine must provide recover_stale_enrollment for endpoint-not-active recovery",
+        )
+        self.assertIn(
+            "endpoint is not active", src,
+            "engine must detect 'endpoint is not active' Station errors",
+        )
+        create_direct = src.find("fn create_direct_conversation")
+        self.assertGreater(create_direct, 0)
+
+        first_attempt = src.find("try_create_direct_conversation", create_direct)
+        self.assertGreater(
+            first_attempt, create_direct,
+            "create_direct_conversation must delegate to try_create_direct_conversation",
+        )
+
+        guard = src.find("endpoint is not active", first_attempt)
+        self.assertGreater(
+            guard, first_attempt,
+            "recovery must be guarded by 'endpoint is not active' error match",
+        )
+
+        recovery = src.find("recover_stale_enrollment", guard)
+        enroll = src.find("enroll_pending_device", recovery)
+        retry = src.find("try_create_direct_conversation", enroll)
+        self.assertGreater(
+            recovery, first_attempt,
+            "recover_stale_enrollment must be called after the first attempt fails",
+        )
+        self.assertGreater(
+            enroll, recovery,
+            "enroll_pending_device must be called after recover_stale_enrollment",
+        )
+        self.assertGreater(
+            retry, enroll,
+            "try_create_direct_conversation must be RETRIED after re-enrollment; "
+            "without the retry the recovery has no effect",
+        )
+
+        non_matching_arm = src.find("Err(error) => Err(error)", retry)
+        self.assertGreater(
+            non_matching_arm, 0,
+            "non-'endpoint is not active' errors must pass through without recovery",
+        )
+
+    def test_store_has_reset_device_enrollment(self) -> None:
+        src = self.source("apps/desktop/src-tauri/src/messaging/store.rs")
+        self.assertIn(
+            "fn reset_device_enrollment", src,
+            "store must provide reset_device_enrollment to re-trigger enrollment "
+            "when Station loses device state",
+        )
+        self.assertIn(
+            "awaiting_device_enrollment", src,
+            "reset_device_enrollment must set status back to awaiting_device_enrollment",
+        )
+        self.assertIn(
+            "status = 'active'", src,
+            "reset_device_enrollment must have an idempotent WHERE status = 'active' "
+            "guard so it is a no-op when the device is already pending enrollment",
+        )
+        self.assertIn(
+            "Ok(rows > 0)", src,
+            "reset_device_enrollment must return Ok(true) only when a row was actually "
+            "reset, enabling the caller to distinguish 'reset performed' from 'already pending'",
+        )
+
+    def test_lifecycle_recovers_stale_enrollment(self) -> None:
+        src = self.source("apps/desktop/src-tauri/src/messaging/lifecycle.rs")
+        self.assertIn(
+            "endpoint is not active", src,
+            "lifecycle must detect 'endpoint is not active' in cycle failures",
+        )
+        self.assertIn(
+            "recover_stale_enrollment", src,
+            "lifecycle must call engine.recover_stale_enrollment on stale endpoint errors",
+        )
+        failure_branch = src.find("if failures.is_empty()")
+        self.assertGreater(
+            failure_branch, 0,
+            "run_cycle must have a failures.is_empty() check",
+        )
+        recovery = src.find("recover_stale_enrollment", failure_branch)
+        err_return = src.rfind("Err(combined)")
+        self.assertGreater(
+            recovery, failure_branch,
+            "recover_stale_enrollment must be called inside the failure branch "
+            "(after the is_empty check), not unconditionally",
+        )
+        self.assertGreater(
+            err_return, recovery,
+            "the cycle error must still be propagated as Err(combined) after "
+            "attempting recovery; recovery is a side-effect, not a success override",
+        )
+
+    def test_contact_double_click_starts_chat(self) -> None:
+        src = self.source("apps/desktop/src/components/chat/ChatContactsPanel.tsx")
+        double_clicks = [i for i in range(len(src)) if src.startswith("onDoubleClick", i)]
+        self.assertGreaterEqual(
+            len(double_clicks), 2,
+            "ChatContactsPanel must provide onDoubleClick on both friend and group rows "
+            "so users can start a chat without opening the detail panel",
+        )
+        self.assertIn(
+            "onStartChat", src,
+            "ChatContactsPanel must accept onStartChat prop for double-click entry",
+        )
+
+        group_kind_pos = src.find("kind: 'group'")
+        friend_kind_pos = src.find("kind: 'friend'")
+        self.assertGreater(
+            group_kind_pos, 0,
+            "group row double-click must pass kind: 'group' so the page can distinguish "
+            "group navigation from friend navigation",
+        )
+        self.assertGreater(
+            friend_kind_pos, 0,
+            "friend row double-click must pass kind: 'friend' so the page can distinguish "
+            "friend navigation from group navigation",
+        )
+        self.assertNotEqual(
+            group_kind_pos, friend_kind_pos,
+            "group and friend double-click handlers must be distinct",
+        )
+
+        first_dc = double_clicks[0]
+        second_dc = double_clicks[1]
+        first_kind = src.find("kind:", first_dc, second_dc)
+        second_kind = src.find("kind:", second_dc)
+        self.assertGreater(
+            first_kind, first_dc,
+            "the first onDoubleClick handler must invoke onStartChat with a kind",
+        )
+        self.assertGreater(
+            second_kind, second_dc,
+            "the second onDoubleClick handler must invoke onStartChat with a kind",
+        )
+
+        page = self.source("apps/desktop/src/pages/SocialChatPage.tsx")
+        self.assertIn(
+            "onStartChat", page,
+            "SocialChatPage must wire onStartChat to navigate to the chats subpage",
+        )
+
+    def test_search_dropdown_dismisses_on_backdrop_click(self) -> None:
+        src = self.source(
+            "apps/desktop/src/components/chat/ChatSearchDropdown.tsx"
+        )
+        self.assertIn(
+            "onDismiss", src,
+            "ChatSearchDropdown must accept onDismiss to close the dropdown "
+            "when the user clicks outside",
+        )
+        self.assertIn(
+            'inset: 0', src,
+            "ChatSearchDropdown must render a full-screen backdrop to capture "
+            "outside clicks for dismissal",
+        )
+        self.assertIn(
+            "onClick={onDismiss}", src,
+            "the backdrop div must wire onClick directly to onDismiss so that "
+            "clicking outside actually triggers dismissal",
+        )
+
+        conditional = src.find("{onDismiss && (")
+        self.assertGreater(
+            conditional, 0,
+            "the backdrop must be conditionally rendered only when onDismiss is provided, "
+            "avoiding a click-capturing overlay in contexts that don't need dismissal",
+        )
+
+        backdrop_z = src.find("zIndex: 19", conditional)
+        dropdown_z = src.find("zIndex: 20", backdrop_z)
+        self.assertGreater(
+            backdrop_z, conditional,
+            "backdrop must have zIndex 19",
+        )
+        self.assertGreater(
+            dropdown_z, backdrop_z,
+            "dropdown must have zIndex 20, above the backdrop at 19, so the dropdown "
+            "itself remains clickable while the backdrop captures outside clicks",
+        )
+
+        session = self.source("apps/desktop/src/components/chat/ChatSessionList.tsx")
+        self.assertIn(
+            "onDismiss", session,
+            "ChatSessionList must wire onDismiss to clear search text",
+        )
+
+    def test_settings_reset_logs_out_before_reset(self) -> None:
+        src = self.source("apps/desktop/src/pages/SettingsPage.tsx")
+        logout_pos = src.find("api.authLogout()")
+        reset_pos = src.find("api.resetOnboarding()", logout_pos)
+        self.assertGreater(
+            logout_pos, 0,
+            "Settings danger-zone reset must call api.authLogout() first",
+        )
+        self.assertGreater(
+            reset_pos, logout_pos,
+            "authLogout() must be called BEFORE resetOnboarding() so the server "
+            "session is invalidated before local state is wiped",
+        )
+
+        warm_resume_pos = src.find("clearWarmResume()", reset_pos)
+        self.assertGreater(
+            warm_resume_pos, reset_pos,
+            "clearWarmResume() must be called after resetOnboarding() so the reload "
+            "lands on onboarding, not the ready view",
+        )
+
+        session_clear_pos = src.find("sessionStorage.clear()", warm_resume_pos)
+        self.assertGreater(
+            session_clear_pos, warm_resume_pos,
+            "sessionStorage.clear() must be called after clearWarmResume()",
+        )
+
+    def test_message_draft_persists_per_conversation(self) -> None:
+        src = self.source("apps/desktop/src/components/chat/ChatMessageArea.tsx")
+        self.assertIn(
+            "draftsRef", src,
+            "ChatMessageArea must keep a per-conversation draft map so typed text "
+            "survives conversation switches",
+        )
+        self.assertIn(
+            "prevActiveRef", src,
+            "ChatMessageArea must track the previous conversation to save its "
+            "draft before switching",
+        )
+        save_pos = src.find("draftsRef.current[prev]")
+        restore_pos = src.find("draftsRef.current[activeUlid", save_pos)
+        self.assertGreater(
+            save_pos, 0,
+            "ChatMessageArea must save the outgoing conversation draft before switching",
+        )
+        self.assertGreater(
+            restore_pos, save_pos,
+            "ChatMessageArea must restore the incoming conversation draft after saving",
+        )
+
+    def test_station_member_index_repair_is_idempotent_and_correct(self) -> None:
+        src = self.source(
+            "apps/station/app/subserver/conversation/repository.go"
+        )
+        self.assertIn(
+            "func repairMemberIndex", src,
+            "repository must provide repairMemberIndex to migrate the legacy "
+            "actor_did index to ptid-based index",
+        )
+
+        self.assertIn(
+            "actor_did", src,
+            "repairMemberIndex must detect the legacy 'actor_did' column to decide "
+            "whether repair is needed",
+        )
+
+        early_return = src.find("len(columns) == 0")
+        self.assertGreater(
+            early_return, 0,
+            "repairMemberIndex must return early when the index does not exist "
+            "(fresh install), avoiding unnecessary DDL",
+        )
+
+        drop_old = src.find("DROP INDEX IF EXISTS idx_member_conv_actor")
+        create_new = src.find(
+            "CREATE UNIQUE INDEX idx_member_conv_actor",
+            drop_old,
+        )
+        self.assertGreater(
+            drop_old, 0,
+            "repair must DROP the legacy index before creating the new one",
+        )
+        self.assertGreater(
+            create_new, drop_old,
+            "repair must CREATE the new unique index after dropping the old one",
+        )
+        self.assertIn(
+            "(conversation_id, ptid)",
+            src[create_new:create_new + 200],
+            "new idx_member_conv_actor must be on (conversation_id, ptid)",
+        )
+
+        drop_secondary = src.find(
+            "DROP INDEX IF EXISTS idx_member_actor", create_new,
+        )
+        create_secondary = src.find(
+            "CREATE INDEX idx_member_actor", drop_secondary,
+        )
+        self.assertGreater(
+            drop_secondary, create_new,
+            "repair must also DROP the legacy idx_member_actor secondary index",
+        )
+        self.assertGreater(
+            create_secondary, drop_secondary,
+            "repair must CREATE the replacement idx_member_actor on (ptid)",
+        )
+        self.assertIn(
+            "(ptid)", src[create_secondary:create_secondary + 100],
+            "replacement idx_member_actor must be on (ptid)",
+        )
+
+        subserver = self.source(
+            "apps/station/app/subserver/conversation/subserver.go"
+        )
+        self.assertIn(
+            "repairMemberIndex(rds)", subserver,
+            "subserver Init must call repairMemberIndex during startup",
+        )
+        init_pos = subserver.find("func (s *subServer) Init")
+        call_pos = subserver.find("repairMemberIndex(rds)", init_pos)
+        self.assertGreater(
+            call_pos, init_pos,
+            "repairMemberIndex must be called within the Init function",
+        )
+
+    def test_toast_host_is_mounted_at_app_root(self) -> None:
+        src = self.source("apps/desktop/src/main.tsx")
+        self.assertIn(
+            "ToastHost", src,
+            "main.tsx must import and mount ToastHost so that presented errors "
+            "are rendered globally; without it, resilience error toasts are invisible",
+        )
+        import_pos = src.find("ToastHost")
+        render_pos = src.rfind("<ToastHost />")
+        self.assertGreater(
+            import_pos, 0,
+            "ToastHost must be imported in main.tsx",
+        )
+        self.assertGreater(
+            render_pos, import_pos,
+            "<ToastHost /> must be rendered in the React tree, not just imported",
+        )
+
+    def test_chat_error_mapping_propagates_debug_message(self) -> None:
+        src = self.source(
+            "apps/desktop/src/services/errorMappings/chatErrorMapping.ts"
+        )
+        self.assertIn(
+            "debugMessage?: string", src,
+            "presentedError must accept an optional debugMessage parameter "
+            "for diagnostic context propagation",
+        )
+        self.assertIn(
+            "debugMessage,", src,
+            "presentedError must include debugMessage in the returned PresentedError",
+        )
+        fallback_pos = src.rfind("return presentedError(")
+        self.assertIn(
+            "message", src[fallback_pos:],
+            "the fallback error mapper must pass the raw error message as debugMessage "
+            "so operators can diagnose the underlying failure",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

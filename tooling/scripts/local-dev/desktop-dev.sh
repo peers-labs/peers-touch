@@ -16,13 +16,17 @@ _wt_offset=$(printf '%s' "${WORKTREE_ID}" | cksum | awk '{print $1 % 100}')
 case "$MODE" in
   app)
     export PT_PROFILE="${PT_DEV_PROFILE:-desktop}-app"
-    export GATEWAY_PORT="${PT_DESKTOP_APP_GATEWAY_PORT:-$((3030 + _wt_offset))}"
-    export WEB_PORT="${PT_DESKTOP_APP_WEB_PORT:-$((3210 + _wt_offset))}"
+    _base_gw="${PT_DESKTOP_APP_GATEWAY_PORT:-3030}"
+    _base_web="${PT_DESKTOP_APP_WEB_PORT:-3210}"
+    export GATEWAY_PORT="$((_base_gw + _wt_offset))"
+    export WEB_PORT="$((_base_web + _wt_offset))"
     ;;
   web)
     export PT_PROFILE="${PT_DEV_PROFILE:-desktop}-web"
-    export GATEWAY_PORT="${PT_DESKTOP_WEB_GATEWAY_PORT:-$((3031 + _wt_offset))}"
-    export WEB_PORT="${PT_DESKTOP_WEB_WEB_PORT:-$((3211 + _wt_offset))}"
+    _base_gw="${PT_DESKTOP_WEB_GATEWAY_PORT:-3031}"
+    _base_web="${PT_DESKTOP_WEB_WEB_PORT:-3211}"
+    export GATEWAY_PORT="$((_base_gw + _wt_offset))"
+    export WEB_PORT="$((_base_web + _wt_offset))"
     ;;
   *)
     echo "[ERROR] Usage: desktop-dev.sh [app|web]"
