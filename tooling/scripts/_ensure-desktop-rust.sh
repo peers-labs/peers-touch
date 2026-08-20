@@ -227,14 +227,17 @@ ensure_desktop_rust_ready() {
   local dev_url="http://localhost:${vite_port}"
   local tauri_config
   local e2e_testing="${PT_DESKTOP_E2E:-false}"
+  local wt_suffix
+  wt_suffix="$(printf '%s' "${wt_id}" | tr -cs 'a-zA-Z0-9' '-' | sed 's/-$//')"
+  local bundle_id="com.peertouch.dev.${wt_suffix}"
   if [[ "$headless" == "--headless" && "$e2e_testing" == "true" ]]; then
-    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}],\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
+    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}],\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
   elif [[ "$headless" == "--headless" ]]; then
-    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}]}}"
+    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"windows\":[{\"visible\":false}]}}"
   elif [[ "$e2e_testing" == "true" ]]; then
-    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
+    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"},\"app\":{\"security\":{\"capabilities\":[\"default\",{\"identifier\":\"e2e-webdriver\",\"windows\":[\"*\"],\"permissions\":[\"wdio-webdriver:default\"]}]}}}"
   else
-    tauri_config="{\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"}}"
+    tauri_config="{\"identifier\":\"${bundle_id}\",\"build\":{\"devUrl\":\"${dev_url}\",\"beforeDevCommand\":\"echo [INFO] external web dev server mode\"}}"
   fi
 
   local desired_fp
