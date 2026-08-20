@@ -17,16 +17,10 @@ import type {
   SessionRevokedPayload,
 } from '../kernel/events/types';
 import {
-  GetPendingResponseSchema,
-  GetStatsResponseSchema,
   SendFriendRequestResponseSchema,
   AcceptFriendRequestResponseSchema,
   RejectFriendRequestResponseSchema,
   ListFriendRequestsResponseSchema,
-  BlockUserResponseSchema,
-  UnblockUserResponseSchema,
-  ListBlockedUsersResponseSchema,
-  GetFriendshipStatusResponseSchema,
 } from '../gen/proto/domain/chat/friend_chat_pb';
 import {
   CreateGroupResponseSchema,
@@ -122,14 +116,6 @@ export type {
 export type {
   FriendChatSession,
   FriendChatMessage,
-  GetSessionsResponse,
-  CreateSessionResponse,
-  GetMessagesResponse,
-  SyncMessagesResponse,
-  GetPendingResponse,
-  PendingMessageInfo,
-  GetStatsResponse,
-  ListBlockedUsersResponse,
 } from '../gen/proto/domain/chat/friend_chat_pb';
 export type {
   Group,
@@ -258,11 +244,7 @@ const ALWAYS_QUIET_COMMANDS = new Set([
 // debug cold-start performance ("first chat tab click is slow") and the
 // 60s background sync loop. Toggle through the desktop config preference store.
 // if the noise becomes a problem during a specific session.
-const PROD_QUIET_COMMANDS = new Set([
-  'friend_chat_sync_from_station_scoped',
-  'friend_chat_list_sessions',
-  'friend_chat_list_messages',
-]);
+const PROD_QUIET_COMMANDS = new Set<string>([]);
 
 const APPLET_AUDIT_FLUSH_COMMANDS = new Set([
   'applets_create_session',
@@ -454,6 +436,22 @@ async function invokeRustDataFromStatus<TInput, TOut>(
   const response = await invokeRustCommand<TInput, TauriStubPayload>(command, input);
   if (response.ok && response.data) {
     return parseJSONSafe(response.data.status) as TOut;
+  }
+  if (response.error?.code === 'UNAUTHORIZED') {
+    throw new AuthCommandException(response.error);
+  }
+  const err = new RustCommandException(command, response.error);
+  log.error('api', `Command error: ${command}`, { error: err.message, code: err.code });
+  throw err;
+}
+
+async function invokeRustData<TInput, TOut>(
+  command: string,
+  input?: TInput,
+): Promise<TOut> {
+  const response = await invokeRustCommand<TInput, TOut>(command, input);
+  if (response.ok && response.data !== undefined) {
+    return response.data;
   }
   if (response.error?.code === 'UNAUTHORIZED') {
     throw new AuthCommandException(response.error);
@@ -4693,11 +4691,6 @@ export const api = {
       return { command: 'presence_notify', status: '{"accepted":false}' };
     }),
 
-  friendChatLocalSearch: (query: string, limit?: number) =>
-    invokeRustDataFromStatus<ChatLocalSearchInput, { messages: any[] }>(
-      'friend_chat_local_search_scoped', { query, limit },
-    ).then(r => r.messages || []),
-
   /**
    * Start the unified realtime SSE consumer for the current actor.
    * Idempotent — the Rust side replaces any in-flight supervisor for
@@ -4749,33 +4742,67 @@ export const api = {
     }),
 
   /**
-   * Publish a typing-state pulse onto the recipient's realtime SSE
-   * stream via Station's `POST /realtime/typing` ingress.
-   *
-   * Typing is purely advisory metadata — there is no payload, no
-   * encryption, no persistence. Senders should debounce locally
-   * (fire `typing=true` at most every ~3s while the user is typing,
-   * and fire `typing=false` after ~4s of inactivity / on send / on
-   * blur). Station fan-outs the pulse to the recipient only — no
-   * multi-device sender echo, since typing is about the actor's own
-   * activity that their other devices already know about.
+   * Submit an ephemeral typing pulse through the canonical Messaging
+   * admission path. Station validates active membership and fans the
+   * pulse out without writing it to durable message history.
    */
-  realtimeTypingSend: (
-    recipientActorId: string,
-    sessionUlid: string,
-    typing: boolean,
+  messagingTypingSend: (conversationId: string, typing: boolean) =>
+    invokeRustData<
+      { conversation_id: string; is_typing: boolean },
+      { submitted: boolean }
+    >('messaging_submit_typing', {
+      conversation_id: conversationId,
+      is_typing: typing,
+    }),
+
+  messagingReadCursor: (conversationId: string, lastReadSequence: number) =>
+    invokeRustData<
+      { conversation_id: string; last_read_sequence: number },
+      { submitted: boolean }
+    >('messaging_submit_read_cursor', {
+      conversation_id: conversationId,
+      last_read_sequence: lastReadSequence,
+    }),
+
+  messagingEditMessage: (
+    conversationId: string,
+    messageId: string,
+    plaintext: string,
   ) =>
-    invokeRustDataFromStatus<
+    invokeRustData<
       {
-        recipient_actor_id: string;
-        session_ulid: string;
-        typing: boolean;
+        conversation_id: string;
+        message_id: string;
+        plaintext: string;
       },
-      Record<string, unknown>
-    >('realtime_typing_send', {
-      recipient_actor_id: recipientActorId,
-      session_ulid: sessionUlid,
-      typing,
+      { command_id: string; state: string }
+    >('messaging_submit_edit', {
+      conversation_id: conversationId,
+      message_id: messageId,
+      plaintext,
+    }),
+
+  messagingMetadataInteraction: (
+    conversationId: string,
+    messageId: string,
+    kind: 'retract' | 'reaction' | 'pin',
+    options: { reaction?: string; remove?: boolean } = {},
+  ) =>
+    invokeRustData<
+      {
+        conversation_id: string;
+        message_id: string;
+        kind: string;
+        reaction: string;
+        remove: boolean;
+      },
+      { command_id: string; state: string }
+    >('messaging_submit_metadata_interaction', {
+      conversation_id: conversationId,
+      message_id: messageId,
+      kind,
+      reaction: options.reaction ?? '',
+      remove: options.remove ?? false,
     }),
 
   /**
@@ -4822,12 +4849,6 @@ export const api = {
       kind,
       payloadB64,
     }),
-
-  friendChatGetPending: (limit?: number) =>
-    invokeRustProto('friend_chat_get_pending', GetPendingResponseSchema, { limit }),
-
-  friendChatGetStats: () =>
-    invokeRustProto('friend_chat_get_stats', GetStatsResponseSchema),
 
   groupChatLocalSearch: (query: string, limit?: number) =>
     invokeRustDataFromStatus<ChatLocalSearchInput, { messages: any[] }>(
@@ -4999,37 +5020,19 @@ export const api = {
   iceGetServers: () =>
     invokeRustDataFromStatus<void, IceServersResponse>('ice_get_servers'),
 
-  // ── Friend Request ──
+  // ── Friend Request (social domain) ──
 
-  friendChatSendFriendRequest: (receiverDid: string, message?: string) =>
-    invokeRustProto('friend_chat_send_friend_request', SendFriendRequestResponseSchema, { receiver_did: receiverDid, message }),
+  socialFriendRequestSend: (receiverDid: string, message?: string) =>
+    invokeRustProto('social_friend_request_send', SendFriendRequestResponseSchema, { receiver_did: receiverDid, message }),
 
-  friendChatAcceptFriendRequest: (requestId: string) =>
-    invokeRustProto('friend_chat_accept_friend_request', AcceptFriendRequestResponseSchema, { request_id: requestId }),
+  socialFriendRequestAccept: (requestId: string) =>
+    invokeRustProto('social_friend_request_accept', AcceptFriendRequestResponseSchema, { request_id: requestId }),
 
-  friendChatRejectFriendRequest: (requestId: string) =>
-    invokeRustProto('friend_chat_reject_friend_request', RejectFriendRequestResponseSchema, { request_id: requestId }),
+  socialFriendRequestReject: (requestId: string) =>
+    invokeRustProto('social_friend_request_reject', RejectFriendRequestResponseSchema, { request_id: requestId }),
 
-  friendChatListFriendRequests: (status?: number, limit?: number, offset?: number) =>
-    invokeRustProto('friend_chat_list_friend_requests', ListFriendRequestsResponseSchema, { status, limit, offset }),
-
-  friendChatBlockUser: async (targetDid: string) => {
-    const response = await invokeRustProto('friend_chat_block_user', BlockUserResponseSchema, { target_did: targetDid });
-    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId: targetDid, action: 'block' });
-    return response;
-  },
-
-  friendChatUnblockUser: async (targetDid: string) => {
-    const response = await invokeRustProto('friend_chat_unblock_user', UnblockUserResponseSchema, { target_did: targetDid });
-    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId: targetDid, action: 'unblock' });
-    return response;
-  },
-
-  friendChatListBlockedUsers: (limit = 100, offset = 0) =>
-    invokeRustProto('friend_chat_list_blocked_users', ListBlockedUsersResponseSchema, { limit, offset }),
-
-  friendChatGetFriendshipStatus: (targetDid: string) =>
-    invokeRustProto('friend_chat_get_friendship_status', GetFriendshipStatusResponseSchema, { target_did: targetDid }),
+  socialFriendRequestList: (status?: number, limit?: number, offset?: number) =>
+    invokeRustProto('social_friend_request_list', ListFriendRequestsResponseSchema, { status, limit, offset }),
 
   // ── Notification ──
 
@@ -5204,14 +5207,6 @@ export interface FriendRequestData {
   message: string;
   createdAt: string;
   respondedAt?: string;
-}
-
-export interface FriendChatSessionData {
-  ulid: string;
-  participantADid: string;
-  participantBDid: string;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface NotificationData {

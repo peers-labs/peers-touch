@@ -1,8 +1,8 @@
 # Messaging Platform — 产品验收矩阵
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-08-10
+> **Version**: v1.3
+> **Created**: 2026-08-08 | **Updated**: 2026-08-17
 > **Owner**: Messaging Platform Team
 
 ---
@@ -39,6 +39,8 @@ native UI、Station truth 和 Device Engine durable evidence。
 | MP-C12 Failure recovery | J12; S20-S28 | A03-A06/A10 | W02-W09 | MP-G12 | 故障可行动且不静默丢失 |
 | MP-C13 Attachments | J11 | A05/A11 | W10 | MP-G13 | 附件 E2EE、重启和恢复可用 |
 | MP-C14 Search | J11 | A05 | W10 | MP-G14 | 仅本地 plaintext index 返回结果 |
+| MP-C15 Typing presence | J14; S40-S42 | A04/A18 | W12 | MP-G16 | Direct/Group receiver 只显示 fresh active-member typing，TTL 后清除 |
+| MP-C16 Message interactions | J13; S30-S38 | A02/A03/A05/A09/A17 | W12 | MP-G15 | Direct/Group receiver 对 reply/edit/retract/reaction/pin/read 收敛且重启不回退 |
 
 ## 3. Required Runtime Cells
 
@@ -47,11 +49,14 @@ native UI、Station truth 和 Device Engine durable evidence。
 | Alice/Bob same Station native Desktop | G01-G10、G12-G14 |
 | Alice/Bob cross Station native Desktop | G01-G04、G10-G12 |
 | Alice + Bob1 + Bob2 | G03、G05、G06、G10 |
-| Desktop + Mobile contract | C01-C14 contract parity |
+| Desktop + Mobile contract | C01-C16 contract parity |
 | Offline recipient | G02、G03、G10 |
 | Station restart | G02、G11、G12 |
 | Client crash points | G02-G04、G07-G08、G12 |
 | Three-device MLS group | G05、G06、G09 |
+| Alice/Bob Direct interaction Native | G10、G15、G16 |
+| Alice/Bob/Carol Group interaction Native | G09、G10、G15、G16 |
+| Desktop + Mobile Native interaction parity | G15、G16 |
 
 ## 4. Gate Definitions
 
@@ -71,6 +76,8 @@ native UI、Station truth 和 Device Engine durable evidence。
 | MP-G12 | storage full/locked、bad ciphertext、lease expiry、poison item 均 fail closed |
 | MP-G13 | Direct/MLS encrypted attachment exact bytes；upload/download 在每个 chunk 边界中断后从 durable checkpoint 恢复；duplicate/conflicting part、ETag/range、ciphertext/plaintext hash 和 AEAD failure fail closed；Desktop/Station restart与fresh recovery后可用；removed actor 只能读取其已获 grant 的历史 object；Station rows/logs 无 filename/key/nonce/plaintext hash |
 | MP-G14 | SQLCipher FTS 对 text/filename 精确命中；offline/restart/recovery 后结果一致；bounded query/cursor；Station 请求/存储/log 中无 query 或 plaintext corpus |
+| MP-G15 | Direct/Group Native clients 逐项执行 reply/thread、author-only edit/retract、reaction add/remove、pin/unpin 和 read；receiver DOM、Station authority event、device queue、Engine durable projection 一致；submit timeout 保持 pending/retrying，exact retry 只收敛为一个 Authority fact 和一个 visible result；offline/restart/duplicate/unauthorized/removed-device 均符合 J13 |
+| MP-G16 | Direct/Group Native clients 执行 typing start/stop/session-switch/disconnect/TTL；只显示 active member fresh pulse，removed/non-member 被拒绝，durable lane 和 history 无 typing item |
 
 ## 5. Crash Matrix
 

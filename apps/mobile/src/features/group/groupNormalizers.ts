@@ -31,7 +31,7 @@ export function normalizeGroupMember(raw: Partial<GroupMember>): GroupMember {
   return {
     ...raw,
     groupUlid: stringValue(raw.groupUlid, record.group_ulid),
-    actorDid: stringValue(raw.actorDid, record.actor_did),
+    ptid: stringValue(raw.ptid),
     role: numberValue(raw.role),
     nickname: stringValue(raw.nickname),
     muted: booleanValue(raw.muted),

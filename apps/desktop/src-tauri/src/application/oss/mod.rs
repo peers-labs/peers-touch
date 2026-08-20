@@ -46,7 +46,7 @@ use crate::infrastructure::station_client;
 
 /// Result returned by `upload_attachment` to the frontend. The shape
 /// mirrors `MessageAttachment` / `ImageAttachment` proto fields so the
-/// renderer can pass it straight into a `friend_chat.send_message` /
+/// renderer can pass it straight into a direct message send /
 /// group send / Moments createPost without further mapping.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatAttachmentUploaded {

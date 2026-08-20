@@ -20,6 +20,97 @@
       "require": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"]
     },
     {
+      "id": "chat-direct-delivered-receipt",
+      "features": ["chat-direct-delivered-receipt"],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/messaging/direct.rs",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
+          "apps/desktop/src-tauri/src/messaging/store.rs",
+          "apps/desktop/src-tauri/src/messaging/transport.rs",
+          "apps/desktop/src-tauri/src/messaging/consumer.rs",
+          "apps/desktop/src-tauri/src/messaging/receipt.rs",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/station/app/subserver/messaging/application/receipt_service.go",
+          "apps/station/app/subserver/messaging/application/receipt_service_test.go",
+          "apps/station/app/subserver/messaging/interface/http/receipt_handler.go",
+          "apps/station/app/subserver/messaging/subserver.go",
+          "tooling/acceptance/fixtures/chat_native_reset.py",
+          "tooling/acceptance/gates/chat/chat_native_reset_test.py",
+          "tooling/acceptance/gates/chat/native_two_client_runner.py",
+          "tooling/acceptance/gates/chat/native_two_client_e2e.py"
+        ]
+      },
+      "require": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-two-client-e2e"
+      ]
+    },
+    {
+      "id": "chat-message-interactions",
+      "features": ["chat-message-interactions"],
+      "when": {
+        "paths": [
+          "model/domain/chat/command.proto",
+          "model/domain/chat/event.proto",
+          "apps/station/app/subserver/messaging/application/authority_service.go",
+          "apps/station/app/subserver/messaging/application/receipt_service.go",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src-tauri/src/messaging/direct.rs",
+          "apps/desktop/src-tauri/src/messaging/mls.rs",
+          "apps/desktop/src-tauri/src/messaging/public_event.rs",
+          "apps/desktop/src-tauri/src/messaging/store.rs",
+          "apps/desktop/src/services/desktop_api.ts",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/desktop/src/components/chat/**",
+          "apps/desktop/src/acceptance/chat/**",
+          "tooling/acceptance/fixtures/chat_native_reset.py",
+          "tooling/acceptance/fixtures/chat_submit_fault_proxy.py",
+          "tooling/acceptance/gates/chat/chat_native_reset_test.py",
+          "tooling/acceptance/gates/chat/chat_submit_fault_proxy_test.py",
+          "tooling/acceptance/gates/chat/native_interactions_runner.py",
+          "tooling/acceptance/gates/chat/native_interactions_static_test.py",
+          "tooling/acceptance/gates/chat/native_support.py"
+        ]
+      },
+      "require": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-interactions-e2e"
+      ]
+    },
+    {
+      "id": "chat-typing-presence",
+      "features": ["chat-typing-presence"],
+      "when": {
+        "paths": [
+          "model/domain/chat/conversation.proto",
+          "apps/station/app/subserver/messaging/application/typing_service.go",
+          "apps/station/app/subserver/messaging/interface/http/typing_handler.go",
+          "apps/desktop/src/components/chat/ChatMessageArea.tsx",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/desktop/src/acceptance/chat/**",
+          "tooling/acceptance/fixtures/chat_native_reset.py",
+          "tooling/acceptance/gates/chat/chat_native_reset_test.py",
+          "tooling/acceptance/gates/chat/native_support.py",
+          "tooling/acceptance/gates/chat/native_typing_runner.py"
+        ]
+      },
+      "require": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-typing-e2e"
+      ]
+    },
+    {
       "id": "desktop-chat",
       "features": ["desktop-chat-surface", "chat-realtime-delivery", "chat-desktop-gateway-message-flow", "chat-native-visible-clients"],
       "when": {
@@ -40,13 +131,15 @@
       "features": ["chat-native-visible-clients"],
       "when": {
         "paths": [
-          "tooling/acceptance/gates/chat/native_visible_runner.py",
-          "tooling/acceptance/gates/chat/native_*_runner.py",
-          "tooling/acceptance/gates/chat/native_visible_e2e.py",
-          "tooling/acceptance/gates/chat/native_visible_*_test.py",
+          "tooling/acceptance/gates/chat/native_multi_device_runner.py",
+          "tooling/acceptance/gates/chat/native_recovery_runner.py",
+          "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+          "tooling/acceptance/gates/chat/native_support.py",
+          "tooling/acceptance/fixtures/chat_native_reset.py",
+          "tooling/acceptance/gates/chat/chat_native_reset_test.py",
           "tooling/acceptance/playbooks/chat-native-visible-clients.md",
-          "apps/desktop/src-tauri/src/application/profile/mod.rs",
-          "apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs"
+          "apps/desktop/src/acceptance/chat/**",
+          "apps/desktop/src-tauri/src/application/profile/mod.rs"
         ]
       },
       "require": [
@@ -165,11 +258,7 @@
           "Makefile"
         ]
       },
-      "require": [
-        "acceptance-plan-self",
-        "acceptance-infra-validation",
-        "acceptance-runtime-provisioning-self"
-      ]
+      "require": ["acceptance-plan-self"]
     }
   ]
 }
