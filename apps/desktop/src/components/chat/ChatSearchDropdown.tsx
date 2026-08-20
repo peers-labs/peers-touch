@@ -9,9 +9,10 @@ interface ChatSearchDropdownProps {
   searchText: string;
   results: IMConversationProjection[];
   onSelect: (conversation: IMConversationProjection) => void;
+  onDismiss?: () => void;
 }
 
-export function ChatSearchDropdown({ searchText, results, onSelect }: ChatSearchDropdownProps) {
+export function ChatSearchDropdown({ searchText, results, onSelect, onDismiss }: ChatSearchDropdownProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
 
@@ -21,13 +22,24 @@ export function ChatSearchDropdown({ searchText, results, onSelect }: ChatSearch
   if (!searchText.trim()) return null;
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 48,
-        left: 12,
-        right: 12,
-        zIndex: 20,
+    <>
+      {onDismiss && (
+        <div
+          onClick={onDismiss}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 19,
+          }}
+        />
+      )}
+      <div
+        style={{
+          position: 'absolute',
+          top: 48,
+          left: 12,
+          right: 12,
+          zIndex: 20,
         background: token.colorBgElevated,
         borderRadius: 10,
         boxShadow: '0 6px 16px rgba(0,0,0,0.12)',
@@ -69,6 +81,7 @@ export function ChatSearchDropdown({ searchText, results, onSelect }: ChatSearch
         </>
       )}
     </div>
+    </>
   );
 }
 

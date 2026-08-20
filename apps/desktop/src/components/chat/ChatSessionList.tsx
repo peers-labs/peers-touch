@@ -498,6 +498,7 @@ export function ChatSessionList() {
           searchText={searchText}
           results={searchResults}
           onSelect={handleSearchSelect}
+          onDismiss={() => setSearchText('')}
         />
       </Flexbox>
 

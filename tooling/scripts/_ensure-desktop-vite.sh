@@ -124,8 +124,9 @@ ensure_desktop_vite_ready() {
   local web_url="http://localhost:$web_port"
 
   VITE_PID=""
-  VITE_PID_FILE="/tmp/peers-touch-desktop-vite-${profile}.pid"
-  VITE_META_FILE="/tmp/peers-touch-desktop-vite-${profile}.meta"
+  local wt_id="${WORKTREE_ID:-default}"
+  VITE_PID_FILE="/tmp/peers-touch-desktop-vite-${profile}-${wt_id}.pid"
+  VITE_META_FILE="/tmp/peers-touch-desktop-vite-${profile}-${wt_id}.meta"
 
   local desired_fp
   desired_fp="$(vite_compute_fingerprint "$desktop_dir" "$web_port" "$gateway_port" "$profile")"

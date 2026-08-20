@@ -16,7 +16,7 @@
       "description": "Validate that acceptance-run preserves source artifact diagnostics, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata in latest-run evidence."
     },
     "chat-native-visible-static": {
-      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test",
+      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-cheap",
@@ -35,6 +35,13 @@
       "environment": "home-station",
       "tier": "env-evidence",
       "description": "Run isolated Native Direct and Group clients and prove reply/thread, author-only edit/retract, reaction, pin, read, offline, replay and restart convergence with Station and Engine durable readback."
+    },
+    "chat-contact-message-resilience-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.contact_message_resilience_runner",
+      "timeout_seconds": 600,
+      "environment": "home-station",
+      "tier": "env-evidence",
+      "description": "Prove that clicking the contact Message button opens the chat view immediately even when createDirect fails, and the error is presented within the open view."
     },
     "chat-native-typing-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
@@ -161,6 +168,20 @@
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Run Desktop TypeScript checks."
+    },
+    "desktop-dev-runtime-isolation-static": {
+      "command": "python3 -m unittest tooling.acceptance.gates.desktop.dev_runtime_multi_instance_static_test",
+      "timeout_seconds": 60,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate dev-runtime multi-instance isolation: per-worktree port offsets, PID files, bundle IDs, and proto ownership without launching processes."
+    },
+    "desktop-dev-runtime-multi-instance": {
+      "command": "python3 tooling/acceptance/gates/desktop/dev_runtime_multi_instance.py",
+      "timeout_seconds": 300,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove two Desktop dev-runtime instances can run simultaneously with distinct gateway ports, storage roots, and profiles without port or PID conflicts."
     },
     "applet-desktop-lifecycle-smoothness": {
       "command": "pnpm applet:desktop-lifecycle-smoothness-gate",

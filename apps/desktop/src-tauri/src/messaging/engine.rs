@@ -840,6 +840,27 @@ impl MessagingEngine {
         if peer_ptid.trim().is_empty() || peer_ptid == self.endpoint.ptid {
             return Err("messaging direct peer identity is invalid".to_string());
         }
+        let result = self.try_create_direct_conversation(token, peer_ptid);
+        match result {
+            Ok(id) => Ok(id),
+            Err(error) if error.contains("endpoint is not active") => {
+                tracing::warn!(error = %error, "createDirect: device not active, attempting re-enrollment");
+                if self.recover_stale_enrollment(&error) {
+                    self.enroll_pending_device(token, "Desktop".to_string())?;
+                    self.try_create_direct_conversation(token, peer_ptid)
+                } else {
+                    Err(error)
+                }
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn try_create_direct_conversation(
+        &self,
+        token: &str,
+        peer_ptid: &str,
+    ) -> Result<String, String> {
         let response = crate::infrastructure::station_client::request_proto_for_device::<
             CreateMessagingDirectConversationRequest,
             CreateMessagingDirectConversationResponse,
@@ -1258,6 +1279,26 @@ impl MessagingEngine {
         self.store
             .complete_device_enrollment(&self.endpoint.device_id)?;
         Ok(Some(device))
+    }
+
+    pub fn recover_stale_enrollment(&self, error: &str) -> bool {
+        if !error.contains("endpoint is not active") {
+            return false;
+        }
+        match self.store.reset_device_enrollment() {
+            Ok(true) => {
+                tracing::warn!(
+                    device_id = %self.endpoint.device_id,
+                    "detected stale device enrollment; reset to pending for re-enrollment"
+                );
+                true
+            }
+            Ok(false) => false,
+            Err(err) => {
+                tracing::error!(error = %err, "failed to reset stale device enrollment");
+                false
+            }
+        }
     }
 
     pub fn publish_prekeys(&self, token: &str) -> Result<(), String> {

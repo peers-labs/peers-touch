@@ -20,11 +20,13 @@ const PANEL_WIDTH = 300;
 interface ChatContactsPanelProps {
   selectedContact: ContactSelection | null;
   onSelectContact: (selection: ContactSelection) => void;
+  onStartChat?: (selection: ContactSelection) => void;
 }
 
 export function ChatContactsPanel({
   selectedContact,
   onSelectContact,
+  onStartChat,
 }: ChatContactsPanelProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
@@ -350,6 +352,15 @@ export function ChatContactsPanel({
                       memberCount: conversation.memberCount ?? 0,
                     });
                   }}
+                  onDoubleClick={() => {
+                    onStartChat?.({
+                      kind: 'group',
+                      conversationId: conversation.id,
+                      displayName,
+                      avatar: conversation.avatar,
+                      memberCount: conversation.memberCount ?? 0,
+                    });
+                  }}
                   style={{
                     ...rowBaseStyle,
                     ...(isSelected ? selectedRowStyle : {}),
@@ -417,6 +428,15 @@ export function ChatContactsPanel({
                   onClick={() => {
                     selectSession(conversation.id);
                     onSelectContact({
+                      kind: 'friend',
+                      conversationId: conversation.id,
+                      peerDid: conversation.peerDid || '',
+                      displayName: label,
+                      avatar: conversation.avatar,
+                    });
+                  }}
+                  onDoubleClick={() => {
+                    onStartChat?.({
                       kind: 'friend',
                       conversationId: conversation.id,
                       peerDid: conversation.peerDid || '',

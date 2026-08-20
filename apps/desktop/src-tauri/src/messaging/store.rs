@@ -4918,6 +4918,19 @@ impl MessagingStore {
         }
     }
 
+    pub fn reset_device_enrollment(&self) -> Result<bool, String> {
+        let result = self.connection()?.execute(
+            "UPDATE messaging_recovery_state
+             SET status = 'awaiting_device_enrollment'
+             WHERE id = 1 AND status = 'active'",
+            [],
+        );
+        match result {
+            Ok(rows) => Ok(rows > 0),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
     pub fn has_prekey_bundle(&self) -> Result<bool, String> {
         self.connection()?
             .query_row(
