@@ -4,17 +4,19 @@ pub mod error;
 // in the lib crate context. The full model tree lives in the binary crate (main.rs).
 pub mod model {
     pub mod chat {
+        pub use messaging_core::proto::chat::*;
+
         pub mod v1 {
-            include!(concat!(env!("OUT_DIR"), "/peers_touch.model.chat.v1.rs"));
+            pub use messaging_core::proto::chat::*;
         }
-        pub use v1::*;
     }
 
     pub mod common {
+        pub use messaging_core::proto::common::*;
+
         pub mod v1 {
-            include!(concat!(env!("OUT_DIR"), "/peers_touch.model.common.v1.rs"));
+            pub use messaging_core::proto::common::*;
         }
-        pub use v1::*;
     }
 }
 

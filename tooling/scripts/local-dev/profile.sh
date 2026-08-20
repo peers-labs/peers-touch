@@ -189,7 +189,9 @@ case "$cmd" in
       echo "        Regenerate or repair the profile before activation."
       exit 1
     fi
-    # Symlink: active/<worktree-id>.env → ../profiles/<name>.env
+    # Write profile name for env.sh resolution
+    echo "$name" > "$LOCAL_DEV_DIR/profile"
+    # Legacy symlink: active/<worktree-id>.env → ../profiles/<name>.env
     ln -sfn "../profiles/$name.env" "$ACTIVE_FILE"
     echo "[OK] Active profile: $name (worktree: $WORKTREE_ID)"
     echo ""

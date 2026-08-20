@@ -9,6 +9,7 @@
         acceptance-chat-native-interactions acceptance-chat-native-typing \
         acceptance-chat-native-multi-device acceptance-chat-native-recovery \
         acceptance-chat-native-group-mls acceptance-chat-native-w8 \
+        acceptance-chat-contact-message-resilience \
         acceptance-chat-w11 \
         acceptance-station-dashboard acceptance-station-dashboard-domain-validation \
         acceptance-federation acceptance-federation-mutual-validation acceptance-federation-report \
@@ -120,6 +121,9 @@ acceptance-chat-native-recovery:
 
 acceptance-chat-native-group-mls:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-group-mls-e2e
+
+acceptance-chat-contact-message-resilience:
+	python3 tooling/scripts/acceptance-run.py --gate chat-contact-message-resilience-e2e
 
 acceptance-chat-native-w8:
 	python3 tooling/scripts/acceptance-run.py \

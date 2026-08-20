@@ -54,6 +54,39 @@ type conversationMemberModel struct {
 
 func (*conversationMemberModel) TableName() string { return "conversation_members" }
 
+func repairMemberIndex(db *gorm.DB) {
+	var columns []struct {
+		ColumnName string `gorm:"column:column_name"`
+	}
+	db.Raw(`
+		SELECT a.attname AS column_name
+		FROM pg_index i
+		JOIN pg_class c ON c.oid = i.indexrelid
+		JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+		WHERE c.relname = 'idx_member_conv_actor'
+		ORDER BY array_position(i.indkey, a.attnum)
+	`).Scan(&columns)
+
+	if len(columns) == 0 {
+		return
+	}
+	needsRepair := false
+	for _, col := range columns {
+		if col.ColumnName == "actor_did" {
+			needsRepair = true
+			break
+		}
+	}
+	if !needsRepair {
+		return
+	}
+
+	db.Exec("DROP INDEX IF EXISTS idx_member_conv_actor")
+	db.Exec("CREATE UNIQUE INDEX idx_member_conv_actor ON conversation_members (conversation_id, ptid)")
+	db.Exec("DROP INDEX IF EXISTS idx_member_actor")
+	db.Exec("CREATE INDEX idx_member_actor ON conversation_members (ptid)")
+}
+
 type conversationMemberDeviceModel struct {
 	ID                uint      `gorm:"column:id;primaryKey"`
 	ConversationID    string    `gorm:"column:conversation_id;size:128;index:idx_member_device_conv;uniqueIndex:uidx_member_device"`

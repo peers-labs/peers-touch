@@ -11,13 +11,14 @@ export interface ChatErrorContext {
   operation: ChatErrorOperation;
 }
 
-function presentedError(code: string, key: string, recoverable = true): PresentedError {
+function presentedError(code: string, key: string, recoverable = true, debugMessage?: string): PresentedError {
   return {
     code,
     title: tError('error.presentation.title'),
     message: tError(key),
     severity: 'error',
     recoverable,
+    debugMessage,
   };
 }
 
@@ -75,5 +76,7 @@ export const mapChatError: ErrorMapper<ChatErrorContext> = (error, context) => {
   return presentedError(
     `chat.${context?.operation ?? 'operation'}Failed`,
     operationFallback(context?.operation ?? 'send'),
+    true,
+    message,
   );
 };

@@ -215,7 +215,13 @@ fn run_cycle(engine: &MessagingEngine, token: &str) -> Result<(), String> {
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(failures.join("; "))
+        let combined = failures.join("; ");
+        if combined.contains("endpoint is not active") {
+            if engine.recover_stale_enrollment(&combined) {
+                tracing::info!("device enrollment reset; re-enrollment will occur on next cycle");
+            }
+        }
+        Err(combined)
     }
 }
 
