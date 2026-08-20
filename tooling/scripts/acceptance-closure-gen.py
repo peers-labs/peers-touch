@@ -315,6 +315,16 @@ def generate_manifest(contract: dict[str, Any]) -> dict[str, Any]:
                 "commands": verify.get("commands", []),
                 "search_files": verify.get("search_files", []),
             }
+        elif vtype == "gates-passed":
+            manifest["scan_targets"][did] = {
+                "type": "gates-passed",
+                "gates": verify.get("gates", []),
+            }
+        elif vtype == "gate-passed":
+            manifest["scan_targets"][did] = {
+                "type": "gate-passed",
+                "gate": verify.get("gate", ""),
+            }
 
     return manifest
 
