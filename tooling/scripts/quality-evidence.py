@@ -28,6 +28,51 @@ def _is_ci() -> bool:
     return value not in {"", "0", "false", "no"}
 
 
+COMMITTED_EVIDENCE_DIR = REPO_ROOT / "tooling" / "acceptance" / "evidence"
+ATTESTATION_KIND = "acceptance-evidence-attestation"
+
+
+def load_committed_evidence(head_commit: str, base_commit: str) -> dict[str, dict[str, Any]]:
+    if not COMMITTED_EVIDENCE_DIR.is_dir():
+        return {}
+    range_commits = set()
+    try:
+        rev_list = subprocess.run(
+            ["git", "rev-list", f"{base_commit}..{head_commit}"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        range_commits = {line.strip() for line in rev_list.stdout.splitlines() if line.strip()}
+    except subprocess.CalledProcessError:
+        pass
+
+    proven: dict[str, dict[str, Any]] = {}
+    for path in sorted(COMMITTED_EVIDENCE_DIR.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("artifactKind") != ATTESTATION_KIND:
+            continue
+        attested_commit = str(data.get("commit", ""))
+        if not attested_commit:
+            continue
+        if attested_commit not in range_commits:
+            is_ancestor = subprocess.run(
+                ["git", "merge-base", "--is-ancestor", attested_commit, head_commit],
+                cwd=REPO_ROOT,
+                capture_output=True,
+            ).returncode == 0
+            if not is_ancestor:
+                continue
+        for gate_id, att in data.get("gates", {}).items():
+            if att.get("manifestSha256") and att.get("runId"):
+                proven[gate_id] = att
+    return proven
+
+
 def load(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -216,9 +261,16 @@ def gate_result_is_proven(
     )
 
 
-def evidence_gaps(evidence: dict[str, Any], *, ci_mode: bool = False) -> dict[str, list[dict[str, str]]]:
+def evidence_gaps(
+    evidence: dict[str, Any],
+    *,
+    ci_mode: bool = False,
+    committed_evidence: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, list[dict[str, str]]]:
     blocking: list[dict[str, str]] = []
     deferred: list[dict[str, str]] = []
+    proven_by_attestation: list[str] = []
+    committed = committed_evidence or {}
     if not evidence["route"]["ok"]:
         blocking.append(
             {
@@ -267,6 +319,9 @@ def evidence_gaps(evidence: dict[str, Any], *, ci_mode: bool = False) -> dict[st
         result = results.get(gate["id"], {})
         if gate_result_is_proven(gate, result, evidence["head_commit"]):
             continue
+        if gate["id"] in committed:
+            proven_by_attestation.append(gate["id"])
+            continue
         entry = {
             "kind": f"environment-gate:{gate['id']}",
             "impact": f"{gate['id']} requires {gate['environment']} and is unproven by this evidence pass.",
@@ -287,7 +342,11 @@ def evidence_gaps(evidence: dict[str, Any], *, ci_mode: bool = False) -> dict[st
                 "next_evidence": "Run in the scheduled/release lane or keep it as explicit deferred evidence.",
             }
         )
-    return {"blocking": blocking, "deferred": deferred}
+    return {
+        "blocking": blocking,
+        "deferred": deferred,
+        "proven_by_attestation": sorted(proven_by_attestation),
+    }
 
 
 def render_markdown(evidence: dict[str, Any]) -> str:
@@ -365,6 +424,13 @@ def render_markdown(evidence: dict[str, Any]) -> str:
     if not evidence["evidence_gaps"]["deferred"]:
         lines.append("- none")
 
+    proven_attest = evidence["evidence_gaps"].get("proven_by_attestation", [])
+    lines.extend(["", "## Proven by Committed Attestation", ""])
+    for gate_id in proven_attest:
+        lines.append(f"- `{gate_id}`")
+    if not proven_attest:
+        lines.append("- none")
+
     return "\n".join(lines) + "\n"
 
 
@@ -427,10 +493,20 @@ def main() -> int:
             "evidenceReadError": f"{type(error).__name__}: {error}",
         }
 
+    range_spec = args.diff_range
+    if "..." in range_spec:
+        base_commit = range_spec.split("...")[0]
+    elif ".." in range_spec:
+        base_commit = range_spec.split("..")[0]
+    else:
+        base_commit = range_spec
+    committed_evidence = load_committed_evidence(head_commit, base_commit)
+
     evidence: dict[str, Any] = {
         "range": args.diff_range,
         "head_commit": head_commit,
         "ci_mode": _is_ci(),
+        "committed_evidence_gate_ids": sorted(committed_evidence.keys()),
         "changed_paths": changed_paths,
         "route": {
             "ok": route["ok"],
@@ -456,7 +532,11 @@ def main() -> int:
             **capability_evidence,
         },
     }
-    gap_result = evidence_gaps(evidence, ci_mode=evidence["ci_mode"])
+    gap_result = evidence_gaps(
+        evidence,
+        ci_mode=evidence["ci_mode"],
+        committed_evidence=committed_evidence,
+    )
     evidence["evidence_gaps"] = gap_result
     evidence["ready_for_github_review"] = is_ready_for_github_review(
         route,
@@ -494,6 +574,7 @@ def main() -> int:
     print(f"impacted_features: {', '.join(evidence['acceptance']['impacted_features']) or 'none'}")
     print(f"blocking_gaps: {len(gap_result['blocking'])}")
     print(f"deferred_gaps: {len(gap_result['deferred'])}")
+    print(f"proven_by_attestation: {len(gap_result.get('proven_by_attestation', []))}")
     print(f"json: {json.dumps(json_ref.to_dict(), sort_keys=True)}")
     print(f"markdown: {json.dumps(markdown_ref.to_dict(), sort_keys=True)}")
     return 0 if evidence["ready_for_github_review"] else 1
