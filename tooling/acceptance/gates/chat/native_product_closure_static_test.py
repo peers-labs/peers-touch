@@ -76,6 +76,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"mouseup"', self.source)
         self.assertIn('"click"', self.source)
         self.assertIn("CGEventSourceButtonState", self.source)
+        self.assertIn("native_window_stack_at_point", self.source)
+        self.assertIn('"windowStack": self.native_window_stack_at_point(point)', self.source)
+        self.assertIn('"actualFrontmostPid": int(fields[9])', self.source)
+        self.assertIn('"mainWindow": fields[7] == "true"', self.source)
+        self.assertIn('"focusedWindow": fields[8] == "true"', self.source)
         click_start = self.source.index(
             "    def click_element(self, actor: str, element: Any) -> Any:"
         )

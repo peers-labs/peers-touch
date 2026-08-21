@@ -24,6 +24,9 @@
 | X | Requiring a staging `mousemove` before a zero-distance click invents an input precondition that a real stationary click does not have | High | Low | The cursor and target center already match; skipping movement still yields target-owned `mousedown -> mouseup -> click` acknowledgements |
 | Y | A move-only event is not required to prove a Native click; target-coordinate down/up can establish click routing after verified actor activation | High | Low | Without a preliminary move wait, the target DOM receives `mousedown -> mouseup -> click` from the real CoreGraphics sequence |
 | Z | The explicit combined-session source changes routing compared with the null-source primitive used by the last clean Native click PASS | High | Low | Restoring `CGEventCreateMouseEvent(None, ...)` makes target-owned `mousedown -> mouseup -> click` observable again |
+| AA | Alice is process-frontmost but its Native window is not AXMain/AXFocused | High | Low | Process `frontmost=true` while front-window `AXMain` or `AXFocused` is false |
+| AB | A higher WindowServer surface owns the target screen point above Alice | High | Medium | CGWindow z-order at `[81.5,95]` lists a different visible owner before Alice |
+| AC | Alice is the key/main and topmost target-point window, but WindowServer still drops synthesized input | Medium | Medium | AXMain/AXFocused and z-order all identify Alice while no DOM event arrives |
 
 ## Log Evidence
 Source-bound run:
@@ -173,3 +176,20 @@ Y is rejected for the explicit combined-session source. The next minimal
 comparison restores the null event source used by historical clean run
 `20260821T101103621394Z-083d69ddf9bbc5bdd1b97026df475f9d` at `04fe56801`,
 while retaining direct down/up/click acknowledgement and button-state recovery.
+
+Null-source direct-click run:
+`20260821T143736652553Z-a70d426890b88b2c0ab859631292097f`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `66c021d80c103fd520e7aaf15e056c00f2a60ed2`.
+- Null-source `leftMouseDown` produced the same empty DOM probe while Alice
+  remained `frontmost=true`, document-focused, and focused on `AXWebArea`.
+- Failure recovery left combined-session button state false.
+- Cleanup evidence and direct `lsof` verification proved actor ports
+  `3330/3331/4445/4446` were released.
+
+Z is rejected. Event construction is no longer a live hypothesis. A read-only
+WindowServer snapshot outside the actor run shows higher-layer full-screen
+surfaces above normal application windows, so the next instrumentation must
+capture target-point z-order and Alice front-window `AXMain/AXFocused` during
+the failed click. No input behavior changes are authorized before that evidence.
