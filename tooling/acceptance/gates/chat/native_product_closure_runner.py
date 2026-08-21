@@ -1545,29 +1545,24 @@ class NativeProductClosureGate(AcceptanceGate):
             self.click_element(actor, select)
             report_picker_snapshot("after-click", picker_snapshot())
 
-            def visible_options(driver: Any) -> list[Any] | None:
+            def rendered_options(driver: Any) -> list[Any] | None:
                 nonlocal last_snapshot
                 options = driver.find_elements(
                     By.CSS_SELECTOR,
                     ".ant-select-item-option",
                 )
-                visible = [
-                    option
-                    for option in options
-                    if option.is_displayed() and option.is_enabled()
-                ]
                 snapshot = picker_snapshot()
                 signature = json.dumps(snapshot, sort_keys=True)
                 if signature != last_snapshot:
                     report_picker_snapshot("option-poll", snapshot)
                     last_snapshot = signature
-                return visible if len(visible) >= 2 else None
+                return options if len(options) >= 2 else None
 
             options = WebDriverWait(
                 client.driver,
                 10,
                 poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(visible_options)
+            ).until(rendered_options)
             before_option_click = picker_snapshot()
             before_option_click["intendedOption"] = client.execute_script(
                 """
