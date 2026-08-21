@@ -47,6 +47,26 @@ use tauri::{Emitter, Manager};
 
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
+#[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+fn configure_acceptance_window_level(window: &tauri::WebviewWindow) -> std::io::Result<()> {
+    use dispatch2::DispatchQueue;
+    use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindow};
+
+    let ns_window = window.ns_window().map_err(|error| {
+        std::io::Error::other(format!("acceptance native window lookup failed: {error}"))
+    })? as usize;
+    DispatchQueue::main().exec_async(move || {
+        let ns_window = unsafe { &*(ns_window as *mut NSWindow) };
+        ns_window.setLevel(NSScreenSaverWindowLevel);
+    });
+    Ok(())
+}
+
+#[cfg(all(feature = "acceptance-webdriver", not(target_os = "macos")))]
+fn configure_acceptance_window_level(_window: &tauri::WebviewWindow) -> std::io::Result<()> {
+    Ok(())
+}
+
 #[cfg(feature = "acceptance-webdriver")]
 fn configure_acceptance_window(window: &tauri::WebviewWindow) -> std::io::Result<()> {
     let slot = std::env::var("PT_ACCEPTANCE_WINDOW_SLOT")
@@ -103,6 +123,7 @@ fn configure_acceptance_window(window: &tauri::WebviewWindow) -> std::io::Result
     window.set_always_on_top(true).map_err(|error| {
         std::io::Error::other(format!("acceptance window layering failed: {error}"))
     })?;
+    configure_acceptance_window_level(window)?;
     window
         .show()
         .map_err(|error| std::io::Error::other(format!("acceptance window show failed: {error}")))
