@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` classify why an accepted AppKit request does not activate Bob before the focus handshake |
+| Current step | `MP-W13-F` implement and verify cooperative PID-scoped AppKit activation for actor handoff |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Clean run `20260821T181636553271Z-9951935716f26f266c7b4ae69fe43935` proved AppKit plus Accessibility activated Alice, but the first Alice-to-Bob handoff still left Alice as `actualFrontmostPid`; Bob remained `documentFocused=false` even though AppKit returned success, System Events reported `frontmost=true`, Bob owned its disjoint point, and the title-bar click completed |
-| Current action | Instrument the AppKit request boundary with target activation policy, `isActive`, and `NSWorkspace.frontmostApplication` before/after the request and after Accessibility activation; do not change actor focus behavior until those signals classify the failure |
-| Next action | Run static verification, commit the instrumentation, deploy/rebuild matching source, and rerun the same Native Gate to distinguish an activation-policy rejection from an accepted-but-unapplied foreground transition |
-| Blockers | MP-W13 remains `UNPROVEN`; AppKit request acceptance is not a valid active-application acknowledgement and Bob actor switching still fails; the chooser clear-and-enter repair is implemented but has not reached its Native proof point; background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Last completed | An isolated production-Driver probe proved `Alice -> Bob -> Alice -> Bob` focus switching after source `yieldActivation(to:)` and target-process `activateIgnoringOtherApps(true)`; every handoff produced exactly one focused WebView and target WindowServer index `0`, then released ports `3340/3341/4455/4456` |
+| Current action | Commit the feature-gated cooperative activation primitive, deploy the same source to Profile Three, rebuild the dedicated binary, and rerun the full product Gate |
+| Next action | Inspect the first source-bound full-Gate result; if actor focus stays closed, continue without interruption into the Native chooser and background upload proof |
+| Blockers | MP-W13 remains `UNPROVEN`; cooperative actor switching has isolated Native proof but not a source-bound full product-Gate result; the chooser clear-and-enter repair has not reached its Native proof point; background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T181636553271Z-9951935716f26f266c7b4ae69fe43935` matched clean source/build/Station at `1bc508153`; Alice activation reached `documentFocused=true`, while Bob `after-owner` and `after-focus-click` retained `documentFocused=false`, released button state, and Alice as `actualFrontmostPid`; Gate `FAILED`, proof is `UNPROVEN`, cleanup passed, and ports `3330/3331/4445/4446` were free |
+| Evidence | Full run `20260821T182824055814Z-187ea8c44a3d48518bbd13595d91bbef` at `816fefddb` remained `FAILED/UNPROVEN`; the subsequent isolated Driver probe with dedicated binary SHA-256 `df29436b...` passed four cooperative actor handoffs with source-bound focus snapshots and released all probe ports; full Native product proof remains missing |
 | Last updated | 2026-08-22 |
 
 ## 1. Plan Sources And Gate

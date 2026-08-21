@@ -131,6 +131,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         recovery_index = focus_source.index(
             "if self.native_mouse_button_down():"
         )
+        cooperative_index = focus_source.index(
+            "cooperative_activation = self.request_cooperative_activation(client)"
+        )
         activation_index = focus_source.index(
             "self.activate_native_process(client.process_id)"
         )
@@ -156,6 +159,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn("NSApplicationActivateAllWindows", self.source)
         self.assertIn("NSApplicationActivateIgnoringOtherApps", self.source)
+        yield_start = self.source.index(
+            "    def invoke_native_activation_command("
+        )
+        yield_end = self.source.index(
+            "    def activate_native_process(",
+            yield_start,
+        )
+        yield_source = self.source[yield_start:yield_end]
+        self.assertIn("window.__TAURI_INTERNALS__.invoke(", yield_source)
+        self.assertIn('"acceptance_yield_activation"', yield_source)
+        self.assertIn('"acceptance_request_activation"', yield_source)
+        self.assertNotIn("call_async_harness", yield_source)
         self.assertLess(
             self.source.index("application.activateWithOptions_(options)"),
             self.source.index('tell application "System Events"'),
@@ -163,6 +178,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('perform action "AXRaise"', self.source)
         self.assertIn('report_focus_snapshot("after-owner")', focus_source)
         self.assertIn('report_focus_snapshot("after-focus-click")', focus_source)
+        self.assertLess(recovery_index, cooperative_index)
+        self.assertLess(cooperative_index, activation_index)
         self.assertLess(recovery_index, activation_index)
         self.assertLess(activation_index, focus_wait_index)
         self.assertLess(focus_wait_index, focus_down_index)
@@ -201,8 +218,25 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("NSScreenSaverWindowLevel", self.desktop_main)
         self.assertIn("DispatchQueue::main().exec_async", self.desktop_main)
         self.assertIn("configure_acceptance_window_level(window)?", self.desktop_main)
+        self.assertIn("fn acceptance_yield_activation(", self.desktop_main)
+        self.assertIn(
+            "yieldActivationToApplication(&target)",
+            self.desktop_main,
+        )
+        self.assertIn("fn acceptance_request_activation(", self.desktop_main)
+        self.assertIn(
+            "NSApplication::sharedApplication(main_thread)"
+            ".activateIgnoringOtherApps(true)",
+            self.desktop_main,
+        )
+        self.assertIn(
+            '#[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]',
+            self.desktop_main,
+        )
         self.assertIn("dispatch2", self.desktop_cargo)
         self.assertIn("objc2-app-kit", self.desktop_cargo)
+        self.assertIn('"NSApplication"', self.desktop_cargo)
+        self.assertIn('"NSRunningApplication"', self.desktop_cargo)
 
     def test_gateway_commands_are_readback_only(self) -> None:
         assignment = next(

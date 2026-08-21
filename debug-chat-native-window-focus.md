@@ -214,3 +214,49 @@ activation policy, `isActive`, and `NSWorkspace.frontmostApplication` before
 and immediately after the AppKit request, then records the same process
 boundary after Accessibility activation. It does not change activation,
 pointer, or wait behavior.
+
+AppKit boundary run:
+`20260821T182824055814Z-187ea8c44a3d48518bbd13595d91bbef`.
+
+- Source, dedicated binary, and live Profile Three Station matched clean commit
+  `816fefddb9eaca66cfc4e04f7be2340250870737`.
+- Alice and Bob both reported activation policy `regular(0)`, completed launch,
+  and `hidden=false`; activation policy and launch readiness are not the fault.
+- For both actors, `activateWithOptions` returned `requestAccepted=true` while
+  `targetActiveAfter=false` and `frontmostPidAfter` remained unchanged.
+- Accessibility subsequently activated Alice, but returned
+  `systemEventsFrontmost=true` for Bob while Alice remained
+  `actualFrontmostPid`; Bob never established `documentFocused`.
+- Cleanup passed and ports `3330/3331/4445/4446` were released.
+
+Apple's public AppKit contract states that an accepted activation request does
+not guarantee activation. A frontmost application must explicitly call
+`yieldActivation(to:)`, after which the target requests activation inside its
+own process. The repair therefore adds macOS-only,
+`acceptance-webdriver`-gated native command for the current actor to yield to a
+target PID and for the target actor to activate itself. The Driver invokes
+these only for window lifecycle before the existing title-bar and
+`document.hasFocus()` confirmation. Product clicks, hover, chooser, send, and
+restart actions remain real Native user paths.
+
+Cooperative activation isolation evidence:
+
+- Calling source `yieldActivation(to:)` followed by an external helper's
+  `NSRunningApplication.activate(from:)` was rejected by macOS. The target must
+  request activation inside its own process.
+- Calling source `yieldActivation(to:)` followed by target
+  `NSApplication.activate()` was accepted but did not establish focus.
+- Alice and Bob have `bundleIdentifier=None` and the same executable identity,
+  but actor-specific byte-identical executable paths did not change the
+  outcome; executable aliasing is not the cause.
+- Calling source `yieldActivation(to:)` followed by target-process
+  `NSApplication.activateIgnoringOtherApps(true)` produced the exact sequence
+  `Alice -> Bob -> Alice -> Bob`. After every handoff, exactly the target
+  WebView had `document.hasFocus()`, the target owned WindowServer index `0`,
+  and the non-target WebView was unfocused.
+- The probe used the production `focus_actor_window` implementation and
+  released ports `3340/3341/4455/4456`.
+
+The source/target commands are compiled and registered only for macOS
+`acceptance-webdriver`. They coordinate Native window ownership only and do
+not submit Chat business commands or replace any product UI action.
