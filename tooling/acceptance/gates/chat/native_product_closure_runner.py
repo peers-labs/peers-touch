@@ -1080,12 +1080,18 @@ class NativeProductClosureGate(AcceptanceGate):
             cursor = 0
             if staging_point is not None:
                 self.post_mouse((5,), staging_point)
-                cursor = self.wait_native_input_event(
-                    client,
-                    probe_id,
-                    "mousemove",
-                    cursor,
-                )
+                try:
+                    cursor = self.wait_native_input_event(
+                        client,
+                        probe_id,
+                        "mousemove",
+                        cursor,
+                    )
+                except GateError:
+                    # #region debug-point R-V:native-input-delivery
+                    report_native_input_delivery("staging-timeout")
+                    # #endregion
+                    raise
             self.post_mouse((5,), point)
             try:
                 cursor = self.wait_native_input_event(
