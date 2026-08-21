@@ -41,10 +41,12 @@ func TestMemberSettingsStoreDefaultsAndPartialUpdates(t *testing.T) {
 	muted := true
 	alertEnabled := false
 	pinned := true
+	nickname := "Project room"
 	background := "mint"
 	backgroundImage := "oss://station/object"
 	clearedAt := int64(1234)
 	updated, err := store.Update(ctx, "conversation-1", "ptid:alice", memberSettingsPatch{
+		Nickname:            &nickname,
 		Muted:               &muted,
 		Pinned:              &pinned,
 		AlertEnabled:        &alertEnabled,
@@ -55,7 +57,8 @@ func TestMemberSettingsStoreDefaultsAndPartialUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !updated.Muted || !updated.Pinned || updated.AlertEnabled ||
+	if updated.Nickname != nickname ||
+		!updated.Muted || !updated.Pinned || updated.AlertEnabled ||
 		updated.Background != "mint" ||
 		updated.BackgroundImage != "oss://station/object" ||
 		updated.ClearedAtUnixMillis != 1234 {
@@ -69,7 +72,8 @@ func TestMemberSettingsStoreDefaultsAndPartialUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Pinned || !updated.Muted || updated.AlertEnabled ||
+	if updated.Nickname != nickname ||
+		updated.Pinned || !updated.Muted || updated.AlertEnabled ||
 		updated.BackgroundImage != "oss://station/object" {
 		t.Fatalf("partial update overwrote unrelated fields: %+v", updated)
 	}
