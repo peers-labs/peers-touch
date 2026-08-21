@@ -394,6 +394,35 @@ class NativeProductClosureGate(AcceptanceGate):
             core_foundation.CFRelease(event)
 
     def activate_native_process(self, process_id: int) -> None:
+        appkit_script = r"""
+import sys
+
+import AppKit
+
+application = AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(
+    int(sys.argv[1])
+)
+if application is None:
+    raise SystemExit("Native actor process is unavailable")
+options = (
+    AppKit.NSApplicationActivateAllWindows
+    | AppKit.NSApplicationActivateIgnoringOtherApps
+)
+if not application.activateWithOptions_(options):
+    raise SystemExit("AppKit rejected Native actor activation")
+"""
+        appkit_activation = subprocess.run(
+            (sys.executable, "-c", appkit_script, str(process_id)),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if appkit_activation.returncode != 0:
+            raise GateError(
+                "Native actor AppKit activation failed: "
+                f"{appkit_activation.stderr.strip() or appkit_activation.stdout.strip()}"
+            )
+
         script = f"""
         tell application "System Events"
           set targetProcess to first application process whose unix id is {process_id}
