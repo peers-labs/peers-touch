@@ -20,12 +20,12 @@
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-F` complete Native chooser path entry and background upload proof |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Clean run `20260821T164939444353Z-73f1904c1b4e8f881d644d7850ad3b6b` proved the Modal handoff is a bounded leave animation and crossed it, then showed `windowCount=0` was incorrectly accepted as file selection while `pick_image_file` never returned |
-| Current action | Require an exact Native chooser state sequence: path confirmation or restored browser, explicit navigation, explicit selection, then restored application window; zero-window AX state remains transitional |
-| Next action | Verify the chooser state-machine repair, commit/deploy/rebuild matching source, and rerun into background upload projection |
+| Last completed | Clean run `20260821T170212415938Z-379f660ea7ac3f0eec90e036e0022393` showed the Go-To surface transitions before slow AX path readback, so waiting before Return leaves `pick_image_file` unresolved even though the product dialog is visible |
+| Current action | Keep the Native gesture atomic by posting the exact path and Return together, then send a second Return only if the file browser remains open before requiring application restoration |
+| Next action | Verify the atomic path-confirmation sequence, commit/deploy/rebuild matching source, and rerun into background upload projection |
 | Blockers | MP-W13 remains `UNPROVEN`; chooser closure is observed but background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T164939444353Z-73f1904c1b4e8f881d644d7850ad3b6b` matched source/build/Station at `04e56f45b`, retained Thread/Transcript/toolbar/reaction/avatar/Station PASS assertions, observed the leave wrapper clear and the action become ready, then failed because the Native chooser remained unresolved with no `pick_image_file` return after a zero-window transition; cleanup released `3330/3331/4445/4446/49680`; upload/restart/attachment and full product-closure Native proof remain missing |
+| Evidence | Run `20260821T170212415938Z-379f660ea7ac3f0eec90e036e0022393` matched source/build/Station at `df5b910b5`, retained Thread/Transcript/toolbar/reaction/avatar/Station PASS assertions, opened the Native chooser and observed application restoration after path entry, but failed before Return because AX could no longer expose the transitioned path field and `pick_image_file` never returned; cleanup released all actor/proxy ports; upload/restart/attachment and full product-closure Native proof remain missing |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
