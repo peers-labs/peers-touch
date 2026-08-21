@@ -400,6 +400,15 @@ class NativeProductClosureGate(AcceptanceGate):
           try
             perform action "AXRaise" of front window of targetProcess
           end try
+          try
+            set value of attribute "AXMain" of front window of targetProcess to true
+          end try
+          try
+            set value of attribute "AXFocused" of front window of targetProcess to true
+          end try
+          try
+            perform action "AXRaise" of front window of targetProcess
+          end try
           return frontmost of targetProcess
         end tell
         """
@@ -892,7 +901,20 @@ except Exception as error:
         client = self.clients[actor]
         if client.process_id is None:
             raise GateError(f"{actor} Native window has no running process")
-        if bool(client.driver.execute_script("return document.hasFocus()")):
+
+        def actor_owns_focus() -> bool:
+            ownership = self.native_focused_control(client.process_id or 0)
+            return (
+                bool(ownership.get("frontmost"))
+                and bool(ownership.get("mainWindow"))
+                and bool(ownership.get("focusedWindow"))
+                and ownership.get("actualFrontmostPid") == client.process_id
+            )
+
+        if (
+            bool(client.driver.execute_script("return document.hasFocus()"))
+            and actor_owns_focus()
+        ):
             return client
         window = self.native_window(client)
         point = (
@@ -956,11 +978,7 @@ except Exception as error:
             5,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(
-            lambda _: bool(
-                self.native_focused_control(
-                    client.process_id or 0
-                ).get("frontmost")
-            )
+            lambda _: actor_owns_focus()
         )
         # #region debug-point N-Q:native-window-focus
         WebDriverWait(
