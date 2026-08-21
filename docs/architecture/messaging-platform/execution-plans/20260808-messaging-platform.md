@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.5
-> **Created**: 2026-08-08 | **Updated**: 2026-08-19
+> **Created**: 2026-08-08 | **Updated**: 2026-08-21
 > **Owner**: Messaging Platform Team
 
 ---
@@ -17,16 +17,16 @@
 | Worktree | `<repo-root>` (peers-group-chat) |
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
-| Current workstream | `MP-W11` Final Closure — closure gates PASS, independent review pending |
-| Current step | Independent review (pt-github-review) |
-| Progress | 17/19 ledger workstreams completed (W09 Desktop closed, W12 Desktop closed); W11 closure verdict PASS/DONE/PROVEN |
-| Last completed | `make acceptance-chat-w11` 10/10 gates PASS (forbidden-scan, duplicate-scan, visible-static, 6 native E2E, completion-audit) at Station `b02714977` |
-| Current action | Independent review of W11 closure |
-| Next action | PR merge |
-| Blockers | none |
-| Decisions required | none for current Desktop execution |
-| Evidence | Profile Three (Station `b02714977` at 10.37.94.156:18080) — `make acceptance-chat-w11` 10/10 gates PASS. Native: G01 (33.3s), G15 (284.7s), G16 (100.8s), G05/G09 (44.2s), G07/G08 (36.3s), G09 (62.3s). Closure gates: forbidden-scan, duplicate-scan, visible-static, completion-audit all PASS. Verdict: `tooling/acceptance/reports/chat-w11-closure-verdict.json` (PASS/DONE/PROVEN). |
-| Last updated | 2026-08-19 |
+| Current workstream | `MP-W13` Product Truth Repair |
+| Current step | `MP-W13-F` Acceptance truth cutover |
+| Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
+| Last completed | A-E source reconciliation: canonical thread/transcript ordering, real reaction/overlay state, exact PTID and Station projection, Station-backed settings/background, and strict attachment outcome/draft retention are implemented; Native receiver proof remains unproven |
+| Current action | Connect the `chat-product-closure` business contract to Registry/Gate/runtime wiring, then implement a fail-closed Native runner that uses real Tauri DOM actions for every claimed Chat behavior |
+| Next action | Run Chat structural/path validation, rebuild the dedicated Acceptance binary, execute the two-client Native journey, and validate source/build/runtime/DOM/geometry/readback/count/cleanup evidence |
+| Blockers | none for Gate implementation; product proof remains `UNPROVEN` until the dedicated Native Gate and cleanup audit pass |
+| Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
+| Evidence | `debug-station-identity-missing.md`: pre-fix runtime evidence; `./model/build.sh`, Desktop check/test/build, focused Station/Rust tests and `cargo check --features acceptance-webdriver` passed for the current W13 implementation; current Native reports remain invalid for W13 because they use command/store Harness paths and omit the required receiver surfaces |
+| Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
 
@@ -100,6 +100,7 @@ MP-D28 industry-aligned pending/retry + post-accept retract amendment is accepte
 | MP-W09 Mobile parity | C01-C16 | A01-A18 | D01-D27 | contract/native mobile cells |
 | MP-W10 Attachments/search | C13/C14 | A05/A11/A12 | D11/D23-D25 | G13/G14 |
 | MP-W12 Message interactions/typing | C10/C15/C16 | A02-A05/A09/A17/A18 | D09/D12/D26/D27 | G10/G15/G16 |
+| MP-W13 Product truth repair | C01-C03/C10/C13-C16 | A05/A09/A11/A12/A17/A18 | D09/D11/D23-D28 | G13-G16 + `chat-native-product-closure-e2e` |
 | MP-W11 Cutover/deletion/final audit | all | A01-A18 | D10/D12/D26/D27 | G01-G16 |
 
 ## 5. Dependency DAG
@@ -125,7 +126,9 @@ MP-W11-R + MP-W10-D ─────────────────> MP-W08
 MP-W04 + MP-W05 + MP-W07 ─────────────────> MP-W12
 MP-W01 + MP-W03 + MP-W04 + MP-W12 ───────> MP-W09
 
-W02/W05/W06/W07/W08/W09/W10-E/W12 + W11-R ──> MP-W11 final closure
+MP-W10-E + MP-W12 + Social Runtime Phase 3 ──> MP-W13-A/B/C/D/E
+MP-W13-A/B/C/D/E ────────────────────────────> MP-W13-F
+W02/W05/W06/W07/W08/W09/W10-E/W12/W13 + W11-R ──> MP-W11 final closure
 ```
 
 可并行：
@@ -723,6 +726,232 @@ Non-claim：
   zero-item scan.
 - **Status**: PASS (Desktop) — `chat-native-typing-e2e` G16 on Profile Three (dc6f4adac). Mobile pending W09.
 
+### MP-W13: Product Truth Repair
+
+#### Amendment Trigger
+
+Live use of the current `peers-group-chat` product invalidated the prior product-proof
+claims for MP-W10-E, MP-W12, and MP-W11. The defects are not new architecture:
+the accepted contracts already require one Station/Engine truth, runtime-owned
+Desktop projections, recoverable interaction state, Station-backed conversation
+settings, canonical attachment transfer, and receiver-visible Native evidence.
+
+The corrective workstream repairs implementation and proof drift without adding a
+compatibility path or changing ownership:
+
+- Thread summary and panel disagree because the panel bypasses the canonical thread
+  projection and does not subscribe to its state.
+- Reaction and hover actions are not real receiver paths; the Gate submits commands
+  through a Harness and the row-local toolbar is trapped by virtual-row stacking
+  contexts.
+- Actor avatars and group composite avatars are rebuilt independently per surface and
+  per viewer instead of consuming one PTID profile projection.
+- Complete transcripts are not compared across Alice/Bob; existing Gates only wait for
+  selected message IDs.
+- `authority_station_id` exists in Rust but is dropped by the TypeScript conversation
+  mapper, so no visible Station attribution can be rendered.
+- Mute/background settings write through a stale membership truth and fail with 403;
+  UI errors are swallowed.
+- Background upload uses a non-existent `chat-backgrounds` bucket and image references
+  are not persisted through typed Station conversation settings.
+- Native attachment preview uses a hand-built `asset://localhost` URL; send outcomes
+  `draft` and `attachment_failed` are treated as success, so drafts are cleared while
+  Engine/message/Details attachment counts remain zero.
+- Existing Native Acceptance uses command/store helpers for interaction and attachment
+  paths, so PASS does not prove actual clicks, hover, file selection, rendering,
+  geometry, settings persistence, transcript convergence, or count conservation.
+
+This is a `PLAN_AMENDMENT_REQUIRED` correction. Product journeys and architecture
+semantics remain unchanged.
+
+#### Responsibility Closures
+
+| Closure | Responsibility | Dependencies | Deliverables | Required evidence |
+|---|---|---|---|---|
+| `MP-W13-A` Projection convergence | Thread and full transcript projections | W05/W12 | Canonical thread API consumption; exact store subscriptions; Alice/Bob top-level message ID/order/content equality; restart and offline reconciliation | Store/unit tests plus Native DOM transcript and thread snapshots |
+| `MP-W13-B` Interaction surface | Reaction and message action placement | W12 + Chat UX contracts | Real reaction picker; scoped pending/error/rollback; pane-owned toolbar overlay outside virtual-row stacking contexts; keyboard and collision behavior | Native click/hover/picker evidence and `getBoundingClientRect` collision report |
+| `MP-W13-C` Identity and attribution | PTID profile and Station identity projections | W05 + Desktop runtime projection contract | One PTID profile resolver for message/group list/Details/thread; `authority_station_id` retained through TS projection; visible Station attribution in both clients | Alice/Bob exact avatar URL/load-state and Station attribution DOM equality |
+| `MP-W13-D` Conversation actions | Mute, sticky, built-in background, uploaded background | Social Runtime Phase 3 + Station membership/settings owner | One canonical membership authorization path; typed settings read/write; pending/error/rollback; sanctioned OSS bucket; typed image reference persistence; realtime invalidation and restart recovery | Real Details clicks, Station readback, Alice/Bob sync, failure rollback, restart evidence |
+| `MP-W13-E` Attachment product path | Picker, preview, upload, send, receive, render, counts | W10-B/C/D/E | `convertFileSrc` preview; strict send outcome handling; draft retention on deferred/failure; no empty message; sender/receiver rendering and open/download; count conservation across all surfaces | Byte-exact Native attachment journey and count ledger |
+| `MP-W13-F` Acceptance truth cutover | Chat business Gate and evidence | W13-A through W13-E | Remove command/store bypasses for claimed UI paths; rebuild dedicated binary; source/build/runtime identity; screenshots, DOM, geometry and cleanup evidence; invalidate stale reports | `chat-native-product-closure-e2e`, structural validation, completion audit, independent review |
+
+#### Dependency And Parallelization Rules
+
+```text
+MP-W13-00 baseline + plan/Anchor
+  ├──> MP-W13-A projection convergence
+  ├──> MP-W13-B interaction surface
+  ├──> MP-W13-C identity and attribution
+  ├──> MP-W13-D conversation actions
+  └──> MP-W13-E attachment product path
+
+MP-W13-A/B/C/D/E
+  └──> MP-W13-F Acceptance truth cutover
+        └──> MP-W11 final closure rerun
+```
+
+`A` through `E` may be investigated in parallel, but shared projection contracts and
+`socialChat` edits must be reconciled before integration. `F` is strictly last: a Gate
+must not be authored around an incomplete product path. The final Native run is serial
+per disposable Station reset and records all allocated resources before launch.
+
+#### Atomic Cutover And Deletion Matrix
+
+| Concern | Canonical owner after repair | Delete/forbid |
+|---|---|---|
+| Thread data | Engine/Station thread projection consumed by `socialChat` | Root-only fallback and Harness-opened UI proof |
+| Reaction state | Authority event + Engine projection | Fixed-emoji command submission as UI proof; UI-only terminal state |
+| Hover actions | Conversation-pane overlay owner | Row-local absolute toolbar inside transformed virtual rows |
+| Actor identity | `socialChat` PTID profile projection | Per-component profile maps and viewer-dependent avatar ordering |
+| Station attribution | Engine conversation projection | Mapper field dropping and inferred Station labels |
+| Conversation settings | Station settings/membership truth + runtime projection | Swallowed errors, local-only terminal mute/background state |
+| Background images | Sanctioned OSS storage + typed Station settings | Unknown bucket names and raw/local-only image references |
+| Attachments | Messaging Engine draft/transfer/message projection | Treating `draft`/`attachment_failed` as sent; clearing failed drafts |
+| Native proof | Real Tauri DOM actions | Store mutation, fixed command, or Harness bypass for claimed UI behavior |
+
+#### Acceptance Scenarios
+
+##### AS-W13-01: Thread and transcript convergence
+- **Precondition**: Alice and Bob are active members of the same Direct and MLS
+  conversations with root, inline reply, and nested thread messages.
+- **Action**: Each user opens the conversation and opens the thread through visible UI;
+  Bob goes offline, receives more messages, reconnects, and restarts.
+- **Expected**: Both clients expose identical top-level message IDs, order and content;
+  summary reply count/IDs equal the panel count/IDs.
+- **Failure variant**: Missing target is explicitly unavailable; no reply is flattened,
+  hidden, duplicated, or reordered.
+- **Evidence**: Native DOM transcript arrays, thread arrays, Engine projection IDs,
+  screenshots before/after restart.
+- **Status**: pending.
+
+##### AS-W13-02: Reaction and toolbar interaction
+- **Precondition**: Two adjacent virtualized message rows are visible in a narrow pane
+  with Details open.
+- **Action**: User hovers the first row, opens the real reaction picker, selects and
+  removes an emoji, then repeats under an injected Station failure.
+- **Expected**: Toolbar remains inside pane/viewport and outside message/adjacent-row
+  content; picker is visible and keyboard reachable; pending is scoped; success
+  converges; failure restores prior state and remains actionable.
+- **Failure variant**: Network/authority failure shows localized recovery and creates no
+  terminal UI-only reaction.
+- **Evidence**: Native hover/click/key events, rectangle intersection report, sender and
+  receiver reaction DOM, authority/Engine readback.
+- **Status**: pending.
+
+##### AS-W13-03: Identity and Station attribution
+- **Precondition**: Alice and Bob have distinct non-placeholder avatars and view the same
+  MLS group from isolated profiles.
+- **Action**: Both open group list, message timeline, thread, and Details.
+- **Expected**: For each PTID, avatar URL and loaded image identity match across all
+  surfaces and clients; group composite slots are deterministic; visible authority
+  Station attribution matches both clients and the Engine projection.
+- **Failure variant**: Failed image load renders a deterministic identity fallback without
+  substituting another actor; missing Station metadata is explicit rather than silently
+  absent.
+- **Evidence**: Native DOM attributes, image `complete/naturalWidth`, screenshot and
+  Engine conversation identity.
+- **Status**: pending.
+
+##### AS-W13-04: Conversation actions and background recovery
+- **Precondition**: Alice and Bob are active members; Details is open.
+- **Action**: Alice toggles mute/sticky, selects each built-in background, uploads a local
+  image, then restarts; Bob observes shared settings where the contract requires
+  cross-device sync.
+- **Expected**: Writes pass canonical membership authorization, Station readback matches,
+  pending/failure states are visible, successful background renders, and restart
+  restores the projected value.
+- **Failure variant**: 403/upload/network failure rolls back visible state, preserves the
+  chosen file/action for retry, and never reports success.
+- **Evidence**: Real Native clicks/file chooser, Station settings/OSS readback, Alice/Bob
+  DOM and post-restart screenshot.
+- **Status**: pending.
+
+##### AS-W13-05: Attachment count conservation
+- **Precondition**: Alice selects one image and one file through the Native picker.
+- **Action**: Send attachment-only and text-plus-attachment messages; Bob opens/downloads
+  them; both clients restart.
+- **Expected**: For each message,
+  `composer count = send outcome count = Engine count = sender row count =
+  receiver row count = Details Media/Files count`; bytes are exact and previews load.
+- **Failure variant**: Deferred/failed upload preserves the draft and preview, exposes
+  retry, emits no empty committed message, and does not increment Details counts.
+- **Evidence**: Native picker/DOM, send outcome, Engine projection, byte hash, Details
+  counters and post-restart readback.
+- **Status**: pending.
+
+##### AS-W13-06: Source-bound final proof and cleanup
+- **Precondition**: W13-A through W13-E pass focused tests.
+- **Action**: Build the dedicated Acceptance binary, run the complete Native product
+  closure Gate, then tear down in reverse acquisition order.
+- **Expected**: Report binds source commit, binary identity, Station commit, actors,
+  devices, profiles, storage roots, ports, screenshots, DOM and geometry evidence; all
+  processes stop and every allocated port is released.
+- **Failure variant**: Missing/stale identity, any Harness bypass, absent screenshot/DOM,
+  or leaked process/port fails the Gate and blocks readiness.
+- **Evidence**: Immutable Gate report, screenshots, DOM/geometry JSON, process inventory,
+  and `lsof` no-listener output.
+- **Status**: pending.
+
+#### Verification And Evidence
+
+Focused checks run as each closure lands:
+
+```bash
+cd apps/desktop
+pnpm run check
+pnpm run test
+pnpm run build
+
+cd src-tauri
+cargo test --features acceptance-webdriver
+```
+
+Station/settings changes additionally require:
+
+```bash
+cd apps/station
+gofmt -l .
+go test ./...
+```
+
+Acceptance contract and plan changes require:
+
+```bash
+make acceptance-validate DOMAIN=chat
+make acceptance-coverage-report
+make acceptance-plan ACCEPTANCE_RANGE=<base>...<head>
+```
+
+Final proof requires the procedure-defined Native preflight, a fresh dedicated binary,
+real UI actions, and resource cleanup:
+
+```bash
+make acceptance-driver-build
+make acceptance-driver-smoke
+CHAT_ACCEPTANCE_RESET=1 make acceptance-chat-native-product-closure
+python3 tooling/scripts/acceptance-validate.py --domain chat --require-proven
+make acceptance-report
+make acceptance-coverage-report
+make status
+lsof -nP -iTCP:<allocated-port> -sTCP:LISTEN
+```
+
+The final Make target and Gate catalog entry are deliverables of `MP-W13-F`; they must
+compose Chat-owned business injection and must not modify generic Acceptance readiness
+semantics.
+
+#### Non-Claims And Escalation
+
+- Existing G13/G15 PASS reports do not prove W13 until the real UI scenarios above pass.
+- Static selectors, command success, API readback, screenshots without DOM identity, or
+  one-client evidence cannot close W13.
+- Desktop closure does not claim Mobile parity.
+- If implementation reveals new membership, settings, attachment, retry, or authorization
+  semantics not defined by current architecture, stop with
+  `DESIGN_AMENDMENT_REQUIRED`.
+- If a receiver-visible expected behavior is ambiguous, stop with
+  `PRODUCT_AMENDMENT_REQUIRED`.
+
 ### MP-W11: Atomic Cutover And Completion Audit
 
 交付物：
@@ -769,9 +998,10 @@ Closure enforcement (deterministic):
 | MP-W10-B | completed | W02/W06/W10-A | Authority upload/session/part/object/grant UOW, replay/conflict/expiry/cancel/finalize/orphan-GC, event-bound grants, ranged download, signed Home-to-Authority proxy, bounded admission, durable audit, redacted logs and Prometheus metrics pass. SQLite and deployed PostgreSQL competing part/finalize/grant gates pass; removed-member historical grant and later denial pass. Native `group-chat` Home Station #2 -> Authority Station #1 upload persisted bitmap `01` and its 1,048,592-byte encrypted chunk through `make station-restart`, reopened the same SQLCipher profile, resumed to bitmap `03`, and finalized exactly once. Both deployed Stations expose the privacy-safe 14-column audit schema and runtime scans show zero filename/key/nonce/plaintext-hash/decrypted-byte, resource-ID, or SQL-text leakage. |
 | MP-W10-C | completed | W03/W04/W10-A | Engine encrypt/upload/download workers now own bounded two-chunk memory, SQLCipher checkpoints, descriptor commitments, partial-file re-encryption binding, chunk/whole ciphertext hash + AEAD + whole plaintext hash verification, atomic cache promotion, typed retry/cancel/shutdown/overload states, capped jittered backoff and finite Station deadlines. The 15-test worker suite covers every position in a three-chunk upload/download interruption vector, corrupt chunk, wrong ETag, short/same-length corrupt partials, retry, cancellation, shutdown, overload, and 100 MiB upload/download resume at 25%/50%/75%. Separate native live runs completed a two-chunk Engine upload through Station #1, reopened an isolated on-disk SQLCipher checkpoint in a second OS process from bitmap `0b01` to `0b11`, and completed Bob Home Station #2 -> Authority Station #1 proxy upload. Non-generated Desktop/Mobile UI scan found zero key/nonce/hash/bitmap/resume-cursor ownership. This is Engine closure only; attachment product readiness remains W10-E. |
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
-| MP-W10-E | completed | W05/W10-D | Native bidirectional Direct text+attachment (SHA-256 verified), OpenMLS group text+attachment (byte-exact), FTS5 local encrypted search (Direct+Group), Station restart continuity (post-restart delivery), fresh-device recovery round-trip (Bob: 3 conv/19 msg/3 att, Alice: 4 conv/19 msg/3 att, format v2), per-attachment admission control fixing concurrency race, startup reconciliation for descriptor-backed terminal uploads. Evidence from `peers-group-chat` and `peers-chat-high-chat` native Tauri apps against remote Stations #1 and #2. Legacy chat OSS and plaintext search owners deleted. |
-| MP-W12 | completed (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | All 6 Native Desktop gates PASS on Profile Three (`c0d62325a`): `chat-native-interactions-e2e` (G15) proves reply/thread, author-only edit/retract, reaction add/remove, pin/unpin, read cursor Direct+Group receiver-visible projection with timeout/retry convergence, offline/restart/duplicate/unauthorized/removed scenarios. `chat-native-typing-e2e` (G16) proves Direct/Group typing start/stop/TTL/cleanup lifecycle. Evidence: embedded WebDriver against dedicated acceptance binary, fixture reset disposable Station, Profile Three remote. Mobile G15/G16 parity deferred to follow-up workstream. |
-| MP-W11 | completed (Desktop) | W02-W10/W12 | `make acceptance-chat-w11` 10/10 gates PASS at Station `b02714977`. Closure enforcement: fixed plan `tooling/acceptance/plans/chat-w11-closure.json` with three deterministic gates (`w11_forbidden_scan`, `w11_duplicate_scan`, `w11_completion_audit`) eliminates AI discretion over which gates run or what counts as done. 6/6 native E2E PASS (73 assertions, 0 failed), forbidden-paths/duplicate-impl scans PASS, visible-static PASS. Verdict: `tooling/acceptance/reports/chat-w11-closure-verdict.json` (PASS/DONE/PROVEN). Remaining: independent review. Mobile parity deferred. |
+| MP-W10-E | reopened by W13 | W05/W10-D | Prior byte-exact Engine evidence remains valid for its recorded runtime, but current product use proves the Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, and count conservation are not closed. W13-E/F must replace the product-proof claim with real UI evidence. |
+| MP-W12 | reopened by W13 (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | Prior authority/Engine interaction evidence remains useful, but current product use proves thread panel, reaction picker, hover toolbar, and complete transcript convergence were bypassed or unasserted. W13-A/B/F must rerun through real Native UI actions. Mobile remains pending W09. |
+| MP-W13 | in progress | W10-E/W12 + Social Runtime Phase 3 | Corrective plan defines six closures for projection, interaction UI, identity/Station attribution, conversation actions/background, attachments, and source-bound Native proof. W13-A through W13-E implementation inventory is active; runtime evidence is pending. |
+| MP-W11 | reopened pending W13 | W02-W10/W12/W13 | The previous closure verdict is invalid for full product readiness because its Native evidence did not prove the receiver-visible paths exposed by W13. Rerun only after W13-F passes and stale reports are rejected by source/build/runtime identity. |
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
@@ -817,8 +1047,9 @@ browser/API-only/screenshot-only evidence 替代。
 
 ## 10. Final Claim Rule
 
-只有 MP-W00 至 MP-W12 全部完成、MP-G01 至 MP-G16 全部通过、old-path scans 为零、
-independent review 与 completion audit 通过后，才允许声明：
+只有 MP-W00 至 MP-W13 全部完成、MP-G01 至 MP-G16 及
+`chat-native-product-closure-e2e` 全部通过、old-path scans 为零、independent review
+与 completion audit 通过后，才允许声明：
 
 > Messaging Platform 在已列 runtime/platform cells 上可用。
 

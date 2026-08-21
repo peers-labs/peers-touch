@@ -6746,6 +6746,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 "conversation_id": args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or(""),
                 "nickname": args.get("nickname").cloned().unwrap_or(Value::Null),
                 "muted": args.get("muted").cloned().unwrap_or(Value::Null),
+                "alertEnabled": args.get("alert_enabled").cloned().unwrap_or(Value::Null),
+                "pinned": args.get("pinned").cloned().unwrap_or(Value::Null),
+                "background": args.get("background").cloned().unwrap_or(Value::Null),
+                "backgroundImage": args.get("background_image").cloned().unwrap_or(Value::Null),
+                "clearedAtUnixMs": args.get("cleared_at_unix_ms").cloned().unwrap_or(Value::Null),
             })),
             "conversation update member settings",
         ),
@@ -6866,12 +6871,107 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         "sender_ptid": m.sender_ptid,
                         "sender_device_id": m.sender_device_id,
                         "plaintext": m.plaintext,
-                        "attachments": Vec::<Value>::new(),
+                        "attachments": m
+                            .attachments
+                            .iter()
+                            .map(|attachment| {
+                                let object = attachment.object.as_ref();
+                                json!({
+                                    "attachment_id": attachment.attachment_id,
+                                    "filename": attachment.filename,
+                                    "mime_type": attachment.mime_type,
+                                    "plaintext_size": attachment.plaintext_size,
+                                    "object_id": object
+                                        .map(|value| value.object_id.as_str())
+                                        .unwrap_or_default(),
+                                    "storage_ref": object
+                                        .map(|value| value.storage_ref.as_str())
+                                        .unwrap_or_default(),
+                                    "ciphertext_size": object
+                                        .map(|value| value.ciphertext_size)
+                                        .unwrap_or_default(),
+                                    "availability_state": if object.is_some() {
+                                        "remote"
+                                    } else {
+                                        "uploading"
+                                    },
+                                })
+                            })
+                            .collect::<Vec<_>>(),
                         "state": m.state,
                         "timestamp_unix_ms": m.timestamp_unix_ms,
+                        "reply_to_message_id": m.reply_to_message_id,
+                        "thread_root_message_id": m.thread_root_message_id,
+                        "edited_text": m.edited_text,
+                        "edited_at_unix_ms": m.edited_at_unix_ms,
+                        "retracted": m.retracted,
+                        "reactions": m
+                            .reactions
+                            .iter()
+                            .map(|(actor_ptid, reaction, created_at_unix_ms)| {
+                                json!({
+                                    "actor_ptid": actor_ptid,
+                                    "reaction": reaction,
+                                    "created_at_unix_ms": created_at_unix_ms,
+                                })
+                            })
+                            .collect::<Vec<_>>(),
+                        "pinned_by_ptid": m.pinned_by_ptid,
+                        "pinned_at_unix_ms": m.pinned_at_unix_ms,
+                        "read_by_ptids": m.read_by_ptids,
                     })).collect();
                     to_json(AppResult::success(json!({ "messages": items })))
                 }
+                Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+            }
+        }
+        "messaging_open_attachment" => {
+            let guard = state.session.lock().map_err(|_| ()).ok();
+            let actor_id = guard
+                .as_ref()
+                .and_then(|g| g.actor_id.clone())
+                .unwrap_or_default();
+            let token = guard
+                .as_ref()
+                .and_then(|g| g.token.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
+            drop(guard);
+            if actor_id.is_empty() || token.is_empty() {
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
+            }
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(e)) => e,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            let attachment_id = args
+                .get("attachment_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if attachment_id.is_empty() {
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::InvalidArgument,
+                    "attachment_id required",
+                    None,
+                ));
+            }
+            match engine.open_attachment(&token, attachment_id) {
+                Ok(local_path) => to_json(AppResult::success(json!({ "local_path": local_path }))),
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
         }

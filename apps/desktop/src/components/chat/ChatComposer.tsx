@@ -52,9 +52,11 @@ import {
   useChatAttachmentDrafts,
   type ChatDraftAttachment,
 } from './composer/useChatAttachmentDrafts';
+import { didQueueExpectedChatAttachments } from './composer/sendOutcome';
 import { useChatScreenshotCapture } from './composer/useChatScreenshotCapture';
 import { useChatVoiceRecorder } from './composer/useChatVoiceRecorder';
 import { useActiveChatSettingsSlice } from './useActiveSocialChatStore';
+import { useSocialChatStore } from '../../store/socialChat';
 import { formatChatScreenshotShortcut } from '../../utils/chatScreenshotShortcut';
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
 import {
@@ -158,6 +160,9 @@ export function ChatComposer({
   const [voiceSending, setVoiceSending] = useState(false);
   const [recentEmojis, setRecentEmojis] = useState<string[]>(() => loadRecentEmojis());
   const screenshotShortcut = useActiveChatSettingsSlice((state) => state.chatScreenshotShortcut);
+  const latestSendOutcome = useSocialChatStore(
+    (state) => state.sendOutcomes[activeConversationId],
+  );
   const activeCapabilities = resolveChatComposerCapabilities(
     CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
     capabilities,
@@ -289,13 +294,9 @@ export function ChatComposer({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handlePickAttachment = async () => {
+  const handlePickAttachment = () => {
     if (disabled || editing || recording) return;
-    try {
-      appendReadyAttachment(await imServiceV1.messaging.pickAttachmentSource());
-    } catch (error) {
-      log.warn('chat', 'composer native attachment picker cancelled or failed', error);
-    }
+    fileInputRef.current?.click();
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -406,12 +407,23 @@ export function ChatComposer({
   const submit = async () => {
     if (!canSend) return;
     const messageType = chatMessageTypeForAttachments(readyAttachments);
+    const previousOutcomeRevision = useSocialChatStore.getState()
+      .sendOutcomes[activeConversationId]?.revision ?? 0;
     await onSend({
       text: value.trim(),
       attachments: readyAttachments,
       messageType,
     });
-    clearDrafts(false);
+    if (
+      readyAttachments.length === 0
+      || didQueueExpectedChatAttachments(
+        previousOutcomeRevision,
+        readyAttachments.length,
+        useSocialChatStore.getState().sendOutcomes[activeConversationId],
+      )
+    ) {
+      clearDrafts(false);
+    }
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -489,6 +501,10 @@ export function ChatComposer({
 
   return (
     <Flexbox
+      data-chat-composer={activeConversationId}
+      data-chat-send-outcome-state={latestSendOutcome?.outcome.state || ''}
+      data-chat-send-outcome-attachment-count={latestSendOutcome?.outcome.attachmentCount ?? 0}
+      data-chat-send-outcome-attachment-ids={latestSendOutcome?.outcome.attachmentIds.join(',') || ''}
       gap={8}
       onDragOver={handleDragOver}
       onDragLeave={() => setDragging(false)}
@@ -566,12 +582,20 @@ export function ChatComposer({
         }}
       >
         {drafts.length > 0 && (
-          <Flexbox horizontal gap={8} style={{ padding: '8px 10px 0', overflowX: 'auto' }}>
+          <Flexbox
+            data-chat-attachment-drafts={drafts.length}
+            horizontal
+            gap={8}
+            style={{ padding: '8px 10px 0', overflowX: 'auto' }}
+          >
             {drafts.map((item) => {
               const labels = renderDraftLabels(item);
               return (
               <Flexbox
                 key={item.id}
+                data-chat-attachment-draft={item.id}
+                data-chat-attachment-status={item.status}
+                data-chat-attachment-preview={item.previewUrl || ''}
                 gap={6}
                 style={{
                   width: 126,
@@ -715,6 +739,7 @@ export function ChatComposer({
             )}
             <input
               ref={fileInputRef}
+              data-chat-attachment-input
               type="file"
               multiple
               accept="image/*,video/*,audio/*,application/pdf,.zip,.txt,.md"
@@ -724,6 +749,7 @@ export function ChatComposer({
             {activeCapabilities.file && (
               <Tooltip title={t('chat.social.composer.file')}>
                 <Button
+                  data-chat-attachment-picker
                   type="text"
                   icon={<FolderOpen size={20} />}
                   aria-label={t('chat.social.composer.file')}

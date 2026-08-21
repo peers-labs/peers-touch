@@ -596,14 +596,10 @@ function onGroupFederationEvent(payload: RealtimeGroupFederationEventPayload): v
   scheduleGroupFederationRefresh(payload.groupUlid, isActiveConversation);
 }
 
-function onConversationSettingsChanged(payload: RealtimeConversationSettingsChangedPayload): void {
+function onConversationSettingsChanged(_payload: RealtimeConversationSettingsChangedPayload): void {
   runDetached('conversation settings refresh', async () => {
     const chat = useSocialChatStore.getState();
-    if (payload.conversationKind === 'friend') {
-      await chat.loadSessions();
-    } else {
-      await chat.loadGroups();
-    }
+    await chat.loadSessions();
     useNavigationBadgeStore.getState().reconcileChatBadge();
   });
 }

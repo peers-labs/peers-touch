@@ -13,6 +13,10 @@ import { markOverlayIntent, markOverlayVisible } from '../../kernel/frontendRunt
 import { OverlayCommitProfiler } from '../../kernel/OverlayCommitProfiler';
 import { imServiceV1 } from '../../services/im-service';
 import { useNavigationBadgeStore } from '../../store/navigationBadges';
+import {
+  projectGroupAvatarSlots,
+  resolveActorIdentity,
+} from '../../store/socialProfileProjection';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
 import { CreateGroupModal } from './CreateGroupModal';
@@ -49,6 +53,7 @@ export function ChatSessionList() {
     groupUnreadCounts,
     lastPreviews,
     currentUserDid,
+    currentUserProfile,
     messages,
     activeTab,
     activeSessionUlid,
@@ -72,6 +77,7 @@ export function ChatSessionList() {
     groupUnreadCounts: state.groupUnreadCounts,
     lastPreviews: state.lastPreviews,
     currentUserDid: state.currentUserDid,
+    currentUserProfile: state.currentUserProfile,
     messages: state.messages,
     activeTab: state.activeTab,
     activeSessionUlid: state.activeSessionUlid,
@@ -443,15 +449,28 @@ export function ChatSessionList() {
                           {c.kind === 'group' ? (
                             <GroupSquareAvatar
                               remoteUrl={c.avatar || undefined}
-                              members={(groupMembers[c.id] || []).slice(0, 4).map((m) => {
-                                const p = peerProfiles[m.ptid];
-                                return { name: p?.display_name?.trim() || p?.username?.trim() || m.nickname || '', avatar: p?.avatar || '' };
-                              })}
+                              members={projectGroupAvatarSlots(
+                                groupMembers[c.id] || [],
+                                (ptid, nickname) => resolveActorIdentity({
+                                  ptid,
+                                  currentUserDid,
+                                  currentUserProfile,
+                                  peerProfiles,
+                                  sessions,
+                                  nickname,
+                                }),
+                              )}
                               name={name}
                               size={36}
                             />
                           ) : (
-                            <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
+                            <span
+                              data-chat-avatar-ptid={c.peerDid || ''}
+                              data-chat-avatar-src={c.avatar || ''}
+                              style={{ display: 'inline-flex', flexShrink: 0 }}
+                            >
+                              <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
+                            </span>
                           )}
 
                           <Flexbox flex={1} style={{ minWidth: 0 }}>
