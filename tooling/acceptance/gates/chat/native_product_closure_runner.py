@@ -1371,8 +1371,50 @@ class NativeProductClosureGate(AcceptanceGate):
         )
 
     def open_background_modal(self, actor: str) -> None:
+        client = self.clients[actor]
+        active_select = client.execute_script(
+            """
+            const candidates = Array.from(
+              document.querySelectorAll('[data-chat-background-select]')
+            );
+            return candidates.find((select) => {
+              const modal = select.closest('.ant-modal');
+              if (!modal) return false;
+              return !Array.from(modal.classList).some(
+                (name) => name.includes('-leave')
+              );
+            }) || null;
+            """
+        )
+        if active_select is not None:
+            return
+        WebDriverWait(
+            client.driver,
+            10,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(
+            lambda _: bool(
+                client.execute_script(
+                    """
+                    return !Array.from(
+                      document.querySelectorAll('.ant-modal-wrap')
+                    ).some((wrap) => {
+                      const style = getComputedStyle(wrap);
+                      const rect = wrap.getBoundingClientRect();
+                      return (
+                        style.display !== 'none'
+                        && style.visibility !== 'hidden'
+                        && style.pointerEvents !== 'none'
+                        && rect.width > 0
+                        && rect.height > 0
+                      );
+                    });
+                    """
+                )
+            )
+        )
         self.click(actor, '[data-chat-conversation-action="background"]')
-        self.clients[actor].find_element("[data-chat-background-select]", 15)
+        client.find_element("[data-chat-background-select]", 15)
 
     def select_second_background(self, actor: str) -> None:
         client = self.clients[actor]
