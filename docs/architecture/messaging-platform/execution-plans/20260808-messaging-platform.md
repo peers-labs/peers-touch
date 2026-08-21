@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-E/F` make Details attachment counts reactive to message projection changes |
+| Current step | `MP-W13-E/F` verify reactive Details attachment counts in the source-bound Native journey |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Source-bound run `20260821T231645935944Z-3f1446b4a9e89b3c64f5e8ac60fa9e3d` matched clean source/live Station `85e8523d0`, dedicated binary SHA-256 `236d822fd0c16cdfb48a89ec92283619b40b967ed1d55c3086e2c3bada2bcd0f`, proved Native preview plus a new revision-3 pending outcome with two attachment IDs, exact Alice/Bob Engine/message-row IDs and counts, loaded images, and byte-exact local opens; it then found Alice Details `media=1/files=1` but Bob Details `0/0`; cleanup released `3330/3331/4445/4446/56872` |
-| Current action | Make `ChatDetailPanel` subscribe to the canonical `socialChat.messages` projection instead of reading through a stable getter that leaves an already-open receiver panel stale |
-| Next action | Commit the reactive Details projection fix, rebuild/deploy exact clean source, and rerun `chat-native-product-closure-e2e` through attachment count conservation and restart recovery |
+| Last completed | Commit `cff908cdc` makes `ChatDetailPanel` subscribe to canonical `socialChat.messages` and derive rows through `projectDesktopIMMessages`; `pnpm run check`, the 20-case product-closure static Gate, and `git diff --check` pass, but no post-fix Native result exists yet |
+| Current action | Deploy the exact clean source, rebuild the dedicated Acceptance binary, and rerun the same Native journey that previously left Bob Details at `0/0` |
+| Next action | Require Alice and Bob Details to converge to `media=1/files=1`, then continue the same Gate through restart recovery |
 | Blockers | MP-W13 remains `UNPROVEN`; attachment send, Engine/message-row identity and byte-exact open are proven in one source-bound run, but Bob's already-open Details surface did not rerender after receiver delivery; final Details conservation and restart/cross-device recovery remain unproven; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T231645935944Z-3f1446b4a9e89b3c64f5e8ac60fa9e3d` is `FAIL/UNPROVEN` with `FIXTURE_READY`, clean source/live Station `85e8523d034aa4a1ab3d15fe48ef59dc5a46be26`, two-attachment outcome/Engine/sender/receiver equality and byte-exact open proven, first failure `attachment_count_conservation` only at Bob Details `0/0`, and cleanup `passed`; Driver smoke passed immediately before the run |
+| Evidence | Pre-fix run `20260821T231645935944Z-3f1446b4a9e89b3c64f5e8ac60fa9e3d` is `FAIL/UNPROVEN` at Bob Details `0/0`; local post-fix evidence for `cff908cdc` is `desktop check PASS`, product-closure static Gate `20/20 PASS`, and `git diff --check PASS`; Native proof remains absent |
 | Last updated | 2026-08-22 |
 
 ## 1. Plan Sources And Gate
