@@ -288,3 +288,25 @@ The repeated down/up loss rejects an isolated product target defect. Existing
 snapshots do not record combined-session button state, so AD-AF remain
 inconclusive. The next pre-fix comparison adds that state to the existing
 snapshot without changing event delivery.
+
+Button-state instrumentation run:
+`20260821T173208817021Z-afe37eed1d1306e5f45db0c67b41f010`.
+
+- Source, dedicated binary, and Profile Three Station matched clean commit
+  `b43307773f219449e2149e25e655b82ae009be14`.
+- Thirty real Native product clicks crossed Thread, Reaction, Mute, Pin, and
+  the first Background chooser without a down/up acknowledgement failure.
+- Every `before-click` snapshot recorded `mouseButtonDown=false`.
+- The first failure moved to the Background chooser state machine, not Native
+  pointer delivery; cleanup released all actor ports.
+
+| ID | Status | Evidence |
+|---|---|---|
+| AD | Rejected | No click inherited a combined-session left-button-down state |
+| AE | Inconclusive | This run did not reproduce a missing down event |
+| AF | Inconclusive | This run did not reproduce a routed-without-DOM down event |
+
+The instrumentation remains active because the intermittent down/up loss is
+not closed by one non-reproducing run. The current dependency-ready defect is
+the source-backed Background chooser false terminal documented in
+`debug-chat-background-picker.md`.
