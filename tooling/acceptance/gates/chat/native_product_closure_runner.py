@@ -10,6 +10,7 @@ import os
 import secrets
 import socket
 import subprocess
+import sys
 import tempfile
 import urllib.request
 from pathlib import Path
@@ -423,6 +424,10 @@ class NativeProductClosureGate(AcceptanceGate):
         tell application "System Events"
           set targetProcess to first application process whose unix id is {process_id}
           set processFrontmost to frontmost of targetProcess
+          set actualFrontmostPid to -1
+          try
+            set actualFrontmostPid to unix id of first application process whose frontmost is true
+          end try
           set windowCount to count of windows of targetProcess
           set sheetCount to 0
           repeat with appWindow in windows of targetProcess
@@ -434,6 +439,14 @@ class NativeProductClosureGate(AcceptanceGate):
           set roleName to ""
           set titleValue to ""
           set controlValue to ""
+          set mainWindow to false
+          set focusedWindow to false
+          try
+            set mainWindow to value of attribute "AXMain" of front window of targetProcess
+          end try
+          try
+            set focusedWindow to value of attribute "AXFocused" of front window of targetProcess
+          end try
           try
             set focusedElement to value of attribute "AXFocusedUIElement" of targetProcess
             set roleName to value of attribute "AXRole" of focusedElement
@@ -447,7 +460,7 @@ class NativeProductClosureGate(AcceptanceGate):
               set controlValue to value of attribute "AXValue" of focusedElement as text
             end try
           end try
-          return roleName & tab & subroleName & tab & titleValue & tab & controlValue & tab & windowCount & tab & sheetCount & tab & processFrontmost
+          return roleName & tab & subroleName & tab & titleValue & tab & controlValue & tab & windowCount & tab & sheetCount & tab & processFrontmost & tab & mainWindow & tab & focusedWindow & tab & actualFrontmostPid
         end tell
         """
         completed = subprocess.run(
@@ -458,8 +471,8 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         if completed.returncode != 0:
             return {"error": completed.stderr.strip()}
-        fields = completed.stdout.rstrip("\n").split("\t", 6)
-        if len(fields) != 7:
+        fields = completed.stdout.rstrip("\n").split("\t", 9)
+        if len(fields) != 10:
             return {"error": f"unexpected AX response: {completed.stdout!r}"}
         return {
             "role": fields[0],
@@ -469,7 +482,78 @@ class NativeProductClosureGate(AcceptanceGate):
             "windowCount": int(fields[4]),
             "sheetCount": int(fields[5]),
             "frontmost": fields[6] == "true",
+            "mainWindow": fields[7] == "true",
+            "focusedWindow": fields[8] == "true",
+            "actualFrontmostPid": int(fields[9]),
         }
+
+    # #region debug-point AA-AC:native-window-server-ownership
+    def native_window_stack_at_point(
+        self,
+        point: tuple[float, float],
+    ) -> dict[str, Any]:
+        script = r"""
+import json
+import sys
+
+try:
+    import Quartz
+
+    point_x = float(sys.argv[1])
+    point_y = float(sys.argv[2])
+    windows = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly,
+        Quartz.kCGNullWindowID,
+    )
+    owners = []
+    for index, window in enumerate(windows):
+        bounds = window.get(Quartz.kCGWindowBounds) or {}
+        left = float(bounds.get("X", 0))
+        top = float(bounds.get("Y", 0))
+        width = float(bounds.get("Width", 0))
+        height = float(bounds.get("Height", 0))
+        if not (
+            left <= point_x < left + width
+            and top <= point_y < top + height
+        ):
+            continue
+        owners.append(
+            {
+                "index": index,
+                "ownerPid": int(window.get(Quartz.kCGWindowOwnerPID, 0)),
+                "ownerName": str(window.get(Quartz.kCGWindowOwnerName, "")),
+                "windowName": str(window.get(Quartz.kCGWindowName, "")),
+                "layer": int(window.get(Quartz.kCGWindowLayer, 0)),
+                "alpha": float(window.get(Quartz.kCGWindowAlpha, 0)),
+                "bounds": {
+                    "left": left,
+                    "top": top,
+                    "width": width,
+                    "height": height,
+                },
+            }
+        )
+    print(json.dumps({"windows": owners[:16]}))
+except Exception as error:
+    print(json.dumps({"error": f"{type(error).__name__}: {error}"}))
+"""
+        completed = subprocess.run(
+            (sys.executable, "-c", script, str(point[0]), str(point[1])),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return {
+                "error": completed.stderr.strip()
+                or f"window stack probe exited {completed.returncode}"
+            }
+        try:
+            value = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            return {"error": f"invalid window stack probe: {completed.stdout!r}"}
+        return value if isinstance(value, dict) else {"error": "invalid window stack"}
+    # #endregion
 
     def choose_native_file(
         self,
@@ -1034,6 +1118,7 @@ class NativeProductClosureGate(AcceptanceGate):
                             ),
                             "cursor": self.native_cursor_position(),
                             "point": point,
+                            "windowStack": self.native_window_stack_at_point(point),
                             "window": window,
                             "target": target,
                             "probeEvents": probe_events,
