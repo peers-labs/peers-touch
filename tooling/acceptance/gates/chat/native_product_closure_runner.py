@@ -403,20 +403,6 @@ class NativeProductClosureGate(AcceptanceGate):
             if source:
                 core_foundation.CFRelease(source)
 
-    # #region debug-point S-W:native-file-shortcut-delivery
-    def native_modifier_flags(self) -> dict[str, int]:
-        core_graphics = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-        )
-        core_graphics.CGEventSourceFlagsState.argtypes = [ctypes.c_int32]
-        core_graphics.CGEventSourceFlagsState.restype = ctypes.c_uint64
-        return {
-            "private": int(core_graphics.CGEventSourceFlagsState(-1)),
-            "combinedSession": int(core_graphics.CGEventSourceFlagsState(0)),
-            "hidSystem": int(core_graphics.CGEventSourceFlagsState(1)),
-        }
-    # #endregion
-
     def invoke_native_activation_command(
         self,
         client: TauriDriver,
@@ -856,7 +842,6 @@ except Exception as error:
                         "snapshotError": f"{type(error).__name__}: {error}",
                     }
             snapshot["focusedControl"] = control
-            snapshot["modifierFlags"] = self.native_modifier_flags()
             signature = json.dumps(
                 {"phase": phase, "snapshot": snapshot},
                 sort_keys=True,
