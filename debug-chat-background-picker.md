@@ -51,3 +51,18 @@ Post-fix source-bound run:
 - The Gate then timed out waiting for its expected `background="paper"`.
 - The current picker probe stops before reporting the option click target, so
   hypotheses F-I remain inconclusive pending one instrumentation-only run.
+
+Target-trace source-bound run:
+`20260821T115041469608Z-d695551f1a951ba42bee418499bbe071`.
+
+| ID | Status | Evidence |
+|---|---|---|
+| F | Rejected | Lines 5-6 show the intended option and every captured Native event target were both Dusk |
+| G | Confirmed | Line 5 shows `visible_options()[1]` resolved to Dusk while the complete rendered DOM order remained Default, Paper, Mint, Dusk, Calm, Graphite |
+| H | Rejected | The captured Dusk click produced the matching Station patch `background="dusk"` |
+| I | Rejected | The intended node stayed connected and retained Dusk text through the click |
+
+The second root cause is indexing after an animation-sensitive visibility
+filter. The Gate must select the second node from the complete stable rendered
+option order, then let `click_element` wait for that specific Paper node to
+become visible and enabled.
