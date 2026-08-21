@@ -67,6 +67,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("(5, 1, 2)", self.source)
         self.assertIn(".send_keys(", self.source)
 
+    def test_transient_native_actions_resolve_after_idempotent_focus(self) -> None:
+        self.assertIn(
+            'if bool(client.driver.execute_script("return document.hasFocus()")):',
+            self.source,
+        )
+        click_start = self.source.index(
+            "    def click(self, actor: str, selector: str, timeout: float = 30)"
+        )
+        click_end = self.source.index(
+            "    def hover_message(self, actor: str, message_id: str)",
+            click_start,
+        )
+        click_source = self.source[click_start:click_end]
+        self.assertLess(
+            click_source.index("self.focus_actor_window(actor)"),
+            click_source.index("client.find_element(selector, timeout)"),
+        )
+
     def test_gateway_commands_are_readback_only(self) -> None:
         assignment = next(
             node
@@ -136,6 +154,76 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("toast.success({", create_group)
         self.assertIn("placement: 'top'", create_group)
+
+    def test_visible_thread_previews_preserve_reply_identity(self) -> None:
+        message_row = (
+            ROOT / "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
+        ).read_text(encoding="utf-8")
+        self.assertIn("data-thread-preview-message-id={reply.ulid}", message_row)
+        self.assertIn("data-thread-preview-message-content={reply.ulid}", message_row)
+        self.assertIn("[data-thread-preview-message-id]", self.source)
+        self.assertIn("[data-thread-preview-message-content]", self.source)
+
+    def test_top_level_transcript_excludes_rooted_thread_replies(self) -> None:
+        self.assertIn(
+            'expected_top_level_ids = [str(root["id"]), str(bob_root["id"])]',
+            self.source,
+        )
+        self.assertIn('reply["id"] not in top_level_ids', self.source)
+        self.assertIn("alice_transcript == bob_transcript", self.source)
+        self.assertIn('expected in item["content"]', self.source)
+        self.assertNotIn(
+            'len(value := self.transcript("alice")) >= 3',
+            self.source,
+        )
+
+    def test_toolbar_adjacent_rects_cross_webdriver_as_plain_objects(self) -> None:
+        self.assertIn(
+            ".map((item) => rect(item.querySelector('[data-message-content]')))",
+            self.source,
+        )
+        self.assertNotIn(
+            ".map((item) => item.querySelector('[data-message-content]')"
+            "?.getBoundingClientRect())",
+            self.source,
+        )
+
+    def test_reaction_fault_transport_is_ready_before_alice_login(self) -> None:
+        self.assertIn("self.reaction_proxy.start()", self.source)
+        self.assertIn("actor_station_url = (", self.source)
+        self.assertIn("PEERS_STATION_URL", self.source)
+        self.assertNotIn(
+            'self.configure_station(self.clients["alice"], proxy.url)',
+            self.source,
+        )
+        self.assertIn(
+            "'[data-message-reaction-state=\"error\"]'",
+            self.source,
+        )
+        self.assertIn("controlled_loss", self.source)
+        self.assertIn("{self.reaction_proxy.port}", self.source)
+
+    def test_station_attribution_evidence_serializes_sets_as_lists(self) -> None:
+        self.assertIn("station_sets_detail = [", self.source)
+        self.assertIn("json.dumps(station_sets_detail)", self.source)
+        self.assertNotIn("json.dumps(station_sets)", self.source)
+
+    def test_avatar_proof_waits_for_exact_loaded_surfaces(self) -> None:
+        self.assertIn("def loaded_snapshot()", self.source)
+        self.assertIn('f"{actor} exact loaded avatar surfaces"', self.source)
+        self.assertIn("len(entries) >= 3", self.source)
+        self.assertIn("len(sources) == 1", self.source)
+        self.assertIn("all(entry.get(\"loaded\") for entry in entries)", self.source)
+
+    def test_narrow_thread_panel_keeps_native_controls_in_viewport(self) -> None:
+        chat_page = (
+            ROOT / "apps/desktop/src/pages/SocialChatPage.tsx"
+        ).read_text(encoding="utf-8")
+        self.assertIn("data-chat-side-panel-open=", chat_page)
+        self.assertIn("data-chat-conversation-list-shell", chat_page)
+        self.assertIn("@media (max-width: 960px)", chat_page)
+        self.assertIn("overflow-x: hidden !important", chat_page)
+        self.assertIn("min-width: 0 !important", chat_page)
 
 
 if __name__ == "__main__":

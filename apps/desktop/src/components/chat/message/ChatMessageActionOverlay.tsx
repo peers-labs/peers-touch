@@ -366,7 +366,27 @@ export function ChatMessageActionOverlay({
                 type="text"
                 size="small"
                 icon={<MessageSquareReply size={14} />}
-                onClick={() => runAndDismiss(() => onReply(message.ulid))}
+                onClick={() => {
+                  // #region debug-point V-X:reply-action-click
+                  fetch('http://127.0.0.1:7778/event', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      sessionId: 'thread-summary-projection',
+                      runId: 'reply-lifecycle-pre-fix',
+                      hypothesisId: 'V-X',
+                      location: 'ChatMessageActionOverlay:replyClick',
+                      msg: '[DEBUG] reply action click entered',
+                      data: {
+                        messageId: message.ulid,
+                        overlayMessageId: target?.message.ulid || '',
+                        anchorConnected: Boolean(target?.anchorElement.isConnected),
+                      },
+                      ts: Date.now(),
+                    }),
+                  }).catch(() => {});
+                  // #endregion
+                  runAndDismiss(() => onReply(message.ulid));
+                }}
                 style={actionButtonStyle}
               />
             </Tooltip>

@@ -176,6 +176,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.device_ids: dict[str, str] = {}
         self.steps: list[dict[str, Any]] = []
         self.structured_evidence: dict[str, Any] = {}
+        self.reaction_proxy: ProfileThreeSubmitFaultProxy | None = None
         self.fixture_root = Path(tempfile.mkdtemp(prefix="pt-chat-product-closure-"))
         self.binary = Path(find_app_binary()).resolve()
         self.report.station_url = self.station_url
@@ -207,6 +208,11 @@ class NativeProductClosureGate(AcceptanceGate):
     def launch_actor(self, actor: str) -> None:
         spec = self.client_specs[actor]
         window_actors = ("alice", "bob")
+        actor_station_url = (
+            self.reaction_proxy.url
+            if actor == "alice" and self.reaction_proxy is not None
+            else self.station_url
+        )
         client = TauriDriver(
             app_binary=str(self.binary),
             port=int(spec["webdriver_port"]),
@@ -214,7 +220,7 @@ class NativeProductClosureGate(AcceptanceGate):
             profile=str(spec["profile"]),
             storage_root=str(spec["storage_root"]),
             environment={
-                "PEERS_STATION_URL": self.station_url,
+                "PEERS_STATION_URL": actor_station_url,
                 "PT_ACCEPTANCE_WINDOW_SLOT": str(window_actors.index(actor)),
                 "PT_ACCEPTANCE_WINDOW_COUNT": str(len(window_actors)),
             },
@@ -223,7 +229,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.register_driver(client)
         try:
             client.wait_for_acceptance_harness(30)
-            self.configure_station(client, self.station_url)
+            self.configure_station(client, actor_station_url)
             with StationDriver(
                 f"http://127.0.0.1:{client.gateway_port}"
             ) as station:
@@ -338,6 +344,8 @@ class NativeProductClosureGate(AcceptanceGate):
         client = self.clients[actor]
         if client.process_id is None:
             raise GateError(f"{actor} Native window has no running process")
+        if bool(client.driver.execute_script("return document.hasFocus()")):
+            return client
         window = self.native_window(client)
         self.post_mouse(
             (1, 2),
@@ -466,7 +474,7 @@ class NativeProductClosureGate(AcceptanceGate):
         return element
 
     def click(self, actor: str, selector: str, timeout: float = 30) -> Any:
-        client = self.clients[actor]
+        client = self.focus_actor_window(actor)
         element = client.find_element(selector, timeout)
         return self.click_element(actor, element)
 
@@ -616,12 +624,26 @@ class NativeProductClosureGate(AcceptanceGate):
                     const content = item.querySelector('[data-message-content]');
                     return (content?.innerText || '').includes(expected);
                   });
-                if (!row) return null;
+                if (row) {
+                  return {
+                    id: row.getAttribute('data-message-ulid') || '',
+                    sequence: Number(row.getAttribute('data-message-authority-sequence') || 0),
+                    attachmentCount: Number(row.getAttribute('data-message-attachment-count') || 0),
+                    content: row.querySelector('[data-message-content]')?.innerText || '',
+                  };
+                }
+                const preview = Array.from(
+                  document.querySelectorAll('[data-thread-preview-message-id]'),
+                ).find((item) => {
+                  const content = item.querySelector('[data-thread-preview-message-content]');
+                  return (content?.innerText || '').includes(expected);
+                });
+                if (!preview) return null;
                 return {
-                  id: row.getAttribute('data-message-ulid') || '',
-                  sequence: Number(row.getAttribute('data-message-authority-sequence') || 0),
-                  attachmentCount: Number(row.getAttribute('data-message-attachment-count') || 0),
-                  content: row.querySelector('[data-message-content]')?.innerText || '',
+                  id: preview.getAttribute('data-thread-preview-message-id') || '',
+                  sequence: 0,
+                  attachmentCount: 0,
+                  content: preview.querySelector('[data-thread-preview-message-content]')?.innerText || '',
                 };
                 """,
                 text,
@@ -768,28 +790,79 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         self.click("alice", "[data-chat-thread-close]")
 
+        transcript_probe = {
+            actor: [
+                {
+                    **{key: value for key, value in item.items() if key != "content"},
+                    "contentSha256": hashlib.sha256(
+                        str(item.get("content", "")).encode("utf-8")
+                    ).hexdigest(),
+                    "contentLength": len(str(item.get("content", ""))),
+                }
+                for item in self.transcript(actor)
+            ]
+            for actor in ("alice", "bob")
+        }
+        # #region debug-point O-S:top-level-transcript
+        request = urllib.request.Request(
+            "http://127.0.0.1:7780/event",
+            data=json.dumps(
+                {
+                    "sessionId": "chat-transcript-projection",
+                    "runId": "post-fix",
+                    "hypothesisId": "O-S",
+                    "location": "NativeProductClosureGate:prove_transcript_thread",
+                    "msg": "[DEBUG] top-level transcript after thread close",
+                    "data": transcript_probe,
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(request, timeout=2).read()
+        except OSError:
+            pass
+        # #endregion
+
+        expected_top_level_ids = [str(root["id"]), str(bob_root["id"])]
+        expected_top_level_content = [root_text, bob_text]
         alice_transcript = wait_until(
             lambda: (
                 value
-                if len(value := self.transcript("alice")) >= 3
+                if (value := self.transcript("alice"))
+                and [item["id"] for item in value] == expected_top_level_ids
                 else None
             ),
-            "Alice complete transcript",
+            "Alice exact top-level transcript",
             timeout=120,
         )
         bob_transcript = wait_until(
             lambda: (
                 value
-                if len(value := self.transcript("bob")) == len(alice_transcript)
+                if (value := self.transcript("bob"))
+                and [item["id"] for item in value] == expected_top_level_ids
                 else None
             ),
-            "Bob complete transcript",
+            "Bob exact top-level transcript",
             timeout=120,
         )
+        top_level_ids = [item["id"] for item in alice_transcript]
+        authority_sequences = [item["sequence"] for item in alice_transcript]
         self.assert_condition(
             "transcript_exact",
             alice_transcript == bob_transcript
-            and all(item["sequence"] > 0 for item in alice_transcript),
+            and top_level_ids == expected_top_level_ids
+            and all(
+                expected in item["content"]
+                for item, expected in zip(
+                    alice_transcript,
+                    expected_top_level_content,
+                )
+            )
+            and reply["id"] not in top_level_ids
+            and all(sequence > 0 for sequence in authority_sequences)
+            and authority_sequences == sorted(authority_sequences),
             json.dumps({"alice": alice_transcript, "bob": bob_transcript}),
         )
         self.structured_evidence["transcriptThread"] = {
@@ -815,9 +888,6 @@ class NativeProductClosureGate(AcceptanceGate):
             const pane = document.querySelector('[data-chat-conversation-pane]');
             const rows = Array.from(document.querySelectorAll('[data-message-ulid]'));
             const index = rows.indexOf(row);
-            const adjacent = [rows[index - 1], rows[index + 1]].filter(Boolean)
-              .map((item) => item.querySelector('[data-message-content]')?.getBoundingClientRect())
-              .filter(Boolean);
             const rect = (element) => {
               const value = element?.getBoundingClientRect();
               return value ? {
@@ -825,6 +895,9 @@ class NativeProductClosureGate(AcceptanceGate):
                 width: value.width, height: value.height,
               } : null;
             };
+            const adjacent = [rows[index - 1], rows[index + 1]].filter(Boolean)
+              .map((item) => rect(item.querySelector('[data-message-content]')))
+              .filter(Boolean);
             return {
               overlay: rect(overlay),
               selected: rect(content),
@@ -916,32 +989,87 @@ class NativeProductClosureGate(AcceptanceGate):
         )
 
         failure_emoji = "🔥"
-        proxy = ProfileThreeSubmitFaultProxy(self.station_url)
-        proxy.start()
+        proxy = self.reaction_proxy
+        if proxy is None:
+            raise GateError("reaction fault proxy is not running")
         try:
-            self.configure_station(self.clients["alice"], proxy.url)
             proxy.arm_connection_loss()
             self.choose_reaction("alice", message_id, failure_emoji)
-            error_row = wait_until(
-                lambda: (
-                    row
-                    if (
-                        row := self.clients["alice"].find_element(
-                            f'[data-message-ulid="{message_id}"]',
-                            5,
-                        )
-                    ).get_attribute("data-message-reaction-state")
-                    == "error"
-                    else None
-                ),
+            last_error_snapshot: dict[str, Any] | None = None
+
+            def actionable_error() -> Any | None:
+                nonlocal last_error_snapshot
+                row = self.clients["alice"].find_element(
+                    f'[data-message-ulid="{message_id}"]',
+                    5,
+                )
+                snapshot = self.clients["alice"].execute_script(
+                    """
+                    const row = arguments[0];
+                    return {
+                      rowState: row.getAttribute('data-message-reaction-state') || '',
+                      descendants: Array.from(
+                        row.querySelectorAll('[data-message-reaction-state]'),
+                      ).map((item) => ({
+                        state: item.getAttribute('data-message-reaction-state') || '',
+                        emoji: item.getAttribute('data-message-reaction-emoji') || '',
+                        retryCount: item.querySelectorAll(
+                          '[data-message-reaction-retry]',
+                        ).length,
+                      })),
+                    };
+                    """,
+                    row,
+                )
+                snapshot["proxy"] = proxy.evidence()
+                if snapshot != last_error_snapshot:
+                    # #region debug-point A-D:reaction-error-surface
+                    request = urllib.request.Request(
+                        "http://127.0.0.1:7781/event",
+                        data=json.dumps(
+                            {
+                                "sessionId": "chat-reaction-recovery",
+                                "runId": "pre-fix",
+                                "hypothesisId": "A-D",
+                                "location":
+                                    "NativeProductClosureGate:prove_reaction",
+                                "msg":
+                                    "[DEBUG] reaction failure surface snapshot",
+                                "data": snapshot,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    try:
+                        urllib.request.urlopen(request, timeout=2).read()
+                    except OSError:
+                        pass
+                    # #endregion
+                    last_error_snapshot = snapshot
+                error_surfaces = row.find_elements(
+                    By.CSS_SELECTOR,
+                    '[data-message-reaction-state="error"]',
+                )
+                proxy_evidence = snapshot["proxy"]
+                command_hashes = proxy_evidence.get("commandSha256") or []
+                controlled_loss = (
+                    int(proxy_evidence.get("connectionLossCount") or 0) >= 1
+                    and bool(proxy_evidence.get("requestSha256"))
+                    and bool(command_hashes)
+                    and len(set(command_hashes)) == 1
+                )
+                return error_surfaces[0] if error_surfaces and controlled_loss else None
+
+            error_surface = wait_until(
+                actionable_error,
                 "reaction actionable error",
                 timeout=30,
             )
             if self.reaction_visible("alice", message_id, failure_emoji):
                 raise GateError("failed reaction remained as terminal optimistic state")
             proxy.disarm()
-            self.configure_station(self.clients["alice"], self.station_url)
-            retry = error_row.find_element(
+            retry = error_surface.find_element(
                 By.CSS_SELECTOR,
                 f'[data-message-reaction-retry="{message_id}"]',
             )
@@ -959,8 +1087,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 "recovered": True,
             }
         finally:
-            proxy.stop()
-            self.configure_station(self.clients["alice"], self.station_url)
+            proxy.disarm()
 
     def open_details(self, actor: str) -> Any:
         if not self.clients[actor].find_elements("[data-chat-detail-panel='open']"):
@@ -1002,9 +1129,31 @@ class NativeProductClosureGate(AcceptanceGate):
         return value if isinstance(value, dict) else {}
 
     def prove_identity_station(self) -> None:
-        snapshots = {
-            actor: self.identity_snapshot(actor) for actor in ("alice", "bob")
-        }
+        snapshots: dict[str, dict[str, Any]] = {}
+        for actor in ("alice", "bob"):
+            expected_peer = self.ptids["bob" if actor == "alice" else "alice"]
+
+            def loaded_snapshot() -> dict[str, Any] | None:
+                snapshot = self.identity_snapshot(actor)
+                entries = snapshot.get("identities", {}).get(expected_peer, [])
+                sources = {
+                    entry.get("src") for entry in entries if entry.get("src")
+                }
+                return (
+                    snapshot
+                    if (
+                        len(entries) >= 3
+                        and len(sources) == 1
+                        and all(entry.get("loaded") for entry in entries)
+                    )
+                    else None
+                )
+
+            snapshots[actor] = wait_until(
+                loaded_snapshot,
+                f"{actor} exact loaded avatar surfaces",
+                timeout=30,
+            )
         for actor, snapshot in snapshots.items():
             expected_peer = self.ptids["bob" if actor == "alice" else "alice"]
             entries = snapshot.get("identities", {}).get(expected_peer, [])
@@ -1026,12 +1175,16 @@ class NativeProductClosureGate(AcceptanceGate):
                 if node.get("state") == "available" and node.get("visible")
             }
             station_sets.append(ids)
+        station_sets_detail = [
+            sorted(str(station_id) for station_id in station_ids if station_id)
+            for station_ids in station_sets
+        ]
         self.assert_condition(
             "station_attribution_exact",
             len(station_sets) == 2
             and len(station_sets[0]) == 1
             and station_sets[0] == station_sets[1],
-            json.dumps(station_sets),
+            json.dumps(station_sets_detail),
         )
         self.structured_evidence["identityStation"] = snapshots
 
@@ -1444,12 +1597,20 @@ class NativeProductClosureGate(AcceptanceGate):
                 int(spec["gateway_port"])
                 for spec in self.client_specs.values()
             }
+            | (
+                {self.reaction_proxy.port}
+                if self.reaction_proxy is not None
+                else set()
+            )
         )
         for client in self.clients.values():
             client.stop()
+        if self.reaction_proxy is not None:
+            self.reaction_proxy.disarm()
+            self.reaction_proxy.stop()
         released = wait_until(
             lambda: all(port_is_free(port) for port in ports),
-            "Native client port release",
+            "Native client and fault proxy port release",
             timeout=30,
         )
         result = {"ports": ports, "released": bool(released)}
@@ -1496,6 +1657,8 @@ class NativeProductClosureGate(AcceptanceGate):
 
         cleanup: dict[str, Any] = {}
         try:
+            self.reaction_proxy = ProfileThreeSubmitFaultProxy(self.station_url)
+            self.reaction_proxy.start()
             for actor in ("alice", "bob"):
                 self.step(f"{actor}.launch", lambda actor=actor: self.launch_actor(actor))
             group_id = self.step("group.create.ui", self.open_group_through_ui)

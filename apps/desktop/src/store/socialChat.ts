@@ -802,6 +802,17 @@ export function socialThreadKey(kind: 'friend' | 'group', ulid: string, rootUlid
   return `${kind}:${ulid}:${rootUlid}`;
 }
 
+export function resolveReplyThreadRootUlid(
+  messages: ReadonlyArray<{ ulid: string; threadRootUlid?: string }>,
+  replyToUlid?: string,
+  explicitThreadRootUlid?: string,
+): string | undefined {
+  if (explicitThreadRootUlid) return explicitThreadRootUlid;
+  if (!replyToUlid) return undefined;
+  const replyTarget = messages.find(message => message.ulid === replyToUlid);
+  return replyTarget?.threadRootUlid || replyToUlid;
+}
+
 function conversationStateStorageKey(ptid: string | null): string {
   return `socialChat:conversationLocalState:${ptid || 'anonymous'}`;
 }
@@ -1230,6 +1241,36 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const msgs = projections.map(projection =>
         projectMessagingProjection(activeTab, ulid, projection),
       );
+      // #region debug-point B-D:message-relation-projection
+      const relationProjections = projections
+        .filter(projection => (
+          Boolean(projection.replyToMessageId)
+          || Boolean(projection.threadRootMessageId)
+        ))
+        .map(projection => ({
+          messageId: projection.messageId,
+          replyToMessageId: projection.replyToMessageId ?? '',
+          threadRootMessageId: projection.threadRootMessageId ?? '',
+        }));
+      if (relationProjections.length > 0) {
+        fetch('http://127.0.0.1:7778/event', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: 'thread-summary-projection',
+            runId: 'post-fix',
+            hypothesisId: 'B-D',
+            location: 'socialChat:loadMessages',
+            msg: '[DEBUG] Messaging relation projection loaded',
+            data: {
+              conversationId: ulid,
+              kind: activeTab,
+              relationProjections,
+            },
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+      }
+      // #endregion
       const visibleMsgs = filterClearedMessages(
         msgs,
         get().conversationLocalState,
@@ -1405,9 +1446,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       if ((type ?? 1) !== 1 && !attachments?.length) {
         throw new Error('This message type has not been migrated to the Messaging Engine');
       }
+      const threadRootUlid = resolveReplyThreadRootUlid(
+        get().messages[sessionUlid] ?? [],
+        replyToUlid,
+        explicitThreadRootUlid,
+      );
       const outcome = await imServiceV1.messaging.sendMessage(sessionUlid, 'direct', content, attachments, {
         replyToMessageId: replyToUlid,
-        threadRootMessageId: explicitThreadRootUlid,
+        threadRootMessageId: threadRootUlid,
       });
       set((state) => ({
         sendOutcomes: {
@@ -1444,9 +1490,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       if ((type ?? 1) !== 1 && !attachments?.length) {
         throw new Error('This message type has not been migrated to the Messaging Engine');
       }
+      const threadRootUlid = resolveReplyThreadRootUlid(
+        get().messages[groupUlid] ?? [],
+        _replyToUlid,
+        explicitThreadRootUlid,
+      );
       const outcome = await imServiceV1.messaging.sendMessage(groupUlid, 'group', content, attachments, {
         replyToMessageId: _replyToUlid,
-        threadRootMessageId: explicitThreadRootUlid,
+        threadRootMessageId: threadRootUlid,
       });
       set((state) => ({
         sendOutcomes: {
