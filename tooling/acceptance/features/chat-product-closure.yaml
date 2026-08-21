@@ -1,0 +1,60 @@
+{
+  "id": "chat-product-closure",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "model/domain/chat/conversation_api.proto",
+    "apps/station/app/subserver/conversation/**",
+    "apps/desktop/src-tauri/src/messaging/**",
+    "apps/desktop/src/services/im-service*",
+    "apps/desktop/src/store/socialChat.ts",
+    "apps/desktop/src/components/chat/**",
+    "tooling/acceptance/gates/chat/native_product_closure_runner.py"
+  ],
+  "truth_sources": [
+    "Station conversation authority and per-actor member settings",
+    "Device Messaging Engine SQLCipher message, thread, reaction and attachment projections",
+    "Desktop socialChat runtime projection",
+    "visible native Tauri DOM"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop-native", "client": "alice"},
+    {"type": "desktop-native", "client": "bob"},
+    {"type": "desktop-dom", "selector": "[data-message-ulid]"},
+    {"type": "desktop-dom", "selector": "[data-chat-thread-panel]"},
+    {"type": "desktop-dom", "selector": "[data-message-action-overlay]"},
+    {"type": "desktop-dom", "selector": "[data-chat-station-id]"},
+    {"type": "desktop-dom", "selector": "[data-chat-conversation-action]"},
+    {"type": "desktop-dom", "selector": "[data-chat-attachment-picker]"},
+    {"type": "desktop-dom", "selector": "[data-chat-detail-attachments]"}
+  ],
+  "required_gates": [
+    "desktop-check",
+    "station-messaging-unit",
+    "chat-native-visible-static",
+    "chat-native-product-closure-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "complete Alice and Bob transcript IDs, authority order and content are equal",
+      "thread summary reply IDs and count equal the visible thread panel",
+      "reaction pending, rollback and retry converge to Station and Engine truth",
+      "mute, pin, background and clear cursor persist as per-actor Station settings",
+      "uploaded background uses a sanctioned OSS bucket and a typed OSS reference",
+      "attachment counts are conserved from Composer through Engine, both message rows and Details"
+    ],
+    "visible": [
+      "Alice and Bob use the real picker, hover toolbar, reaction picker, Details actions, attachment picker and send button",
+      "one PTID resolves to the same loaded avatar URL across message, conversation list and Details",
+      "Station attribution is visible and equal in both clients",
+      "toolbar geometry remains inside pane and viewport without intersecting selected or adjacent message content",
+      "restart restores settings, background, transcript, reactions, threads and attachments"
+    ]
+  },
+  "negative": [
+    "Store actions, fixed commands and Acceptance Harness methods must not substitute for claimed Chat UI actions",
+    "failed upload or send must not clear the Composer draft or create an empty message",
+    "static selectors, API readback or screenshots alone must not prove the native journey",
+    "missing source, build, runtime, screenshot, DOM, geometry or cleanup identity fails the Gate"
+  ]
+}

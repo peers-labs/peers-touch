@@ -606,7 +606,7 @@ export interface OssUploadLocalFileInput {
   chat_session_id?: string | null;
 }
 
-export interface AgentUploadAttachmentBytesInput {
+export interface OssUploadAttachmentBytesInput {
   filename: string;
   mime_type: string;
   bytes: number[];
@@ -615,6 +615,8 @@ export interface AgentUploadAttachmentBytesInput {
   /** Required when `visibility` is `chat`. */
   chat_session_id?: string | null;
 }
+
+export type AgentUploadAttachmentBytesInput = OssUploadAttachmentBytesInput;
 
 /**
  * Payload returned by `oss_upload_local_file` /
@@ -3237,6 +3239,12 @@ export const api = {
   ossUploadLocalFile: (input: OssUploadLocalFileInput) =>
     invokeRustDataFromStatus<OssUploadLocalFileInput, OssAttachmentUploaded>(
       'oss_upload_local_file',
+      input,
+    ),
+
+  ossUploadAttachmentBytes: (input: OssUploadAttachmentBytesInput) =>
+    invokeRustDataFromStatus<OssUploadAttachmentBytesInput, OssAttachmentUploaded>(
+      'oss_upload_attachment_bytes',
       input,
     ),
 

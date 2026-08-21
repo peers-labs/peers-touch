@@ -1,12 +1,9 @@
-import { useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography } from 'antd';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import {
-  buildChatMessageSurfaceItems,
-  countChatThreadReplies,
-} from '@peers-touch/client-chat-core';
+import { buildChatMessageSurfaceItems } from '@peers-touch/client-chat-core';
 
 import type { DesktopIMSenderProfileProjection } from '../../../store/socialProjection';
 import {
@@ -14,12 +11,17 @@ import {
   type ChatMessage,
   type ChatSurfaceKind,
 } from './chatMessageModel';
+import {
+  ChatMessageActionOverlay,
+  type MessageActionTarget,
+} from './ChatMessageActionOverlay';
 import { ChatMessageRow, ChatMessageRowInteractionStyle } from './ChatMessageRow';
 
 const { Text } = Typography;
 
 interface ChatThreadStats {
   replyCount: number;
+  replyIds: string[];
   unreadCount: number;
   previewMessages: ChatMessage[];
 }
@@ -41,11 +43,17 @@ interface ChatMessageTimelineProps {
   onForward: (message: ChatMessage) => void;
   onOpenThread: (rootUlid: string) => void;
   onPin: (message: ChatMessage) => void;
-  onReact: (message: ChatMessage) => void;
+  onReact: (message: ChatMessage, emoji: string) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
+  onRetryReaction: (message: ChatMessage) => void;
+  reactionMutationFor: (message: ChatMessage) => {
+    emoji: string;
+    phase: 'pending' | 'awaiting-projection' | 'error';
+  } | undefined;
   resolveReactions: (message: ChatMessage) => { actorId: string; emoji: string }[];
   resolveThreadStats: (message: ChatMessage) => ChatThreadStats;
+  actionOverlayHostRef: React.RefObject<HTMLDivElement | null>;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -92,10 +100,6 @@ function DateSeparator({ date }: { date: Date }) {
   );
 }
 
-export function loadedThreadReplyCount(messages: ChatMessage[], rootUlid: string): number {
-  return countChatThreadReplies(messages, rootUlid);
-}
-
 const ESTIMATED_ROW_HEIGHT = 72;
 
 export function ChatMessageTimeline({
@@ -114,8 +118,11 @@ export function ChatMessageTimeline({
   onReact,
   onRecall,
   onReply,
+  onRetryReaction,
+  reactionMutationFor,
   resolveReactions,
   resolveThreadStats,
+  actionOverlayHostRef,
   scrollContainerRef,
 }: ChatMessageTimelineProps) {
   const surfaceItems = buildChatMessageSurfaceItems({
@@ -124,6 +131,49 @@ export function ChatMessageTimeline({
   });
 
   const measureRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const closeActionsTimerRef = useRef<number | null>(null);
+  const [actionTarget, setActionTarget] = useState<MessageActionTarget | null>(null);
+
+  const cancelActionClose = useCallback(() => {
+    if (closeActionsTimerRef.current === null) return;
+    window.clearTimeout(closeActionsTimerRef.current);
+    closeActionsTimerRef.current = null;
+  }, []);
+
+  const dismissActions = useCallback(() => {
+    cancelActionClose();
+    setActionTarget(null);
+  }, [cancelActionClose]);
+
+  const scheduleActionClose = useCallback(() => {
+    cancelActionClose();
+    closeActionsTimerRef.current = window.setTimeout(() => {
+      setActionTarget(null);
+      closeActionsTimerRef.current = null;
+    }, 140);
+  }, [cancelActionClose]);
+
+  const activateActions = useCallback((
+    message: ChatMessage,
+    anchorElement: HTMLElement,
+    requestFocus: boolean,
+  ) => {
+    cancelActionClose();
+    setActionTarget({
+      activatedAtMs: Date.now(),
+      message,
+      anchorElement,
+      requestFocus,
+    });
+  }, [cancelActionClose]);
+
+  useEffect(() => () => cancelActionClose(), [cancelActionClose]);
+
+  useEffect(() => {
+    if (!actionTarget) return;
+    if (messages.some(message => message.ulid === actionTarget.message.ulid)) return;
+    dismissActions();
+  }, [actionTarget, dismissActions, messages]);
 
   const virtualizer = useVirtualizer({
     count: surfaceItems.length,
@@ -150,6 +200,24 @@ export function ChatMessageTimeline({
   return (
     <>
       <ChatMessageRowInteractionStyle />
+      <ChatMessageActionOverlay
+        key={actionTarget?.message.ulid ?? 'no-message-action'}
+        currentUserDid={currentUserDid}
+        hostElement={actionOverlayHostRef.current}
+        onDelete={onDelete}
+        onDismiss={dismissActions}
+        onEdit={onEdit}
+        onForward={onForward}
+        onOpenThread={onOpenThread}
+        onPin={onPin}
+        onPointerEnter={cancelActionClose}
+        onPointerLeave={scheduleActionClose}
+        onReact={onReact}
+        onRecall={onRecall}
+        onReply={onReply}
+        target={actionTarget}
+        viewportElement={scrollContainerRef.current}
+      />
       <div
         style={{
           height: virtualizer.getTotalSize(),
@@ -162,6 +230,7 @@ export function ChatMessageTimeline({
           const message = item.message;
           const messageDate = item.timestampMs > 0 ? new Date(item.timestampMs) : null;
           const threadStats = resolveThreadStats(message);
+          const reactionMutation = reactionMutationFor(message);
 
           return (
             <div
@@ -189,17 +258,18 @@ export function ChatMessageTimeline({
                 highlighted={highlightedMessageUlid === message.ulid}
                 message={message}
                 messages={messages}
-                onDelete={onDelete}
-                onEdit={onEdit}
-                onForward={onForward}
+                onActionTargetChange={activateActions}
+                onActionTargetLeave={scheduleActionClose}
                 onOpenThread={onOpenThread}
                 onPin={onPin}
                 onReact={onReact}
-                onRecall={onRecall}
-                onReply={onReply}
+                onRetryReaction={onRetryReaction}
                 pinned={isPinned(message)}
+                reactionMutationEmoji={reactionMutation?.emoji}
+                reactionMutationPhase={reactionMutation?.phase}
                 reactions={resolveReactions(message)}
                 threadReplyCount={threadStats.replyCount}
+                threadReplyIds={threadStats.replyIds}
                 threadUnreadCount={threadStats.unreadCount}
                 threadPreviewMessages={threadStats.previewMessages}
                 timelineGap={item.timelineGap}
