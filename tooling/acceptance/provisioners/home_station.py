@@ -26,7 +26,9 @@ from tooling.acceptance.fixtures.chat_native_actors import produce_actor_manifes
 
 GATE_ROLES = {
     "chat-native-two-client-e2e": ("alice", "bob"),
+    "chat-native-product-closure-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
+    "chat-contact-message-resilience-e2e": ("alice", "bob"),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
     "chat-native-multi-device-e2e": ("alice", "bob"),
     "chat-native-recovery-e2e": ("alice", "bob"),
@@ -35,7 +37,9 @@ GATE_ROLES = {
 
 CLIENT_ROLES = {
     "chat-native-two-client-e2e": ("alice", "bob"),
+    "chat-native-product-closure-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
+    "chat-contact-message-resilience-e2e": ("alice",),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
     "chat-native-multi-device-e2e": ("alice", "bob1", "bob2"),
     "chat-native-recovery-e2e": ("alice", "bob"),

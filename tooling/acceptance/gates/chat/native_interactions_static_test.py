@@ -61,6 +61,9 @@ class NativeInteractionContractsTest(unittest.TestCase):
         row = self.source(
             "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
         )
+        overlay = self.source(
+            "apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx"
+        )
         area = self.source("apps/desktop/src/components/chat/ChatMessageArea.tsx")
         thread = self.source("apps/desktop/src/components/chat/ChatThreadPanel.tsx")
         for selector in (
@@ -68,6 +71,9 @@ class NativeInteractionContractsTest(unittest.TestCase):
             'data-message-action="retract"',
             'data-message-action="reaction"',
             'data-message-action="pin"',
+        ):
+            self.assertIn(selector, overlay)
+        for selector in (
             "data-message-edited=",
             "data-message-retracted=",
             "data-message-reply-to=",
@@ -325,9 +331,23 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "engine must provide recover_stale_enrollment for endpoint-not-active recovery",
         )
         self.assertIn(
-            "endpoint is not active", src,
-            "engine must detect 'endpoint is not active' Station errors",
+            "is_stale_endpoint_error", src,
+            "engine must provide is_stale_endpoint_error to detect stale endpoint errors "
+            "from both explicit messages and empty-body 403 responses",
         )
+
+        helper = src.find("fn is_stale_endpoint_error")
+        self.assertGreater(helper, 0)
+        self.assertIn(
+            "endpoint is not active", src[helper:helper + 300],
+            "is_stale_endpoint_error must detect 'endpoint is not active' in error text",
+        )
+        self.assertIn(
+            "station returned 403", src[helper:helper + 300],
+            "is_stale_endpoint_error must detect 'station returned 403' because protobuf "
+            "endpoints return 403 with empty body when the endpoint is not active",
+        )
+
         create_direct = src.find("fn create_direct_conversation")
         self.assertGreater(create_direct, 0)
 
@@ -337,10 +357,10 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "create_direct_conversation must delegate to try_create_direct_conversation",
         )
 
-        guard = src.find("endpoint is not active", first_attempt)
+        guard = src.find("is_stale_endpoint_error", first_attempt)
         self.assertGreater(
             guard, first_attempt,
-            "recovery must be guarded by 'endpoint is not active' error match",
+            "recovery must be guarded by is_stale_endpoint_error",
         )
 
         recovery = src.find("recover_stale_enrollment", guard)
@@ -360,10 +380,20 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "without the retry the recovery has no effect",
         )
 
+        recovery_block = src[recovery:enroll]
+        self.assertNotIn(
+            "if self.recover_stale_enrollment",
+            recovery_block,
+            "enroll_pending_device must NOT be gated on recover_stale_enrollment's return "
+            "value: when the device is already in awaiting_device_enrollment state, "
+            "reset_device_enrollment returns false but the pending enrollment still "
+            "needs to be submitted to Station",
+        )
+
         non_matching_arm = src.find("Err(error) => Err(error)", retry)
         self.assertGreater(
             non_matching_arm, 0,
-            "non-'endpoint is not active' errors must pass through without recovery",
+            "non-stale-endpoint errors must pass through without recovery",
         )
 
     def test_store_has_reset_device_enrollment(self) -> None:
@@ -391,10 +421,6 @@ class ContactMessageResilienceTest(unittest.TestCase):
     def test_lifecycle_recovers_stale_enrollment(self) -> None:
         src = self.source("apps/desktop/src-tauri/src/messaging/lifecycle.rs")
         self.assertIn(
-            "endpoint is not active", src,
-            "lifecycle must detect 'endpoint is not active' in cycle failures",
-        )
-        self.assertIn(
             "recover_stale_enrollment", src,
             "lifecycle must call engine.recover_stale_enrollment on stale endpoint errors",
         )
@@ -414,6 +440,12 @@ class ContactMessageResilienceTest(unittest.TestCase):
             err_return, recovery,
             "the cycle error must still be propagated as Err(combined) after "
             "attempting recovery; recovery is a side-effect, not a success override",
+        )
+        self.assertNotIn(
+            'combined.contains("endpoint is not active")', src,
+            "lifecycle must not duplicate the stale-endpoint string check; "
+            "recover_stale_enrollment now internally detects both 'endpoint is not active' "
+            "and 'station returned 403' via is_stale_endpoint_error",
         )
 
     def test_contact_double_click_starts_chat(self) -> None:

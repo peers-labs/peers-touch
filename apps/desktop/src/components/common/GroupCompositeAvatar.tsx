@@ -3,6 +3,7 @@ import { Users } from 'lucide-react';
 import { UserSquareAvatar } from './UserSquareAvatar';
 
 export interface GroupAvatarSlot {
+  ptid?: string;
   name: string;
   avatar: string;
 }
@@ -55,6 +56,9 @@ export function GroupCompositeAvatar({ members, size = 36, gap = 1 }: GroupCompo
       {slots.map((member, i) => (
         <div
           key={i}
+          data-chat-group-avatar-slot={member.ptid || ''}
+          data-chat-avatar-ptid={member.ptid || ''}
+          data-chat-avatar-src={member.avatar}
           style={{
             position: 'absolute',
             top: positions[i].top,

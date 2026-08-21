@@ -18,7 +18,11 @@ import {
   useSocialChatStore,
   socialThreadKey,
 } from '../../store/socialChat';
-import type { DesktopIMSenderProfileProjection } from '../../store/socialProjection';
+import {
+  projectDesktopIMMessages,
+  type DesktopIMSenderProfileProjection,
+  type SocialMessage,
+} from '../../store/socialProjection';
 import { log } from '../../utils/logger';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
@@ -36,6 +40,7 @@ import {
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 
 const { Text } = Typography;
+const EMPTY_SOCIAL_MESSAGES: SocialMessage[] = [];
 
 /**
  * Mirrors `application.DefaultMutationWindow` on the Station side and
@@ -124,12 +129,17 @@ function ThreadMessageItem({
       }}
       className="thread-comment-row"
     >
-      <UserSquareAvatar
-        remoteUrl={senderProfile.avatar}
-        name={senderProfile.name}
-        size={root ? 30 : 28}
-        style={{ flexShrink: 0 }}
-      />
+      <span
+        data-chat-avatar-ptid={message.senderId}
+        data-chat-avatar-src={senderProfile.avatar}
+        style={{ display: 'inline-flex', flexShrink: 0 }}
+      >
+        <UserSquareAvatar
+          remoteUrl={senderProfile.avatar}
+          name={senderProfile.name}
+          size={root ? 30 : 28}
+        />
+      </span>
       <Flexbox gap={5} style={{ flex: 1, minWidth: 0 }}>
         <Flexbox horizontal align="center" justify="space-between" gap={8}>
           <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
@@ -222,6 +232,10 @@ export function ChatThreadPanel() {
     threadHasMore,
     threadNextCursor,
     currentUserDid,
+    currentUserProfile,
+    peerProfiles,
+    sessions,
+    groupMembers,
     openThreadRootUlid,
     closeThread,
     loadThreadMessages,
@@ -235,8 +249,6 @@ export function ChatThreadPanel() {
     recallFriendMessage,
     recallGroupMessage,
     getIMConversations,
-    getIMMessages,
-    getIMThreadMessages,
     getIMSenderProfile,
   } = useActiveSocialChatSlice((s) => ({
     activeTab: s.activeTab,
@@ -248,6 +260,10 @@ export function ChatThreadPanel() {
     threadHasMore: s.threadHasMore,
     threadNextCursor: s.threadNextCursor,
     currentUserDid: s.currentUserDid,
+    currentUserProfile: s.currentUserProfile,
+    peerProfiles: s.peerProfiles,
+    sessions: s.sessions,
+    groupMembers: s.groupMembers,
     openThreadRootUlid: s.openThreadRootUlid,
     closeThread: s.closeThread,
     loadThreadMessages: s.loadThreadMessages,
@@ -261,10 +277,12 @@ export function ChatThreadPanel() {
     recallFriendMessage: s.recallFriendMessage,
     recallGroupMessage: s.recallGroupMessage,
     getIMConversations: s.getIMConversations,
-    getIMMessages: s.getIMMessages,
-    getIMThreadMessages: s.getIMThreadMessages,
     getIMSenderProfile: s.getIMSenderProfile,
   }));
+  void currentUserProfile;
+  void peerProfiles;
+  void sessions;
+  void groupMembers;
   const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
@@ -273,19 +291,29 @@ export function ChatThreadPanel() {
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
+  const threadKey = activeUlid && openThreadRootUlid
+    ? socialThreadKey(activeKind, activeUlid, openThreadRootUlid)
+    : '';
+  const currentMessageProjection = useSocialChatStore((state) => (
+    activeUlid ? state.messages[activeUlid] ?? EMPTY_SOCIAL_MESSAGES : EMPTY_SOCIAL_MESSAGES
+  ));
+  const loadedThreadProjection = useSocialChatStore((state) => (
+    threadKey ? state.threadMessages[threadKey] ?? EMPTY_SOCIAL_MESSAGES : EMPTY_SOCIAL_MESSAGES
+  ));
   const activeConversation = activeUlid
     ? getIMConversations().find((conversation) => conversation.kind === activeKind && conversation.id === activeUlid)
     : undefined;
   const currentMessages = useMemo(
-    () => (activeUlid ? getIMMessages(activeKind, activeUlid) : []),
-    [activeKind, activeUlid, getIMMessages],
+    () => activeUlid
+      ? projectDesktopIMMessages(activeKind, activeUlid, currentMessageProjection)
+      : [],
+    [activeKind, activeUlid, currentMessageProjection],
   );
-  const threadKey = activeUlid && openThreadRootUlid
-    ? socialThreadKey(activeKind, activeUlid, openThreadRootUlid)
-    : '';
   const loadedThreadMessages = useMemo(
-    () => (activeUlid && openThreadRootUlid ? getIMThreadMessages(activeKind, activeUlid, openThreadRootUlid) : []),
-    [activeKind, activeUlid, getIMThreadMessages, openThreadRootUlid],
+    () => activeUlid && openThreadRootUlid
+      ? projectDesktopIMMessages(activeKind, activeUlid, loadedThreadProjection)
+      : [],
+    [activeKind, activeUlid, loadedThreadProjection, openThreadRootUlid],
   );
   const loadingThread = threadKey ? threadLoading[threadKey] === true : false;
   const loadingMoreReplies = threadKey ? threadLoadingMore[threadKey] === true : false;
@@ -494,6 +522,7 @@ export function ChatThreadPanel() {
             style={{ width: 28, height: 28 }}
           />
           <Button
+            data-chat-thread-close
             type="text"
             title={t('chat.social.thread.close')}
             aria-label={t('chat.social.thread.close')}

@@ -8,11 +8,15 @@ from tooling.acceptance.core import (
 
 from .home_station import HomeStationProvisioner
 from .local_desktop_gateway import LocalDesktopGatewayProvisioner
+from .native_tauri_embedded_webdriver import (
+    NativeTauriEmbeddedWebDriverProvisioner,
+)
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     HomeStationProvisioner.environment_id: HomeStationProvisioner,
     LocalDesktopGatewayProvisioner.environment_id: LocalDesktopGatewayProvisioner,
+    NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
 }
 
 
@@ -28,5 +32,6 @@ def get_provisioner(contract: EnvironmentContract) -> EnvironmentProvisioner:
 __all__ = [
     "HomeStationProvisioner",
     "LocalDesktopGatewayProvisioner",
+    "NativeTauriEmbeddedWebDriverProvisioner",
     "get_provisioner",
 ]

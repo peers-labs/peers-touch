@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   chatMediaKindFromMimeFilename,
   type ChatMediaTransferStatus,
@@ -19,6 +20,7 @@ export interface ChatDraftAttachment {
   size: number;
   durationSeconds?: number;
   previewUrl: string | null;
+  ownsPreviewUrl: boolean;
   status: ChatDraftStatus;
   managedSource: boolean;
   attachment?: MessagingLocalAttachmentIntent;
@@ -36,8 +38,30 @@ function nextDraftId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-function revokePreviewUrl(item: ChatDraftAttachment): void {
-  if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+export interface ChatAttachmentPreview {
+  previewUrl: string | null;
+  ownsPreviewUrl: boolean;
+}
+
+export function createChatAttachmentPreview(
+  mimeType: string,
+  filename: string,
+  source: File | string,
+): ChatAttachmentPreview {
+  const mediaKind = chatMediaKindFromMimeFilename(mimeType, filename);
+  if (mediaKind !== 'image' && mediaKind !== 'video') {
+    return { previewUrl: null, ownsPreviewUrl: false };
+  }
+  if (typeof source === 'string') {
+    return { previewUrl: convertFileSrc(source), ownsPreviewUrl: false };
+  }
+  return { previewUrl: URL.createObjectURL(source), ownsPreviewUrl: true };
+}
+
+export function revokeChatAttachmentPreview(preview: ChatAttachmentPreview): void {
+  if (preview.ownsPreviewUrl && preview.previewUrl?.startsWith('blob:')) {
+    URL.revokeObjectURL(preview.previewUrl);
+  }
 }
 
 interface AddDraftFilesOptions {
@@ -50,7 +74,6 @@ function createDraftAttachment(
   options?: AddDraftFilesOptions,
 ): ChatDraftAttachment {
   const mimeType = file.type || 'application/octet-stream';
-  const mediaKind = chatMediaKindFromMimeFilename(mimeType, file.name);
   return {
     id: nextDraftId(),
     file,
@@ -58,9 +81,7 @@ function createDraftAttachment(
     mimeType,
     size: file.size,
     durationSeconds: options?.durationSeconds,
-    previewUrl: mediaKind === 'image' || mediaKind === 'video'
-      ? URL.createObjectURL(file)
-      : null,
+    ...createChatAttachmentPreview(mimeType, file.name, file),
     status: 'uploading',
     managedSource: false,
   };
@@ -90,7 +111,7 @@ export function useChatAttachmentDrafts({
   const clearDrafts = useCallback((discardSources = true) => {
     setDrafts((prev) => {
       prev.forEach((item) => {
-        revokePreviewUrl(item);
+        revokeChatAttachmentPreview(item);
         if (discardSources) discardManagedSource(item);
       });
       return [];
@@ -133,7 +154,6 @@ export function useChatAttachmentDrafts({
   }, [disabled, editing, fallbackName, stageDraft]);
 
   const appendReadyAttachment = useCallback((attachment: MessagingLocalAttachmentIntent) => {
-    const mediaKind = chatMediaKindFromMimeFilename(attachment.mimeType, attachment.filename);
     setDrafts((prev) => [
       ...prev,
       {
@@ -141,9 +161,11 @@ export function useChatAttachmentDrafts({
         name: attachment.filename || fallbackName,
         mimeType: attachment.mimeType || 'application/octet-stream',
         size: attachment.size ?? 0,
-        previewUrl: mediaKind === 'image' || mediaKind === 'video'
-          ? `asset://localhost/${encodeURI(attachment.filePath)}`
-          : null,
+        ...createChatAttachmentPreview(
+          attachment.mimeType,
+          attachment.filename,
+          attachment.filePath,
+        ),
         status: 'ready',
         managedSource: false,
         attachment,
@@ -155,7 +177,7 @@ export function useChatAttachmentDrafts({
     setDrafts((prev) => {
       const target = prev.find((item) => item.id === id);
       if (target) {
-        revokePreviewUrl(target);
+        revokeChatAttachmentPreview(target);
         discardManagedSource(target);
       }
       return prev.filter((item) => item.id !== id);
@@ -177,7 +199,7 @@ export function useChatAttachmentDrafts({
 
   useEffect(() => () => {
     draftsRef.current.forEach((item) => {
-      revokePreviewUrl(item);
+      revokeChatAttachmentPreview(item);
       discardManagedSource(item);
     });
   }, [discardManagedSource]);

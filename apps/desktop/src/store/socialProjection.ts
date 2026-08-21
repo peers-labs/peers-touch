@@ -29,6 +29,7 @@ export interface MessagePreview {
 export interface DesktopUnifiedConversationLike {
   type: 'friend' | 'group';
   ulid: string;
+  authorityStationId?: string;
   name: string;
   avatar?: string;
   lastActivity: Date;
@@ -160,6 +161,7 @@ export function messageGroupSeq(message: SocialMessage): number {
 }
 
 export type DesktopIMConversationProjection = IMConversationProjection & {
+  authorityStationId: string;
   peerDid?: string;
   memberCount?: number;
 };
@@ -172,6 +174,7 @@ export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike>
   replyToUlid?: string;
   threadRootUlid?: string;
   readByPtids: string[];
+  eventSequence: number;
 };
 
 export interface DesktopIMSenderProfileProjection {
@@ -278,6 +281,7 @@ export function projectDesktopIMConversation(conversation: DesktopUnifiedConvers
   });
   return {
     ...projection,
+    authorityStationId: conversation.authorityStationId ?? '',
     peerDid: conversation.peerDid,
     memberCount: conversation.memberCount,
   };
@@ -313,6 +317,7 @@ export function projectDesktopIMMessage(
     replyToUlid: projection.replyToId,
     threadRootUlid: projection.threadRootId,
     readByPtids: (message as { readByPtids?: string[] }).readByPtids ?? [],
+    eventSequence: messageGroupSeq(message),
   };
 }
 
@@ -324,6 +329,12 @@ export function projectDesktopIMMessages(
   return messages
     .map((message) => projectDesktopIMMessage(kind, conversationId, message))
     .sort((a, b) => {
+      if (a.eventSequence > 0 && b.eventSequence > 0) {
+        const sequenceDelta = a.eventSequence - b.eventSequence;
+        if (sequenceDelta !== 0) return sequenceDelta;
+      } else if (a.eventSequence > 0 || b.eventSequence > 0) {
+        return a.eventSequence > 0 ? -1 : 1;
+      }
       const timestampDelta = a.sentAtMs - b.sentAtMs;
       if (timestampDelta !== 0) return timestampDelta;
       return a.id.localeCompare(b.id);

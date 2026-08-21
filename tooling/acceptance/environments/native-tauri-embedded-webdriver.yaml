@@ -1,0 +1,34 @@
+{
+  "id": "native-tauri-embedded-webdriver",
+  "profile": {
+    "required": true,
+    "identity_match": true
+  },
+  "services": {
+    "station": {
+      "required": true,
+      "ready_action": "station",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "desktop-acceptance-binary": {
+      "required": true,
+      "ready_action": "acceptance-driver-build",
+      "health_action": "acceptance-driver-smoke",
+      "status_action": "acceptance-driver-smoke",
+      "attestation_producer": "desktop-acceptance-build"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "chat-native-actors",
+      "authorization_required": true,
+      "authorization_ref": "env:CHAT_ACCEPTANCE_RESET"
+    }
+  ],
+  "credentials": [],
+  "cleanup": {
+    "resources": ["processes", "ports", "storage", "sessions"]
+  }
+}

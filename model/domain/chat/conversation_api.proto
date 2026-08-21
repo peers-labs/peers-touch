@@ -310,6 +310,7 @@ message MemberSettings {
   bool pinned = 4;
   string background = 5;
   int64 cleared_at_ms = 6;
+  string background_image = 7;
 }
 
 message GetMemberSettingsRequest {

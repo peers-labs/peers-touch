@@ -96,6 +96,16 @@ pub struct MessagingEngine {
     projection_notifier: Mutex<Option<MessagingProjectionNotifier>>,
 }
 
+fn is_stale_endpoint_error(error: &str) -> bool {
+    if error.contains("endpoint is not active") {
+        return true;
+    }
+    if error.contains("station returned 403") {
+        return true;
+    }
+    false
+}
+
 impl MessagingEngine {
     pub fn open_profile(
         profile_id: String,
@@ -821,6 +831,15 @@ impl MessagingEngine {
         self.store.conversation_message_projections(conversation_id)
     }
 
+    pub fn thread_messages(
+        &self,
+        conversation_id: &str,
+        thread_root_message_id: &str,
+    ) -> Result<Vec<ConversationMessageProjection>, String> {
+        self.store
+            .thread_message_projections(conversation_id, thread_root_message_id)
+    }
+
     pub fn search_messages(
         &self,
         conversation_id: &str,
@@ -843,14 +862,11 @@ impl MessagingEngine {
         let result = self.try_create_direct_conversation(token, peer_ptid);
         match result {
             Ok(id) => Ok(id),
-            Err(error) if error.contains("endpoint is not active") => {
+            Err(error) if is_stale_endpoint_error(&error) => {
                 tracing::warn!(error = %error, "createDirect: device not active, attempting re-enrollment");
-                if self.recover_stale_enrollment(&error) {
-                    self.enroll_pending_device(token, "Desktop".to_string())?;
-                    self.try_create_direct_conversation(token, peer_ptid)
-                } else {
-                    Err(error)
-                }
+                let _ = self.recover_stale_enrollment(&error);
+                self.enroll_pending_device(token, "Desktop".to_string())?;
+                self.try_create_direct_conversation(token, peer_ptid)
             }
             Err(error) => Err(error),
         }
@@ -1282,7 +1298,7 @@ impl MessagingEngine {
     }
 
     pub fn recover_stale_enrollment(&self, error: &str) -> bool {
-        if !error.contains("endpoint is not active") {
+        if !is_stale_endpoint_error(error) {
             return false;
         }
         match self.store.reset_device_enrollment() {

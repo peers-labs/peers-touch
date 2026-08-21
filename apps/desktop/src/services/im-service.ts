@@ -15,6 +15,7 @@ import type {
   MemberSettingsResult,
   CreateGroupConversationResult,
   MlsLeaveIntentView,
+  MessagingProjection,
   MessagingServiceContract,
 } from './im-service-contract'
 import { DirectKeyExchangeKind } from './im-service-contract'
@@ -615,18 +616,55 @@ const conversationService: ConversationServiceContract = {
   },
 
   async getMemberSettings(conversationId) {
-    const resp = await cmd<any, MemberSettingsResult>('conversation_get_member_settings', {
+    const resp = await cmd<{ conversation_id: string }, MemberSettingsResult>(
+      'conversation_get_member_settings',
+      {
       conversation_id: conversationId,
-    })
-    return resp
+      },
+    )
+    return {
+      nickname: resp.nickname ?? '',
+      muted: resp.muted ?? false,
+      alertEnabled: resp.alertEnabled ?? true,
+      pinned: resp.pinned ?? false,
+      background: resp.background ?? 'default',
+      backgroundImage: resp.backgroundImage ?? '',
+      clearedAtUnixMs: resp.clearedAtUnixMs ?? 0,
+    }
   },
 
   async updateMemberSettings(conversationId, settings) {
-    await cmd('conversation_update_member_settings', {
-      conversation_id: conversationId,
-      nickname: settings.nickname,
-      muted: settings.muted,
-    })
+    const resp = await cmd<
+      {
+        conversation_id: string
+        nickname?: string
+        muted?: boolean
+        alert_enabled?: boolean
+        pinned?: boolean
+        background?: string
+        background_image?: string
+        cleared_at_unix_ms?: number
+      },
+      MemberSettingsResult
+    >('conversation_update_member_settings', {
+        conversation_id: conversationId,
+        nickname: settings.nickname,
+        muted: settings.muted,
+        alert_enabled: settings.alertEnabled,
+        pinned: settings.pinned,
+        background: settings.background,
+        background_image: settings.backgroundImage,
+        cleared_at_unix_ms: settings.clearedAtUnixMs,
+      })
+    return {
+      nickname: resp.nickname ?? '',
+      muted: resp.muted ?? false,
+      alertEnabled: resp.alertEnabled ?? true,
+      pinned: resp.pinned ?? false,
+      background: resp.background ?? 'default',
+      backgroundImage: resp.backgroundImage ?? '',
+      clearedAtUnixMs: resp.clearedAtUnixMs ?? 0,
+    }
   },
 
   async syncFromStation(conversationId, limit) {
@@ -1246,6 +1284,76 @@ const dkxService: DirectKeyExchangeServiceContract = {
   },
 }
 
+interface MessagingMessageWire {
+  event_id?: string
+  event_sequence?: number
+  message_id: string
+  sender_ptid: string
+  sender_device_id: string
+  plaintext: string
+  attachments: Array<{
+    attachment_id: string
+    filename: string
+    mime_type: string
+    plaintext_size: number
+    object_id: string
+    storage_ref: string
+    ciphertext_size: number
+    availability_state: 'uploading' | 'remote' | 'local' | 'failed'
+  }>
+  state: string
+  timestamp_unix_ms: number
+  reply_to_message_id?: string
+  thread_root_message_id?: string
+  edited_text?: string
+  edited_at_unix_ms?: number
+  retracted: boolean
+  reactions: Array<{
+    actor_ptid: string
+    reaction: string
+    created_at_unix_ms: number
+  }>
+  pinned_by_ptid?: string
+  pinned_at_unix_ms?: number
+  read_by_ptids: string[]
+}
+
+function projectMessagingMessage(message: MessagingMessageWire): MessagingProjection {
+  return {
+    eventId: message.event_id,
+    eventSequence: message.event_sequence,
+    messageId: message.message_id,
+    senderPtid: message.sender_ptid,
+    senderDeviceId: message.sender_device_id,
+    plaintext: message.plaintext,
+    attachments: message.attachments.map(attachment => ({
+      attachmentId: attachment.attachment_id,
+      filename: attachment.filename,
+      mimeType: attachment.mime_type,
+      plaintextSize: attachment.plaintext_size,
+      objectId: attachment.object_id,
+      storageRef: attachment.storage_ref,
+      ciphertextSize: attachment.ciphertext_size,
+      availabilityState: attachment.availability_state,
+    })),
+    state: message.state,
+    timestampUnixMs: message.timestamp_unix_ms,
+    replyToMessageId: message.reply_to_message_id,
+    threadRootMessageId: message.thread_root_message_id,
+    editedText: message.edited_text,
+    editedAtUnixMs: message.edited_at_unix_ms,
+    retracted: message.retracted,
+    reactions: message.reactions.map(reaction => ({
+      actorPtid: reaction.actor_ptid,
+      reaction: reaction.reaction,
+      createdAtUnixMs: reaction.created_at_unix_ms,
+    })),
+    pinnedByPtid: message.pinned_by_ptid,
+    pinnedAtUnixMs: message.pinned_at_unix_ms,
+    readByPtids: message.read_by_ptids,
+  }
+}
+
 const messagingService: MessagingServiceContract = {
   async createDirect(peerPtid) {
     const response = await cmd<
@@ -1298,6 +1406,7 @@ const messagingService: MessagingServiceContract = {
       {
         conversations: Array<{
           conversation_id: string
+          authority_station_id: string
           kind: number
           name: string
           owner_ptid: string
@@ -1309,8 +1418,9 @@ const messagingService: MessagingServiceContract = {
         }>
       }
     >('messaging_list_conversations')
-    return response.conversations.map(conversation => ({
+    const conversations = response.conversations.map(conversation => ({
       conversationId: conversation.conversation_id,
+      authorityStationId: conversation.authority_station_id,
       kind: conversation.kind as 1 | 2,
       name: conversation.name,
       ownerPtid: conversation.owner_ptid,
@@ -1320,6 +1430,7 @@ const messagingService: MessagingServiceContract = {
       active: conversation.active,
       updatedAtUnixMs: conversation.updated_at_unix_ms,
     }))
+    return conversations
   },
 
   async pickAttachmentSource() {
@@ -1401,6 +1512,7 @@ const messagingService: MessagingServiceContract = {
       commandId: response.command_id || undefined,
       messageId: response.message_id,
       attachmentIds: response.attachment_ids,
+      attachmentCount: response.attachment_ids.length,
       state: response.state,
     }
   },
@@ -1408,75 +1520,20 @@ const messagingService: MessagingServiceContract = {
   async listMessages(conversationId) {
     const response = await cmd<
       { conversation_id: string },
-      {
-        messages: Array<{
-          event_id?: string
-          event_sequence?: number
-          message_id: string
-          sender_ptid: string
-          sender_device_id: string
-          plaintext: string
-          attachments: Array<{
-            attachment_id: string
-            filename: string
-            mime_type: string
-            plaintext_size: number
-            object_id: string
-            storage_ref: string
-            ciphertext_size: number
-            availability_state: 'uploading' | 'remote' | 'local' | 'failed'
-          }>
-          state: string
-          timestamp_unix_ms: number
-          reply_to_message_id?: string
-          thread_root_message_id?: string
-          edited_text?: string
-          edited_at_unix_ms?: number
-          retracted: boolean
-          reactions: Array<{
-            actor_ptid: string
-            reaction: string
-            created_at_unix_ms: number
-          }>
-          pinned_by_ptid?: string
-          pinned_at_unix_ms?: number
-          read_by_ptids: string[]
-        }>
-      }
+      { messages: MessagingMessageWire[] }
     >('messaging_list_messages', { conversation_id: conversationId })
-    return response.messages.map(message => ({
-      eventId: message.event_id,
-      eventSequence: message.event_sequence,
-      messageId: message.message_id,
-      senderPtid: message.sender_ptid,
-      senderDeviceId: message.sender_device_id,
-      plaintext: message.plaintext,
-      attachments: message.attachments.map(attachment => ({
-        attachmentId: attachment.attachment_id,
-        filename: attachment.filename,
-        mimeType: attachment.mime_type,
-        plaintextSize: attachment.plaintext_size,
-        objectId: attachment.object_id,
-        storageRef: attachment.storage_ref,
-        ciphertextSize: attachment.ciphertext_size,
-        availabilityState: attachment.availability_state,
-      })),
-      state: message.state,
-      timestampUnixMs: message.timestamp_unix_ms,
-      replyToMessageId: message.reply_to_message_id,
-      threadRootMessageId: message.thread_root_message_id,
-      editedText: message.edited_text,
-      editedAtUnixMs: message.edited_at_unix_ms,
-      retracted: message.retracted,
-      reactions: message.reactions.map(reaction => ({
-        actorPtid: reaction.actor_ptid,
-        reaction: reaction.reaction,
-        createdAtUnixMs: reaction.created_at_unix_ms,
-      })),
-      pinnedByPtid: message.pinned_by_ptid,
-      pinnedAtUnixMs: message.pinned_at_unix_ms,
-      readByPtids: message.read_by_ptids,
-    }))
+    return response.messages.map(projectMessagingMessage)
+  },
+
+  async listThreadMessages(conversationId, threadRootMessageId) {
+    const response = await cmd<
+      { conversation_id: string; thread_root_message_id: string },
+      { messages: MessagingMessageWire[] }
+    >('messaging_list_thread_messages', {
+      conversation_id: conversationId,
+      thread_root_message_id: threadRootMessageId,
+    })
+    return response.messages.map(projectMessagingMessage)
   },
 
   async searchMessages(conversationId, query, options = {}) {

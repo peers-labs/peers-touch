@@ -47,6 +47,7 @@ type subServer struct {
 	leaveService         *MlsLeaveIntentService
 	leaveIntentForwarder MlsLeaveIntentForwarder
 	kpStore              *KeyPackageStore
+	memberSettings       *memberSettingsStore
 	deviceStore          *touchactor.DeviceStore
 	envelopeService      envpkg.Service
 	localStationID       string
@@ -81,6 +82,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		&conversationModel{},
 		&conversationMemberModel{},
 		&conversationMemberDeviceModel{},
+		&conversationMemberSettingsModel{},
 		&conversationEventModel{},
 		&conversationCommandReceiptModel{},
 		&conversationCommandProposalModel{},
@@ -96,6 +98,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	repo := newPostgresConversationRepo(rds)
 	s.repo = repo
 	s.proposalStore = newCommandProposalStore(rds)
+	s.memberSettings = newMemberSettingsStore(rds)
 	s.kpStore = NewKeyPackageStore(rds)
 	if err := s.kpStore.AutoMigrate(); err != nil {
 		return err

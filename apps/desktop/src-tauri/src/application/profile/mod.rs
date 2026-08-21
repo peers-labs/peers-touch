@@ -148,12 +148,8 @@ fn upload_and_set_profile_image(
     }
     tracing::info!(url = %url, field = %field, "OSS URL obtained, updating profile");
 
-    // Resolve relative OSS URL to absolute for local identity sync
-    let absolute_url = if url.starts_with('/') {
-        format!("{}{}", station_client::station_base_url(), url)
-    } else {
-        url.clone()
-    };
+    // Resolve relative OSS URL to absolute for local identity sync.
+    let absolute_url = absolute_profile_url(&url);
 
     // Step 2: Update profile with the relative URL (Station stores relative paths)
     let mut body = UpdateProfileRequest::default();
@@ -283,18 +279,19 @@ fn map_upload(
 // ── Helpers ──
 
 fn actor_profile_to_value(p: &ActorProfile) -> Value {
+    let canonical_ptid = canonical_profile_ptid(p).unwrap_or_default();
     let links: Vec<Value> = p
         .links
         .iter()
         .map(|l| json!({ "label": l.label, "url": l.url }))
         .collect();
-    let mut data = json!({
-        "id": p.id,
+    json!({
+        "id": canonical_ptid,
         "username": p.username,
         "display_name": p.display_name,
         "note": p.note,
-        "avatar": p.avatar,
-        "header": p.header,
+        "avatar": absolute_profile_url(&p.avatar),
+        "header": absolute_profile_url(&p.header),
         "region": p.region,
         "timezone": p.timezone,
         "tags": p.tags,
@@ -310,9 +307,10 @@ fn actor_profile_to_value(p: &ActorProfile) -> Value {
         "manually_approves_followers": p.manually_approves_followers,
         "message_permission": p.message_permission,
         "auto_expire_days": p.auto_expire_days,
-    });
-    resolve_profile_urls(&mut data);
-    data
+        "peers_touch": {
+            "network_id": canonical_ptid,
+        },
+    })
 }
 
 fn canonical_profile_ptid(profile: &ActorProfile) -> Option<&str> {
@@ -365,18 +363,13 @@ fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
     r
 }
 
-/// Resolve relative avatar/header URLs (e.g. `/sub-oss/file?key=...`) to absolute URLs
-/// by prepending the Station base URL. This ensures the frontend can render images directly.
-fn resolve_profile_urls(data: &mut Value) {
-    let base = station_client::station_base_url();
-    for field in &["avatar", "header"] {
-        if let Some(val) = data.get_mut(*field) {
-            if let Some(s) = val.as_str() {
-                if !s.is_empty() && s.starts_with('/') {
-                    *val = Value::String(format!("{}{}", base, s));
-                }
-            }
-        }
+/// Resolve Station-relative profile media to the same absolute URL for every
+/// self and peer profile response.
+fn absolute_profile_url(url: &str) -> String {
+    if !url.is_empty() && url.starts_with('/') {
+        format!("{}{}", station_client::station_base_url(), url)
+    } else {
+        url.to_string()
     }
 }
 
@@ -465,12 +458,8 @@ pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> 
         );
     }
 
-    // Resolve avatar URL to absolute.
-    let avatar_url = if !profile.avatar.is_empty() && profile.avatar.starts_with('/') {
-        format!("{}{}", station_client::station_base_url(), profile.avatar)
-    } else {
-        profile.avatar.clone()
-    };
+    // Resolve avatar URL through the same self/peer profile normalization.
+    let avatar_url = absolute_profile_url(&profile.avatar);
 
     // Pick the LocalAccount whose `provider_user_id` matches `actor_id`. This
     // is the only correct destination — `active_account_id` is a UI/router
@@ -579,7 +568,7 @@ pub fn account_sync_avatar(input: &AccountSyncAvatarInput, token: &str) -> AppRe
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_profile_ptid, profile_matches_actor};
+    use super::{actor_profile_to_value, canonical_profile_ptid, profile_matches_actor};
     use crate::model::actor::{ActorProfile, PeersTouchInfo};
 
     #[test]
@@ -637,5 +626,44 @@ mod tests {
             "ptid:v1:actor:peers:p:alice:1220abc"
         ));
         assert!(!profile_matches_actor(&profile, "350519971299721220"));
+    }
+
+    #[test]
+    fn profile_value_exposes_canonical_ptid_and_normalized_media_urls() {
+        let profile = ActorProfile {
+            id: "350519971299721219".to_string(),
+            avatar: "/sub-oss/avatar/alice".to_string(),
+            header: "https://cdn.example.test/header/alice".to_string(),
+            peers_touch: Some(PeersTouchInfo {
+                network_id: "ptid:v1:actor:peers:p:alice:1220abc".to_string(),
+            }),
+            ..ActorProfile::default()
+        };
+
+        let value = actor_profile_to_value(&profile);
+        let expected_avatar = format!(
+            "{}/sub-oss/avatar/alice",
+            crate::infrastructure::station_client::station_base_url()
+        );
+
+        assert_eq!(
+            value.get("id").and_then(|id| id.as_str()),
+            Some("ptid:v1:actor:peers:p:alice:1220abc")
+        );
+        assert_eq!(
+            value
+                .get("peers_touch")
+                .and_then(|info| info.get("network_id"))
+                .and_then(|id| id.as_str()),
+            Some("ptid:v1:actor:peers:p:alice:1220abc")
+        );
+        assert_eq!(
+            value.get("avatar").and_then(|avatar| avatar.as_str()),
+            Some(expected_avatar.as_str())
+        );
+        assert_eq!(
+            value.get("header").and_then(|header| header.as_str()),
+            Some("https://cdn.example.test/header/alice")
+        );
     }
 }
