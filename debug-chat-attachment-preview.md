@@ -70,3 +70,19 @@ Native Gate proves preview load and the downstream attachment ledger.
 - The Gate now records the pre-click revision and waits for a strictly newer
   outcome before enforcing state and attachment count/ID equality.
 - Cleanup released `3330`, `3331`, `4445`, `4446`, and `53444`.
+
+## Attachment Projection Run
+- Run `20260821T231645935944Z-3f1446b4a9e89b3c64f5e8ac60fa9e3d`
+  is source-bound to clean source and Station `85e8523d0`.
+- Composer preview passed.
+- The new outcome is revision `3`, state `pending`, with exactly two attachment IDs.
+- Alice and Bob Engine projections and message rows have the same message ID and
+  two attachments; both image rows report loaded.
+- Alice Details reports `media=1/files=1`, while Bob Details remains
+  `media=0/files=0`.
+- `ChatDetailPanel` reads messages through a stable `getIMMessages` action but does
+  not subscribe to `socialChat.messages`; a panel opened before receiver delivery
+  therefore retains its previous render until unrelated selected state changes.
+- The repair subscribes the panel to the canonical raw message projection and
+  derives the current conversation through `projectDesktopIMMessages`.
+- Cleanup released `3330`, `3331`, `4445`, `4446`, and `56872`.

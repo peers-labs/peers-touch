@@ -325,6 +325,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("api.ossUploadLocalFile", details)
         self.assertNotIn("data-chat-background-input", details)
         self.assertNotIn("ossUploadAttachmentBytes", details)
+        self.assertIn("messages: s.messages", details)
+        self.assertIn("projectDesktopIMMessages(", details)
+        self.assertNotIn("getIMMessages: s.getIMMessages", details)
         self.assertIn("fn allow_attachment_preview(", messaging)
         self.assertIn(".asset_protocol_scope()", messaging)
         self.assertEqual(
