@@ -634,3 +634,24 @@ Real-retry source-bound run:
   requiring final `oss://`, pending clear, and retry clear.
 - The run remained `PARTIAL/UNPROVEN`; cleanup released
   `3330/3331/4445/4446/62163`.
+
+Transient-baseline source-bound run:
+`20260821T234703453070Z-0ba892fd82975073593952ace3fa9005`.
+
+- Source, live Profile Three Station, and dedicated binary matched clean commit
+  `86a9d2190120b4837a4ea533bdfb312c61532327`.
+- The run entered the fourth real Native chooser, for `w13-image.png`.
+- Its pre-trigger Accessibility sample was transiently invalid:
+  `windowCount=0`, `mainWindow=false`, with no focused role.
+- The chooser then opened, accepted the exact path, closed, and repeatedly
+  returned the normal app state `AXWebArea/windowCount=1`.
+- Because the state machine had captured the invalid zero-window sample as its
+  baseline, every normal one-window app state satisfied the relative
+  `windowCount > baseline` panel-open condition. It therefore timed out in
+  `native_window_restored` despite the chooser having closed.
+- The correction waits for an app-owned baseline with
+  `windowCount>=1`, `mainWindow=true`, `frontmost=true`, and a non-chooser
+  role/subrole before triggering the picker. All real shortcut, path
+  acknowledgement, callback, and terminal chooser checks remain unchanged.
+- The run remained `PARTIAL/UNPROVEN`; cleanup released
+  `3330/3331/4445/4446/65288`.

@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` classify the restart Details-surface readiness failure with preserved DOM evidence |
+| Current step | `MP-W13-F` stabilize Native chooser baseline, then classify restart Details readiness with preserved DOM evidence |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
 | Last completed | Source-bound run `20260821T233451461621Z-f0a7b1bb1f65dee54addee44fab05862` matched clean source/live Station `d71c08067`, proved Alice/Bob Details `media=1/files=1`, complete attachment count conservation, and byte-exact opens, then failed after Alice restart while locating the Details toggle; cleanup released `3330/3331/4445/4446/61118` |
-| Current action | Preserve restart phase DOM, screenshot, and app-log evidence to distinguish premature transcript readiness, hidden duplicate group rows, transient Chat loading, and lost active selection |
-| Next action | Rerun the same source-bound Native Gate, classify the first restart snapshot divergence, and fix the owning product or Gate layer without weakening the restart assertion |
-| Blockers | MP-W13 remains `UNPROVEN`; attachment conservation is now proven in one source-bound run, but settings/background/transcript restart recovery did not reach its assertion because Alice's restarted DOM had no discoverable Details toggle; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Current action | Require a stable app-owned Accessibility baseline before every real Native file chooser so transient zero-window samples cannot block the Gate before restart evidence |
+| Next action | Rerun the same source-bound Native Gate through all chooser paths, then classify the preserved restart DOM snapshot and fix the owning product or Gate layer without weakening the assertion |
+| Blockers | MP-W13 remains `UNPROVEN`; attachment conservation is proven in one source-bound run, but the first restart diagnostic rerun was preempted by a transient zero-window Native chooser baseline; settings/background/transcript restart recovery remains unproven; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T233451461621Z-f0a7b1bb1f65dee54addee44fab05862` is `FAIL/UNPROVEN` with source/live Station `d71c08067b7f9b137adcbc7046929e9d586f12bb`, `attachment_count_conservation=PASS`, `attachment_byte_exact=PASS`, first failure `client.restart.ui` at `[data-chat-detail-toggle]`, and cleanup `passed`; diagnostic instrumentation compiles and the product-closure static Gate remains `20/20 PASS` |
+| Evidence | Run `20260821T233451461621Z-f0a7b1bb1f65dee54addee44fab05862` proved attachment conservation and failed at restart Details; rerun `20260821T234703453070Z-0ba892fd82975073593952ace3fa9005` matched source/live Station `86a9d2190`, failed earlier at `choose_native_file:1242`, and recorded invalid baseline `windowCount=0/mainWindow=false` followed by normal `AXWebArea/windowCount=1`; both runs have cleanup `passed` |
 | Last updated | 2026-08-22 |
 
 ## 1. Plan Sources And Gate
