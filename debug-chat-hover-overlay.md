@@ -19,10 +19,10 @@
 | C | Geometry validation dismisses a disconnected anchor or surface | Medium | Low | Rejected: only normal empty-target mount events, no disconnect |
 | D | The 140ms leave timer clears the target immediately | High | Low | Rejected: no leave or timer events |
 | E | Overlay renders with a different message identity or selector | Low | Low | Rejected as root cause: no action target or overlay existed |
-| F | WebKit emits `mouseover` or `pointerenter`, but React does not synthesize `mouseenter` | Medium | Low | Pending |
-| G | A transparent or adjacent element owns the row-center hit target | High | Low | Pending |
-| H | Neutral and row rectangles overlap or change before pointer movement | Medium | Low | Pending |
-| I | W3C pointer movement does not update the row's CSS `:hover` state | High | Low | Pending |
+| F | WebKit emits `mouseover` or `pointerenter`, but React does not synthesize `mouseenter` | Medium | Low | Rejected: neither raw event fired |
+| G | A transparent or adjacent element owns the row-center hit target | High | Low | Rejected: center hit the target row's `SPAN` descendant |
+| H | Neutral and row rectangles overlap or change before pointer movement | Medium | Low | Rejected: rects were separated and stable |
+| I | Element-origin W3C pointer movement does not update the row's CSS `:hover` state | High | Low | Confirmed: `:hover` remained false after successful ActionChains |
 
 ## Log Evidence
 Instrumentation points:
@@ -49,9 +49,22 @@ First post-fix run:
 - The Gate failed at the same first `hover_message` call and emitted cleanup
   evidence with ports `3330`, `3331`, `4445`, and `4446` released.
 
+Second post-fix run:
+`20260821T013459294184Z-1dd53cbc629969dcc56f068998d0015e`.
+
+- Source and Station matched commit `37b09d5be0eb0236e11a75fb812054fe04a7b12b`.
+- Before and after movement, the target row rect remained
+  `(406,177)-(591.765625,254)` and its center hit the same message `SPAN`.
+- The neutral send rect remained `(1153,722)-(1185,754)`, so the two targets
+  were separated and stable.
+- After `ActionChains.perform()`, target row `:hover` remained false and neither
+  `mouseover` nor `pointerenter` fired.
+- Cleanup again released `3330`, `3331`, `4445`, and `4446`.
+
 ## Verification Conclusion
-Direct movement and the neutral-control choreography both fail to produce
-`mouseenter`, so the original pointer-boundary explanation is insufficient.
-The next instrumentation must distinguish raw `mouseover`/`pointerenter`, actual
-hit-test ownership, element rectangles, and CSS `:hover` state before changing
-the product or the Native input path again.
+The target geometry and hit-test ownership are correct, but Selenium's
+element-origin pointer movement does not update WebKit hover state. The minimal
+fix is to keep the same Selenium W3C Actions protocol while moving a mouse
+pointer by viewport coordinates derived from the measured neutral and row
+centers. JS event dispatch, Store mutation, Harness actions, and fixed commands
+remain forbidden.

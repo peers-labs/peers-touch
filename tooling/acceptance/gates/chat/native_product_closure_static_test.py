@@ -51,9 +51,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "execute_async_script(",
             "dispatchEvent(",
             "time.sleep(",
+            "ActionChains",
         ):
             self.assertNotIn(forbidden, self.source)
-        self.assertIn("ActionChains", self.source)
+        self.assertIn("ActionBuilder", self.source)
+        self.assertIn("PointerInput", self.source)
+        self.assertIn(".move_to_location(", self.source)
         self.assertIn(".click()", self.source)
         self.assertIn(".send_keys(", self.source)
 

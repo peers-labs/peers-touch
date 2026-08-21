@@ -20,12 +20,12 @@
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-F` Acceptance truth cutover |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Source-bound post-fix run rejected the first hover fix: `neutral control -> target row` still emitted no row `mouseenter`, action target, geometry, leave, or timer event; Gate teardown released all client ports |
-| Current action | Instrument raw row mouse/pointer events plus rect, hit-test, and CSS `:hover` state to distinguish WebKit input delivery from overlay interception or changing virtual-row geometry |
-| Next action | Rebuild and rerun the same first hover step, then compare F/G/H/I signals before changing pointer choreography or product behavior |
+| Last completed | Source-bound hit-test run confirmed element-origin W3C pointer movement leaves target row `:hover=false`; raw mouse/pointer events are absent while rects and center hit ownership remain correct and stable |
+| Current action | Replace element-origin movement with Selenium viewport-origin `PointerInput(mouse)` coordinates derived from the measured neutral and target row centers |
+| Next action | Rebuild and rerun the same Native Gate; require A/B/E events and toolbar appearance before advancing to thread assertions |
 | Blockers | Native hover input remains unresolved; thread and every assertion after the first hover remain `UNPROVEN` |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Native run `20260821T012601558653Z-33089642cf17466dbe04f2cdadd74d7c` bound source/Station commit `47095d40a4b58cbb03d5792080971394b1ded294` and dedicated binary SHA-256 `920c90ca66300a6e3083d2e38aed87a6eeeb151888df68e2e00ed88e2aea7008`, passed launch/group readiness/bidirectional message visibility, then failed at the first `hover_message`; post-fix log still contains only two empty-target C events; cleanup released `3330/3331/4445/4446`; debug session `chat-hover-overlay` remains `[OPEN]`; W13 remains `UNPROVEN` |
+| Evidence | Native run `20260821T013459294184Z-1dd53cbc629969dcc56f068998d0015e` bound source/Station commit `37b09d5be0eb0236e11a75fb812054fe04a7b12b`; row center hit the correct message descendant before/after movement, target and neutral rects were separated/stable, but row `:hover` remained false and F/A/B/D/E events were absent; cleanup released `3330/3331/4445/4446`; debug session `chat-hover-overlay` remains `[OPEN]`; W13 remains `UNPROVEN` |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
