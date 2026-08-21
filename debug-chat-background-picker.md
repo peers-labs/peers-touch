@@ -195,3 +195,23 @@ The Gate now waits for
 its descendants. `click_element` then repeats the target ownership check and
 requires the real CoreGraphics DOM click sequence. This preserves genuine
 occlusion failure while rejecting unrelated wrappers as false blockers.
+
+Target-hit source-bound run:
+`20260821T160835765030Z-a3fc711387f9d655300c6f9e69d480f8`.
+
+- Source, dedicated binary, and Profile Three Station matched clean commit
+  `94d840018f61905cf7cb95e08394984ab18ed6ba`.
+- The Gate crossed the failed-upload modal lifecycle wait and opened the next
+  Native chooser.
+- After Unicode path entry, Accessibility reported
+  `windowCount=0/sheetCount=0`, confirming the chooser closed.
+- While that transition temporarily blocked the WebView, debug-only
+  `report_native_file_snapshot()` called WebDriver `execute_script`, timed out,
+  and incorrectly aborted the Gate before `native_path_ready` could consume the
+  already available AX terminal state.
+- Cleanup released ports `3330/3331/4445/4446/55611`.
+
+Debug snapshot collection now records a typed `snapshotError` when the WebView
+is temporarily unavailable and continues reporting the supplied Native
+Accessibility state. Product selection, upload, projection and persistence
+failures remain unsuppressed.

@@ -267,6 +267,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("def panel_open(", self.source)
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn('if not path_entry["selected"]:', self.source)
+        self.assertIn('"snapshotError": f"{type(error).__name__}: {error}"', self.source)
         self.assertIn('trigger_selector="[data-chat-background-upload]"', self.source)
         self.assertIn('trigger_selector="[data-chat-attachment-picker]"', self.source)
         for forbidden in (
