@@ -300,3 +300,26 @@ The correction is to keep the Native user gesture atomic: post the exact path
 and Return without inserting a slow AX round trip. Then observe whether the
 file browser remains open; only that state receives the second Return. Final
 application restoration and product upload/byte assertions remain mandatory.
+
+Atomic-confirmation source-bound run:
+`20260821T173208817021Z-afe37eed1d1306e5f45db0c67b41f010`.
+
+- Source, dedicated binary, and Profile Three Station matched clean commit
+  `b43307773f219449e2149e25e655b82ae009be14`.
+- The Gate crossed Thread, Reaction, Mute, Pin, and the built-in Paper
+  background path, then opened the real Native image chooser.
+- The Go-To field already contained the remembered value `/opt`. The Driver
+  appended the target path without replacing that value, then posted Return.
+- Accessibility returned to the application dialog and the Driver emitted
+  `selected`, but the product log contained `pick_image_file` entry with no
+  return or `Image file selected` line.
+- The original Background Modal remained open because
+  `handleSelectBackgroundImage` was still awaiting the picker. Since upload
+  pending never started, the Gate immediately tried to open another Background
+  Modal and timed out behind the existing surface.
+- Cleanup passed and ports `3330/3331/4445/4446` were released.
+
+The false terminal state is caused by appending to a remembered Go-To value.
+The next comparison must perform the real keyboard sequence
+`Cmd+A -> exact path -> Return`; product callback return, Modal destruction,
+upload pending, and failure recovery remain mandatory.

@@ -271,7 +271,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("def panel_open(", self.source)
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn(
-            'self.post_key(0, text=str(selected_path))\n        self.post_key(36)',
+            "self.post_key(0, flags=command)\n"
+            "        self.post_key(0, text=str(selected_path))\n"
+            "        self.post_key(36)",
             self.source,
         )
         self.assertIn("def selection_or_browser_ready(", self.source)
