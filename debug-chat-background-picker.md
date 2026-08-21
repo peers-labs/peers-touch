@@ -282,3 +282,21 @@ or a restored file-browser control, use Enter to navigate, use Enter again to
 select when the browser remains open, and only accept the restored application
 window after the final selection. A zero-window snapshot remains transitional
 and cannot satisfy selection.
+
+Explicit-state source-bound run:
+`20260821T170212415938Z-379f660ea7ac3f0eec90e036e0022393`.
+
+- Source, dedicated binary, and Profile Three Station matched clean commit
+  `df5b910b57f8e88153890690b8a143e6944911fe`.
+- The Native chooser opened and `Cmd+Shift+G` again exposed the path field.
+- The complete path event caused the Go-To surface to transition before the
+  first AX readback, restoring the product application dialog.
+- Because the Driver waited to observe the path before sending Return, the
+  product log again contained `pick_image_file` entry without a return and the
+  Gate timed out at `native_path_ready`.
+- Cleanup released the actor and proxy ports.
+
+The correction is to keep the Native user gesture atomic: post the exact path
+and Return without inserting a slow AX round trip. Then observe whether the
+file browser remains open; only that state receives the second Return. Final
+application restoration and product upload/byte assertions remain mandatory.
