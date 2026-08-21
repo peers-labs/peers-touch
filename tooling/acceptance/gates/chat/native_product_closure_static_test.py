@@ -266,7 +266,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"sheetCount"', self.source)
         self.assertIn("def panel_open(", self.source)
         self.assertIn('return {"selected": True, "control": control}', self.source)
-        self.assertIn('if not path_entry["selected"]:', self.source)
+        self.assertIn('if path_entry["pathConfirmed"]:', self.source)
+        self.assertIn("baseline_window_count", self.source)
+        self.assertIn("NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS", self.source)
+        self.assertIn(
+            'if int(control.get("windowCount", 0)) < baseline_window_count:',
+            self.source,
+        )
         self.assertIn('def native_window_restored(', self.source)
         self.assertIn('include_webview=False', self.source)
         self.assertIn('and bool(control.get("role"))', self.source)
