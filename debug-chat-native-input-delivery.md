@@ -216,3 +216,51 @@ Acceptance-only activation path must explicitly set and verify front-window
 `AXFocused=true` before any product input. AB remains an observed environmental
 surface but is not yet the selected cause because Alice never acquired focused
 window ownership.
+
+Isolated event-routing probe:
+
+- A fresh dedicated Acceptance binary was launched on isolated ports
+  `3340/4455`; both ports were released after the probe.
+- System Events activation and
+  `NSRunningApplication.activateWithOptions(ActivateAllWindows |
+  IgnoringOtherApps)` both produced the same stable Tauri state:
+  process frontmost, `AXMain=true`, and `AXFocused=false`.
+- A passive `kCGAnnotatedSessionEventTap` observed the real CoreGraphics
+  `leftMouseDown` at `[200,265]`. WindowServer annotated
+  `targetPid=92990` (`Lark Helper`), while the dedicated app PID was `33796`.
+- The dedicated DOM received no `mousedown`.
+
+This retracts AA as the root cause: `AXFocused=false` is stable for this Tauri
+window even after both supported activation paths. AB is confirmed by direct
+event routing, not only z-order: the higher layer-100 full-screen Lark Helper
+surface owns the synthesized click. The correct Acceptance-only host repair is
+to raise dedicated windows above that surface for the Gate lifetime, without
+hiding or terminating the user's external application.
+
+Acceptance-window-level post-fix verification:
+
+- The first `run_on_main_thread` implementation was insufficient. A 10 ms
+  startup timeline observed the dedicated window at layer `1000` around
+  `848.9 ms`, followed by a deterministic fallback to layer `5` around
+  `894.1 ms` while the queued window layout completed.
+- Tao `0.34.8` source confirmed that macOS `set_always_on_top(true)` enqueues
+  `setLevel(NSFloatingWindowLevel)` on the serial main dispatch queue, while
+  Tauri `run_on_main_thread` executes immediately when called from setup on the
+  main thread.
+- The corrected Acceptance-only host path enqueues
+  `setLevel(NSScreenSaverWindowLevel)` on that same serial dispatch queue after
+  Tauri's request. The rebuilt dedicated binary SHA-256 is
+  `ebb0b855e50253a40657c8c5cd0b4f2c41cbefef2a53b6c8f73304bb072844c5`.
+- The post-fix startup timeline observed only layers `0` and `1000`; after the
+  layout completed, the window remained at layer `1000` with no layer-5
+  regression.
+- The isolated annotated-session event-tap probe observed app PID `2990` at
+  layer `1000`, above Lark Helper PID `92990` at layer `100`. WindowServer
+  annotated the real CoreGraphics `leftMouseDown` with `targetPid=2990`, and
+  the dedicated WebView received `mousedown` at screen point `[200,298]`.
+- `make acceptance-driver-smoke` passed. Probe and smoke teardown released
+  ports `3340/3350/4445/4455/4465`.
+
+AB is confirmed as the pre-fix cause and closed by source-bound post-fix
+evidence. The input-routing blocker is removed; MP-W13 remains unproven until
+the complete Native product-closure Gate passes.
