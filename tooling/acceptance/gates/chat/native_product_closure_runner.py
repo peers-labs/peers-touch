@@ -2527,6 +2527,8 @@ except Exception as error:
               background: panel.getAttribute('data-chat-detail-background') || '',
               backgroundImage: panel.getAttribute('data-chat-detail-background-image') || '',
               pending: panel.getAttribute('data-chat-detail-action-pending') || '',
+              backgroundRetry:
+                panel.getAttribute('data-chat-detail-background-retry') || '',
             };
             """,
             panel,
@@ -2949,21 +2951,31 @@ except Exception as error:
             trigger_selector="[data-chat-background-upload]",
             file_path=empty_image,
         )
-        wait_until(
-            lambda: self.setting_state("alice").get("pending") == "",
-            "failed background upload completion",
+        failed_state = wait_until(
+            lambda: (
+                state
+                if (
+                    (state := self.setting_state("alice")).get("pending") == ""
+                    and state.get("backgroundRetry") == "true"
+                )
+                else None
+            ),
+            "failed background upload recovery state",
             timeout=60,
         )
+        if failed_state.get("backgroundImage") != before_image:
+            raise GateError("failed background upload replaced the prior background")
         self.open_background_modal("alice")
-        retry_visible = bool(
-            self.clients["alice"].find_elements("[data-chat-background-retry]")
+        retry = self.clients["alice"].find_element(
+            "[data-chat-background-retry]",
+            10,
         )
-        if not retry_visible or self.setting_state("alice").get("backgroundImage") != before_image:
-            raise GateError("failed background upload did not preserve retry state")
-        self.choose_native_file(
-            "alice",
-            trigger_selector="[data-chat-background-upload]",
-            file_path=valid_image,
+        empty_image.write_bytes(valid_image.read_bytes())
+        self.click_element("alice", retry)
+        wait_until(
+            lambda: self.setting_state("alice").get("pending") == "background-image",
+            "background retry pending",
+            timeout=10,
         )
         final_state = wait_until(
             lambda: (
@@ -2971,6 +2983,8 @@ except Exception as error:
                 if (
                     (state := self.setting_state("alice")).get("backgroundImage", "")
                 ).startswith("oss://")
+                and state.get("pending") == ""
+                and state.get("backgroundRetry") == "false"
                 else None
             ),
             "uploaded background projection",

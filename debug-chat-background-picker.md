@@ -589,3 +589,26 @@ Process-bound AX source-bound run:
   growth, exact path acknowledgement, and terminal chooser lifecycle checks.
 - The run remained `PARTIAL/UNPROVEN`; cleanup released
   `3330/3331/4445/4446/54347`.
+
+Role-transition and chooser-callback source-bound run:
+`20260821T220228466683Z-1e58914ee30412bb8a2ef991eeeb95ea`.
+
+- Source and live Station matched clean commit
+  `ed65922e8476b44a631ece340b5c717916b07cd6`; dedicated binary SHA-256
+  was `0ac53c69ec4dae4b36ab8c14ee6620f2fb26b0e951ace32b8300719730a34615`.
+- The Gate crossed the `AXComboBox -> AXList` panel transition, opened Go-To,
+  observed `AXTextField`, acknowledged the exact path, returned to `AXList`,
+  confirmed selection, recovered `AXWebArea`, and received the product picker
+  callback.
+- The selected 0-byte `empty.png` then produced the success notification
+  `Background image updated`. Product state therefore cleared
+  `backgroundRetryPath`, and reopening the Modal exposed no
+  `[data-chat-background-retry]`.
+- The root cause is the shared Desktop Rust OSS application service accepting
+  zero-byte regular files. The correct owner is the local upload-source
+  boundary before capability lookup or Station upload, not the Chat component.
+- Recovery proof must mutate the same failed fixture path into a valid image
+  and click `[data-chat-background-retry]` through the Native input path. A
+  fresh `[data-chat-background-upload]` picker is not retry evidence.
+- The run remained `PARTIAL/UNPROVEN`; cleanup released
+  `3330/3331/4445/4446/57228`.
