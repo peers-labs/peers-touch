@@ -321,6 +321,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
     def test_product_files_use_real_native_chooser(self) -> None:
         self.assertIn("def choose_native_file(", self.source)
         self.assertIn("def post_key(", self.source)
+        self.assertIn("def post_key_chord(", self.source)
         self.assertIn("CGEventCreateKeyboardEvent", self.source)
         self.assertIn("CGEventKeyboardSetUnicodeString", self.source)
         self.assertIn('"AXFocusedUIElement"', self.source)
@@ -330,8 +331,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("def panel_open(", self.source)
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn(
-            "self.post_key(0, flags=command)\n"
-            "        self.post_key(51)",
+            "self.post_key_chord(0, ((55, command),))\n"
+            "        self.post_key(51, private_source=True)",
             self.source,
         )
         self.assertIn(
@@ -352,7 +353,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('control.get("value") == str(selected_path)', self.source)
         self.assertIn(
-            "self.post_key(5, flags=command_shift, private_source=True)",
+            "self.post_key_chord(5, ((55, command), (56, shift)))",
+            self.source,
+        )
+        self.assertIn(
+            "self.post_key_chord(9, ((55, command),))",
             self.source,
         )
         self.assertIn("self.post_key(36, private_source=True)", self.source)

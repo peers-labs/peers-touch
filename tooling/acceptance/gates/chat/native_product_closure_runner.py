@@ -403,6 +403,60 @@ class NativeProductClosureGate(AcceptanceGate):
             if source:
                 core_foundation.CFRelease(source)
 
+    def post_key_chord(
+        self,
+        key_code: int,
+        modifiers: tuple[tuple[int, int], ...],
+    ) -> None:
+        core_graphics = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        )
+        core_foundation = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+        )
+        core_graphics.CGEventCreateKeyboardEvent.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint16,
+            ctypes.c_bool,
+        ]
+        core_graphics.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
+        core_graphics.CGEventSourceCreate.argtypes = [ctypes.c_int32]
+        core_graphics.CGEventSourceCreate.restype = ctypes.c_void_p
+        core_graphics.CGEventSetFlags.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+        ]
+        core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
+
+        source = core_graphics.CGEventSourceCreate(-1)
+        if not source:
+            raise GateError("CoreGraphics failed to create Native private event source")
+
+        active_flags = 0
+
+        def post(key: int, pressed: bool, flags: int) -> None:
+            event = core_graphics.CGEventCreateKeyboardEvent(source, key, pressed)
+            if not event:
+                raise GateError("CoreGraphics failed to create Native keyboard event")
+            try:
+                core_graphics.CGEventSetFlags(event, flags)
+                core_graphics.CGEventPost(0, event)
+            finally:
+                core_foundation.CFRelease(event)
+
+        try:
+            for modifier_key, modifier_flag in modifiers:
+                active_flags |= modifier_flag
+                post(modifier_key, True, active_flags)
+            post(key_code, True, active_flags)
+            post(key_code, False, active_flags)
+            for modifier_key, modifier_flag in reversed(modifiers):
+                active_flags &= ~modifier_flag
+                post(modifier_key, False, active_flags)
+        finally:
+            core_foundation.CFRelease(source)
+
     def invoke_native_activation_command(
         self,
         client: TauriDriver,
@@ -904,11 +958,11 @@ except Exception as error:
         ).until(native_panel_ready)
 
         command = 0x00100000
-        command_shift = command | 0x00020000
+        shift = 0x00020000
         # #region debug-point S-W:native-file-shortcut-delivery
         report_native_file_snapshot("before-go-to-shortcut")
         # #endregion
-        self.post_key(5, flags=command_shift, private_source=True)
+        self.post_key_chord(5, ((55, command), (56, shift)))
         # #region debug-point S-W:native-file-shortcut-delivery
         report_native_file_snapshot("after-go-to-shortcut")
 
@@ -926,8 +980,8 @@ except Exception as error:
         report_native_file_snapshot("go-to-field", go_to_control)
         # #endregion
 
-        self.post_key(0, flags=command)
-        self.post_key(51)
+        self.post_key_chord(0, ((55, command),))
+        self.post_key(51, private_source=True)
         WebDriverWait(
             client.driver,
             10,
@@ -961,7 +1015,7 @@ except Exception as error:
             )
             if copied.returncode != 0:
                 raise GateError("Native file chooser could not stage the selected path")
-            self.post_key(9, flags=command)
+            self.post_key_chord(9, ((55, command),))
             WebDriverWait(
                 client.driver,
                 10,
