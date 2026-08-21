@@ -675,7 +675,8 @@ except Exception as error:
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(native_panel_ready)
 
-        command_shift = 0x00100000 | 0x00020000
+        command = 0x00100000
+        command_shift = command | 0x00020000
         self.post_key(5, flags=command_shift)
         go_to_control = WebDriverWait(
             client.driver,
@@ -697,6 +698,7 @@ except Exception as error:
         report_native_file_snapshot("go-to-field", go_to_control)
         # #endregion
 
+        self.post_key(0, flags=command)
         self.post_key(0, text=str(selected_path))
         self.post_key(36)
         # #region debug-point M:native-file-path-entry
