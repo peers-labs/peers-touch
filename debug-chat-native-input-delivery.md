@@ -22,6 +22,7 @@
 | V | CoreGraphics posts the move but macOS coalesces or routes it without a WebView mouse event | Low | Medium | Cursor coordinates change to the requested point, actor remains focused, hit target is correct, and the DOM event list remains empty |
 | W | Mouse events created with a null source are not tracked in the login session's combined event state | Medium | Low | Explicit `CGEventSourceCreate(kCGEventSourceStateCombinedSessionState)` restores WebView delivery |
 | X | Requiring a staging `mousemove` before a zero-distance click invents an input precondition that a real stationary click does not have | High | Low | The cursor and target center already match; skipping movement still yields target-owned `mousedown -> mouseup -> click` acknowledgements |
+| Y | A move-only event is not required to prove a Native click; target-coordinate down/up can establish click routing after verified actor activation | High | Low | Without a preliminary move wait, the target DOM receives `mousedown -> mouseup -> click` from the real CoreGraphics sequence |
 
 ## Log Evidence
 Source-bound run:
@@ -132,3 +133,24 @@ already occupies the target center. The next comparison preserves movement
 acknowledgement for non-zero-distance actions, but for a stationary click it
 must proceed directly to the real CoreGraphics down/up sequence and require
 target-owned `mousedown`, `mouseup`, and `click` acknowledgements.
+
+Conditional-movement source-bound run:
+`20260821T142028343355Z-c819251376fb096b4465f6bbf55f3333`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `098433b214100932dae13c409439b5df61befc85`.
+- The inherited cursor started at `[67.5,81]`, so the stationary-click branch
+  correctly did not apply. The Driver posted a real move to target center
+  `[81.5,95]`; the cursor moved, the scoped DOM probe remained empty, and the
+  WebView lost document focus.
+- The run therefore neither confirms nor rejects X. It confirms that requiring
+  move-only acknowledgement before every click still prevents the actual
+  CoreGraphics down/up sequence from being exercised.
+- Cleanup evidence and direct `lsof` verification proved actor ports
+  `3330/3331/4445/4446` were released.
+
+The next comparison removes `mousemove` as a click precondition entirely while
+retaining the exact target hit test and real CoreGraphics down/up events.
+`mousedown`, `mouseup`, and `click` remain mandatory DOM acknowledgements.
+Actual hover remains a separate movement-owned product assertion and is not
+weakened by this click correction.

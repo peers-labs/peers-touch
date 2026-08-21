@@ -73,14 +73,27 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("wait_native_input_event", self.source)
         self.assertIn("NATIVE_INPUT_ACK_POLL_SECONDS", self.source)
         self.assertIn("poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS", self.source)
-        self.assertIn('"mousemove"', self.source)
+        self.assertIn("'mousemove'", self.source)
         self.assertIn('"mousedown"', self.source)
         self.assertIn('"mouseup"', self.source)
         self.assertIn('"click"', self.source)
         self.assertIn("CGEventSourceButtonState", self.source)
-        self.assertIn("requires_pointer_move = not (", self.source)
-        self.assertIn("if requires_pointer_move:", self.source)
-        self.assertIn('"requiresPointerMove": requires_pointer_move', self.source)
+        click_start = self.source.index(
+            "    def click_element(self, actor: str, element: Any) -> Any:"
+        )
+        click_end = self.source.index(
+            "    def click(self, actor: str, selector: str",
+            click_start,
+        )
+        click_source = self.source[click_start:click_end]
+        self.assertNotIn('"mousemove"', click_source)
+        self.assertIn('"mousedown-timeout"', click_source)
+        self.assertIn('"mouseup-timeout"', click_source)
+        self.assertIn('"click-timeout"', click_source)
+        self.assertIn(
+            "if mouse_down_posted and self.native_mouse_button_down():",
+            click_source,
+        )
         self.assertNotIn("staging_point", self.source)
         self.assertIn(".send_keys(", self.source)
 
