@@ -215,3 +215,25 @@ Debug snapshot collection now records a typed `snapshotError` when the WebView
 is temporarily unavailable and continues reporting the supplied Native
 Accessibility state. Product selection, upload, projection and persistence
 failures remain unsuppressed.
+
+Snapshot-isolation source-bound run:
+`20260821T162507498155Z-1adcbc32a92f6198d1cd207dab5b2715`.
+
+- Source, dedicated binary, and Profile Three Station matched clean commit
+  `5c503837c483f8823ed5f1d286553424257d514d`.
+- The second Native chooser again closed after path entry with
+  `windowCount=0/sheetCount=0`.
+- Debug snapshot collection recorded the expected typed `snapshotError` and
+  returned control to the Gate instead of aborting it.
+- The next mandatory `document.hasFocus()` query still ran before Alice's
+  Native window returned, so a second WebDriver script timeout became the new
+  first failure.
+- Cleanup released ports `3330/3331/4445/4446/59340`.
+
+The remaining handoff defect is the Native-to-WebView recovery order, not the
+product upload assertion. While Accessibility reports `windowCount=0`, debug
+sampling must not issue a WebDriver command. After chooser closure, the Driver
+must first wait for Alice's Native window count to return to its pre-chooser
+baseline, then use the existing actor focus lifecycle to prove WebView focus.
+Only after that may the product upload projection be queried. No fixed delay or
+weakened upload assertion is valid.

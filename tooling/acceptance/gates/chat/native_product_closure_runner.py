@@ -581,33 +581,45 @@ except Exception as error:
         def report_native_file_snapshot(
             phase: str,
             focused_control: dict[str, Any] | None = None,
+            *,
+            include_webview: bool = True,
         ) -> None:
             nonlocal last_native_file_snapshot
-            try:
-                snapshot = client.execute_script(
-                    """
-                    return {
-                      documentFocused: document.hasFocus(),
-                      visibilityState: document.visibilityState,
-                      activeElement: {
-                        tag: document.activeElement?.tagName || '',
-                        role: document.activeElement?.getAttribute?.('role') || '',
-                        classes: document.activeElement?.className?.baseVal
-                          || document.activeElement?.className
-                          || '',
-                      },
-                    };
-                    """
-                )
-            except Exception as error:
-                snapshot = {
-                    "snapshotError": f"{type(error).__name__}: {error}",
-                }
-            snapshot["focusedControl"] = (
+            control = (
                 focused_control
                 if focused_control is not None
                 else self.native_focused_control(client.process_id or 0)
             )
+            if not include_webview:
+                snapshot = {
+                    "snapshotSkipped": "native recovery poll",
+                }
+            elif int(control.get("windowCount", 0)) == 0:
+                snapshot = {
+                    "snapshotSkipped": "native window unavailable",
+                }
+            else:
+                try:
+                    snapshot = client.execute_script(
+                        """
+                        return {
+                          documentFocused: document.hasFocus(),
+                          visibilityState: document.visibilityState,
+                          activeElement: {
+                            tag: document.activeElement?.tagName || '',
+                            role: document.activeElement?.getAttribute?.('role') || '',
+                            classes: document.activeElement?.className?.baseVal
+                              || document.activeElement?.className
+                              || '',
+                          },
+                        };
+                        """
+                    )
+                except Exception as error:
+                    snapshot = {
+                        "snapshotError": f"{type(error).__name__}: {error}",
+                    }
+            snapshot["focusedControl"] = control
             signature = json.dumps(snapshot, sort_keys=True)
             if signature == last_native_file_snapshot:
                 return
@@ -743,15 +755,29 @@ except Exception as error:
                     )
                 )
 
+        def native_window_restored(_: Any) -> dict[str, Any] | None:
+            control = self.native_focused_control(client.process_id or 0)
+            # #region debug-point L-M:native-file-chooser-handoff
+            report_native_file_snapshot(
+                "window-recovery-poll",
+                control,
+                include_webview=False,
+            )
+            # #endregion
+            return (
+                control
+                if int(control.get("windowCount", 0))
+                >= int(baseline_control.get("windowCount", 0))
+                and bool(control.get("role"))
+                else None
+            )
+
         WebDriverWait(
             client.driver,
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(
-            lambda driver: bool(
-                driver.execute_script("return document.hasFocus()")
-            )
-        )
+        ).until(native_window_restored)
+        self.focus_actor_window(actor)
         # #region debug-point L-M:native-file-chooser-handoff
         report_native_file_snapshot("selected")
         # #endregion
