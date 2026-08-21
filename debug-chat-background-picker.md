@@ -132,3 +132,18 @@ Instrumentation-only source-bound run:
 - The Gate continues through the visible DOM triggers and must prove the real
   Native sheet/window lifecycle before accepting the resulting product
   projection.
+
+Native-picker product-fix run:
+`20260821T124407097731Z-5f955ec9b9ce1dd26b3499803818dbb3`.
+
+- Source, dedicated binary, and live Station matched at `66ad986b`.
+- Debug line 6 records the product dialog baseline at
+  `windowCount=1/sheetCount=0`.
+- Debug line 7 records the visible upload action opening a real Native panel:
+  `documentFocused=false`, `windowCount=1/sheetCount=1`, focused role `AXList`.
+- The Gate advanced through `Cmd+Shift+G` to its `AXTextField` wait, then timed
+  out waiting for the field value to equal the selected absolute path.
+- The next instrumentation run must record the focused control immediately
+  after the shortcut and each distinct path-value poll before changing Native
+  keyboard behavior.
+- Cleanup released ports `3330/3331/4445/4446/53083`.
