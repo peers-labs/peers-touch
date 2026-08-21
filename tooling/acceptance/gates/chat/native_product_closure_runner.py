@@ -281,8 +281,15 @@ class NativeProductClosureGate(AcceptanceGate):
 
     def hover_message(self, actor: str, message_id: str) -> Any:
         client = self.clients[actor]
+        neutral = client.find_element("[data-chat-send]", 30)
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 30)
-        ActionChains(client.driver).move_to_element(row).perform()
+        (
+            ActionChains(client.driver)
+            .move_to_element(neutral)
+            .pause(0.2)
+            .move_to_element(row)
+            .perform()
+        )
         return WebDriverWait(client.driver, 15).until(
             lambda driver: driver.find_element(
                 By.CSS_SELECTOR,
