@@ -98,6 +98,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"mouseup-timeout"', click_source)
         self.assertIn('"click-timeout"', click_source)
         self.assertIn(
+            '"mouseButtonDown": self.native_mouse_button_down()',
+            click_source,
+        )
+        self.assertIn(
             "if mouse_down_posted and self.native_mouse_button_down():",
             click_source,
         )
