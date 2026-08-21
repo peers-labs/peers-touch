@@ -345,6 +345,7 @@ class NativeProductClosureGate(AcceptanceGate):
         *,
         flags: int = 0,
         text: str = "",
+        private_source: bool = False,
     ) -> None:
         core_graphics = ctypes.CDLL(
             "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
@@ -358,6 +359,8 @@ class NativeProductClosureGate(AcceptanceGate):
             ctypes.c_bool,
         ]
         core_graphics.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
+        core_graphics.CGEventSourceCreate.argtypes = [ctypes.c_int32]
+        core_graphics.CGEventSourceCreate.restype = ctypes.c_void_p
         core_graphics.CGEventSetFlags.argtypes = [
             ctypes.c_void_p,
             ctypes.c_uint64,
@@ -374,24 +377,31 @@ class NativeProductClosureGate(AcceptanceGate):
         unicode_units = (ctypes.c_uint16 * (len(encoded) // 2)).from_buffer_copy(
             encoded
         )
-        for pressed in (True, False):
-            event = core_graphics.CGEventCreateKeyboardEvent(
-                None,
-                key_code,
-                pressed,
-            )
-            if not event:
-                raise GateError("CoreGraphics failed to create Native keyboard event")
-            if flags:
-                core_graphics.CGEventSetFlags(event, flags)
-            if text:
-                core_graphics.CGEventKeyboardSetUnicodeString(
-                    event,
-                    len(unicode_units),
-                    unicode_units,
+        source = core_graphics.CGEventSourceCreate(-1) if private_source else None
+        try:
+            if private_source and not source:
+                raise GateError("CoreGraphics failed to create Native private event source")
+            for pressed in (True, False):
+                event = core_graphics.CGEventCreateKeyboardEvent(
+                    source,
+                    key_code,
+                    pressed,
                 )
-            core_graphics.CGEventPost(0, event)
-            core_foundation.CFRelease(event)
+                if not event:
+                    raise GateError("CoreGraphics failed to create Native keyboard event")
+                if flags:
+                    core_graphics.CGEventSetFlags(event, flags)
+                if text:
+                    core_graphics.CGEventKeyboardSetUnicodeString(
+                        event,
+                        len(unicode_units),
+                        unicode_units,
+                    )
+                core_graphics.CGEventPost(0, event)
+                core_foundation.CFRelease(event)
+        finally:
+            if source:
+                core_foundation.CFRelease(source)
 
     def invoke_native_activation_command(
         self,
@@ -928,17 +938,56 @@ except Exception as error:
                 else None
             )
         )
-        self.post_key(0, text=str(selected_path))
-        self.post_key(36)
+        original_clipboard = subprocess.run(
+            ("/usr/bin/pbpaste",),
+            capture_output=True,
+            check=False,
+        )
+        if original_clipboard.returncode != 0:
+            raise GateError("Native file chooser could not read the current clipboard")
+        try:
+            copied = subprocess.run(
+                ("/usr/bin/pbcopy",),
+                input=str(selected_path).encode("utf-8"),
+                capture_output=True,
+                check=False,
+            )
+            if copied.returncode != 0:
+                raise GateError("Native file chooser could not stage the selected path")
+            self.post_key(9, flags=command)
+            WebDriverWait(
+                client.driver,
+                10,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(
+                lambda _: (
+                    control
+                    if (
+                        (control := self.native_focused_control(
+                            client.process_id or 0
+                        )).get("role")
+                        == "AXTextField"
+                        and control.get("value") == str(selected_path)
+                    )
+                    else None
+                )
+            )
+        finally:
+            restored = subprocess.run(
+                ("/usr/bin/pbcopy",),
+                input=original_clipboard.stdout,
+                capture_output=True,
+                check=False,
+            )
+            if restored.returncode != 0:
+                raise GateError("Native file chooser could not restore the clipboard")
+        self.post_key(36, private_source=True)
         # #region debug-point M:native-file-path-entry
         report_native_file_snapshot("after-path-confirmation")
         # #endregion
 
         baseline_window_count = int(baseline_control.get("windowCount", 0))
-        activation_recovery_attempted = False
-
         def selection_or_browser_ready(_: Any) -> dict[str, Any] | None:
-            nonlocal activation_recovery_attempted
             control = self.native_focused_control(client.process_id or 0)
             # #region debug-point M:native-file-path-entry
             report_native_file_snapshot("selection-poll", control)
@@ -947,31 +996,6 @@ except Exception as error:
                 int(control.get("windowCount", 0)) < baseline_window_count
                 or not control.get("role")
             ):
-                actor_process_ids = {
-                    candidate.process_id
-                    for candidate in self.clients.values()
-                    if candidate.process_id is not None
-                }
-                frontmost_pid = int(control.get("actualFrontmostPid", -1))
-                if (
-                    not activation_recovery_attempted
-                    and client.is_alive()
-                    and frontmost_pid != client.process_id
-                    and frontmost_pid in actor_process_ids
-                ):
-                    activation_recovery_attempted = True
-                    if not self.request_cooperative_activation(client):
-                        raise GateError(
-                            f"{actor} Native chooser lost foreground ownership "
-                            "without a cooperative activation source"
-                        )
-                    # #region debug-point R:native-chooser-activation-recovery
-                    report_native_file_snapshot(
-                        "activation-recovery-requested",
-                        self.native_focused_control(client.process_id or 0),
-                        include_webview=False,
-                    )
-                    # #endregion
                 return None
             if control.get("subrole") == "AXApplicationDialog":
                 return {"selected": False, "control": control}
@@ -988,7 +1012,7 @@ except Exception as error:
         ).until(selection_or_browser_ready)
 
         if not intermediate["selected"]:
-            self.post_key(36)
+            self.post_key(36, private_source=True)
 
         def native_window_restored(_: Any) -> dict[str, Any] | None:
             control = self.native_focused_control(client.process_id or 0)
@@ -1005,6 +1029,7 @@ except Exception as error:
                 >= baseline_window_count
                 and not panel_open(control)
                 and bool(control.get("role"))
+                and control.get("subrole") != "AXApplicationDialog"
                 else None
             )
 
