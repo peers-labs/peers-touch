@@ -272,6 +272,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn(
             "self.post_key(0, flags=command)\n"
+            "        self.post_key(51)",
+            self.source,
+        )
+        self.assertIn(
+            'control.get("value") == ""',
+            self.source,
+        )
+        self.assertIn(
+            "poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS",
+            self.source,
+        )
+        self.assertIn(
             "        self.post_key(0, text=str(selected_path))\n"
             "        self.post_key(36)",
             self.source,
