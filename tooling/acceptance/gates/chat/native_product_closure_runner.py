@@ -2014,28 +2014,92 @@ except Exception as error:
         )
         if active_select is not None:
             return
+        # #region debug-point N-R:background-modal-handoff
+        last_handoff_snapshot = ""
+
+        def background_action_ready(_: Any) -> dict[str, Any] | None:
+            nonlocal last_handoff_snapshot
+            snapshot = client.execute_script(
+                """
+                const describe = (node) => {
+                  if (!node) return null;
+                  const rect = node.getBoundingClientRect();
+                  return {
+                    tag: node.tagName,
+                    classes: node.className?.baseVal || node.className || '',
+                    role: node.getAttribute?.('role') || '',
+                    text: node.textContent?.trim() || '',
+                    rect: {
+                      left: rect.left,
+                      top: rect.top,
+                      right: rect.right,
+                      bottom: rect.bottom,
+                      width: rect.width,
+                      height: rect.height,
+                    },
+                  };
+                };
+                const action = document.querySelector(
+                  '[data-chat-conversation-action="background"]'
+                );
+                const rect = action?.getBoundingClientRect();
+                const x = rect ? rect.left + rect.width / 2 : 0;
+                const y = rect ? rect.top + rect.height / 2 : 0;
+                const hitStack = action
+                  ? document.elementsFromPoint(x, y).slice(0, 8).map(describe)
+                  : [];
+                const hit = action ? document.elementFromPoint(x, y) : null;
+                return {
+                  ready: Boolean(
+                    action && (hit === action || action.contains(hit))
+                  ),
+                  action: describe(action),
+                  hitStack,
+                  modals: Array.from(
+                    document.querySelectorAll('.ant-modal')
+                  ).map(describe),
+                  retry: Array.from(
+                    document.querySelectorAll(
+                      '[data-chat-background-retry]'
+                    )
+                  ).map(describe),
+                  alerts: Array.from(
+                    document.querySelectorAll('[role="alert"]')
+                  ).map(describe),
+                };
+                """
+            )
+            signature = json.dumps(snapshot, sort_keys=True)
+            if signature != last_handoff_snapshot:
+                request = urllib.request.Request(
+                    "http://127.0.0.1:7783/event",
+                    data=json.dumps(
+                        {
+                            "sessionId": "chat-background-picker",
+                            "runId": "post-fix",
+                            "hypothesisId": "N-R",
+                            "location":
+                                "NativeProductClosureGate:open_background_modal",
+                            "msg": "[DEBUG] background modal handoff",
+                            "data": snapshot,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urllib.request.urlopen(request, timeout=2).read()
+                except OSError:
+                    pass
+                last_handoff_snapshot = signature
+            return snapshot if snapshot.get("ready") else None
+
         WebDriverWait(
             client.driver,
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(
-            lambda _: bool(
-                client.execute_script(
-                    """
-                    const action = document.querySelector(
-                      '[data-chat-conversation-action="background"]'
-                    );
-                    if (!action) return false;
-                    const rect = action.getBoundingClientRect();
-                    const hit = document.elementFromPoint(
-                      rect.left + rect.width / 2,
-                      rect.top + rect.height / 2,
-                    );
-                    return hit === action || action.contains(hit);
-                    """
-                )
-            )
-        )
+        ).until(background_action_ready)
+        # #endregion
         self.click(actor, '[data-chat-conversation-action="background"]')
         client.find_element("[data-chat-background-select]", 15)
 
