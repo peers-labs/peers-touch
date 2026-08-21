@@ -596,10 +596,54 @@ function onGroupFederationEvent(payload: RealtimeGroupFederationEventPayload): v
   scheduleGroupFederationRefresh(payload.groupUlid, isActiveConversation);
 }
 
-function onConversationSettingsChanged(_payload: RealtimeConversationSettingsChangedPayload): void {
+function onConversationSettingsChanged(payload: RealtimeConversationSettingsChangedPayload): void {
+  // #region debug-point D:settings-realtime-event
+  fetch('http://127.0.0.1:7782/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'chat-mute-projection',
+      runId: 'pre-fix',
+      hypothesisId: 'D',
+      location: 'socialRealtime:onConversationSettingsChanged:event',
+      msg: '[DEBUG] conversation settings realtime event received',
+      data: {
+        conversationId: payload.containerUlid,
+        kind: payload.conversationKind,
+        actorId: payload.actorId,
+        changedAt: payload.changedTsUnixMs,
+      },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   runDetached('conversation settings refresh', async () => {
     const chat = useSocialChatStore.getState();
     await chat.loadSessions();
+    const refreshed = useSocialChatStore.getState();
+    const friendState = refreshed.conversationLocalState[
+      conversationKey('friend', payload.containerUlid)
+    ];
+    const groupState = refreshed.conversationLocalState[
+      conversationKey('group', payload.containerUlid)
+    ];
+    // #region debug-point D-E:settings-realtime-reconcile
+    fetch('http://127.0.0.1:7782/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'chat-mute-projection',
+        runId: 'pre-fix',
+        hypothesisId: 'D-E',
+        location: 'socialRealtime:onConversationSettingsChanged:reconciled',
+        msg: '[DEBUG] conversation settings realtime reconcile completed',
+        data: {
+          conversationId: payload.containerUlid,
+          friendState: friendState ?? null,
+          groupState: groupState ?? null,
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     useNavigationBadgeStore.getState().reconcileChatBadge();
   });
 }

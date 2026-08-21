@@ -14,6 +14,7 @@ type conversationMemberSettingsModel struct {
 	ID                  uint      `gorm:"column:id;primaryKey"`
 	ConversationID      string    `gorm:"column:conversation_id;size:128;uniqueIndex:uidx_conversation_member_settings"`
 	Ptid                string    `gorm:"column:ptid;size:255;uniqueIndex:uidx_conversation_member_settings"`
+	Nickname            string    `gorm:"column:nickname;size:255"`
 	Muted               bool      `gorm:"column:muted"`
 	Pinned              bool      `gorm:"column:pinned"`
 	AlertEnabled        bool      `gorm:"column:alert_enabled"`
@@ -28,6 +29,7 @@ func (*conversationMemberSettingsModel) TableName() string {
 }
 
 type memberSettingsProjection struct {
+	Nickname            string
 	Muted               bool
 	Pinned              bool
 	AlertEnabled        bool
@@ -37,6 +39,7 @@ type memberSettingsProjection struct {
 }
 
 type memberSettingsPatch struct {
+	Nickname            *string
 	Muted               *bool
 	Pinned              *bool
 	AlertEnabled        *bool
@@ -81,6 +84,9 @@ func (s *memberSettingsStore) Update(
 	patch memberSettingsPatch,
 ) (memberSettingsProjection, error) {
 	updates := map[string]any{"updated_at": time.Now().UTC()}
+	if patch.Nickname != nil {
+		updates["nickname"] = *patch.Nickname
+	}
 	if patch.Muted != nil {
 		updates["muted"] = *patch.Muted
 	}
@@ -106,6 +112,9 @@ func (s *memberSettingsStore) Update(
 		AlertEnabled:   true,
 		Background:     "default",
 		UpdatedAt:      time.Now().UTC(),
+	}
+	if patch.Nickname != nil {
+		model.Nickname = *patch.Nickname
 	}
 	if patch.Muted != nil {
 		model.Muted = *patch.Muted
@@ -148,6 +157,7 @@ func normalizeConversationBackground(value string) string {
 func projectMemberSettings(model conversationMemberSettingsModel) memberSettingsProjection {
 	background := normalizeConversationBackground(model.Background)
 	return memberSettingsProjection{
+		Nickname:            model.Nickname,
 		Muted:               model.Muted,
 		Pinned:              model.Pinned,
 		AlertEnabled:        model.AlertEnabled,
