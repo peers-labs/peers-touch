@@ -260,3 +260,25 @@ The next run adds instrumentation only around the failed-upload Modal handoff:
 Background action hit stack, active Modals, retry controls, and alerts. The
 readiness condition remains exact action ownership; no product or Gate behavior
 is changed before runtime evidence identifies the blocker.
+
+Modal-handoff instrumentation run:
+`20260821T164939444353Z-73f1904c1b4e8f881d644d7850ad3b6b`.
+
+- Source, dedicated binary, and Profile Three Station matched clean commit
+  `04e56f45b606b71eb404cd890201c453816f0e49`.
+- The post-failure action was briefly covered only by the previous Background
+  Modal's `ant-zoom-leave` wrapper. Its rect shrank through the leave animation,
+  then the hit stack returned to the actual Background action with
+  `ready=true`; the Gate crossed this stage without relaxing the condition.
+- The next Native chooser opened and accepted the Go-To path event.
+- Accessibility then stayed at `windowCount=0/sheetCount=0`; the product log
+  recorded `pick_image_file` entry but no return before the Gate failed.
+- This rejects the assumption that `windowCount=0` alone means the file was
+  selected. It is an intermediate Go-To-to-browser transition.
+- Cleanup released ports `3330/3331/4445/4446/49680`.
+
+The Native chooser state machine must now require either the exact path field
+or a restored file-browser control, use Enter to navigate, use Enter again to
+select when the browser remains open, and only accept the restored application
+window after the final selection. A zero-window snapshot remains transitional
+and cannot satisfy selection.
