@@ -1067,20 +1067,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           });
         }
 
-        let groupSecurityState: GroupSecurityState | undefined;
-        if (conversation.kind === 2) {
-          try {
-            const recipientStatus = await imServiceV1.mlsGroup.recipientStatus(
-              conversation.conversationId,
-            );
-            groupSecurityState = projectGroupSecurityState(recipientStatus.status);
-          } catch (error) {
-            log.warn('socialChat', 'load group MLS recipient status failed', {
-              conversationId: conversation.conversationId,
-              error,
-            });
-          }
-        }
+        const groupSecurityState = conversation.kind === 2 && conversation.mlsStatus
+          ? projectGroupSecurityState(conversation.mlsStatus)
+          : undefined;
 
         return { conversation, settings, groupSecurityState };
       }));

@@ -284,8 +284,19 @@ pub fn messaging_list_conversations(
         Ok(conversations) => conversations,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    AppResult::success(json!({
-        "conversations": conversations.into_iter().map(|conversation| json!({
+    let mut projected = Vec::with_capacity(conversations.len());
+    for conversation in conversations {
+        let mls_status = if conversation.kind == ConversationKind::Group as i32 {
+            match engine
+                .group_security_status(&conversation.conversation_id, conversation.mls_epoch)
+            {
+                Ok(status) => Some(status),
+                Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+            }
+        } else {
+            None
+        };
+        projected.push(json!({
             "conversation_id": conversation.conversation_id,
             "authority_station_id": conversation.authority_station_id,
             "kind": conversation.kind,
@@ -294,9 +305,13 @@ pub fn messaging_list_conversations(
             "member_ptids": conversation.member_ptids,
             "membership_epoch": conversation.membership_epoch,
             "mls_epoch": conversation.mls_epoch,
+            "mls_status": mls_status,
             "active": conversation.active,
             "updated_at_unix_ms": conversation.updated_at_unix_ms,
-        })).collect::<Vec<_>>()
+        }));
+    }
+    AppResult::success(json!({
+        "conversations": projected
     }))
 }
 

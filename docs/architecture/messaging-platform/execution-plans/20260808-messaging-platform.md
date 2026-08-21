@@ -20,12 +20,12 @@
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-F` Acceptance truth cutover |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Second Native failure repaired at the Engine state owner: creator MLS status now reports `active` only when the local session epoch and active leaf match; recipient-head and buffer failure precedence remains fail-closed |
+| Last completed | MLS readiness split-brain removed: `messaging_list_conversations` now projects status from the profile-scoped `MessagingEngine.mls_manager`, and `socialChat` no longer queries the unrelated global legacy manager |
 | Current action | Rebuild the dedicated Acceptance binary and rerun the complete real-DOM two-client journey against a Station deployed from the same clean source commit |
 | Next action | Inspect the next first failed bounded step or, only if the Gate finishes `DONE/PROVEN`, validate the complete DOM/geometry/readback/count/restart/cleanup evidence ledger |
-| Blockers | Native run `20260821T004058261056Z-c6d37d2bcfd89c09ecc09fe5fc52b04a` failed at Alice creator readiness after the frontend began consuming canonical recipient status; the Engine creator-status gap is repaired, but all later product assertions remain `UNPROVEN` |
+| Blockers | Native run `20260821T005208485713Z-9b5f4d951ea93d82d6c6319aac77a640` proved the global legacy manager was not the product Engine instance; the split-brain is removed, but all later product assertions remain `UNPROVEN` until a fresh Gate runs |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Native runs `20260821T002402444965Z-b2c42b202c36ae6d7dd8f78a15695f40` and `20260821T004058261056Z-c6d37d2bcfd89c09ecc09fe5fc52b04a` preserve valid source/build/runtime and cleanup evidence but fail before product closure; frontend fix passes Desktop check/test/build, Engine creator-status test passes 1/1, and `cargo check --features acceptance-webdriver` passes; W13 remains `UNPROVEN` |
+| Evidence | Three failed Native runs preserve valid source/build/runtime and cleanup evidence but stop at group readiness; the profile-scoped cutover passes Desktop check, 29 focused TS tests, Engine status test 1/1, `cargo check --features acceptance-webdriver`, and the legacy-call old-path scan; W13 remains `UNPROVEN` |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
