@@ -1016,6 +1016,9 @@ except Exception as error:
         ).until(
             lambda _: actor_window_owns_point()
         )
+        # #region debug-point N-Q:native-window-focus
+        report_focus_snapshot("after-owner")
+        # #endregion
         if not bool(client.driver.execute_script("return document.hasFocus()")):
             focus_mouse_down = False
             try:
@@ -1033,6 +1036,9 @@ except Exception as error:
             finally:
                 if focus_mouse_down and self.native_mouse_button_down():
                     self.post_mouse((2,), point)
+            # #region debug-point N-Q:native-window-focus
+            report_focus_snapshot("after-focus-click")
+            # #endregion
             WebDriverWait(
                 client.driver,
                 5,
