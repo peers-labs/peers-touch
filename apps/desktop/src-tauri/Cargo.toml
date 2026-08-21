@@ -59,7 +59,8 @@ messaging-core = { path = "../../../packages/messaging-core" }
 [target.'cfg(target_os = "macos")'.dependencies]
 dispatch2 = "0.3.1"
 keyring = { version = "3", features = ["apple-native"] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSWindow"] }
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["libc", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }

@@ -4338,6 +4338,7 @@ dependencies = [
  "hkdf",
  "keyring",
  "messaging-core",
+ "objc2",
  "objc2-app-kit",
  "openmls",
  "openmls_basic_credential",

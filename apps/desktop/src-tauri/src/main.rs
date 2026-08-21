@@ -67,6 +67,51 @@ fn configure_acceptance_window_level(_window: &tauri::WebviewWindow) -> std::io:
     Ok(())
 }
 
+#[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+#[tauri::command]
+fn acceptance_yield_activation(target_pid: i32) -> error::AppResult<serde_json::Value> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSRunningApplication};
+
+    let Some(main_thread) = MainThreadMarker::new() else {
+        return error::AppResult::fail(
+            error::ErrorCode::InternalError,
+            "acceptance activation yield must run on the AppKit main thread",
+            Some(serde_json::json!({ "targetPid": target_pid })),
+        );
+    };
+    let Some(target) = NSRunningApplication::runningApplicationWithProcessIdentifier(target_pid)
+    else {
+        return error::AppResult::fail(
+            error::ErrorCode::NotFound,
+            "acceptance activation target process is unavailable",
+            Some(serde_json::json!({ "targetPid": target_pid })),
+        );
+    };
+
+    NSApplication::sharedApplication(main_thread).yieldActivationToApplication(&target);
+    error::AppResult::success(serde_json::json!({ "targetPid": target_pid }))
+}
+
+#[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+#[tauri::command]
+#[allow(deprecated)]
+fn acceptance_request_activation() -> error::AppResult<serde_json::Value> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSApplication;
+
+    let Some(main_thread) = MainThreadMarker::new() else {
+        return error::AppResult::fail(
+            error::ErrorCode::InternalError,
+            "acceptance activation request must run on the AppKit main thread",
+            None,
+        );
+    };
+
+    NSApplication::sharedApplication(main_thread).activateIgnoringOtherApps(true);
+    error::AppResult::success(serde_json::json!({ "requested": true }))
+}
+
 #[cfg(feature = "acceptance-webdriver")]
 fn configure_acceptance_window(window: &tauri::WebviewWindow) -> std::io::Result<()> {
     let slot = std::env::var("PT_ACCEPTANCE_WINDOW_SLOT")
@@ -257,6 +302,10 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+            acceptance_yield_activation,
+            #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+            acceptance_request_activation,
             interface::tauri_commands::meta_contract_version,
             frontend_log::frontend_log,
             frontend_telemetry::frontend_telemetry_upload,
