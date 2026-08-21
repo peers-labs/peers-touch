@@ -1523,7 +1523,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 data=json.dumps(
                     {
                         "sessionId": "chat-background-picker",
-                        "runId": "pre-fix",
+                        "runId": "post-fix",
                         "hypothesisId": "A-E",
                         "location":
                             "NativeProductClosureGate:select_second_background",
