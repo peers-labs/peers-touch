@@ -395,6 +395,7 @@ class NativeProductClosureGate(AcceptanceGate):
 
     def activate_native_process(self, process_id: int) -> None:
         appkit_script = r"""
+import json
 import sys
 
 import AppKit
@@ -404,11 +405,38 @@ application = AppKit.NSRunningApplication.runningApplicationWithProcessIdentifie
 )
 if application is None:
     raise SystemExit("Native actor process is unavailable")
+workspace = AppKit.NSWorkspace.sharedWorkspace()
+frontmost_before = workspace.frontmostApplication()
+target_active_before = bool(application.isActive())
 options = (
     AppKit.NSApplicationActivateAllWindows
     | AppKit.NSApplicationActivateIgnoringOtherApps
 )
-if not application.activateWithOptions_(options):
+request_accepted = bool(application.activateWithOptions_(options))
+frontmost_after = workspace.frontmostApplication()
+sys.stdout.write(
+    json.dumps(
+        {
+            "activationPolicy": int(application.activationPolicy()),
+            "finishedLaunching": bool(application.isFinishedLaunching()),
+            "hidden": bool(application.isHidden()),
+            "targetActiveBefore": target_active_before,
+            "requestAccepted": request_accepted,
+            "targetActiveAfter": bool(application.isActive()),
+            "frontmostPidBefore": (
+                int(frontmost_before.processIdentifier())
+                if frontmost_before is not None
+                else -1
+            ),
+            "frontmostPidAfter": (
+                int(frontmost_after.processIdentifier())
+                if frontmost_after is not None
+                else -1
+            ),
+        }
+    )
+)
+if not request_accepted:
     raise SystemExit("AppKit rejected Native actor activation")
 """
         appkit_activation = subprocess.run(
@@ -417,6 +445,38 @@ if not application.activateWithOptions_(options):
             text=True,
             check=False,
         )
+        # #region debug-point R-T:appkit-activation-boundary
+        try:
+            appkit_snapshot = json.loads(appkit_activation.stdout)
+        except json.JSONDecodeError:
+            appkit_snapshot = {
+                "snapshotError": f"invalid AppKit response: {appkit_activation.stdout!r}",
+            }
+        request = urllib.request.Request(
+            "http://127.0.0.1:7784/event",
+            data=json.dumps(
+                {
+                    "sessionId": "chat-native-window-focus",
+                    "runId": "post-fix-appkit-boundary",
+                    "hypothesisId": "R-T",
+                    "location":
+                        "NativeProductClosureGate:activate_native_process",
+                    "msg": "[DEBUG] AppKit activation request completed",
+                    "data": {
+                        "processId": process_id,
+                        "returnCode": appkit_activation.returncode,
+                        "snapshot": appkit_snapshot,
+                    },
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(request, timeout=2).read()
+        except OSError:
+            pass
+        # #endregion
         if appkit_activation.returncode != 0:
             raise GateError(
                 "Native actor AppKit activation failed: "
@@ -454,6 +514,32 @@ if not application.activateWithOptions_(options):
             raise GateError(
                 f"Native actor process {process_id} did not become frontmost"
             )
+        # #region debug-point R-T:appkit-activation-boundary
+        request = urllib.request.Request(
+            "http://127.0.0.1:7784/event",
+            data=json.dumps(
+                {
+                    "sessionId": "chat-native-window-focus",
+                    "runId": "post-fix-appkit-boundary",
+                    "hypothesisId": "R-T",
+                    "location":
+                        "NativeProductClosureGate:activate_native_process",
+                    "msg": "[DEBUG] Accessibility activation completed",
+                    "data": {
+                        "processId": process_id,
+                        "systemEventsFrontmost": completed.stdout.strip(),
+                        "focusedControl": self.native_focused_control(process_id),
+                    },
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(request, timeout=2).read()
+        except OSError:
+            pass
+        # #endregion
 
     def native_focused_control(self, process_id: int) -> dict[str, Any]:
         script = f"""
