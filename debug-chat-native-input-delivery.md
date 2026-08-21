@@ -61,3 +61,18 @@ move to a different, already verified owned probe point when the cursor equals
 the center, require that real movement acknowledgement, then move back to the
 center and continue the existing down/up/click sequence. Post-fix source-bound
 verification is pending.
+
+First staging source-bound run:
+`20260821T134416643171Z-4d64ff333c8e21460d0ff508e3edf033`.
+
+- Source, dedicated binary, and live Station matched at `2dab48e2f`.
+- The selected alternate point `[67.5,81]` differed from center `[81.5,95]`
+  and came from a target-owned DOM probe.
+- The Gate failed waiting for the staging move acknowledgement before posting
+  the center move.
+- The current instrumentation only reports center-move timeout, so it did not
+  capture the Native cursor/focus state after the staging post.
+- Cleanup released ports `3330/3331/4445/4446/63919`.
+
+The next instrumentation run must capture `staging-timeout` before changing
+CoreGraphics event-source or activation behavior.
