@@ -273,16 +273,39 @@ class NativeProductClosureGate(AcceptanceGate):
         if self.device_ids[actor] != previous_device:
             raise GateError(f"{actor} device identity changed across restart")
 
+    def activate_actor_window(self, actor: str) -> TauriDriver:
+        client = self.clients[actor]
+        if client.process_id is None:
+            raise GateError(f"{actor} Native window has no running process")
+        subprocess.run(
+            [
+                "/usr/bin/osascript",
+                "-e",
+                (
+                    'tell application "System Events" to set frontmost of first '
+                    f"application process whose unix id is {client.process_id} to true"
+                ),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        WebDriverWait(client.driver, 5).until(
+            lambda driver: bool(driver.execute_script("return document.hasFocus()"))
+        )
+        return client
+
     def click(self, actor: str, selector: str, timeout: float = 30) -> Any:
-        element = self.clients[actor].find_element(selector, timeout)
-        WebDriverWait(self.clients[actor].driver, timeout).until(
+        client = self.activate_actor_window(actor)
+        element = client.find_element(selector, timeout)
+        WebDriverWait(client.driver, timeout).until(
             lambda _: element.is_displayed() and element.is_enabled()
         )
         element.click()
         return element
 
     def hover_message(self, actor: str, message_id: str) -> Any:
-        client = self.clients[actor]
+        client = self.activate_actor_window(actor)
         neutral = client.find_element("[data-chat-send]", 30)
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 30)
         native_window: dict[str, float] | None = None
@@ -368,24 +391,6 @@ class NativeProductClosureGate(AcceptanceGate):
             return snapshot
 
         before = report_probe("before")
-        if client.process_id is None:
-            raise GateError("Native hover requires a running client process")
-        subprocess.run(
-            [
-                "/usr/bin/osascript",
-                "-e",
-                (
-                    'tell application "System Events" to set frontmost of first '
-                    f"application process whose unix id is {client.process_id} to true"
-                ),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        WebDriverWait(client.driver, 5).until(
-            lambda driver: bool(driver.execute_script("return document.hasFocus()"))
-        )
         bounds_script = (
             'tell application "System Events" to tell first application process '
             f"whose unix id is {client.process_id} to get "
