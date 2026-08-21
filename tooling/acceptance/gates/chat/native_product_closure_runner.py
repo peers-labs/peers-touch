@@ -1547,7 +1547,10 @@ class NativeProductClosureGate(AcceptanceGate):
 
             def visible_options(driver: Any) -> list[Any] | None:
                 nonlocal last_snapshot
-                options = driver.find_elements(By.CSS_SELECTOR, "[role='option']")
+                options = driver.find_elements(
+                    By.CSS_SELECTOR,
+                    ".ant-select-item-option",
+                )
                 visible = [
                     option
                     for option in options
