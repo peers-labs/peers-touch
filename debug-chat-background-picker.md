@@ -532,3 +532,38 @@ This rejects source selection alone. The remaining input-lifecycle difference
 is that the shortcut does not contain physical Command/Shift down/up events.
 The next correction uses one private source for the complete modifier chord,
 and applies the same real chord lifecycle to `Cmd+A` and `Cmd+V`.
+
+Physical-chord source-bound comparison:
+`20260821T212739077914Z-bc7a860de294c77de2bddc104449d21c`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `54dc248566261e4c327a7fa78cd7044b6807d9b4`.
+- The Gate crossed all prior assertions and emitted physical private-source
+  Command/Shift down, G down/up, and modifier-up events.
+- The first post-shortcut System Events probe timed out and no readable
+  `AXTextField` followed. The run therefore remained `UNPROVEN`.
+- Cleanup released `3330/3331/4445/4446`.
+
+Screenshot-bound diagnostic comparison:
+`20260821T213231555565Z-3f587fb9915d27043b51cfdba923a58e`.
+
+- The run matched the same clean source and Station, reached `FIXTURE_READY`,
+  and reproduced the same bounded AX timeout.
+- `.dbg/chat-chooser-after-shortcut-20260821T213231555565Z.png`, SHA-256
+  `70f99e9fa2eb99f655cf6ed46dd8ad3e3663b690c55725392adde35fd00e23ee`,
+  was captured at debug timestamp `1787348159767`. It shows the real macOS
+  Go-To sheet visibly open over Alice's chooser, with the chooser's remembered
+  `empty.png` path in its text field.
+- The screenshot was taken immediately after the runner's post-shortcut AX
+  probe returned its timeout and before the Gate could execute its current-run
+  select-all, delete, or paste steps. It is diagnostic evidence only, not
+  product proof.
+- This confirms the physical shortcut lifecycle and rejects “Go-To never
+  opened.” The first failing boundary is the System Events AppleScript bridge:
+  it becomes unreadable while the sheet is visibly present.
+- The next correction replaces only `native_focused_control` with a
+  deadline-bounded, process-bound `AXUIElementCreateApplication` probe. The
+  Gate must retain `AXTextField`, exact empty value, exact selected path,
+  window/sheet lifecycle, and frontmost-process assertions.
+- Acceptance run status is `PARTIAL/UNPROVEN`; cleanup status is `passed`, and
+  direct process/port checks found no actor or runner residue.
