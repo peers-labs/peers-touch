@@ -39,6 +39,8 @@
 | AB | The pane-owned overlay rect itself is missing an edge | Low | Low | Rejected: overlay used the plain-object serializer and reached collision checks |
 | AC | A product overlap was detected before the Gate exception | Low | Low | Rejected: collision evaluation aborted on adjacent deserialization |
 | AD | Re-focusing an already-focused actor moves the Native pointer away from a transient overlay and dismisses it before the paced click completes | High | Low | Confirmed: row leave and the 140ms close timer fired after hover but before any Reply handler event |
+| AE | A fixed post interval does not prove WKWebView consumed the previous click before the next target move | High | Low | Confirmed: the previous `mouseup` reached Send before the current `pointerdown/mousedown`, and no current `mouseup/click` followed |
+| AF | Default 500ms acknowledgement polling holds a transient toolbar press past its 140ms close grace | High | Low | Confirmed: target `mousedown` was acknowledged, the close timer fired, and the subsequent `mouseup` had no target owner |
 
 ## Log Evidence
 Instrumentation points:
@@ -299,6 +301,40 @@ Clean source-bound verification:
   transient action lifecycle on clean source.
 - The first failure was the independent Mute projection.
 - Actor and fault-proxy ports were released.
+
+Native acknowledgement recurrence:
+`20260821T103108217486Z-e695d7ae3893ecd1e2b33097cd853564`.
+
+- Source, dedicated binary, and Profile Three Station matched commit
+  `5d5606bd75784722d5c7647de7be88f2e9d59b87`; provisioning reached
+  `FIXTURE_READY`.
+- The real Reply handler, callback, and `replyToUlid` commit entered for Bob's
+  exact root.
+- The next Composer click did not reach `click`, `submit`, or `handleSend`.
+  The DOM first received a prior `mouseup` on Send, then the current
+  `pointerdown/mousedown`, with no matching current `mouseup/click`.
+- The Gate therefore timed out waiting for Alice's visible reply before Mute.
+  This does not reopen the Thread relation owner; the send intent was never
+  constructed.
+- AE is confirmed: fixed posting delay is not a consumption acknowledgement.
+  The Driver must synchronize each Native event against passive DOM capture
+  evidence instead of relying on a fixed sleep or retrying a business action.
+- Cleanup released `3330`, `3331`, `4445`, and `4446`.
+
+First acknowledgement run:
+`20260821T104530388449Z-7aff353c561e04d3faa9fb86cb2428a5`.
+
+- Alice and Bob root sends both completed with ordered
+  `pointerdown/mousedown -> mouseup -> click -> submit -> onSend return`.
+- The Reply toolbar target acknowledged `mousedown`, proving geometry, focus,
+  movement, and target ownership.
+- The Driver's default 500ms WebDriver poll held the press beyond the overlay's
+  140ms close grace. The row-leave timer removed the toolbar before Driver
+  posted `mouseup`, which then had no target owner.
+- AF is confirmed. The acknowledgement loop must poll below the transient
+  target grace while remaining event-driven; changing the product timer or
+  retrying Reply would be a test workaround.
+- Cleanup released `3330`, `3331`, `4445`, and `4446`.
 
 ## Verification Conclusion
 The target geometry and hit-test ownership are correct, but neither Selenium
