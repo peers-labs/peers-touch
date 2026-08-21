@@ -174,3 +174,24 @@ The Driver must accept both native path-entry terminal states:
 Chooser closure alone does not prove upload success. The existing background
 failure/retry, `oss://` persistence, Station readback, cross-device and restart
 assertions remain mandatory.
+
+Chooser-terminal source-bound run:
+`20260821T155837498049Z-330b252a0a550838f5efead5e87ac5c5`.
+
+- Source, binary, and Profile Three Station matched clean commit
+  `e588f2c2eac213ea6ae726cd524e72c3fbeff77c`.
+- The Gate accepted Native panel closure after path entry and continued beyond
+  `choose_native_file`.
+- It reached the failed-upload recovery stage, then timed out in
+  `open_background_modal` while waiting for every non-zero
+  `.ant-modal-wrap` in the document to disappear.
+- That condition is broader than the user action. The required prerequisite is
+  that the Details Background action center is owned by the action itself, not
+  that no Modal wrapper exists anywhere in the document.
+- Cleanup released ports `3330/3331/4445/4446/52377`.
+
+The Gate now waits for
+`elementFromPoint(background-action-center)` to resolve to the action or one of
+its descendants. `click_element` then repeats the target ownership check and
+requires the real CoreGraphics DOM click sequence. This preserves genuine
+occlusion failure while rejecting unrelated wrappers as false blockers.
