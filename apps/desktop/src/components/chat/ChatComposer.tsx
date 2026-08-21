@@ -509,6 +509,7 @@ export function ChatComposer({
   return (
     <Flexbox
       data-chat-composer={activeConversationId}
+      data-chat-send-outcome-revision={latestSendOutcome?.revision ?? 0}
       data-chat-send-outcome-state={latestSendOutcome?.outcome.state || ''}
       data-chat-send-outcome-attachment-count={latestSendOutcome?.outcome.attachmentCount ?? 0}
       data-chat-send-outcome-attachment-ids={latestSendOutcome?.outcome.attachmentIds.join(',') || ''}
