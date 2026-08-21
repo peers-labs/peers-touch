@@ -1,4 +1,4 @@
-import { memo, useRef, type CSSProperties, type KeyboardEvent } from 'react';
+import { memo, useEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Tooltip } from '@lobehub/ui';
 import { Popover, Spin, theme, Typography } from 'antd';
@@ -172,6 +172,36 @@ function ThreadReplyPreviewList({
   const openLabel = unreadCount > 0
     ? t('chat.social.thread.summaryUnread', { count: totalCount, unread: unreadCount })
     : t('chat.social.thread.summary', { count: totalCount });
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const previewId = previewMessages[0]?.ulid || '';
+      const marker = previewId
+        ? document.querySelector(`[data-thread-preview-message-id="${previewId}"]`)
+        : null;
+      const content = marker?.querySelector('[data-thread-preview-message-content]');
+      // #region debug-point G-I:thread-preview-commit
+      fetch('http://127.0.0.1:7778/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'thread-summary-projection',
+          runId: 'post-fix',
+          hypothesisId: 'G-I',
+          location: 'ThreadReplyPreviewList:commit',
+          msg: '[DEBUG] thread preview committed',
+          data: {
+            totalCount,
+            previewIds: previewMessages.map(message => message.ulid),
+            markerFound: Boolean(marker),
+            contentFound: Boolean(content),
+            contentLength: content?.textContent?.length ?? 0,
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [previewMessages, totalCount]);
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
@@ -270,6 +300,7 @@ function ThreadReplyPreviewList({
                 return (
                   <div
                     key={reply.ulid}
+                    data-thread-preview-message-id={reply.ulid}
                     style={{
                       display: 'grid',
                       gridTemplateColumns: 'max-content minmax(0, 1fr)',
@@ -294,6 +325,7 @@ function ThreadReplyPreviewList({
                       {ownReply ? t('chat.social.thread.you') : profile.name}
                     </Text>
                     <Text
+                      data-thread-preview-message-content={reply.ulid}
                       ellipsis
                       style={{
                         minWidth: 0,
