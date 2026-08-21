@@ -1069,7 +1069,26 @@ except Exception as error:
             except OSError:
                 pass
 
-        baseline_control = self.native_focused_control(client.process_id)
+        def native_app_baseline_ready(_: Any) -> dict[str, Any] | None:
+            control = self.native_focused_control(client.process_id or 0)
+            # #region debug-point L-M:native-file-chooser-handoff
+            report_native_file_snapshot("baseline-poll", control)
+            # #endregion
+            return (
+                control
+                if int(control.get("windowCount", 0)) >= 1
+                and bool(control.get("mainWindow"))
+                and bool(control.get("frontmost"))
+                and control.get("role") not in NATIVE_FILE_PANEL_FOCUSED_ROLES
+                and control.get("subrole") != "AXApplicationDialog"
+                else None
+            )
+
+        baseline_control = WebDriverWait(
+            client.driver,
+            NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(native_app_baseline_ready)
         report_native_file_snapshot("before-trigger", baseline_control)
         # #endregion
         self.click(actor, trigger_selector)

@@ -56,3 +56,10 @@ boundary. Hypotheses A-E therefore remain inconclusive.
   JSON evidence before cleanup.
 - Product behavior, waits, clicks, and assertions are unchanged.
 - Python compile, product-closure static Gate, and diff check pass.
+
+The first source-bound instrumentation run,
+`20260821T234703453070Z-0ba892fd82975073593952ace3fa9005`, did not reach
+restart. It failed earlier in the fourth Native file chooser because a
+transient zero-window Accessibility sample was used as the chooser baseline.
+That independent Gate state-machine defect is tracked in
+`debug-chat-background-picker.md`; restart hypotheses A-E remain pending.
