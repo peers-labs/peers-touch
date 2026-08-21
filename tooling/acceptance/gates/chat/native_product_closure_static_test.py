@@ -85,6 +85,37 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'if bool(client.driver.execute_script("return document.hasFocus()")):',
             self.source,
         )
+        focus_start = self.source.index(
+            "    def focus_actor_window(self, actor: str) -> TauriDriver:"
+        )
+        focus_end = self.source.index(
+            "    def click_element(self, actor: str, element: Any) -> Any:",
+            focus_start,
+        )
+        focus_source = self.source[focus_start:focus_end]
+        recovery_index = focus_source.index(
+            "if self.native_mouse_button_down():"
+        )
+        move_index = focus_source.index("self.post_mouse((5,), point)")
+        down_index = focus_source.index(
+            "self.post_mouse(\n            (1,),",
+            move_index,
+        )
+        finally_index = focus_source.index("        finally:", down_index)
+        up_index = focus_source.index(
+            "self.post_mouse(\n                (2,),",
+            finally_index,
+        )
+        focus_wait_index = focus_source.index(
+            "WebDriverWait(client.driver, 5).until(",
+            up_index,
+        )
+        self.assertLess(recovery_index, move_index)
+        self.assertLess(move_index, down_index)
+        self.assertLess(down_index, finally_index)
+        self.assertLess(finally_index, up_index)
+        self.assertLess(up_index, focus_wait_index)
+
         click_start = self.source.index(
             "    def click(self, actor: str, selector: str, timeout: float = 30)"
         )
