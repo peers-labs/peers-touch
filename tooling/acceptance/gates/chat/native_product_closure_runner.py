@@ -419,10 +419,10 @@ class NativeProductClosureGate(AcceptanceGate):
             check=False,
         )
         if completed.returncode != 0:
-            return {}
+            return {"error": completed.stderr.strip()}
         fields = completed.stdout.rstrip("\n").split("\t", 3)
         if len(fields) != 4:
-            return {}
+            return {"error": f"unexpected AX response: {completed.stdout!r}"}
         return {
             "role": fields[0],
             "subrole": fields[1],
@@ -516,12 +516,80 @@ class NativeProductClosureGate(AcceptanceGate):
         file_input = client.find_element(input_selector, 10)
         probe_id = self.install_native_file_probe(client, file_input)
         try:
+            # #region debug-point L-M:native-file-chooser-handoff
+            last_native_file_snapshot = ""
+
+            def report_native_file_snapshot(
+                phase: str,
+                focused_control: dict[str, str] | None = None,
+            ) -> None:
+                nonlocal last_native_file_snapshot
+                snapshot = client.execute_script(
+                    """
+                    return {
+                      documentFocused: document.hasFocus(),
+                      visibilityState: document.visibilityState,
+                      activeElement: {
+                        tag: document.activeElement?.tagName || '',
+                        role: document.activeElement?.getAttribute?.('role') || '',
+                        classes: document.activeElement?.className?.baseVal
+                          || document.activeElement?.className
+                          || '',
+                      },
+                    };
+                    """
+                )
+                snapshot["focusedControl"] = (
+                    focused_control
+                    if focused_control is not None
+                    else self.native_focused_control(client.process_id or 0)
+                )
+                snapshot["inputEvents"] = self.native_file_probe_events(
+                    client,
+                    probe_id,
+                )
+                signature = json.dumps(snapshot, sort_keys=True)
+                if signature == last_native_file_snapshot:
+                    return
+                last_native_file_snapshot = signature
+                request = urllib.request.Request(
+                    "http://127.0.0.1:7783/event",
+                    data=json.dumps(
+                        {
+                            "sessionId": "chat-background-picker",
+                            "runId": "native-file-pre-fix",
+                            "hypothesisId": "L-M",
+                            "location":
+                                "NativeProductClosureGate:choose_native_file",
+                            "msg": f"[DEBUG] Native file chooser {phase}",
+                            "data": snapshot,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urllib.request.urlopen(request, timeout=2).read()
+                except OSError:
+                    pass
+
+            report_native_file_snapshot("before-trigger")
+            # #endregion
             self.click(actor, trigger_selector)
+            # #region debug-point L-M:native-file-chooser-handoff
+            report_native_file_snapshot("after-trigger")
+            # #endregion
 
             def native_panel_ready(driver: Any) -> dict[str, str] | None:
-                if bool(driver.execute_script("return document.hasFocus()")):
-                    return None
+                document_focused = bool(
+                    driver.execute_script("return document.hasFocus()")
+                )
                 control = self.native_focused_control(client.process_id or 0)
+                # #region debug-point L-M:native-file-chooser-handoff
+                report_native_file_snapshot("panel-poll", control)
+                # #endregion
+                if document_focused:
+                    return None
                 return control if control.get("role") else None
 
             WebDriverWait(
