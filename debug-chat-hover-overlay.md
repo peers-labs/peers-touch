@@ -70,12 +70,26 @@ Third post-fix run:
 - No raw row mouse/pointer event or action-target/geometry event appeared.
 - Cleanup again released `3330`, `3331`, `4445`, and `4446`.
 
+First CoreGraphics run:
+`20260821T015121128471Z-630f7fe7e190a15059b003ff6f400268`.
+
+- Source and Station matched commit `d98130c947df054a724651a459fddaeccf072927`.
+- CoreGraphics posting completed, but the WKWebView exposed unusable browser
+  window fields: `outerWidth=0`, `outerHeight=0`, `screenX=0`, `screenY=1117`.
+- The derived HID coordinates were therefore outside the actual client window;
+  this run does not reject CoreGraphics input.
+- An isolated smoke client proved the correct coordinate source:
+  Accessibility bounds `264,98,1200,801`, DOM viewport `1200x769`, and a
+  32-point title/content offset. WebDriver reported doubled Retina pixels and
+  is not used for DOM-to-screen conversion.
+
 ## Verification Conclusion
 The target geometry and hit-test ownership are correct, but neither Selenium
 element-origin nor viewport-origin W3C pointer movement reaches the embedded
 WKWebView input layer. macOS native HID posting is available and authorized by
-the host. The next minimal path activates the exact client PID, converts the
-measured DOM center into screen coordinates, posts real CoreGraphics mouse
-movement through a neutral point, and keeps Selenium only for DOM geometry and
-result verification. JS event dispatch, Store mutation, Harness actions, and
-fixed business commands remain forbidden.
+the host. Browser `screenX/screenY/outerWidth/outerHeight` are invalid in this
+embedded runtime, so the coordinate mapping must use the exact client PID's
+Accessibility front-window position/size plus the DOM viewport. The Native path
+then posts real CoreGraphics mouse movement through a neutral point and keeps
+Selenium only for DOM geometry and result verification. JS event dispatch,
+Store mutation, Harness actions, and fixed business commands remain forbidden.

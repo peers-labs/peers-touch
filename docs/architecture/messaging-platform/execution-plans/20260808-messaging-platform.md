@@ -20,12 +20,12 @@
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-F` Acceptance truth cutover |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Source-bound runs confirmed both element-origin and viewport-origin Selenium W3C pointer movement leave the embedded WKWebView row `:hover=false`; geometry and hit ownership are correct |
-| Current action | Use macOS CoreGraphics native mouse movement after activating the exact client PID, with screen coordinates derived from measured DOM/window geometry |
+| Last completed | First CoreGraphics run exposed invalid WKWebView browser window fields; isolated smoke proved Accessibility bounds use points and provide the correct 32-point content offset while WebDriver rect uses doubled Retina pixels |
+| Current action | Map DOM centers through the exact client PID's Accessibility front-window bounds, then post CoreGraphics mouse movement in macOS point coordinates |
 | Next action | Rebuild and rerun the same Native Gate; require raw mouse events, `:hover=true`, A/B/E events, and toolbar appearance before advancing |
 | Blockers | Native hover input remains unresolved; thread and every assertion after the first hover remain `UNPROVEN` |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Native run `20260821T014246527356Z-c0c025ff36d65daeb00ea15648ef75a6` bound source/Station commit `aae7297dd9792b0bec11339b586e8840e703a516`; viewport-origin `PointerInput(mouse)` completed but row `:hover` stayed false and F/A/B/D/E remained absent; cleanup released `3330/3331/4445/4446`; host reports `CGPreflightPostEventAccess=true`; debug session `chat-hover-overlay` remains `[OPEN]`; W13 remains `UNPROVEN` |
+| Evidence | Native run `20260821T015121128471Z-630f7fe7e190a15059b003ff6f400268` bound source/Station commit `d98130c947df054a724651a459fddaeccf072927` but derived offscreen HID coordinates from invalid browser window fields; isolated smoke measured Accessibility bounds `264,98,1200,801`, DOM viewport `1200x769`, and WebDriver Retina rect `528,196,2400,1602`; cleanup released `3330/3331/4445/4446`; debug session `chat-hover-overlay` remains `[OPEN]`; W13 remains `UNPROVEN` |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
