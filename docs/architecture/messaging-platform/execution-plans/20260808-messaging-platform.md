@@ -21,11 +21,11 @@
 | Current step | `MP-W13-F` Acceptance truth cutover |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
 | Last completed | MLS readiness split-brain removed: `messaging_list_conversations` now projects status from the profile-scoped `MessagingEngine.mls_manager`, and `socialChat` no longer queries the unrelated global legacy manager |
-| Current action | Rebuild the dedicated Acceptance binary and rerun the complete real-DOM two-client journey against a Station deployed from the same clean source commit |
-| Next action | Inspect the next first failed bounded step or, only if the Gate finishes `DONE/PROVEN`, validate the complete DOM/geometry/readback/count/restart/cleanup evidence ledger |
-| Blockers | Native run `20260821T005208485713Z-9b5f4d951ea93d82d6c6319aac77a640` proved the global legacy manager was not the product Engine instance; the split-brain is removed, but all later product assertions remain `UNPROVEN` until a fresh Gate runs |
+| Current action | Collect pre-fix runtime evidence for the first post-readiness failure: Native hover reaches a visible Alice message row but no pane-owned action overlay appears |
+| Next action | Use `chat-hover-overlay` instrumentation to distinguish missing mouse-enter, unavailable portal host, geometry dismissal, leave-timer race, or selector identity mismatch before changing behavior |
+| Blockers | Native run `20260821T010357798690Z-65927f285ead75b26bff1d1e278f9322` passes MLS group readiness and bidirectional message visibility, then fails at the first real hover action; thread and all later assertions remain `UNPROVEN` |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Three failed Native runs preserve valid source/build/runtime and cleanup evidence but stop at group readiness; the profile-scoped cutover passes Desktop check, 29 focused TS tests, Engine status test 1/1, `cargo check --features acceptance-webdriver`, and the legacy-call old-path scan; W13 remains `UNPROVEN` |
+| Evidence | Three earlier Native runs diagnosed and closed group readiness ownership; run `20260821T010357798690Z-65927f285ead75b26bff1d1e278f9322` proves the profile-scoped cutover and cleanup, then fails in `transcript.thread.ui` at `hover_message`; debug session `chat-hover-overlay` is `[OPEN]`; W13 remains `UNPROVEN` |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
