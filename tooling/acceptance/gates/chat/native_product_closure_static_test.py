@@ -52,11 +52,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "dispatchEvent(",
             "time.sleep(",
             "ActionChains",
+            "ActionBuilder",
+            "PointerInput",
         ):
             self.assertNotIn(forbidden, self.source)
-        self.assertIn("ActionBuilder", self.source)
-        self.assertIn("PointerInput", self.source)
-        self.assertIn(".move_to_location(", self.source)
+        self.assertIn("CGEventCreateMouseEvent", self.source)
+        self.assertIn("CGEventPost", self.source)
+        self.assertIn("document.hasFocus()", self.source)
         self.assertIn(".click()", self.source)
         self.assertIn(".send_keys(", self.source)
 
