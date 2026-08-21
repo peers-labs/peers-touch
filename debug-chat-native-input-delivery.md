@@ -193,3 +193,26 @@ WindowServer snapshot outside the actor run shows higher-layer full-screen
 surfaces above normal application windows, so the next instrumentation must
 capture target-point z-order and Alice front-window `AXMain/AXFocused` during
 the failed click. No input behavior changes are authorized before that evidence.
+
+Window-ownership source-bound run:
+`20260821T144649005191Z-b0240d40e3baa76cfd52be14904589d0`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `d95aded90f6ff8993e8332012b6b6b310c05e708`.
+- Alice's process was the actual frontmost PID and its front window was
+  `AXMain=true`, but the front window remained `AXFocused=false` both before
+  the click and after `mousedown` timeout.
+- Alice's window occupied layer `5` at the target point. Higher-layer
+  full-screen Lark Helper and Dock surfaces were present, but did not change
+  while Alice remained the actual frontmost process.
+- The DOM target, cursor, and screen point all matched `[81.5,95]`; no scoped
+  event arrived.
+- Failure recovery left combined-session button state false, and cleanup
+  released ports `3330/3331/4445/4446`.
+
+AA is confirmed and AC is rejected as the current trigger: process foreground,
+DOM focus, and AXWebArea focus did not imply front-window ownership. The
+Acceptance-only activation path must explicitly set and verify front-window
+`AXFocused=true` before any product input. AB remains an observed environmental
+surface but is not yet the selected cause because Alice never acquired focused
+window ownership.

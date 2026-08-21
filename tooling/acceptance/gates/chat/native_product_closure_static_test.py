@@ -109,10 +109,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn(".send_keys(", self.source)
 
     def test_transient_native_actions_resolve_after_idempotent_focus(self) -> None:
-        self.assertIn(
-            'if bool(client.driver.execute_script("return document.hasFocus()")):',
-            self.source,
-        )
+        self.assertIn("def actor_owns_focus() -> bool:", self.source)
+        self.assertIn("and actor_owns_focus()", self.source)
+        self.assertIn('set value of attribute "AXMain"', self.source)
+        self.assertIn('set value of attribute "AXFocused"', self.source)
+        self.assertIn('ownership.get("actualFrontmostPid") == client.process_id', self.source)
         focus_start = self.source.index(
             "    def focus_actor_window(self, actor: str) -> TauriDriver:"
         )
