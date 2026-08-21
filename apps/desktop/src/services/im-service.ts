@@ -1413,6 +1413,7 @@ const messagingService: MessagingServiceContract = {
           member_ptids: string[]
           membership_epoch: number
           mls_epoch: number
+          mls_status: 'idle' | 'active' | 'establishing' | 'crypto_desynced' | null
           active: boolean
           updated_at_unix_ms: number
         }>
@@ -1427,6 +1428,7 @@ const messagingService: MessagingServiceContract = {
       memberPtids: conversation.member_ptids,
       membershipEpoch: conversation.membership_epoch,
       mlsEpoch: conversation.mls_epoch,
+      mlsStatus: conversation.mls_status,
       active: conversation.active,
       updatedAtUnixMs: conversation.updated_at_unix_ms,
     }))
