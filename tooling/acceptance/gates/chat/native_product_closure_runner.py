@@ -7,6 +7,7 @@ import ctypes
 import hashlib
 import json
 import os
+import secrets
 import socket
 import tempfile
 import urllib.request
@@ -36,7 +37,7 @@ from tooling.acceptance.gates.chat.native_support import wait_until
 
 
 GATE_ID = "chat-native-product-closure-e2e"
-NATIVE_MOUSE_EVENT_INTERVAL_US = 50_000
+NATIVE_INPUT_ACK_POLL_SECONDS = 0.01
 READBACK_COMMANDS = {
     "conversation_get_member_settings",
     "messaging_list_messages",
@@ -312,7 +313,6 @@ class NativeProductClosureGate(AcceptanceGate):
         core_foundation = ctypes.CDLL(
             "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
         )
-        libc = ctypes.CDLL(None)
         core_graphics.CGEventCreateMouseEvent.argtypes = [
             ctypes.c_void_p,
             ctypes.c_uint32,
@@ -322,8 +322,6 @@ class NativeProductClosureGate(AcceptanceGate):
         core_graphics.CGEventCreateMouseEvent.restype = ctypes.c_void_p
         core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
         core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
-        libc.usleep.argtypes = [ctypes.c_uint]
-        libc.usleep.restype = ctypes.c_int
 
         native_point = CGPoint(*point)
         for event_type in event_types:
@@ -337,8 +335,126 @@ class NativeProductClosureGate(AcceptanceGate):
                 raise GateError("CoreGraphics failed to create Native mouse event")
             core_graphics.CGEventPost(0, event)
             core_foundation.CFRelease(event)
-            if libc.usleep(NATIVE_MOUSE_EVENT_INTERVAL_US) != 0:
-                raise GateError("Native mouse event pacing was interrupted")
+
+    def native_mouse_button_down(self) -> bool:
+        core_graphics = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        )
+        core_graphics.CGEventSourceButtonState.argtypes = [
+            ctypes.c_int32,
+            ctypes.c_uint32,
+        ]
+        core_graphics.CGEventSourceButtonState.restype = ctypes.c_bool
+        return bool(core_graphics.CGEventSourceButtonState(0, 0))
+
+    def install_native_input_probe(
+        self,
+        client: TauriDriver,
+        element: Any,
+    ) -> str:
+        probe_id = secrets.token_hex(8)
+        client.execute_script(
+            """
+            const target = arguments[0];
+            const probeId = arguments[1];
+            const registry = window.__PT_NATIVE_INPUT_PROBES__ ||= {};
+            const existing = registry[probeId];
+            existing?.cleanup?.();
+            const eventTypes = [
+              'pointermove',
+              'mousemove',
+              'pointerdown',
+              'mousedown',
+              'pointerup',
+              'mouseup',
+              'click',
+            ];
+            const events = [];
+            const listener = (event) => {
+              const eventTarget = event.target;
+              const owned = (
+                eventTarget === target
+                || (
+                  eventTarget instanceof Node
+                  && target.contains(eventTarget)
+                )
+              );
+              if (!owned) return;
+              events.push({
+                type: event.type,
+                button: event.button,
+                buttons: event.buttons,
+                clientX: event.clientX,
+                clientY: event.clientY,
+              });
+            };
+            eventTypes.forEach((type) => {
+              document.addEventListener(type, listener, true);
+            });
+            registry[probeId] = {
+              events,
+              cleanup: () => {
+                eventTypes.forEach((type) => {
+                  document.removeEventListener(type, listener, true);
+                });
+                delete registry[probeId];
+              },
+            };
+            """,
+            element,
+            probe_id,
+        )
+        return probe_id
+
+    def wait_native_input_event(
+        self,
+        client: TauriDriver,
+        probe_id: str,
+        event_type: str,
+        after_index: int,
+    ) -> int:
+        def observed(driver: Any) -> int | None:
+            events = driver.execute_script(
+                """
+                return (
+                  window.__PT_NATIVE_INPUT_PROBES__?.[arguments[0]]?.events
+                  || []
+                );
+                """,
+                probe_id,
+            )
+            if not isinstance(events, list):
+                return None
+            for index in range(after_index, len(events)):
+                event = events[index]
+                if isinstance(event, dict) and event.get("type") == event_type:
+                    return index + 1
+            return None
+
+        try:
+            return int(
+                WebDriverWait(
+                    client.driver,
+                    5,
+                    poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+                ).until(observed)
+            )
+        except Exception as error:
+            raise GateError(
+                f"Native {event_type} was not acknowledged by the target DOM"
+            ) from error
+
+    def remove_native_input_probe(
+        self,
+        client: TauriDriver,
+        probe_id: str,
+    ) -> None:
+        client.execute_script(
+            """
+            window.__PT_NATIVE_INPUT_PROBES__?.[arguments[0]]?.cleanup?.();
+            """,
+            probe_id,
+        )
 
     def focus_actor_window(self, actor: str) -> TauriDriver:
         client = self.clients[actor]
@@ -348,14 +464,35 @@ class NativeProductClosureGate(AcceptanceGate):
             return client
         window = self.native_window(client)
         self.post_mouse(
-            (1, 2),
+            (1,),
             (
                 window["left"] + window["width"] / 2,
                 window["top"] + 16,
             ),
         )
+        WebDriverWait(
+            client.driver,
+            5,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(
+            lambda _: self.native_mouse_button_down()
+        )
         WebDriverWait(client.driver, 5).until(
             lambda driver: bool(driver.execute_script("return document.hasFocus()"))
+        )
+        self.post_mouse(
+            (2,),
+            (
+                window["left"] + window["width"] / 2,
+                window["top"] + 16,
+            ),
+        )
+        WebDriverWait(
+            client.driver,
+            5,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(
+            lambda _: not self.native_mouse_button_down()
         )
         return client
 
@@ -464,13 +601,42 @@ class NativeProductClosureGate(AcceptanceGate):
             0.0,
             window["height"] - float(target["viewportHeight"]),
         )
-        self.post_mouse(
-            (5, 1, 2),
-            (
-                window["left"] + content_offset_x + float(target["x"]),
-                window["top"] + content_offset_y + float(target["y"]),
-            ),
+        point = (
+            window["left"] + content_offset_x + float(target["x"]),
+            window["top"] + content_offset_y + float(target["y"]),
         )
+        probe_id = self.install_native_input_probe(client, element)
+        try:
+            cursor = 0
+            self.post_mouse((5,), point)
+            cursor = self.wait_native_input_event(
+                client,
+                probe_id,
+                "mousemove",
+                cursor,
+            )
+            self.post_mouse((1,), point)
+            cursor = self.wait_native_input_event(
+                client,
+                probe_id,
+                "mousedown",
+                cursor,
+            )
+            self.post_mouse((2,), point)
+            cursor = self.wait_native_input_event(
+                client,
+                probe_id,
+                "mouseup",
+                cursor,
+            )
+            self.wait_native_input_event(
+                client,
+                probe_id,
+                "click",
+                cursor,
+            )
+        finally:
+            self.remove_native_input_probe(client, probe_id)
         return element
 
     def click(self, actor: str, selector: str, timeout: float = 30) -> Any:
@@ -1226,8 +1392,60 @@ class NativeProductClosureGate(AcceptanceGate):
     ) -> dict[str, Any]:
         self.open_details("alice")
         self.click("alice", '[data-chat-conversation-action="mute"]')
+        last_mute_snapshot: dict[str, Any] | None = None
+
+        def mute_projection() -> dict[str, Any] | None:
+            nonlocal last_mute_snapshot
+            state = self.setting_state("alice")
+            try:
+                station = gateway_read(
+                    self.clients["alice"],
+                    "conversation_get_member_settings",
+                    {"conversation_id": group_id},
+                )
+            except Exception as error:
+                station = {
+                    "errorType": type(error).__name__,
+                    "error": str(error),
+                }
+            normalized = (
+                station.get("settings")
+                if isinstance(station.get("settings"), dict)
+                else station
+            )
+            snapshot = {
+                "conversationId": group_id,
+                "ui": state,
+                "station": normalized,
+            }
+            if snapshot != last_mute_snapshot:
+                # #region debug-point B-E:mute-projection-snapshot
+                request = urllib.request.Request(
+                    "http://127.0.0.1:7782/event",
+                    data=json.dumps(
+                        {
+                            "sessionId": "chat-mute-projection",
+                            "runId": "pre-fix",
+                            "hypothesisId": "B-E",
+                            "location":
+                                "NativeProductClosureGate:prove_settings_background:mute",
+                            "msg": "[DEBUG] mute projection snapshot",
+                            "data": snapshot,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urllib.request.urlopen(request, timeout=2).read()
+                except OSError:
+                    pass
+                # #endregion
+                last_mute_snapshot = snapshot
+            return state if state.get("muted") == "true" else None
+
         wait_until(
-            lambda: self.setting_state("alice").get("muted") == "true",
+            mute_projection,
             "mute projection",
             timeout=60,
         )
