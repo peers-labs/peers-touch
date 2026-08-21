@@ -43,6 +43,12 @@ pub struct MessagingListMessagesInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct MessagingListThreadMessagesInput {
+    pub conversation_id: String,
+    pub thread_root_message_id: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct MessagingTypingInput {
     pub conversation_id: String,
     pub is_typing: bool,
@@ -748,6 +754,60 @@ pub fn messaging_list_messages(
         Ok(messages) => messages,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
+    AppResult::success(json!({
+        "messages": messages.into_iter().map(|message| json!({
+            "event_id": message.event_id,
+            "event_sequence": message.event_sequence,
+            "message_id": message.message_id,
+            "sender_ptid": message.sender_ptid,
+            "sender_device_id": message.sender_device_id,
+            "plaintext": message.plaintext,
+            "attachments": message.attachments.iter()
+                .map(attachment_projection_json)
+                .collect::<Vec<_>>(),
+            "state": message.state,
+            "timestamp_unix_ms": message.timestamp_unix_ms,
+            "reply_to_message_id": message.reply_to_message_id,
+            "thread_root_message_id": message.thread_root_message_id,
+            "edited_text": message.edited_text,
+            "edited_at_unix_ms": message.edited_at_unix_ms,
+            "retracted": message.retracted,
+            "reactions": message.reactions.into_iter().map(
+                |(actor_ptid, reaction, created_at_unix_ms)| json!({
+                    "actor_ptid": actor_ptid,
+                    "reaction": reaction,
+                    "created_at_unix_ms": created_at_unix_ms,
+                })
+            ).collect::<Vec<_>>(),
+            "pinned_by_ptid": message.pinned_by_ptid,
+            "pinned_at_unix_ms": message.pinned_at_unix_ms,
+            "read_by_ptids": message.read_by_ptids,
+        })).collect::<Vec<_>>()
+    }))
+}
+
+#[tauri::command]
+pub fn messaging_list_thread_messages(
+    input: MessagingListThreadMessagesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    if input.conversation_id.trim().is_empty() || input.thread_root_message_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id and thread_root_message_id are required",
+            None,
+        );
+    }
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let messages =
+        match engine.thread_messages(&input.conversation_id, &input.thread_root_message_id) {
+            Ok(messages) => messages,
+            Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+        };
     AppResult::success(json!({
         "messages": messages.into_iter().map(|message| json!({
             "event_id": message.event_id,

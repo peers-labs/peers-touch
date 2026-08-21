@@ -216,10 +216,8 @@ fn run_cycle(engine: &MessagingEngine, token: &str) -> Result<(), String> {
         Ok(())
     } else {
         let combined = failures.join("; ");
-        if combined.contains("endpoint is not active") {
-            if engine.recover_stale_enrollment(&combined) {
-                tracing::info!("device enrollment reset; re-enrollment will occur on next cycle");
-            }
+        if engine.recover_stale_enrollment(&combined) {
+            tracing::info!("device enrollment reset; re-enrollment will occur on next cycle");
         }
         Err(combined)
     }

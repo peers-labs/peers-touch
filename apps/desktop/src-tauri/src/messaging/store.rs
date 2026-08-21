@@ -2029,32 +2029,148 @@ impl MessagingStore {
         let connection = self.connection()?;
         let mut statement = connection
             .prepare(
-                "SELECT event_id, event_sequence, message_id,
+                "WITH conversation_messages AS (
+                    SELECT event_id, event_sequence, message_id,
+                           sender_ptid, sender_device_id, plaintext,
+                           delivery_state, committed_at_unix_ms,
+                           reply_to_message_id, thread_root_message_id,
+                           edited_text, edited_at_unix_ms, retracted,
+                           0 AS pending_rank
+                    FROM messaging_message_projections
+                    WHERE conversation_id = ?1
+                    UNION ALL
+                    SELECT NULL, NULL, pending.message_id,
+                           pending.sender_ptid, pending.sender_device_id,
+                           pending.plaintext, pending.state, pending.created_at_unix_ms,
+                           NULLIF(pending.reply_to_message_id, ''),
+                           NULLIF(pending.thread_root_message_id, ''),
+                           NULL, NULL, 0,
+                           1
+                    FROM messaging_pending_messages pending
+                    WHERE pending.conversation_id = ?1
+                      AND NOT EXISTS (
+                          SELECT 1 FROM messaging_message_projections committed
+                          WHERE committed.conversation_id = pending.conversation_id
+                            AND committed.message_id = pending.message_id
+                      )
+                 )
+                 SELECT event_id, event_sequence, message_id,
                         sender_ptid, sender_device_id, plaintext,
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
                         edited_text, edited_at_unix_ms, retracted
-                 FROM messaging_message_projections
-                 WHERE conversation_id = ?1
-                 UNION ALL
-                 SELECT NULL, NULL, pending.message_id,
-                        pending.sender_ptid, pending.sender_device_id,
-                        pending.plaintext, pending.state, pending.created_at_unix_ms,
-                        NULLIF(pending.reply_to_message_id, ''),
-                        NULLIF(pending.thread_root_message_id, ''),
-                        NULL, NULL, 0
-                 FROM messaging_pending_messages pending
-                 WHERE pending.conversation_id = ?1
-                   AND NOT EXISTS (
-                       SELECT 1 FROM messaging_message_projections committed
-                       WHERE committed.conversation_id = pending.conversation_id
-                         AND committed.message_id = pending.message_id
-                   )
-                 ORDER BY 8 ASC, 3 ASC",
+                 FROM conversation_messages
+                 ORDER BY pending_rank ASC,
+                          event_sequence ASC,
+                          committed_at_unix_ms ASC,
+                          message_id ASC",
             )
             .map_err(|error| error.to_string())?;
         let mut rows = statement
             .query_map(params![conversation_id], |row| {
+                Ok(ConversationMessageProjection {
+                    event_id: row.get(0)?,
+                    event_sequence: row.get(1)?,
+                    message_id: row.get(2)?,
+                    sender_ptid: row.get(3)?,
+                    sender_device_id: row.get(4)?,
+                    plaintext: row.get(5)?,
+                    attachments: Vec::new(),
+                    state: row.get(6)?,
+                    timestamp_unix_ms: row.get(7)?,
+                    reply_to_message_id: row.get(8)?,
+                    thread_root_message_id: row.get(9)?,
+                    edited_text: row.get(10)?,
+                    edited_at_unix_ms: row.get(11)?,
+                    retracted: row.get::<_, i64>(12).unwrap_or(0) != 0,
+                    reactions: Vec::new(),
+                    pinned_by_ptid: None,
+                    pinned_at_unix_ms: None,
+                    read_by_ptids: Vec::new(),
+                })
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        let pins = load_pins_for_conversation(&connection, conversation_id)?;
+        for row in &mut rows {
+            row.attachments = load_visible_message_attachments(&connection, &row.message_id)?;
+            row.reactions = load_reactions_for_message(&connection, &row.message_id)?;
+            row.read_by_ptids = load_readers_for_message(
+                &connection,
+                conversation_id,
+                row.event_sequence,
+                &row.sender_ptid,
+            )?;
+            if let Some((_, actor_ptid, pinned_at_unix_ms)) = pins
+                .iter()
+                .find(|(message_id, _, _)| message_id == &row.message_id)
+            {
+                row.pinned_by_ptid = Some(actor_ptid.clone());
+                row.pinned_at_unix_ms = Some(*pinned_at_unix_ms);
+            }
+        }
+        Ok(rows)
+    }
+
+    pub fn thread_message_projections(
+        &self,
+        conversation_id: &str,
+        thread_root_message_id: &str,
+    ) -> Result<Vec<ConversationMessageProjection>, String> {
+        if conversation_id.trim().is_empty() || thread_root_message_id.trim().is_empty() {
+            return Err("messaging thread projection identity is required".to_string());
+        }
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "WITH thread_messages AS (
+                    SELECT event_id, event_sequence, message_id,
+                           sender_ptid, sender_device_id, plaintext,
+                           delivery_state, committed_at_unix_ms,
+                           reply_to_message_id, thread_root_message_id,
+                           edited_text, edited_at_unix_ms, retracted,
+                           CASE WHEN message_id = ?2 THEN 0 ELSE 1 END AS root_rank,
+                           0 AS pending_rank
+                    FROM messaging_message_projections
+                    WHERE conversation_id = ?1
+                      AND (message_id = ?2 OR thread_root_message_id = ?2)
+                    UNION ALL
+                    SELECT NULL, NULL, pending.message_id,
+                           pending.sender_ptid, pending.sender_device_id,
+                           pending.plaintext, pending.state, pending.created_at_unix_ms,
+                           NULLIF(pending.reply_to_message_id, ''),
+                           NULLIF(pending.thread_root_message_id, ''),
+                           NULL, NULL, 0,
+                           CASE WHEN pending.message_id = ?2 THEN 0 ELSE 1 END,
+                           1
+                    FROM messaging_pending_messages pending
+                    WHERE pending.conversation_id = ?1
+                      AND (
+                        pending.message_id = ?2
+                        OR pending.thread_root_message_id = ?2
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM messaging_message_projections committed
+                          WHERE committed.conversation_id = pending.conversation_id
+                            AND committed.message_id = pending.message_id
+                      )
+                 )
+                 SELECT event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        delivery_state, committed_at_unix_ms,
+                        reply_to_message_id, thread_root_message_id,
+                        edited_text, edited_at_unix_ms, retracted
+                 FROM thread_messages
+                 ORDER BY root_rank ASC,
+                          pending_rank ASC,
+                          event_sequence ASC,
+                          committed_at_unix_ms ASC,
+                          message_id ASC",
+            )
+            .map_err(|error| error.to_string())?;
+        let mut rows = statement
+            .query_map(params![conversation_id, thread_root_message_id], |row| {
                 Ok(ConversationMessageProjection {
                     event_id: row.get(0)?,
                     event_sequence: row.get(1)?,
@@ -7332,6 +7448,10 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 created_at_unix_ms INTEGER NOT NULL,
                 PRIMARY KEY(conversation_id, message_id)
              );
+             CREATE INDEX IF NOT EXISTS idx_messaging_pending_messages_thread
+                ON messaging_pending_messages(
+                    conversation_id, thread_root_message_id, created_at_unix_ms, message_id
+                );
              CREATE TABLE IF NOT EXISTS messaging_command_attempts (
                 command_id TEXT PRIMARY KEY,
                 conversation_id TEXT NOT NULL,
@@ -7415,6 +7535,10 @@ fn migrate(connection: &Connection) -> Result<(), String> {
              );
              CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_projection_message
                 ON messaging_message_projections(conversation_id, message_id);
+             CREATE INDEX IF NOT EXISTS idx_messaging_message_projections_thread
+                ON messaging_message_projections(
+                    conversation_id, thread_root_message_id, event_sequence
+                );
              CREATE TABLE IF NOT EXISTS message_reactions (
                 message_id TEXT NOT NULL,
                 actor_ptid TEXT NOT NULL,
@@ -7805,6 +7929,170 @@ mod tests {
                 .unwrap();
             assert_eq!(count, 1, "table {table}");
         }
+    }
+
+    #[test]
+    fn conversation_projection_orders_committed_messages_by_authority_sequence() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        for (event_id, event_sequence, message_id, committed_at_unix_ms) in [
+            ("event-third", 3, "message-third", 100),
+            ("event-first", 1, "message-first", 900),
+            ("event-second", 2, "message-second", 500),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        delivery_state, committed_at_unix_ms
+                     ) VALUES (
+                        'conversation-1', ?1, ?2, ?3,
+                        'ptid:alice', 'alice-device', ?3,
+                        'consumed', ?4
+                     )",
+                    params![
+                        event_id,
+                        event_sequence,
+                        message_id,
+                        committed_at_unix_ms
+                    ],
+                )
+                .unwrap();
+        }
+        for (message_id, created_at_unix_ms) in [
+            ("pending-z", 50),
+            ("pending-a", 50),
+            ("message-second", 25),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO messaging_pending_messages(
+                        conversation_id, conversation_kind, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        reply_to_message_id, thread_root_message_id, state,
+                        attempt_count, next_attempt_at_unix_ms, last_error_code,
+                        created_at_unix_ms
+                     ) VALUES (
+                        'conversation-1', 1, ?1,
+                        'ptid:alice', 'alice-device', ?1,
+                        '', '', 'pending',
+                        0, ?2, '', ?2
+                     )",
+                    params![message_id, created_at_unix_ms],
+                )
+                .unwrap();
+        }
+        drop(connection);
+
+        let transcript = store
+            .conversation_message_projections("conversation-1")
+            .unwrap();
+
+        assert_eq!(
+            transcript
+                .iter()
+                .map(|message| message.message_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "message-first",
+                "message-second",
+                "message-third",
+                "pending-a",
+                "pending-z"
+            ]
+        );
+        assert_eq!(
+            transcript
+                .iter()
+                .map(|message| message.event_sequence)
+                .collect::<Vec<_>>(),
+            vec![Some(1), Some(2), Some(3), None, None]
+        );
+    }
+
+    #[test]
+    fn thread_projection_orders_root_committed_replies_and_pending_replies() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        for (event_id, event_sequence, message_id, committed_at_unix_ms, thread_root_message_id) in [
+            ("event-root", 10, "root", 500, None),
+            ("event-reply-late", 13, "reply-late", 100, Some("root")),
+            ("event-reply-early", 11, "reply-early", 900, Some("root")),
+            ("event-unrelated", 12, "unrelated", 600, None),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        delivery_state, committed_at_unix_ms,
+                        reply_to_message_id, thread_root_message_id
+                     ) VALUES (
+                        'conversation-1', ?1, ?2, ?3,
+                        'ptid:alice', 'alice-device', ?3,
+                        'consumed', ?4, NULL, ?5
+                     )",
+                    params![
+                        event_id,
+                        event_sequence,
+                        message_id,
+                        committed_at_unix_ms,
+                        thread_root_message_id
+                    ],
+                )
+                .unwrap();
+        }
+        for (message_id, created_at_unix_ms, thread_root_message_id) in [
+            ("pending-z", 50, "root"),
+            ("pending-a", 50, "root"),
+            ("reply-early", 25, "root"),
+            ("pending-other-thread", 1, "other-root"),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO messaging_pending_messages(
+                        conversation_id, conversation_kind, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        reply_to_message_id, thread_root_message_id, state,
+                        attempt_count, next_attempt_at_unix_ms, last_error_code,
+                        created_at_unix_ms
+                     ) VALUES (
+                        'conversation-1', 1, ?1,
+                        'ptid:alice', 'alice-device', ?1,
+                        'root', ?3, 'pending',
+                        0, ?2, '', ?2
+                     )",
+                    params![message_id, created_at_unix_ms, thread_root_message_id],
+                )
+                .unwrap();
+        }
+        drop(connection);
+
+        let thread = store
+            .thread_message_projections("conversation-1", "root")
+            .unwrap();
+
+        assert_eq!(
+            thread
+                .iter()
+                .map(|message| message.message_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "root",
+                "reply-early",
+                "reply-late",
+                "pending-a",
+                "pending-z"
+            ]
+        );
+        assert_eq!(
+            thread
+                .iter()
+                .map(|message| message.event_sequence)
+                .collect::<Vec<_>>(),
+            vec![Some(10), Some(11), Some(13), None, None]
+        );
     }
 
     #[test]

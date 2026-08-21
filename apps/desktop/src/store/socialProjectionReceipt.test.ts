@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { FriendMessageStatus } from '../gen/proto/domain/chat/friend_chat_pb';
 import {
   preserveMessageReceiptStatuses,
+  projectDesktopIMConversation,
+  projectDesktopIMMessages,
   type SocialMessage,
 } from './socialProjection';
 
@@ -38,5 +40,40 @@ describe('message receipt reconciliation', () => {
 
     const [message] = preserveMessageReceiptStatuses(existing, reconciled);
     expect('status' in message ? message.status : null).toBe(FriendMessageStatus.READ);
+  });
+});
+
+describe('conversation identity projection', () => {
+  it('retains the authority Station identity for visible Chat surfaces', () => {
+    expect(projectDesktopIMConversation({
+      type: 'group',
+      ulid: 'conversation-1',
+      authorityStationId: 'station-authority',
+      name: 'Group',
+      lastActivity: new Date(1_800_000_000_000),
+      unread: 0,
+    })).toMatchObject({
+      id: 'conversation-1',
+      authorityStationId: 'station-authority',
+    });
+  });
+});
+
+describe('conversation message authority ordering', () => {
+  it('orders committed messages by authority sequence before pending messages', () => {
+    const messages = [
+      { ulid: 'pending', senderDid: 'alice', content: 'pending', type: 1, groupSeq: 0n },
+      { ulid: 'second', senderDid: 'bob', content: 'second', type: 1, groupSeq: 2n },
+      { ulid: 'first', senderDid: 'alice', content: 'first', type: 1, groupSeq: 1n },
+    ] as SocialMessage[];
+
+    expect(projectDesktopIMMessages('group', 'conversation-1', messages).map((message) => ({
+      id: message.id,
+      sequence: message.eventSequence,
+    }))).toEqual([
+      { id: 'first', sequence: 1 },
+      { id: 'second', sequence: 2 },
+      { id: 'pending', sequence: 0 },
+    ]);
   });
 });
