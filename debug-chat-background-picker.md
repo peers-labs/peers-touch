@@ -20,7 +20,21 @@
 | E | The Gate resolves a stale or non-current background Select | Low | Low | The selected node is disconnected, hidden, or belongs to a different Modal than the visible popup |
 
 ## Log Evidence
-Pending instrumentation run.
+Pre-fix source-bound run:
+`20260821T113231993752Z-6029622db9e5c85081b5c7e4b085d7b7`.
+
+| ID | Status | Evidence |
+|---|---|---|
+| A | Rejected | Lines 2-12 record the full Native pointer/mouse/click sequence and `aria-expanded=true` |
+| B | Rejected | Lines 2-12 contain one popup add mutation, no removal, and the dropdown remains open for the full timeout |
+| C | Confirmed | Lines 4-12 show six `.ant-select-item-option` nodes with visible `384x32` rects while both `[role=option]` nodes remain zero-width virtual nodes |
+| D | Rejected | Lines 4-12 show each rendered option center hits its own `.ant-select-item-option-content` |
+| E | Rejected | Lines 1-12 show the Select remains connected, focused, visible, and owned by the current visible Modal |
 
 ## Verification Conclusion
-Pending runtime evidence. No further picker logic change is justified yet.
+The Ant Design virtual list exposes zero-width accessibility nodes through
+`[role=option]`; Selenium correctly reports those nodes as not displayed. The
+real Native targets are the visible `.ant-select-item-option` nodes. The Gate
+must wait for and click the rendered option class while retaining CoreGraphics
+input and DOM acknowledgement. Product Select behavior is correct and requires
+no UI change.
