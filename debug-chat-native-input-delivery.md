@@ -20,6 +20,7 @@
 | T | Alice loses foreground or document focus between actor activation and the product pointer post | Medium | Low | Pre/post move snapshots change from `frontmost=true/documentFocused=true` to false |
 | U | The move reaches Alice but lands outside the target subtree, so the scoped DOM probe rejects it | Medium | Low | Document-level hit target differs from the requested element while unscoped pointer state changes |
 | V | CoreGraphics posts the move but macOS coalesces or routes it without a WebView mouse event | Low | Medium | Cursor coordinates change to the requested point, actor remains focused, hit target is correct, and the DOM event list remains empty |
+| W | Mouse events created with a null source are not tracked in the login session's combined event state | Medium | Low | Explicit `CGEventSourceCreate(kCGEventSourceStateCombinedSessionState)` restores WebView delivery |
 
 ## Log Evidence
 Source-bound run:
@@ -91,6 +92,21 @@ Staging-timeout source-bound run:
 
 This confirms V for the global event path: CoreGraphics moves the system cursor,
 but the globally posted event is consumed outside the intended actor WebView.
-The Driver must route product pointer events with
-`CGEventPostToPid(actor_pid, event)` while retaining global mouse-up only for
-stale-button recovery.
+The next experiment routes product pointer events with
+`CGEventPostToPid(actor_pid, event)` to determine whether process-directed
+delivery is supported by the WKWebView path.
+
+PID-directed source-bound run:
+`20260821T140156042704Z-412fb03495dd1540aedadbf9441c97e5`.
+
+- Source, dedicated binary, and live Station matched at `e95945727`.
+- PID-directed movement left the global cursor at center and produced no
+  WebView event, while Alice remained `frontmost=true`,
+  `documentFocused=true`, and focused on `AXWebArea`.
+- Cleanup released ports `3330/3331/4445/4446/50534`.
+
+`CGEventPostToPid` is rejected for this WKWebView pointer path. The local macOS
+SDK specifies that events posted from a login session must use an explicit
+`CGEventSourceCreate(kCGEventSourceStateCombinedSessionState)` source. The next
+repair restores global posting with combined-session source state `0`, matching
+the state table used by `CGEventSourceButtonState`.

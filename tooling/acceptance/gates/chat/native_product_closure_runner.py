@@ -304,8 +304,6 @@ class NativeProductClosureGate(AcceptanceGate):
         self,
         event_types: tuple[int, ...],
         point: tuple[float, float],
-        *,
-        process_id: int | None = None,
     ) -> None:
         class CGPoint(ctypes.Structure):
             _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
@@ -323,28 +321,31 @@ class NativeProductClosureGate(AcceptanceGate):
             ctypes.c_uint32,
         ]
         core_graphics.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+        core_graphics.CGEventSourceCreate.argtypes = [ctypes.c_int32]
+        core_graphics.CGEventSourceCreate.restype = ctypes.c_void_p
         core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
-        core_graphics.CGEventPostToPid.argtypes = [
-            ctypes.c_int32,
-            ctypes.c_void_p,
-        ]
         core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
 
         native_point = CGPoint(*point)
-        for event_type in event_types:
-            event = core_graphics.CGEventCreateMouseEvent(
-                None,
-                event_type,
-                native_point,
-                0,
-            )
-            if not event:
-                raise GateError("CoreGraphics failed to create Native mouse event")
-            if process_id is None:
+        event_source = core_graphics.CGEventSourceCreate(0)
+        if not event_source:
+            raise GateError("CoreGraphics failed to create the login event source")
+        try:
+            for event_type in event_types:
+                event = core_graphics.CGEventCreateMouseEvent(
+                    event_source,
+                    event_type,
+                    native_point,
+                    0,
+                )
+                if not event:
+                    raise GateError(
+                        "CoreGraphics failed to create Native mouse event"
+                    )
                 core_graphics.CGEventPost(0, event)
-            else:
-                core_graphics.CGEventPostToPid(process_id, event)
-            core_foundation.CFRelease(event)
+                core_foundation.CFRelease(event)
+        finally:
+            core_foundation.CFRelease(event_source)
 
     def post_key(
         self,
@@ -1091,7 +1092,6 @@ class NativeProductClosureGate(AcceptanceGate):
                 self.post_mouse(
                     (5,),
                     staging_point,
-                    process_id=client.process_id,
                 )
                 try:
                     cursor = self.wait_native_input_event(
@@ -1108,7 +1108,6 @@ class NativeProductClosureGate(AcceptanceGate):
             self.post_mouse(
                 (5,),
                 point,
-                process_id=client.process_id,
             )
             try:
                 cursor = self.wait_native_input_event(
@@ -1125,7 +1124,6 @@ class NativeProductClosureGate(AcceptanceGate):
             self.post_mouse(
                 (1,),
                 point,
-                process_id=client.process_id,
             )
             cursor = self.wait_native_input_event(
                 client,
@@ -1136,7 +1134,6 @@ class NativeProductClosureGate(AcceptanceGate):
             self.post_mouse(
                 (2,),
                 point,
-                process_id=client.process_id,
             )
             cursor = self.wait_native_input_event(
                 client,
@@ -1272,7 +1269,6 @@ class NativeProductClosureGate(AcceptanceGate):
                     neutral_point[0] + (row_point[0] - neutral_point[0]) * ratio,
                     neutral_point[1] + (row_point[1] - neutral_point[1]) * ratio,
                 ),
-                process_id=client.process_id,
             )
 
         report_probe("after")
