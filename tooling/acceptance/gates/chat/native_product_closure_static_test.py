@@ -382,6 +382,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'control.get("role") != baseline_control.get("role")',
             self.source,
         )
+        self.assertIn("def native_app_baseline_ready(", self.source)
+        self.assertIn('int(control.get("windowCount", 0)) >= 1', self.source)
+        self.assertIn('bool(control.get("mainWindow"))', self.source)
+        self.assertIn('bool(control.get("frontmost"))', self.source)
+        self.assertIn(
+            'control.get("subrole") != "AXApplicationDialog"',
+            self.source,
+        )
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn(
             "self.post_key_chord(0, ((55, command),))\n"
