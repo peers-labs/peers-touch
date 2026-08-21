@@ -454,6 +454,7 @@ fn main() {
             oss::oss_pick_local_file,
             oss::oss_pick_local_folder,
             oss::oss_upload_local_file,
+            oss::oss_upload_attachment_bytes,
             oss::oss_upload_agent_attachment_bytes,
             oss::oss_pick_image_social,
             oss::oss_upload_attachment_social,
@@ -582,6 +583,7 @@ fn main() {
             messaging_commands::messaging_submit_edit,
             messaging_commands::messaging_submit_metadata_interaction,
             messaging_commands::messaging_list_messages,
+            messaging_commands::messaging_list_thread_messages,
             messaging_commands::messaging_open_attachment,
             messaging_commands::messaging_search_messages,
             // v1 conversation commands (P2)

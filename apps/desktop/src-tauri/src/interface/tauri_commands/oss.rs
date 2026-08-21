@@ -297,13 +297,13 @@ pub fn oss_upload_local_file(
     )
 }
 
-#[tauri::command]
-pub fn oss_upload_agent_attachment_bytes(
+fn upload_attachment_bytes(
     input: OssUploadAttachmentBytesInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
+    state: &Arc<AppState>,
+    window: &Window,
+    consumer: &str,
 ) -> AppResult<StubPayload> {
-    let token = match require_token(state.inner(), &window) {
+    let token = match require_token(state, window) {
         Ok(t) => t,
         Err(e) => return e,
     };
@@ -321,21 +321,22 @@ pub fn oss_upload_agent_attachment_bytes(
     };
 
     let filename = safe_temp_filename(input.filename.as_str());
-    let temp_path = std::env::temp_dir().join(format!("peers-agent-{}-{}", Ulid::new(), filename));
+    let temp_path =
+        std::env::temp_dir().join(format!("peers-{consumer}-{}-{filename}", Ulid::new()));
     if let Err(error) = std::fs::write(&temp_path, input.bytes) {
         return AppResult::fail(
             ErrorCode::InternalError,
-            format!("write temp Agent attachment: {error}"),
+            format!("write temp {consumer} attachment: {error}"),
             None,
         );
     }
-    let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "Agent attachment");
+    let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "byte attachment");
 
     let mime_override = input.mime_type.trim();
     let result = application_oss::upload_attachment_with_mime(
         temp_path.to_string_lossy().as_ref(),
         &token,
-        "agent",
+        consumer,
         bucket,
         visibility,
         chat_sid,
@@ -347,6 +348,24 @@ pub fn oss_upload_agent_attachment_bytes(
     );
     cleanup.remove_now();
     result
+}
+
+#[tauri::command]
+pub fn oss_upload_attachment_bytes(
+    input: OssUploadAttachmentBytesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    upload_attachment_bytes(input, state.inner(), &window, "local_file_bytes")
+}
+
+#[tauri::command]
+pub fn oss_upload_agent_attachment_bytes(
+    input: OssUploadAttachmentBytesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    upload_attachment_bytes(input, state.inner(), &window, "agent")
 }
 
 #[cfg(target_os = "macos")]
