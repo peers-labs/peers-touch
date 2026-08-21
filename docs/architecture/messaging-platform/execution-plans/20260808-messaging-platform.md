@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` rerun the source-bound Native product-closure Gate after actor-switch repair |
+| Current step | `MP-W13-F` complete Native chooser path entry and background upload proof |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Source-bound run `20260821T153201367506Z-7cc4a89bbc0aca7717de6874f256573b` crossed five real Alice group-creation clicks, then exposed stale process-wide focus flags during Bob switch; isolated `Alice -> Bob -> Alice -> Bob` focus-click proof produced counters `1,1,2,2` and released ports |
-| Current action | Commit the conditional actor focus-click repair, deploy matching Profile Three source, rebuild the dedicated binary, and rerun `chat-native-product-closure-e2e` |
-| Next action | Continue from the first product assertion that remains failed after the clean source-bound rerun |
-| Blockers | MP-W13 remains `UNPROVEN`; input routing and isolated actor switching are repaired, but background chooser/upload/restart/cross-device, attachment conservation, and complete product-closure assertions have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Last completed | Clean run `20260821T154759347000Z-54846fac40f130b0f90b8b168b869fff` proved exact Thread/Transcript, toolbar geometry, reaction recovery, avatar equality and Station attribution, then showed Unicode path entry can close the Native chooser before the path-value wait |
+| Current action | Accept Native panel closure as the OS selection terminal state while retaining product projection, upload failure/retry, Station readback, cross-device and restart assertions |
+| Next action | Commit/deploy/rebuild matching source and rerun the complete Native product Gate from the real background upload action |
+| Blockers | MP-W13 remains `UNPROVEN`; chooser closure is observed but background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Product-fix run `20260821T124407097731Z-5f955ec9b9ce1dd26b3499803818dbb3` proved Native chooser panel opening; pre-fix ownership evidence proved layer `5` routed clicks to Lark Helper; clean run `20260821T153201367506Z-7cc4a89bbc0aca7717de6874f256573b` matched source/build/Station at `7c7b63bb8`, kept both actors at layer `1000`, completed five Alice UI clicks, failed only on stale process-wide ownership during Bob switch, and released all resources; isolated two-window evidence proved actual-frontmost/AX flags stale and verified conditional focus click with `Alice/Bob/Alice/Bob` counters `1,1,2,2`; background/restart/attachment and full product-closure Native proof remain missing |
+| Evidence | Run `20260821T154759347000Z-54846fac40f130b0f90b8b168b869fff` matched source/build/Station at `13bd6fed8`, passed `thread_exact`, `transcript_exact`, `toolbar_geometry`, reaction success/recovery, loaded avatar equality and Station attribution, opened the real Native background chooser, focused `AXTextField`, then observed sheet closure and WebView focus restoration after Unicode path entry; cleanup released ports `3330/3331/4445/4446/49210`; background upload/restart/attachment and full product-closure Native proof remain missing |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate

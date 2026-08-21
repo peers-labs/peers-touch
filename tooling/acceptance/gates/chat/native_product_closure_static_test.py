@@ -265,6 +265,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"windowCount"', self.source)
         self.assertIn('"sheetCount"', self.source)
         self.assertIn("def panel_open(", self.source)
+        self.assertIn('return {"selected": True, "control": control}', self.source)
+        self.assertIn('if not path_entry["selected"]:', self.source)
         self.assertIn('trigger_selector="[data-chat-background-upload]"', self.source)
         self.assertIn('trigger_selector="[data-chat-attachment-picker]"', self.source)
         for forbidden in (
