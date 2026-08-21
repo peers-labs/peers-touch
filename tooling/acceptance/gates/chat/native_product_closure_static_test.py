@@ -113,11 +113,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn(".send_keys(", self.source)
 
     def test_transient_native_actions_resolve_after_idempotent_focus(self) -> None:
-        self.assertIn("def actor_owns_focus() -> bool:", self.source)
-        self.assertIn("and actor_owns_focus()", self.source)
+        self.assertIn("def actor_window_owns_point() -> bool:", self.source)
         self.assertIn('set value of attribute "AXMain"', self.source)
         self.assertNotIn('set value of attribute "AXFocused"', self.source)
-        self.assertIn('ownership.get("actualFrontmostPid") == client.process_id', self.source)
         focus_start = self.source.index(
             "    def focus_actor_window(self, actor: str) -> TauriDriver:"
         )
@@ -133,17 +131,41 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "self.activate_native_process(client.process_id)"
         )
         focus_wait_index = focus_source.index(
-            'lambda driver: bool(driver.execute_script("return document.hasFocus()"))',
+            "lambda _: actor_window_owns_point()",
             activation_index,
+        )
+        focus_down_index = focus_source.index(
+            "self.post_mouse((1,), point)",
+            focus_wait_index,
+        )
+        focus_up_index = focus_source.index(
+            "self.post_mouse((2,), point)",
+            focus_down_index,
+        )
+        document_focus_index = focus_source.index(
+            'lambda driver: bool(driver.execute_script("return document.hasFocus()"))',
+            focus_up_index,
         )
         self.assertIn('perform action "AXRaise"', self.source)
         self.assertLess(recovery_index, activation_index)
         self.assertLess(activation_index, focus_wait_index)
-        self.assertNotIn("self.post_mouse((5,), point)", focus_source)
-        self.assertNotIn(
-            "self.post_mouse(\n            (1,),",
+        self.assertLess(focus_wait_index, focus_down_index)
+        self.assertLess(focus_down_index, focus_up_index)
+        self.assertLess(focus_up_index, document_focus_index)
+        self.assertIn("self.native_window_stack_at_point(point)", focus_source)
+        self.assertIn(
+            'window.get("ownerPid") == client.process_id',
             focus_source,
         )
+        self.assertNotIn(
+            'ownership.get("actualFrontmostPid") == client.process_id',
+            focus_source,
+        )
+        self.assertIn(
+            "if focus_mouse_down and self.native_mouse_button_down():",
+            focus_source,
+        )
+        self.assertNotIn("self.post_mouse((5,), point)", focus_source)
         click_start = self.source.index(
             "    def click(self, actor: str, selector: str, timeout: float = 30)"
         )
