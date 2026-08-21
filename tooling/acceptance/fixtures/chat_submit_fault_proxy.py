@@ -77,6 +77,7 @@ class _FaultState:
         self.command_sha256: list[str] = []
         self.connection_loss_count = 0
         self.forwarded_count = 0
+        self.forwarded_paths: dict[str, int] = {}
 
     def arm(self) -> None:
         with self.lock:
@@ -85,6 +86,7 @@ class _FaultState:
             self.command_sha256 = []
             self.connection_loss_count = 0
             self.forwarded_count = 0
+            self.forwarded_paths = {}
 
     def disarm(self) -> None:
         with self.lock:
@@ -100,6 +102,7 @@ class _FaultState:
                 self.connection_loss_count += 1
                 return True
             self.forwarded_count += 1
+            self.forwarded_paths[path] = self.forwarded_paths.get(path, 0) + 1
             return False
 
     def snapshot(self) -> dict[str, Any]:
@@ -111,6 +114,7 @@ class _FaultState:
                 "commandSha256": list(self.command_sha256),
                 "connectionLossCount": self.connection_loss_count,
                 "forwardedCount": self.forwarded_count,
+                "forwardedPaths": dict(sorted(self.forwarded_paths.items())),
             }
 
 

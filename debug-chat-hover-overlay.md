@@ -35,6 +35,10 @@
 | S | React `onClick` runs but `submit` exits before the messaging API | Medium | Low | Rejected post-fix: click entered submit and message delivery completed |
 | T | `canSend` becomes false between typing and submit | Low | Low | Rejected: all three submit entries had `canSend=true` |
 | U | `onSend` returns without producing a visible projection | Low | Medium | Rejected for root/Bob/reply sends; each returned and rendered in both clients |
+| AA | Native `DOMRect` values preserve all edges across the WebDriver script boundary | High | Low | Rejected: adjacent entries reached Python without `left` |
+| AB | The pane-owned overlay rect itself is missing an edge | Low | Low | Rejected: overlay used the plain-object serializer and reached collision checks |
+| AC | A product overlap was detected before the Gate exception | Low | Low | Rejected: collision evaluation aborted on adjacent deserialization |
+| AD | Re-focusing an already-focused actor moves the Native pointer away from a transient overlay and dismisses it before the paced click completes | High | Low | Confirmed: row leave and the 140ms close timer fired after hover but before any Reply handler event |
 
 ## Log Evidence
 Instrumentation points:
@@ -216,6 +220,74 @@ Paced Native input diagnostic run:
   the root row's thread summary projection did not reach count `1` within
   120 seconds.
 - Cleanup released `3330`, `3331`, `4445`, and `4446`.
+
+Clean source-bound handoff run:
+`20260821T072034901028Z-51dcc08fd5f6a338f4253ddc8f940ba4`.
+
+- Source, rebuilt binary, and Profile Three matched clean commit
+  `3d1256c948ec0bad6d3b2cfeecc09d1dccacea32`; the dedicated binary SHA-256
+  was `a069a5992510b6ad4c017d5bb2c0a51bf34cb6e45966c696427c9c603f638f9f`.
+- The immutable report preserved ordered pointer/down/up/click/submit/onSend
+  evidence for all three sends and F/A/B/C/E hover evidence with
+  `:hover=true` and a `191x36` overlay.
+- The Gate failed at the same next product boundary:
+  `timed out waiting for thread summary projection`. This clean comparison
+  closes the Driver foreground/Native-input diagnosis without proving the
+  product closure.
+- The durable report SHA-256 is
+  `7ce236a0fe7fb5949fb1bdad89d4924ae19185ff69513abea245f31f7e0bb5e1`;
+  cleanup evidence and an independent `lsof` check confirmed ports `3330`,
+  `3331`, `4445`, and `4446` were released.
+
+Adjacent geometry serialization run:
+`20260821T085747312015Z-8ee1be3046571316504a0988f1cb3746`.
+
+- `thread_exact=PASS` and `transcript_exact=PASS`.
+- The Gate reached `overlay_geometry` and failed before a product collision
+  judgment with `KeyError: 'left'`.
+- AA was rejected: adjacent message content returned raw native `DOMRect`
+  objects, while overlay, selected content, and pane used explicit plain
+  objects. WebDriver did not preserve the raw adjacent edge fields.
+- AB and AC were rejected: the overlay rect was valid and no overlap assertion
+  ran.
+- The Gate now serializes every adjacent rect through the same `rect()` helper;
+  collision conditions remain unchanged.
+- Cleanup evidence and direct `lsof` verification show ports
+  `3330/3331/4445/4446` released.
+
+Transient action refocus run:
+`20260821T092456697805Z-9eb5cdac84a4179ccaf983c3fd3d3893`.
+
+- The actor was already focused and the Reply overlay was visible after the
+  real hover at timestamp `1787304449456`.
+- `click_element` unconditionally posted another title-bar focus click. The
+  row emitted `mouseleave` at `1787304449586`, and the 140ms overlay close
+  timer fired at `1787304449727`.
+- No Reply button handler, callback, reply-state commit, or inline-reply intent
+  event followed. The next Composer send completed as an ordinary top-level
+  message, so the Gate later timed out at thread summary projection.
+- AD is confirmed: resolving a transient element before an unnecessary focus
+  action invalidates the user target during paced Native delivery.
+- The Driver fix must make focus idempotent and resolve selector targets only
+  after focus ownership is established. Product Reply and thread projection
+  behavior remain unchanged.
+- Cleanup evidence and direct `lsof` verification show ports
+  `3330/3331/4445/4446` released.
+
+Idempotent-focus verification run:
+`20260821T093354484080Z-7f080a8e2ca1c7ca4f44c3b9c7534a18`.
+
+- The Reply overlay remained actionable long enough for the real Native click
+  to enter the React handler.
+- Reply handler, callback, state commit, send intent, immutable relation,
+  summary, preview, and panel all converged; `thread_exact=PASS`.
+- The same run also recorded `transcript_exact=PASS`,
+  `toolbar_geometry=PASS`, and `reaction_picker_success=PASS`.
+- AD is fixed in dirty runtime evidence: focus ownership is now idempotent and
+  selector-based transient targets are resolved after focus.
+- The next failure returned to the independent Reaction recovery path.
+- Cleanup evidence and direct `lsof` verification show ports
+  `3330/3331/4445/4446` released.
 
 ## Verification Conclusion
 The target geometry and hit-test ownership are correct, but neither Selenium
