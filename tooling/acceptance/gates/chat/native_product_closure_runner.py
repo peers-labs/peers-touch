@@ -3191,41 +3191,53 @@ except Exception as error:
             preview,
         ):
             raise GateError("Composer image preview did not load")
+        composer = self.clients["alice"].find_element(
+            f'[data-chat-composer="{group_id}"]',
+            5,
+        )
+        previous_outcome_revision = int(
+            composer.get_attribute("data-chat-send-outcome-revision") or 0
+        )
         self.click("alice", "[data-chat-send]")
 
-        outcome = wait_until(
-            lambda: (
-                {
-                    "state": composer.get_attribute("data-chat-send-outcome-state"),
-                    "count": int(
-                        composer.get_attribute(
-                            "data-chat-send-outcome-attachment-count"
-                        )
-                        or 0
-                    ),
-                    "ids": [
-                        item
-                        for item in (
-                            composer.get_attribute(
-                                "data-chat-send-outcome-attachment-ids"
-                            )
-                            or ""
-                        ).split(",")
-                        if item
-                    ],
-                }
-                if (
-                    composer := self.clients["alice"].find_element(
-                        f'[data-chat-composer="{group_id}"]',
-                        5,
+        def current_send_outcome() -> dict[str, Any] | None:
+            composer = self.clients["alice"].find_element(
+                f'[data-chat-composer="{group_id}"]',
+                5,
+            )
+            revision = int(
+                composer.get_attribute("data-chat-send-outcome-revision") or 0
+            )
+            if revision <= previous_outcome_revision:
+                return None
+            return {
+                "revision": revision,
+                "state": composer.get_attribute("data-chat-send-outcome-state"),
+                "count": int(
+                    composer.get_attribute(
+                        "data-chat-send-outcome-attachment-count"
                     )
-                ).get_attribute("data-chat-send-outcome-state")
-                == "pending"
-                else None
-            ),
+                    or 0
+                ),
+                "ids": [
+                    item
+                    for item in (
+                        composer.get_attribute(
+                            "data-chat-send-outcome-attachment-ids"
+                        )
+                        or ""
+                    ).split(",")
+                    if item
+                ],
+            }
+
+        outcome = wait_until(
+            current_send_outcome,
             "queued two-attachment send outcome",
             timeout=180,
         )
+        if outcome["state"] != "pending":
+            raise GateError(f"Composer send outcome was not queued: {outcome}")
         if outcome["count"] != 2 or len(outcome["ids"]) != 2:
             raise GateError(f"Composer send outcome count mismatch: {outcome}")
         if self.clients["alice"].find_elements("[data-chat-attachment-draft]"):

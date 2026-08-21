@@ -55,3 +55,18 @@ Native Gate proves preview load and the downstream attachment ledger.
 - Desktop TypeScript check: `PASS`.
 - Rust `acceptance-webdriver` compile: `PASS` with pre-existing warnings.
 - Post-fix Native Gate: not run yet.
+
+## Post-Fix Run
+- Run `20260821T230452173910Z-471e105b624107c1f6bc2921308f737c`
+  is source-bound to clean source and Station `d73344f69`.
+- The Gate passed the Composer image `complete && naturalWidth > 0` assertion.
+- The native app log no longer contains an asset-scope denial for the selected
+  attachment path.
+- The next failure was
+  `Composer send outcome count mismatch: {'state': 'pending', 'count': 0, 'ids': []}`.
+- The zero-count snapshot is the prior text-only send outcome: the Gate accepted
+  any `pending` state immediately after Native click acknowledgement, while the
+  product store already distinguishes outcomes with a monotonic `revision`.
+- The Gate now records the pre-click revision and waits for a strictly newer
+  outcome before enforcing state and attachment count/ID equality.
+- Cleanup released `3330`, `3331`, `4445`, `4446`, and `53444`.

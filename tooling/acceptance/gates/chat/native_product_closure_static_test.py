@@ -318,6 +318,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("data-chat-attachment-picker", composer)
         self.assertIn("imServiceV1.messaging.pickAttachmentSource()", composer)
         self.assertIn("appendPickedAttachment", composer)
+        self.assertIn("data-chat-send-outcome-revision", composer)
         self.assertNotIn("data-chat-attachment-input", composer)
         self.assertIn("data-chat-background-upload", details)
         self.assertIn("api.pickImageFile()", details)
@@ -330,6 +331,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             messaging.count("allow_attachment_preview(&window,"),
             3,
         )
+        self.assertIn("previous_outcome_revision", self.source)
+        self.assertIn("revision <= previous_outcome_revision", self.source)
 
     def test_product_files_use_real_native_chooser(self) -> None:
         self.assertIn("def choose_native_file(", self.source)
