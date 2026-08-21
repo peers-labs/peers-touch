@@ -333,3 +333,24 @@ an entirely missing mouseup from a mouseup delivered to a shifted/different DOM
 target. The next instrumentation records all document-capture pointer/mouse
 events with an `owned` marker while preserving `owned=true` as the Gate success
 condition.
+
+Unowned-event comparison:
+`20260821T205757910720Z-36270d1b46171b153e98c066065e7c77`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `f1cc4235788a3ae1445062ab488442b990abb74e`; the rebuilt binary SHA-256 was
+  `fc3d3c68b3e522be6fab76e95c62272ffd3c202552969e9a507e87302d265e2b`.
+- The Gate crossed Thread/Transcript, toolbar geometry, and Reaction success,
+  then reached the real Reaction failure retry button.
+- Immediately before event delivery, the retry button was connected, enabled,
+  and owned its center. The actual `pointerdown` and `mousedown` reached the
+  same document and coordinates but targeted an unowned `DIV`.
+- Alice remained frontmost and WindowServer index `0`; cleanup released
+  `3330/3331/4445/4446/54720`.
+
+This confirms a preflight-to-post race inside `click_element`: target geometry
+can change after the expensive diagnostic snapshot but before CoreGraphics
+posts the event. The correction keeps the failure snapshots, removes the
+blocking pre-click report, and performs a final connected/enabled/hit-owned
+geometry read immediately before `leftMouseDown`. The Gate still rejects any
+event whose actual DOM target is not owned by the intended element.
