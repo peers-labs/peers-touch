@@ -99,3 +99,21 @@ file panel, OS-level path entry and confirmation, and a DOM readback proving the
 selected `FileList` reached the product `onChange`. Direct `send_keys` to hidden
 file inputs, JavaScript value assignment, synthetic `dispatchEvent`, store
 mutation, and command/harness selection remain forbidden.
+
+Native-chooser source-bound run:
+`20260821T122018429682Z-934faf18cea5636363b02eb2ba3b48c4`.
+
+- Source and live Station matched at `95f090772`; Runtime Manifest reached
+  `FIXTURE_READY`.
+- The prior Thread, Transcript, Toolbar, Reaction, Avatar, Station attribution,
+  Mute, Pin, and Paper paths advanced to the visible background upload action.
+- `choose_native_file` timed out waiting for the combined condition
+  `document.hasFocus()==false` and a readable `AXFocusedUIElement`.
+- The run did not record whether the hidden input received its real `click`,
+  whether a Native panel existed while the document remained focused, or
+  whether Accessibility returned no focused element.
+- Cleanup evidence released ports `3330/3331/4445/4446/64006`.
+
+Hypotheses L and M remain inconclusive. The next run is instrumentation-only and
+must record document focus, active element, input `click/change` events, and the
+AX focused-control value or AX query error before changing the readiness rule.
