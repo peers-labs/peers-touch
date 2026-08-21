@@ -267,7 +267,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("def panel_open(", self.source)
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn('if not path_entry["selected"]:', self.source)
+        self.assertIn('def native_window_restored(', self.source)
+        self.assertIn('include_webview=False', self.source)
+        self.assertIn('and bool(control.get("role"))', self.source)
+        self.assertIn('"snapshotSkipped": "native recovery poll"', self.source)
+        self.assertIn('"snapshotSkipped": "native window unavailable"', self.source)
         self.assertIn('"snapshotError": f"{type(error).__name__}: {error}"', self.source)
+        self.assertIn("self.focus_actor_window(actor)", self.source)
         self.assertIn('trigger_selector="[data-chat-background-upload]"', self.source)
         self.assertIn('trigger_selector="[data-chat-attachment-picker]"', self.source)
         for forbidden in (
