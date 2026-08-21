@@ -148,11 +148,11 @@ export function ChatMessageTimeline({
   const scheduleActionClose = useCallback(() => {
     cancelActionClose();
     // #region debug-point D:close-timer-scheduled
-    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'pre-fix', hypothesisId: 'D', location: 'ChatMessageTimeline:scheduleActionClose', msg: '[DEBUG] action close timer scheduled', data: {}, ts: Date.now() }) }).catch(() => {});
+    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'D', location: 'ChatMessageTimeline:scheduleActionClose', msg: '[DEBUG] action close timer scheduled', data: {}, ts: Date.now() }) }).catch(() => {});
     // #endregion
     closeActionsTimerRef.current = window.setTimeout(() => {
       // #region debug-point D:close-timer-fired
-      fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'pre-fix', hypothesisId: 'D', location: 'ChatMessageTimeline:closeTimer', msg: '[DEBUG] action close timer fired', data: {}, ts: Date.now() }) }).catch(() => {});
+      fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'D', location: 'ChatMessageTimeline:closeTimer', msg: '[DEBUG] action close timer fired', data: {}, ts: Date.now() }) }).catch(() => {});
       // #endregion
       setActionTarget(null);
       closeActionsTimerRef.current = null;
@@ -166,7 +166,7 @@ export function ChatMessageTimeline({
   ) => {
     cancelActionClose();
     // #region debug-point B:activate-action-target
-    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'pre-fix', hypothesisId: 'B', location: 'ChatMessageTimeline:activateActions', msg: '[DEBUG] action target activated', data: { messageId: message.ulid, anchorConnected: anchorElement.isConnected, hostReady: Boolean(actionOverlayHostRef.current), viewportReady: Boolean(scrollContainerRef.current) }, ts: Date.now() }) }).catch(() => {});
+    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'B', location: 'ChatMessageTimeline:activateActions', msg: '[DEBUG] action target activated', data: { messageId: message.ulid, anchorConnected: anchorElement.isConnected, hostReady: Boolean(actionOverlayHostRef.current), viewportReady: Boolean(scrollContainerRef.current) }, ts: Date.now() }) }).catch(() => {});
     // #endregion
     setActionTarget({
       activatedAtMs: Date.now(),
