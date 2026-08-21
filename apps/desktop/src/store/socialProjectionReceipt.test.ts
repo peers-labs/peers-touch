@@ -5,6 +5,7 @@ import {
   preserveMessageReceiptStatuses,
   projectDesktopIMConversation,
   projectDesktopIMMessages,
+  projectGroupSecurityState,
   type SocialMessage,
 } from './socialProjection';
 
@@ -59,13 +60,22 @@ describe('conversation identity projection', () => {
   });
 });
 
+describe('group security projection', () => {
+  it('projects local MLS recipient status without inferring readiness from authority epoch', () => {
+    expect(projectGroupSecurityState('idle')).toBe('idle');
+    expect(projectGroupSecurityState('establishing')).toBe('establishing');
+    expect(projectGroupSecurityState('active')).toBe('ready');
+    expect(projectGroupSecurityState('crypto_desynced')).toBe('crypto-desynced');
+  });
+});
+
 describe('conversation message authority ordering', () => {
   it('orders committed messages by authority sequence before pending messages', () => {
     const messages = [
       { ulid: 'pending', senderDid: 'alice', content: 'pending', type: 1, groupSeq: 0n },
       { ulid: 'second', senderDid: 'bob', content: 'second', type: 1, groupSeq: 2n },
       { ulid: 'first', senderDid: 'alice', content: 'first', type: 1, groupSeq: 1n },
-    ] as SocialMessage[];
+    ] as unknown as SocialMessage[];
 
     expect(projectDesktopIMMessages('group', 'conversation-1', messages).map((message) => ({
       id: message.id,
