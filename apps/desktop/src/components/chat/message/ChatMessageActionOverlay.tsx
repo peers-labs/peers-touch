@@ -127,7 +127,7 @@ export function ChatMessageActionOverlay({
     const surface = surfaceRef.current;
     const anchor = target?.anchorElement;
     // #region debug-point C:overlay-layout-entry
-    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'pre-fix', hypothesisId: 'C', location: 'ChatMessageActionOverlay:layoutEffect', msg: '[DEBUG] overlay layout effect entered', data: { messageId: target?.message.ulid || '', hasSurface: Boolean(surface), hasAnchor: Boolean(anchor), hasHost: Boolean(hostElement), hasViewport: Boolean(viewportElement), anchorConnected: Boolean(anchor?.isConnected), surfaceConnected: Boolean(surface?.isConnected) }, ts: Date.now() }) }).catch(() => {});
+    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'C', location: 'ChatMessageActionOverlay:layoutEffect', msg: '[DEBUG] overlay layout effect entered', data: { messageId: target?.message.ulid || '', hasSurface: Boolean(surface), hasAnchor: Boolean(anchor), hasHost: Boolean(hostElement), hasViewport: Boolean(viewportElement), anchorConnected: Boolean(anchor?.isConnected), surfaceConnected: Boolean(surface?.isConnected) }, ts: Date.now() }) }).catch(() => {});
     // #endregion
     if (!surface || !anchor || !hostElement || !viewportElement) {
       setGeometry(null);
@@ -140,7 +140,7 @@ export function ChatMessageActionOverlay({
       frame = requestAnimationFrame(() => {
         if (!anchor.isConnected || !surface.isConnected) {
           // #region debug-point C:overlay-disconnected
-          fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'pre-fix', hypothesisId: 'C', location: 'ChatMessageActionOverlay:updateGeometry', msg: '[DEBUG] overlay dismissed for disconnected node', data: { messageId: target.message.ulid, anchorConnected: anchor.isConnected, surfaceConnected: surface.isConnected }, ts: Date.now() }) }).catch(() => {});
+          fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'C', location: 'ChatMessageActionOverlay:updateGeometry', msg: '[DEBUG] overlay dismissed for disconnected node', data: { messageId: target.message.ulid, anchorConnected: anchor.isConnected, surfaceConnected: surface.isConnected }, ts: Date.now() }) }).catch(() => {});
           // #endregion
           onDismiss();
           return;
@@ -174,7 +174,7 @@ export function ChatMessageActionOverlay({
           boundaryPadding: 8,
         }));
         // #region debug-point E:overlay-geometry-set
-        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'pre-fix', hypothesisId: 'E', location: 'ChatMessageActionOverlay:updateGeometry', msg: '[DEBUG] overlay geometry calculated', data: { messageId: target.message.ulid, surfaceWidth: surfaceRect.width, surfaceHeight: surfaceRect.height }, ts: Date.now() }) }).catch(() => {});
+        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'E', location: 'ChatMessageActionOverlay:updateGeometry', msg: '[DEBUG] overlay geometry calculated', data: { messageId: target.message.ulid, surfaceWidth: surfaceRect.width, surfaceHeight: surfaceRect.height }, ts: Date.now() }) }).catch(() => {});
         // #endregion
       });
     };
