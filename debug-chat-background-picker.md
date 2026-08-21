@@ -424,3 +424,36 @@ The same source review exposed a later coverage gap: after proving that
 `[data-chat-background-retry]` is visible, the Gate opens a fresh picker through
 `[data-chat-background-upload]` instead of clicking the retry action. That must
 be corrected after chooser recovery so the Gate proves the real recovery path.
+
+Chooser-reactivation source-bound run:
+`20260821T193512691967Z-d0161d83892e020bb44b37ef742fc9e9`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `fcaa518de78a1eeb447281e44a296357676ed19b`; the binary SHA-256 was
+  `3ca0c7184320e2029073d100fc57776e1831b182c7605331de374c1aa4bc66c7`.
+- The run reached the first empty-image chooser with Alice retaining foreground
+  ownership. It transitioned
+  `AXTextField -> AXGroup/AXApplicationDialog`, sent the conditional second
+  Return, then incorrectly accepted the unchanged `AXApplicationDialog` as the
+  restored application state.
+- `pick_image_file` still emitted no return and no `Image file selected`; the
+  next `open_background_modal` timed out against the still-open original Modal.
+- Therefore the prior focus-loss repair was not exercised and is not the
+  governing root cause. It must be removed instead of retained as a fallback.
+
+Isolated Native picker probes then established:
+
+1. The existing Unicode event never produced a visually committed Go-To path
+   and ordinary Return did not transition the sheet.
+2. A real clipboard paste produced exact AX path readback.
+3. `CGEventSourceStatePrivate` Return transitioned
+   `AXTextField -> AXList`; a second private-source Return completed
+   `pick_image_file` with the exact selected path and restored `AXWebArea`.
+4. Probe ports `3340/4455` were released; the system clipboard was restored.
+
+The root cause is the CoreGraphics source used for Native chooser confirmation,
+combined with a missing path-entry acknowledgement. The final Driver path uses
+the existing real keyboard shortcut to open and clear Go-To, stages the path
+through a real `Cmd+V`, requires exact AX readback, uses private-source
+CoreGraphics Return for both confirmations, and rejects
+`AXApplicationDialog` as an application-restored terminal state.
