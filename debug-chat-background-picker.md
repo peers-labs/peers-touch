@@ -66,3 +66,15 @@ The second root cause is indexing after an animation-sensitive visibility
 filter. The Gate must select the second node from the complete stable rendered
 option order, then let `click_element` wait for that specific Paper node to
 become visible and enabled.
+
+Stable-order source-bound run:
+`20260821T115837563032Z-8a281cd46cd8fd89ebaefed3e466135b`.
+
+- The intended option and every captured Native event target were Paper.
+- The product action and Station write both committed `background="paper"`.
+- The next failure occurred while reopening Background: the completed Modal
+  was still in its leave transition and `.ant-modal-wrap` occluded the Details
+  action.
+- `open_background_modal` must reuse an active background Modal and otherwise
+  wait for any blocking Modal wrap to leave before posting the next Native
+  click. Fixed sleeps and product animation changes are rejected.
