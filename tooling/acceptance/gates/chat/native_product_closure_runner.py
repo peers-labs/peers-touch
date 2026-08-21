@@ -1568,7 +1568,32 @@ class NativeProductClosureGate(AcceptanceGate):
                 10,
                 poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
             ).until(visible_options)
+            before_option_click = picker_snapshot()
+            before_option_click["intendedOption"] = client.execute_script(
+                """
+                const option = arguments[0];
+                const rect = option.getBoundingClientRect();
+                return {
+                  text: (option.textContent || '').trim(),
+                  connected: option.isConnected,
+                  rect: {
+                    left: rect.left,
+                    top: rect.top,
+                    right: rect.right,
+                    bottom: rect.bottom,
+                    width: rect.width,
+                    height: rect.height,
+                  },
+                };
+                """,
+                options[1],
+            )
+            report_picker_snapshot(
+                "before-option-click",
+                before_option_click,
+            )
             self.click_element(actor, options[1])
+            report_picker_snapshot("after-option-click", picker_snapshot())
         except Exception:
             report_picker_snapshot("failure", picker_snapshot())
             raise
