@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
+	msgdomain "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
@@ -159,18 +160,17 @@ func (s *subServer) handleGetMemberSettings(ctx context.Context, req *getMemberS
 	if req.ConversationID == "" {
 		return nil, server.BadRequest("conversation_id is required")
 	}
-	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
+	if _, err := s.requireActiveMessagingMembership(
+		ctx,
+		req.ConversationID,
+	); err != nil {
 		return nil, err
-	}
-	member, err := s.service.GetMember(ctx, req.ConversationID, subject.ID)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("get member settings failed", err)
 	}
 	settings, err := s.memberSettings.Get(ctx, req.ConversationID, subject.ID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("get member preferences failed", err)
 	}
-	return memberSettingsResponseFrom(member.Nickname, settings), nil
+	return memberSettingsResponseFrom(settings), nil
 }
 
 func (s *subServer) handleUpdateMemberSettings(ctx context.Context, req *updateMemberSettingsRequest) (*memberSettingsResponse, error) {
@@ -181,12 +181,12 @@ func (s *subServer) handleUpdateMemberSettings(ctx context.Context, req *updateM
 	if req.ConversationID == "" {
 		return nil, server.BadRequest("conversation_id is required")
 	}
-	if err := s.requireActiveMembership(ctx, req.ConversationID); err != nil {
-		return nil, err
-	}
-	member, err := s.service.GetMember(ctx, req.ConversationID, subject.ID)
+	conversation, err := s.requireActiveMessagingMembership(
+		ctx,
+		req.ConversationID,
+	)
 	if err != nil {
-		return nil, server.InternalErrorWithCause("get member settings failed", err)
+		return nil, err
 	}
 	if req.Muted != nil && req.AlertEnabled != nil && *req.Muted == *req.AlertEnabled {
 		return nil, server.BadRequest("muted and alertEnabled conflict")
@@ -207,13 +207,8 @@ func (s *subServer) handleUpdateMemberSettings(ctx context.Context, req *updateM
 		}
 		req.BackgroundImage = &backgroundImage
 	}
-	if req.Nickname != nil {
-		member.Nickname = *req.Nickname
-		if err := s.service.UpsertMember(ctx, member); err != nil {
-			return nil, server.InternalErrorWithCause("update member nickname failed", err)
-		}
-	}
 	settings, err := s.memberSettings.Update(ctx, req.ConversationID, subject.ID, memberSettingsPatch{
+		Nickname:            req.Nickname,
 		Muted:               req.Muted,
 		Pinned:              req.Pinned,
 		AlertEnabled:        req.AlertEnabled,
@@ -224,18 +219,17 @@ func (s *subServer) handleUpdateMemberSettings(ctx context.Context, req *updateM
 	if err != nil {
 		return nil, server.InternalErrorWithCause("update member preferences failed", err)
 	}
-	if err := s.publishMemberSettingsChanged(ctx, req.ConversationID, subject.ID); err != nil {
+	if err := s.publishMemberSettingsChanged(ctx, conversation, subject.ID); err != nil {
 		return nil, server.InternalErrorWithCause("publish member settings change failed", err)
 	}
-	return memberSettingsResponseFrom(member.Nickname, settings), nil
+	return memberSettingsResponseFrom(settings), nil
 }
 
 func memberSettingsResponseFrom(
-	nickname string,
 	settings memberSettingsProjection,
 ) *memberSettingsResponse {
 	return &memberSettingsResponse{
-		Nickname:        nickname,
+		Nickname:        settings.Nickname,
 		Muted:           settings.Muted,
 		AlertEnabled:    settings.AlertEnabled,
 		Pinned:          settings.Pinned,
@@ -247,7 +241,7 @@ func memberSettingsResponseFrom(
 
 func (s *subServer) publishMemberSettingsChanged(
 	ctx context.Context,
-	conversationID string,
+	conversation *msgdomain.AuthorityConversation,
 	ptid string,
 ) error {
 	bus := events.GetBus()
@@ -258,18 +252,17 @@ func (s *subServer) publishMemberSettingsChanged(
 	if err != nil || actor == nil {
 		return fmt.Errorf("resolve settings actor %q: %w", ptid, err)
 	}
-	conversation, err := s.service.GetConversation(ctx, conversationID)
-	if err != nil {
-		return fmt.Errorf("resolve settings conversation %q: %w", conversationID, err)
+	if conversation == nil {
+		return fmt.Errorf("resolve settings conversation: missing authority projection")
 	}
 	kind := realtime.ConversationSettingsChanged_FRIEND
-	if conversation.Kind == chat.ConversationKind_CONVERSATION_KIND_GROUP {
+	if conversation.Kind == msgdomain.AuthorityConversationKindGroup {
 		kind = realtime.ConversationSettingsChanged_GROUP
 	}
 	_, err = bus.Publish(fmt.Sprintf("%d", actor.ID), &realtime.StreamEvent{
 		Kind: &realtime.StreamEvent_ConversationSettingsChanged{
 			ConversationSettingsChanged: &realtime.ConversationSettingsChanged{
-				ContainerUlid:   conversationID,
+				ContainerUlid:   conversation.ConversationID,
 				Kind:            kind,
 				ActorId:         ptid,
 				ChangedTsUnixMs: time.Now().UnixMilli(),

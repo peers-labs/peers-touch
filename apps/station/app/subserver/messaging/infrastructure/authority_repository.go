@@ -138,6 +138,21 @@ func (r *AuthorityRepository) CreateConversation(
 	return result.RowsAffected == 1, result.Error
 }
 
+func (r *AuthorityRepository) GetConversation(
+	ctx context.Context,
+	conversationID string,
+) (*messaging.AuthorityConversation, error) {
+	var model AuthorityConversationModel
+	if err := r.db.WithContext(ctx).
+		First(&model, "conversation_id = ?", conversationID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, messaging.ErrNotFound
+		}
+		return nil, err
+	}
+	return authorityConversationFromModel(model), nil
+}
+
 func (r *AuthorityRepository) AddMember(
 	ctx context.Context,
 	conversationID string,
