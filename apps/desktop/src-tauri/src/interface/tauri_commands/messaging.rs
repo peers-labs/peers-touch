@@ -3,8 +3,9 @@ use crate::model::chat::{ConversationKind, MessagingMembershipAction};
 use crate::state::AppState;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::path::Path;
 use std::sync::Arc;
-use tauri::{State, Window};
+use tauri::{Manager, State, Window};
 
 #[derive(Debug, Deserialize)]
 pub struct MessagingLocalAttachmentInput {
@@ -195,6 +196,14 @@ fn attachment_projection_json(
     })
 }
 
+fn allow_attachment_preview(window: &Window, path: &Path) -> Result<(), String> {
+    window
+        .app_handle()
+        .asset_protocol_scope()
+        .allow_file(path)
+        .map_err(|error| format!("allow messaging attachment preview: {error}"))
+}
+
 #[tauri::command]
 pub async fn messaging_pick_attachment_source(
     state: State<'_, Arc<AppState>>,
@@ -232,6 +241,9 @@ pub async fn messaging_pick_attachment_source(
             ))
         }
     };
+    if let Err(error) = allow_attachment_preview(&window, path) {
+        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
+    }
     Ok(AppResult::success(json!({
         "file_path": path.to_string_lossy(),
         "filename": path.file_name()
@@ -653,8 +665,9 @@ pub async fn messaging_stage_attachment_source(
         Ok(value) => value,
         Err(error) => return Ok(error),
     };
+    let staging_engine = Arc::clone(&engine);
     let local_path = match tauri::async_runtime::spawn_blocking(move || {
-        engine.stage_attachment_source(&input.filename, &input.bytes)
+        staging_engine.stage_attachment_source(&input.filename, &input.bytes)
     })
     .await
     {
@@ -668,6 +681,18 @@ pub async fn messaging_stage_attachment_source(
             ))
         }
     };
+    if let Err(error) = allow_attachment_preview(&window, Path::new(&local_path)) {
+        let cleanup = engine
+            .discard_staged_attachment_source(&local_path)
+            .err()
+            .map(|cleanup| format!("; staged-source cleanup failed: {cleanup}"))
+            .unwrap_or_default();
+        return Ok(AppResult::fail(
+            ErrorCode::InternalError,
+            format!("{error}{cleanup}"),
+            None,
+        ));
+    }
     Ok(AppResult::success(json!({
         "local_path": local_path,
     })))
@@ -740,6 +765,14 @@ pub fn messaging_capture_attachment_source(
             format!("remove captured messaging source: {error}{cleanup}"),
             None,
         );
+    }
+    if let Err(error) = allow_attachment_preview(&window, Path::new(&local_path)) {
+        let cleanup = engine
+            .discard_staged_attachment_source(&local_path)
+            .err()
+            .map(|cleanup| format!("; staged-source cleanup failed: {cleanup}"))
+            .unwrap_or_default();
+        return AppResult::fail(ErrorCode::InternalError, format!("{error}{cleanup}"), None);
     }
     AppResult::success(json!({
         "file_path": local_path,
