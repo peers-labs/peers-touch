@@ -1035,6 +1035,11 @@ pub struct ConversationUpdateMemberSettingsInput {
     pub conversation_id: String,
     pub nickname: Option<String>,
     pub muted: Option<bool>,
+    pub alert_enabled: Option<bool>,
+    pub pinned: Option<bool>,
+    pub background: Option<String>,
+    pub background_image: Option<String>,
+    pub cleared_at_unix_ms: Option<i64>,
 }
 
 #[tauri::command]
@@ -1051,6 +1056,11 @@ pub fn conversation_update_member_settings(
         "conversation_id": input.conversation_id,
         "nickname": input.nickname,
         "muted": input.muted,
+        "alertEnabled": input.alert_enabled,
+        "pinned": input.pinned,
+        "background": input.background,
+        "backgroundImage": input.background_image,
+        "clearedAtUnixMs": input.cleared_at_unix_ms,
     });
     match station_client::request_json_auth(
         Method::PUT,
