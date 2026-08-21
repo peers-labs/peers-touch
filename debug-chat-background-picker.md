@@ -457,3 +457,30 @@ the existing real keyboard shortcut to open and clear Go-To, stages the path
 through a real `Cmd+V`, requires exact AX readback, uses private-source
 CoreGraphics Return for both confirmations, and rejects
 `AXApplicationDialog` as an application-restored terminal state.
+
+Full-Gate private-source comparison:
+`20260821T202221429844Z-336f108ac1df25fa2cff53dcdd615fd1`.
+
+- Source and live Profile Three Station matched clean commit
+  `32f14ddb1f1d9a271ddc202494fbe4d89e672859`; the Gate rebuilt dedicated
+  binary SHA-256
+  `278b83542fe2e9db95b583930eddefa67158b471db5b530ec26554948ddfa6d3`.
+- The run again passed source identity, exact Thread/Transcript, toolbar
+  geometry, Reaction success/failure recovery, avatar loading/equality, and
+  Station attribution.
+- The first empty-image picker opened as
+  `AXList(window=1,sheet=1,frontmost=true)`, but the default-source
+  `Cmd+Shift+G` produced no observed `AXTextField`; the Gate timed out at
+  `choose_native_file:902` before clear, paste, or private-source Return.
+- The application log contains `pick_image_file` entry without
+  `Image file selected` or command return. The rebuilt binary therefore does
+  not yet have source-bound chooser closure despite the isolated probe.
+- Immutable cleanup evidence and direct `lsof` both show
+  `3330/3331/4445/4446/58557` released.
+
+The next comparison is instrumentation-only. It records the focused control,
+frontmost owner, key/focused-window state, and CoreGraphics modifier flags
+immediately before and after `Cmd+Shift+G`, plus distinct Go-To poll states.
+Chooser branching and product behavior remain unchanged until this evidence
+distinguishes default-source delivery, stale modifiers, missing key-window
+ownership, foreground interception, or an AX focused-element blind spot.
