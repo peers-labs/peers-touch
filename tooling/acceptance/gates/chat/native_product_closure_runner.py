@@ -946,6 +946,8 @@ except Exception as error:
                 or not control.get("role")
             ):
                 return None
+            if control.get("subrole") == "AXApplicationDialog":
+                return {"selected": False, "control": control}
             if panel_open(control) and control.get("role") != "AXTextField":
                 return {"selected": False, "control": control}
             if not panel_open(control):
