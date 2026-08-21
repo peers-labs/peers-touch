@@ -311,6 +311,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         details = (
             ROOT / "apps/desktop/src/components/chat/ChatDetailPanel.tsx"
         ).read_text(encoding="utf-8")
+        messaging = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
+        ).read_text(encoding="utf-8")
         self.assertIn("data-chat-attachment-picker", composer)
         self.assertIn("imServiceV1.messaging.pickAttachmentSource()", composer)
         self.assertIn("appendPickedAttachment", composer)
@@ -320,6 +324,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("api.ossUploadLocalFile", details)
         self.assertNotIn("data-chat-background-input", details)
         self.assertNotIn("ossUploadAttachmentBytes", details)
+        self.assertIn("fn allow_attachment_preview(", messaging)
+        self.assertIn(".asset_protocol_scope()", messaging)
+        self.assertEqual(
+            messaging.count("allow_attachment_preview(&window,"),
+            3,
+        )
 
     def test_product_files_use_real_native_chooser(self) -> None:
         self.assertIn("def choose_native_file(", self.source)
