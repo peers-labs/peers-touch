@@ -699,6 +699,24 @@ except Exception as error:
         # #endregion
 
         self.post_key(0, flags=command)
+        self.post_key(51)
+        WebDriverWait(
+            client.driver,
+            10,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(
+            lambda _: (
+                control
+                if (
+                    (control := self.native_focused_control(
+                        client.process_id or 0
+                    )).get("role")
+                    == "AXTextField"
+                    and control.get("value") == ""
+                )
+                else None
+            )
+        )
         self.post_key(0, text=str(selected_path))
         self.post_key(36)
         # #region debug-point M:native-file-path-entry
