@@ -421,6 +421,16 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           onActionTargetChange(message, messageContentRef.current, false);
         }
       }}
+      onMouseOver={() => {
+        // #region debug-point F:row-mouse-over
+        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'F', location: 'ChatMessageRow:onMouseOver', msg: '[DEBUG] message row mouse over', data: { messageId: message.ulid }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
+      }}
+      onPointerEnter={(event) => {
+        // #region debug-point F:row-pointer-enter
+        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'F', location: 'ChatMessageRow:onPointerEnter', msg: '[DEBUG] message row pointer enter', data: { messageId: message.ulid, pointerType: event.pointerType }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
+      }}
       onMouseLeave={() => {
         // #region debug-point D:row-mouse-leave
         fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'D', location: 'ChatMessageRow:onMouseLeave', msg: '[DEBUG] message row mouse leave', data: { messageId: message.ulid }, ts: Date.now() }) }).catch(() => {});
