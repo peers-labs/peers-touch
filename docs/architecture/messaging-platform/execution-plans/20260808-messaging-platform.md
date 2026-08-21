@@ -20,12 +20,12 @@
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-F` Acceptance truth cutover |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Hover pre-fix diagnosis: direct WebDriver movement to the message row produced no pointer-boundary transition, so React received no `mouseenter`; portal host, geometry, selector identity, and the close timer were rejected as the first failure |
-| Current action | Checkpoint the real pointer choreography (`neutral control -> target row`) with post-fix instrumentation, then rebuild and deploy one clean source identity |
-| Next action | Run `chat-native-product-closure-e2e` against the clean commit and compare post-fix A/B/E events with the pre-fix log before diagnosing the next bounded failure |
-| Blockers | Product-closure rerun is required; thread and every assertion after the first hover remain `UNPROVEN` |
+| Last completed | Source-bound post-fix run rejected the first hover fix: `neutral control -> target row` still emitted no row `mouseenter`, action target, geometry, leave, or timer event; Gate teardown released all client ports |
+| Current action | Instrument raw row mouse/pointer events plus rect, hit-test, and CSS `:hover` state to distinguish WebKit input delivery from overlay interception or changing virtual-row geometry |
+| Next action | Rebuild and rerun the same first hover step, then compare F/G/H/I signals before changing pointer choreography or product behavior |
+| Blockers | Native hover input remains unresolved; thread and every assertion after the first hover remain `UNPROVEN` |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Native run `20260821T010357798690Z-65927f285ead75b26bff1d1e278f9322` proves the profile-scoped readiness cutover and fails at `hover_message`; pre-fix debug run `20260821T011327502682Z-499fcc3677e1e24d187dd9dac0505a6b` contains no A/B/D/E events after direct movement; Desktop check, six Native runner no-bypass tests, and `git diff --check` pass for the post-fix checkpoint; debug session `chat-hover-overlay` remains `[OPEN]`; W13 remains `UNPROVEN` |
+| Evidence | Native run `20260821T012601558653Z-33089642cf17466dbe04f2cdadd74d7c` bound source/Station commit `47095d40a4b58cbb03d5792080971394b1ded294` and dedicated binary SHA-256 `920c90ca66300a6e3083d2e38aed87a6eeeb151888df68e2e00ed88e2aea7008`, passed launch/group readiness/bidirectional message visibility, then failed at the first `hover_message`; post-fix log still contains only two empty-target C events; cleanup released `3330/3331/4445/4446`; debug session `chat-hover-overlay` remains `[OPEN]`; W13 remains `UNPROVEN` |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
