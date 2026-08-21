@@ -40,6 +40,7 @@ from tooling.acceptance.gates.chat.native_support import wait_until
 
 GATE_ID = "chat-native-product-closure-e2e"
 NATIVE_INPUT_ACK_POLL_SECONDS = 0.01
+NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS = 30
 READBACK_COMMANDS = {
     "conversation_get_member_settings",
     "messaging_list_messages",
@@ -701,59 +702,59 @@ except Exception as error:
         report_native_file_snapshot("after-path-key")
         # #endregion
 
+        baseline_window_count = int(baseline_control.get("windowCount", 0))
+
         def native_path_ready(_: Any) -> dict[str, Any] | None:
             control = self.native_focused_control(client.process_id or 0)
             # #region debug-point M:native-file-path-entry
             report_native_file_snapshot("path-poll", control)
             # #endregion
-            if not panel_open(control):
-                return {"selected": True, "control": control}
+            if int(control.get("windowCount", 0)) < baseline_window_count:
+                return None
             if (
                 control.get("role") == "AXTextField"
                 and control.get("value") == str(selected_path)
             ):
-                return {"selected": False, "control": control}
+                return {"pathConfirmed": True, "control": control}
+            if panel_open(control) and control.get("role") != "AXTextField":
+                return {"pathConfirmed": False, "control": control}
             return None
 
         path_entry = WebDriverWait(
             client.driver,
-            10,
+            NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(native_path_ready)
 
-        if not path_entry["selected"]:
+        if path_entry["pathConfirmed"]:
             self.post_key(36)
 
-            def selection_or_browser_ready(_: Any) -> dict[str, Any] | None:
+            def selection_or_browser_ready(
+                _: Any,
+            ) -> dict[str, Any] | None:
                 control = self.native_focused_control(client.process_id or 0)
+                if (
+                    int(control.get("windowCount", 0))
+                    < baseline_window_count
+                    or not control.get("role")
+                ):
+                    return None
+                if panel_open(control) and control.get("role") != "AXTextField":
+                    return {"selected": False, "control": control}
                 if not panel_open(control):
                     return {"selected": True, "control": control}
-                if control.get("role") and control.get("role") != "AXTextField":
-                    return {"selected": False, "control": control}
                 return None
 
             intermediate = WebDriverWait(
                 client.driver,
-                10,
+                NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
                 poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
             ).until(selection_or_browser_ready)
-            if not intermediate["selected"]:
-                self.post_key(36)
-                WebDriverWait(
-                    client.driver,
-                    10,
-                    poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-                ).until(
-                    lambda _: (
-                        control
-                        if not panel_open(
-                            control := self.native_focused_control(
-                                client.process_id or 0
-                            )
-                        )
-                        else None
-                    )
-                )
+        else:
+            intermediate = {"selected": False, "control": path_entry["control"]}
+
+        if not intermediate["selected"]:
+            self.post_key(36)
 
         def native_window_restored(_: Any) -> dict[str, Any] | None:
             control = self.native_focused_control(client.process_id or 0)
@@ -767,14 +768,15 @@ except Exception as error:
             return (
                 control
                 if int(control.get("windowCount", 0))
-                >= int(baseline_control.get("windowCount", 0))
+                >= baseline_window_count
+                and not panel_open(control)
                 and bool(control.get("role"))
                 else None
             )
 
         WebDriverWait(
             client.driver,
-            10,
+            NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(native_window_restored)
         self.focus_actor_window(actor)
