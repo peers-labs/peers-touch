@@ -147,3 +147,21 @@ Conditional focus-click verification:
 The actor-switch ownership defect is closed in isolated runtime evidence.
 Source-bound product-Gate verification remains pending, and this session stays
 `[OPEN]`.
+
+Source-bound recurrence:
+`20260821T175501025454Z-2dd1cd8614176a72fb51b1801545175a`.
+
+- Source, dedicated binary, and Profile Three Station matched clean commit
+  `e3f550adabd4ec3e43655f77f002c51d2d317d7d`.
+- Alice completed five real Native product clicks with released button state.
+- On the first Alice-to-Bob switch, Bob had one layer-1000 window at
+  WindowServer index `1`, an AXWebArea focused control, no sheet, and
+  `documentFocused=false`; Alice remained the actual frontmost PID.
+- The ownership wait after activation completed, but the subsequent title-bar
+  down/up did not establish Bob `document.hasFocus()` within five seconds.
+- Cleanup passed and ports `3330/3331/4445/4446` were released.
+
+Existing evidence does not distinguish whether WindowServer ownership was lost
+after the wait or whether the completed focus click was routed without WebView
+focus. The next instrumentation records `after-owner` and
+`after-focus-click` snapshots without changing activation or pointer behavior.
