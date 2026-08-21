@@ -56,4 +56,22 @@ leaves the global left mouse button down across Gate runs, and macOS does not
 activate the application before the Driver's premature focus wait. The minimal
 fix normalizes any inherited button-down state, posts a complete move/down/up
 sequence, guarantees mouse-up in `finally`, and waits for WebView focus only
-after mouse-up. Post-fix source-bound verification is pending.
+after mouse-up.
+
+First post-fix source-bound run:
+`20260821T131904118790Z-a683811bb5367b9b497436b8b8968f68`.
+
+- Source, dedicated binary, and live Station matched at `ef43efa52`.
+- Debug lines 1-4 prove the inherited mouse state was recovered and the
+  activation click completed:
+  `down -> recovery-up -> down -> up`.
+- Alice remained `frontmost=false` and `documentFocused=false` after mouse-up,
+  then the Driver timed out waiting for focus.
+- Cleanup released ports `3330/3331/4445/4446/59400`.
+
+This rejects a complete CoreGraphics click as sufficient when another
+application window owns the frontmost layer. The remaining repair belongs to
+the Acceptance Driver's actor-window ownership: raise and foreground the target
+macOS process through Accessibility, verify frontmost ownership, then retain
+the real CoreGraphics click for product interaction. Post-fix foreground
+ownership verification is pending.

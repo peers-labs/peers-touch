@@ -96,6 +96,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         recovery_index = focus_source.index(
             "if self.native_mouse_button_down():"
         )
+        activation_index = focus_source.index(
+            "self.activate_native_process(client.process_id)"
+        )
         move_index = focus_source.index("self.post_mouse((5,), point)")
         down_index = focus_source.index(
             "self.post_mouse(\n            (1,),",
@@ -110,7 +113,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "WebDriverWait(client.driver, 5).until(",
             up_index,
         )
-        self.assertLess(recovery_index, move_index)
+        self.assertIn('perform action "AXRaise"', self.source)
+        self.assertLess(recovery_index, activation_index)
+        self.assertLess(activation_index, move_index)
         self.assertLess(move_index, down_index)
         self.assertLess(down_index, finally_index)
         self.assertLess(finally_index, up_index)

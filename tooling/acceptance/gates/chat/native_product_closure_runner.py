@@ -391,6 +391,33 @@ class NativeProductClosureGate(AcceptanceGate):
             core_graphics.CGEventPost(0, event)
             core_foundation.CFRelease(event)
 
+    def activate_native_process(self, process_id: int) -> None:
+        script = f"""
+        tell application "System Events"
+          set targetProcess to first application process whose unix id is {process_id}
+          set frontmost of targetProcess to true
+          try
+            perform action "AXRaise" of front window of targetProcess
+          end try
+          return frontmost of targetProcess
+        end tell
+        """
+        completed = subprocess.run(
+            ("osascript", "-e", script),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise GateError(
+                "Native actor activation failed: "
+                f"{completed.stderr.strip() or completed.stdout.strip()}"
+            )
+        if completed.stdout.strip() != "true":
+            raise GateError(
+                f"Native actor process {process_id} did not become frontmost"
+            )
+
     def native_focused_control(self, process_id: int) -> dict[str, Any]:
         script = f"""
         tell application "System Events"
@@ -768,7 +795,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 data=json.dumps(
                     {
                         "sessionId": "chat-native-window-focus",
-                        "runId": "post-fix",
+                        "runId": "post-fix-foreground-owner",
                         "hypothesisId": "N-Q",
                         "location":
                             "NativeProductClosureGate:focus_actor_window",
@@ -812,6 +839,21 @@ class NativeProductClosureGate(AcceptanceGate):
             # #region debug-point N-Q:native-window-focus
             report_focus_snapshot("after-recovery-up")
             # #endregion
+        self.activate_native_process(client.process_id)
+        WebDriverWait(
+            client.driver,
+            5,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(
+            lambda _: bool(
+                self.native_focused_control(
+                    client.process_id or 0
+                ).get("frontmost")
+            )
+        )
+        # #region debug-point N-Q:native-window-focus
+        report_focus_snapshot("after-activate")
+        # #endregion
         self.post_mouse((5,), point)
         self.post_mouse(
             (1,),
