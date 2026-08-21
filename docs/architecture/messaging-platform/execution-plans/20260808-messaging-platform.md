@@ -20,12 +20,12 @@
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-F` Acceptance truth cutover |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | A-E source reconciliation: canonical thread/transcript ordering, real reaction/overlay state, exact PTID and Station projection, Station-backed settings/background, and strict attachment outcome/draft retention are implemented; Native receiver proof remains unproven |
-| Current action | Repair the first Native failure at the owning projection layer: Bob receives the Engine group projection but `socialChat` does not derive `groupSecurityState=ready` from the installed MLS epoch |
-| Next action | Add projection regression coverage, rebuild/redeploy the dedicated source identity, and rerun `chat-native-product-closure-e2e` from the first real UI group-creation step |
+| Last completed | First Native failure repaired at the projection owner: `socialChat` now derives each group readiness from the local MLS recipient state machine during runtime reconciliation; Desktop check, 332 tests, and production build pass |
+| Current action | Rebuild the dedicated Acceptance binary and rerun the complete real-DOM two-client journey against a Station deployed from the same clean source commit |
+| Next action | Inspect the next first failed bounded step or, only if the Gate finishes `DONE/PROVEN`, validate the complete DOM/geometry/readback/count/restart/cleanup evidence ledger |
 | Blockers | Native run `20260821T002402444965Z-b2c42b202c36ae6d7dd8f78a15695f40` failed at `group.create.ui`: Bob could select the projected group but the conversation pane remained non-ready; remaining product assertions are `UNPROVEN` |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | `debug-station-identity-missing.md`: pre-fix runtime evidence; static/type/unit/build checks passed for commit `b3b532d57e35b41ae8ead221c13f81a550bace28`; first real Native run proved source/build/runtime identity and cleanup but failed at Bob MLS-ready projection, so W13 remains `UNPROVEN` |
+| Evidence | First Native run `20260821T002402444965Z-b2c42b202c36ae6d7dd8f78a15695f40` proved source/build/runtime identity and cleanup but failed at Bob MLS-ready projection; fix commit `fdfe6a9e74ec515a9458a63c457b388486982768` passes `pnpm run check`, `pnpm run test` (332 passed, 1 skipped), focused runtime tests, and `pnpm run build`; W13 remains `UNPROVEN` |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
