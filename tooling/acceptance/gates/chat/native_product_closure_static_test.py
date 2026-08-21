@@ -336,6 +336,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn("def selection_or_browser_ready(", self.source)
         self.assertIn("baseline_window_count", self.source)
+        self.assertIn(
+            'control.get("subrole") == "AXApplicationDialog"',
+            self.source,
+        )
         self.assertIn("NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS", self.source)
         self.assertIn('def native_window_restored(', self.source)
         self.assertIn('include_webview=False', self.source)
