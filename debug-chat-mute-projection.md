@@ -66,3 +66,23 @@ Messaging authority read model, keep actor-scoped settings (including nickname)
 in `conversation_member_settings`, and derive the realtime settings kind from
 the canonical authority conversation. Dual-writing legacy membership would
 create a second truth source and is rejected.
+
+Post-fix source-bound run:
+`20260821T111320224051Z-a00d79d77433a69e1bbb6766037356ad`.
+
+- Source, dedicated binary, and Profile Three Station matched commit
+  `b1174eb6f1d188c7e320719ee498ff3da128ec04`.
+- Alice's real Native Mute click entered the toggle and action handlers.
+- Station returned `muted=true`; the authoritative Desktop projection committed
+  `muted=true`; direct Station readback returned `muted=true`.
+- Alice's real Native Pin click returned and committed `pinned=true`.
+- Later Alice reconciliation retained `muted=true` and `pinned=true`.
+- Bob retained actor-scoped defaults, as required by per-member settings
+  ownership.
+- The Gate advanced to the built-in background picker and failed independently
+  while waiting on a hidden Ant Design option node.
+- Cleanup released `3330`, `3331`, `4445`, `4446`, and the Reaction proxy port.
+
+The legacy/canonical membership split is fixed for Mute and Pin. This session
+remains `[OPEN]` until the complete ConversationActionSurface journey passes
+on clean source and the user confirms closure.
