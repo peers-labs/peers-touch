@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-E/F` verify reactive Details attachment counts in the source-bound Native journey |
+| Current step | `MP-W13-F` classify the restart Details-surface readiness failure with preserved DOM evidence |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Commit `cff908cdc` makes `ChatDetailPanel` subscribe to canonical `socialChat.messages` and derive rows through `projectDesktopIMMessages`; `pnpm run check`, the 20-case product-closure static Gate, and `git diff --check` pass, but no post-fix Native result exists yet |
-| Current action | Deploy the exact clean source, rebuild the dedicated Acceptance binary, and rerun the same Native journey that previously left Bob Details at `0/0` |
-| Next action | Require Alice and Bob Details to converge to `media=1/files=1`, then continue the same Gate through restart recovery |
-| Blockers | MP-W13 remains `UNPROVEN`; attachment send, Engine/message-row identity and byte-exact open are proven in one source-bound run, but Bob's already-open Details surface did not rerender after receiver delivery; final Details conservation and restart/cross-device recovery remain unproven; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Last completed | Source-bound run `20260821T233451461621Z-f0a7b1bb1f65dee54addee44fab05862` matched clean source/live Station `d71c08067`, proved Alice/Bob Details `media=1/files=1`, complete attachment count conservation, and byte-exact opens, then failed after Alice restart while locating the Details toggle; cleanup released `3330/3331/4445/4446/61118` |
+| Current action | Preserve restart phase DOM, screenshot, and app-log evidence to distinguish premature transcript readiness, hidden duplicate group rows, transient Chat loading, and lost active selection |
+| Next action | Rerun the same source-bound Native Gate, classify the first restart snapshot divergence, and fix the owning product or Gate layer without weakening the restart assertion |
+| Blockers | MP-W13 remains `UNPROVEN`; attachment conservation is now proven in one source-bound run, but settings/background/transcript restart recovery did not reach its assertion because Alice's restarted DOM had no discoverable Details toggle; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Pre-fix run `20260821T231645935944Z-3f1446b4a9e89b3c64f5e8ac60fa9e3d` is `FAIL/UNPROVEN` at Bob Details `0/0`; local post-fix evidence for `cff908cdc` is `desktop check PASS`, product-closure static Gate `20/20 PASS`, and `git diff --check PASS`; Native proof remains absent |
+| Evidence | Run `20260821T233451461621Z-f0a7b1bb1f65dee54addee44fab05862` is `FAIL/UNPROVEN` with source/live Station `d71c08067b7f9b137adcbc7046929e9d586f12bb`, `attachment_count_conservation=PASS`, `attachment_byte_exact=PASS`, first failure `client.restart.ui` at `[data-chat-detail-toggle]`, and cleanup `passed`; diagnostic instrumentation compiles and the product-closure static Gate remains `20/20 PASS` |
 | Last updated | 2026-08-22 |
 
 ## 1. Plan Sources And Gate
