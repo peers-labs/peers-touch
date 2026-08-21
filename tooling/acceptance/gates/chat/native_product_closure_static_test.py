@@ -78,10 +78,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"mouseup"', self.source)
         self.assertIn('"click"', self.source)
         self.assertIn("CGEventSourceButtonState", self.source)
-        self.assertIn(
-            "Native click target has no owned staging point",
-            self.source,
-        )
+        self.assertIn("requires_pointer_move = not (", self.source)
+        self.assertIn("if requires_pointer_move:", self.source)
+        self.assertIn('"requiresPointerMove": requires_pointer_move', self.source)
+        self.assertNotIn("staging_point", self.source)
         self.assertIn(".send_keys(", self.source)
 
     def test_transient_native_actions_resolve_after_idempotent_focus(self) -> None:
