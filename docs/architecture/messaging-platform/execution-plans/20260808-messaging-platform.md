@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` verify the corrected CoreGraphics Native chooser keyboard lifecycle |
+| Current step | `MP-W13-F` classify why the full Native chooser ignores the Go-To shortcut |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Isolated Native probe proved `Cmd+V` with exact AX path acknowledgement plus two `CGEventSourceStatePrivate` Return events completes `pick_image_file` and restores `AXWebArea`; probe ports `3340/4455` were released and the clipboard restored |
-| Current action | Replace the unacknowledged Unicode/default-source chooser sequence with the proven clipboard/exact-AX/private-source sequence, remove the unexercised actor-reactivation compensation, and keep `AXApplicationDialog` non-terminal |
-| Next action | Commit the corrected Driver, deploy matching source, rerun static/smoke/full Native Gates, then continue from the first real background upload or attachment boundary |
-| Blockers | MP-W13 remains `UNPROVEN`; source-bound run `20260821T193512691967Z-d0161d83892e020bb44b37ef742fc9e9` sent the second Return but falsely accepted unchanged `AXApplicationDialog` as recovery while `pick_image_file` remained pending; background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Last completed | Source-bound run `20260821T202221429844Z-336f108ac1df25fa2cff53dcdd615fd1` rebuilt binary `278b8354...`, matched clean source and Station `32f14ddb1`, preserved prior Thread/Transcript/Reaction/toolbar/avatar/Station assertions, and released `3330/3331/4445/4446/58557` |
+| Current action | Instrument the `Cmd+Shift+G` boundary without changing chooser behavior so the next comparison distinguishes event-source, modifier-state, key-window, foreground-owner, and AX-tree hypotheses |
+| Next action | Run the same source-bound Native Gate with shortcut-boundary instrumentation, classify the first divergent Native state, then apply only the evidence-supported Driver correction |
+| Blockers | MP-W13 remains `UNPROVEN`; source-bound run `20260821T202221429844Z-336f108ac1df25fa2cff53dcdd615fd1` opened the real chooser as `AXList` but timed out waiting for the Go-To `AXTextField` after `Cmd+Shift+G`; no path entry, picker callback, background upload/retry/persistence/restart/cross-device, or attachment conservation proof followed; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T193512691967Z-d0161d83892e020bb44b37ef742fc9e9` matched clean source/build/Station at `fcaa518de`, passed the prior product assertions, and failed at the next Background Modal because `AXApplicationDialog` was accepted before picker callback; isolated probes proved private-source Return and exact pasted-path acknowledgement complete the real Native picker, while default-source Return does not; all Gate and probe actor ports were released |
+| Evidence | Run `20260821T202221429844Z-336f108ac1df25fa2cff53dcdd615fd1` matched clean source/Station `32f14ddb1` and rebuilt binary SHA-256 `278b83542fe2e9db95b583930eddefa67158b471db5b530ec26554948ddfa6d3`; it passed prior product assertions, recorded `AXComboBox -> AXList`, then failed at `choose_native_file:902` because the Go-To `AXTextField` never appeared; immutable cleanup and direct `lsof` both prove all allocated ports released |
 | Last updated | 2026-08-22 |
 
 ## 1. Plan Sources And Gate
