@@ -39,7 +39,11 @@ import {
   resolveActorIdentity,
 } from '../../store/socialProfileProjection';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
-import { CHAT_BACKGROUND_OPTIONS, type DesktopIMMessageProjection } from '../../store/socialProjection';
+import {
+  CHAT_BACKGROUND_OPTIONS,
+  projectDesktopIMMessages,
+  type DesktopIMMessageProjection,
+} from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';
@@ -585,8 +589,7 @@ export function ChatDetailPanel() {
     setShowDetail, loadSessions, loadGroupMembers, loadGroups, loadMessages,
     loadConversationPreviews, selectGroup,
     conversationLocalState, updateConversationLocalState,
-    getIMConversations,
-    getIMMessages,
+    getIMConversations, messages,
     encryptionEnabled,
     ownFingerprint,
     currentUserDid,
@@ -612,7 +615,7 @@ export function ChatDetailPanel() {
     conversationLocalState: s.conversationLocalState,
     updateConversationLocalState: s.updateConversationLocalState,
     getIMConversations: s.getIMConversations,
-    getIMMessages: s.getIMMessages,
+    messages: s.messages,
     encryptionEnabled: s.encryptionEnabled,
     ownFingerprint: s.ownFingerprint,
     currentUserDid: s.currentUserDid,
@@ -764,7 +767,14 @@ export function ChatDetailPanel() {
   const peerIsOnline = peerDid in peerOnline ? peerOnline[peerDid] : null;
   const localStateKey = activeUlid ? `${activeTab}:${activeUlid}` : '';
   const activeLocalState = localStateKey ? conversationLocalState[localStateKey] : undefined;
-  const activeMessages = activeUlid ? getIMMessages(activeTab, activeUlid) : [];
+  const activeMessages = useMemo(
+    () => (
+      activeUlid
+        ? projectDesktopIMMessages(activeTab, activeUlid, messages[activeUlid] ?? [])
+        : []
+    ),
+    [activeTab, activeUlid, messages],
+  );
   const clearHistoryClearedAt = Number(activeLocalState?.clearedAt || 0);
   const clearHistoryExpiresAt = clearHistoryClearedAt > 0
     ? clearHistoryClearedAt + HISTORY_RESTORE_WINDOW_MS
