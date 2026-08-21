@@ -354,6 +354,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"windowCount"', self.source)
         self.assertIn('"sheetCount"', self.source)
         self.assertIn("def panel_open(", self.source)
+        self.assertIn(
+            'NATIVE_FILE_PANEL_FOCUSED_ROLES = frozenset({"AXList", "AXTextField"})',
+            self.source,
+        )
+        self.assertIn(
+            'control.get("role") in NATIVE_FILE_PANEL_FOCUSED_ROLES',
+            self.source,
+        )
+        self.assertIn(
+            'control.get("role") != baseline_control.get("role")',
+            self.source,
+        )
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn(
             "self.post_key_chord(0, ((55, command),))\n"

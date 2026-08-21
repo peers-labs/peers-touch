@@ -41,6 +41,7 @@ from tooling.acceptance.gates.chat.native_support import wait_until
 GATE_ID = "chat-native-product-closure-e2e"
 NATIVE_INPUT_ACK_POLL_SECONDS = 0.01
 NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS = 30
+NATIVE_FILE_PANEL_FOCUSED_ROLES = frozenset({"AXList", "AXTextField"})
 NATIVE_ACCESSIBILITY_PROBE = r"""
 import ctypes
 import json
@@ -1082,6 +1083,10 @@ except Exception as error:
                 > int(baseline_control.get("windowCount", 0))
                 or int(control.get("sheetCount", 0))
                 > int(baseline_control.get("sheetCount", 0))
+                or (
+                    control.get("role") in NATIVE_FILE_PANEL_FOCUSED_ROLES
+                    and control.get("role") != baseline_control.get("role")
+                )
             )
 
         def native_panel_ready(_: Any) -> dict[str, Any] | None:

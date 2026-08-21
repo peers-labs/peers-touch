@@ -567,3 +567,25 @@ Screenshot-bound diagnostic comparison:
   window/sheet lifecycle, and frontmost-process assertions.
 - Acceptance run status is `PARTIAL/UNPROVEN`; cleanup status is `passed`, and
   direct process/port checks found no actor or runner residue.
+
+Process-bound AX source-bound run:
+`20260821T215215627227Z-4dfd607f52731a00c5d6a333c5c485a6`.
+
+- Source and live Station matched clean commit
+  `728e1c6eb976c79a28c369937078e4a6019732ed`; dedicated binary SHA-256
+  was `42ea2fecc4e05ad984be0717b35a1238ff83462b06dd0b79b33df49c0d2a9a69`.
+- The process-bound `AXUIElementCreateApplication` probe returned bounded,
+  structured state throughout the chooser transition. The System Events
+  timeout did not recur.
+- The real upload action changed focus from the WebView's `AXComboBox` to the
+  chooser's `AXList`, with Alice still frontmost and the WebView unfocused.
+- Direct AX represented both states as `windowCount=1/sheetCount=0`; unlike
+  System Events, it did not expose the attached chooser through `AXSheets`.
+- The Gate timed out at `native_panel_ready` because `panel_open` still
+  required a window or sheet count increase and ignored the source-bound
+  focused-role transition.
+- The next correction treats a baseline-role transition into chooser-owned
+  `AXList` or `AXTextField` as panel-open evidence while preserving count
+  growth, exact path acknowledgement, and terminal chooser lifecycle checks.
+- The run remained `PARTIAL/UNPROVEN`; cleanup released
+  `3330/3331/4445/4446/54347`.
