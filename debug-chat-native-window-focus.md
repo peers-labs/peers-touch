@@ -75,3 +75,20 @@ the Acceptance Driver's actor-window ownership: raise and foreground the target
 macOS process through Accessibility, verify frontmost ownership, then retain
 the real CoreGraphics click for product interaction. Post-fix foreground
 ownership verification is pending.
+
+Foreground-owner source-bound run:
+`20260821T132551271228Z-51015327c9968c335fcbc0109464599d`.
+
+- Source, dedicated binary, and live Station matched at `0130a00bb`.
+- Debug line 2 proved the Accessibility activation worked:
+  `frontmost=true`, `documentFocused=true`, focused role `AXWebArea`.
+- Debug lines 3-4 proved the subsequent title-bar down/up was redundant; the
+  WebView was already focused before it ran, and the delayed post-click state
+  then caused the final `document.hasFocus()` wait to time out.
+- Cleanup released ports `3330/3331/4445/4446/60512`.
+
+The foreground owner is now correct. The remaining Driver defect is redundant
+refocus after successful activation. `focus_actor_window` must return after
+verified Accessibility foreground/WebView focus; the subsequent product
+element action remains a real CoreGraphics pointer sequence with DOM
+acknowledgements.
