@@ -62,6 +62,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("document.hasFocus()", self.source)
         self.assertIn("PT_ACCEPTANCE_WINDOW_SLOT", self.source)
         self.assertIn("PT_ACCEPTANCE_WINDOW_COUNT", self.source)
+        self.assertIn("NATIVE_MOUSE_EVENT_INTERVAL_US", self.source)
+        self.assertIn("libc.usleep(", self.source)
         self.assertIn("(5, 1, 2)", self.source)
         self.assertIn(".send_keys(", self.source)
 
@@ -127,6 +129,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("data-chat-background-input", details)
         self.assertIn("backgroundInputRef.current?.click()", details)
         self.assertIn("ossUploadAttachmentBytes", details)
+
+    def test_group_creation_feedback_does_not_cover_composer_actions(self) -> None:
+        create_group = (
+            ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
+        ).read_text(encoding="utf-8")
+        self.assertIn("toast.success({", create_group)
+        self.assertIn("placement: 'top'", create_group)
 
 
 if __name__ == "__main__":

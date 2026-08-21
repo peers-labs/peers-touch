@@ -26,6 +26,15 @@
 | J | Process activation is sufficient to focus a raw dedicated Tauri window | High | Low | Rejected: exact-PID activation left `document.hasFocus=false` |
 | K | Acceptance-only window tiling and topmost ownership can make CoreGraphics input deterministic | High | Medium | Confirmed: two-window probe switched exact `document.hasFocus()` ownership in both directions |
 | L | Retina-normalized WebDriver bounds map DOM centers to CoreGraphics coordinates | High | Medium | Confirmed: raw rects were exactly 2x the non-overlapping logical window slots |
+| M | The send-button center falls outside the viewport in the narrower actor slot | Medium | Low | Rejected: rect `817,721,32,32` was inside the `864x768` viewport |
+| N | An Ant Tooltip or portal surface covers the send-button center | Medium | Low | Confirmed: bottom-right LobeUI success toast owned the center |
+| O | React replaces or disconnects the send button after composer input | Low | Low | Rejected: target remained connected and enabled |
+| P | A same-layer sibling covers only the center while inset points remain target-owned | Medium | Low | Confirmed: only bottom-right inset remained send-owned; product fix moved the toast |
+| Q | CoreGraphics movement reaches the button but Native down never reaches the DOM | High | Low | Rejected: pointerdown and mousedown both arrived |
+| R | Native events are delivered out of sequence before WebKit can synthesize `click` | High | Low | Confirmed pre-fix and fixed: paced events arrived down -> up -> click |
+| S | React `onClick` runs but `submit` exits before the messaging API | Medium | Low | Rejected post-fix: click entered submit and message delivery completed |
+| T | `canSend` becomes false between typing and submit | Low | Low | Rejected: all three submit entries had `canSend=true` |
+| U | `onSend` returns without producing a visible projection | Low | Medium | Rejected for root/Bob/reply sends; each returned and rendered in both clients |
 
 ## Log Evidence
 Instrumentation points:
@@ -137,6 +146,76 @@ Acceptance-only two-window probe:
 - This confirms the generic host lifecycle and coordinate normalization. It
   does not yet prove the Chat menu, hover overlay, or later product assertions;
   those remain for the source-bound product-closure Gate.
+
+Source-bound product-closure rerun:
+`20260821T064607367400Z-7459e447bcdc8a61d972b5c951690e19`.
+
+- Source, rebuilt binary, and Profile Three matched clean commit
+  `b7bf54ffbeaf88852981918c615f5038f386db62`; provisioning reached
+  `FIXTURE_READY`. The dedicated binary SHA-256 was
+  `ba6d4b41890cb08e5e7b1b5f59f75a02bb3a920581e9d7c107a753f086fc8685`.
+- Group creation and actor-window focus passed. The first failure moved into
+  `prove_transcript_thread`, after Alice typed the root message and before
+  submission: `[data-chat-send]` failed the center ownership check with
+  `Native click target center is occluded`.
+- Hover was not reached, so the debug NDJSON remained empty. This run confirms
+  the foreground lifecycle repair but does not prove hover or later product
+  assertions.
+- Cleanup evidence reported `3330`, `3331`, `4445`, and `4446` released.
+
+Click-occlusion diagnostic run:
+`20260821T065132580799Z-f95f32441418b54d29732ee3352a933e`.
+
+- M and O were rejected: the send button rect was inside the viewport,
+  `connected=true`, and `disabled=false`.
+- N was confirmed: the center hit stack was led by a bottom-right LobeUI toast
+  `DIV` with `role=dialog`; only the send button's bottom-right inset remained
+  target-owned.
+- The owner was `CreateGroupModal`'s success toast. Its placement was moved to
+  `top` so completion feedback no longer covers the conversation primary
+  action; the center ownership check remained unchanged.
+- Cleanup released `3330`, `3331`, `4445`, and `4446`.
+
+Post-toast-placement diagnostic run:
+`20260821T065737113531Z-d0633f9032f75cbdd7580ca288d51073`.
+
+- The M-P occlusion event disappeared, proving the send-button center became
+  target-owned.
+- The run timed out waiting for Alice's root message. Alice's app log recorded
+  typing true/false but no `messaging_submit_message` request and no composer
+  send failure, so the next comparison must distinguish Native event delivery
+  from React click/submit entry.
+- Cleanup released `3330`, `3331`, `4445`, and `4446`.
+
+Native event-order diagnostic run:
+`20260821T070426261276Z-52d2eb651bfafbea6fbd08080e0087df`.
+
+- Q was rejected: the send button received `pointerdown` and `mousedown`.
+- R was confirmed: Debug Server line 1 recorded `mouseup` before lines 2-3
+  recorded `pointerdown` and `mousedown`; no later `mouseup`, `click`, submit
+  entry, or messaging request appeared.
+- The focus title-bar down/up and target move/down/up events were posted without
+  a delivery interval. WindowServer/WKWebView therefore observed cross-location
+  event reordering and could not synthesize a click.
+- The generic Native mouse primitive must pace each posted event before any
+  business action can rely on it. JS click, retry, and alternate-point
+  workarounds remain forbidden.
+- Cleanup released `3330`, `3331`, `4445`, and `4446`.
+
+Paced Native input diagnostic run:
+`20260821T071102527504Z-fd178f22b871fddd827c3bfbac14b2da`.
+
+- A fixed 50ms interval after every CoreGraphics post restored ordered
+  `pointerdown/mousedown -> mouseup -> click -> submit -> onSend return`.
+- Alice root send, Bob root send, and Alice reply send all completed through
+  the real button and rendered cross-client.
+- The first real hover produced F/A/B/C/E events, `:hover=true`, connected
+  anchor/surface ownership, and a `191x36` overlay geometry calculation.
+- The Driver/foreground/Native-input lifecycle is therefore closed by runtime
+  evidence. The next first failure is product-owned: the reply rendered, but
+  the root row's thread summary projection did not reach count `1` within
+  120 seconds.
+- Cleanup released `3330`, `3331`, `4445`, and `4446`.
 
 ## Verification Conclusion
 The target geometry and hit-test ownership are correct, but neither Selenium
