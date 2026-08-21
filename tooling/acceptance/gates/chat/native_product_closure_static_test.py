@@ -293,7 +293,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("def open_background_modal(self, actor: str)", self.source)
         self.assertIn("if active_select is not None:", self.source)
         self.assertIn("document.elementFromPoint(", self.source)
-        self.assertIn("return hit === action || action.contains(hit);", self.source)
+        self.assertIn("document.elementsFromPoint(", self.source)
+        self.assertIn(
+            "action && (hit === action || action.contains(hit))",
+            self.source,
+        )
+        self.assertIn('"[DEBUG] background modal handoff"', self.source)
         self.assertIn("name.includes('-leave')", self.source)
 
     def test_group_creation_feedback_does_not_cover_composer_actions(self) -> None:
