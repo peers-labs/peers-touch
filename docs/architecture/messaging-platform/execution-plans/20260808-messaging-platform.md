@@ -20,12 +20,12 @@
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-F` Acceptance truth cutover |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | First Native failure repaired at the projection owner: `socialChat` now derives each group readiness from the local MLS recipient state machine during runtime reconciliation; Desktop check, 332 tests, and production build pass |
+| Last completed | Second Native failure repaired at the Engine state owner: creator MLS status now reports `active` only when the local session epoch and active leaf match; recipient-head and buffer failure precedence remains fail-closed |
 | Current action | Rebuild the dedicated Acceptance binary and rerun the complete real-DOM two-client journey against a Station deployed from the same clean source commit |
 | Next action | Inspect the next first failed bounded step or, only if the Gate finishes `DONE/PROVEN`, validate the complete DOM/geometry/readback/count/restart/cleanup evidence ledger |
-| Blockers | Native run `20260821T002402444965Z-b2c42b202c36ae6d7dd8f78a15695f40` failed at `group.create.ui`: Bob could select the projected group but the conversation pane remained non-ready; remaining product assertions are `UNPROVEN` |
+| Blockers | Native run `20260821T004058261056Z-c6d37d2bcfd89c09ecc09fe5fc52b04a` failed at Alice creator readiness after the frontend began consuming canonical recipient status; the Engine creator-status gap is repaired, but all later product assertions remain `UNPROVEN` |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | First Native run `20260821T002402444965Z-b2c42b202c36ae6d7dd8f78a15695f40` proved source/build/runtime identity and cleanup but failed at Bob MLS-ready projection; fix commit `fdfe6a9e74ec515a9458a63c457b388486982768` passes `pnpm run check`, `pnpm run test` (332 passed, 1 skipped), focused runtime tests, and `pnpm run build`; W13 remains `UNPROVEN` |
+| Evidence | Native runs `20260821T002402444965Z-b2c42b202c36ae6d7dd8f78a15695f40` and `20260821T004058261056Z-c6d37d2bcfd89c09ecc09fe5fc52b04a` preserve valid source/build/runtime and cleanup evidence but fail before product closure; frontend fix passes Desktop check/test/build, Engine creator-status test passes 1/1, and `cargo check --features acceptance-webdriver` passes; W13 remains `UNPROVEN` |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
