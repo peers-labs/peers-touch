@@ -83,6 +83,21 @@ First CoreGraphics run:
   32-point title/content offset. WebDriver reported doubled Retina pixels and
   is not used for DOM-to-screen conversion.
 
+Accessibility-mapped rerun:
+`20260821T023546815138Z-4467abd67e84c4886672d70b783c2bc9`.
+
+- Source and Station matched commit
+  `b2efe72d50561221eff50429a7f68b172e50d99e`; the dedicated binary SHA-256
+  was `09d3ebb0ebef65575bf681ad4a9d3ea42aa19a2a5333b676f59bb3c7316e497b`.
+- Alice and Bob launched in overlapping Native windows. The Gate failed during
+  `group.create.ui`: Alice's WebDriver click found `[data-chat-new-menu]`, but
+  the Ant `[data-chat-create-group-menu]` item remained present and hidden
+  because Bob's later-launched window owned macOS focus.
+- The run never entered `hover_message`; the debug NDJSON therefore remained
+  empty and this run neither confirms nor rejects the Accessibility-mapped
+  CoreGraphics input path.
+- Cleanup released `3330`, `3331`, `4445`, and `4446`.
+
 ## Verification Conclusion
 The target geometry and hit-test ownership are correct, but neither Selenium
 element-origin nor viewport-origin W3C pointer movement reaches the embedded
@@ -93,3 +108,7 @@ Accessibility front-window position/size plus the DOM viewport. The Native path
 then posts real CoreGraphics mouse movement through a neutral point and keeps
 Selenium only for DOM geometry and result verification. JS event dispatch,
 Store mutation, Harness actions, and fixed business commands remain forbidden.
+Before the next comparison run, every actor-specific click and hover must first
+activate that actor's exact process by PID and require `document.hasFocus()`;
+otherwise overlapping Native windows can fail an earlier menu interaction and
+produce no hover evidence.
