@@ -62,6 +62,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.assertNotIn(forbidden, self.source)
         self.assertIn("CGEventCreateMouseEvent", self.source)
         self.assertIn("CGEventPost", self.source)
+        self.assertIn("CGEventPostToPid", self.source)
         self.assertIn("document.hasFocus()", self.source)
         self.assertIn("PT_ACCEPTANCE_WINDOW_SLOT", self.source)
         self.assertIn("PT_ACCEPTANCE_WINDOW_COUNT", self.source)
@@ -75,10 +76,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"mouseup"', self.source)
         self.assertIn('"click"', self.source)
         self.assertIn("CGEventSourceButtonState", self.source)
-        self.assertIn("self.post_mouse((5,), point)", self.source)
-        self.assertIn("self.post_mouse((1,), point)", self.source)
-        self.assertIn("self.post_mouse((2,), point)", self.source)
-        self.assertIn("self.post_mouse((5,), staging_point)", self.source)
+        self.assertGreaterEqual(
+            self.source.count("process_id=client.process_id"),
+            5,
+        )
         self.assertIn(
             "Native click target has no owned staging point",
             self.source,

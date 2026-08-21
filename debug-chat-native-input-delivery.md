@@ -76,3 +76,21 @@ First staging source-bound run:
 
 The next instrumentation run must capture `staging-timeout` before changing
 CoreGraphics event-source or activation behavior.
+
+Staging-timeout source-bound run:
+`20260821T135059847646Z-31c63fd76c11542ad3f8aefe00f05dbf`.
+
+- Source, dedicated binary, and live Station matched at `09d4e800a`.
+- The inherited cursor started at the prior staging point `[67.5,81]`, so this
+  run correctly skipped staging and posted a real move to center `[81.5,95]`.
+- The timeout snapshot proved the Native cursor reached `[81.5,95]`, while the
+  scoped WebView probe remained empty.
+- Alice was frontmost and document-focused before the post; document focus was
+  lost only during the unacknowledged global-event wait.
+- Cleanup released all actor ports.
+
+This confirms V for the global event path: CoreGraphics moves the system cursor,
+but the globally posted event is consumed outside the intended actor WebView.
+The Driver must route product pointer events with
+`CGEventPostToPid(actor_pid, event)` while retaining global mouse-up only for
+stale-button recovery.

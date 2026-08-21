@@ -304,6 +304,8 @@ class NativeProductClosureGate(AcceptanceGate):
         self,
         event_types: tuple[int, ...],
         point: tuple[float, float],
+        *,
+        process_id: int | None = None,
     ) -> None:
         class CGPoint(ctypes.Structure):
             _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
@@ -322,6 +324,10 @@ class NativeProductClosureGate(AcceptanceGate):
         ]
         core_graphics.CGEventCreateMouseEvent.restype = ctypes.c_void_p
         core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        core_graphics.CGEventPostToPid.argtypes = [
+            ctypes.c_int32,
+            ctypes.c_void_p,
+        ]
         core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
 
         native_point = CGPoint(*point)
@@ -334,7 +340,10 @@ class NativeProductClosureGate(AcceptanceGate):
             )
             if not event:
                 raise GateError("CoreGraphics failed to create Native mouse event")
-            core_graphics.CGEventPost(0, event)
+            if process_id is None:
+                core_graphics.CGEventPost(0, event)
+            else:
+                core_graphics.CGEventPostToPid(process_id, event)
             core_foundation.CFRelease(event)
 
     def post_key(
@@ -1079,7 +1088,11 @@ class NativeProductClosureGate(AcceptanceGate):
         try:
             cursor = 0
             if staging_point is not None:
-                self.post_mouse((5,), staging_point)
+                self.post_mouse(
+                    (5,),
+                    staging_point,
+                    process_id=client.process_id,
+                )
                 try:
                     cursor = self.wait_native_input_event(
                         client,
@@ -1092,7 +1105,11 @@ class NativeProductClosureGate(AcceptanceGate):
                     report_native_input_delivery("staging-timeout")
                     # #endregion
                     raise
-            self.post_mouse((5,), point)
+            self.post_mouse(
+                (5,),
+                point,
+                process_id=client.process_id,
+            )
             try:
                 cursor = self.wait_native_input_event(
                     client,
@@ -1105,14 +1122,22 @@ class NativeProductClosureGate(AcceptanceGate):
                 report_native_input_delivery("mousemove-timeout")
                 # #endregion
                 raise
-            self.post_mouse((1,), point)
+            self.post_mouse(
+                (1,),
+                point,
+                process_id=client.process_id,
+            )
             cursor = self.wait_native_input_event(
                 client,
                 probe_id,
                 "mousedown",
                 cursor,
             )
-            self.post_mouse((2,), point)
+            self.post_mouse(
+                (2,),
+                point,
+                process_id=client.process_id,
+            )
             cursor = self.wait_native_input_event(
                 client,
                 probe_id,
@@ -1247,6 +1272,7 @@ class NativeProductClosureGate(AcceptanceGate):
                     neutral_point[0] + (row_point[0] - neutral_point[0]) * ratio,
                     neutral_point[1] + (row_point[1] - neutral_point[1]) * ratio,
                 ),
+                process_id=client.process_id,
             )
 
         report_probe("after")
