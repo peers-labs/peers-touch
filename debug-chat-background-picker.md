@@ -515,3 +515,20 @@ boundary and rejects actor/foreground or sheet ownership loss. The correction
 uses the already-proven private CoreGraphics source for `Cmd+Shift+G` and adds
 a two-second subprocess deadline to the AX probe so one blocked System Events
 query cannot defeat the Gate timeout.
+
+Private-source flags-only comparison:
+`20260821T211928500693Z-5e18cc514d2504e05fc3c8d0218de417`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `e61b3c7203c39d654a7bfc1689d28ab775c3df99`; binary SHA-256 was
+  `ffe465aa600514a6e6ed71e7f7ae7a5048a3f6599aadc1915c8752e211c2bae8`.
+- The Gate crossed all prior assertions and reached the same chooser boundary.
+- Adding a private source while still representing `Cmd+Shift+G` only as flags
+  on the G event did not expose `AXTextField`; the bounded AX probes timed out
+  in two seconds and the Gate failed within its own deadline.
+- Cleanup released `3330/3331/4445/4446/61938`.
+
+This rejects source selection alone. The remaining input-lifecycle difference
+is that the shortcut does not contain physical Command/Shift down/up events.
+The next correction uses one private source for the complete modifier chord,
+and applies the same real chord lifecycle to `Cmd+A` and `Cmd+V`.
