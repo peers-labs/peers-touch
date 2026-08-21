@@ -395,6 +395,7 @@ class NativeProductClosureGate(AcceptanceGate):
         script = f"""
         tell application "System Events"
           set targetProcess to first application process whose unix id is {process_id}
+          set processFrontmost to frontmost of targetProcess
           set windowCount to count of windows of targetProcess
           set sheetCount to 0
           repeat with appWindow in windows of targetProcess
@@ -419,7 +420,7 @@ class NativeProductClosureGate(AcceptanceGate):
               set controlValue to value of attribute "AXValue" of focusedElement as text
             end try
           end try
-          return roleName & tab & subroleName & tab & titleValue & tab & controlValue & tab & windowCount & tab & sheetCount
+          return roleName & tab & subroleName & tab & titleValue & tab & controlValue & tab & windowCount & tab & sheetCount & tab & processFrontmost
         end tell
         """
         completed = subprocess.run(
@@ -430,8 +431,8 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         if completed.returncode != 0:
             return {"error": completed.stderr.strip()}
-        fields = completed.stdout.rstrip("\n").split("\t", 5)
-        if len(fields) != 6:
+        fields = completed.stdout.rstrip("\n").split("\t", 6)
+        if len(fields) != 7:
             return {"error": f"unexpected AX response: {completed.stdout!r}"}
         return {
             "role": fields[0],
@@ -440,6 +441,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "value": fields[3],
             "windowCount": int(fields[4]),
             "sheetCount": int(fields[5]),
+            "frontmost": fields[6] == "true",
         }
 
     def choose_native_file(
@@ -755,12 +757,52 @@ class NativeProductClosureGate(AcceptanceGate):
         if bool(client.driver.execute_script("return document.hasFocus()")):
             return client
         window = self.native_window(client)
+        point = (
+            window["left"] + window["width"] / 2,
+            window["top"] + 16,
+        )
+        # #region debug-point N-Q:native-window-focus
+        def report_focus_snapshot(phase: str) -> None:
+            request = urllib.request.Request(
+                "http://127.0.0.1:7784/event",
+                data=json.dumps(
+                    {
+                        "sessionId": "chat-native-window-focus",
+                        "runId": "pre-fix",
+                        "hypothesisId": "N-Q",
+                        "location":
+                            "NativeProductClosureGate:focus_actor_window",
+                        "msg": f"[DEBUG] Native window focus {phase}",
+                        "data": {
+                            "actor": actor,
+                            "processId": client.process_id,
+                            "documentFocused": bool(
+                                client.driver.execute_script(
+                                    "return document.hasFocus()"
+                                )
+                            ),
+                            "mouseButtonDown": self.native_mouse_button_down(),
+                            "window": window,
+                            "point": point,
+                            "focusedControl": self.native_focused_control(
+                                client.process_id or 0
+                            ),
+                        },
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                urllib.request.urlopen(request, timeout=2).read()
+            except OSError:
+                pass
+
+        report_focus_snapshot("before-move")
+        # #endregion
         self.post_mouse(
             (1,),
-            (
-                window["left"] + window["width"] / 2,
-                window["top"] + 16,
-            ),
+            point,
         )
         WebDriverWait(
             client.driver,
@@ -769,15 +811,18 @@ class NativeProductClosureGate(AcceptanceGate):
         ).until(
             lambda _: self.native_mouse_button_down()
         )
+        # #region debug-point N-Q:native-window-focus
+        report_focus_snapshot("after-down")
+        # #endregion
         WebDriverWait(client.driver, 5).until(
             lambda driver: bool(driver.execute_script("return document.hasFocus()"))
         )
+        # #region debug-point N-Q:native-window-focus
+        report_focus_snapshot("after-focus")
+        # #endregion
         self.post_mouse(
             (2,),
-            (
-                window["left"] + window["width"] / 2,
-                window["top"] + 16,
-            ),
+            point,
         )
         WebDriverWait(
             client.driver,
@@ -786,6 +831,9 @@ class NativeProductClosureGate(AcceptanceGate):
         ).until(
             lambda _: not self.native_mouse_button_down()
         )
+        # #region debug-point N-Q:native-window-focus
+        report_focus_snapshot("after-up")
+        # #endregion
         return client
 
     def click_element(self, actor: str, element: Any) -> Any:
