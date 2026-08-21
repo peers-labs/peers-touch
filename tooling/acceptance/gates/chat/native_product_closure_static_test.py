@@ -451,6 +451,37 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"[DEBUG] background modal handoff"', self.source)
         self.assertIn("name.includes('-leave')", self.source)
 
+    def test_background_recovery_uses_the_visible_retry_action(self) -> None:
+        start = self.source.index("    def prove_settings_background(")
+        end = self.source.index("    def prove_attachment_failure(", start)
+        settings_source = self.source[start:end]
+        self.assertEqual(
+            settings_source.count(
+                'trigger_selector="[data-chat-background-upload]"'
+            ),
+            1,
+        )
+        self.assertIn(
+            '"[data-chat-background-retry]"',
+            settings_source,
+        )
+        self.assertIn(
+            'self.click_element("alice", retry)',
+            settings_source,
+        )
+        self.assertIn(
+            "empty_image.write_bytes(valid_image.read_bytes())",
+            settings_source,
+        )
+        self.assertIn(
+            'state.get("backgroundRetry") == "true"',
+            settings_source,
+        )
+        self.assertIn(
+            'state.get("backgroundRetry") == "false"',
+            settings_source,
+        )
+
     def test_group_creation_feedback_does_not_cover_composer_actions(self) -> None:
         create_group = (
             ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"

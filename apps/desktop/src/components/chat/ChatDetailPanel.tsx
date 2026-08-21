@@ -1322,6 +1322,7 @@ export function ChatDetailPanel() {
       data-chat-detail-background={activeLocalState?.background || 'default'}
       data-chat-detail-background-image={activeLocalState?.backgroundImage || ''}
       data-chat-detail-action-pending={conversationActionPending || ''}
+      data-chat-detail-background-retry={backgroundRetryPath ? 'true' : 'false'}
       style={{
         width: 320,
         maxWidth: '100%',
