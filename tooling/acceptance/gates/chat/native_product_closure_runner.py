@@ -1111,6 +1111,17 @@ except Exception as error:
               'click',
             ];
             const events = [];
+            const describe = (candidate) => {
+              if (!(candidate instanceof Element)) return null;
+              return {
+                tag: candidate.tagName,
+                id: candidate.id || '',
+                classes: candidate.className?.baseVal
+                  || candidate.className
+                  || '',
+                role: candidate.getAttribute('role') || '',
+              };
+            };
             const listener = (event) => {
               const eventTarget = event.target;
               const owned = (
@@ -1120,13 +1131,14 @@ except Exception as error:
                   && target.contains(eventTarget)
                 )
               );
-              if (!owned) return;
               events.push({
                 type: event.type,
                 button: event.button,
                 buttons: event.buttons,
                 clientX: event.clientX,
                 clientY: event.clientY,
+                owned,
+                target: describe(eventTarget),
               });
             };
             eventTypes.forEach((type) => {
@@ -1168,7 +1180,11 @@ except Exception as error:
                 return None
             for index in range(after_index, len(events)):
                 event = events[index]
-                if isinstance(event, dict) and event.get("type") == event_type:
+                if (
+                    isinstance(event, dict)
+                    and event.get("type") == event_type
+                    and event.get("owned") is True
+                ):
                     return index + 1
             return None
 
