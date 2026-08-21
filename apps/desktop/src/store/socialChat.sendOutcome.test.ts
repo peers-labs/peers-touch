@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MessagingSendOutcomeError,
   requireQueuedMessagingSendOutcome,
+  resolveReplyThreadRootUlid,
 } from './socialChat';
 import type { MessagingSendOutcome } from '../services/im-service-contract';
 
@@ -55,5 +56,29 @@ describe('social chat send outcome boundary', () => {
       ...outcome('pending'),
       attachmentCount: 2,
     }, 1)).toThrowError(expect.objectContaining({ code: 'attachment_count_mismatch' }));
+  });
+});
+
+describe('social chat reply thread ownership', () => {
+  const messages = [
+    { ulid: 'root' },
+    { ulid: 'nested-reply', threadRootUlid: 'root' },
+  ];
+
+  it('binds an inline root reply to the target message', () => {
+    expect(resolveReplyThreadRootUlid(messages, 'root')).toBe('root');
+  });
+
+  it('preserves the existing root when replying to a nested message', () => {
+    expect(resolveReplyThreadRootUlid(messages, 'nested-reply')).toBe('root');
+  });
+
+  it('prefers the explicit root supplied by a thread surface', () => {
+    expect(resolveReplyThreadRootUlid(messages, 'nested-reply', 'explicit-root'))
+      .toBe('explicit-root');
+  });
+
+  it('does not create a thread root for a non-reply message', () => {
+    expect(resolveReplyThreadRootUlid(messages)).toBeUndefined();
   });
 });

@@ -45,3 +45,19 @@ Root cause confirmed before fix:
 5. Acceptance proves backend Station identity/readback only and overclaims visible coverage.
 
 Post-fix comparison pending.
+
+Post-fix Native evidence:
+
+- Run `20260821T100236040888Z-80282f9702fbc8c0fa58404d109fbed7`
+  recorded `avatar_exact_loaded=PASS`.
+- Alice and Bob exposed the same single authority Station ID:
+  `12D3KooWNvqw4A848Zqmz1c19vuxL9B9rrEPxEBmpUMAF1FXdFAW`.
+- `station_attribution_exact=PASS` proved the Station surface was available and
+  visible in both clients.
+- The Gate advanced to the independent ConversationActionSurface failure:
+  `timed out waiting for mute projection`.
+- Actor ports and the Reaction fault-proxy port were released.
+
+The identity and Station attribution product path is fixed in dirty
+source-bound Native evidence. This debug session remains `[OPEN]` until clean
+source verification and user confirmation.
