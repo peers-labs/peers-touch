@@ -61,3 +61,10 @@ Post-fix Native evidence:
 The identity and Station attribution product path is fixed in dirty
 source-bound Native evidence. This debug session remains `[OPEN]` until clean
 source verification and user confirmation.
+
+Clean source-bound run
+`20260821T101103621394Z-083d69ddf9bbc5bdd1b97026df475f9d`
+matched source and Profile Three Station commit
+`04fe5680128ac008c350a264e5e9ac20c7000e1f` and recorded both
+`avatar_exact_loaded=PASS` and `station_attribution_exact=PASS`. The first
+failure advanced to Mute projection; cleanup released actor and proxy ports.
