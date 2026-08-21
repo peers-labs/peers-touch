@@ -147,3 +147,30 @@ Native-picker product-fix run:
   after the shortcut and each distinct path-value poll before changing Native
   keyboard behavior.
 - Cleanup released ports `3330/3331/4445/4446/53083`.
+
+Path-entry source-bound run:
+`20260821T154759347000Z-54846fac40f130b0f90b8b168b869fff`.
+
+- Source, dedicated binary, and Profile Three Station matched clean commit
+  `13bd6fed8b4c1901463f8a95dcd67464619e470b`.
+- Before the chooser, the Gate proved exact Thread/Transcript, toolbar
+  geometry, reaction success/failure recovery, loaded avatar equality, and
+  Station attribution.
+- The real background upload trigger opened a Native sheet and
+  `Cmd+Shift+G` focused an `AXTextField` whose initial value was `/opt`.
+- After one CoreGraphics Unicode path event, the Native sheet closed,
+  the focused control returned to the product `Chat background` application
+  dialog, and the WebView regained focus.
+- The Gate then timed out because it continued waiting for the already closed
+  text field to equal the selected absolute path.
+- Cleanup released ports `3330/3331/4445/4446/49210`.
+
+The Driver must accept both native path-entry terminal states:
+
+1. The `AXTextField` contains the exact path, so Enter continues the chooser.
+2. The Native panel has already closed, so OS selection is complete and the
+   product projection becomes the next mandatory proof.
+
+Chooser closure alone does not prove upload success. The existing background
+failure/retry, `oss://` persistence, Station readback, cross-device and restart
+assertions remain mandatory.
