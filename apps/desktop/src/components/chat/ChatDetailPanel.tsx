@@ -1,9 +1,7 @@
 import {
   useEffect,
   useMemo,
-  useRef,
   useState,
-  type ChangeEvent,
   type ReactNode,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -652,9 +650,8 @@ export function ChatDetailPanel() {
   const [editMyNicknameValue, setEditMyNicknameValue] = useState('');
   const [historyActionPending, setHistoryActionPending] = useState(false);
   const [conversationActionPending, setConversationActionPending] = useState<string | null>(null);
-  const [backgroundRetryFile, setBackgroundRetryFile] = useState<File | null>(null);
+  const [backgroundRetryPath, setBackgroundRetryPath] = useState<string | null>(null);
   const [historyNow, setHistoryNow] = useState(Date.now());
-  const backgroundInputRef = useRef<HTMLInputElement>(null);
 
   const peerDid = !isGroup
     ? activeConversation?.peerDid || getFriendPeerDid(activeFriendSession, currentUserDid)
@@ -982,22 +979,20 @@ export function ChatDetailPanel() {
     }
   };
 
-  const handleUploadBackgroundImage = async (file: File) => {
+  const handleUploadBackgroundImage = async (filePath: string) => {
     if (!activeUlid) return;
     if (conversationActionPending) return;
-    setBackgroundRetryFile(file);
+    setBackgroundRetryPath(filePath);
     setConversationActionPending('background-image');
     try {
-      const uploaded = await api.ossUploadAttachmentBytes({
-        filename: file.name,
-        mime_type: file.type || 'application/octet-stream',
-        bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
+      const uploaded = await api.ossUploadLocalFile({
+        file_path: filePath,
         bucket: 'personal',
         visibility: 'private',
         chat_session_id: null,
       });
       await updateConversationLocalState(activeTab, activeUlid, { backgroundImage: uploaded.cid });
-      setBackgroundRetryFile(null);
+      setBackgroundRetryPath(null);
       toast.success(t('chat.social.detail.backgroundImageUpdated'));
     } catch (error) {
       log.error('chat', 'update chat background image failed', { kind: activeTab, ulid: activeUlid, error });
@@ -1010,12 +1005,16 @@ export function ChatDetailPanel() {
     }
   };
 
-  const handleBackgroundImageSelected = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
+  const handleSelectBackgroundImage = async () => {
+    if (conversationActionPending) return;
+    let filePath: string;
+    try {
+      filePath = await api.pickImageFile();
+    } catch {
+      return;
+    }
     Modal.destroyAll();
-    void handleUploadBackgroundImage(file);
+    await handleUploadBackgroundImage(filePath);
   };
 
   const confirmClearHistory = () => {
@@ -1240,33 +1239,25 @@ export function ChatDetailPanel() {
             disabled={Boolean(conversationActionPending)}
             style={{ width: '100%' }}
           />
-          <input
-            ref={backgroundInputRef}
-            data-chat-background-input
-            type="file"
-            accept="image/*"
-            onChange={handleBackgroundImageSelected}
-            style={{ display: 'none' }}
-          />
           <Button
             data-chat-background-upload
             block
             icon={<ImageIcon size={14} />}
             loading={conversationActionPending === 'background-image'}
             onClick={() => {
-              backgroundInputRef.current?.click();
+              void handleSelectBackgroundImage();
             }}
           >
             {t('chat.social.detail.uploadBackgroundImage')}
           </Button>
-          {backgroundRetryFile ? (
+          {backgroundRetryPath ? (
             <Button
               data-chat-background-retry
               block
               loading={conversationActionPending === 'background-image'}
               onClick={() => {
                 Modal.destroyAll();
-                void handleUploadBackgroundImage(backgroundRetryFile);
+                void handleUploadBackgroundImage(backgroundRetryPath);
               }}
             >
               {t('chat.social.detail.retryBackgroundImage')}
@@ -1310,7 +1301,7 @@ export function ChatDetailPanel() {
     setInviteDids([]);
     setEditingName(false);
     setConversationActionPending(null);
-    setBackgroundRetryFile(null);
+    setBackgroundRetryPath(null);
     setEditingMyNickname(false);
   }, [activeUlid]);
 
