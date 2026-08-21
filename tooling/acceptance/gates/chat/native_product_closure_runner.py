@@ -36,6 +36,7 @@ from tooling.acceptance.gates.chat.native_support import wait_until
 
 
 GATE_ID = "chat-native-product-closure-e2e"
+NATIVE_MOUSE_EVENT_INTERVAL_US = 50_000
 READBACK_COMMANDS = {
     "conversation_get_member_settings",
     "messaging_list_messages",
@@ -305,6 +306,7 @@ class NativeProductClosureGate(AcceptanceGate):
         core_foundation = ctypes.CDLL(
             "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
         )
+        libc = ctypes.CDLL(None)
         core_graphics.CGEventCreateMouseEvent.argtypes = [
             ctypes.c_void_p,
             ctypes.c_uint32,
@@ -314,6 +316,8 @@ class NativeProductClosureGate(AcceptanceGate):
         core_graphics.CGEventCreateMouseEvent.restype = ctypes.c_void_p
         core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
         core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
+        libc.usleep.argtypes = [ctypes.c_uint]
+        libc.usleep.restype = ctypes.c_int
 
         native_point = CGPoint(*point)
         for event_type in event_types:
@@ -327,6 +331,8 @@ class NativeProductClosureGate(AcceptanceGate):
                 raise GateError("CoreGraphics failed to create Native mouse event")
             core_graphics.CGEventPost(0, event)
             core_foundation.CFRelease(event)
+            if libc.usleep(NATIVE_MOUSE_EVENT_INTERVAL_US) != 0:
+                raise GateError("Native mouse event pacing was interrupted")
 
     def focus_actor_window(self, actor: str) -> TauriDriver:
         client = self.clients[actor]
@@ -357,10 +363,57 @@ class NativeProductClosureGate(AcceptanceGate):
             const x = rect.left + rect.width / 2;
             const y = rect.top + rect.height / 2;
             const hit = document.elementFromPoint(x, y);
+            const describe = (candidate) => {
+              if (!candidate) return null;
+              return {
+                tag: candidate.tagName,
+                id: candidate.id || '',
+                classes: candidate.className?.baseVal
+                  || candidate.className
+                  || '',
+                chatSend: candidate.matches?.('[data-chat-send]')
+                  || Boolean(candidate.closest?.('[data-chat-send]')),
+                role: candidate.getAttribute?.('role') || '',
+              };
+            };
+            const owns = (candidate) => (
+              candidate === element || element.contains(candidate)
+            );
+            const insetX = Math.min(4, rect.width / 4);
+            const insetY = Math.min(4, rect.height / 4);
+            const probes = [
+              { name: 'center', x, y },
+              { name: 'topLeft', x: rect.left + insetX, y: rect.top + insetY },
+              { name: 'topRight', x: rect.right - insetX, y: rect.top + insetY },
+              { name: 'bottomLeft', x: rect.left + insetX, y: rect.bottom - insetY },
+              { name: 'bottomRight', x: rect.right - insetX, y: rect.bottom - insetY },
+            ].map((probe) => {
+              const candidate = document.elementFromPoint(probe.x, probe.y);
+              return {
+                ...probe,
+                owned: owns(candidate),
+                target: describe(candidate),
+              };
+            });
             return {
               x,
               y,
-              hit: hit === element || element.contains(hit),
+              hit: owns(hit),
+              hitTarget: describe(hit),
+              hitStack: document.elementsFromPoint(x, y)
+                .slice(0, 8)
+                .map(describe),
+              probes,
+              connected: element.isConnected,
+              disabled: Boolean(element.disabled),
+              rect: {
+                left: rect.left,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.bottom,
+                width: rect.width,
+                height: rect.height,
+              },
               viewportWidth: innerWidth,
               viewportHeight: innerHeight,
             };
@@ -368,7 +421,32 @@ class NativeProductClosureGate(AcceptanceGate):
             element,
         )
         if not target.get("hit"):
-            raise GateError("Native click target center is occluded")
+            # #region debug-point M-P:native-click-occlusion
+            request = urllib.request.Request(
+                "http://127.0.0.1:7777/event",
+                data=json.dumps(
+                    {
+                        "sessionId": "chat-hover-overlay",
+                        "runId": "post-fix",
+                        "hypothesisId": "M-P",
+                        "location": "NativeProductClosureGate:click_element",
+                        "msg": "[DEBUG] Native click target center is occluded",
+                        "data": target,
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=2):
+                    pass
+            except OSError:
+                pass
+            # #endregion
+            raise GateError(
+                "Native click target center is occluded: "
+                f"{json.dumps(target, sort_keys=True)}"
+            )
         window = self.native_window(client)
         content_offset_x = max(
             0.0,
