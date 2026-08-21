@@ -768,7 +768,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 data=json.dumps(
                     {
                         "sessionId": "chat-native-window-focus",
-                        "runId": "pre-fix",
+                        "runId": "post-fix",
                         "hypothesisId": "N-Q",
                         "location":
                             "NativeProductClosureGate:focus_actor_window",
@@ -800,39 +800,54 @@ class NativeProductClosureGate(AcceptanceGate):
 
         report_focus_snapshot("before-move")
         # #endregion
+        if self.native_mouse_button_down():
+            self.post_mouse((2,), point)
+            WebDriverWait(
+                client.driver,
+                5,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(
+                lambda _: not self.native_mouse_button_down()
+            )
+            # #region debug-point N-Q:native-window-focus
+            report_focus_snapshot("after-recovery-up")
+            # #endregion
+        self.post_mouse((5,), point)
         self.post_mouse(
             (1,),
             point,
         )
-        WebDriverWait(
-            client.driver,
-            5,
-            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(
-            lambda _: self.native_mouse_button_down()
-        )
-        # #region debug-point N-Q:native-window-focus
-        report_focus_snapshot("after-down")
-        # #endregion
+        try:
+            WebDriverWait(
+                client.driver,
+                5,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(
+                lambda _: self.native_mouse_button_down()
+            )
+            # #region debug-point N-Q:native-window-focus
+            report_focus_snapshot("after-down")
+            # #endregion
+        finally:
+            self.post_mouse(
+                (2,),
+                point,
+            )
+            WebDriverWait(
+                client.driver,
+                5,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(
+                lambda _: not self.native_mouse_button_down()
+            )
+            # #region debug-point N-Q:native-window-focus
+            report_focus_snapshot("after-up")
+            # #endregion
         WebDriverWait(client.driver, 5).until(
             lambda driver: bool(driver.execute_script("return document.hasFocus()"))
         )
         # #region debug-point N-Q:native-window-focus
         report_focus_snapshot("after-focus")
-        # #endregion
-        self.post_mouse(
-            (2,),
-            point,
-        )
-        WebDriverWait(
-            client.driver,
-            5,
-            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(
-            lambda _: not self.native_mouse_button_down()
-        )
-        # #region debug-point N-Q:native-window-focus
-        report_focus_snapshot("after-up")
         # #endregion
         return client
 
