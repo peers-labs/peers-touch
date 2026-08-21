@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` complete Native chooser path entry and background upload proof |
+| Current step | `MP-W13-F` repair Native CoreGraphics button-state delivery before continuing chooser and background upload proof |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Clean run `20260821T170212415938Z-379f660ea7ac3f0eec90e036e0022393` showed the Go-To surface transitions before slow AX path readback, so waiting before Return leaves `pick_image_file` unresolved even though the product dialog is visible |
-| Current action | Keep the Native gesture atomic by posting the exact path and Return together, then send a second Return only if the file browser remains open before requiring application restoration |
-| Next action | Verify the atomic path-confirmation sequence, commit/deploy/rebuild matching source, and rerun into background upload projection |
-| Blockers | MP-W13 remains `UNPROVEN`; chooser closure is observed but background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Last completed | Clean runs `20260821T171341782516Z-5d658323078dc72992c3648df9dd36a9` and `20260821T171744923762Z-dec764d855f89c531cd462e2cea44b12` reproduced the same Native input-lifecycle family as missing `mouseup` and missing `mousedown`; the latter retained Alice WindowServer ownership, document focus, and an enabled hit-owned reaction retry target while the DOM probe stayed empty |
+| Current action | Instrument the existing Native input snapshot with combined-session left-button state to distinguish inherited-down, absent-down, and routed-without-DOM delivery before changing the Driver lifecycle |
+| Next action | Run the source-bound pre-fix Native comparison, classify AD-AF from button-state evidence, then repair the owning Acceptance Driver input lifecycle and resume chooser/background proof |
+| Blockers | MP-W13 remains `UNPROVEN`; repeated CoreGraphics down/up delivery loss blocks reliable Native product traversal; chooser path confirmation, background upload/retry/persistence/restart/cross-device, and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T170212415938Z-379f660ea7ac3f0eec90e036e0022393` matched source/build/Station at `df5b910b5`, retained Thread/Transcript/toolbar/reaction/avatar/Station PASS assertions, opened the Native chooser and observed application restoration after path entry, but failed before Return because AX could no longer expose the transitioned path field and `pick_image_file` never returned; cleanup released all actor/proxy ports; upload/restart/attachment and full product-closure Native proof remain missing |
+| Evidence | Run `20260821T171744923762Z-dec764d855f89c531cd462e2cea44b12` matched clean source, dedicated binary, and Profile Three Station at `a83f6a1b`, crossed Thread Reply and reaction add/remove, then failed at reaction retry with `Native mousedown was not acknowledged`; Alice PID `89064` owned WindowServer index `0`, `documentFocused=true`, and the retry target remained connected/enabled/hit-owned while `probeEvents=[]`; cleanup passed and ports `3330/3331/4445/4446` were free; full Native proof remains missing |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate

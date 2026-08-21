@@ -27,6 +27,9 @@
 | AA | Alice is process-frontmost but its Native window is not AXMain/AXFocused | High | Low | Process `frontmost=true` while front-window `AXMain` or `AXFocused` is false |
 | AB | A higher WindowServer surface owns the target screen point above Alice | High | Medium | CGWindow z-order at `[81.5,95]` lists a different visible owner before Alice |
 | AC | Alice is the key/main and topmost target-point window, but WindowServer still drops synthesized input | Medium | Medium | AXMain/AXFocused and z-order all identify Alice while no DOM event arrives |
+| AD | The focused fast path inherits a combined-session left-button-down state because normalization only runs after `focus_actor_window` decides activation is required | High | Low | `before-click.mouseButtonDown=true` while document focus and WindowServer ownership already pass |
+| AE | The button state starts released but the posted down is intermittently absent from both combined-session state and the target DOM | Medium | Low | `before-click.mouseButtonDown=false`, timeout remains false, and the scoped probe is empty |
+| AF | The posted down reaches combined-session state but not the target DOM despite stable WindowServer ownership | Medium | Low | `before-click.mouseButtonDown=false`, timeout becomes true, target remains hit-owned, and the scoped probe is empty |
 
 ## Log Evidence
 Source-bound run:
@@ -264,3 +267,24 @@ Acceptance-window-level post-fix verification:
 AB is confirmed as the pre-fix cause and closed by source-bound post-fix
 evidence. The input-routing blocker is removed; MP-W13 remains unproven until
 the complete Native product-closure Gate passes.
+
+Two later clean-source runs exposed a second input-lifecycle failure family:
+
+- `20260821T171341782516Z-5d658323078dc72992c3648df9dd36a9`
+  reached the Thread Reply action, delivered target-owned `pointerdown` and
+  `mousedown`, then failed because `pointerup`, `mouseup`, and `click` never
+  arrived.
+- `20260821T171744923762Z-dec764d855f89c531cd462e2cea44b12`
+  crossed Thread Reply and the first reaction add/remove/retry setup, then
+  failed on the reaction retry because the target-owned probe remained empty
+  after posting `leftMouseDown`.
+- In the second run Alice remained `documentFocused=true`, WindowServer index
+  `0` belonged to Alice PID `89064`, and the retry target remained connected,
+  enabled, and hit-owned before and after timeout.
+- Cleanup passed and direct `lsof` checks found no listeners on
+  `3330/3331/4445/4446`.
+
+The repeated down/up loss rejects an isolated product target defect. Existing
+snapshots do not record combined-session button state, so AD-AF remain
+inconclusive. The next pre-fix comparison adds that state to the existing
+snapshot without changing event delivery.

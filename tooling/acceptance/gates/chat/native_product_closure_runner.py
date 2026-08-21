@@ -1167,6 +1167,7 @@ except Exception as error:
                             "focusedControl": self.native_focused_control(
                                 client.process_id or 0
                             ),
+                            "mouseButtonDown": self.native_mouse_button_down(),
                             "cursor": self.native_cursor_position(),
                             "point": point,
                             "windowStack": self.native_window_stack_at_point(point),
