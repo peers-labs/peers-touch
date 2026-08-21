@@ -988,9 +988,7 @@ impl MessagingEngine {
         let (projection, _) = self
             .store
             .message_projection(conversation_id, message_id)?
-            .ok_or_else(|| {
-                "messaging interaction target projection is unavailable".to_string()
-            })?;
+            .ok_or_else(|| "messaging interaction target projection is unavailable".to_string())?;
         if matches!(interaction, MetadataInteraction::Retract)
             && projection.sender_ptid != self.endpoint.ptid
         {
@@ -1154,6 +1152,28 @@ impl MessagingEngine {
 
     pub fn conversations(&self) -> Result<Vec<ConversationProjection>, String> {
         self.store.conversation_projections()
+    }
+
+    pub fn group_security_status(
+        &self,
+        conversation_id: &str,
+        expected_mls_epoch: i64,
+    ) -> Result<&'static str, String> {
+        let expected_epoch = u64::try_from(expected_mls_epoch)
+            .map_err(|_| "messaging group MLS epoch is invalid".to_string())?;
+        if expected_epoch == 0 || self.mls_manager.has_pending_transition(conversation_id) {
+            return Ok("establishing");
+        }
+        if self
+            .mls_manager
+            .is_local_leaf_active_at_epoch(conversation_id, expected_epoch)?
+        {
+            return Ok("active");
+        }
+        if self.mls_manager.has_session(conversation_id) {
+            return Ok("crypto_desynced");
+        }
+        Ok("establishing")
     }
 
     #[cfg(feature = "acceptance-webdriver")]
@@ -1896,6 +1916,7 @@ pub(crate) fn now_unix_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::mls_group::MlsMemberKeyPackage;
 
     fn endpoint(device_id: &str) -> EngineEndpoint {
         EngineEndpoint {
@@ -1962,6 +1983,43 @@ mod tests {
             store,
         )
         .is_err());
+    }
+
+    #[test]
+    fn group_security_status_uses_profile_scoped_mls_manager() {
+        let engine =
+            MessagingEngine::in_memory("alice-profile".to_string(), endpoint("alice-device"))
+                .unwrap();
+        let bob = MlsGroupManager::new();
+        bob.actor_identity().init("ptid:bob", "bob-device").unwrap();
+        let created = engine
+            .mls_manager()
+            .create_group(
+                "conversation-1",
+                &[MlsMemberKeyPackage {
+                    ptid: "ptid:bob".to_string(),
+                    device_id: "bob-device".to_string(),
+                    key_package: bob.generate_key_package().unwrap(),
+                }],
+            )
+            .unwrap();
+
+        assert_eq!(
+            engine.group_security_status("conversation-1", 1).unwrap(),
+            "establishing"
+        );
+        engine
+            .mls_manager()
+            .accept_pending_transition("conversation-1", &created.transition_id)
+            .unwrap();
+        assert_eq!(
+            engine.group_security_status("conversation-1", 1).unwrap(),
+            "active"
+        );
+        assert_eq!(
+            engine.group_security_status("conversation-1", 2).unwrap(),
+            "crypto_desynced"
+        );
     }
 
     #[test]

@@ -1296,23 +1296,12 @@ pub(crate) fn mls_recipient_status_for_scope(
             mls.is_local_leaf_active_at_epoch(&input.conversation_id, epoch)
                 .unwrap_or(false)
         });
-    let local_active_epoch = if head.is_none() {
-        mls.group_epoch(&input.conversation_id)
-            .ok()
-            .filter(|epoch| {
-                mls.is_local_leaf_active_at_epoch(&input.conversation_id, *epoch)
-                    .unwrap_or(false)
-            })
-    } else {
-        None
-    };
     let status = match head.as_ref().map(|head| head.status.as_str()) {
         Some("crypto_desynced") => "crypto_desynced",
         Some("establishing") => "establishing",
         _ if events > 0 || deliveries > 0 => "establishing",
         Some("active") if active_head_matches_local_leaf => "active",
         Some("active") => "crypto_desynced",
-        None if local_active_epoch.is_some() => "active",
         _ if mls.has_session(&input.conversation_id) => "establishing",
         _ => "idle",
     };
@@ -1327,12 +1316,7 @@ pub(crate) fn mls_recipient_status_for_scope(
         "status": status,
         "group_seq": head.as_ref().map_or(0, |head| head.group_seq),
         "membership_epoch": head.as_ref().map_or(0, |head| head.membership_epoch),
-        "mls_epoch": head
-            .as_ref()
-            .map_or_else(
-                || local_active_epoch.and_then(|epoch| i64::try_from(epoch).ok()).unwrap_or(0),
-                |head| head.mls_epoch,
-            ),
+        "mls_epoch": head.as_ref().map_or(0, |head| head.mls_epoch),
         "buffered": events + deliveries,
         "last_error": last_error,
     }))
@@ -1489,46 +1473,6 @@ mod recipient_transition_tests {
         local_chat_store::crypto_save_actor_device_identity(&invalid_scope, "42", b"identity")
             .unwrap();
         assert!(canonical_mls_identity_ptid(&invalid_scope).is_err());
-    }
-
-    #[test]
-    fn creator_without_recipient_head_reports_active_local_leaf() {
-        let scope = unique_scope();
-        let alice = MlsGroupManager::new();
-        let bob = MlsGroupManager::new();
-        alice
-            .actor_identity()
-            .init("ptid:test:alice", "alice-device")
-            .unwrap();
-        bob.actor_identity()
-            .init("ptid:test:bob", "bob-device")
-            .unwrap();
-        let created = alice
-            .create_group(
-                "conversation-creator-status",
-                &[MlsMemberKeyPackage {
-                    ptid: "ptid:test:bob".to_string(),
-                    device_id: "bob-device".to_string(),
-                    key_package: bob.generate_key_package().unwrap(),
-                }],
-            )
-            .unwrap();
-        alice
-            .accept_pending_transition("conversation-creator-status", &created.transition_id)
-            .unwrap();
-
-        let status = mls_recipient_status_for_scope(
-            MlsRecipientStatusInput {
-                conversation_id: "conversation-creator-status".to_string(),
-            },
-            &alice,
-            &scope,
-        );
-
-        assert!(status.ok);
-        let data = status.data.unwrap();
-        assert_eq!(data["status"], "active");
-        assert_eq!(data["mls_epoch"], 1);
     }
 
     #[test]
