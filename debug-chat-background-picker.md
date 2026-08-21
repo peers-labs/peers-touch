@@ -18,6 +18,10 @@
 | C | Ant Design exposes rendered options through a different visible node shape than `[role=option]` | Medium | Low | Popup is visible and `.ant-select-item-option` nodes are visible while role options are hidden |
 | D | The popup portal renders but is occluded by the Modal mask or another layer | Medium | Low | Popup and options have non-empty rects but `elementFromPoint` belongs to a different overlay |
 | E | The Gate resolves a stale or non-current background Select | Low | Low | The selected node is disconnected, hidden, or belongs to a different Modal than the visible popup |
+| F | The option rect moves during popup animation and the Native point lands on Calm instead of Paper | High | Low | Pre-click option target is Paper but the captured click target is Calm |
+| G | Selenium option order differs from rendered visual order | Medium | Low | `options[1]` text is not Paper before the Native click |
+| H | Paper receives the click but the product `onChange` maps it to Calm | Low | Low | Captured click target is Paper while the resulting Select text and Station patch are Calm |
+| I | The selected WebElement is reused for another virtual option before click | Medium | Low | The same element changes text or rect between option resolution and the captured click |
 
 ## Log Evidence
 Pre-fix source-bound run:
@@ -38,3 +42,12 @@ real Native targets are the visible `.ant-select-item-option` nodes. The Gate
 must wait for and click the rendered option class while retaining CoreGraphics
 input and DOM acknowledgement. Product Select behavior is correct and requires
 no UI change.
+
+Post-fix source-bound run:
+`20260821T114156898577Z-dcc3c233dc722109f3305125f0e2fc39`.
+
+- The Gate no longer timed out resolving or clicking a rendered option.
+- The real UI action reached Station and persisted `background="calm"`.
+- The Gate then timed out waiting for its expected `background="paper"`.
+- The current picker probe stops before reporting the option click target, so
+  hypotheses F-I remain inconclusive pending one instrumentation-only run.
