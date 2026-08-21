@@ -414,11 +414,19 @@ export const ChatMessageRow = memo(function ChatMessageRow({
       className={`msg-row ${highlighted ? 'highlighted' : ''}`}
       tabIndex={0}
       onMouseEnter={() => {
+        // #region debug-point A:row-mouse-enter
+        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'pre-fix', hypothesisId: 'A', location: 'ChatMessageRow:onMouseEnter', msg: '[DEBUG] message row mouse enter', data: { messageId: message.ulid, hasContentAnchor: Boolean(messageContentRef.current), showHoverActions }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
         if (showHoverActions && messageContentRef.current) {
           onActionTargetChange(message, messageContentRef.current, false);
         }
       }}
-      onMouseLeave={onActionTargetLeave}
+      onMouseLeave={() => {
+        // #region debug-point D:row-mouse-leave
+        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'pre-fix', hypothesisId: 'D', location: 'ChatMessageRow:onMouseLeave', msg: '[DEBUG] message row mouse leave', data: { messageId: message.ulid }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
+        onActionTargetLeave();
+      }}
       onFocusCapture={() => {
         if (showHoverActions && messageContentRef.current) {
           onActionTargetChange(message, messageContentRef.current, false);
