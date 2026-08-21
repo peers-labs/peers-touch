@@ -12,7 +12,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from selenium.webdriver import ActionChains, Keys
+from selenium.webdriver import Keys
+from selenium.webdriver.common.actions import interaction
+from selenium.webdriver.common.actions.action_builder import ActionBuilder
+from selenium.webdriver.common.actions.pointer_input import PointerInput
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -284,7 +287,7 @@ class NativeProductClosureGate(AcceptanceGate):
         neutral = client.find_element("[data-chat-send]", 30)
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 30)
 
-        def report_probe(phase: str) -> None:
+        def report_probe(phase: str) -> dict[str, Any]:
             snapshot = client.execute_script(
                 """
                 const neutral = arguments[0];
@@ -349,15 +352,21 @@ class NativeProductClosureGate(AcceptanceGate):
             except OSError:
                 pass
             # #endregion
+            return snapshot
 
-        report_probe("before")
-        (
-            ActionChains(client.driver)
-            .move_to_element(neutral)
-            .pause(0.2)
-            .move_to_element(row)
-            .perform()
+        before = report_probe("before")
+        mouse = PointerInput(interaction.POINTER_MOUSE, "native-hover")
+        actions = ActionBuilder(client.driver, mouse=mouse, duration=250)
+        actions.pointer_action.move_to_location(
+            before["neutral"]["center"]["x"],
+            before["neutral"]["center"]["y"],
         )
+        actions.pointer_action.pause(0.2)
+        actions.pointer_action.move_to_location(
+            before["row"]["center"]["x"],
+            before["row"]["center"]["y"],
+        )
+        actions.perform()
         report_probe("after")
         return WebDriverWait(client.driver, 15).until(
             lambda driver: driver.find_element(
