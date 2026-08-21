@@ -21,11 +21,11 @@
 | Current step | `MP-W13-F` Acceptance truth cutover |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
 | Last completed | A-E source reconciliation: canonical thread/transcript ordering, real reaction/overlay state, exact PTID and Station projection, Station-backed settings/background, and strict attachment outcome/draft retention are implemented; Native receiver proof remains unproven |
-| Current action | Connect the `chat-product-closure` business contract to Registry/Gate/runtime wiring, then implement a fail-closed Native runner that uses real Tauri DOM actions for every claimed Chat behavior |
-| Next action | Run Chat structural/path validation, rebuild the dedicated Acceptance binary, execute the two-client Native journey, and validate source/build/runtime/DOM/geometry/readback/count/cleanup evidence |
-| Blockers | none for Gate implementation; product proof remains `UNPROVEN` until the dedicated Native Gate and cleanup audit pass |
+| Current action | Repair the first Native failure at the owning projection layer: Bob receives the Engine group projection but `socialChat` does not derive `groupSecurityState=ready` from the installed MLS epoch |
+| Next action | Add projection regression coverage, rebuild/redeploy the dedicated source identity, and rerun `chat-native-product-closure-e2e` from the first real UI group-creation step |
+| Blockers | Native run `20260821T002402444965Z-b2c42b202c36ae6d7dd8f78a15695f40` failed at `group.create.ui`: Bob could select the projected group but the conversation pane remained non-ready; remaining product assertions are `UNPROVEN` |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | `debug-station-identity-missing.md`: pre-fix runtime evidence; `./model/build.sh`, Desktop check/test/build, focused Station/Rust tests and `cargo check --features acceptance-webdriver` passed for the current W13 implementation; current Native reports remain invalid for W13 because they use command/store Harness paths and omit the required receiver surfaces |
+| Evidence | `debug-station-identity-missing.md`: pre-fix runtime evidence; static/type/unit/build checks passed for commit `b3b532d57e35b41ae8ead221c13f81a550bace28`; first real Native run proved source/build/runtime identity and cleanup but failed at Bob MLS-ready projection, so W13 remains `UNPROVEN` |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
