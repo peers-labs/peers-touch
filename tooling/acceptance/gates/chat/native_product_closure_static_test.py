@@ -351,7 +351,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn('control.get("value") == str(selected_path)', self.source)
+        self.assertIn(
+            "self.post_key(5, flags=command_shift, private_source=True)",
+            self.source,
+        )
         self.assertIn("self.post_key(36, private_source=True)", self.source)
+        self.assertIn(
+            '"Native Accessibility probe timed out"',
+            self.source,
+        )
         self.assertIn("def selection_or_browser_ready(", self.source)
         self.assertIn("baseline_window_count", self.source)
         self.assertIn(
