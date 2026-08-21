@@ -99,27 +99,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         activation_index = focus_source.index(
             "self.activate_native_process(client.process_id)"
         )
-        move_index = focus_source.index("self.post_mouse((5,), point)")
-        down_index = focus_source.index(
-            "self.post_mouse(\n            (1,),",
-            move_index,
-        )
-        finally_index = focus_source.index("        finally:", down_index)
-        up_index = focus_source.index(
-            "self.post_mouse(\n                (2,),",
-            finally_index,
-        )
         focus_wait_index = focus_source.index(
-            "WebDriverWait(client.driver, 5).until(",
-            up_index,
+            'lambda driver: bool(driver.execute_script("return document.hasFocus()"))',
+            activation_index,
         )
         self.assertIn('perform action "AXRaise"', self.source)
         self.assertLess(recovery_index, activation_index)
-        self.assertLess(activation_index, move_index)
-        self.assertLess(move_index, down_index)
-        self.assertLess(down_index, finally_index)
-        self.assertLess(finally_index, up_index)
-        self.assertLess(up_index, focus_wait_index)
+        self.assertLess(activation_index, focus_wait_index)
+        self.assertNotIn("self.post_mouse((5,), point)", focus_source)
+        self.assertNotIn(
+            "self.post_mouse(\n            (1,),",
+            focus_source,
+        )
 
         click_start = self.source.index(
             "    def click(self, actor: str, selector: str, timeout: float = 30)"
