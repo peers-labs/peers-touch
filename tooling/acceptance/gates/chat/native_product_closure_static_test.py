@@ -340,6 +340,19 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'control.get("subrole") == "AXApplicationDialog"',
             self.source,
         )
+        self.assertIn("activation_recovery_attempted = False", self.source)
+        self.assertIn(
+            "frontmost_pid != client.process_id",
+            self.source,
+        )
+        self.assertIn(
+            "frontmost_pid in actor_process_ids",
+            self.source,
+        )
+        self.assertIn(
+            "self.request_cooperative_activation(client)",
+            self.source,
+        )
         self.assertIn("NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS", self.source)
         self.assertIn('def native_window_restored(', self.source)
         self.assertIn('include_webview=False', self.source)

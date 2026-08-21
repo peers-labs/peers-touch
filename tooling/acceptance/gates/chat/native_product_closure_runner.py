@@ -935,8 +935,10 @@ except Exception as error:
         # #endregion
 
         baseline_window_count = int(baseline_control.get("windowCount", 0))
+        activation_recovery_attempted = False
 
         def selection_or_browser_ready(_: Any) -> dict[str, Any] | None:
+            nonlocal activation_recovery_attempted
             control = self.native_focused_control(client.process_id or 0)
             # #region debug-point M:native-file-path-entry
             report_native_file_snapshot("selection-poll", control)
@@ -945,6 +947,31 @@ except Exception as error:
                 int(control.get("windowCount", 0)) < baseline_window_count
                 or not control.get("role")
             ):
+                actor_process_ids = {
+                    candidate.process_id
+                    for candidate in self.clients.values()
+                    if candidate.process_id is not None
+                }
+                frontmost_pid = int(control.get("actualFrontmostPid", -1))
+                if (
+                    not activation_recovery_attempted
+                    and client.is_alive()
+                    and frontmost_pid != client.process_id
+                    and frontmost_pid in actor_process_ids
+                ):
+                    activation_recovery_attempted = True
+                    if not self.request_cooperative_activation(client):
+                        raise GateError(
+                            f"{actor} Native chooser lost foreground ownership "
+                            "without a cooperative activation source"
+                        )
+                    # #region debug-point R:native-chooser-activation-recovery
+                    report_native_file_snapshot(
+                        "activation-recovery-requested",
+                        self.native_focused_control(client.process_id or 0),
+                        include_webview=False,
+                    )
+                    # #endregion
                 return None
             if control.get("subrole") == "AXApplicationDialog":
                 return {"selected": False, "control": control}

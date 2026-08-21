@@ -363,3 +363,64 @@ Cooperative-focus source-bound run:
 callback completion. The Driver must classify it as `selected=false`, send the
 second real Return, and continue to require application-window restoration plus
 the existing product pending/retry/OSS assertions.
+
+Post-application-dialog source-bound run:
+`20260821T191521667379Z-81fbcf75e6004228b56b5b4ea4a5c819`.
+
+- Source and live Profile Three Station matched clean commit
+  `e32cf70653fae67bafc3ed693ae4a66bceb2ede6`; the dedicated binary SHA-256 was
+  `ef8c64cfda398e78d06dada6f36dc133d56df7f21d864c6de14be2ee9d8b3e45`.
+- The same Native run passed source identity, exact Thread/Transcript, toolbar
+  geometry, Reaction success/failure recovery, avatar loading/equality, and
+  Station attribution before entering the first empty-image chooser.
+- The chooser sequence was
+  `AXComboBox(window=1,sheet=0) -> AXList(window=1,sheet=1) ->
+  AXTextField(value=/opt) -> role empty(window=0,sheet=0)`.
+- The following distinct sample still reported Alice with no AX window, but
+  foreground ownership had moved from Alice PID `49781` to Bob PID `49819`.
+- `selection_or_browser_ready` therefore never returned, the conditional second
+  Return was never posted, and the Gate timed out at
+  `native_product_closure_runner.py:957`.
+- No `selected`, callback, upload-pending, failed-upload, or retry evidence was
+  emitted. Cleanup released `3330/3331/4445/4446/63561`.
+
+The current evidence does not distinguish these hypotheses:
+
+| ID | Hypothesis | Likelihood | Effort | Expected signal |
+|---|---|---|---|---|
+| N | Alice exits or loses its application window after path confirmation | Medium | Low | PID is absent or no WindowServer window remains and WebDriver is unavailable |
+| O | Accessibility temporarily loses Alice's window while the Tauri WebView and WindowServer window remain alive | High | Low | PID and WindowServer window remain present and a bounded WebDriver probe succeeds while AX reports zero windows |
+| P | File selection already completed and product callback advanced before AX recovered | Medium | Low | WebDriver remains responsive and the background Modal/pending state changes despite zero AX windows |
+| Q | The chooser transitioned to an external process or system-owned confirmation surface | Medium | Low | WindowServer shows a new non-Alice chooser/dialog owner while Alice AX reports zero windows |
+| R | Foreground handoff to Bob prevents Alice's chooser transition from completing | Medium | Low | Alice PID/window survive, callback remains pending, and the first ownership change precedes every stalled sample |
+
+The next run adds instrumentation only for PID liveness, WindowServer windows,
+bounded WebDriver responsiveness/product state, and topmost non-Alice windows.
+Chooser branching and product behavior remain unchanged until one hypothesis is
+confirmed.
+
+The retained per-actor stdout log already supplies the missing process and
+callback evidence:
+
+- Alice continued processing frontend runtime work after AX first reported zero
+  windows, so hypothesis N is rejected: the process and renderer remained
+  alive.
+- Alice logged `pick_image_file` entry, but never logged
+  `Image file selected`, command success, command failure, or an OSS upload.
+  Hypothesis P is rejected: selection and the product callback did not finish.
+- Alice entered app-background state when the chooser opened. Bob became
+  frontmost before the stalled transition ended while Alice's renderer
+  continued running. This confirms the ownership-loss boundary in hypothesis
+  R. O and Q remain possible implementation details but do not alter the
+  required recovery.
+
+The minimal Acceptance lifecycle fix is a one-shot cooperative reactivation
+when Alice is alive but another actor becomes frontmost during the chooser
+transition. The Driver must still wait for a real browser/application-dialog
+control, send the second real Return, and require application-window plus
+product-callback recovery. Zero AX windows remain transitional, never success.
+
+The same source review exposed a later coverage gap: after proving that
+`[data-chat-background-retry]` is visible, the Gate opens a fresh picker through
+`[data-chat-background-upload]` instead of clicking the retry action. That must
+be corrected after chooser recovery so the Gate proves the real recovery path.
