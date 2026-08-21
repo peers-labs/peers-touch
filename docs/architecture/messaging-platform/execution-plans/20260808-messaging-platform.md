@@ -18,15 +18,15 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` require AppKit process activation before AX raise and Bob focus handshake |
+| Current step | `MP-W13-F` classify why an accepted AppKit request does not activate Bob before the focus handshake |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Clean run `20260821T180608267628Z-3d94f919d24e15176abbc9c7bd09bce5` proved Bob owned its disjoint right-side WindowServer point while Alice remained the actual frontmost process before and after System Events activation and the complete title-bar click; Bob never established `document.hasFocus()` |
-| Current action | Make AppKit `NSRunningApplication.activateWithOptions(AllWindows|IgnoringOtherApps)` a required first activation phase before existing AXRaise/AXMain and title-bar focus confirmation |
-| Next action | Commit/deploy/rebuild matching source and rerun the same Native Gate; if Bob focus closes, continue directly through Go-To clearing and background upload proof |
-| Blockers | MP-W13 remains `UNPROVEN`; source-bound actor switching lacks post-fix AppKit activation evidence; the chooser clear-and-enter repair is implemented but has not reached its Native proof point; background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Last completed | Clean run `20260821T181636553271Z-9951935716f26f266c7b4ae69fe43935` proved AppKit plus Accessibility activated Alice, but the first Alice-to-Bob handoff still left Alice as `actualFrontmostPid`; Bob remained `documentFocused=false` even though AppKit returned success, System Events reported `frontmost=true`, Bob owned its disjoint point, and the title-bar click completed |
+| Current action | Instrument the AppKit request boundary with target activation policy, `isActive`, and `NSWorkspace.frontmostApplication` before/after the request and after Accessibility activation; do not change actor focus behavior until those signals classify the failure |
+| Next action | Run static verification, commit the instrumentation, deploy/rebuild matching source, and rerun the same Native Gate to distinguish an activation-policy rejection from an accepted-but-unapplied foreground transition |
+| Blockers | MP-W13 remains `UNPROVEN`; AppKit request acceptance is not a valid active-application acknowledgement and Bob actor switching still fails; the chooser clear-and-enter repair is implemented but has not reached its Native proof point; background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T180608267628Z-3d94f919d24e15176abbc9c7bd09bce5` matched clean source/build/Station at `172cdc4a2`, then timed out in `focus_actor_window` before Bob's group-row click; `after-owner` and `after-focus-click` both showed Bob point ownership with `documentFocused=false`, released button state, and Alice as `actualFrontmostPid`; cleanup passed and ports `3330/3331/4445/4446` were free; full Native proof remains missing |
-| Last updated | 2026-08-21 |
+| Evidence | Run `20260821T181636553271Z-9951935716f26f266c7b4ae69fe43935` matched clean source/build/Station at `1bc508153`; Alice activation reached `documentFocused=true`, while Bob `after-owner` and `after-focus-click` retained `documentFocused=false`, released button state, and Alice as `actualFrontmostPid`; Gate `FAILED`, proof is `UNPROVEN`, cleanup passed, and ports `3330/3331/4445/4446` were free |
+| Last updated | 2026-08-22 |
 
 ## 1. Plan Sources And Gate
 
