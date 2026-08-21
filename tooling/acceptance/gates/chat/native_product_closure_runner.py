@@ -3349,15 +3349,115 @@ except Exception as error:
         group_id: str,
         settings_before: dict[str, Any],
     ) -> None:
+        restart_snapshots: list[dict[str, Any]] = []
+
+        def capture_restart_snapshot(phase: str) -> dict[str, Any]:
+            snapshot = self.clients["alice"].execute_script(
+                """
+                const targetGroupId = arguments[0];
+                const visible = (node) => {
+                  if (!node) return false;
+                  const rect = node.getBoundingClientRect();
+                  const style = getComputedStyle(node);
+                  return Boolean(
+                    node.getClientRects().length
+                    && rect.width > 0
+                    && rect.height > 0
+                    && style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                  );
+                };
+                const describe = (node) => {
+                  if (!node) return null;
+                  const rect = node.getBoundingClientRect();
+                  return {
+                    visible: visible(node),
+                    rect: {
+                      left: rect.left,
+                      top: rect.top,
+                      right: rect.right,
+                      bottom: rect.bottom,
+                      width: rect.width,
+                      height: rect.height,
+                    },
+                  };
+                };
+                const groups = Array.from(
+                  document.querySelectorAll(`[data-chat-group-ulid="${CSS.escape(targetGroupId)}"]`)
+                ).map((node) => ({
+                  ...describe(node),
+                  id: node.getAttribute('data-chat-group-ulid') || '',
+                }));
+                const panes = Array.from(
+                  document.querySelectorAll('[data-chat-conversation-pane]')
+                ).map((node) => ({
+                  ...describe(node),
+                  id: node.getAttribute('data-chat-conversation-pane') || '',
+                  security: node.getAttribute('data-group-security') || '',
+                  messageIds: Array.from(
+                    node.querySelectorAll('[data-message-ulid]')
+                  ).map((row) => row.getAttribute('data-message-ulid') || ''),
+                }));
+                const detailPanels = Array.from(
+                  document.querySelectorAll("[data-chat-detail-panel='open']")
+                ).map(describe);
+                const detailToggles = Array.from(
+                  document.querySelectorAll('[data-chat-detail-toggle]')
+                ).map(describe);
+                return {
+                  url: location.href,
+                  readyState: document.readyState,
+                  documentFocused: document.hasFocus(),
+                  chatSurface: describe(document.querySelector('[data-social-chat-layout]')),
+                  chatSubpage: Array.from(
+                    document.querySelectorAll('[data-chat-subpage]')
+                  ).map((node) => ({
+                    ...describe(node),
+                    id: node.getAttribute('data-chat-subpage') || '',
+                  })),
+                  groups,
+                  panes,
+                  detailPanels,
+                  detailToggles,
+                  transcriptIds: Array.from(
+                    document.querySelectorAll('[data-message-ulid]')
+                  ).map((row) => row.getAttribute('data-message-ulid') || ''),
+                };
+                """,
+                group_id,
+            )
+            record = {
+                "phase": phase,
+                "snapshot": snapshot if isinstance(snapshot, dict) else {},
+            }
+            restart_snapshots.append(record)
+            return record
+
         self.restart_actor("alice")
+        capture_restart_snapshot("after-restart")
         self.enter_chat_page("alice")
+        capture_restart_snapshot("after-enter-chat")
         self.click("alice", f'[data-chat-group-ulid="{group_id}"]')
+        capture_restart_snapshot("after-group-click")
         wait_until(
             lambda: len(self.transcript("alice")) == len(self.transcript("bob")),
             "Alice transcript after restart",
             timeout=180,
         )
-        self.open_details("alice")
+        capture_restart_snapshot("after-transcript-match")
+        try:
+            self.open_details("alice")
+        except Exception as error:
+            capture_restart_snapshot("detail-toggle-failure")
+            self.save_screenshot(self.clients["alice"], "alice-restart-detail-failure")
+            self.save_dom(self.clients["alice"], "alice-restart-detail-failure")
+            self.save_app_log(self.clients["alice"], "alice-restart-detail-failure")
+            self.write_json_evidence("restart-detail-failure", restart_snapshots)
+            raise GateError(
+                "Alice Details unavailable after restart: "
+                f"{json.dumps(restart_snapshots[-1], sort_keys=True)}"
+            ) from error
+        self.write_json_evidence("restart-detail-ready", restart_snapshots)
         state = wait_until(
             lambda: (
                 value
