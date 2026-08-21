@@ -1508,11 +1508,44 @@ except Exception as error:
             except OSError:
                 pass
 
-        report_native_input_delivery("before-click")
         # #endregion
         mouse_down_posted = False
         try:
             cursor = 0
+            current_target = client.driver.execute_script(
+                """
+                const element = arguments[0];
+                const rect = element.getBoundingClientRect();
+                const x = rect.left + rect.width / 2;
+                const y = rect.top + rect.height / 2;
+                const hit = document.elementFromPoint(x, y);
+                return {
+                  connected: element.isConnected,
+                  disabled: Boolean(element.disabled),
+                  hit: hit === element || element.contains(hit),
+                  x,
+                  y,
+                };
+                """,
+                element,
+            )
+            if (
+                not current_target.get("connected")
+                or current_target.get("disabled")
+                or not current_target.get("hit")
+            ):
+                report_native_input_delivery("pre-post-target-invalid")
+                raise GateError(
+                    "Native click target changed before event delivery"
+                )
+            point = (
+                window["left"]
+                + content_offset_x
+                + float(current_target["x"]),
+                window["top"]
+                + content_offset_y
+                + float(current_target["y"]),
+            )
             self.post_mouse(
                 (1,),
                 point,

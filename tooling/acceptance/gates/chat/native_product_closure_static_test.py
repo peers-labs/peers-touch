@@ -106,6 +106,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "if mouse_down_posted and self.native_mouse_button_down():",
             click_source,
         )
+        self.assertIn(
+            '"Native click target changed before event delivery"',
+            click_source,
+        )
+        self.assertLess(
+            click_source.index("current_target = client.driver.execute_script("),
+            click_source.index("self.post_mouse(\n                (1,),"),
+        )
+        self.assertNotIn(
+            'report_native_input_delivery("before-click")',
+            click_source,
+        )
         self.assertNotIn("staging_point", self.source)
         post_mouse_start = self.source.index("    def post_mouse(")
         post_mouse_end = self.source.index(
