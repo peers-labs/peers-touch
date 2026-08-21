@@ -330,27 +330,27 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn(
-            "        self.post_key(0, text=str(selected_path))\n"
-            "        self.post_key(36)",
+            '("/usr/bin/pbcopy",)',
             self.source,
         )
+        self.assertIn(
+            "Native file chooser could not restore the clipboard",
+            self.source,
+        )
+        self.assertIn('control.get("value") == str(selected_path)', self.source)
+        self.assertIn("self.post_key(36, private_source=True)", self.source)
         self.assertIn("def selection_or_browser_ready(", self.source)
         self.assertIn("baseline_window_count", self.source)
         self.assertIn(
             'control.get("subrole") == "AXApplicationDialog"',
             self.source,
         )
-        self.assertIn("activation_recovery_attempted = False", self.source)
         self.assertIn(
-            "frontmost_pid != client.process_id",
+            "core_graphics.CGEventSourceCreate(-1)",
             self.source,
         )
         self.assertIn(
-            "frontmost_pid in actor_process_ids",
-            self.source,
-        )
-        self.assertIn(
-            "self.request_cooperative_activation(client)",
+            'control.get("subrole") != "AXApplicationDialog"',
             self.source,
         )
         self.assertIn("NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS", self.source)
