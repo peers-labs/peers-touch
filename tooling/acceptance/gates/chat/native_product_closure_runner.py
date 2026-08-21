@@ -1991,19 +1991,16 @@ except Exception as error:
             lambda _: bool(
                 client.execute_script(
                     """
-                    return !Array.from(
-                      document.querySelectorAll('.ant-modal-wrap')
-                    ).some((wrap) => {
-                      const style = getComputedStyle(wrap);
-                      const rect = wrap.getBoundingClientRect();
-                      return (
-                        style.display !== 'none'
-                        && style.visibility !== 'hidden'
-                        && style.pointerEvents !== 'none'
-                        && rect.width > 0
-                        && rect.height > 0
-                      );
-                    });
+                    const action = document.querySelector(
+                      '[data-chat-conversation-action="background"]'
+                    );
+                    if (!action) return false;
+                    const rect = action.getBoundingClientRect();
+                    const hit = document.elementFromPoint(
+                      rect.left + rect.width / 2,
+                      rect.top + rect.height / 2,
+                    );
+                    return hit === action || action.contains(hit);
                     """
                 )
             )

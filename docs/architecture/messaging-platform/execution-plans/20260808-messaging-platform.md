@@ -20,12 +20,12 @@
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-F` complete Native chooser path entry and background upload proof |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Clean run `20260821T154759347000Z-54846fac40f130b0f90b8b168b869fff` proved exact Thread/Transcript, toolbar geometry, reaction recovery, avatar equality and Station attribution, then showed Unicode path entry can close the Native chooser before the path-value wait |
-| Current action | Accept Native panel closure as the OS selection terminal state while retaining product projection, upload failure/retry, Station readback, cross-device and restart assertions |
-| Next action | Commit/deploy/rebuild matching source and rerun the complete Native product Gate from the real background upload action |
+| Last completed | Clean run `20260821T155837498049Z-330b252a0a550838f5efead5e87ac5c5` crossed Native path entry and failed later because `open_background_modal` treated any document-wide Modal wrapper as a blocker instead of checking the actual Details action hit target |
+| Current action | Replace the broad Modal-wrapper wait with an event-driven `elementFromPoint` ownership check on the real Background action; retain `click_element` occlusion and DOM acknowledgement |
+| Next action | Commit/deploy/rebuild matching source and rerun from failed-upload recovery through successful background upload |
 | Blockers | MP-W13 remains `UNPROVEN`; chooser closure is observed but background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T154759347000Z-54846fac40f130b0f90b8b168b869fff` matched source/build/Station at `13bd6fed8`, passed `thread_exact`, `transcript_exact`, `toolbar_geometry`, reaction success/recovery, loaded avatar equality and Station attribution, opened the real Native background chooser, focused `AXTextField`, then observed sheet closure and WebView focus restoration after Unicode path entry; cleanup released ports `3330/3331/4445/4446/49210`; background upload/restart/attachment and full product-closure Native proof remain missing |
+| Evidence | Run `20260821T155837498049Z-330b252a0a550838f5efead5e87ac5c5` matched source/build/Station at `e588f2c2e`, retained all prior Thread/Transcript/toolbar/reaction/avatar/Station PASS assertions, accepted Native chooser completion, reached failed-upload recovery, then timed out only on the broad wrapper condition; cleanup released ports `3330/3331/4445/4446/52377`; background upload/restart/attachment and full product-closure Native proof remain missing |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate

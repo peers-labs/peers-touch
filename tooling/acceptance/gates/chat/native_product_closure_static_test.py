@@ -285,7 +285,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
     def test_background_modal_reuses_active_surface_without_sleep(self) -> None:
         self.assertIn("def open_background_modal(self, actor: str)", self.source)
         self.assertIn("if active_select is not None:", self.source)
-        self.assertIn("document.querySelectorAll('.ant-modal-wrap')", self.source)
+        self.assertIn("document.elementFromPoint(", self.source)
+        self.assertIn("return hit === action || action.contains(hit);", self.source)
         self.assertIn("name.includes('-leave')", self.source)
 
     def test_group_creation_feedback_does_not_cover_composer_actions(self) -> None:
