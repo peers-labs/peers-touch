@@ -19,6 +19,10 @@
 | C | Geometry validation dismisses a disconnected anchor or surface | Medium | Low | Rejected: only normal empty-target mount events, no disconnect |
 | D | The 140ms leave timer clears the target immediately | High | Low | Rejected: no leave or timer events |
 | E | Overlay renders with a different message identity or selector | Low | Low | Rejected as root cause: no action target or overlay existed |
+| F | WebKit emits `mouseover` or `pointerenter`, but React does not synthesize `mouseenter` | Medium | Low | Pending |
+| G | A transparent or adjacent element owns the row-center hit target | High | Low | Pending |
+| H | Neutral and row rectangles overlap or change before pointer movement | Medium | Low | Pending |
+| I | W3C pointer movement does not update the row's CSS `:hover` state | High | Low | Pending |
 
 ## Log Evidence
 Instrumentation points:
@@ -34,8 +38,20 @@ Pre-fix run: `20260821T011327502682Z-499fcc3677e1e24d187dd9dac0505a6b`.
 - No A event: moving directly to the row did not cross a pointer boundary and did not emit `mouseenter`.
 - No B/D/E events: the action target, close timer, and geometry pipeline never started.
 
+First post-fix run:
+`20260821T012601558653Z-33089642cf17466dbe04f2cdadd74d7c`.
+
+- Source and Station matched commit `47095d40a4b58cbb03d5792080971394b1ded294`.
+- The dedicated binary SHA-256 was
+  `920c90ca66300a6e3083d2e38aed87a6eeeb151888df68e2e00ed88e2aea7008`.
+- Moving `neutral control -> target row` still produced only the two normal C
+  empty-target mount events; A/B/D/E remained absent.
+- The Gate failed at the same first `hover_message` call and emitted cleanup
+  evidence with ports `3330`, `3331`, `4445`, and `4446` released.
+
 ## Verification Conclusion
-The Native WebDriver pointer can already be inside a row's future bounds. A direct
-`move_to_element(row)` then produces no boundary transition and React receives no
-`mouseenter`. The Acceptance input must first move to a neutral visible element,
-then move to the target row using the same Selenium ActionChains pointer source.
+Direct movement and the neutral-control choreography both fail to produce
+`mouseenter`, so the original pointer-boundary explanation is insufficient.
+The next instrumentation must distinguish raw `mouseover`/`pointerenter`, actual
+hit-test ownership, element rectangles, and CSS `:hover` state before changing
+the product or the Native input path again.

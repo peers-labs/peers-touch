@@ -283,6 +283,74 @@ class NativeProductClosureGate(AcceptanceGate):
         client = self.clients[actor]
         neutral = client.find_element("[data-chat-send]", 30)
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 30)
+
+        def report_probe(phase: str) -> None:
+            snapshot = client.execute_script(
+                """
+                const neutral = arguments[0];
+                const row = arguments[1];
+                const describe = (element) => {
+                  if (!element) return null;
+                  const messageRow = element.closest('[data-message-ulid]');
+                  return {
+                    tag: element.tagName,
+                    classes: element.className || '',
+                    messageId: messageRow?.getAttribute('data-message-ulid') || '',
+                    chatSend: element.matches('[data-chat-send]')
+                      || Boolean(element.closest('[data-chat-send]')),
+                  };
+                };
+                const inspect = (element) => {
+                  const rect = element.getBoundingClientRect();
+                  const centerX = rect.left + rect.width / 2;
+                  const centerY = rect.top + rect.height / 2;
+                  return {
+                    rect: {
+                      left: rect.left,
+                      top: rect.top,
+                      right: rect.right,
+                      bottom: rect.bottom,
+                      width: rect.width,
+                      height: rect.height,
+                    },
+                    center: { x: centerX, y: centerY },
+                    centerHit: describe(document.elementFromPoint(centerX, centerY)),
+                    hovered: element.matches(':hover'),
+                  };
+                };
+                return {
+                  neutral: inspect(neutral),
+                  row: inspect(row),
+                  viewport: { width: innerWidth, height: innerHeight },
+                };
+                """,
+                neutral,
+                row,
+            )
+            # #region debug-point G-I:hover-probe
+            request = urllib.request.Request(
+                "http://127.0.0.1:7777/event",
+                data=json.dumps(
+                    {
+                        "sessionId": "chat-hover-overlay",
+                        "runId": "post-fix",
+                        "hypothesisId": "G-I",
+                        "location": "NativeProductClosureGate:hover_message",
+                        "msg": f"[DEBUG] hover geometry probe {phase}",
+                        "data": {"phase": phase, "messageId": message_id, **snapshot},
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=2):
+                    pass
+            except OSError:
+                pass
+            # #endregion
+
+        report_probe("before")
         (
             ActionChains(client.driver)
             .move_to_element(neutral)
@@ -290,6 +358,7 @@ class NativeProductClosureGate(AcceptanceGate):
             .move_to_element(row)
             .perform()
         )
+        report_probe("after")
         return WebDriverWait(client.driver, 15).until(
             lambda driver: driver.find_element(
                 By.CSS_SELECTOR,
