@@ -691,12 +691,16 @@ if not request_accepted:
           return roleName & tab & subroleName & tab & titleValue & tab & controlValue & tab & windowCount & tab & sheetCount & tab & processFrontmost & tab & mainWindow & tab & focusedWindow & tab & actualFrontmostPid
         end tell
         """
-        completed = subprocess.run(
-            ("osascript", "-e", script),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            completed = subprocess.run(
+                ("osascript", "-e", script),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=2,
+            )
+        except subprocess.TimeoutExpired:
+            return {"error": "Native Accessibility probe timed out"}
         if completed.returncode != 0:
             return {"error": completed.stderr.strip()}
         fields = completed.stdout.rstrip("\n").split("\t", 9)
@@ -904,7 +908,7 @@ except Exception as error:
         # #region debug-point S-W:native-file-shortcut-delivery
         report_native_file_snapshot("before-go-to-shortcut")
         # #endregion
-        self.post_key(5, flags=command_shift)
+        self.post_key(5, flags=command_shift, private_source=True)
         # #region debug-point S-W:native-file-shortcut-delivery
         report_native_file_snapshot("after-go-to-shortcut")
 

@@ -492,3 +492,26 @@ distinct Go-To poll states. It does not query CoreGraphics event-source state.
 Chooser branching and product behavior remain unchanged until this evidence
 distinguishes default-source delivery, missing key-window ownership,
 foreground interception, or an AX focused-element blind spot.
+
+Atomic-click source-bound chooser run:
+`20260821T210717480946Z-c0d631375efa68b57be052c66b0e66c8`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `837ccc44ca76c52fc8960067c8f7df9d1263af6c`; binary SHA-256 was
+  `6bb7fa6ccf33f0b7e6d57ff89e00bf5cf0a16044e0bd206f817eeb4dbbcb07d1`.
+- The Gate crossed Thread/Transcript, toolbar geometry, Reaction
+  success/failure recovery, avatar equality, and Station attribution.
+- Before `Cmd+Shift+G`, Alice owned the frontmost process and the chooser was
+  `AXList(window=1,sheet=1)`.
+- After the default-source shortcut, Alice still owned the same
+  `window=1/sheet=1`, but focused role became empty. Each subsequent System
+  Events `AXFocusedUIElement` probe blocked for approximately 120 seconds,
+  defeating the surrounding ten-second `WebDriverWait`.
+- No path entry, picker callback, or upload occurred. Cleanup released
+  `3330/3331/4445/4446/57169`.
+
+This confirms default-source shortcut delivery as the first divergent
+boundary and rejects actor/foreground or sheet ownership loss. The correction
+uses the already-proven private CoreGraphics source for `Cmd+Shift+G` and adds
+a two-second subprocess deadline to the AX probe so one blocked System Events
+query cannot defeat the Gate timeout.
