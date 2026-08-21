@@ -342,3 +342,24 @@ entry. The next comparison sends `Cmd+A`, sends Delete, waits until the focused
 AXTextField value is exactly empty, then posts the exact path and Return
 atomically. This is event-driven real Native input, not a fixed delay or AX
 value mutation.
+
+Cooperative-focus source-bound run:
+`20260821T190059116917Z-d449d1fc1726f0d7520b1f915ca83a41`.
+
+- Source, dedicated binary, and live Profile Three Station matched clean commit
+  `740fd346c7f9df0766498e90ad1416dc741f6eb5`.
+- The Gate crossed group creation, exact Thread/Transcript, toolbar geometry,
+  Reaction success/failure recovery, avatar/Station identity, Mute, Pin, and
+  the built-in Paper background path.
+- The real Native image chooser opened, the Go-To field started at `/opt`,
+  `Cmd+A -> Delete` produced an exact empty AX value, and the exact file path
+  plus Return transitioned to `AXGroup / AXApplicationDialog`.
+- The Driver classified `sheetCount=0` as selection complete, but the product
+  log contained `pick_image_file` entry with no `Image file selected` return.
+  The original Background Modal remained open and occluded the next action.
+- Cleanup passed and ports `3330/3331/4445/4446` were released.
+
+`AXApplicationDialog` is the file browser confirmation stage, not product
+callback completion. The Driver must classify it as `selected=false`, send the
+second real Return, and continue to require application-window restoration plus
+the existing product pending/retry/OSS assertions.

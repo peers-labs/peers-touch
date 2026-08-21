@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` implement and verify cooperative PID-scoped AppKit activation for actor handoff |
+| Current step | `MP-W13-F` complete the real Native file-browser confirmation state after Go-To path entry |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | An isolated production-Driver probe proved `Alice -> Bob -> Alice -> Bob` focus switching after source `yieldActivation(to:)` and target-process `activateIgnoringOtherApps(true)`; every handoff produced exactly one focused WebView and target WindowServer index `0`, then released ports `3340/3341/4455/4456` |
-| Current action | Commit the feature-gated cooperative activation primitive, deploy the same source to Profile Three, rebuild the dedicated binary, and rerun the full product Gate |
-| Next action | Inspect the first source-bound full-Gate result; if actor focus stays closed, continue without interruption into the Native chooser and background upload proof |
-| Blockers | MP-W13 remains `UNPROVEN`; cooperative actor switching has isolated Native proof but not a source-bound full product-Gate result; the chooser clear-and-enter repair has not reached its Native proof point; background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Last completed | Source-bound full run `20260821T190059116917Z-d449d1fc1726f0d7520b1f915ca83a41` at `740fd346c` proved cooperative actor focus through every prior Alice/Bob handoff and advanced through Thread/Transcript, toolbar, Reaction, identity/Station, Mute, Pin, and built-in Paper background |
+| Current action | Treat the post-Go-To `AXGroup / AXApplicationDialog` state as file-browser-ready rather than selection-complete, send the second real Return, then retain application restoration and product callback assertions |
+| Next action | Run static verification, commit/deploy/rebuild matching source, and rerun the full Native Gate through empty-file failure/retry and valid background upload |
+| Blockers | MP-W13 remains `UNPROVEN`; the first source-bound full run with cooperative focus reached the Native chooser but `pick_image_file` never returned because `AXApplicationDialog` was misclassified as completion; background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Full run `20260821T182824055814Z-187ea8c44a3d48518bbd13595d91bbef` at `816fefddb` remained `FAILED/UNPROVEN`; the subsequent isolated Driver probe with dedicated binary SHA-256 `df29436b...` passed four cooperative actor handoffs with source-bound focus snapshots and released all probe ports; full Native product proof remains missing |
+| Evidence | Run `20260821T190059116917Z-d449d1fc1726f0d7520b1f915ca83a41` matched clean source/build/Station at `740fd346c`, reached the second `open_background_modal`, and then `FAILED/UNPROVEN`; chooser logs show exact empty-field acknowledgement, exact path entry, `AXApplicationDialog`, restored WebView, but no `Image file selected`; cleanup passed and ports `3330/3331/4445/4446` were free |
 | Last updated | 2026-08-22 |
 
 ## 1. Plan Sources And Gate
