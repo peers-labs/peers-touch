@@ -47,6 +47,67 @@ use tauri::{Emitter, Manager};
 
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
+#[cfg(feature = "acceptance-webdriver")]
+fn configure_acceptance_window(window: &tauri::WebviewWindow) -> std::io::Result<()> {
+    let slot = std::env::var("PT_ACCEPTANCE_WINDOW_SLOT")
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window slot is missing: {error}"))
+        })?
+        .parse::<u32>()
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window slot is invalid: {error}"))
+        })?;
+    let count = std::env::var("PT_ACCEPTANCE_WINDOW_COUNT")
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window count is missing: {error}"))
+        })?
+        .parse::<u32>()
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window count is invalid: {error}"))
+        })?;
+    if count == 0 || slot >= count {
+        return Err(std::io::Error::other(format!(
+            "acceptance window slot {slot} is outside window count {count}"
+        )));
+    }
+
+    let monitor = window
+        .current_monitor()
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance monitor lookup failed: {error}"))
+        })?
+        .ok_or_else(|| std::io::Error::other("acceptance window has no current monitor"))?;
+    let scale = monitor.scale_factor();
+    let monitor_size = monitor.size();
+    let monitor_position = monitor.position();
+    let logical_width = f64::from(monitor_size.width) / scale;
+    let logical_height = f64::from(monitor_size.height) / scale;
+    let logical_x = f64::from(monitor_position.x) / scale;
+    let logical_y = f64::from(monitor_position.y) / scale;
+    let window_width = logical_width / f64::from(count);
+    let window_height = (logical_height - 64.0).min(800.0);
+
+    window
+        .set_size(tauri::LogicalSize::new(window_width, window_height))
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window resize failed: {error}"))
+        })?;
+    window
+        .set_position(tauri::LogicalPosition::new(
+            logical_x + window_width * f64::from(slot),
+            logical_y + 32.0,
+        ))
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window positioning failed: {error}"))
+        })?;
+    window.set_always_on_top(true).map_err(|error| {
+        std::io::Error::other(format!("acceptance window layering failed: {error}"))
+    })?;
+    window
+        .show()
+        .map_err(|error| std::io::Error::other(format!("acceptance window show failed: {error}")))
+}
+
 fn main() {
     let ctx = bootstrap::run();
 
@@ -74,6 +135,14 @@ fn main() {
         .manage(actor_device_identity)
         .manage(mls_group_manager)
         .setup(|app| {
+            #[cfg(feature = "acceptance-webdriver")]
+            if std::env::var_os("PT_ACCEPTANCE_WINDOW_SLOT").is_some() {
+                let window = app
+                    .get_webview_window("main")
+                    .ok_or_else(|| std::io::Error::other("acceptance main window is missing"))?;
+                configure_acceptance_window(&window)?;
+            }
+
             let resource_dir = app.path()
                 .resource_dir()
                 .unwrap_or_else(|e| {
