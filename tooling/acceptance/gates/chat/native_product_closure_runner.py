@@ -899,24 +899,28 @@ except Exception as error:
         if client.process_id is None:
             raise GateError(f"{actor} Native window has no running process")
 
-        def actor_owns_focus() -> bool:
-            ownership = self.native_focused_control(client.process_id or 0)
-            return (
-                bool(ownership.get("frontmost"))
-                and bool(ownership.get("mainWindow"))
-                and ownership.get("actualFrontmostPid") == client.process_id
-            )
-
-        if (
-            bool(client.driver.execute_script("return document.hasFocus()"))
-            and actor_owns_focus()
-        ):
-            return client
         window = self.native_window(client)
         point = (
             window["left"] + window["width"] / 2,
             window["top"] + 16,
         )
+
+        def actor_window_owns_point() -> bool:
+            stack = self.native_window_stack_at_point(point)
+            windows = stack.get("windows")
+            if not isinstance(windows, list):
+                return False
+            for window in windows:
+                if not isinstance(window, dict) or float(window.get("alpha") or 0) <= 0:
+                    continue
+                return window.get("ownerPid") == client.process_id
+            return False
+
+        if (
+            bool(client.driver.execute_script("return document.hasFocus()"))
+            and actor_window_owns_point()
+        ):
+            return client
         # #region debug-point N-Q:native-window-focus
         def report_focus_snapshot(phase: str) -> None:
             request = urllib.request.Request(
@@ -940,6 +944,7 @@ except Exception as error:
                             "mouseButtonDown": self.native_mouse_button_down(),
                             "window": window,
                             "point": point,
+                            "windowStack": self.native_window_stack_at_point(point),
                             "focusedControl": self.native_focused_control(
                                 client.process_id or 0
                             ),
@@ -974,16 +979,33 @@ except Exception as error:
             5,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(
-            lambda _: actor_owns_focus()
+            lambda _: actor_window_owns_point()
         )
+        if not bool(client.driver.execute_script("return document.hasFocus()")):
+            focus_mouse_down = False
+            try:
+                self.post_mouse((1,), point)
+                focus_mouse_down = True
+                self.post_mouse((2,), point)
+                focus_mouse_down = False
+                WebDriverWait(
+                    client.driver,
+                    5,
+                    poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+                ).until(
+                    lambda _: not self.native_mouse_button_down()
+                )
+            finally:
+                if focus_mouse_down and self.native_mouse_button_down():
+                    self.post_mouse((2,), point)
+            WebDriverWait(
+                client.driver,
+                5,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(
+                lambda driver: bool(driver.execute_script("return document.hasFocus()"))
+            )
         # #region debug-point N-Q:native-window-focus
-        WebDriverWait(
-            client.driver,
-            5,
-            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(
-            lambda driver: bool(driver.execute_script("return document.hasFocus()"))
-        )
         report_focus_snapshot("after-activate")
         # #endregion
         return client
