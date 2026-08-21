@@ -612,3 +612,25 @@ Role-transition and chooser-callback source-bound run:
   fresh `[data-chat-background-upload]` picker is not retry evidence.
 - The run remained `PARTIAL/UNPROVEN`; cleanup released
   `3330/3331/4445/4446/57228`.
+
+Real-retry source-bound run:
+`20260821T223040720301Z-7aa69244032bf3dce156192ab954addd`.
+
+- Source and live Station matched clean commit
+  `64e6b52c75cb0a954950307c13e5433ea6e6ff7c`; dedicated binary SHA-256
+  was `c755ceb78368092b46e20dab1a48f14eddafc6c037e6cee1c30042f436df8051`.
+- The empty Native-selected image was rejected before Station upload. The
+  Details projection reached `pending=""`, `backgroundRetry="true"`, and
+  retained the previous background image.
+- The Gate repaired the same selected fixture path and completed a real
+  CoreGraphics click on `[data-chat-background-retry]`; no fresh picker was
+  opened.
+- The next polling assertion timed out waiting to observe the transient
+  `background-image` pending value. Since `click_element` waits for the full
+  target-owned click sequence before returning, a fast retry can render and
+  clear pending before polling begins.
+- The next comparison installs a DOM attribute observer before the click and
+  requires its transition history to contain `background-image`, while still
+  requiring final `oss://`, pending clear, and retry clear.
+- The run remained `PARTIAL/UNPROVEN`; cleanup released
+  `3330/3331/4445/4446/62163`.

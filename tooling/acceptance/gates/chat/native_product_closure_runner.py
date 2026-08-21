@@ -2970,26 +2970,95 @@ except Exception as error:
             "[data-chat-background-retry]",
             10,
         )
-        empty_image.write_bytes(valid_image.read_bytes())
-        self.click_element("alice", retry)
-        wait_until(
-            lambda: self.setting_state("alice").get("pending") == "background-image",
-            "background retry pending",
-            timeout=10,
+        retry_client = self.clients["alice"]
+        retry_client.execute_script(
+            """
+            const panel = document.querySelector('[data-chat-detail-panel="open"]');
+            if (!panel) throw new Error('Chat Details panel is unavailable');
+            const transitions = [];
+            const capture = () => {
+              const state = {
+                pending:
+                  panel.getAttribute('data-chat-detail-action-pending') || '',
+                retry:
+                  panel.getAttribute('data-chat-detail-background-retry') || '',
+              };
+              const previous = transitions.at(-1);
+              if (
+                !previous
+                || previous.pending !== state.pending
+                || previous.retry !== state.retry
+              ) {
+                transitions.push(state);
+              }
+            };
+            capture();
+            const observer = new MutationObserver(capture);
+            observer.observe(panel, {
+              attributes: true,
+              attributeFilter: [
+                'data-chat-detail-action-pending',
+                'data-chat-detail-background-retry',
+              ],
+            });
+            window.__PT_BACKGROUND_RETRY_PROBE__ = {
+              cleanup: () => observer.disconnect(),
+              snapshot: () => transitions.slice(),
+            };
+            """
         )
-        final_state = wait_until(
-            lambda: (
-                state
-                if (
-                    (state := self.setting_state("alice")).get("backgroundImage", "")
-                ).startswith("oss://")
-                and state.get("pending") == ""
-                and state.get("backgroundRetry") == "false"
+
+        def background_retry_trace() -> list[dict[str, str]]:
+            value = retry_client.execute_script(
+                """
+                return window.__PT_BACKGROUND_RETRY_PROBE__?.snapshot?.() || [];
+                """
+            )
+            return value if isinstance(value, list) else []
+
+        def background_retry_pending() -> list[dict[str, str]] | None:
+            transitions = background_retry_trace()
+            return (
+                transitions
+                if any(
+                    item.get("pending") == "background-image"
+                    for item in transitions
+                )
                 else None
-            ),
-            "uploaded background projection",
-            timeout=120,
-        )
+            )
+
+        empty_image.write_bytes(valid_image.read_bytes())
+        try:
+            self.click_element("alice", retry)
+            retry_transitions = wait_until(
+                background_retry_pending,
+                "background retry pending transition",
+                timeout=10,
+            )
+            final_state = wait_until(
+                lambda: (
+                    state
+                    if (
+                        (
+                            state := self.setting_state("alice")
+                        ).get("backgroundImage", "")
+                    ).startswith("oss://")
+                    and state.get("pending") == ""
+                    and state.get("backgroundRetry") == "false"
+                    else None
+                ),
+                "uploaded background projection",
+                timeout=120,
+            )
+        except Exception as error:
+            raise GateError(
+                "background retry did not converge: "
+                f"{json.dumps(background_retry_trace(), sort_keys=True)}"
+            ) from error
+        finally:
+            retry_client.execute_script(
+                "window.__PT_BACKGROUND_RETRY_PROBE__?.cleanup?.();"
+            )
         self.assert_condition("background_upload_recovery", True)
 
         station = gateway_read(
@@ -3014,7 +3083,11 @@ except Exception as error:
             station_matches,
             json.dumps({"ui": final_state, "station": normalized}),
         )
-        return {"ui": final_state, "station": normalized}
+        return {
+            "ui": final_state,
+            "station": normalized,
+            "retryTransitions": retry_transitions,
+        }
 
     def prove_attachment_failure(self, empty_file: Path) -> None:
         if self.clients["alice"].find_elements("[data-chat-detail-panel='open']"):
