@@ -23,6 +23,7 @@
 | W | Mouse events created with a null source are not tracked in the login session's combined event state | Medium | Low | Explicit `CGEventSourceCreate(kCGEventSourceStateCombinedSessionState)` restores WebView delivery |
 | X | Requiring a staging `mousemove` before a zero-distance click invents an input precondition that a real stationary click does not have | High | Low | The cursor and target center already match; skipping movement still yields target-owned `mousedown -> mouseup -> click` acknowledgements |
 | Y | A move-only event is not required to prove a Native click; target-coordinate down/up can establish click routing after verified actor activation | High | Low | Without a preliminary move wait, the target DOM receives `mousedown -> mouseup -> click` from the real CoreGraphics sequence |
+| Z | The explicit combined-session source changes routing compared with the null-source primitive used by the last clean Native click PASS | High | Low | Restoring `CGEventCreateMouseEvent(None, ...)` makes target-owned `mousedown -> mouseup -> click` observable again |
 
 ## Log Evidence
 Source-bound run:
@@ -154,3 +155,21 @@ retaining the exact target hit test and real CoreGraphics down/up events.
 `mousedown`, `mouseup`, and `click` remain mandatory DOM acknowledgements.
 Actual hover remains a separate movement-owned product assertion and is not
 weakened by this click correction.
+
+Direct-click source-bound run:
+`20260821T142850753410Z-872dd45dc83adaf056bf346fcf4b6409`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `87ed95366b8e70575cc8bd2c5256228c0f72d86b`.
+- Before the first click, Alice was frontmost, document-focused, and focused on
+  `AXWebArea`; cursor and target center both equaled `[81.5,95]`.
+- The explicit combined-session source posted `leftMouseDown`, but the scoped
+  DOM probe remained empty. Alice stayed frontmost and document-focused.
+- Failure recovery returned combined-session left-button state to `false`.
+- Cleanup evidence and direct `lsof` verification proved actor ports
+  `3330/3331/4445/4446` were released.
+
+Y is rejected for the explicit combined-session source. The next minimal
+comparison restores the null event source used by historical clean run
+`20260821T101103621394Z-083d69ddf9bbc5bdd1b97026df475f9d` at `04fe56801`,
+while retaining direct down/up/click acknowledgement and button-state recovery.

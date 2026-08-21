@@ -321,31 +321,21 @@ class NativeProductClosureGate(AcceptanceGate):
             ctypes.c_uint32,
         ]
         core_graphics.CGEventCreateMouseEvent.restype = ctypes.c_void_p
-        core_graphics.CGEventSourceCreate.argtypes = [ctypes.c_int32]
-        core_graphics.CGEventSourceCreate.restype = ctypes.c_void_p
         core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
         core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
 
         native_point = CGPoint(*point)
-        event_source = core_graphics.CGEventSourceCreate(0)
-        if not event_source:
-            raise GateError("CoreGraphics failed to create the login event source")
-        try:
-            for event_type in event_types:
-                event = core_graphics.CGEventCreateMouseEvent(
-                    event_source,
-                    event_type,
-                    native_point,
-                    0,
-                )
-                if not event:
-                    raise GateError(
-                        "CoreGraphics failed to create Native mouse event"
-                    )
-                core_graphics.CGEventPost(0, event)
-                core_foundation.CFRelease(event)
-        finally:
-            core_foundation.CFRelease(event_source)
+        for event_type in event_types:
+            event = core_graphics.CGEventCreateMouseEvent(
+                None,
+                event_type,
+                native_point,
+                0,
+            )
+            if not event:
+                raise GateError("CoreGraphics failed to create Native mouse event")
+            core_graphics.CGEventPost(0, event)
+            core_foundation.CFRelease(event)
 
     def post_key(
         self,

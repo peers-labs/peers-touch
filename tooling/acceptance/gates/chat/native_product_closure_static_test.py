@@ -61,8 +61,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, self.source)
         self.assertIn("CGEventCreateMouseEvent", self.source)
-        self.assertIn("CGEventSourceCreate", self.source)
-        self.assertIn("CGEventSourceCreate(0)", self.source)
         self.assertIn("CGEventPost", self.source)
         self.assertNotIn("CGEventPostToPid", self.source)
         self.assertIn("document.hasFocus()", self.source)
@@ -95,6 +93,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source,
         )
         self.assertNotIn("staging_point", self.source)
+        post_mouse_start = self.source.index("    def post_mouse(")
+        post_mouse_end = self.source.index(
+            "    def post_key(",
+            post_mouse_start,
+        )
+        post_mouse_source = self.source[post_mouse_start:post_mouse_end]
+        self.assertIn("CGEventCreateMouseEvent(\n                None,", post_mouse_source)
+        self.assertNotIn("CGEventSourceCreate", post_mouse_source)
         self.assertIn(".send_keys(", self.source)
 
     def test_transient_native_actions_resolve_after_idempotent_focus(self) -> None:
