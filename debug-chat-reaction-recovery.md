@@ -122,3 +122,14 @@ Pre-login proxy verification run:
 - Cleanup released actor ports and proxy port `58945`.
 - The next first failure is a Gate evidence serialization error after
   `avatar_exact_loaded=PASS`; it does not invalidate Reaction recovery.
+
+Clean source-bound verification:
+`20260821T101103621394Z-083d69ddf9bbc5bdd1b97026df475f9d`.
+
+- Source and Profile Three Station matched commit
+  `04fe5680128ac008c350a264e5e9ac20c7000e1f`.
+- `reaction_picker_success=PASS` and
+  `reaction_failure_recovery=PASS`.
+- Avatar and Station attribution also passed before the independent Mute
+  projection failure.
+- Actor and fault-proxy ports, including `65465`, were released.

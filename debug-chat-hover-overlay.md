@@ -289,6 +289,17 @@ Idempotent-focus verification run:
 - Cleanup evidence and direct `lsof` verification show ports
   `3330/3331/4445/4446` released.
 
+Clean source-bound verification:
+`20260821T101103621394Z-083d69ddf9bbc5bdd1b97026df475f9d`.
+
+- Source and Profile Three Station matched commit
+  `04fe5680128ac008c350a264e5e9ac20c7000e1f`.
+- `thread_exact`, `transcript_exact`, `toolbar_geometry`, and the later
+  Reaction/identity assertions passed, confirming the Driver focus and
+  transient action lifecycle on clean source.
+- The first failure was the independent Mute projection.
+- Actor and fault-proxy ports were released.
+
 ## Verification Conclusion
 The target geometry and hit-test ownership are correct, but neither Selenium
 element-origin nor viewport-origin W3C pointer movement reaches the embedded
