@@ -668,6 +668,33 @@ class NativeProductClosureGate(AcceptanceGate):
         core_graphics.CGEventSourceButtonState.restype = ctypes.c_bool
         return bool(core_graphics.CGEventSourceButtonState(0, 0))
 
+    # #region debug-point R-V:native-input-delivery
+    def native_cursor_position(self) -> tuple[float, float]:
+        class CGPoint(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+        core_graphics = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        )
+        core_foundation = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+        )
+        core_graphics.CGEventCreate.argtypes = [ctypes.c_void_p]
+        core_graphics.CGEventCreate.restype = ctypes.c_void_p
+        core_graphics.CGEventGetLocation.argtypes = [ctypes.c_void_p]
+        core_graphics.CGEventGetLocation.restype = CGPoint
+        core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
+
+        event = core_graphics.CGEventCreate(None)
+        if not event:
+            raise GateError("CoreGraphics failed to read the Native cursor")
+        try:
+            point = core_graphics.CGEventGetLocation(event)
+            return (float(point.x), float(point.y))
+        finally:
+            core_foundation.CFRelease(event)
+    # #endregion
+
     def install_native_input_probe(
         self,
         client: TauriDriver,
@@ -973,15 +1000,71 @@ class NativeProductClosureGate(AcceptanceGate):
             window["top"] + content_offset_y + float(target["y"]),
         )
         probe_id = self.install_native_input_probe(client, element)
+        # #region debug-point R-V:native-input-delivery
+        def report_native_input_delivery(phase: str) -> None:
+            probe_events = client.execute_script(
+                """
+                return (
+                  window.__PT_NATIVE_INPUT_PROBES__?.[arguments[0]]?.events
+                  || []
+                );
+                """,
+                probe_id,
+            )
+            request = urllib.request.Request(
+                "http://127.0.0.1:7785/event",
+                data=json.dumps(
+                    {
+                        "sessionId": "chat-native-input-delivery",
+                        "runId": "pre-fix",
+                        "hypothesisId": "R-V",
+                        "location":
+                            "NativeProductClosureGate:click_element",
+                        "msg": f"[DEBUG] Native input delivery {phase}",
+                        "data": {
+                            "actor": actor,
+                            "processId": client.process_id,
+                            "documentFocused": bool(
+                                client.driver.execute_script(
+                                    "return document.hasFocus()"
+                                )
+                            ),
+                            "focusedControl": self.native_focused_control(
+                                client.process_id or 0
+                            ),
+                            "cursor": self.native_cursor_position(),
+                            "point": point,
+                            "window": window,
+                            "target": target,
+                            "probeEvents": probe_events,
+                        },
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                urllib.request.urlopen(request, timeout=2).read()
+            except OSError:
+                pass
+
+        report_native_input_delivery("before-move")
+        # #endregion
         try:
             cursor = 0
             self.post_mouse((5,), point)
-            cursor = self.wait_native_input_event(
-                client,
-                probe_id,
-                "mousemove",
-                cursor,
-            )
+            try:
+                cursor = self.wait_native_input_event(
+                    client,
+                    probe_id,
+                    "mousemove",
+                    cursor,
+                )
+            except GateError:
+                # #region debug-point R-V:native-input-delivery
+                report_native_input_delivery("mousemove-timeout")
+                # #endregion
+                raise
             self.post_mouse((1,), point)
             cursor = self.wait_native_input_event(
                 client,
