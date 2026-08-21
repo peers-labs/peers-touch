@@ -8,7 +8,6 @@ import hashlib
 import json
 import os
 import socket
-import subprocess
 import tempfile
 import urllib.request
 from pathlib import Path
@@ -33,7 +32,7 @@ from tooling.acceptance.drivers.tauri import TauriDriver, find_app_binary
 from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
     ProfileThreeSubmitFaultProxy,
 )
-from tooling.acceptance.gates.chat.native_support import enter_chat_page, wait_until
+from tooling.acceptance.gates.chat.native_support import wait_until
 
 
 GATE_ID = "chat-native-product-closure-e2e"
@@ -206,13 +205,18 @@ class NativeProductClosureGate(AcceptanceGate):
 
     def launch_actor(self, actor: str) -> None:
         spec = self.client_specs[actor]
+        window_actors = ("alice", "bob")
         client = TauriDriver(
             app_binary=str(self.binary),
             port=int(spec["webdriver_port"]),
             gateway_port=int(spec["gateway_port"]),
             profile=str(spec["profile"]),
             storage_root=str(spec["storage_root"]),
-            environment={"PEERS_STATION_URL": self.station_url},
+            environment={
+                "PEERS_STATION_URL": self.station_url,
+                "PT_ACCEPTANCE_WINDOW_SLOT": str(window_actors.index(actor)),
+                "PT_ACCEPTANCE_WINDOW_COUNT": str(len(window_actors)),
+            },
         )
         client.start()
         self.register_driver(client)
@@ -273,39 +277,123 @@ class NativeProductClosureGate(AcceptanceGate):
         if self.device_ids[actor] != previous_device:
             raise GateError(f"{actor} device identity changed across restart")
 
-    def activate_actor_window(self, actor: str) -> TauriDriver:
+    def native_window(self, client: TauriDriver) -> dict[str, float]:
+        rect = client.driver.get_window_rect()
+        scale = float(
+            client.driver.execute_script("return window.devicePixelRatio || 1")
+        )
+        if scale <= 0:
+            raise GateError(f"Native window scale is invalid: {scale}")
+        return {
+            "left": float(rect["x"]) / scale,
+            "top": float(rect["y"]) / scale,
+            "width": float(rect["width"]) / scale,
+            "height": float(rect["height"]) / scale,
+        }
+
+    def post_mouse(
+        self,
+        event_types: tuple[int, ...],
+        point: tuple[float, float],
+    ) -> None:
+        class CGPoint(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+        core_graphics = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        )
+        core_foundation = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+        )
+        core_graphics.CGEventCreateMouseEvent.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            CGPoint,
+            ctypes.c_uint32,
+        ]
+        core_graphics.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+        core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
+
+        native_point = CGPoint(*point)
+        for event_type in event_types:
+            event = core_graphics.CGEventCreateMouseEvent(
+                None,
+                event_type,
+                native_point,
+                0,
+            )
+            if not event:
+                raise GateError("CoreGraphics failed to create Native mouse event")
+            core_graphics.CGEventPost(0, event)
+            core_foundation.CFRelease(event)
+
+    def focus_actor_window(self, actor: str) -> TauriDriver:
         client = self.clients[actor]
         if client.process_id is None:
             raise GateError(f"{actor} Native window has no running process")
-        subprocess.run(
-            [
-                "/usr/bin/osascript",
-                "-e",
-                (
-                    'tell application "System Events" to set frontmost of first '
-                    f"application process whose unix id is {client.process_id} to true"
-                ),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
+        window = self.native_window(client)
+        self.post_mouse(
+            (1, 2),
+            (
+                window["left"] + window["width"] / 2,
+                window["top"] + 16,
+            ),
         )
         WebDriverWait(client.driver, 5).until(
             lambda driver: bool(driver.execute_script("return document.hasFocus()"))
         )
         return client
 
-    def click(self, actor: str, selector: str, timeout: float = 30) -> Any:
-        client = self.activate_actor_window(actor)
-        element = client.find_element(selector, timeout)
-        WebDriverWait(client.driver, timeout).until(
+    def click_element(self, actor: str, element: Any) -> Any:
+        client = self.focus_actor_window(actor)
+        WebDriverWait(client.driver, 30).until(
             lambda _: element.is_displayed() and element.is_enabled()
         )
-        element.click()
+        target = client.driver.execute_script(
+            """
+            const element = arguments[0];
+            const rect = element.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+            const hit = document.elementFromPoint(x, y);
+            return {
+              x,
+              y,
+              hit: hit === element || element.contains(hit),
+              viewportWidth: innerWidth,
+              viewportHeight: innerHeight,
+            };
+            """,
+            element,
+        )
+        if not target.get("hit"):
+            raise GateError("Native click target center is occluded")
+        window = self.native_window(client)
+        content_offset_x = max(
+            0.0,
+            (window["width"] - float(target["viewportWidth"])) / 2,
+        )
+        content_offset_y = max(
+            0.0,
+            window["height"] - float(target["viewportHeight"]),
+        )
+        self.post_mouse(
+            (5, 1, 2),
+            (
+                window["left"] + content_offset_x + float(target["x"]),
+                window["top"] + content_offset_y + float(target["y"]),
+            ),
+        )
         return element
 
+    def click(self, actor: str, selector: str, timeout: float = 30) -> Any:
+        client = self.clients[actor]
+        element = client.find_element(selector, timeout)
+        return self.click_element(actor, element)
+
     def hover_message(self, actor: str, message_id: str) -> Any:
-        client = self.activate_actor_window(actor)
+        client = self.focus_actor_window(actor)
         neutral = client.find_element("[data-chat-send]", 30)
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 30)
         native_window: dict[str, float] | None = None
@@ -391,49 +479,7 @@ class NativeProductClosureGate(AcceptanceGate):
             return snapshot
 
         before = report_probe("before")
-        bounds_script = (
-            'tell application "System Events" to tell first application process '
-            f"whose unix id is {client.process_id} to get "
-            "{position of front window, size of front window}"
-        )
-        bounds_output = subprocess.run(
-            ["/usr/bin/osascript", "-e", bounds_script],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        bounds = [
-            float(value)
-            for value in bounds_output.replace(",", " ").split()
-        ]
-        if len(bounds) != 4:
-            raise GateError(f"Native window bounds are invalid: {bounds_output}")
-        native_window = {
-            "left": bounds[0],
-            "top": bounds[1],
-            "width": bounds[2],
-            "height": bounds[3],
-        }
-
-        class CGPoint(ctypes.Structure):
-            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
-
-        core_graphics = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-        )
-        core_foundation = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
-        )
-        core_graphics.CGEventCreateMouseEvent.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_uint32,
-            CGPoint,
-            ctypes.c_uint32,
-        ]
-        core_graphics.CGEventCreateMouseEvent.restype = ctypes.c_void_p
-        core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
-        core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
-
+        native_window = self.native_window(client)
         content_offset_x = max(
             0.0,
             (native_window["width"] - float(before["viewport"]["width"])) / 2,
@@ -443,8 +489,8 @@ class NativeProductClosureGate(AcceptanceGate):
             native_window["height"] - float(before["viewport"]["height"]),
         )
 
-        def screen_point(center: dict[str, float]) -> CGPoint:
-            return CGPoint(
+        def screen_point(center: dict[str, float]) -> tuple[float, float]:
+            return (
                 native_window["left"] + content_offset_x + float(center["x"]),
                 native_window["top"] + content_offset_y + float(center["y"]),
             )
@@ -453,20 +499,13 @@ class NativeProductClosureGate(AcceptanceGate):
         row_point = screen_point(before["row"]["center"])
         for step in range(13):
             ratio = step / 12
-            point = CGPoint(
-                neutral_point.x + (row_point.x - neutral_point.x) * ratio,
-                neutral_point.y + (row_point.y - neutral_point.y) * ratio,
+            self.post_mouse(
+                (5,),
+                (
+                    neutral_point[0] + (row_point[0] - neutral_point[0]) * ratio,
+                    neutral_point[1] + (row_point[1] - neutral_point[1]) * ratio,
+                ),
             )
-            event = core_graphics.CGEventCreateMouseEvent(
-                None,
-                5,
-                point,
-                0,
-            )
-            if not event:
-                raise GateError("CoreGraphics failed to create Native mouse event")
-            core_graphics.CGEventPost(0, event)
-            core_foundation.CFRelease(event)
 
         report_probe("after")
         return WebDriverWait(client.driver, 15).until(
@@ -480,7 +519,7 @@ class NativeProductClosureGate(AcceptanceGate):
     def composer_send(self, actor: str, text: str = "") -> None:
         client = self.clients[actor]
         composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
-        composer.click()
+        self.click_element(actor, composer)
         composer.send_keys(Keys.COMMAND, "a")
         composer.send_keys(Keys.BACKSPACE)
         if text:
@@ -513,9 +552,22 @@ class NativeProductClosureGate(AcceptanceGate):
 
         return wait_until(snapshot, f"{actor} visible message {text!r}", timeout=120)
 
+    def enter_chat_page(self, actor: str) -> None:
+        client = self.clients[actor]
+        if client.get_current_url().endswith("#/chat"):
+            return
+        self.click(
+            actor,
+            '[data-pt-primary-nav="chat"] button, '
+            '[data-pt-primary-nav="chat"] [role="button"]',
+        )
+        WebDriverWait(client.driver, 20).until(
+            lambda driver: driver.current_url.endswith("#/chat")
+        )
+
     def open_group_through_ui(self) -> str:
         for actor in ("alice", "bob"):
-            enter_chat_page(self.clients[actor])
+            self.enter_chat_page(actor)
         self.click("alice", '[data-chat-subpage="chats"]')
         self.click("alice", "[data-chat-new-menu]")
         self.click("alice", "[data-chat-create-group-menu]")
@@ -753,7 +805,7 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         if target is None:
             raise GateError(f"reaction picker does not contain {emoji}")
-        target.click()
+        self.click_element(actor, target)
 
     def reaction_visible(self, actor: str, message_id: str, emoji: str) -> bool:
         rows = self.clients[actor].find_elements(
@@ -815,7 +867,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 By.CSS_SELECTOR,
                 f'[data-message-reaction-retry="{message_id}"]',
             )
-            retry.click()
+            self.click_element("alice", retry)
             wait_until(
                 lambda: self.reaction_visible("alice", message_id, failure_emoji)
                 and self.reaction_visible("bob", message_id, failure_emoji),
@@ -927,13 +979,13 @@ class NativeProductClosureGate(AcceptanceGate):
 
     def select_second_background(self, actor: str) -> None:
         select = self.clients[actor].find_element("[data-chat-background-select]", 15)
-        select.click()
+        self.click_element(actor, select)
         options = WebDriverWait(self.clients[actor].driver, 10).until(
             lambda driver: driver.find_elements(By.CSS_SELECTOR, "[role='option']")
         )
         if len(options) < 2:
             raise GateError("background select has fewer than two options")
-        options[1].click()
+        self.click_element(actor, options[1])
 
     def prove_settings_background(
         self,
@@ -1048,7 +1100,7 @@ class NativeProductClosureGate(AcceptanceGate):
         buttons = draft.find_elements(By.TAG_NAME, "button")
         if not buttons:
             raise GateError("failed attachment draft has no recovery controls")
-        buttons[-1].click()
+        self.click_element("alice", buttons[-1])
         self.assert_condition("attachment_failure_draft_retained", True)
 
     def attachment_message(
@@ -1264,7 +1316,7 @@ class NativeProductClosureGate(AcceptanceGate):
         settings_before: dict[str, Any],
     ) -> None:
         self.restart_actor("alice")
-        enter_chat_page(self.clients["alice"])
+        self.enter_chat_page("alice")
         self.click("alice", f'[data-chat-group-ulid="{group_id}"]')
         wait_until(
             lambda: len(self.transcript("alice")) == len(self.transcript("bob")),
