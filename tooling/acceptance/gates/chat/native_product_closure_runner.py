@@ -403,6 +403,20 @@ class NativeProductClosureGate(AcceptanceGate):
             if source:
                 core_foundation.CFRelease(source)
 
+    # #region debug-point S-W:native-file-shortcut-delivery
+    def native_modifier_flags(self) -> dict[str, int]:
+        core_graphics = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        )
+        core_graphics.CGEventSourceFlagsState.argtypes = [ctypes.c_int32]
+        core_graphics.CGEventSourceFlagsState.restype = ctypes.c_uint64
+        return {
+            "private": int(core_graphics.CGEventSourceFlagsState(-1)),
+            "combinedSession": int(core_graphics.CGEventSourceFlagsState(0)),
+            "hidSystem": int(core_graphics.CGEventSourceFlagsState(1)),
+        }
+    # #endregion
+
     def invoke_native_activation_command(
         self,
         client: TauriDriver,
@@ -842,7 +856,11 @@ except Exception as error:
                         "snapshotError": f"{type(error).__name__}: {error}",
                     }
             snapshot["focusedControl"] = control
-            signature = json.dumps(snapshot, sort_keys=True)
+            snapshot["modifierFlags"] = self.native_modifier_flags()
+            signature = json.dumps(
+                {"phase": phase, "snapshot": snapshot},
+                sort_keys=True,
+            )
             if signature == last_native_file_snapshot:
                 return
             last_native_file_snapshot = signature
@@ -898,23 +916,23 @@ except Exception as error:
 
         command = 0x00100000
         command_shift = command | 0x00020000
+        # #region debug-point S-W:native-file-shortcut-delivery
+        report_native_file_snapshot("before-go-to-shortcut")
+        # #endregion
         self.post_key(5, flags=command_shift)
+        # #region debug-point S-W:native-file-shortcut-delivery
+        report_native_file_snapshot("after-go-to-shortcut")
+
+        def go_to_field_ready(_: Any) -> dict[str, Any] | None:
+            control = self.native_focused_control(client.process_id or 0)
+            report_native_file_snapshot("go-to-poll", control)
+            return control if control.get("role") == "AXTextField" else None
+        # #endregion
         go_to_control = WebDriverWait(
             client.driver,
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(
-            lambda _: (
-                control
-                if (
-                    (control := self.native_focused_control(
-                        client.process_id or 0
-                    )).get("role")
-                    == "AXTextField"
-                )
-                else None
-            )
-        )
+        ).until(go_to_field_ready)
         # #region debug-point M:native-file-path-entry
         report_native_file_snapshot("go-to-field", go_to_control)
         # #endregion
