@@ -237,3 +237,26 @@ must first wait for Alice's Native window count to return to its pre-chooser
 baseline, then use the existing actor focus lifecycle to prove WebView focus.
 Only after that may the product upload projection be queried. No fixed delay or
 weakened upload assertion is valid.
+
+Native-window recovery source-bound run:
+`20260821T163917038276Z-efc8e81c1db0da215a888f3b06ad83fc`.
+
+- Source, dedicated binary, and Profile Three Station matched clean commit
+  `75eff05b67f0ecddbbaf7c5966c04b3cdae8daaf`.
+- After Native path entry, Accessibility reported Alice's application dialog
+  restored with `windowCount=1/sheetCount=0`.
+- The Native-only recovery poll completed, actor focus was reacquired, and the
+  `selected` WebDriver snapshot succeeded. The previous post-chooser script
+  timeout is fixed.
+- The Gate completed the empty-file chooser and waited for background upload
+  pending state to clear.
+- The next failure occurred in `open_background_modal` while waiting for the
+  Details Background action center to become clickable. Existing evidence does
+  not identify the hit target, residual Modal, retry control, or alert at that
+  moment.
+- Cleanup released ports `3330/3331/4445/4446/62967`.
+
+The next run adds instrumentation only around the failed-upload Modal handoff:
+Background action hit stack, active Modals, retry controls, and alerts. The
+readiness condition remains exact action ownership; no product or Gate behavior
+is changed before runtime evidence identifies the blocker.
