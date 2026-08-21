@@ -165,3 +165,28 @@ Existing evidence does not distinguish whether WindowServer ownership was lost
 after the wait or whether the completed focus click was routed without WebView
 focus. The next instrumentation records `after-owner` and
 `after-focus-click` snapshots without changing activation or pointer behavior.
+
+Focus-boundary source run:
+`20260821T180608267628Z-3d94f919d24e15176abbc9c7bd09bce5`.
+
+- Source, dedicated binary, and Profile Three Station matched clean commit
+  `172cdc4a2de82d7002d50f940576b1f4bba98da6`.
+- Before switching, Alice PID `15907` owned the left target point and held
+  `documentFocused=true`.
+- Bob PID `15944` already owned the non-overlapping right target point, but
+  `actualFrontmostPid` remained Alice before activation, after the ownership
+  wait, and after the complete title-bar click.
+- Bob retained `documentFocused=false`, `mouseButtonDown=false`, and
+  `AXWebArea` after the click. WindowServer point ownership never moved away
+  from Bob because Alice does not cover Bob's half of the display.
+- The Gate therefore timed out before Bob's product click. Cleanup passed and
+  ports `3330/3331/4445/4446` were released.
+
+The evidence confirms that point ownership is necessary but cannot establish
+process activation for spatially disjoint high-level windows. The current
+activation primitive only uses System Events and AXRaise, while the isolated
+comparison already showed AppKit activation can establish target WebView focus
+even when NSWorkspace's reported frontmost PID remains stale. The fix makes
+`NSRunningApplication.activateWithOptions(AllWindows|IgnoringOtherApps)` a
+required first phase of `activate_native_process`, followed by the existing AX
+raise and title-bar focus handshake.

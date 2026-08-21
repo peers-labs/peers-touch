@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` classify source-bound Alice-to-Bob focus-click handoff before resuming chooser proof |
+| Current step | `MP-W13-F` require AppKit process activation before AX raise and Bob focus handshake |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Clean run `20260821T175501025454Z-2dd1cd8614176a72fb51b1801545175a` failed on the first Alice-to-Bob switch after ownership activation and one complete title-bar click; Bob never established `document.hasFocus()` even though its AXWebArea was focused before activation |
-| Current action | Record Native focus snapshots immediately after WindowServer ownership and after the complete focus click to distinguish ownership loss from click-without-WebView-focus |
-| Next action | Commit/deploy/rebuild matching instrumentation, classify the focus handoff, repair the owning Driver lifecycle, then resume the Go-To clearing and background upload proof |
-| Blockers | MP-W13 remains `UNPROVEN`; source-bound actor switching still has an intermittent focus-click failure; the chooser clear-and-enter repair is implemented but has not reached its Native proof point; background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Last completed | Clean run `20260821T180608267628Z-3d94f919d24e15176abbc9c7bd09bce5` proved Bob owned its disjoint right-side WindowServer point while Alice remained the actual frontmost process before and after System Events activation and the complete title-bar click; Bob never established `document.hasFocus()` |
+| Current action | Make AppKit `NSRunningApplication.activateWithOptions(AllWindows|IgnoringOtherApps)` a required first activation phase before existing AXRaise/AXMain and title-bar focus confirmation |
+| Next action | Commit/deploy/rebuild matching source and rerun the same Native Gate; if Bob focus closes, continue directly through Go-To clearing and background upload proof |
+| Blockers | MP-W13 remains `UNPROVEN`; source-bound actor switching lacks post-fix AppKit activation evidence; the chooser clear-and-enter repair is implemented but has not reached its Native proof point; background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T175501025454Z-2dd1cd8614176a72fb51b1801545175a` matched clean source/build/Station at `e3f550ada`, completed five Alice Native clicks, then timed out in `focus_actor_window` before Bob's group-row click; Bob had a layer-1000 window, AXWebArea, no sheet, released button state, and `documentFocused=false` before activation; cleanup passed and ports `3330/3331/4445/4446` were free; full Native proof remains missing |
+| Evidence | Run `20260821T180608267628Z-3d94f919d24e15176abbc9c7bd09bce5` matched clean source/build/Station at `172cdc4a2`, then timed out in `focus_actor_window` before Bob's group-row click; `after-owner` and `after-focus-click` both showed Bob point ownership with `documentFocused=false`, released button state, and Alice as `actualFrontmostPid`; cleanup passed and ports `3330/3331/4445/4446` were free; full Native proof remains missing |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
