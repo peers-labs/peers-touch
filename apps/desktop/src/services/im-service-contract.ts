@@ -353,6 +353,7 @@ export interface MessagingConversationProjection {
   memberPtids: string[]
   membershipEpoch: number
   mlsEpoch: number
+  mlsStatus: MlsRecipientStatusResult['status'] | null
   active: boolean
   updatedAtUnixMs: number
 }

@@ -849,6 +849,7 @@ describe('Messaging conversation projection', () => {
           member_ptids: ['ptid:test:alice', 'ptid:test:bob'],
           membership_epoch: 3,
           mls_epoch: 4,
+          mls_status: 'active',
           active: true,
           updated_at_unix_ms: 1_800_000_000_000,
         }],
@@ -864,6 +865,7 @@ describe('Messaging conversation projection', () => {
       memberPtids: ['ptid:test:alice', 'ptid:test:bob'],
       membershipEpoch: 3,
       mlsEpoch: 4,
+      mlsStatus: 'active',
       active: true,
       updatedAtUnixMs: 1_800_000_000_000,
     }])
