@@ -23,6 +23,9 @@
 | G | A transparent or adjacent element owns the row-center hit target | High | Low | Rejected: center hit the target row's `SPAN` descendant |
 | H | Neutral and row rectangles overlap or change before pointer movement | Medium | Low | Rejected: rects were separated and stable |
 | I | Element-origin W3C pointer movement does not update the row's CSS `:hover` state | High | Low | Confirmed: `:hover` remained false after successful ActionChains |
+| J | Process activation is sufficient to focus a raw dedicated Tauri window | High | Low | Rejected: exact-PID activation left `document.hasFocus=false` |
+| K | Acceptance-only window tiling and topmost ownership can make CoreGraphics input deterministic | High | Medium | Confirmed: two-window probe switched exact `document.hasFocus()` ownership in both directions |
+| L | Retina-normalized WebDriver bounds map DOM centers to CoreGraphics coordinates | High | Medium | Confirmed: raw rects were exactly 2x the non-overlapping logical window slots |
 
 ## Log Evidence
 Instrumentation points:
@@ -98,6 +101,43 @@ Accessibility-mapped rerun:
   CoreGraphics input path.
 - Cleanup released `3330`, `3331`, `4445`, and `4446`.
 
+Exact-PID activation rerun:
+`20260821T025017264835Z-8a21d90b63ab1bb5675afe3a715c2f80`.
+
+- Source and Profile Three matched commit
+  `ed7a677a5131796899815d461ecf664eda3a5d17`; Driver smoke passed and the
+  dedicated binary SHA-256 was
+  `1118c8dc619616fa0322d9a18865ce5861712243b0e215a4bec5a1be4551f7bc`.
+- Provisioning reached `FIXTURE_READY`, but the first Alice UI action failed in
+  `activate_actor_window`: exact-PID process activation did not make the raw
+  dedicated WebView focused, and `document.hasFocus()` remained false.
+- Bounded probes showed the Tauri window onscreen at `264,98,1200,801`, while
+  LaunchServices exposed no bundle identity and the host IDE retained
+  foreground ownership. Web-layer `setAlwaysOnTop` was denied by Tauri
+  capability policy.
+- The failure is owned by the Acceptance-only native host lifecycle, not Chat
+  business behavior. The next comparison uses feature-gated host window slots,
+  topmost ownership, and CoreGraphics click/hover with Retina-normalized
+  WebDriver bounds.
+- Cleanup released `3330`, `3331`, `4445`, and `4446`; no hover instrumentation
+  ran, so the debug NDJSON remained empty.
+
+Acceptance-only two-window probe:
+
+- The rebuilt dedicated binary SHA-256 was
+  `2c901c9c111ee472b1ff7ceadfbe17d9cbe93e81614e55b928007a6fcd67da94`.
+- Alice occupied logical rect `0,33,864,800`; Bob occupied
+  `864,33,864,800`. Their raw WebDriver rects were exactly 2x at Retina scale
+  and did not overlap.
+- A CoreGraphics title-bar click changed focus to
+  `Alice=true, Bob=false`; the inverse click changed it to
+  `Alice=false, Bob=true`.
+- Probe ports `3340`, `3341`, `4455`, and `4456` were all free after reverse
+  cleanup.
+- This confirms the generic host lifecycle and coordinate normalization. It
+  does not yet prove the Chat menu, hover overlay, or later product assertions;
+  those remain for the source-bound product-closure Gate.
+
 ## Verification Conclusion
 The target geometry and hit-test ownership are correct, but neither Selenium
 element-origin nor viewport-origin W3C pointer movement reaches the embedded
@@ -108,7 +148,7 @@ Accessibility front-window position/size plus the DOM viewport. The Native path
 then posts real CoreGraphics mouse movement through a neutral point and keeps
 Selenium only for DOM geometry and result verification. JS event dispatch,
 Store mutation, Harness actions, and fixed business commands remain forbidden.
-Before the next comparison run, every actor-specific click and hover must first
-activate that actor's exact process by PID and require `document.hasFocus()`;
-otherwise overlapping Native windows can fail an earlier menu interaction and
-produce no hover evidence.
+Before the next comparison run, every actor-specific click and hover must target
+a non-overlapping acceptance-only window slot, require `document.hasFocus()`,
+and use Retina-normalized Native coordinates. Process activation alone is
+rejected by the latest run and must not remain as a fallback.
