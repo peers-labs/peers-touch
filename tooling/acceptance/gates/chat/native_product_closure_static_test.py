@@ -78,6 +78,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("self.post_mouse((5,), point)", self.source)
         self.assertIn("self.post_mouse((1,), point)", self.source)
         self.assertIn("self.post_mouse((2,), point)", self.source)
+        self.assertIn("self.post_mouse((5,), staging_point)", self.source)
+        self.assertIn(
+            "Native click target has no owned staging point",
+            self.source,
+        )
         self.assertIn(".send_keys(", self.source)
 
     def test_transient_native_actions_resolve_after_idempotent_focus(self) -> None:
