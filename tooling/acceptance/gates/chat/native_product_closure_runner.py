@@ -404,9 +404,6 @@ class NativeProductClosureGate(AcceptanceGate):
             set value of attribute "AXMain" of front window of targetProcess to true
           end try
           try
-            set value of attribute "AXFocused" of front window of targetProcess to true
-          end try
-          try
             perform action "AXRaise" of front window of targetProcess
           end try
           return frontmost of targetProcess
@@ -907,7 +904,6 @@ except Exception as error:
             return (
                 bool(ownership.get("frontmost"))
                 and bool(ownership.get("mainWindow"))
-                and bool(ownership.get("focusedWindow"))
                 and ownership.get("actualFrontmostPid") == client.process_id
             )
 

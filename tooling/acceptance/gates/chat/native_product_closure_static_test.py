@@ -7,11 +7,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
 RUNNER = ROOT / "tooling/acceptance/gates/chat/native_product_closure_runner.py"
+DESKTOP_MAIN = ROOT / "apps/desktop/src-tauri/src/main.rs"
+DESKTOP_CARGO = ROOT / "apps/desktop/src-tauri/Cargo.toml"
 
 
 class NativeProductClosureStaticTests(unittest.TestCase):
     def setUp(self) -> None:
         self.source = RUNNER.read_text(encoding="utf-8")
+        self.desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
+        self.desktop_cargo = DESKTOP_CARGO.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
 
     def test_runner_is_a_real_acceptance_gate(self) -> None:
@@ -112,7 +116,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("def actor_owns_focus() -> bool:", self.source)
         self.assertIn("and actor_owns_focus()", self.source)
         self.assertIn('set value of attribute "AXMain"', self.source)
-        self.assertIn('set value of attribute "AXFocused"', self.source)
+        self.assertNotIn('set value of attribute "AXFocused"', self.source)
         self.assertIn('ownership.get("actualFrontmostPid") == client.process_id', self.source)
         focus_start = self.source.index(
             "    def focus_actor_window(self, actor: str) -> TauriDriver:"
@@ -140,7 +144,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "self.post_mouse(\n            (1,),",
             focus_source,
         )
-
         click_start = self.source.index(
             "    def click(self, actor: str, selector: str, timeout: float = 30)"
         )
@@ -153,6 +156,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source.index("self.focus_actor_window(actor)"),
             click_source.index("client.find_element(selector, timeout)"),
         )
+
+    def test_acceptance_window_owns_the_native_overlay_level(self) -> None:
+        self.assertIn('feature = "acceptance-webdriver"', self.desktop_main)
+        self.assertIn("target_os = \"macos\"", self.desktop_main)
+        self.assertIn("NSScreenSaverWindowLevel", self.desktop_main)
+        self.assertIn("DispatchQueue::main().exec_async", self.desktop_main)
+        self.assertIn("configure_acceptance_window_level(window)?", self.desktop_main)
+        self.assertIn("dispatch2", self.desktop_cargo)
+        self.assertIn("objc2-app-kit", self.desktop_cargo)
 
     def test_gateway_commands_are_readback_only(self) -> None:
         assignment = next(
