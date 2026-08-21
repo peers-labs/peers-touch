@@ -22,6 +22,10 @@
 | G | Selenium option order differs from rendered visual order | Medium | Low | `options[1]` text is not Paper before the Native click |
 | H | Paper receives the click but the product `onChange` maps it to Calm | Low | Low | Captured click target is Paper while the resulting Select text and Station patch are Calm |
 | I | The selected WebElement is reused for another virtual option before click | Medium | Low | The same element changes text or rect between option resolution and the captured click |
+| J | Selenium's default local file detector calls an unsupported remote upload endpoint before the product input receives the path | High | Low | Stack enters `WebElement._upload` and `Command.UPLOAD_FILE`; Embedded WebDriver returns `Not Found` |
+| K | Sending the local path directly through the Embedded WebDriver element-value endpoint is a valid Native file selection path | Low | Low | Plugin implementation constructs a real `FileList` without script mutation or synthetic events |
+| L | The visible product upload control opens the real WKWebView/macOS file chooser | High | Medium | CoreGraphics click is acknowledged, the webview loses focus to a Native panel, and no product handler runs before selection |
+| M | CoreGraphics keyboard input plus macOS Accessibility state can select a path in the real chooser and produce a DOM `FileList/onChange` acknowledgement | Medium | Medium | Native panel lifecycle and focused control transitions complete, then the input exposes the selected filename/count |
 
 ## Log Evidence
 Pre-fix source-bound run:
@@ -78,3 +82,20 @@ Stable-order source-bound run:
 - `open_background_modal` must reuse an active background Modal and otherwise
   wait for any blocking Modal wrap to leave before posting the next Native
   click. Fixed sleeps and product animation changes are rejected.
+
+Modal-lifecycle source-bound run:
+`20260821T120502833852Z-46d0f77e8ee16dd8cd86b932b04a8203`.
+
+| ID | Status | Evidence |
+|---|---|---|
+| J | Confirmed | The Gate reached `[data-chat-background-input].send_keys(...)`; Selenium 4.36 entered `WebElement._upload`, issued `Command.UPLOAD_FILE`, and the Embedded WebDriver returned `Not Found` before invoking the element-value command |
+| K | Rejected | `tauri-plugin-wdio-webdriver` v1.3.0 has no `/session/{id}/se/file` route; its `/element/{id}/value` implementation assigns `HTMLInputElement.value` from JavaScript and dispatches synthetic `input/change` events, which cannot construct a legal file selection and violates the Native-only Gate |
+| L | Pending | The product control and hidden input are connected, but the latest run bypassed the visible upload control and therefore did not observe a real chooser |
+| M | Pending | No OS-level chooser interaction was attempted in the latest run |
+
+The next instrumentation/fix must preserve the actual user path: CoreGraphics
+click on `[data-chat-background-upload]`, event-driven detection of the macOS
+file panel, OS-level path entry and confirmation, and a DOM readback proving the
+selected `FileList` reached the product `onChange`. Direct `send_keys` to hidden
+file inputs, JavaScript value assignment, synthetic `dispatchEvent`, store
+mutation, and command/harness selection remain forbidden.

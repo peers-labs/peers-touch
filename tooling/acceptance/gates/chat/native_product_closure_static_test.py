@@ -55,6 +55,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "ActionBuilder",
             "PointerInput",
             ".click()",
+            "Command.UPLOAD_FILE",
+            "LocalFileDetector",
+            "UselessFileDetector",
         ):
             self.assertNotIn(forbidden, self.source)
         self.assertIn("CGEventCreateMouseEvent", self.source)
@@ -157,6 +160,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("data-chat-background-input", details)
         self.assertIn("backgroundInputRef.current?.click()", details)
         self.assertIn("ossUploadAttachmentBytes", details)
+
+    def test_product_files_use_real_native_chooser(self) -> None:
+        self.assertIn("def choose_native_file(", self.source)
+        self.assertIn("def post_key(", self.source)
+        self.assertIn("CGEventCreateKeyboardEvent", self.source)
+        self.assertIn("CGEventKeyboardSetUnicodeString", self.source)
+        self.assertIn('"AXFocusedUIElement"', self.source)
+        self.assertIn('"AXTextField"', self.source)
+        self.assertIn("install_native_file_probe", self.source)
+        self.assertIn("native_file_probe_events", self.source)
+        self.assertIn('trigger_selector="[data-chat-background-upload]"', self.source)
+        self.assertIn('trigger_selector="[data-chat-attachment-picker]"', self.source)
+        for forbidden in (
+            'find_element(\n            "[data-chat-background-input]",\n'
+            "            10,\n        ).send_keys",
+            "attachment_input.send_keys",
+        ):
+            self.assertNotIn(forbidden, self.source)
 
     def test_background_select_uses_visible_native_options(self) -> None:
         self.assertIn("def rendered_options(driver: Any)", self.source)

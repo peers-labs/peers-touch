@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import socket
+import subprocess
 import tempfile
 import urllib.request
 from pathlib import Path
@@ -335,6 +336,292 @@ class NativeProductClosureGate(AcceptanceGate):
                 raise GateError("CoreGraphics failed to create Native mouse event")
             core_graphics.CGEventPost(0, event)
             core_foundation.CFRelease(event)
+
+    def post_key(
+        self,
+        key_code: int,
+        *,
+        flags: int = 0,
+        text: str = "",
+    ) -> None:
+        core_graphics = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        )
+        core_foundation = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+        )
+        core_graphics.CGEventCreateKeyboardEvent.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint16,
+            ctypes.c_bool,
+        ]
+        core_graphics.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
+        core_graphics.CGEventSetFlags.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+        ]
+        core_graphics.CGEventKeyboardSetUnicodeString.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.POINTER(ctypes.c_uint16),
+        ]
+        core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
+
+        encoded = text.encode("utf-16-le")
+        unicode_units = (ctypes.c_uint16 * (len(encoded) // 2)).from_buffer_copy(
+            encoded
+        )
+        for pressed in (True, False):
+            event = core_graphics.CGEventCreateKeyboardEvent(
+                None,
+                key_code,
+                pressed,
+            )
+            if not event:
+                raise GateError("CoreGraphics failed to create Native keyboard event")
+            if flags:
+                core_graphics.CGEventSetFlags(event, flags)
+            if text:
+                core_graphics.CGEventKeyboardSetUnicodeString(
+                    event,
+                    len(unicode_units),
+                    unicode_units,
+                )
+            core_graphics.CGEventPost(0, event)
+            core_foundation.CFRelease(event)
+
+    def native_focused_control(self, process_id: int) -> dict[str, str]:
+        script = f"""
+        tell application "System Events"
+          set targetProcess to first application process whose unix id is {process_id}
+          set focusedElement to value of attribute "AXFocusedUIElement" of targetProcess
+          set roleName to value of attribute "AXRole" of focusedElement
+          set subroleName to ""
+          set titleValue to ""
+          set controlValue to ""
+          try
+            set subroleName to value of attribute "AXSubrole" of focusedElement
+          end try
+          try
+            set titleValue to value of attribute "AXTitle" of focusedElement as text
+          end try
+          try
+            set controlValue to value of attribute "AXValue" of focusedElement as text
+          end try
+          return roleName & tab & subroleName & tab & titleValue & tab & controlValue
+        end tell
+        """
+        completed = subprocess.run(
+            ("osascript", "-e", script),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return {}
+        fields = completed.stdout.rstrip("\n").split("\t", 3)
+        if len(fields) != 4:
+            return {}
+        return {
+            "role": fields[0],
+            "subrole": fields[1],
+            "title": fields[2],
+            "value": fields[3],
+        }
+
+    def install_native_file_probe(
+        self,
+        client: TauriDriver,
+        file_input: Any,
+    ) -> str:
+        probe_id = secrets.token_hex(8)
+        client.execute_script(
+            """
+            const target = arguments[0];
+            const probeId = arguments[1];
+            const registry = window.__PT_NATIVE_FILE_PROBES__ ||= {};
+            registry[probeId]?.cleanup?.();
+            const events = [];
+            const listener = (event) => {
+              events.push({
+                type: event.type,
+                files: Array.from(target.files || []).map((file) => ({
+                  name: file.name,
+                  size: file.size,
+                  type: file.type,
+                  lastModified: file.lastModified,
+                })),
+              });
+            };
+            target.addEventListener('click', listener, true);
+            target.addEventListener('change', listener, true);
+            registry[probeId] = {
+              events,
+              cleanup: () => {
+                target.removeEventListener('click', listener, true);
+                target.removeEventListener('change', listener, true);
+                delete registry[probeId];
+              },
+            };
+            """,
+            file_input,
+            probe_id,
+        )
+        return probe_id
+
+    def native_file_probe_events(
+        self,
+        client: TauriDriver,
+        probe_id: str,
+    ) -> list[dict[str, Any]]:
+        events = client.execute_script(
+            """
+            return (
+              window.__PT_NATIVE_FILE_PROBES__?.[arguments[0]]?.events
+              || []
+            );
+            """,
+            probe_id,
+        )
+        return events if isinstance(events, list) else []
+
+    def remove_native_file_probe(
+        self,
+        client: TauriDriver,
+        probe_id: str,
+    ) -> None:
+        client.execute_script(
+            """
+            window.__PT_NATIVE_FILE_PROBES__?.[arguments[0]]?.cleanup?.();
+            """,
+            probe_id,
+        )
+
+    def choose_native_file(
+        self,
+        actor: str,
+        *,
+        trigger_selector: str,
+        input_selector: str,
+        file_path: Path,
+    ) -> dict[str, Any]:
+        client = self.focus_actor_window(actor)
+        if client.process_id is None:
+            raise GateError(f"{actor} Native file chooser has no owning process")
+        selected_path = file_path.resolve()
+        if not selected_path.is_file():
+            raise GateError(f"Native file selection source is missing: {selected_path}")
+
+        file_input = client.find_element(input_selector, 10)
+        probe_id = self.install_native_file_probe(client, file_input)
+        try:
+            self.click(actor, trigger_selector)
+
+            def native_panel_ready(driver: Any) -> dict[str, str] | None:
+                if bool(driver.execute_script("return document.hasFocus()")):
+                    return None
+                control = self.native_focused_control(client.process_id or 0)
+                return control if control.get("role") else None
+
+            WebDriverWait(
+                client.driver,
+                10,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(native_panel_ready)
+
+            command_shift = 0x00100000 | 0x00020000
+            self.post_key(5, flags=command_shift)
+            WebDriverWait(
+                client.driver,
+                10,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(
+                lambda _: (
+                    control
+                    if (
+                        (control := self.native_focused_control(
+                            client.process_id or 0
+                        )).get("role")
+                        == "AXTextField"
+                    )
+                    else None
+                )
+            )
+
+            self.post_key(0, text=str(selected_path))
+            WebDriverWait(
+                client.driver,
+                10,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(
+                lambda _: (
+                    control
+                    if (
+                        (control := self.native_focused_control(
+                            client.process_id or 0
+                        )).get("value")
+                        == str(selected_path)
+                    )
+                    else None
+                )
+            )
+
+            self.post_key(36)
+
+            def selection_or_browser_ready(_: Any) -> dict[str, Any] | None:
+                selected = next(
+                    (
+                        event
+                        for event in self.native_file_probe_events(client, probe_id)
+                        if event.get("type") == "change" and event.get("files")
+                    ),
+                    None,
+                )
+                if selected:
+                    return {"selected": selected}
+                control = self.native_focused_control(client.process_id or 0)
+                if control.get("role") and control.get("role") != "AXTextField":
+                    return {"control": control}
+                return None
+
+            intermediate = WebDriverWait(
+                client.driver,
+                10,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(selection_or_browser_ready)
+            if "selected" not in intermediate:
+                self.post_key(36)
+
+            selected_event = WebDriverWait(
+                client.driver,
+                10,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(
+                lambda _: next(
+                    (
+                        event
+                        for event in self.native_file_probe_events(client, probe_id)
+                        if event.get("type") == "change" and event.get("files")
+                    ),
+                    None,
+                )
+            )
+            files = selected_event.get("files", [])
+            expected = {
+                "name": selected_path.name,
+                "size": selected_path.stat().st_size,
+            }
+            if len(files) != 1 or any(
+                files[0].get(key) != value for key, value in expected.items()
+            ):
+                raise GateError(
+                    "Native file chooser selected unexpected files: "
+                    f"{json.dumps(files, sort_keys=True)}"
+                )
+            return selected_event
+        finally:
+            self.remove_native_file_probe(client, probe_id)
 
     def native_mouse_button_down(self) -> bool:
         core_graphics = ctypes.CDLL(
@@ -1721,10 +2008,12 @@ class NativeProductClosureGate(AcceptanceGate):
 
         before_image = self.setting_state("alice").get("backgroundImage")
         self.open_background_modal("alice")
-        self.clients["alice"].find_element(
-            "[data-chat-background-input]",
-            10,
-        ).send_keys(str(empty_image))
+        self.choose_native_file(
+            "alice",
+            trigger_selector="[data-chat-background-upload]",
+            input_selector="[data-chat-background-input]",
+            file_path=empty_image,
+        )
         wait_until(
             lambda: self.setting_state("alice").get("pending") == "",
             "failed background upload completion",
@@ -1736,10 +2025,12 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         if not retry_visible or self.setting_state("alice").get("backgroundImage") != before_image:
             raise GateError("failed background upload did not preserve retry state")
-        self.clients["alice"].find_element(
-            "[data-chat-background-input]",
-            10,
-        ).send_keys(str(valid_image))
+        self.choose_native_file(
+            "alice",
+            trigger_selector="[data-chat-background-upload]",
+            input_selector="[data-chat-background-input]",
+            file_path=valid_image,
+        )
         final_state = wait_until(
             lambda: (
                 state
@@ -1781,11 +2072,12 @@ class NativeProductClosureGate(AcceptanceGate):
         if self.clients["alice"].find_elements("[data-chat-detail-panel='open']"):
             self.click("alice", "[data-chat-detail-toggle]")
         before_ids = [item["id"] for item in self.transcript("alice")]
-        attachment_input = self.clients["alice"].find_element(
-            "[data-chat-attachment-input]",
-            10,
+        self.choose_native_file(
+            "alice",
+            trigger_selector="[data-chat-attachment-picker]",
+            input_selector="[data-chat-attachment-input]",
+            file_path=empty_file,
         )
-        attachment_input.send_keys(str(empty_file))
         draft = wait_until(
             lambda: (
                 items[0]
@@ -1846,11 +2138,18 @@ class NativeProductClosureGate(AcceptanceGate):
         image_file: Path,
         text_file: Path,
     ) -> dict[str, Any]:
-        attachment_input = self.clients["alice"].find_element(
-            "[data-chat-attachment-input]",
-            10,
+        self.choose_native_file(
+            "alice",
+            trigger_selector="[data-chat-attachment-picker]",
+            input_selector="[data-chat-attachment-input]",
+            file_path=image_file,
         )
-        attachment_input.send_keys(f"{image_file}\n{text_file}")
+        self.choose_native_file(
+            "alice",
+            trigger_selector="[data-chat-attachment-picker]",
+            input_selector="[data-chat-attachment-input]",
+            file_path=text_file,
+        )
         wait_until(
             lambda: (
                 items
