@@ -63,11 +63,13 @@ import {
   pruneTypingPeers,
   projectDesktopIMConversation,
   projectDesktopIMMessages,
+  projectGroupSecurityState,
   visibleConversationUnread,
   type ConversationLocalState,
   type DesktopIMConversationProjection,
   type DesktopIMMessageProjection,
   type DesktopIMSenderProfileProjection,
+  type GroupSecurityState,
   type MessagePreview,
   type SocialMessage,
 } from './socialProjection';
@@ -442,10 +444,7 @@ interface SocialChatState {
   sessionEncrypted: Record<string, boolean>;
   sessionSecurityState: Record<string, 'idle' | 'establishing' | 'ready' | 'error'>;
   sessionCryptoVersion: Record<string, number>;
-  groupSecurityState: Record<
-    string,
-    'idle' | 'establishing' | 'ready' | 'crypto-desynced' | 'error'
-  >;
+  groupSecurityState: Record<string, GroupSecurityState>;
   setSessionSecurityState: (
     sessionUlid: string,
     state: 'idle' | 'establishing' | 'ready' | 'error',
@@ -453,7 +452,7 @@ interface SocialChatState {
   ) => void;
   setGroupSecurityState: (
     groupUlid: string,
-    state: 'idle' | 'establishing' | 'ready' | 'crypto-desynced' | 'error',
+    state: GroupSecurityState,
   ) => void;
   /**
    * Per-session WebRTC status. `transport` is the in-use ICE candidate type:
@@ -1055,21 +1054,35 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     set({ loading: true });
     try {
       const projections = await imServiceV1.messaging.listConversations();
-      const memberSettings = await Promise.all(projections.map(async (conversation) => {
+      const conversationSnapshots = await Promise.all(projections.map(async (conversation) => {
+        let settings: MemberSettingsResult | null = null;
         try {
-          return {
-            conversation,
-            settings: await imServiceV1.conversation.getMemberSettings(
-              conversation.conversationId,
-            ),
-          };
+          settings = await imServiceV1.conversation.getMemberSettings(
+            conversation.conversationId,
+          );
         } catch (error) {
           log.warn('socialChat', 'load conversation member settings failed', {
             conversationId: conversation.conversationId,
             error,
           });
-          return { conversation, settings: null };
         }
+
+        let groupSecurityState: GroupSecurityState | undefined;
+        if (conversation.kind === 2) {
+          try {
+            const recipientStatus = await imServiceV1.mlsGroup.recipientStatus(
+              conversation.conversationId,
+            );
+            groupSecurityState = projectGroupSecurityState(recipientStatus.status);
+          } catch (error) {
+            log.warn('socialChat', 'load group MLS recipient status failed', {
+              conversationId: conversation.conversationId,
+              error,
+            });
+          }
+        }
+
+        return { conversation, settings, groupSecurityState };
       }));
       const allConversations = normalizeConversations(projections.map(conversation => ({
         conversation_id: conversation.conversationId,
@@ -1114,7 +1127,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         return false;
       };
       const nextConversationLocalState = { ...get().conversationLocalState };
-      for (const { conversation, settings } of memberSettings) {
+      const nextGroupSecurityState = { ...get().groupSecurityState };
+      for (const { conversation, settings, groupSecurityState } of conversationSnapshots) {
+        if (groupSecurityState) {
+          nextGroupSecurityState[conversation.conversationId] = groupSecurityState;
+        }
         if (!settings) continue;
         const kind = conversation.kind === 1 ? 'friend' : 'group';
         const key = conversationKey(kind, conversation.conversationId);
@@ -1129,6 +1146,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         conversationMembers: memberMap,
         groupMembers: groupMembersUpdate,
         conversationLocalState: nextConversationLocalState,
+        groupSecurityState: nextGroupSecurityState,
         sessions: [],
         groups: [],
         loading: false,

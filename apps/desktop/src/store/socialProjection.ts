@@ -19,6 +19,7 @@ import {
 import { FriendMessageStatus, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 import type { CommittedConversationEvent } from '../gen/proto/domain/chat/conversation_pb';
+import type { MlsRecipientStatusResult } from '../services/im-service-contract';
 
 export interface MessagePreview {
   content: string;
@@ -51,6 +52,26 @@ export interface ConversationLocalState {
   alertEnabled?: boolean;
   background?: ChatBackgroundId;
   backgroundImage?: string;
+}
+
+export type GroupSecurityState =
+  | 'idle'
+  | 'establishing'
+  | 'ready'
+  | 'crypto-desynced'
+  | 'error';
+
+export function projectGroupSecurityState(
+  status: MlsRecipientStatusResult['status'],
+): Exclude<GroupSecurityState, 'error'> {
+  switch (status) {
+    case 'active':
+      return 'ready';
+    case 'crypto_desynced':
+      return 'crypto-desynced';
+    default:
+      return status;
+  }
 }
 
 export const CHAT_BACKGROUND_OPTIONS = ['default', 'paper', 'mint', 'dusk', 'calm', 'graphite'] as const;
