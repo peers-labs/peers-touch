@@ -92,3 +92,19 @@ refocus after successful activation. `focus_actor_window` must return after
 verified Accessibility foreground/WebView focus; the subsequent product
 element action remains a real CoreGraphics pointer sequence with DOM
 acknowledgements.
+
+No-refocus source-bound run:
+`20260821T133210237489Z-37fbfe45307c3d14fefdc5dcbf9830e5`.
+
+- Source, dedicated binary, and live Station matched at `050043ed9`.
+- Foreground debug lines prove Alice transitioned directly from
+  `frontmost=false/documentFocused=false` to
+  `frontmost=true/documentFocused=true/AXWebArea`.
+- The Gate crossed `focus_actor_window` and failed later in the first product
+  `click_element` while waiting for its `mousemove` DOM acknowledgement.
+- Cleanup released ports `3330/3331/4445/4446/61634`.
+
+The actor-window foreground lifecycle is fixed by source-bound evidence. The
+new product-input delivery failure is tracked separately in
+`debug-chat-native-input-delivery.md`. This session remains `[OPEN]` until the
+full Native product path is verified and the user confirms cleanup.
