@@ -285,6 +285,7 @@ class NativeProductClosureGate(AcceptanceGate):
         client = self.clients[actor]
         neutral = client.find_element("[data-chat-send]", 30)
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 30)
+        native_window: dict[str, float] | None = None
 
         def report_probe(phase: str) -> dict[str, Any]:
             snapshot = client.execute_script(
@@ -347,7 +348,12 @@ class NativeProductClosureGate(AcceptanceGate):
                         "hypothesisId": "G-I",
                         "location": "NativeProductClosureGate:hover_message",
                         "msg": f"[DEBUG] hover geometry probe {phase}",
-                        "data": {"phase": phase, "messageId": message_id, **snapshot},
+                        "data": {
+                            "phase": phase,
+                            "messageId": message_id,
+                            "nativeWindow": native_window,
+                            **snapshot,
+                        },
                     }
                 ).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
@@ -380,6 +386,29 @@ class NativeProductClosureGate(AcceptanceGate):
         WebDriverWait(client.driver, 5).until(
             lambda driver: bool(driver.execute_script("return document.hasFocus()"))
         )
+        bounds_script = (
+            'tell application "System Events" to tell first application process '
+            f"whose unix id is {client.process_id} to get "
+            "{position of front window, size of front window}"
+        )
+        bounds_output = subprocess.run(
+            ["/usr/bin/osascript", "-e", bounds_script],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        bounds = [
+            float(value)
+            for value in bounds_output.replace(",", " ").split()
+        ]
+        if len(bounds) != 4:
+            raise GateError(f"Native window bounds are invalid: {bounds_output}")
+        native_window = {
+            "left": bounds[0],
+            "top": bounds[1],
+            "width": bounds[2],
+            "height": bounds[3],
+        }
 
         class CGPoint(ctypes.Structure):
             _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
@@ -400,20 +429,19 @@ class NativeProductClosureGate(AcceptanceGate):
         core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
         core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
 
-        window = before["window"]
         content_offset_x = max(
             0.0,
-            (float(window["outerWidth"]) - float(window["innerWidth"])) / 2,
+            (native_window["width"] - float(before["viewport"]["width"])) / 2,
         )
         content_offset_y = max(
             0.0,
-            float(window["outerHeight"]) - float(window["innerHeight"]),
+            native_window["height"] - float(before["viewport"]["height"]),
         )
 
         def screen_point(center: dict[str, float]) -> CGPoint:
             return CGPoint(
-                float(window["screenX"]) + content_offset_x + float(center["x"]),
-                float(window["screenY"]) + content_offset_y + float(center["y"]),
+                native_window["left"] + content_offset_x + float(center["x"]),
+                native_window["top"] + content_offset_y + float(center["y"]),
             )
 
         neutral_point = screen_point(before["neutral"]["center"])
