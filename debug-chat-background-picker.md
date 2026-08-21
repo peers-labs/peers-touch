@@ -90,8 +90,8 @@ Modal-lifecycle source-bound run:
 |---|---|---|
 | J | Confirmed | The Gate reached `[data-chat-background-input].send_keys(...)`; Selenium 4.36 entered `WebElement._upload`, issued `Command.UPLOAD_FILE`, and the Embedded WebDriver returned `Not Found` before invoking the element-value command |
 | K | Rejected | `tauri-plugin-wdio-webdriver` v1.3.0 has no `/session/{id}/se/file` route; its `/element/{id}/value` implementation assigns `HTMLInputElement.value` from JavaScript and dispatches synthetic `input/change` events, which cannot construct a legal file selection and violates the Native-only Gate |
-| L | Pending | The product control and hidden input are connected, but the latest run bypassed the visible upload control and therefore did not observe a real chooser |
-| M | Pending | No OS-level chooser interaction was attempted in the latest run |
+| L | Rejected | Source-bound instrumentation run `20260821T122922695206Z-645b74a240d5260fb2f3aca192dbb417` lines 6-7 shows the visible trigger produced the hidden input `click`, but `document.hasFocus` stayed true and AX remained the product `Chat background` application dialog; no Native file panel was created |
+| M | Blocked by product path | OS input cannot select a file because the WKWebView hidden-input path never creates a Native chooser; the Gate must consume the product's existing Tauri picker path before testing OS selection |
 
 The next instrumentation/fix must preserve the actual user path: CoreGraphics
 click on `[data-chat-background-upload]`, event-driven detection of the macOS
@@ -114,6 +114,21 @@ Native-chooser source-bound run:
   whether Accessibility returned no focused element.
 - Cleanup evidence released ports `3330/3331/4445/4446/64006`.
 
-Hypotheses L and M remain inconclusive. The next run is instrumentation-only and
-must record document focus, active element, input `click/change` events, and the
-AX focused-control value or AX query error before changing the readiness rule.
+The instrumentation run below resolves L and blocks M at the product picker
+path; no Acceptance readiness relaxation is valid.
+
+Instrumentation-only source-bound run:
+`20260821T122922695206Z-645b74a240d5260fb2f3aca192dbb417`.
+
+- Debug line 6 records the pre-trigger product dialog with no input events.
+- Debug line 7 records a real hidden-input `click`, but the document remains
+  focused and AX remains `AXGroup / AXApplicationDialog / Chat background`.
+- No later AX state exists because no macOS chooser was created.
+- The owning product fix is to remove the dead hidden-input paths: Composer
+  consumes Engine `messaging_pick_attachment_source`; background consumes
+  Tauri `pick_image_file`, uploads the selected path through
+  `oss_upload_local_file` with the sanctioned `personal/private` scope, and
+  persists the returned `oss://` reference.
+- The Gate continues through the visible DOM triggers and must prove the real
+  Native sheet/window lifecycle before accepting the resulting product
+  projection.
