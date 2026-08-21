@@ -1377,11 +1377,21 @@ class NativeProductClosureGate(AcceptanceGate):
     def select_second_background(self, actor: str) -> None:
         select = self.clients[actor].find_element("[data-chat-background-select]", 15)
         self.click_element(actor, select)
-        options = WebDriverWait(self.clients[actor].driver, 10).until(
-            lambda driver: driver.find_elements(By.CSS_SELECTOR, "[role='option']")
-        )
-        if len(options) < 2:
-            raise GateError("background select has fewer than two options")
+
+        def visible_options(driver: Any) -> list[Any] | None:
+            options = driver.find_elements(By.CSS_SELECTOR, "[role='option']")
+            visible = [
+                option
+                for option in options
+                if option.is_displayed() and option.is_enabled()
+            ]
+            return visible if len(visible) >= 2 else None
+
+        options = WebDriverWait(
+            self.clients[actor].driver,
+            10,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(visible_options)
         self.click_element(actor, options[1])
 
     def prove_settings_background(
