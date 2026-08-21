@@ -478,9 +478,17 @@ Full-Gate private-source comparison:
 - Immutable cleanup evidence and direct `lsof` both show
   `3330/3331/4445/4446/58557` released.
 
-The next comparison is instrumentation-only. It records the focused control,
-frontmost owner, key/focused-window state, and CoreGraphics modifier flags
-immediately before and after `Cmd+Shift+G`, plus distinct Go-To poll states.
+The first instrumentation-only comparison attempt,
+`20260821T203524438710Z-ad4b31d5c28d704b67bb69135cc34373`,
+was aborted before the chooser. Process sampling proved that
+`CGEventSourceFlagsState(-1)` deadlocked inside SkyLight while collecting a
+background-modal snapshot. The runner and both actors were stopped, and direct
+`lsof` verified `3330/3331/4445/4446` released. This run is invalid as product
+evidence.
+
+The corrected comparison records the focused control, frontmost owner, and
+key/focused-window state immediately before and after `Cmd+Shift+G`, plus
+distinct Go-To poll states. It does not query CoreGraphics event-source state.
 Chooser branching and product behavior remain unchanged until this evidence
-distinguishes default-source delivery, stale modifiers, missing key-window
-ownership, foreground interception, or an AX focused-element blind spot.
+distinguishes default-source delivery, missing key-window ownership,
+foreground interception, or an AX focused-element blind spot.
