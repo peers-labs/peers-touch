@@ -108,3 +108,42 @@ The actor-window foreground lifecycle is fixed by source-bound evidence. The
 new product-input delivery failure is tracked separately in
 `debug-chat-native-input-delivery.md`. This session remains `[OPEN]` until the
 full Native product path is verified and the user confirms cleanup.
+
+High-window-level actor-switch run:
+`20260821T153201367506Z-7cc4a89bbc0aca7717de6874f256573b`.
+
+- Source, dedicated binary, and live Profile Three Station matched clean commit
+  `7c7b63bb89cc2539201d157f98949d9a42b2cf65`.
+- Alice completed the Chats, new-group menu, create-group option, Bob member
+  selection, and create submit actions through real CoreGraphics clicks.
+- After Bob received the new group projection, the Gate timed out in the first
+  ownership wait while switching from Alice to Bob. Cleanup released ports
+  `3330/3331/4445/4446/63045`.
+- An isolated two-window probe showed that both System Events and AppKit
+  activation can return success while `NSWorkspace.frontmostApplication`
+  remains the last-launched PID. After switching to Alice, Alice's WebView was
+  focused and its layer-1000 window was WindowServer index `0`, while the
+  reported actual frontmost PID remained Bob.
+- A stricter AX comparison showed `frontmost` and `AXMain` can also return false
+  after the target WebView and WindowServer ownership have switched. These
+  process-wide flags are not stable hard gates for two independent
+  screen-saver-level Tauri processes.
+- WindowServer target ownership alone was insufficient for the first click on
+  an unfocused actor: macOS delivered pointer/mouse movement with
+  `buttons=1`, established document focus, and withheld DOM `mousedown`.
+
+Conditional focus-click verification:
+
+- The Driver now treats WindowServer top ownership at the actor's independent
+  screen point as the pointer-routing prerequisite.
+- When the actor WebView is not focused, it activates/raises the process, posts
+  one complete title-bar CoreGraphics down/up sequence with guaranteed mouse-up
+  recovery, and waits for `document.hasFocus()` before the product click.
+- When the actor WebView is already focused, it skips the title-bar click.
+- An isolated real-input sequence `Alice -> Bob -> Alice -> Bob` produced click
+  counters `1,1,2,2` through the same `click_element` implementation and
+  released ports `3340/3341/4455/4456`.
+
+The actor-switch ownership defect is closed in isolated runtime evidence.
+Source-bound product-Gate verification remains pending, and this session stays
+`[OPEN]`.
