@@ -32,5 +32,32 @@ Source-bound run:
   `Native mousemove was not acknowledged by the target DOM`.
 - Cleanup released ports `3330/3331/4445/4446/61634`.
 
+Input-delivery instrumentation run:
+`20260821T133833878316Z-25147cc3ddbb0eeb700f78496c0daf91`.
+
+- Source, dedicated binary, and live Station matched at `36a98f452`.
+- Debug line 1 captured cursor `[81.5,95]` exactly equal to the requested screen
+  point `[81.5,95]`.
+- Alice was `frontmost=true`, `documentFocused=true`, and focused on
+  `AXWebArea`; the WebView center hit was connected, enabled, and owned by the
+  requested Chats element.
+- Debug line 2 retained the same cursor/point and an empty scoped event list
+  after timeout.
+- Cleanup released ports `3330/3331/4445/4446/62813`.
+
+| ID | Status | Evidence |
+|---|---|---|
+| R | Confirmed | Cursor and requested point were exactly equal before and after the posted move, so macOS emitted no movement |
+| S | Rejected | WebView geometry and Native cursor both resolved to `[81.5,95]` inside Alice's live window |
+| T | Rejected as the trigger | Alice was frontmost and document-focused before the move |
+| U | Rejected | Center and all alternate probes were owned by the requested element subtree |
+| V | Rejected | The cursor never changed; no routed/coalesced movement existed to deliver |
+
 ## Verification Conclusion
-Pending instrumentation.
+The Driver incorrectly requires a `mousemove` acknowledgement even when the
+cursor is already at the requested target point. macOS suppresses zero-distance
+mouse movement, so the scoped probe remains empty. The minimal fix must first
+move to a different, already verified owned probe point when the cursor equals
+the center, require that real movement acknowledgement, then move back to the
+center and continue the existing down/up/click sequence. Post-fix source-bound
+verification is pending.
