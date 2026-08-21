@@ -698,60 +698,34 @@ except Exception as error:
         # #endregion
 
         self.post_key(0, text=str(selected_path))
+        self.post_key(36)
         # #region debug-point M:native-file-path-entry
-        report_native_file_snapshot("after-path-key")
+        report_native_file_snapshot("after-path-confirmation")
         # #endregion
 
         baseline_window_count = int(baseline_control.get("windowCount", 0))
 
-        def native_path_ready(_: Any) -> dict[str, Any] | None:
+        def selection_or_browser_ready(_: Any) -> dict[str, Any] | None:
             control = self.native_focused_control(client.process_id or 0)
             # #region debug-point M:native-file-path-entry
-            report_native_file_snapshot("path-poll", control)
+            report_native_file_snapshot("selection-poll", control)
             # #endregion
-            if int(control.get("windowCount", 0)) < baseline_window_count:
-                return None
             if (
-                control.get("role") == "AXTextField"
-                and control.get("value") == str(selected_path)
+                int(control.get("windowCount", 0)) < baseline_window_count
+                or not control.get("role")
             ):
-                return {"pathConfirmed": True, "control": control}
+                return None
             if panel_open(control) and control.get("role") != "AXTextField":
-                return {"pathConfirmed": False, "control": control}
+                return {"selected": False, "control": control}
+            if not panel_open(control):
+                return {"selected": True, "control": control}
             return None
 
-        path_entry = WebDriverWait(
+        intermediate = WebDriverWait(
             client.driver,
             NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(native_path_ready)
-
-        if path_entry["pathConfirmed"]:
-            self.post_key(36)
-
-            def selection_or_browser_ready(
-                _: Any,
-            ) -> dict[str, Any] | None:
-                control = self.native_focused_control(client.process_id or 0)
-                if (
-                    int(control.get("windowCount", 0))
-                    < baseline_window_count
-                    or not control.get("role")
-                ):
-                    return None
-                if panel_open(control) and control.get("role") != "AXTextField":
-                    return {"selected": False, "control": control}
-                if not panel_open(control):
-                    return {"selected": True, "control": control}
-                return None
-
-            intermediate = WebDriverWait(
-                client.driver,
-                NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(selection_or_browser_ready)
-        else:
-            intermediate = {"selected": False, "control": path_entry["control"]}
+        ).until(selection_or_browser_ready)
 
         if not intermediate["selected"]:
             self.post_key(36)
