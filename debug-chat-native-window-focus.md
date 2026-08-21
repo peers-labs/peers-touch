@@ -30,5 +30,30 @@ reached `FIXTURE_READY`, then timed out in `focus_actor_window` before the first
 Alice click while waiting for `document.hasFocus()` after Native mouse-down.
 Both cleanup artifacts released all actor and proxy ports.
 
+Foreground instrumentation run:
+`20260821T130858914586Z-e9040dea97615f90b0211321ef75b4f4`.
+
+- Source, dedicated binary, and live Station matched at
+  `f74596126ac132ae2b5ce357bc521c089b400fa4`.
+- Debug line 1 captured Alice before the focus click with
+  `mouseButtonDown=true`, `documentFocused=false`, `frontmost=false`,
+  `window=[0,33,864,800]`, point `[432,49]`, and no Native sheet.
+- Debug line 2 captured the same state after posting mouse-down.
+- The Driver then timed out waiting for `document.hasFocus()` and never reached
+  its mouse-up statement.
+- Cleanup evidence released ports `3330/3331/4445/4446/57935`.
+
+| ID | Status | Evidence |
+|---|---|---|
+| N | Confirmed | The Driver waits for focus after mouse-down and cannot post mouse-up on timeout; the next run entered with the global left button already down |
+| O | Rejected | `[432,49]` is inside the recorded Alice window `[0,33,864,800]` |
+| P | Confirmed | Alice remained `frontmost=false` before and after mouse-down |
+| Q | Rejected | Alice had one window, zero sheets, and no competing AX focused control |
+
 ## Verification Conclusion
-Pending.
+The Acceptance-only foreground lifecycle is the root cause. A failed activation
+leaves the global left mouse button down across Gate runs, and macOS does not
+activate the application before the Driver's premature focus wait. The minimal
+fix normalizes any inherited button-down state, posts a complete move/down/up
+sequence, guarantees mouse-up in `finally`, and waits for WebView focus only
+after mouse-up. Post-fix source-bound verification is pending.
