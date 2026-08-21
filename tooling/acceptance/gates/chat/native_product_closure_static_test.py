@@ -481,6 +481,23 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'state.get("backgroundRetry") == "false"',
             settings_source,
         )
+        self.assertIn(
+            "const observer = new MutationObserver(capture);",
+            settings_source,
+        )
+        self.assertIn(
+            "'data-chat-detail-action-pending'",
+            settings_source,
+        )
+        self.assertIn(
+            "def background_retry_pending()",
+            settings_source,
+        )
+        self.assertIn(
+            'item.get("pending") == "background-image"',
+            settings_source,
+        )
+        self.assertIn('"retryTransitions": retry_transitions', settings_source)
 
     def test_group_creation_feedback_does_not_cover_composer_actions(self) -> None:
         create_group = (
