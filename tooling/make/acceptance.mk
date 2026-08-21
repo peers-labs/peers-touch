@@ -1,7 +1,7 @@
 # ─── Acceptance Framework ───────────────────────────────────────
 
 .PHONY: acceptance-plan acceptance-run acceptance-run-ci acceptance-run-local-evidence \
-        acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate \
+        acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-infra-validate acceptance-validate \
         acceptance-driver-build acceptance-driver-smoke \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-desktop-gateway \
@@ -71,6 +71,9 @@ acceptance:
 	$(if $(PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)")
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 	python3 tooling/scripts/acceptance-report.py
+
+acceptance-infra-validate:
+	python3 tooling/scripts/acceptance-validate.py --infra
 
 acceptance-validate:
 	python3 tooling/scripts/acceptance-validate.py $(if $(DOMAIN),--domain $(DOMAIN),)
