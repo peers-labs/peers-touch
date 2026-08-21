@@ -86,3 +86,20 @@ Native Gate proves preview load and the downstream attachment ledger.
 - The repair subscribes the panel to the canonical raw message projection and
   derives the current conversation through `projectDesktopIMMessages`.
 - Cleanup released `3330`, `3331`, `4445`, `4446`, and `56872`.
+
+## Reactive Details Verification
+- Run `20260821T233451461621Z-f0a7b1bb1f65dee54addee44fab05862`
+  is source-bound to clean source and Station `d71c08067`.
+- Composer preview passed.
+- The send outcome contained exactly two attachment IDs.
+- Alice and Bob Engine projections and message rows used the same message ID
+  and each contained exactly two attachments.
+- Alice and Bob Details both reported `media=1/files=1`.
+- Both actors opened byte-exact local copies of the image and file.
+- The Gate advanced to the independent restart Details-surface failure tracked
+  in `debug-chat-restart-detail.md`.
+- Cleanup released `3330`, `3331`, `4445`, `4446`, and `61118`.
+
+The attachment preview and live Details projection fix now have source-bound
+post-fix evidence. This debug session remains `[OPEN]` until user confirmation;
+its instrumentation and debug files must not be removed before that gate.
