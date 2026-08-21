@@ -87,6 +87,26 @@ function createDraftAttachment(
   };
 }
 
+export function createPickedDraftAttachment(
+  attachment: MessagingLocalAttachmentIntent,
+  fallbackName: string,
+): ChatDraftAttachment {
+  const name = attachment.filename || fallbackName;
+  const mimeType = attachment.mimeType || 'application/octet-stream';
+  const valid = Boolean(attachment.filePath) && (attachment.size ?? 0) > 0;
+  return {
+    id: nextDraftId(),
+    filePath: attachment.filePath,
+    name,
+    mimeType,
+    size: attachment.size ?? 0,
+    ...createChatAttachmentPreview(mimeType, name, attachment.filePath),
+    status: valid ? 'ready' : 'failed',
+    managedSource: false,
+    attachment: valid ? attachment : undefined,
+  };
+}
+
 export function useChatAttachmentDrafts({
   conversationId,
   disabled,
@@ -121,6 +141,11 @@ export function useChatAttachmentDrafts({
   const stageDraft = useCallback(async (item: ChatDraftAttachment) => {
     if (!item.file && !item.filePath) return;
     patchDraft(item.id, { status: 'uploading' });
+    if (item.filePath && item.size <= 0) {
+      patchDraft(item.id, { status: 'failed', attachment: undefined });
+      onUploadFailed();
+      return;
+    }
     try {
       const filePath = item.filePath ?? await imServiceV1.messaging.stageAttachmentSource(
         item.name,
@@ -173,6 +198,12 @@ export function useChatAttachmentDrafts({
     ]);
   }, [fallbackName]);
 
+  const appendPickedAttachment = useCallback((attachment: MessagingLocalAttachmentIntent) => {
+    const item = createPickedDraftAttachment(attachment, fallbackName);
+    setDrafts((prev) => [...prev, item]);
+    if (item.status === 'failed') onUploadFailed();
+  }, [fallbackName, onUploadFailed]);
+
   const removeDraft = useCallback((id: string) => {
     setDrafts((prev) => {
       const target = prev.find((item) => item.id === id);
@@ -220,6 +251,7 @@ export function useChatAttachmentDrafts({
     uploading,
     failed,
     addFiles,
+    appendPickedAttachment,
     appendReadyAttachment,
     clearDrafts,
     removeDraft,

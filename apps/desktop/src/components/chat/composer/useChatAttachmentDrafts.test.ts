@@ -3,6 +3,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 
 import {
   createChatAttachmentPreview,
+  createPickedDraftAttachment,
   revokeChatAttachmentPreview,
 } from './useChatAttachmentDrafts';
 
@@ -68,5 +69,45 @@ describe('chat attachment preview substrate', () => {
 
     expect(revokeObjectUrl).toHaveBeenCalledOnce();
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:owned');
+  });
+
+  it('keeps an empty native selection as a failed retryable draft', () => {
+    const draft = createPickedDraftAttachment({
+      filePath: '/tmp/empty.png',
+      filename: 'empty.png',
+      mimeType: 'image/png',
+      size: 0,
+    }, 'Attachment');
+
+    expect(draft).toMatchObject({
+      filePath: '/tmp/empty.png',
+      name: 'empty.png',
+      mimeType: 'image/png',
+      size: 0,
+      status: 'failed',
+      managedSource: false,
+      attachment: undefined,
+    });
+    expect(draft.previewUrl).toBe('asset://converted/%2Ftmp%2Fempty.png');
+  });
+
+  it('projects a non-empty native selection as an exact ready intent', () => {
+    const attachment = {
+      filePath: '/tmp/photo.png',
+      filename: 'photo.png',
+      mimeType: 'image/png',
+      size: 42,
+    };
+    const draft = createPickedDraftAttachment(attachment, 'Attachment');
+
+    expect(draft).toMatchObject({
+      filePath: '/tmp/photo.png',
+      name: 'photo.png',
+      mimeType: 'image/png',
+      size: 42,
+      status: 'ready',
+      managedSource: false,
+      attachment,
+    });
   });
 });

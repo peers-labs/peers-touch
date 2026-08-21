@@ -391,25 +391,35 @@ class NativeProductClosureGate(AcceptanceGate):
             core_graphics.CGEventPost(0, event)
             core_foundation.CFRelease(event)
 
-    def native_focused_control(self, process_id: int) -> dict[str, str]:
+    def native_focused_control(self, process_id: int) -> dict[str, Any]:
         script = f"""
         tell application "System Events"
           set targetProcess to first application process whose unix id is {process_id}
-          set focusedElement to value of attribute "AXFocusedUIElement" of targetProcess
-          set roleName to value of attribute "AXRole" of focusedElement
+          set windowCount to count of windows of targetProcess
+          set sheetCount to 0
+          repeat with appWindow in windows of targetProcess
+            try
+              set sheetCount to sheetCount + (count of sheets of appWindow)
+            end try
+          end repeat
           set subroleName to ""
+          set roleName to ""
           set titleValue to ""
           set controlValue to ""
           try
-            set subroleName to value of attribute "AXSubrole" of focusedElement
+            set focusedElement to value of attribute "AXFocusedUIElement" of targetProcess
+            set roleName to value of attribute "AXRole" of focusedElement
+            try
+              set subroleName to value of attribute "AXSubrole" of focusedElement
+            end try
+            try
+              set titleValue to value of attribute "AXTitle" of focusedElement as text
+            end try
+            try
+              set controlValue to value of attribute "AXValue" of focusedElement as text
+            end try
           end try
-          try
-            set titleValue to value of attribute "AXTitle" of focusedElement as text
-          end try
-          try
-            set controlValue to value of attribute "AXValue" of focusedElement as text
-          end try
-          return roleName & tab & subroleName & tab & titleValue & tab & controlValue
+          return roleName & tab & subroleName & tab & titleValue & tab & controlValue & tab & windowCount & tab & sheetCount
         end tell
         """
         completed = subprocess.run(
@@ -420,90 +430,23 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         if completed.returncode != 0:
             return {"error": completed.stderr.strip()}
-        fields = completed.stdout.rstrip("\n").split("\t", 3)
-        if len(fields) != 4:
+        fields = completed.stdout.rstrip("\n").split("\t", 5)
+        if len(fields) != 6:
             return {"error": f"unexpected AX response: {completed.stdout!r}"}
         return {
             "role": fields[0],
             "subrole": fields[1],
             "title": fields[2],
             "value": fields[3],
+            "windowCount": int(fields[4]),
+            "sheetCount": int(fields[5]),
         }
-
-    def install_native_file_probe(
-        self,
-        client: TauriDriver,
-        file_input: Any,
-    ) -> str:
-        probe_id = secrets.token_hex(8)
-        client.execute_script(
-            """
-            const target = arguments[0];
-            const probeId = arguments[1];
-            const registry = window.__PT_NATIVE_FILE_PROBES__ ||= {};
-            registry[probeId]?.cleanup?.();
-            const events = [];
-            const listener = (event) => {
-              events.push({
-                type: event.type,
-                files: Array.from(target.files || []).map((file) => ({
-                  name: file.name,
-                  size: file.size,
-                  type: file.type,
-                  lastModified: file.lastModified,
-                })),
-              });
-            };
-            target.addEventListener('click', listener, true);
-            target.addEventListener('change', listener, true);
-            registry[probeId] = {
-              events,
-              cleanup: () => {
-                target.removeEventListener('click', listener, true);
-                target.removeEventListener('change', listener, true);
-                delete registry[probeId];
-              },
-            };
-            """,
-            file_input,
-            probe_id,
-        )
-        return probe_id
-
-    def native_file_probe_events(
-        self,
-        client: TauriDriver,
-        probe_id: str,
-    ) -> list[dict[str, Any]]:
-        events = client.execute_script(
-            """
-            return (
-              window.__PT_NATIVE_FILE_PROBES__?.[arguments[0]]?.events
-              || []
-            );
-            """,
-            probe_id,
-        )
-        return events if isinstance(events, list) else []
-
-    def remove_native_file_probe(
-        self,
-        client: TauriDriver,
-        probe_id: str,
-    ) -> None:
-        client.execute_script(
-            """
-            window.__PT_NATIVE_FILE_PROBES__?.[arguments[0]]?.cleanup?.();
-            """,
-            probe_id,
-        )
 
     def choose_native_file(
         self,
         actor: str,
         *,
         trigger_selector: str,
-        input_selector: str,
         file_path: Path,
     ) -> dict[str, Any]:
         client = self.focus_actor_window(actor)
@@ -513,183 +456,174 @@ class NativeProductClosureGate(AcceptanceGate):
         if not selected_path.is_file():
             raise GateError(f"Native file selection source is missing: {selected_path}")
 
-        file_input = client.find_element(input_selector, 10)
-        probe_id = self.install_native_file_probe(client, file_input)
-        try:
-            # #region debug-point L-M:native-file-chooser-handoff
-            last_native_file_snapshot = ""
+        # #region debug-point L-M:native-file-chooser-handoff
+        last_native_file_snapshot = ""
 
-            def report_native_file_snapshot(
-                phase: str,
-                focused_control: dict[str, str] | None = None,
-            ) -> None:
-                nonlocal last_native_file_snapshot
-                snapshot = client.execute_script(
-                    """
-                    return {
-                      documentFocused: document.hasFocus(),
-                      visibilityState: document.visibilityState,
-                      activeElement: {
-                        tag: document.activeElement?.tagName || '',
-                        role: document.activeElement?.getAttribute?.('role') || '',
-                        classes: document.activeElement?.className?.baseVal
-                          || document.activeElement?.className
-                          || '',
-                      },
-                    };
-                    """
-                )
-                snapshot["focusedControl"] = (
-                    focused_control
-                    if focused_control is not None
-                    else self.native_focused_control(client.process_id or 0)
-                )
-                snapshot["inputEvents"] = self.native_file_probe_events(
-                    client,
-                    probe_id,
-                )
-                signature = json.dumps(snapshot, sort_keys=True)
-                if signature == last_native_file_snapshot:
-                    return
-                last_native_file_snapshot = signature
-                request = urllib.request.Request(
-                    "http://127.0.0.1:7783/event",
-                    data=json.dumps(
-                        {
-                            "sessionId": "chat-background-picker",
-                            "runId": "native-file-pre-fix",
-                            "hypothesisId": "L-M",
-                            "location":
-                                "NativeProductClosureGate:choose_native_file",
-                            "msg": f"[DEBUG] Native file chooser {phase}",
-                            "data": snapshot,
-                        }
-                    ).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                try:
-                    urllib.request.urlopen(request, timeout=2).read()
-                except OSError:
-                    pass
+        def report_native_file_snapshot(
+            phase: str,
+            focused_control: dict[str, Any] | None = None,
+        ) -> None:
+            nonlocal last_native_file_snapshot
+            snapshot = client.execute_script(
+                """
+                return {
+                  documentFocused: document.hasFocus(),
+                  visibilityState: document.visibilityState,
+                  activeElement: {
+                    tag: document.activeElement?.tagName || '',
+                    role: document.activeElement?.getAttribute?.('role') || '',
+                    classes: document.activeElement?.className?.baseVal
+                      || document.activeElement?.className
+                      || '',
+                  },
+                };
+                """
+            )
+            snapshot["focusedControl"] = (
+                focused_control
+                if focused_control is not None
+                else self.native_focused_control(client.process_id or 0)
+            )
+            signature = json.dumps(snapshot, sort_keys=True)
+            if signature == last_native_file_snapshot:
+                return
+            last_native_file_snapshot = signature
+            request = urllib.request.Request(
+                "http://127.0.0.1:7783/event",
+                data=json.dumps(
+                    {
+                        "sessionId": "chat-background-picker",
+                        "runId": "native-file-post-fix",
+                        "hypothesisId": "L-M",
+                        "location":
+                            "NativeProductClosureGate:choose_native_file",
+                        "msg": f"[DEBUG] Native file chooser {phase}",
+                        "data": snapshot,
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                urllib.request.urlopen(request, timeout=2).read()
+            except OSError:
+                pass
 
-            report_native_file_snapshot("before-trigger")
-            # #endregion
-            self.click(actor, trigger_selector)
-            # #region debug-point L-M:native-file-chooser-handoff
-            report_native_file_snapshot("after-trigger")
-            # #endregion
+        baseline_control = self.native_focused_control(client.process_id)
+        report_native_file_snapshot("before-trigger", baseline_control)
+        # #endregion
+        self.click(actor, trigger_selector)
+        # #region debug-point L-M:native-file-chooser-handoff
+        report_native_file_snapshot("after-trigger")
+        # #endregion
 
-            def native_panel_ready(driver: Any) -> dict[str, str] | None:
-                document_focused = bool(
-                    driver.execute_script("return document.hasFocus()")
-                )
-                control = self.native_focused_control(client.process_id or 0)
-                # #region debug-point L-M:native-file-chooser-handoff
-                report_native_file_snapshot("panel-poll", control)
-                # #endregion
-                if document_focused:
-                    return None
-                return control if control.get("role") else None
-
-            WebDriverWait(
-                client.driver,
-                10,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(native_panel_ready)
-
-            command_shift = 0x00100000 | 0x00020000
-            self.post_key(5, flags=command_shift)
-            WebDriverWait(
-                client.driver,
-                10,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(
-                lambda _: (
-                    control
-                    if (
-                        (control := self.native_focused_control(
-                            client.process_id or 0
-                        )).get("role")
-                        == "AXTextField"
-                    )
-                    else None
-                )
+        def panel_open(control: dict[str, Any]) -> bool:
+            return (
+                int(control.get("windowCount", 0))
+                > int(baseline_control.get("windowCount", 0))
+                or int(control.get("sheetCount", 0))
+                > int(baseline_control.get("sheetCount", 0))
             )
 
-            self.post_key(0, text=str(selected_path))
-            WebDriverWait(
-                client.driver,
-                10,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(
-                lambda _: (
-                    control
-                    if (
-                        (control := self.native_focused_control(
-                            client.process_id or 0
-                        )).get("value")
-                        == str(selected_path)
-                    )
-                    else None
-                )
-            )
+        def native_panel_ready(_: Any) -> dict[str, Any] | None:
+            control = self.native_focused_control(client.process_id or 0)
+            # #region debug-point L-M:native-file-chooser-handoff
+            report_native_file_snapshot("panel-poll", control)
+            # #endregion
+            return control if panel_open(control) else None
 
+        WebDriverWait(
+            client.driver,
+            10,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(native_panel_ready)
+
+        command_shift = 0x00100000 | 0x00020000
+        self.post_key(5, flags=command_shift)
+        WebDriverWait(
+            client.driver,
+            10,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(
+            lambda _: (
+                control
+                if (
+                    (control := self.native_focused_control(
+                        client.process_id or 0
+                    )).get("role")
+                    == "AXTextField"
+                )
+                else None
+            )
+        )
+
+        self.post_key(0, text=str(selected_path))
+        WebDriverWait(
+            client.driver,
+            10,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(
+            lambda _: (
+                control
+                if (
+                    (control := self.native_focused_control(
+                        client.process_id or 0
+                    )).get("value")
+                    == str(selected_path)
+                )
+                else None
+            )
+        )
+
+        self.post_key(36)
+
+        def selection_or_browser_ready(_: Any) -> dict[str, Any] | None:
+            control = self.native_focused_control(client.process_id or 0)
+            if not panel_open(control):
+                return {"selected": True, "control": control}
+            if control.get("role") and control.get("role") != "AXTextField":
+                return {"selected": False, "control": control}
+            return None
+
+        intermediate = WebDriverWait(
+            client.driver,
+            10,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(selection_or_browser_ready)
+        if not intermediate["selected"]:
             self.post_key(36)
-
-            def selection_or_browser_ready(_: Any) -> dict[str, Any] | None:
-                selected = next(
-                    (
-                        event
-                        for event in self.native_file_probe_events(client, probe_id)
-                        if event.get("type") == "change" and event.get("files")
-                    ),
-                    None,
-                )
-                if selected:
-                    return {"selected": selected}
-                control = self.native_focused_control(client.process_id or 0)
-                if control.get("role") and control.get("role") != "AXTextField":
-                    return {"control": control}
-                return None
-
-            intermediate = WebDriverWait(
-                client.driver,
-                10,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(selection_or_browser_ready)
-            if "selected" not in intermediate:
-                self.post_key(36)
-
-            selected_event = WebDriverWait(
+            WebDriverWait(
                 client.driver,
                 10,
                 poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
             ).until(
-                lambda _: next(
-                    (
-                        event
-                        for event in self.native_file_probe_events(client, probe_id)
-                        if event.get("type") == "change" and event.get("files")
-                    ),
-                    None,
+                lambda _: (
+                    control
+                    if not panel_open(
+                        control := self.native_focused_control(
+                            client.process_id or 0
+                        )
+                    )
+                    else None
                 )
             )
-            files = selected_event.get("files", [])
-            expected = {
-                "name": selected_path.name,
-                "size": selected_path.stat().st_size,
-            }
-            if len(files) != 1 or any(
-                files[0].get(key) != value for key, value in expected.items()
-            ):
-                raise GateError(
-                    "Native file chooser selected unexpected files: "
-                    f"{json.dumps(files, sort_keys=True)}"
-                )
-            return selected_event
-        finally:
-            self.remove_native_file_probe(client, probe_id)
+
+        WebDriverWait(
+            client.driver,
+            10,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(
+            lambda driver: bool(
+                driver.execute_script("return document.hasFocus()")
+            )
+        )
+        # #region debug-point L-M:native-file-chooser-handoff
+        report_native_file_snapshot("selected")
+        # #endregion
+        return {
+            "name": selected_path.name,
+            "size": selected_path.stat().st_size,
+        }
 
     def native_mouse_button_down(self) -> bool:
         core_graphics = ctypes.CDLL(
@@ -2079,7 +2013,6 @@ class NativeProductClosureGate(AcceptanceGate):
         self.choose_native_file(
             "alice",
             trigger_selector="[data-chat-background-upload]",
-            input_selector="[data-chat-background-input]",
             file_path=empty_image,
         )
         wait_until(
@@ -2096,7 +2029,6 @@ class NativeProductClosureGate(AcceptanceGate):
         self.choose_native_file(
             "alice",
             trigger_selector="[data-chat-background-upload]",
-            input_selector="[data-chat-background-input]",
             file_path=valid_image,
         )
         final_state = wait_until(
@@ -2143,7 +2075,6 @@ class NativeProductClosureGate(AcceptanceGate):
         self.choose_native_file(
             "alice",
             trigger_selector="[data-chat-attachment-picker]",
-            input_selector="[data-chat-attachment-input]",
             file_path=empty_file,
         )
         draft = wait_until(
@@ -2209,13 +2140,11 @@ class NativeProductClosureGate(AcceptanceGate):
         self.choose_native_file(
             "alice",
             trigger_selector="[data-chat-attachment-picker]",
-            input_selector="[data-chat-attachment-input]",
             file_path=image_file,
         )
         self.choose_native_file(
             "alice",
             trigger_selector="[data-chat-attachment-picker]",
-            input_selector="[data-chat-attachment-input]",
             file_path=text_file,
         )
         wait_until(

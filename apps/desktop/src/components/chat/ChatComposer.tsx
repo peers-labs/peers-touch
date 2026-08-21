@@ -47,6 +47,7 @@ import {
 
 import { log } from '../../utils/logger';
 import { imServiceV1 } from '../../services/im-service';
+import { RustCommandException } from '../../services/desktop_api';
 import type { MessagingLocalAttachmentIntent } from '../../services/im-service-contract';
 import {
   useChatAttachmentDrafts,
@@ -151,7 +152,6 @@ export function ChatComposer({
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const composingRef = useRef(false);
   const lastCompositionEndRef = useRef(0);
   const [dragging, setDragging] = useState(false);
@@ -193,6 +193,7 @@ export function ChatComposer({
     uploading,
     failed,
     addFiles,
+    appendPickedAttachment,
     appendReadyAttachment,
     clearDrafts,
     removeDraft,
@@ -288,15 +289,15 @@ export function ChatComposer({
     setInputExpanded(false);
   }, [activeConversationId]);
 
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    addFiles(files);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handlePickAttachment = () => {
-    if (disabled || editing || recording) return;
-    fileInputRef.current?.click();
+  const handlePickAttachment = async () => {
+    if (disabled || editing || recording || voiceSending) return;
+    try {
+      appendPickedAttachment(await imServiceV1.messaging.pickAttachmentSource());
+    } catch (error) {
+      if (error instanceof RustCommandException && error.code === 'INVALID_ARGUMENT') return;
+      log.error('chat', 'native attachment picker failed', error);
+      toast.error(t('chat.social.composer.uploadFailed'));
+    }
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -743,15 +744,6 @@ export function ChatComposer({
                 </Tooltip>
               </Popover>
             )}
-            <input
-              ref={fileInputRef}
-              data-chat-attachment-input
-              type="file"
-              multiple
-              accept="image/*,video/*,audio/*,application/pdf,.zip,.txt,.md"
-              onChange={handleFileChange}
-              style={{ display: 'none' }}
-            />
             {activeCapabilities.file && (
               <Tooltip title={t('chat.social.composer.file')}>
                 <Button
@@ -759,7 +751,9 @@ export function ChatComposer({
                   type="text"
                   icon={<FolderOpen size={20} />}
                   aria-label={t('chat.social.composer.file')}
-                  onClick={handlePickAttachment}
+                  onClick={() => {
+                    void handlePickAttachment();
+                  }}
                   disabled={disabled || editing || recording || voiceSending}
                   style={toolButtonStyle}
                 />
