@@ -190,3 +190,27 @@ even when NSWorkspace's reported frontmost PID remains stale. The fix makes
 `NSRunningApplication.activateWithOptions(AllWindows|IgnoringOtherApps)` a
 required first phase of `activate_native_process`, followed by the existing AX
 raise and title-bar focus handshake.
+
+AppKit source-bound post-fix run:
+`20260821T181636553271Z-9951935716f26f266c7b4ae69fe43935`.
+
+- Source, dedicated binary, and live Profile Three Station matched clean commit
+  `1bc508153e728f417cbd295d09c6103d3ac852ce`.
+- AppKit plus Accessibility activation moved Alice from
+  `documentFocused=false` to `documentFocused=true`, with Alice becoming
+  WindowServer index `0` and `actualFrontmostPid`.
+- On the first Alice-to-Bob handoff, AppKit returned success and System Events
+  reported Bob `frontmost=true`, but `actualFrontmostPid` remained Alice before
+  and after the complete title-bar click. Bob remained
+  `documentFocused=false`, with a released mouse button and no competing sheet.
+- The Gate timed out before Bob's group-row click. Cleanup passed and ports
+  `3330/3331/4445/4446` were released.
+
+The AppKit Boolean return only proves that macOS accepted the activation
+request; it does not prove that the target became the active application.
+System Events `frontmost=true` also conflicts with the observed active PID and
+cannot close this boundary. The next instrumentation records the target
+activation policy, `isActive`, and `NSWorkspace.frontmostApplication` before
+and immediately after the AppKit request, then records the same process
+boundary after Accessibility activation. It does not change activation,
+pointer, or wait behavior.
