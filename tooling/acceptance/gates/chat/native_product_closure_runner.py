@@ -1375,24 +1375,205 @@ class NativeProductClosureGate(AcceptanceGate):
         self.clients[actor].find_element("[data-chat-background-select]", 15)
 
     def select_second_background(self, actor: str) -> None:
-        select = self.clients[actor].find_element("[data-chat-background-select]", 15)
-        self.click_element(actor, select)
+        client = self.clients[actor]
+        select = client.find_element("[data-chat-background-select]", 15)
 
-        def visible_options(driver: Any) -> list[Any] | None:
-            options = driver.find_elements(By.CSS_SELECTOR, "[role='option']")
-            visible = [
-                option
-                for option in options
-                if option.is_displayed() and option.is_enabled()
-            ]
-            return visible if len(visible) >= 2 else None
+        # #region debug-point A-E:background-picker-probe
+        client.execute_script(
+            """
+            window.__PT_BACKGROUND_PICKER_PROBE__?.cleanup?.();
+            const describe = (node) => {
+              if (!(node instanceof Element)) return null;
+              return {
+                tag: node.tagName,
+                role: node.getAttribute('role') || '',
+                classes: node.className?.baseVal || node.className || '',
+                text: (node.textContent || '').trim().slice(0, 80),
+              };
+            };
+            const events = [];
+            const mutations = [];
+            const eventTypes = [
+              'pointerdown',
+              'mousedown',
+              'pointerup',
+              'mouseup',
+              'click',
+            ];
+            const listener = (event) => {
+              const target = event.target;
+              if (!(target instanceof Element)) return;
+              if (
+                !target.closest('[data-chat-background-select]')
+                && !target.closest('.ant-select-dropdown')
+              ) return;
+              events.push({
+                type: event.type,
+                target: describe(target),
+                expanded: document.querySelector(
+                  '[data-chat-background-select] [role="combobox"]'
+                )?.getAttribute('aria-expanded') || '',
+              });
+            };
+            eventTypes.forEach((type) => {
+              document.addEventListener(type, listener, true);
+            });
+            const observer = new MutationObserver((records) => {
+              records.forEach((record) => {
+                ['addedNodes', 'removedNodes'].forEach((key) => {
+                  Array.from(record[key]).forEach((node) => {
+                    if (!(node instanceof Element)) return;
+                    const relevant = (
+                      node.matches('.ant-select-dropdown, [role="option"]')
+                      || node.querySelector(
+                        '.ant-select-dropdown, [role="option"]'
+                      )
+                    );
+                    if (!relevant) return;
+                    mutations.push({
+                      kind: key === 'addedNodes' ? 'added' : 'removed',
+                      node: describe(node),
+                    });
+                  });
+                });
+              });
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+            window.__PT_BACKGROUND_PICKER_PROBE__ = {
+              events,
+              mutations,
+              cleanup: () => {
+                observer.disconnect();
+                eventTypes.forEach((type) => {
+                  document.removeEventListener(type, listener, true);
+                });
+                delete window.__PT_BACKGROUND_PICKER_PROBE__;
+              },
+            };
+            """
+        )
 
-        options = WebDriverWait(
-            self.clients[actor].driver,
-            10,
-            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(visible_options)
-        self.click_element(actor, options[1])
+        def picker_snapshot() -> dict[str, Any]:
+            return client.execute_script(
+                """
+                const select = arguments[0];
+                const describe = (node) => {
+                  if (!(node instanceof Element)) return null;
+                  const rect = node.getBoundingClientRect();
+                  const style = getComputedStyle(node);
+                  const x = rect.left + rect.width / 2;
+                  const y = rect.top + rect.height / 2;
+                  const hit = (
+                    rect.width > 0 && rect.height > 0
+                      ? document.elementFromPoint(x, y)
+                      : null
+                  );
+                  return {
+                    tag: node.tagName,
+                    role: node.getAttribute('role') || '',
+                    classes: node.className?.baseVal || node.className || '',
+                    text: (node.textContent || '').trim().slice(0, 80),
+                    connected: node.isConnected,
+                    display: style.display,
+                    visibility: style.visibility,
+                    opacity: style.opacity,
+                    rect: {
+                      left: rect.left,
+                      top: rect.top,
+                      right: rect.right,
+                      bottom: rect.bottom,
+                      width: rect.width,
+                      height: rect.height,
+                    },
+                    hit: hit
+                      ? {
+                          tag: hit.tagName,
+                          role: hit.getAttribute('role') || '',
+                          classes:
+                            hit.className?.baseVal || hit.className || '',
+                        }
+                      : null,
+                  };
+                };
+                const collect = (selector) => (
+                  Array.from(document.querySelectorAll(selector)).map(describe)
+                );
+                const probe = window.__PT_BACKGROUND_PICKER_PROBE__ || {};
+                return {
+                  documentFocused: document.hasFocus(),
+                  activeElement: describe(document.activeElement),
+                  select: describe(select),
+                  expanded:
+                    select.querySelector('[role="combobox"]')
+                      ?.getAttribute('aria-expanded') || '',
+                  modals: collect('.ant-modal'),
+                  dropdowns: collect('.ant-select-dropdown'),
+                  roleOptions: collect('[role="option"]'),
+                  classOptions: collect('.ant-select-item-option'),
+                  events: Array.from(probe.events || []),
+                  mutations: Array.from(probe.mutations || []),
+                };
+                """,
+                select,
+            )
+
+        def report_picker_snapshot(phase: str, snapshot: dict[str, Any]) -> None:
+            request = urllib.request.Request(
+                "http://127.0.0.1:7783/event",
+                data=json.dumps(
+                    {
+                        "sessionId": "chat-background-picker",
+                        "runId": "pre-fix",
+                        "hypothesisId": "A-E",
+                        "location":
+                            "NativeProductClosureGate:select_second_background",
+                        "msg": f"[DEBUG] background picker {phase}",
+                        "data": snapshot,
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                urllib.request.urlopen(request, timeout=2).read()
+            except OSError:
+                pass
+
+        report_picker_snapshot("before-click", picker_snapshot())
+        last_snapshot = ""
+        try:
+            self.click_element(actor, select)
+            report_picker_snapshot("after-click", picker_snapshot())
+
+            def visible_options(driver: Any) -> list[Any] | None:
+                nonlocal last_snapshot
+                options = driver.find_elements(By.CSS_SELECTOR, "[role='option']")
+                visible = [
+                    option
+                    for option in options
+                    if option.is_displayed() and option.is_enabled()
+                ]
+                snapshot = picker_snapshot()
+                signature = json.dumps(snapshot, sort_keys=True)
+                if signature != last_snapshot:
+                    report_picker_snapshot("option-poll", snapshot)
+                    last_snapshot = signature
+                return visible if len(visible) >= 2 else None
+
+            options = WebDriverWait(
+                client.driver,
+                10,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(visible_options)
+            self.click_element(actor, options[1])
+        except Exception:
+            report_picker_snapshot("failure", picker_snapshot())
+            raise
+        finally:
+            client.execute_script(
+                "window.__PT_BACKGROUND_PICKER_PROBE__?.cleanup?.();"
+            )
+        # #endregion
 
     def prove_settings_background(
         self,
