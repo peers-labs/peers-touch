@@ -689,46 +689,54 @@ except Exception as error:
             # #region debug-point M:native-file-path-entry
             report_native_file_snapshot("path-poll", control)
             # #endregion
-            return control if control.get("value") == str(selected_path) else None
+            if not panel_open(control):
+                return {"selected": True, "control": control}
+            if (
+                control.get("role") == "AXTextField"
+                and control.get("value") == str(selected_path)
+            ):
+                return {"selected": False, "control": control}
+            return None
 
-        WebDriverWait(
+        path_entry = WebDriverWait(
             client.driver,
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(native_path_ready)
 
-        self.post_key(36)
-
-        def selection_or_browser_ready(_: Any) -> dict[str, Any] | None:
-            control = self.native_focused_control(client.process_id or 0)
-            if not panel_open(control):
-                return {"selected": True, "control": control}
-            if control.get("role") and control.get("role") != "AXTextField":
-                return {"selected": False, "control": control}
-            return None
-
-        intermediate = WebDriverWait(
-            client.driver,
-            10,
-            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(selection_or_browser_ready)
-        if not intermediate["selected"]:
+        if not path_entry["selected"]:
             self.post_key(36)
-            WebDriverWait(
+
+            def selection_or_browser_ready(_: Any) -> dict[str, Any] | None:
+                control = self.native_focused_control(client.process_id or 0)
+                if not panel_open(control):
+                    return {"selected": True, "control": control}
+                if control.get("role") and control.get("role") != "AXTextField":
+                    return {"selected": False, "control": control}
+                return None
+
+            intermediate = WebDriverWait(
                 client.driver,
                 10,
                 poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(
-                lambda _: (
-                    control
-                    if not panel_open(
-                        control := self.native_focused_control(
-                            client.process_id or 0
+            ).until(selection_or_browser_ready)
+            if not intermediate["selected"]:
+                self.post_key(36)
+                WebDriverWait(
+                    client.driver,
+                    10,
+                    poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+                ).until(
+                    lambda _: (
+                        control
+                        if not panel_open(
+                            control := self.native_focused_control(
+                                client.process_id or 0
+                            )
                         )
+                        else None
                     )
-                    else None
                 )
-            )
 
         WebDriverWait(
             client.driver,
