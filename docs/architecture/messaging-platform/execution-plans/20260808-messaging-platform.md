@@ -20,12 +20,12 @@
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-F` complete Native chooser path entry and background upload proof |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Clean run `20260821T162507498155Z-1adcbc32a92f6198d1cd207dab5b2715` proved debug `snapshotError` no longer aborts the Gate, then exposed a second WebDriver script timeout because the mandatory focus query ran while AX still reported Alice `windowCount=0/mainWindow=false` |
-| Current action | Make Native window restoration precede all post-chooser WebDriver queries, then reacquire Alice through the existing actor focus lifecycle before evaluating product upload projection |
-| Next action | Verify the event-driven Native-window recovery change, commit/deploy/rebuild matching source, and rerun through background upload projection |
+| Last completed | Clean run `20260821T163917038276Z-efc8e81c1db0da215a888f3b06ad83fc` proved Native window recovery and WebDriver focus after chooser closure, completed empty-file pending recovery, then timed out reopening Background because the current evidence does not identify the action-center blocker |
+| Current action | Add instrumentation-only evidence for the failed-upload Background action hit stack, residual Modal, retry control, and alert while preserving the exact action ownership condition |
+| Next action | Commit/deploy/rebuild matching instrumentation source and rerun to classify the post-failure Modal handoff blocker |
 | Blockers | MP-W13 remains `UNPROVEN`; chooser closure is observed but background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T162507498155Z-1adcbc32a92f6198d1cd207dab5b2715` matched source/build/Station at `5c503837c`, retained Thread/Transcript/toolbar/reaction/avatar/Station PASS assertions, crossed chooser closure and the debug snapshot timeout, then failed at the immediate post-chooser `document.hasFocus()` query while AX still reported no Alice Native window; cleanup released `3330/3331/4445/4446/59340`; background upload/restart/attachment and full product-closure Native proof remain missing |
+| Evidence | Run `20260821T163917038276Z-efc8e81c1db0da215a888f3b06ad83fc` matched source/build/Station at `75eff05b6`, retained Thread/Transcript/toolbar/reaction/avatar/Station PASS assertions, restored Alice through Native-only window recovery, completed chooser selection and empty-file pending clearance, then failed waiting to reopen Background; cleanup released `3330/3331/4445/4446/62967`; successful upload/restart/attachment and full product-closure Native proof remain missing |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
