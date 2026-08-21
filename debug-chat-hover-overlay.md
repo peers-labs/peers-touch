@@ -61,10 +61,21 @@ Second post-fix run:
   `mouseover` nor `pointerenter` fired.
 - Cleanup again released `3330`, `3331`, `4445`, and `4446`.
 
+Third post-fix run:
+`20260821T014246527356Z-c0c025ff36d65daeb00ea15648ef75a6`.
+
+- Source and Station matched commit `aae7297dd9792b0bec11339b586e8840e703a516`.
+- Selenium viewport-origin `PointerInput(mouse)` completed without error, but
+  target row `:hover` again remained false.
+- No raw row mouse/pointer event or action-target/geometry event appeared.
+- Cleanup again released `3330`, `3331`, `4445`, and `4446`.
+
 ## Verification Conclusion
-The target geometry and hit-test ownership are correct, but Selenium's
-element-origin pointer movement does not update WebKit hover state. The minimal
-fix is to keep the same Selenium W3C Actions protocol while moving a mouse
-pointer by viewport coordinates derived from the measured neutral and row
-centers. JS event dispatch, Store mutation, Harness actions, and fixed commands
-remain forbidden.
+The target geometry and hit-test ownership are correct, but neither Selenium
+element-origin nor viewport-origin W3C pointer movement reaches the embedded
+WKWebView input layer. macOS native HID posting is available and authorized by
+the host. The next minimal path activates the exact client PID, converts the
+measured DOM center into screen coordinates, posts real CoreGraphics mouse
+movement through a neutral point, and keeps Selenium only for DOM geometry and
+result verification. JS event dispatch, Store mutation, Harness actions, and
+fixed business commands remain forbidden.
