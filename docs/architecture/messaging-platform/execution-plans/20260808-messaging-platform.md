@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` Acceptance truth cutover |
+| Current step | `MP-W13-F` Acceptance truth cutover; current first-failure boundary is `MP-W13-B` reaction recovery |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Dirty diagnostic run `20260821T071102527504Z-fd178f22b871fddd827c3bfbac14b2da` proved ordered CoreGraphics click delivery, three real send paths, first real hover with A/B/C/E and `:hover=true`, then failed at the next product-owned boundary because the rendered reply did not update the root row's thread summary count; cleanup released all actor ports |
-| Current action | Commit the verified Native event pacing and non-occluding group-success feedback with instrumentation retained, deploy the clean checkpoint, and rerun once for source-bound handoff evidence |
-| Next action | After the clean rerun, continue MP-W13-A at the thread summary projection owner; do not weaken the exact summary/panel assertion |
-| Blockers | Driver foreground/Native input lifecycle is runtime-verified; thread summary projection is now the first product failure, while every later product assertion remains `UNPROVEN`; `station-messaging-unit` still has an independent read event-ID length assertion failure |
+| Last completed | Native run `20260821T100236040888Z-80282f9702fbc8c0fa58404d109fbed7` recorded Driver, thread, transcript, toolbar, Reaction recovery, `avatar_exact_loaded`, and `station_attribution_exact` PASS; Alice/Bob exposed the same authority Station ID; the new first product failure is `timed out waiting for mute projection`; actor and proxy ports were released |
+| Current action | Create a clean checkpoint for the verified Driver/Reaction/identity/Station closures while preserving all `[OPEN]` Debug sessions and the explicit `0/1 UNPROVEN` claim |
+| Next action | Regenerate the exact-range Acceptance plan, deploy the clean checkpoint to Profile Three, rerun the same Native Gate, then debug the Mute projection at its Station membership/settings owner |
+| Blockers | The latest Gate still fails at Mute, so MP-W13 remains `UNPROVEN`; the Gap Detector also reports a stale Acceptance plan range and required Gates not run; `station-messaging-unit` retains an independent read event-ID length assertion failure |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Clean run `20260821T064607367400Z-7459e447bcdc8a61d972b5c951690e19` exposed the bottom-right success-toast collision; diagnostic run `20260821T070426261276Z-52d2eb651bfafbea6fbd08080e0087df` proved unpaced event reordering; post-fix run `20260821T071102527504Z-fd178f22b871fddd827c3bfbac14b2da` recorded ordered send click/submit/onSend events plus hover F/A/B/C/E, `:hover=true`, and overlay `191x36`, then failed at thread summary projection; all runs had `FIXTURE_READY` and cleanup `3330/3331/4445/4446` released; Desktop check and 7 static no-bypass tests PASS; debug session `chat-hover-overlay` remains `[OPEN]`; product-closure Native proof remains `0/1` and W13 remains `UNPROVEN` |
+| Evidence | Clean run `20260821T072034901028Z-51dcc08fd5f6a338f4253ddc8f940ba4` bound Driver/window-slot/paced Native input to clean commit `3d1256c948ec0bad6d3b2cfeecc09d1dccacea32`; dirty runs through `20260821T095103680817Z-18f2ee6459432d2a31730c02f465cb25` closed transient Driver and Reaction recovery; dirty run `20260821T100236040888Z-80282f9702fbc8c0fa58404d109fbed7` added exact avatar and Station attribution PASS before Mute failure; 17 Python static/unit tests, Desktop check, Python 3.9 compile, diff checks, and Gap Detector self-tests pass; Gap Detector verdict for full W13 is `UNPROVEN`; debug sessions remain `[OPEN]`; product-closure Native proof remains `0/1` |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
