@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` replace remembered Native Go-To value and prove real picker callback return |
+| Current step | `MP-W13-F` acknowledge Native Go-To field clearing before exact path entry |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Clean run `20260821T173208817021Z-afe37eed1d1306e5f45db0c67b41f010` crossed 30 real Native clicks with every pre-click button state released, then proved the Go-To field retained `/opt`, the Driver appended instead of replacing it, `pick_image_file` never returned, and the original Background Modal remained open |
-| Current action | Send the real Native sequence `Cmd+A`, exact selected path, and Return so the remembered Go-To value is replaced before evaluating browser/application restoration |
+| Last completed | Clean run `20260821T174413990623Z-53f8ca71a5c59eeab252c407aed5ddcd` proved unacknowledged `Cmd+A -> text -> Return` left the Go-To field at `/opt`; `selection_or_browser_ready` timed out and `pick_image_file` emitted no return |
+| Current action | Send real `Cmd+A` and Delete, wait until the focused AXTextField value is exactly empty, then atomically post the exact path and Return |
 | Next action | Commit/deploy/rebuild matching source and rerun until `pick_image_file` returns, then continue through failed upload retry, valid OSS upload, Station readback, cross-device sync, and restart |
-| Blockers | MP-W13 remains `UNPROVEN`; the chooser currently emits a false selected terminal before the product callback returns; intermittent CoreGraphics down/up loss remains instrumented but did not reproduce in the latest run; background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Blockers | MP-W13 remains `UNPROVEN`; the chooser cannot yet prove its Go-To field was cleared before exact path entry; intermittent CoreGraphics down/up loss remains instrumented but did not reproduce in the latest runs; background upload/retry/persistence/restart/cross-device and attachment conservation have not passed in one source-bound Gate; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T173208817021Z-afe37eed1d1306e5f45db0c67b41f010` matched clean source/build/Station at `b43307773`, retained Thread/Transcript/toolbar/reaction/avatar/Station and settings traversal, opened the Native chooser, observed remembered Go-To value `/opt`, then logged `pick_image_file` entry without return while the Driver falsely emitted selected and the original Background Modal stayed open; cleanup passed and ports `3330/3331/4445/4446` were free; full Native proof remains missing |
+| Evidence | Run `20260821T174413990623Z-53f8ca71a5c59eeab252c407aed5ddcd` matched clean source/build/Station at `caa650cd4`, retained Thread/Transcript/toolbar/reaction/avatar/Station and settings traversal, opened `AXTextField value=/opt`, then timed out in `selection_or_browser_ready` with no `pick_image_file` return after the unacknowledged select-all sequence; cleanup passed and ports `3330/3331/4445/4446` were free; full Native proof remains missing |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate

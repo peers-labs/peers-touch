@@ -323,3 +323,22 @@ The false terminal state is caused by appending to a remembered Go-To value.
 The next comparison must perform the real keyboard sequence
 `Cmd+A -> exact path -> Return`; product callback return, Modal destruction,
 upload pending, and failure recovery remain mandatory.
+
+Unacknowledged-select-all source-bound run:
+`20260821T174413990623Z-53f8ca71a5c59eeab252c407aed5ddcd`.
+
+- Source, dedicated binary, and Profile Three Station matched clean commit
+  `caa650cd4e2bf98adf59fb1f570e4bf180bb1349`.
+- The Go-To field again opened as `AXTextField value=/opt`.
+- The Driver posted `Cmd+A`, path text, and Return without waiting for any
+  field-state transition. The post-entry snapshot deduplicated against the
+  `/opt` snapshot, and `selection_or_browser_ready` timed out while
+  `pick_image_file` remained pending.
+- No product callback return or `Image file selected` line was emitted.
+- Cleanup passed and ports `3330/3331/4445/4446` were released.
+
+The sequence needs an observable Native UI boundary between selection and path
+entry. The next comparison sends `Cmd+A`, sends Delete, waits until the focused
+AXTextField value is exactly empty, then posts the exact path and Return
+atomically. This is event-driven real Native input, not a fixed delay or AX
+value mutation.
