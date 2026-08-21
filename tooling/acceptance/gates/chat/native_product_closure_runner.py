@@ -583,21 +583,26 @@ except Exception as error:
             focused_control: dict[str, Any] | None = None,
         ) -> None:
             nonlocal last_native_file_snapshot
-            snapshot = client.execute_script(
-                """
-                return {
-                  documentFocused: document.hasFocus(),
-                  visibilityState: document.visibilityState,
-                  activeElement: {
-                    tag: document.activeElement?.tagName || '',
-                    role: document.activeElement?.getAttribute?.('role') || '',
-                    classes: document.activeElement?.className?.baseVal
-                      || document.activeElement?.className
-                      || '',
-                  },
-                };
-                """
-            )
+            try:
+                snapshot = client.execute_script(
+                    """
+                    return {
+                      documentFocused: document.hasFocus(),
+                      visibilityState: document.visibilityState,
+                      activeElement: {
+                        tag: document.activeElement?.tagName || '',
+                        role: document.activeElement?.getAttribute?.('role') || '',
+                        classes: document.activeElement?.className?.baseVal
+                          || document.activeElement?.className
+                          || '',
+                      },
+                    };
+                    """
+                )
+            except Exception as error:
+                snapshot = {
+                    "snapshotError": f"{type(error).__name__}: {error}",
+                }
             snapshot["focusedControl"] = (
                 focused_control
                 if focused_control is not None
