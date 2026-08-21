@@ -134,8 +134,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '[data-chat-detail-toggle]',
             '[data-chat-conversation-action="mute"]',
             '[data-chat-conversation-action="pin"]',
-            '[data-chat-background-input]',
-            '[data-chat-attachment-input]',
+            '[data-chat-background-upload]',
+            '[data-chat-attachment-picker]',
             "toolbar_geometry",
             "transcript_exact",
             "thread_exact",
@@ -155,11 +155,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         details = (
             ROOT / "apps/desktop/src/components/chat/ChatDetailPanel.tsx"
         ).read_text(encoding="utf-8")
-        self.assertIn("data-chat-attachment-input", composer)
-        self.assertIn("fileInputRef.current?.click()", composer)
-        self.assertIn("data-chat-background-input", details)
-        self.assertIn("backgroundInputRef.current?.click()", details)
-        self.assertIn("ossUploadAttachmentBytes", details)
+        self.assertIn("data-chat-attachment-picker", composer)
+        self.assertIn("imServiceV1.messaging.pickAttachmentSource()", composer)
+        self.assertIn("appendPickedAttachment", composer)
+        self.assertNotIn("data-chat-attachment-input", composer)
+        self.assertIn("data-chat-background-upload", details)
+        self.assertIn("api.pickImageFile()", details)
+        self.assertIn("api.ossUploadLocalFile", details)
+        self.assertNotIn("data-chat-background-input", details)
+        self.assertNotIn("ossUploadAttachmentBytes", details)
 
     def test_product_files_use_real_native_chooser(self) -> None:
         self.assertIn("def choose_native_file(", self.source)
@@ -168,8 +172,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("CGEventKeyboardSetUnicodeString", self.source)
         self.assertIn('"AXFocusedUIElement"', self.source)
         self.assertIn('"AXTextField"', self.source)
-        self.assertIn("install_native_file_probe", self.source)
-        self.assertIn("native_file_probe_events", self.source)
+        self.assertIn('"windowCount"', self.source)
+        self.assertIn('"sheetCount"', self.source)
+        self.assertIn("def panel_open(", self.source)
         self.assertIn('trigger_selector="[data-chat-background-upload]"', self.source)
         self.assertIn('trigger_selector="[data-chat-attachment-picker]"', self.source)
         for forbidden in (
