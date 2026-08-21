@@ -20,12 +20,12 @@
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-F` Acceptance truth cutover |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | MLS readiness split-brain removed: `messaging_list_conversations` now projects status from the profile-scoped `MessagingEngine.mls_manager`, and `socialChat` no longer queries the unrelated global legacy manager |
-| Current action | Collect pre-fix runtime evidence for the first post-readiness failure: Native hover reaches a visible Alice message row but no pane-owned action overlay appears |
-| Next action | Use `chat-hover-overlay` instrumentation to distinguish missing mouse-enter, unavailable portal host, geometry dismissal, leave-timer race, or selector identity mismatch before changing behavior |
-| Blockers | Native run `20260821T010357798690Z-65927f285ead75b26bff1d1e278f9322` passes MLS group readiness and bidirectional message visibility, then fails at the first real hover action; thread and all later assertions remain `UNPROVEN` |
+| Last completed | Hover pre-fix diagnosis: direct WebDriver movement to the message row produced no pointer-boundary transition, so React received no `mouseenter`; portal host, geometry, selector identity, and the close timer were rejected as the first failure |
+| Current action | Checkpoint the real pointer choreography (`neutral control -> target row`) with post-fix instrumentation, then rebuild and deploy one clean source identity |
+| Next action | Run `chat-native-product-closure-e2e` against the clean commit and compare post-fix A/B/E events with the pre-fix log before diagnosing the next bounded failure |
+| Blockers | Product-closure rerun is required; thread and every assertion after the first hover remain `UNPROVEN` |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Three earlier Native runs diagnosed and closed group readiness ownership; run `20260821T010357798690Z-65927f285ead75b26bff1d1e278f9322` proves the profile-scoped cutover and cleanup, then fails in `transcript.thread.ui` at `hover_message`; debug session `chat-hover-overlay` is `[OPEN]`; W13 remains `UNPROVEN` |
+| Evidence | Native run `20260821T010357798690Z-65927f285ead75b26bff1d1e278f9322` proves the profile-scoped readiness cutover and fails at `hover_message`; pre-fix debug run `20260821T011327502682Z-499fcc3677e1e24d187dd9dac0505a6b` contains no A/B/D/E events after direct movement; Desktop check, six Native runner no-bypass tests, and `git diff --check` pass for the post-fix checkpoint; debug session `chat-hover-overlay` remains `[OPEN]`; W13 remains `UNPROVEN` |
 | Last updated | 2026-08-21 |
 
 ## 1. Plan Sources And Gate
