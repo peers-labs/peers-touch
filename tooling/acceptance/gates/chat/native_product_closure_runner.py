@@ -3,19 +3,18 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import os
 import socket
+import subprocess
 import tempfile
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
 from selenium.webdriver import Keys
-from selenium.webdriver.common.actions import interaction
-from selenium.webdriver.common.actions.action_builder import ActionBuilder
-from selenium.webdriver.common.actions.pointer_input import PointerInput
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -325,6 +324,14 @@ class NativeProductClosureGate(AcceptanceGate):
                   neutral: inspect(neutral),
                   row: inspect(row),
                   viewport: { width: innerWidth, height: innerHeight },
+                  window: {
+                    screenX,
+                    screenY,
+                    outerWidth,
+                    outerHeight,
+                    innerWidth,
+                    innerHeight,
+                  },
                 };
                 """,
                 neutral,
@@ -355,18 +362,79 @@ class NativeProductClosureGate(AcceptanceGate):
             return snapshot
 
         before = report_probe("before")
-        mouse = PointerInput(interaction.POINTER_MOUSE, "native-hover")
-        actions = ActionBuilder(client.driver, mouse=mouse, duration=250)
-        actions.pointer_action.move_to_location(
-            before["neutral"]["center"]["x"],
-            before["neutral"]["center"]["y"],
+        if client.process_id is None:
+            raise GateError("Native hover requires a running client process")
+        subprocess.run(
+            [
+                "/usr/bin/osascript",
+                "-e",
+                (
+                    'tell application "System Events" to set frontmost of first '
+                    f"application process whose unix id is {client.process_id} to true"
+                ),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
         )
-        actions.pointer_action.pause(0.2)
-        actions.pointer_action.move_to_location(
-            before["row"]["center"]["x"],
-            before["row"]["center"]["y"],
+        WebDriverWait(client.driver, 5).until(
+            lambda driver: bool(driver.execute_script("return document.hasFocus()"))
         )
-        actions.perform()
+
+        class CGPoint(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+        core_graphics = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+        )
+        core_foundation = ctypes.CDLL(
+            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+        )
+        core_graphics.CGEventCreateMouseEvent.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            CGPoint,
+            ctypes.c_uint32,
+        ]
+        core_graphics.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+        core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
+
+        window = before["window"]
+        content_offset_x = max(
+            0.0,
+            (float(window["outerWidth"]) - float(window["innerWidth"])) / 2,
+        )
+        content_offset_y = max(
+            0.0,
+            float(window["outerHeight"]) - float(window["innerHeight"]),
+        )
+
+        def screen_point(center: dict[str, float]) -> CGPoint:
+            return CGPoint(
+                float(window["screenX"]) + content_offset_x + float(center["x"]),
+                float(window["screenY"]) + content_offset_y + float(center["y"]),
+            )
+
+        neutral_point = screen_point(before["neutral"]["center"])
+        row_point = screen_point(before["row"]["center"])
+        for step in range(13):
+            ratio = step / 12
+            point = CGPoint(
+                neutral_point.x + (row_point.x - neutral_point.x) * ratio,
+                neutral_point.y + (row_point.y - neutral_point.y) * ratio,
+            )
+            event = core_graphics.CGEventCreateMouseEvent(
+                None,
+                5,
+                point,
+                0,
+            )
+            if not event:
+                raise GateError("CoreGraphics failed to create Native mouse event")
+            core_graphics.CGEventPost(0, event)
+            core_foundation.CFRelease(event)
+
         report_probe("after")
         return WebDriverWait(client.driver, 15).until(
             lambda driver: driver.find_element(
