@@ -173,7 +173,10 @@ export function CreateGroupModal({ open, onClose }: Props) {
       await loadSessions();
       setActiveTab('group');
       selectGroup(conversationId);
-      toast.success(t('chat.social.createGroup.success'));
+      toast.success({
+        description: t('chat.social.createGroup.success'),
+        placement: 'top',
+      });
     } catch (err) {
       useSocialChatStore.getState().setGroupSecurityState(conversationId, 'error');
       log.error('chat', 'createGroup failed', { conversationId, error: err });
