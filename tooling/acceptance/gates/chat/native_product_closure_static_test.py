@@ -150,6 +150,16 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'lambda driver: bool(driver.execute_script("return document.hasFocus()"))',
             focus_up_index,
         )
+        self.assertIn(
+            "NSRunningApplication.runningApplicationWithProcessIdentifier_",
+            self.source,
+        )
+        self.assertIn("NSApplicationActivateAllWindows", self.source)
+        self.assertIn("NSApplicationActivateIgnoringOtherApps", self.source)
+        self.assertLess(
+            self.source.index("application.activateWithOptions_(options)"),
+            self.source.index('tell application "System Events"'),
+        )
         self.assertIn('perform action "AXRaise"', self.source)
         self.assertIn('report_focus_snapshot("after-owner")', focus_source)
         self.assertIn('report_focus_snapshot("after-focus-click")', focus_source)
