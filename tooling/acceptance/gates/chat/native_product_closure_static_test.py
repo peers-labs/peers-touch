@@ -73,6 +73,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("libc.usleep", self.source)
         self.assertIn("install_native_input_probe", self.source)
         self.assertIn("wait_native_input_event", self.source)
+        self.assertIn('event.get("owned") is True', self.source)
         self.assertIn("NATIVE_INPUT_ACK_POLL_SECONDS", self.source)
         self.assertIn("poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS", self.source)
         self.assertIn("'mousemove'", self.source)

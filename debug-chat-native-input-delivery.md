@@ -310,3 +310,26 @@ The instrumentation remains active because the intermittent down/up loss is
 not closed by one non-reproducing run. The current dependency-ready defect is
 the source-backed Background chooser false terminal documented in
 `debug-chat-background-picker.md`.
+
+Reply-mouseup recurrence:
+`20260821T204928275912Z-77be15179988c07ddb06439608387545`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `5f3e426a4a14cbbca8ee33ae547873e19913fa98`; the rebuilt binary SHA-256 was
+  `dd28a2b59e6e2e8f05110b2e459fea8c76a48c9693f39ac9d40ffe1a7fa758a8`.
+- Alice received target-owned `pointerdown` and `mousedown` on the reply
+  button. The target remained connected, enabled, and hit-owned; Alice
+  remained document-focused, frontmost, and WindowServer index `0`.
+- After the timeout, combined-session button state was `false`, proving the OS
+  no longer considered the button pressed, but the target-scoped probe had no
+  `pointerup`, `mouseup`, or `click`.
+- The Gate failed before the chooser, and cleanup released
+  `3330/3331/4445/4446/52946`.
+
+This recurrence rejects actor ownership, target occlusion, and a stuck OS
+button as the immediate cause. The current probe discards document-capture
+events whose target is outside the intended element, so it cannot distinguish
+an entirely missing mouseup from a mouseup delivered to a shifted/different DOM
+target. The next instrumentation records all document-capture pointer/mouse
+events with an `owned` marker while preserving `owned=true` as the Gate success
+condition.
