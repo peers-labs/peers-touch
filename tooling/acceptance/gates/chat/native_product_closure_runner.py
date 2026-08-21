@@ -1009,11 +1009,6 @@ class NativeProductClosureGate(AcceptanceGate):
             window["left"] + content_offset_x + float(target["x"]),
             window["top"] + content_offset_y + float(target["y"]),
         )
-        cursor_position = self.native_cursor_position()
-        requires_pointer_move = not (
-            abs(cursor_position[0] - point[0]) < 0.5
-            and abs(cursor_position[1] - point[1]) < 0.5
-        )
         probe_id = self.install_native_input_probe(client, element)
         # #region debug-point R-V:native-input-delivery
         def report_native_input_delivery(phase: str) -> None:
@@ -1049,7 +1044,6 @@ class NativeProductClosureGate(AcceptanceGate):
                             ),
                             "cursor": self.native_cursor_position(),
                             "point": point,
-                            "requiresPointerMove": requires_pointer_move,
                             "window": window,
                             "target": target,
                             "probeEvents": probe_events,
@@ -1064,54 +1058,60 @@ class NativeProductClosureGate(AcceptanceGate):
             except OSError:
                 pass
 
-        report_native_input_delivery("before-move")
+        report_native_input_delivery("before-click")
         # #endregion
+        mouse_down_posted = False
         try:
             cursor = 0
-            if requires_pointer_move:
-                self.post_mouse(
-                    (5,),
-                    point,
-                )
-                try:
-                    cursor = self.wait_native_input_event(
-                        client,
-                        probe_id,
-                        "mousemove",
-                        cursor,
-                    )
-                except GateError:
-                    # #region debug-point R-V:native-input-delivery
-                    report_native_input_delivery("mousemove-timeout")
-                    # #endregion
-                    raise
             self.post_mouse(
                 (1,),
                 point,
             )
-            cursor = self.wait_native_input_event(
-                client,
-                probe_id,
-                "mousedown",
-                cursor,
-            )
+            mouse_down_posted = True
+            try:
+                cursor = self.wait_native_input_event(
+                    client,
+                    probe_id,
+                    "mousedown",
+                    cursor,
+                )
+            except GateError:
+                # #region debug-point R-V:native-input-delivery
+                report_native_input_delivery("mousedown-timeout")
+                # #endregion
+                raise
             self.post_mouse(
                 (2,),
                 point,
             )
-            cursor = self.wait_native_input_event(
-                client,
-                probe_id,
-                "mouseup",
-                cursor,
-            )
-            self.wait_native_input_event(
-                client,
-                probe_id,
-                "click",
-                cursor,
-            )
+            mouse_down_posted = False
+            try:
+                cursor = self.wait_native_input_event(
+                    client,
+                    probe_id,
+                    "mouseup",
+                    cursor,
+                )
+            except GateError:
+                # #region debug-point R-V:native-input-delivery
+                report_native_input_delivery("mouseup-timeout")
+                # #endregion
+                raise
+            try:
+                self.wait_native_input_event(
+                    client,
+                    probe_id,
+                    "click",
+                    cursor,
+                )
+            except GateError:
+                # #region debug-point R-V:native-input-delivery
+                report_native_input_delivery("click-timeout")
+                # #endregion
+                raise
         finally:
+            if mouse_down_posted and self.native_mouse_button_down():
+                self.post_mouse((2,), point)
             self.remove_native_input_probe(client, probe_id)
         return element
 
