@@ -540,7 +540,7 @@ class NativeProductClosureGate(AcceptanceGate):
 
         command_shift = 0x00100000 | 0x00020000
         self.post_key(5, flags=command_shift)
-        WebDriverWait(
+        go_to_control = WebDriverWait(
             client.driver,
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
@@ -556,24 +556,27 @@ class NativeProductClosureGate(AcceptanceGate):
                 else None
             )
         )
+        # #region debug-point M:native-file-path-entry
+        report_native_file_snapshot("go-to-field", go_to_control)
+        # #endregion
 
         self.post_key(0, text=str(selected_path))
+        # #region debug-point M:native-file-path-entry
+        report_native_file_snapshot("after-path-key")
+        # #endregion
+
+        def native_path_ready(_: Any) -> dict[str, Any] | None:
+            control = self.native_focused_control(client.process_id or 0)
+            # #region debug-point M:native-file-path-entry
+            report_native_file_snapshot("path-poll", control)
+            # #endregion
+            return control if control.get("value") == str(selected_path) else None
+
         WebDriverWait(
             client.driver,
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(
-            lambda _: (
-                control
-                if (
-                    (control := self.native_focused_control(
-                        client.process_id or 0
-                    )).get("value")
-                    == str(selected_path)
-                )
-                else None
-            )
-        )
+        ).until(native_path_ready)
 
         self.post_key(36)
 
