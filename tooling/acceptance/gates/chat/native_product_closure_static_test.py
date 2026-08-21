@@ -160,6 +160,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
 
     def test_background_select_uses_visible_native_options(self) -> None:
         self.assertIn("def visible_options(driver: Any)", self.source)
+        self.assertIn('".ant-select-item-option"', self.source)
         self.assertIn("option.is_displayed() and option.is_enabled()", self.source)
         self.assertIn("return visible if len(visible) >= 2 else None", self.source)
         self.assertIn("self.click_element(actor, options[1])", self.source)
