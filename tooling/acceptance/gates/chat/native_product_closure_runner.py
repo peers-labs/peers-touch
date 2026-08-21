@@ -41,6 +41,194 @@ from tooling.acceptance.gates.chat.native_support import wait_until
 GATE_ID = "chat-native-product-closure-e2e"
 NATIVE_INPUT_ACK_POLL_SECONDS = 0.01
 NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS = 30
+NATIVE_ACCESSIBILITY_PROBE = r"""
+import ctypes
+import json
+import sys
+
+import AppKit
+
+process_id = int(sys.argv[1])
+application_services = ctypes.CDLL(
+    "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
+)
+core_foundation = ctypes.CDLL(
+    "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+)
+CFRef = ctypes.c_void_p
+CFIndex = ctypes.c_long
+CFTypeID = ctypes.c_ulong
+UTF8 = 0x08000100
+
+application_services.AXUIElementCreateApplication.argtypes = [ctypes.c_int32]
+application_services.AXUIElementCreateApplication.restype = CFRef
+application_services.AXUIElementCopyAttributeValue.argtypes = [
+    CFRef,
+    CFRef,
+    ctypes.POINTER(CFRef),
+]
+application_services.AXUIElementCopyAttributeValue.restype = ctypes.c_int32
+application_services.AXUIElementSetMessagingTimeout.argtypes = [
+    CFRef,
+    ctypes.c_float,
+]
+application_services.AXUIElementSetMessagingTimeout.restype = ctypes.c_int32
+core_foundation.CFStringCreateWithCString.argtypes = [
+    CFRef,
+    ctypes.c_char_p,
+    ctypes.c_uint32,
+]
+core_foundation.CFStringCreateWithCString.restype = CFRef
+core_foundation.CFStringGetTypeID.restype = CFTypeID
+core_foundation.CFBooleanGetTypeID.restype = CFTypeID
+core_foundation.CFArrayGetTypeID.restype = CFTypeID
+core_foundation.CFGetTypeID.argtypes = [CFRef]
+core_foundation.CFGetTypeID.restype = CFTypeID
+core_foundation.CFStringGetLength.argtypes = [CFRef]
+core_foundation.CFStringGetLength.restype = CFIndex
+core_foundation.CFStringGetMaximumSizeForEncoding.argtypes = [
+    CFIndex,
+    ctypes.c_uint32,
+]
+core_foundation.CFStringGetMaximumSizeForEncoding.restype = CFIndex
+core_foundation.CFStringGetCString.argtypes = [
+    CFRef,
+    ctypes.c_char_p,
+    CFIndex,
+    ctypes.c_uint32,
+]
+core_foundation.CFStringGetCString.restype = ctypes.c_bool
+core_foundation.CFBooleanGetValue.argtypes = [CFRef]
+core_foundation.CFBooleanGetValue.restype = ctypes.c_bool
+core_foundation.CFArrayGetCount.argtypes = [CFRef]
+core_foundation.CFArrayGetCount.restype = CFIndex
+core_foundation.CFArrayGetValueAtIndex.argtypes = [CFRef, CFIndex]
+core_foundation.CFArrayGetValueAtIndex.restype = CFRef
+core_foundation.CFRelease.argtypes = [CFRef]
+
+
+def create_attribute(name):
+    return core_foundation.CFStringCreateWithCString(
+        None,
+        name.encode("utf-8"),
+        UTF8,
+    )
+
+
+def copy_attribute(element, name):
+    key = create_attribute(name)
+    value = CFRef()
+    try:
+        error = application_services.AXUIElementCopyAttributeValue(
+            element,
+            key,
+            ctypes.byref(value),
+        )
+    finally:
+        core_foundation.CFRelease(key)
+    return value if error == 0 else None
+
+
+def decode_text(value):
+    if (
+        not value
+        or core_foundation.CFGetTypeID(value)
+        != core_foundation.CFStringGetTypeID()
+    ):
+        return ""
+    size = (
+        core_foundation.CFStringGetMaximumSizeForEncoding(
+            core_foundation.CFStringGetLength(value),
+            UTF8,
+        )
+        + 1
+    )
+    buffer = ctypes.create_string_buffer(size)
+    if not core_foundation.CFStringGetCString(value, buffer, size, UTF8):
+        return ""
+    return buffer.value.decode("utf-8")
+
+
+def decode_boolean(value):
+    return bool(
+        value
+        and core_foundation.CFGetTypeID(value)
+        == core_foundation.CFBooleanGetTypeID()
+        and core_foundation.CFBooleanGetValue(value)
+    )
+
+
+def array_items(value):
+    if (
+        not value
+        or core_foundation.CFGetTypeID(value)
+        != core_foundation.CFArrayGetTypeID()
+    ):
+        return []
+    return [
+        core_foundation.CFArrayGetValueAtIndex(value, index)
+        for index in range(core_foundation.CFArrayGetCount(value))
+    ]
+
+
+def copied_text(element, name):
+    value = copy_attribute(element, name)
+    try:
+        return decode_text(value)
+    finally:
+        if value:
+            core_foundation.CFRelease(value)
+
+
+def copied_boolean(element, name):
+    value = copy_attribute(element, name)
+    try:
+        return decode_boolean(value)
+    finally:
+        if value:
+            core_foundation.CFRelease(value)
+
+
+application = application_services.AXUIElementCreateApplication(process_id)
+application_services.AXUIElementSetMessagingTimeout(application, 0.5)
+focused = copy_attribute(application, "AXFocusedUIElement")
+windows_value = copy_attribute(application, "AXWindows")
+windows = array_items(windows_value)
+sheet_count = 0
+for window in windows:
+    sheets_value = copy_attribute(window, "AXSheets")
+    try:
+        sheet_count += len(array_items(sheets_value))
+    finally:
+        if sheets_value:
+            core_foundation.CFRelease(sheets_value)
+front_window = windows[0] if windows else None
+frontmost_app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+result = {
+    "role": copied_text(focused, "AXRole") if focused else "",
+    "subrole": copied_text(focused, "AXSubrole") if focused else "",
+    "title": copied_text(focused, "AXTitle") if focused else "",
+    "value": copied_text(focused, "AXValue") if focused else "",
+    "windowCount": len(windows),
+    "sheetCount": sheet_count,
+    "frontmost": copied_boolean(application, "AXFrontmost"),
+    "mainWindow": (
+        copied_boolean(front_window, "AXMain") if front_window else False
+    ),
+    "focusedWindow": (
+        copied_boolean(front_window, "AXFocused") if front_window else False
+    ),
+    "actualFrontmostPid": (
+        int(frontmost_app.processIdentifier()) if frontmost_app else -1
+    ),
+}
+sys.stdout.write(json.dumps(result))
+if windows_value:
+    core_foundation.CFRelease(windows_value)
+if focused:
+    core_foundation.CFRelease(focused)
+core_foundation.CFRelease(application)
+"""
 READBACK_COMMANDS = {
     "conversation_get_member_settings",
     "messaging_list_messages",
@@ -702,52 +890,14 @@ if not request_accepted:
         # #endregion
 
     def native_focused_control(self, process_id: int) -> dict[str, Any]:
-        script = f"""
-        tell application "System Events"
-          set targetProcess to first application process whose unix id is {process_id}
-          set processFrontmost to frontmost of targetProcess
-          set actualFrontmostPid to -1
-          try
-            set actualFrontmostPid to unix id of first application process whose frontmost is true
-          end try
-          set windowCount to count of windows of targetProcess
-          set sheetCount to 0
-          repeat with appWindow in windows of targetProcess
-            try
-              set sheetCount to sheetCount + (count of sheets of appWindow)
-            end try
-          end repeat
-          set subroleName to ""
-          set roleName to ""
-          set titleValue to ""
-          set controlValue to ""
-          set mainWindow to false
-          set focusedWindow to false
-          try
-            set mainWindow to value of attribute "AXMain" of front window of targetProcess
-          end try
-          try
-            set focusedWindow to value of attribute "AXFocused" of front window of targetProcess
-          end try
-          try
-            set focusedElement to value of attribute "AXFocusedUIElement" of targetProcess
-            set roleName to value of attribute "AXRole" of focusedElement
-            try
-              set subroleName to value of attribute "AXSubrole" of focusedElement
-            end try
-            try
-              set titleValue to value of attribute "AXTitle" of focusedElement as text
-            end try
-            try
-              set controlValue to value of attribute "AXValue" of focusedElement as text
-            end try
-          end try
-          return roleName & tab & subroleName & tab & titleValue & tab & controlValue & tab & windowCount & tab & sheetCount & tab & processFrontmost & tab & mainWindow & tab & focusedWindow & tab & actualFrontmostPid
-        end tell
-        """
         try:
             completed = subprocess.run(
-                ("osascript", "-e", script),
+                (
+                    sys.executable,
+                    "-c",
+                    NATIVE_ACCESSIBILITY_PROBE,
+                    str(process_id),
+                ),
                 capture_output=True,
                 text=True,
                 check=False,
@@ -757,21 +907,11 @@ if not request_accepted:
             return {"error": "Native Accessibility probe timed out"}
         if completed.returncode != 0:
             return {"error": completed.stderr.strip()}
-        fields = completed.stdout.rstrip("\n").split("\t", 9)
-        if len(fields) != 10:
+        try:
+            value = json.loads(completed.stdout)
+        except json.JSONDecodeError:
             return {"error": f"unexpected AX response: {completed.stdout!r}"}
-        return {
-            "role": fields[0],
-            "subrole": fields[1],
-            "title": fields[2],
-            "value": fields[3],
-            "windowCount": int(fields[4]),
-            "sheetCount": int(fields[5]),
-            "frontmost": fields[6] == "true",
-            "mainWindow": fields[7] == "true",
-            "focusedWindow": fields[8] == "true",
-            "actualFrontmostPid": int(fields[9]),
-        }
+        return value if isinstance(value, dict) else {"error": "invalid AX response"}
 
     # #region debug-point AA-AC:native-window-server-ownership
     def native_window_stack_at_point(

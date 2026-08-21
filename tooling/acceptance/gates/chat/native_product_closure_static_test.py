@@ -83,9 +83,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("CGEventSourceButtonState", self.source)
         self.assertIn("native_window_stack_at_point", self.source)
         self.assertIn('"windowStack": self.native_window_stack_at_point(point)', self.source)
-        self.assertIn('"actualFrontmostPid": int(fields[9])', self.source)
-        self.assertIn('"mainWindow": fields[7] == "true"', self.source)
-        self.assertIn('"focusedWindow": fields[8] == "true"', self.source)
+        self.assertIn(
+            "int(frontmost_app.processIdentifier()) if frontmost_app else -1",
+            self.source,
+        )
+        self.assertIn('copied_boolean(front_window, "AXMain")', self.source)
+        self.assertIn('copied_boolean(front_window, "AXFocused")', self.source)
         click_start = self.source.index(
             "    def click_element(self, actor: str, element: Any) -> Any:"
         )
@@ -322,6 +325,28 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("def choose_native_file(", self.source)
         self.assertIn("def post_key(", self.source)
         self.assertIn("def post_key_chord(", self.source)
+        self.assertIn("AXUIElementCreateApplication", self.source)
+        self.assertIn(
+            "AXUIElementSetMessagingTimeout(application, 0.5)",
+            self.source,
+        )
+        focused_control_start = self.source.index(
+            "    def native_focused_control("
+        )
+        focused_control_end = self.source.index(
+            "    # #region debug-point AA-AC:native-window-server-ownership",
+            focused_control_start,
+        )
+        focused_control_source = self.source[
+            focused_control_start:focused_control_end
+        ]
+        self.assertIn("NATIVE_ACCESSIBILITY_PROBE", focused_control_source)
+        self.assertIn("str(process_id)", focused_control_source)
+        self.assertIn("timeout=2", focused_control_source)
+        self.assertNotIn(
+            'tell application "System Events"',
+            focused_control_source,
+        )
         self.assertIn("CGEventCreateKeyboardEvent", self.source)
         self.assertIn("CGEventKeyboardSetUnicodeString", self.source)
         self.assertIn('"AXFocusedUIElement"', self.source)
