@@ -1010,30 +1010,10 @@ class NativeProductClosureGate(AcceptanceGate):
             window["top"] + content_offset_y + float(target["y"]),
         )
         cursor_position = self.native_cursor_position()
-        staging_point: tuple[float, float] | None = None
-        if (
+        requires_pointer_move = not (
             abs(cursor_position[0] - point[0]) < 0.5
             and abs(cursor_position[1] - point[1]) < 0.5
-        ):
-            for probe in target["probes"]:
-                candidate = (
-                    window["left"] + content_offset_x + float(probe["x"]),
-                    window["top"] + content_offset_y + float(probe["y"]),
-                )
-                if (
-                    probe["owned"]
-                    and (
-                        abs(candidate[0] - point[0]) >= 0.5
-                        or abs(candidate[1] - point[1]) >= 0.5
-                    )
-                ):
-                    staging_point = candidate
-                    break
-            if staging_point is None:
-                raise GateError(
-                    "Native click target has no owned staging point "
-                    "for zero-distance cursor movement"
-                )
+        )
         probe_id = self.install_native_input_probe(client, element)
         # #region debug-point R-V:native-input-delivery
         def report_native_input_delivery(phase: str) -> None:
@@ -1069,7 +1049,7 @@ class NativeProductClosureGate(AcceptanceGate):
                             ),
                             "cursor": self.native_cursor_position(),
                             "point": point,
-                            "stagingPoint": staging_point,
+                            "requiresPointerMove": requires_pointer_move,
                             "window": window,
                             "target": target,
                             "probeEvents": probe_events,
@@ -1088,10 +1068,10 @@ class NativeProductClosureGate(AcceptanceGate):
         # #endregion
         try:
             cursor = 0
-            if staging_point is not None:
+            if requires_pointer_move:
                 self.post_mouse(
                     (5,),
-                    staging_point,
+                    point,
                 )
                 try:
                     cursor = self.wait_native_input_event(
@@ -1102,25 +1082,9 @@ class NativeProductClosureGate(AcceptanceGate):
                     )
                 except GateError:
                     # #region debug-point R-V:native-input-delivery
-                    report_native_input_delivery("staging-timeout")
+                    report_native_input_delivery("mousemove-timeout")
                     # #endregion
                     raise
-            self.post_mouse(
-                (5,),
-                point,
-            )
-            try:
-                cursor = self.wait_native_input_event(
-                    client,
-                    probe_id,
-                    "mousemove",
-                    cursor,
-                )
-            except GateError:
-                # #region debug-point R-V:native-input-delivery
-                report_native_input_delivery("mousemove-timeout")
-                # #endregion
-                raise
             self.post_mouse(
                 (1,),
                 point,

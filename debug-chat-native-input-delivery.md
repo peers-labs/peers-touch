@@ -21,6 +21,7 @@
 | U | The move reaches Alice but lands outside the target subtree, so the scoped DOM probe rejects it | Medium | Low | Document-level hit target differs from the requested element while unscoped pointer state changes |
 | V | CoreGraphics posts the move but macOS coalesces or routes it without a WebView mouse event | Low | Medium | Cursor coordinates change to the requested point, actor remains focused, hit target is correct, and the DOM event list remains empty |
 | W | Mouse events created with a null source are not tracked in the login session's combined event state | Medium | Low | Explicit `CGEventSourceCreate(kCGEventSourceStateCombinedSessionState)` restores WebView delivery |
+| X | Requiring a staging `mousemove` before a zero-distance click invents an input precondition that a real stationary click does not have | High | Low | The cursor and target center already match; skipping movement still yields target-owned `mousedown -> mouseup -> click` acknowledgements |
 
 ## Log Evidence
 Source-bound run:
@@ -110,3 +111,24 @@ SDK specifies that events posted from a login session must use an explicit
 `CGEventSourceCreate(kCGEventSourceStateCombinedSessionState)` source. The next
 repair restores global posting with combined-session source state `0`, matching
 the state table used by `CGEventSourceButtonState`.
+
+Combined-session source-bound run:
+`20260821T140930898866Z-70a6c0737f1e5fc4586be3fd498a52e2`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `ac741606a04536019980b204edc116c9c86561b0`.
+- The explicit combined-session source moved the Native cursor from center
+  `[81.5,95]` to the target-owned staging point `[67.5,81]`, but the DOM probe
+  remained empty and the WebView lost document focus.
+- `CGPreflightPostEventAccess`, `CGPreflightListenEventAccess`, and
+  `AXIsProcessTrusted` all returned true for the runner process.
+- Cleanup evidence and direct `lsof` verification proved actor ports
+  `3330/3331/4445/4446` were released.
+
+W is rejected: source state and TCC authorization do not explain the missing
+staging acknowledgement. The remaining defect is the Driver's invented
+precondition. A physical click does not require mouse movement when the cursor
+already occupies the target center. The next comparison preserves movement
+acknowledgement for non-zero-distance actions, but for a stationary click it
+must proceed directly to the real CoreGraphics down/up sequence and require
+target-owned `mousedown`, `mouseup`, and `click` acknowledgements.
