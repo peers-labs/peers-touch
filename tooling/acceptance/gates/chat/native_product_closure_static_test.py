@@ -151,6 +151,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             focus_up_index,
         )
         self.assertIn('perform action "AXRaise"', self.source)
+        self.assertIn('report_focus_snapshot("after-owner")', focus_source)
+        self.assertIn('report_focus_snapshot("after-focus-click")', focus_source)
         self.assertLess(recovery_index, activation_index)
         self.assertLess(activation_index, focus_wait_index)
         self.assertLess(focus_wait_index, focus_down_index)
