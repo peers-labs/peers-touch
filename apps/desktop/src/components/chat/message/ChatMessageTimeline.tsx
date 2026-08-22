@@ -136,6 +136,19 @@ export function ChatMessageTimeline({
 
   const cancelActionClose = useCallback(() => {
     if (closeActionsTimerRef.current === null) return;
+    // #region debug-point AI:action-close-cancelled
+    fetch('http://127.0.0.1:7785/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'chat-native-input-delivery',
+        runId: 'pre-fix-transient-toolbar',
+        hypothesisId: 'AI',
+        location: 'ChatMessageTimeline:cancelActionClose',
+        msg: '[DEBUG] Action close timer cancelled',
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     window.clearTimeout(closeActionsTimerRef.current);
     closeActionsTimerRef.current = null;
   }, []);
@@ -148,16 +161,19 @@ export function ChatMessageTimeline({
   const scheduleActionClose = useCallback(() => {
     cancelActionClose();
     // #region debug-point D:close-timer-scheduled
-    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'D', location: 'ChatMessageTimeline:scheduleActionClose', msg: '[DEBUG] action close timer scheduled', data: {}, ts: Date.now() }) }).catch(() => {});
+    fetch('http://127.0.0.1:7785/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-native-input-delivery', runId: 'pre-fix-transient-toolbar', hypothesisId: 'AI', location: 'ChatMessageTimeline:scheduleActionClose', msg: '[DEBUG] Action close timer scheduled', data: {}, ts: Date.now() }) }).catch(() => {});
     // #endregion
     closeActionsTimerRef.current = window.setTimeout(() => {
       // #region debug-point D:close-timer-fired
-      fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'D', location: 'ChatMessageTimeline:closeTimer', msg: '[DEBUG] action close timer fired', data: {}, ts: Date.now() }) }).catch(() => {});
+      const overlay = actionOverlayHostRef.current?.querySelector<HTMLElement>(
+        '[data-message-action-overlay]',
+      );
+      fetch('http://127.0.0.1:7785/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-native-input-delivery', runId: 'pre-fix-transient-toolbar', hypothesisId: 'AI', location: 'ChatMessageTimeline:closeTimer', msg: '[DEBUG] Action close timer fired', data: { overlayHovered: Boolean(overlay?.matches(':hover')), overlayFocused: Boolean(overlay?.contains(document.activeElement)) }, ts: Date.now() }) }).catch(() => {});
       // #endregion
       setActionTarget(null);
       closeActionsTimerRef.current = null;
     }, 140);
-  }, [cancelActionClose]);
+  }, [actionOverlayHostRef, cancelActionClose]);
 
   const activateActions = useCallback((
     message: ChatMessage,
