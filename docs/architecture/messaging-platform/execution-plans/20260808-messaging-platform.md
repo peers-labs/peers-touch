@@ -21,9 +21,9 @@
 | Current step | `MP-W13-F` remove Gate-induced logout from real client restart proof |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
 | Last completed | Source-bound run `20260822T004237818803Z-2a73ae509e64f3f810528a4c06a0e8c0` matched clean source/live Station `2eff7abe4`, proved loaded Alice/Bob image DOM, complete attachment count conservation, real Native attachment clicks and byte-exact opens, then failed in restart after the Gate invalidated the successfully restored Alice session |
-| Current action | Separate initial fixture authentication from restart so the Gate observes the persisted Native session instead of injecting logout/login during the restart journey |
-| Next action | Commit the Gate lifecycle correction, deploy/rebuild exact clean source, rerun Driver smoke, then rerun the Native Gate through restart recovery |
-| Blockers | MP-W13 remains `UNPROVEN`; restart recovery has not passed after removing the Gate-induced logout; `acceptance-run.py` separately crashes while summarizing a list-shaped evidence artifact; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Current action | Commit the generic list-artifact enrichment repair after the Chat Gate lifecycle correction, preserving the separation between Infra evidence semantics and Chat business assertions |
+| Next action | Deploy/rebuild the exact clean HEAD, rerun Driver smoke, then execute `chat-native-product-closure-e2e` through the standard provisioned runner |
+| Blockers | MP-W13 remains `UNPROVEN`; restart recovery has not passed after removing the Gate-induced logout; the generic list-artifact enrichment repair is locally verified but not yet source-bound; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
 | Evidence | Run `20260822T004237818803Z-2a73ae509e64f3f810528a4c06a0e8c0` matched source/live Station `2eff7abe4`; `attachment_images_loaded`, `attachment_count_conservation`, and `attachment_byte_exact` passed after real Native clicks; restart snapshots show the group before click and the account chooser afterward; app logs show successful restore followed by Gate-issued logout/login; cleanup released all actor/fault-proxy ports |
 | Last updated | 2026-08-22 |
@@ -774,6 +774,10 @@ semantics remain unchanged.
 | `MP-W13-D` Conversation actions | Mute, sticky, built-in background, uploaded background | Social Runtime Phase 3 + Station membership/settings owner | One canonical membership authorization path; typed settings read/write; pending/error/rollback; sanctioned OSS bucket; typed image reference persistence; realtime invalidation and restart recovery | Real Details clicks, Station readback, Alice/Bob sync, failure rollback, restart evidence |
 | `MP-W13-E` Attachment product path | Picker, preview, upload, send, receive, render, counts | W10-B/C/D/E | `convertFileSrc` preview; strict send outcome handling; draft retention on deferred/failure; no empty message; sender/receiver rendering and open/download; count conservation across all surfaces | Byte-exact Native attachment journey and count ledger |
 | `MP-W13-F` Acceptance truth cutover | Chat business Gate and evidence | W13-A through W13-E | Remove command/store bypasses for claimed UI paths; rebuild dedicated binary; source/build/runtime identity; screenshots, DOM, geometry and cleanup evidence; invalidate stale reports | `chat-native-product-closure-e2e`, structural validation, completion audit, independent review |
+
+`MP-W13-F` also requires the generic Acceptance runner to retain list-shaped
+JSON evidence such as restart phase snapshots without interpreting it as a
+Gate-status object or crashing report finalization.
 
 #### Dependency And Parallelization Rules
 

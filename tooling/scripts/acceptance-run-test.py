@@ -70,6 +70,12 @@ class AcceptanceRunTest(unittest.TestCase):
             worktree.mkdir()
             store = EvidenceStore(root / "artifacts", worktree=worktree)
             run = store.begin_run("desktop-performance-report-gate", source={})
+            list_artifact_path = run.run_dir / "evidence/restart-snapshots.json"
+            list_artifact_path.parent.mkdir(parents=True)
+            list_artifact_path.write_text(
+                json.dumps([{"phase": "after-restart"}]),
+                encoding="utf-8",
+            )
             artifact_path = run.run_dir / "reports/desktop-performance-report-latest.json"
             artifact_path.parent.mkdir(parents=True)
             artifact_path.write_text(
@@ -136,7 +142,9 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(result["sourceGate"], "Final report must fail closed until runtime evidence is proven")
         self.assertEqual(result["details"][0]["step"], "desktop-gateway")
         self.assertEqual(result["evidenceDetails"][0]["reason"], "connection refused")
-        self.assertEqual(result["evidenceArtifacts"][0]["details"][0]["url"], "http://127.0.0.1:3030")
+        self.assertEqual(result["evidenceArtifacts"][0]["jsonValueType"], "array")
+        self.assertEqual(result["evidenceArtifacts"][0]["itemCount"], 1)
+        self.assertEqual(result["evidenceArtifacts"][1]["details"][0]["url"], "http://127.0.0.1:3030")
         self.assertEqual(result["issue_breakdown"][0]["category"], "matrix")
         self.assertEqual(
             result["recommended_review_commands"][0]["command"],
