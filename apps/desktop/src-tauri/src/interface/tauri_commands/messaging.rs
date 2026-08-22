@@ -921,6 +921,9 @@ pub async fn messaging_open_attachment(
             ))
         }
     };
+    if let Err(error) = allow_attachment_preview(&window, Path::new(&local_path)) {
+        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
+    }
     Ok(AppResult::success(json!({
         "local_path": local_path,
     })))

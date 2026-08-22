@@ -315,6 +315,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         details = (
             ROOT / "apps/desktop/src/components/chat/ChatDetailPanel.tsx"
         ).read_text(encoding="utf-8")
+        attachment_item = (
+            ROOT / "apps/desktop/src/components/chat/AttachmentItem.tsx"
+        ).read_text(encoding="utf-8")
         messaging = (
             ROOT
             / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
@@ -336,10 +339,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn(".asset_protocol_scope()", messaging)
         self.assertEqual(
             messaging.count("allow_attachment_preview(&window,"),
-            3,
+            4,
         )
         self.assertIn("previous_outcome_revision", self.source)
         self.assertIn("revision <= previous_outcome_revision", self.source)
+        self.assertIn("data-messaging-attachment-open-state", attachment_item)
+        self.assertIn("data-chat-detail-attachment-open-state", details)
+        self.assertIn("attachment_images_loaded", self.source)
+        self.assertIn("Native open", self.source)
 
     def test_product_files_use_real_native_chooser(self) -> None:
         self.assertIn("def choose_native_file(", self.source)

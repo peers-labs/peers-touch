@@ -339,21 +339,29 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [previewFailed, setPreviewFailed] = useState(false);
-  const { src: openUrl, resolve } = useMessagingAttachmentUrl(
+  const { src: openUrl, openState, resolve } = useMessagingAttachmentUrl(
     item.attachment,
     item.kind === 'media',
   );
   const previewUrl = openUrl;
   const filename = item.attachment.filename?.trim() || t('chat.social.detail.unnamedAttachment');
   const sizeLabel = formatChatAttachmentSize(item.attachment.size);
-  const canOpen = Boolean(
+  const hasAttachmentIdentity = Boolean(
     (item.attachment as DetailAttachment & { attachmentId?: string }).attachmentId
       || item.attachment.cid?.startsWith('messaging:'),
   );
+  const canOpen = hasAttachmentIdentity && openState !== 'pending';
   const isMedia = item.kind === 'media';
-  const tooltip = canOpen
-    ? t('chat.social.detail.openAttachment')
-    : t('chat.social.detail.attachmentUnavailable');
+  const openStateLabel = openState === 'pending'
+    ? t('chat.social.messageArea.attachmentStateDownloading')
+    : openState === 'error'
+      ? t('chat.social.messageArea.attachmentDownloadFailed')
+      : '';
+  const tooltip = openStateLabel || (
+    hasAttachmentIdentity
+      ? t('chat.social.detail.openAttachment')
+      : t('chat.social.detail.attachmentUnavailable')
+  );
   const Icon = item.isImage ? ImageIcon : item.isVideo ? Film : FileText;
 
   useEffect(() => {
@@ -364,6 +372,7 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
   }, [previewUrl, item.attachment.cid]);
 
   const handleOpen = async () => {
+    if (openState === 'pending') return;
     const resolved = openUrl ?? await resolve();
     if (resolved) window.open(resolved, '_blank');
   };
@@ -375,6 +384,8 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
           <button
             data-chat-detail-attachment={item.id}
             data-chat-detail-attachment-kind={item.kind}
+            data-chat-detail-attachment-open-state={openState}
+            aria-busy={openState === 'pending'}
             type="button"
             disabled={!canOpen}
             onClick={handleOpen}
@@ -419,6 +430,11 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
               <Text ellipsis style={{ fontSize: 11, fontWeight: 600, maxWidth: '100%' }}>
                 {filename}
               </Text>
+              {openStateLabel ? (
+                <Text type={openState === 'error' ? 'danger' : 'secondary'} ellipsis style={{ fontSize: 10 }}>
+                  {openStateLabel}
+                </Text>
+              ) : null}
               <Flexbox horizontal align="center" justify="space-between" gap={4}>
                 <Text type="secondary" ellipsis style={{ fontSize: 10, minWidth: 0 }}>
                   {sizeLabel || t('chat.social.detail.mediaAttachment')}
@@ -438,6 +454,8 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
         <button
           data-chat-detail-attachment={item.id}
           data-chat-detail-attachment-kind={item.kind}
+          data-chat-detail-attachment-open-state={openState}
+          aria-busy={openState === 'pending'}
           type="button"
           disabled={!canOpen}
           onClick={handleOpen}
@@ -474,7 +492,7 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
                 {filename}
               </Text>
               <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-                {sizeLabel || t('chat.social.detail.fileAttachment')}
+                {openStateLabel || sizeLabel || t('chat.social.detail.fileAttachment')}
               </Text>
             </Flexbox>
             {canOpen ? <ExternalLink size={13} style={{ color: token.colorTextTertiary, flexShrink: 0 }} /> : null}
