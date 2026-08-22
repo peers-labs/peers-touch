@@ -373,3 +373,27 @@ between down and up. Existing logs do not identify whether focus/leave close
 logic or an early reaction mutation caused the teardown, so AG and AH remain
 inconclusive. The next instrumentation records picker focus, pointer boundary,
 and emoji press/click order without changing behavior.
+
+Reaction-picker lifecycle instrumentation run:
+`20260822T013542398002Z-baa3ad2dbb0fd615b5eda703d4393ba2`.
+
+- Source, dedicated binary, and live Station matched clean commit `eec57c834`.
+- The complete Native product-closure Gate passed with `DONE/PROVEN`.
+- For both successful picker selections, the emoji received
+  `pointerdown`, then the picker emitted `blur` with
+  `relatedTarget=null` and `pointerInside=true`.
+- Native `mouseup` and `click` followed 7-16 ms later, before the 140 ms
+  action-close timer could remove the picker.
+- Reaction mutation started only from `click`, after the target-owned up.
+
+| ID | Status | Evidence |
+|---|---|---|
+| AG | Confirmed | WebKit clears focus to `BODY` during an in-surface mouse press; the current blur handler schedules dismissal even though the pointer remains inside |
+| AH | Rejected | The reaction action begins from `click`, after `mouseup`; it does not remove the target early |
+
+The previous failure is therefore a real hold-duration race: if Native
+acknowledgement or a user's press exceeds the close grace, the blur-scheduled
+timer removes the picker before release. The minimal product fix records
+pointer containment and ignores blur dismissal while the pointer remains
+inside. Pointer-leave and true keyboard-focus departure continue to use the
+existing close path. Instrumentation remains active for post-fix comparison.
