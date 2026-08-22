@@ -462,3 +462,30 @@ Minimal fix:
 - Pointer leave, true keyboard-focus departure, outside press dismissal, and
   target-owned Native down/up/click requirements remain unchanged.
 - Instrumentation remains active for the post-fix comparison.
+
+Post-fix source-bound run:
+`20260822T023547607100Z-c254467ea8aa8aef1a807482137fd9ed`.
+
+- Source and live Station matched clean commit
+  `5edf8a1b90e7bebf88647a503e3ebbf0b18acebc`; the rebuilt dedicated binary
+  SHA-256 was
+  `ad063f4cc446b767ced12c26d442ab327b287cd27f09bb9a229dcb37d355c4c5`.
+- The complete Native product-closure Gate passed all 17 assertions and
+  released ports `3330`, `3331`, `4445`, `4446`, and `59124`.
+- At `1787366308100`, the row-leave path scheduled a close timer and the action
+  surface's real `pointerdown` capture cancelled it in the same millisecond.
+- The first Reaction press remained target-owned for 536 ms from pointer down
+  at `1787366317582` through mouse up at `1787366318118`, exceeding the old
+  140 ms close window without unmounting the picker; click followed at
+  `1787366318119`.
+- A second Reaction press also completed down, up, and click with the same
+  pointer ownership guard.
+
+## Verification Conclusion
+
+The pre-fix ordering depended on focus arrival to cancel a row-leave timer even
+after the pointer had entered the portal surface. The post-fix surface
+pointer-down capture cancels that timer at the start of the press, before blur
+or delayed Native up. The full Native journey and the long in-surface Reaction
+press both passed. Instrumentation and Debug Servers remain active pending the
+required user confirmation.
