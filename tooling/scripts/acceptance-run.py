@@ -295,7 +295,7 @@ def filter_gates_by_tier(gates: list[dict[str, Any]], tiers: list[str]) -> list[
     return [gate for gate in gates if gate.get("tier", "local-evidence") in selected]
 
 
-def load_json_artifact(path: Path) -> dict[str, Any] | None:
+def load_json_artifact(path: Path) -> Any | None:
     if not path.exists():
         return None
     try:
@@ -304,8 +304,13 @@ def load_json_artifact(path: Path) -> dict[str, Any] | None:
         return None
 
 
-def evidence_summary_from_artifact(path: Any, artifact: dict[str, Any]) -> dict[str, Any]:
+def evidence_summary_from_artifact(path: Any, artifact: Any) -> dict[str, Any]:
     summary: dict[str, Any] = {"path": path}
+    if not isinstance(artifact, dict):
+        summary["jsonValueType"] = "array" if isinstance(artifact, list) else type(artifact).__name__
+        if isinstance(artifact, list):
+            summary["itemCount"] = len(artifact)
+        return summary
     for key in (
         "artifactKind",
         "status",
@@ -368,7 +373,17 @@ def enrich_result_with_run_artifacts(
         return result
     enriched = dict(result)
     enriched["evidenceArtifacts"] = artifacts
-    primary = artifacts[0]
+    primary = next(
+        (
+            artifact
+            for artifact in artifacts
+            if any(
+                key in artifact
+                for key in ("artifactKind", "status", "completionStatus", "proofStatus")
+            )
+        ),
+        artifacts[0],
+    )
     enriched["sourceArtifact"] = primary.get("path")
     for source_key, target_key in (
         ("artifactKind", "sourceArtifactKind"),
