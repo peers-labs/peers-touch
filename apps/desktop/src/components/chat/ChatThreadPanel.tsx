@@ -244,7 +244,6 @@ export function ChatThreadPanel() {
     setScrollToMessageUlid,
     sendFriendMessage,
     sendGroupMessage,
-    loadGroupMembers,
     deleteMessage,
     recallFriendMessage,
     recallGroupMessage,
@@ -272,7 +271,6 @@ export function ChatThreadPanel() {
     setScrollToMessageUlid: s.setScrollToMessageUlid,
     sendFriendMessage: s.sendFriendMessage,
     sendGroupMessage: s.sendGroupMessage,
-    loadGroupMembers: s.loadGroupMembers,
     deleteMessage: s.deleteMessage,
     recallFriendMessage: s.recallFriendMessage,
     recallGroupMessage: s.recallGroupMessage,
@@ -329,14 +327,6 @@ export function ChatThreadPanel() {
     [currentMessages, loadedThreadMessages, openThreadRootUlid],
   );
   const { rootMessage, replies, displayMessages } = threadSurface;
-
-  useEffect(() => {
-    if (activeTab === 'group' && activeUlid) {
-      loadGroupMembers(activeUlid).catch((error) => {
-        log.warn('socialChat', 'thread panel loadGroupMembers failed', error);
-      });
-    }
-  }, [activeTab, activeUlid, loadGroupMembers]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {

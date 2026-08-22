@@ -583,7 +583,7 @@ export function ChatDetailPanel() {
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, groupMembers,
-    setShowDetail, loadSessions, loadGroupMembers, loadGroups, loadMessages,
+    setShowDetail, loadSessions, loadGroups, loadMessages,
     loadConversationPreviews, selectGroup,
     conversationLocalState, updateConversationLocalState,
     getIMConversations, messages,
@@ -604,7 +604,6 @@ export function ChatDetailPanel() {
     groupMembers: s.groupMembers,
     setShowDetail: s.setShowDetail,
     loadSessions: s.loadSessions,
-    loadGroupMembers: s.loadGroupMembers,
     loadGroups: s.loadGroups,
     loadMessages: s.loadMessages,
     loadConversationPreviews: s.loadConversationPreviews,
@@ -868,7 +867,7 @@ export function ChatDetailPanel() {
     const nextNickname = editMyNicknameValue.trim();
     try {
       await api.groupChatUpdateNickname(activeUlid, nextNickname);
-      await loadGroupMembers(activeUlid);
+      await loadGroups();
       toast.success(t('chat.social.detail.myNicknameUpdated'));
     } catch (error) {
       log.error('chat', 'update group nickname failed', { groupUlid: activeUlid, error });
@@ -1028,7 +1027,7 @@ export function ChatDetailPanel() {
     if (!activeUlid || !member.ptid) return;
     try {
       await api.groupChatUpdateMember(activeUlid, member.ptid, input);
-      await loadGroupMembers(activeUlid);
+      await loadGroups();
       toast.success(t('chat.social.detail.updateMemberSuccess'));
     } catch (error) {
       log.error('chat', 'update group member failed', { groupUlid: activeUlid, ptid: member.ptid, input, error });
@@ -1066,7 +1065,7 @@ export function ChatDetailPanel() {
       onOk: async () => {
         try {
           await api.groupChatTransferOwnership(activeUlid, member.ptid);
-          await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
+          await loadGroups();
           toast.success(t('chat.social.detail.transferOwnerSuccess'));
         } catch (error) {
           log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerDid: member.ptid, error });
@@ -1212,12 +1211,6 @@ export function ChatDetailPanel() {
   };
 
   useEffect(() => {
-    if (isGroup && activeUlid) {
-      loadGroupMembers(activeUlid);
-    }
-  }, [isGroup, activeUlid, loadGroupMembers]);
-
-  useEffect(() => {
     setShowAllMembers(false);
     setMemberManagerOpen(false);
     setInviteModalOpen(false);
@@ -1244,6 +1237,7 @@ export function ChatDetailPanel() {
       data-chat-detail-pinned={activeLocalState?.sticky ? 'true' : 'false'}
       data-chat-detail-background={activeLocalState?.background || 'default'}
       data-chat-detail-background-image={activeLocalState?.backgroundImage || ''}
+      data-chat-detail-cleared-at={String(activeLocalState?.clearedAt || 0)}
       data-chat-detail-action-pending={conversationActionPending || ''}
       data-chat-detail-background-retry={backgroundRetryPath ? 'true' : 'false'}
       style={{
@@ -1660,6 +1654,7 @@ export function ChatDetailPanel() {
         {/* Danger zone */}
         <DetailSection title={t('chat.social.detail.dangerZone')}>
           <Button
+            data-chat-history-action="clear"
             type="text"
             danger
             icon={<Trash2 size={14} />}
@@ -1674,6 +1669,7 @@ export function ChatDetailPanel() {
           {canRestoreHistory ? (
             <Flexbox gap={4}>
               <Button
+                data-chat-history-action="restore"
                 type="text"
                 icon={<RotateCcw size={14} />}
                 style={{ justifyContent: 'flex-start', height: 36 }}

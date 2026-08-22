@@ -22,6 +22,8 @@ import {
 } from '../gen/proto/domain/chat/friend_chat_pb';
 import {
   ChatEncryptedMessagePayloadSchema,
+  GroupMemberSchema,
+  GroupRole,
   GroupMessageAttachmentSchema,
   type ChatEncryptedMessagePayload,
   type Group,
@@ -32,6 +34,10 @@ import { EncryptedMediaDescriptorSchema } from '../gen/proto/domain/common/commo
 import type {
   Conversation,
   ConversationMember,
+} from '../gen/proto/domain/chat/conversation_pb';
+import {
+  MemberRole,
+  MemberStatus,
 } from '../gen/proto/domain/chat/conversation_pb';
 import { imServiceV1 } from '../services/im-service';
 import type {
@@ -769,20 +775,41 @@ export function groupAvatarRemoteUrl(group?: Pick<Group, 'avatarCid'> | null): s
   return '';
 }
 
-function normalizeGroupMember(raw: unknown): GroupMember {
-  const item = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  return {
-    ...(item as unknown as GroupMember),
-    groupUlid: String(item.groupUlid ?? item.group_ulid ?? ''),
-    ptid: String(item.ptid ?? item.actor_did ?? ''),
-    invitedBy: String(item.invitedBy ?? item.invited_by ?? ''),
-  };
+function projectGroupRole(role: MemberRole): GroupRole {
+  switch (role) {
+    case MemberRole.OWNER:
+      return GroupRole.OWNER;
+    case MemberRole.ADMIN:
+      return GroupRole.ADMIN;
+    case MemberRole.MEMBER:
+      return GroupRole.MEMBER;
+    default:
+      return GroupRole.UNSPECIFIED;
+  }
 }
 
-function normalizeGroupMembers(raw: unknown): GroupMember[] {
-  return Array.isArray(raw) ? raw.map(normalizeGroupMember) : [];
+function projectConversationGroupMember(member: ConversationMember): GroupMember {
+  return createProto(GroupMemberSchema, {
+    groupUlid: member.conversationId,
+    ptid: member.ptid,
+    role: projectGroupRole(member.role),
+    nickname: member.nickname,
+    muted: member.muted,
+    mutedUntil: member.mutedUntil,
+    joinedAt: member.joinedAt,
+    invitedBy: member.invitedByPtid,
+    actorHomeStationPeerId: member.actorHomeStationPeerId,
+    actorHomeStationDomain: member.actorHomeStationDomain,
+  });
 }
 
+function activeConversationMembers(
+  members: readonly ConversationMember[],
+): ConversationMember[] {
+  return members.filter(
+    (member) => member.memberStatus === MemberStatus.ACTIVE,
+  );
+}
 
 function socialMessageExplicitThreadRootUlid(msg: SocialMessage): string {
   return (msg as SocialMessage & { threadRootUlid?: string }).threadRootUlid || '';
@@ -989,6 +1016,8 @@ const initialSocialState: Pick<
   typingPeers: {},
 };
 
+let loadSessionsGeneration = 0;
+
 export const useSocialChatStore = createDesktopStore<SocialChatState>('socialChat', (set, get) => ({
   ...initialSocialState,
 
@@ -1025,9 +1054,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     if (!did) return;
     if (currentAuthenticatedActorId() !== did) return;
     set({ currentUserDid: did });
-    const { loadCurrentUserProfile, loadSessions, loadGroups } = get();
+    const { loadCurrentUserProfile, loadSessions } = get();
     await loadCurrentUserProfile();
-    await Promise.all([loadSessions(), loadGroups()]);
+    await loadSessions();
   },
   setFriendP2pStatus: (sessionUlid, state, detail, transport) =>
     set((prev) => ({
@@ -1061,12 +1090,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadSessions: async () => {
-    if (!hasAuthenticatedActor()) return;
+    const actorId = currentAuthenticatedActorId();
+    if (!actorId) return;
+    const requestGeneration = ++loadSessionsGeneration;
     set({ loading: true });
     try {
       const projections = await imServiceV1.messaging.listConversations();
       const conversationSnapshots = await Promise.all(projections.map(async (conversation) => {
         let settings: MemberSettingsResult | null = null;
+        let members: ConversationMember[] | null = null;
         try {
           settings = await imServiceV1.conversation.getMemberSettings(
             conversation.conversationId,
@@ -1077,12 +1109,17 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
             error,
           });
         }
+        if (conversation.kind === 2) {
+          members = await imServiceV1.conversation.getMembers(
+            conversation.conversationId,
+          );
+        }
 
         const groupSecurityState = conversation.kind === 2 && conversation.mlsStatus
           ? projectGroupSecurityState(conversation.mlsStatus)
           : undefined;
 
-        return { conversation, settings, groupSecurityState };
+        return { conversation, settings, members, groupSecurityState };
       }));
       const allConversations = normalizeConversations(projections.map(conversation => ({
         conversation_id: conversation.conversationId,
@@ -1108,23 +1145,24 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         );
       }
 
-      const groupMembersUpdate: Record<string, any[]> = { ...get().groupMembers };
-      for (const conversation of projections.filter(item => item.kind === 2)) {
-        groupMembersUpdate[conversation.conversationId] = conversation.memberPtids.map(ptid => ({
-          conversationId: conversation.conversationId,
-          ptid,
-          role: ptid === conversation.ownerPtid ? 3 : 1,
-          memberStatus: 1,
-        }));
+      if (
+        requestGeneration !== loadSessionsGeneration
+        || currentAuthenticatedActorId() !== actorId
+      ) {
+        return;
       }
 
-      const actorId = currentAuthenticatedActorId() || '';
-      const actorUsername = get().currentUserProfile?.username?.trim().toLowerCase() || '';
-      const isSelfMember = (member: ConversationMember): boolean => {
-        if (!member.ptid) return false;
-        if (member.ptid === actorId) return true;
-        if (actorUsername && member.ptid.includes(`:p:${actorUsername}:`)) return true;
-        return false;
+      const groupMembersUpdate: Record<string, GroupMember[]> = {};
+      for (const { conversation, members } of conversationSnapshots) {
+        if (conversation.kind !== 2) continue;
+        if (members) {
+          groupMembersUpdate[conversation.conversationId] =
+            activeConversationMembers(members).map(projectConversationGroupMember);
+        }
+      }
+
+      const isSelfMember = (member: Pick<ConversationMember, 'ptid'>): boolean => {
+        return Boolean(member.ptid && member.ptid === actorId);
       };
       const nextConversationLocalState = { ...get().conversationLocalState };
       const nextGroupSecurityState = { ...get().groupSecurityState };
@@ -1140,7 +1178,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           ...projectConversationMemberSettings(settings),
         };
       }
-      saveConversationLocalState(actorId || get().currentUserDid, nextConversationLocalState);
+      saveConversationLocalState(actorId, nextConversationLocalState);
       set({
         conversations: allConversations,
         conversationMembers: memberMap,
@@ -1151,23 +1189,38 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         groups: [],
         loading: false,
         loadError: null,
-        ...(!get().currentUserDid && actorId ? { currentUserDid: actorId } : {}),
+        ...(!get().currentUserDid ? { currentUserDid: actorId } : {}),
       });
       log.info('socialChat', 'loadConversations completed', {
         direct: directConversations.length,
         group: allConversations.length - directConversations.length,
       });
 
-      // Trigger profile loading for DM peers so names resolve.
-      for (const [, members] of Object.entries(memberMap)) {
+      // Resolve every conversation member through the same PTID profile
+      // projection so list, message, thread, and Details surfaces converge.
+      for (const members of [
+        ...Object.values(memberMap),
+        ...Object.values(groupMembersUpdate),
+      ]) {
         for (const m of members) {
           if (m.ptid && !isSelfMember(m) && !get().peerProfiles[m.ptid]) {
-            get().loadPeerProfile(m.ptid).catch(() => {});
+            get().loadPeerProfile(m.ptid).catch((error) => {
+              log.warn('socialChat', 'load conversation member profile failed', {
+                peerPtid: m.ptid,
+                error,
+              });
+            });
           }
         }
       }
       get().loadFriendRequests().catch(() => {});
     } catch (error) {
+      if (
+        requestGeneration !== loadSessionsGeneration
+        || currentAuthenticatedActorId() !== actorId
+      ) {
+        return;
+      }
       set({ loading: false });
       if (isUnauthorizedError(error)) return;
       const message = error instanceof Error ? error.message : String(error);
@@ -1175,6 +1228,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       log.error('socialChat', 'loadConversations failed', error);
 
       get().loadFriendRequests().catch(() => {});
+      throw error;
     }
   },
 
@@ -1211,19 +1265,29 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
             0,
           );
           if (lastReadSequence > 0) {
-            api.messagingReadCursor(ulid, lastReadSequence).catch(() => {});
+            api.messagingReadCursor(ulid, lastReadSequence).catch((error) => {
+              log.warn('socialChat', 'selectSession read cursor failed', {
+                sessionUlid: ulid,
+                lastReadSequence,
+                error,
+              });
+            });
           }
         }
       }
     },
   selectGroup: (ulid) => {
-      set((prev) => ({
+      set({
         activeGroupUlid: ulid,
         activeTab: 'group' as const,
         openThreadRootUlid: null,
-        groupUnreadCounts: { ...prev.groupUnreadCounts, [ulid]: 0 },
-      }));
-      get().markGroupRead(ulid).catch(() => {});
+      });
+      get().markGroupRead(ulid).catch((error) => {
+        log.warn('socialChat', 'selectGroup read cursor failed', {
+          groupUlid: ulid,
+          error,
+        });
+      });
     },
 
   loadMessages: async (ulid, kind) => {
@@ -1401,6 +1465,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const lastReadSeq = messages.find((message) => message.ulid === lastReadUlid)
         ? messageGroupSeq(messages.find((message) => message.ulid === lastReadUlid)!)
         : messages.reduce((max, message) => Math.max(max, messageGroupSeq(message)), 0);
+      if (lastReadSeq <= 0) return;
       await api.messagingReadCursor(ulid, lastReadSeq);
       await get().refreshThreadCounts(ulid, [rootUlid], activeKind);
     } catch (error) {
@@ -1506,19 +1571,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   loadGroupMembers: async (groupUlid) => {
     if (!hasAuthenticatedActor()) return;
     try {
-      const data = await api.groupChatGetMembers(groupUlid);
-      const members = normalizeGroupMembers(data?.members);
-
-      set((state) => ({
-        groupMembers: { ...state.groupMembers, [groupUlid]: members },
-      }));
-
-      const actorId = get().currentUserDid || '';
-      const actorUn = get().currentUserProfile?.username?.trim().toLowerCase() || '';
-      for (const m of members) {
-        if (m.ptid && m.ptid !== actorId && !(actorUn && m.ptid.includes(`:p:${actorUn}:`)) && !get().peerProfiles[m.ptid]) {
-          get().loadPeerProfile(m.ptid).catch(() => {});
-        }
+      await get().loadSessions();
+      if (!Object.prototype.hasOwnProperty.call(get().groupMembers, groupUlid)) {
+        throw new Error(`conversation_members_unavailable:${groupUlid}`);
       }
     } catch (error) {
       if (isUnauthorizedError(error)) return;
@@ -1672,10 +1727,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   loadCurrentUserProfile: async () => {
     if (!hasAuthenticatedActor()) return;
     try {
-      const profile = await api.actorGetMyProfile();
+      const profile = await api.profileGet();
       const profileDid = profile?.id?.trim() || null;
       set({
-        currentUserProfile: profile,
+        currentUserProfile: {
+          id: profile.id,
+          username: profile.username,
+          displayName: profile.display_name,
+          avatar: profile.avatar,
+        },
         currentUserDid: profileDid,
         conversationLocalState: loadConversationLocalState(profileDid),
       });
@@ -1845,8 +1905,16 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   markGroupRead: async (groupUlid) => {
     try {
-      const lastReadSeq = (get().messages[groupUlid] ?? [])
+      let lastReadSeq = (get().messages[groupUlid] ?? [])
         .reduce((max, message) => Math.max(max, messageGroupSeq(message)), 0);
+      if (lastReadSeq <= 0) {
+        await get().loadMessages(groupUlid, 'group');
+        lastReadSeq = (get().messages[groupUlid] ?? [])
+          .reduce((max, message) => Math.max(max, messageGroupSeq(message)), 0);
+      }
+      if (lastReadSeq <= 0) {
+        return;
+      }
       await api.messagingReadCursor(groupUlid, lastReadSeq);
       set((state) => ({
         groupUnreadCounts: { ...state.groupUnreadCounts, [groupUlid]: 0 },

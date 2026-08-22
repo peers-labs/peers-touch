@@ -13,6 +13,13 @@ MESSAGE_ACTION_OVERLAY = (
     ROOT
     / "apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx"
 )
+HOME_STATION_PROVISIONER = (
+    ROOT / "tooling/acceptance/provisioners/home_station.py"
+)
+CHAT_DETAIL_PANEL = (
+    ROOT / "apps/desktop/src/components/chat/ChatDetailPanel.tsx"
+)
+CHAT_COMPOSER = ROOT / "apps/desktop/src/components/chat/ChatComposer.tsx"
 
 
 class NativeProductClosureStaticTests(unittest.TestCase):
@@ -23,6 +30,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.message_action_overlay = MESSAGE_ACTION_OVERLAY.read_text(
             encoding="utf-8"
         )
+        self.home_station_provisioner = HOME_STATION_PROVISIONER.read_text(
+            encoding="utf-8"
+        )
+        self.chat_detail_panel = CHAT_DETAIL_PANEL.read_text(encoding="utf-8")
+        self.chat_composer = CHAT_COMPOSER.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
 
     def test_runner_is_a_real_acceptance_gate(self) -> None:
@@ -296,6 +308,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             commands,
             {
                 "conversation_get_member_settings",
+                "messaging_list_conversations",
                 "messaging_list_messages",
                 "messaging_open_attachment",
             },
@@ -320,14 +333,38 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "attachment_count_conservation",
             "attachment_byte_exact",
             "cleanup_ports_released",
+            "cleanup_processes_released",
+            "cleanup_storage_released",
+            "offline_recovery_exact",
+            "restart_exact",
+            "clear_cursor_station_readback",
+            "background_rendered",
+            "background_second_device_recovery",
+            "runtime_logs_clean",
             "binarySha256",
             "save_screenshot",
             "save_dom",
-            "capture_restart_snapshot",
-            "restart-detail-failure",
-            "alice-restart-detail-failure",
+            "conversation_snapshot",
+            "background_resource_snapshot",
+            "create_recovery_revision",
+            "restore_recovery_revision",
+            "runtime-launch-ledger",
+            "runtime-log-audit",
         ):
             self.assertIn(required, self.source)
+
+    def test_second_device_and_clear_cursor_are_real_runtime_paths(self) -> None:
+        self.assertIn(
+            '"chat-native-product-closure-e2e": ("alice", "bob", "alice2")',
+            self.home_station_provisioner,
+        )
+        self.assertIn('"alice2": "alice"', self.source)
+        self.assertIn('data-chat-history-action="clear"', self.chat_detail_panel)
+        self.assertIn('data-chat-history-action="restore"', self.chat_detail_panel)
+        self.assertIn("conversation_get_member_settings", self.source)
+        self.assertIn("commits_match(source_commit, station_commit)", self.source)
+        self.assertIn('RECOVERY_SELECTORS["restore_submit"]', self.source)
+        self.assertNotIn("shutil.copy2", self.source)
 
     def test_product_file_controls_share_the_visible_user_path(self) -> None:
         composer = (
@@ -610,15 +647,90 @@ class NativeProductClosureStaticTests(unittest.TestCase):
 
     def test_station_attribution_evidence_serializes_sets_as_lists(self) -> None:
         self.assertIn("station_sets_detail = [", self.source)
-        self.assertIn("json.dumps(station_sets_detail)", self.source)
+        self.assertIn('"engine": engine_authorities', self.source)
+        self.assertIn('station_sets["alice"] == {expected_authority}', self.source)
         self.assertNotIn("json.dumps(station_sets)", self.source)
 
     def test_avatar_proof_waits_for_exact_loaded_surfaces(self) -> None:
         self.assertIn("def loaded_snapshot()", self.source)
         self.assertIn('f"{actor} exact loaded avatar surfaces"', self.source)
-        self.assertIn("len(entries) >= 3", self.source)
-        self.assertIn("len(sources) == 1", self.source)
+        self.assertIn('"conversation-list"', self.source)
+        self.assertIn('"timeline"', self.source)
+        self.assertIn('"thread"', self.source)
+        self.assertIn('"details"', self.source)
+        self.assertIn("len(canonical) == 1", self.source)
+        self.assertGreaterEqual(self.source.count("client_sources["), 3)
         self.assertIn("all(entry.get(\"loaded\") for entry in entries)", self.source)
+        self.assertIn("expected_cache_key", self.source)
+        self.assertIn('sources["current"]', self.source)
+        self.assertIn('snapshot["groupSlots"]', self.source)
+        self.assertIn('slot["ptid"] for slot in slot_sets["alice"]', self.source)
+        self.assertNotIn(
+            'if entry.get("surface") == "conversation-list"',
+            self.source,
+        )
+
+    def test_attachment_image_assertion_rejects_an_empty_image_set(self) -> None:
+        self.assertIn("imageCount: images.length", self.source)
+        self.assertIn("imageLoaded: images.length > 0", self.source)
+        self.assertIn('image_attachments[0]["imageCount"] > 0', self.source)
+
+    def test_runtime_audit_fails_closed_on_missing_resources(self) -> None:
+        self.assertIn('"runtime log missing"', self.source)
+        self.assertIn('"runtime log empty"', self.source)
+        self.assertIn(r"unhandled(?: promise)? rejection", self.source)
+        self.assertIn('int(spec["renderer_port"])', self.source)
+        self.assertIn('"storageReleased": storage_released', self.source)
+        self.assertIn('self.write_json_evidence("cleanup", result)', self.source)
+        self.assertIn('source.get("workspaceDigest") == "clean"', self.source)
+        launch_start = self.source.index("    def launch_actor(")
+        launch_end = self.source.index("    def restart_actor(", launch_start)
+        launch_source = self.source[launch_start:launch_end]
+        self.assertLess(
+            launch_source.index("self.runtime_instances.append(client)"),
+            launch_source.index("client.start()"),
+        )
+        self.assertLess(
+            launch_source.index("self.runtime_launches.append(attempt)"),
+            launch_source.index("client.start()"),
+        )
+        cleanup_start = self.source.index("    def cleanup_clients(")
+        cleanup_end = self.source.index("    def run(", cleanup_start)
+        cleanup_source = self.source[cleanup_start:cleanup_end]
+        self.assertLess(
+            cleanup_source.index("client.stop()"),
+            cleanup_source.index("self.audit_runtime_logs()"),
+        )
+        self.assertIn(
+            'self.write_json_evidence(\n'
+            '            "runtime-launch-ledger",',
+            cleanup_source,
+        )
+        self.assertNotIn(
+            'self.step("runtime.logs.clean"',
+            self.source,
+        )
+
+    def test_attachment_ledger_binds_outcome_engine_and_dom_ids(self) -> None:
+        self.assertIn(
+            "data-chat-send-outcome-message-id",
+            self.chat_composer,
+        )
+        self.assertIn(
+            '"messageId": composer.get_attribute(',
+            self.source,
+        )
+        self.assertIn(
+            'str(outcome["messageId"])',
+            self.source,
+        )
+        self.assertIn(
+            'str(text_outcome["messageId"])',
+            self.source,
+        )
+        self.assertIn("== set(outcome[\"ids\"])", self.source)
+        self.assertIn("!= set(text_outcome[\"ids\"])", self.source)
+        self.assertIn("engine_attachment_ids != expected_attachment_ids", self.source)
 
     def test_narrow_thread_panel_keeps_native_controls_in_viewport(self) -> None:
         chat_page = (

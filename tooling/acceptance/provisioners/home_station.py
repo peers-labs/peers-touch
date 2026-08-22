@@ -37,7 +37,7 @@ GATE_ROLES = {
 
 CLIENT_ROLES = {
     "chat-native-two-client-e2e": ("alice", "bob"),
-    "chat-native-product-closure-e2e": ("alice", "bob"),
+    "chat-native-product-closure-e2e": ("alice", "bob", "alice2"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
     "chat-contact-message-resilience-e2e": ("alice",),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
