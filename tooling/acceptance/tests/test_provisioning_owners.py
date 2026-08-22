@@ -21,6 +21,7 @@ from tooling.acceptance.core.attestation import (
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore
 from tooling.acceptance.fixtures.chat_native_actors import (
+    ACTOR_ACCOUNTS,
     _login_session,
     produce_actor_manifest,
 )
@@ -198,6 +199,16 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
 
 class ActorFixtureOwnerTests(unittest.TestCase):
+    def test_actor_roles_resolve_to_canonical_preset_accounts(self) -> None:
+        self.assertEqual(
+            ACTOR_ACCOUNTS,
+            {
+                "alice": "alice@p.t",
+                "bob": "bob@p.t",
+                "charlie": "carol@p.t",
+            },
+        )
+
     def test_login_session_requires_ptid_token_and_session(self) -> None:
         session = _login_session(
             {
