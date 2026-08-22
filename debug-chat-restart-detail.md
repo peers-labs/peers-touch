@@ -99,3 +99,12 @@ successfully; the Gate invalidated it during restart and introduced a logout
 navigation race. The repair separates initial fixture login from restart:
 restart now waits read-only for the existing session's canonical PTID and
 device identity and never invokes logout/login.
+
+Post-fix source-bound run
+`20260822T013542398002Z-baa3ad2dbb0fd615b5eda703d4393ba2`
+matched clean source, dedicated binary, and live Station `eec57c834`. It
+completed `PASS/DONE/PROVEN`, including `settings_restart_recovery`. The
+persisted group reopened after restart, Details became available, and Mute,
+Pin, Background, transcript, thread, reaction, and attachment projections
+remained consistent. This closes hypothesis F with a pre-fix/post-fix Native
+comparison; the debug session remains `[OPEN]` until user confirmation.

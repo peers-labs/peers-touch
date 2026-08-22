@@ -68,3 +68,11 @@ matched source and Profile Three Station commit
 `04fe5680128ac008c350a264e5e9ac20c7000e1f` and recorded both
 `avatar_exact_loaded=PASS` and `station_attribution_exact=PASS`. The first
 failure advanced to Mute projection; cleanup released actor and proxy ports.
+
+Full closure run
+`20260822T013542398002Z-baa3ad2dbb0fd615b5eda703d4393ba2`
+matched clean source, dedicated binary, and live Station `eec57c834` and
+completed `PASS/DONE/PROVEN`. Alice and Bob again exposed the same authority
+Station ID while avatar URLs matched across message, conversation-list, and
+Details surfaces and every asserted image loaded. The debug session remains
+`[OPEN]` until user confirmation.
