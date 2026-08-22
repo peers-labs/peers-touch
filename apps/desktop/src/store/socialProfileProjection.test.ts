@@ -60,6 +60,24 @@ describe('social profile projection', () => {
     }).isSelf).toBe(false);
   });
 
+  it('preserves the Station origin in avatar resource identity', () => {
+    const identity = resolveActorIdentity({
+      ptid: bob,
+      currentUserDid: alice,
+      currentUserProfile: null,
+      peerProfiles: {
+        [bob]: {
+          ...bobStationProfile,
+          avatar: 'https://station-b.example/sub-oss/file?key=avatars%2Fbob.png',
+        },
+      },
+      sessions: [],
+    });
+
+    expect(identity.avatarUrl)
+      .toBe('https://station-b.example/sub-oss/file?key=avatars%2Fbob.png');
+  });
+
   it('prefers Station profile over stale session metadata', () => {
     expect(resolveActorIdentity({
       ptid: bob,

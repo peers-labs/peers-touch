@@ -7,7 +7,9 @@ import ctypes
 import hashlib
 import json
 import os
+import re
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -35,10 +37,25 @@ from tooling.acceptance.drivers.tauri import TauriDriver, find_app_binary
 from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
     ProfileThreeSubmitFaultProxy,
 )
-from tooling.acceptance.gates.chat.native_support import wait_until
+from tooling.acceptance.gates.chat.native_support import commits_match, wait_until
 
 
 GATE_ID = "chat-native-product-closure-e2e"
+CLIENT_ACTOR_ROLES = {
+    "alice": "alice",
+    "bob": "bob",
+    "alice2": "alice",
+}
+RECOVERY_SELECTORS = {
+    "settings_nav": '[data-pt-primary-nav="settings"]',
+    "security_section": '[data-pt-section-item="security"]',
+    "generate": "[data-recovery-generate]",
+    "reveal": "[data-recovery-reveal]",
+    "backup": "[data-recovery-backup-create]",
+    "restore_open": "[data-recovery-restore-open]",
+    "restore_input": "[data-recovery-restore-input]",
+    "restore_submit": "[data-recovery-restore-submit]",
+}
 NATIVE_INPUT_ACK_POLL_SECONDS = 0.01
 NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS = 30
 NATIVE_FILE_PANEL_FOCUSED_ROLES = frozenset({"AXList", "AXTextField"})
@@ -232,6 +249,7 @@ core_foundation.CFRelease(application)
 """
 READBACK_COMMANDS = {
     "conversation_get_member_settings",
+    "messaging_list_conversations",
     "messaging_list_messages",
     "messaging_open_attachment",
 }
@@ -241,30 +259,46 @@ REQUIRED_ASSERTIONS = {
     "transcript_exact",
     "thread_exact",
     "toolbar_geometry",
+    "toolbar_keyboard_reachable",
     "reaction_picker_success",
+    "reaction_authority_readback",
     "reaction_failure_recovery",
     "avatar_exact_loaded",
+    "group_avatar_slots_exact",
     "station_attribution_exact",
     "settings_station_readback",
     "settings_restart_recovery",
     "background_upload_recovery",
+    "background_rendered",
+    "background_second_device_recovery",
+    "clear_cursor_station_readback",
+    "offline_recovery_exact",
+    "restart_exact",
     "attachment_failure_draft_retained",
     "attachment_images_loaded",
     "attachment_count_conservation",
     "attachment_byte_exact",
+    "runtime_logs_clean",
     "cleanup_ports_released",
+    "cleanup_processes_released",
+    "cleanup_storage_released",
 }
 REQUIRED_EVIDENCE = {
     "alice-final-screenshot",
     "alice-final-dom",
     "bob-final-screenshot",
     "bob-final-dom",
+    "alice2-final-screenshot",
+    "alice2-final-dom",
     "source-build-runtime",
     "transcript-thread",
     "reaction-geometry",
     "identity-station",
     "settings-background",
     "attachment-ledger",
+    "recovery-ledger",
+    "runtime-launch-ledger",
+    "runtime-log-audit",
     "cleanup",
 }
 
@@ -339,6 +373,18 @@ def port_is_free(port: int) -> bool:
         return probe.connect_ex(("127.0.0.1", port)) != 0
 
 
+def pid_is_stopped(pid: int) -> bool:
+    if pid <= 0:
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False
+
+
 class NativeProductClosureGate(AcceptanceGate):
     gate_id = GATE_ID
 
@@ -361,11 +407,16 @@ class NativeProductClosureGate(AcceptanceGate):
             for actor in self.actor_manifest.get("actors", [])
             if isinstance(actor, dict)
         }
-        if set(self.client_specs) != {"alice", "bob"}:
-            raise GateError("runtime manifest must allocate isolated Alice and Bob clients")
+        if set(self.client_specs) != set(CLIENT_ACTOR_ROLES):
+            raise GateError(
+                "runtime manifest must allocate isolated Alice, Bob, and Alice2 clients"
+            )
         if set(self.actor_specs) != {"alice", "bob"}:
             raise GateError("actor manifest must contain canonical Alice and Bob identities")
         self.clients: dict[str, TauriDriver] = {}
+        self.runtime_instances: list[TauriDriver] = []
+        self.runtime_pids: set[int] = set()
+        self.runtime_launches: list[dict[str, Any]] = []
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
         self.steps: list[dict[str, Any]] = []
@@ -425,9 +476,16 @@ class NativeProductClosureGate(AcceptanceGate):
             timeout=60,
         )
 
-    def launch_actor(self, actor: str, *, restore_session: bool = False) -> None:
+    def launch_actor(
+        self,
+        actor: str,
+        *,
+        restore_session: bool = False,
+        wait_for_device: bool = True,
+    ) -> None:
         spec = self.client_specs[actor]
-        window_actors = ("alice", "bob")
+        actor_role = CLIENT_ACTOR_ROLES[actor]
+        window_actors = tuple(CLIENT_ACTOR_ROLES)
         actor_station_url = (
             self.reaction_proxy.url
             if actor == "alice" and self.reaction_proxy is not None
@@ -445,18 +503,42 @@ class NativeProductClosureGate(AcceptanceGate):
                 "PT_ACCEPTANCE_WINDOW_COUNT": str(len(window_actors)),
             },
         )
-        client.start()
-        self.register_driver(client)
+        attempt = {
+            "sequence": len(self.runtime_launches) + 1,
+            "clientRole": actor,
+            "actorRole": actor_role,
+            "ptid": "",
+            "deviceId": "",
+            "pid": None,
+            "webdriverPort": client.port,
+            "gatewayPort": client.gateway_port,
+            "rendererPort": int(spec["renderer_port"]),
+            "profile": client.profile,
+            "storageRoot": client.storage_root,
+            "logPath": "",
+            "initializationStatus": "starting",
+            "cleanupStatus": "pending",
+        }
+        self.runtime_instances.append(client)
+        self.runtime_launches.append(attempt)
         try:
+            client.start()
+            attempt["pid"] = client.process_id
+            attempt["logPath"] = str(client.log_path or "")
+            if client.process_id:
+                self.runtime_pids.add(int(client.process_id))
+            self.register_driver(client)
             client.wait_for_acceptance_harness(30)
-            expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
+            expected_ptid = str(self.actor_specs[actor_role].get("ptid") or "")
             if not restore_session:
                 self.configure_station(client, actor_station_url)
                 with StationDriver(
                     f"http://127.0.0.1:{client.gateway_port}"
                 ) as station:
                     station.auth_logout()
-                account_ref = str(self.actor_specs[actor].get("accountRef") or "")
+                account_ref = str(
+                    self.actor_specs[actor_role].get("accountRef") or ""
+                )
                 account = account_ref.removeprefix("station-account:")
                 login = call_async_harness(
                     client,
@@ -471,14 +553,21 @@ class NativeProductClosureGate(AcceptanceGate):
                         f"{actor} login identity mismatch: "
                         f"expected={expected_ptid} actual={ptid}"
                     )
-            device = self.wait_for_realtime_device(client, expected_ptid)
-            ptid = str(device.get("actorId") or "")
-            device_id = str((device or {}).get("deviceId") or "")
-            if not device_id:
-                raise GateError(f"{actor} messaging device identity is missing")
+            ptid = expected_ptid
+            device_id = ""
+            if wait_for_device:
+                device = self.wait_for_realtime_device(client, expected_ptid)
+                ptid = str(device.get("actorId") or "")
+                device_id = str((device or {}).get("deviceId") or "")
+                if not device_id:
+                    raise GateError(f"{actor} messaging device identity is missing")
             self.clients[actor] = client
             self.ptids[actor] = ptid
-            self.device_ids[actor] = device_id
+            if device_id:
+                self.device_ids[actor] = device_id
+            attempt["ptid"] = ptid
+            attempt["deviceId"] = device_id
+            attempt["initializationStatus"] = "ready"
             self.report.add_actor(
                 ActorRuntime(
                     name=actor,
@@ -490,7 +579,13 @@ class NativeProductClosureGate(AcceptanceGate):
                     pid=client.process_id,
                 )
             )
-        except Exception:
+        except Exception as error:
+            attempt["pid"] = attempt["pid"] or client.process_id
+            attempt["logPath"] = str(client.log_path or "")
+            attempt["initializationStatus"] = "failed"
+            attempt["failureType"] = type(error).__name__
+            if client.process_id:
+                self.runtime_pids.add(int(client.process_id))
             client.stop()
             raise
 
@@ -500,6 +595,21 @@ class NativeProductClosureGate(AcceptanceGate):
         self.launch_actor(actor, restore_session=True)
         if self.device_ids[actor] != previous_device:
             raise GateError(f"{actor} device identity changed across restart")
+
+    def bind_recovered_device(self, actor: str) -> str:
+        device = self.wait_for_realtime_device(
+            self.clients[actor],
+            self.ptids[actor],
+        )
+        device_id = str(device.get("deviceId") or "")
+        if not device_id:
+            raise GateError(f"{actor} recovered messaging device identity is missing")
+        self.device_ids[actor] = device_id
+        for launch in reversed(self.runtime_launches):
+            if launch.get("clientRole") == actor:
+                launch["deviceId"] = device_id
+                break
+        return device_id
 
     def native_window(self, client: TauriDriver) -> dict[str, float]:
         rect = client.driver.get_window_rect()
@@ -1731,6 +1841,99 @@ except Exception as error:
         ).get("messages")
         return value if isinstance(value, list) else []
 
+    def thread_snapshot(self, actor: str, root_id: str) -> dict[str, Any]:
+        if self.clients[actor].find_elements("[data-chat-detail-panel='open']"):
+            self.click(actor, "[data-chat-detail-toggle]")
+        row = self.clients[actor].find_element(
+            f'[data-message-ulid="{root_id}"]',
+            20,
+        )
+        summary = {
+            "count": int(
+                row.get_attribute("data-message-thread-reply-count") or 0
+            ),
+            "ids": [
+                item
+                for item in (
+                    row.get_attribute("data-message-thread-reply-ids") or ""
+                ).split(",")
+                if item
+            ],
+        }
+        self.hover_message(actor, root_id)
+        self.click(actor, '[data-message-action="thread"]')
+        panel = self.clients[actor].find_element(
+            "[data-chat-thread-panel='open']",
+            30,
+        )
+        panel_snapshot = self.clients[actor].execute_script(
+            """
+            const panel = arguments[0];
+            return {
+              root: panel.getAttribute('data-chat-thread-root') || '',
+              count: Number(
+                panel.getAttribute('data-chat-thread-reply-count') || 0
+              ),
+              ids: Array.from(
+                panel.querySelectorAll('[data-thread-message-role="reply"]')
+              ).map((item) =>
+                item.getAttribute('data-thread-message-id') || ''
+              ),
+              orders: Array.from(
+                panel.querySelectorAll('[data-thread-message-order]')
+              ).map((item) =>
+                Number(item.getAttribute('data-thread-message-order') || -1)
+              ),
+            };
+            """,
+            panel,
+        )
+        self.click(actor, "[data-chat-thread-close]")
+        if (
+            panel_snapshot.get("root") != root_id
+            or panel_snapshot.get("count") != summary["count"]
+            or panel_snapshot.get("ids") != summary["ids"]
+        ):
+            raise GateError(
+                f"{actor} thread summary and panel diverged: "
+                f"{json.dumps({'summary': summary, 'panel': panel_snapshot})}"
+            )
+        return {"summary": summary, "panel": panel_snapshot}
+
+    def conversation_snapshot(
+        self,
+        actor: str,
+        thread_root_id: str,
+        reaction_message_id: str,
+        reaction_emoji: str,
+        attachment_messages: dict[str, int],
+    ) -> dict[str, Any]:
+        reaction_visible = self.reaction_visible(
+            actor,
+            reaction_message_id,
+            reaction_emoji,
+        )
+        attachments = {
+            message_id: self.attachment_message(actor, count, message_id)
+            for message_id, count in attachment_messages.items()
+        }
+        if not reaction_visible:
+            raise GateError(
+                f"{actor} reaction {reaction_emoji} is missing after recovery"
+            )
+        if not all(isinstance(item, dict) for item in attachments.values()):
+            raise GateError(f"{actor} attachment rows are incomplete after recovery")
+        return {
+            "transcript": self.transcript(actor),
+            "thread": self.thread_snapshot(actor, thread_root_id),
+            "reaction": {
+                "messageId": reaction_message_id,
+                "emoji": reaction_emoji,
+                "visible": reaction_visible,
+            },
+            "attachments": attachments,
+        }
+
     def prove_transcript_thread(self, group_id: str) -> tuple[str, str]:
         root_text = f"w13-root-{os.getpid()}"
         bob_text = f"w13-bob-{os.getpid()}"
@@ -1923,6 +2126,56 @@ except Exception as error:
             raise GateError(f"reaction picker does not contain {emoji}")
         self.click_element(actor, target)
 
+    def prove_keyboard_reaction_picker(self, actor: str, message_id: str) -> None:
+        client = self.focus_actor_window(actor)
+        row = client.find_element(f'[data-message-ulid="{message_id}"]', 20)
+        self.click_element(actor, row)
+        self.post_key(36, private_source=True)
+        WebDriverWait(client.driver, 15).until(
+            lambda driver: driver.execute_script(
+                """
+                const active = document.activeElement;
+                return active?.closest(
+                  '[data-message-action-overlay="toolbar"]'
+                )?.getAttribute('data-message-action-message') || '';
+                """
+            )
+            == message_id
+        )
+        for _ in range(10):
+            action = str(
+                client.execute_script(
+                    """
+                    return document.activeElement
+                      ?.getAttribute('data-message-action') || '';
+                    """
+                )
+                or ""
+            )
+            if action == "reaction":
+                break
+            self.post_key(48, private_source=True)
+        else:
+            raise GateError("reaction action is not keyboard reachable")
+        self.post_key(36, private_source=True)
+        WebDriverWait(client.driver, 15).until(
+            lambda driver: bool(
+                driver.execute_script(
+                    """
+                    const picker = document.querySelector(
+                      '[data-message-action-overlay="reaction-picker"]'
+                    );
+                    return picker
+                      && document.activeElement?.hasAttribute(
+                        'data-reaction-emoji'
+                      );
+                    """
+                )
+            )
+        )
+        self.post_key(53, private_source=True)
+        self.assert_condition("toolbar_keyboard_reachable", True)
+
     def reaction_visible(self, actor: str, message_id: str, emoji: str) -> bool:
         rows = self.clients[actor].find_elements(
             f'[data-message-ulid="{message_id}"] [data-message-reaction]'
@@ -1931,7 +2184,12 @@ except Exception as error:
             row.get_attribute("data-message-reaction") == emoji for row in rows
         )
 
-    def prove_reaction(self, message_id: str) -> dict[str, Any]:
+    def prove_reaction(
+        self,
+        conversation_id: str,
+        message_id: str,
+    ) -> dict[str, Any]:
+        self.prove_keyboard_reaction_picker("alice", message_id)
         success_emoji = "❤️"
         self.choose_reaction("alice", message_id, success_emoji)
         wait_until(
@@ -2018,10 +2276,61 @@ except Exception as error:
                 "reaction retry convergence",
                 timeout=120,
             )
+            engine: dict[str, list[dict[str, str]]] = {}
+            for actor in ("alice", "bob"):
+                def reaction_readback(actor: str = actor) -> list[dict[str, str]] | None:
+                    message = next(
+                        (
+                            item
+                            for item in self.engine_messages(actor, conversation_id)
+                            if item.get("message_id") == message_id
+                        ),
+                        None,
+                    )
+                    if not isinstance(message, dict):
+                        return None
+                    reactions = message.get("reactions")
+                    if not isinstance(reactions, list):
+                        return None
+                    normalized = sorted(
+                        ({
+                            "actorPtid": str(
+                                item.get("actor_ptid")
+                                or item.get("actorPtid")
+                                or ""
+                            ),
+                            "reaction": str(item.get("reaction") or ""),
+                        } for item in reactions if isinstance(item, dict)),
+                        key=lambda item: (
+                            item["actorPtid"],
+                            item["reaction"],
+                        ),
+                    )
+                    return (
+                        normalized
+                        if normalized
+                        == [{
+                            "actorPtid": self.ptids["alice"],
+                            "reaction": failure_emoji,
+                        }]
+                        else None
+                    )
+
+                engine[actor] = wait_until(
+                    reaction_readback,
+                    f"{actor} reaction Engine readback",
+                    timeout=120,
+                )
+            self.assert_condition(
+                "reaction_authority_readback",
+                engine["alice"] == engine["bob"],
+                json.dumps(engine, sort_keys=True),
+            )
             self.assert_condition("reaction_failure_recovery", True)
             return {
                 "failureEmoji": failure_emoji,
                 "proxy": proxy.evidence(),
+                "engine": engine,
                 "recovered": True,
             }
         finally:
@@ -2033,7 +2342,6 @@ except Exception as error:
         return self.clients[actor].find_element("[data-chat-detail-panel='open']", 20)
 
     def identity_snapshot(self, actor: str) -> dict[str, Any]:
-        self.open_details(actor)
         client = self.clients[actor]
         value = client.execute_script(
             """
@@ -2043,8 +2351,28 @@ except Exception as error:
               const src = node.getAttribute('data-chat-avatar-src') || '';
               if (!ptid || !src) continue;
               const image = node.matches('img') ? node : node.querySelector('img');
+              const canonical = (() => {
+                try {
+                  const url = new URL(src, document.baseURI);
+                  return `${url.pathname}${url.search}`;
+                } catch {
+                  return src;
+                }
+              })();
+              const surface = node.closest('[data-chat-thread-panel]')
+                ? 'thread'
+                : node.closest('[data-chat-detail-panel]')
+                  ? 'details'
+                  : node.closest('[data-chat-group-ulid]')
+                    ? 'conversation-list'
+                    : node.closest('[data-message-ulid]')
+                      ? 'timeline'
+                      : 'other';
               (identities[ptid] ||= []).push({
                 src,
+                canonical,
+                currentSrc: image?.currentSrc || image?.src || '',
+                surface,
                 loaded: Boolean(image?.complete && image?.naturalWidth > 0),
               });
             }
@@ -2057,33 +2385,108 @@ except Exception as error:
             }));
             const groupSlots = Array.from(
               document.querySelectorAll('[data-chat-group-avatar-slot]')
-            ).map((node) => ({
-              ptid: node.getAttribute('data-chat-avatar-ptid') || '',
-              src: node.getAttribute('data-chat-avatar-src') || '',
-            })).sort((a, b) => a.ptid.localeCompare(b.ptid));
+            ).map((node) => {
+              const src = node.getAttribute('data-chat-avatar-src') || '';
+              const image = node.querySelector('img');
+              let canonical = src;
+              try {
+                canonical = new URL(src, document.baseURI).href;
+              } catch {
+                // Preserve the source value so malformed identities fail equality.
+              }
+              return {
+                conversationId:
+                  node.closest('[data-chat-group-ulid]')
+                    ?.getAttribute('data-chat-group-ulid') || '',
+                ptid: node.getAttribute('data-chat-avatar-ptid') || '',
+                src,
+                canonical,
+                currentSrc: image?.currentSrc || image?.src || '',
+                loaded: Boolean(image?.complete && image?.naturalWidth > 0),
+              };
+            });
             return { identities, stationNodes, groupSlots };
             """
         )
         return value if isinstance(value, dict) else {}
 
-    def prove_identity_station(self) -> None:
+    def prove_identity_station(self, group_id: str, thread_root_id: str) -> None:
         snapshots: dict[str, dict[str, Any]] = {}
         for actor in ("alice", "bob"):
-            expected_peer = self.ptids["bob" if actor == "alice" else "alice"]
+            def capture_phase(required_surfaces: set[str]) -> dict[str, Any]:
+                def ready() -> dict[str, Any] | None:
+                    snapshot = self.identity_snapshot(actor)
+                    identities = snapshot.get("identities", {})
+                    for ptid in self.ptids.values():
+                        entries = identities.get(ptid, [])
+                        for surface in required_surfaces:
+                            surface_entries = [
+                                entry
+                                for entry in entries
+                                if entry.get("surface") == surface
+                            ]
+                            if not surface_entries or not all(
+                                entry.get("loaded") for entry in surface_entries
+                            ):
+                                return None
+                    return snapshot
+
+                return wait_until(
+                    ready,
+                    f"{actor} loaded avatar surfaces {sorted(required_surfaces)}",
+                    timeout=30,
+                )
+
+            if self.clients[actor].find_elements("[data-chat-detail-panel='open']"):
+                self.click(actor, "[data-chat-detail-toggle]")
+            phases = [capture_phase({"conversation-list", "timeline"})]
+            self.open_details(actor)
+            phases.append(capture_phase({"details"}))
+            self.click(actor, "[data-chat-detail-toggle]")
+            self.hover_message(actor, thread_root_id)
+            self.click(actor, '[data-message-action="thread"]')
+            self.clients[actor].find_element("[data-chat-thread-panel='open']", 30)
+            phases.append(capture_phase({"thread"}))
+            self.click(actor, "[data-chat-thread-close]")
 
             def loaded_snapshot() -> dict[str, Any] | None:
-                snapshot = self.identity_snapshot(actor)
-                entries = snapshot.get("identities", {}).get(expected_peer, [])
-                sources = {
-                    entry.get("src") for entry in entries if entry.get("src")
+                merged: dict[str, list[dict[str, Any]]] = {}
+                station_nodes: list[dict[str, Any]] = []
+                for snapshot in phases:
+                    station_nodes.extend(snapshot.get("stationNodes", []))
+                    for ptid, entries in snapshot.get("identities", {}).items():
+                        merged.setdefault(ptid, []).extend(entries)
+                expected_surfaces = {
+                    "conversation-list",
+                    "timeline",
+                    "thread",
+                    "details",
                 }
-                return (
-                    snapshot
-                    if (
-                        len(entries) >= 3
-                        and len(sources) == 1
+                valid = True
+                for ptid in self.ptids.values():
+                    entries = merged.get(ptid, [])
+                    surfaces = {entry.get("surface") for entry in entries}
+                    canonical = {
+                        entry.get("canonical")
+                        for entry in entries
+                        if entry.get("canonical")
+                    }
+                    valid = valid and (
+                        expected_surfaces.issubset(surfaces)
+                        and len(canonical) == 1
                         and all(entry.get("loaded") for entry in entries)
                     )
+                return (
+                    {
+                        "identities": merged,
+                        "stationNodes": station_nodes,
+                        "groupSlots": [
+                            slot
+                            for slot in phases[0].get("groupSlots", [])
+                            if slot.get("conversationId") == group_id
+                        ],
+                    }
+                    if valid
                     else None
                 )
 
@@ -2092,37 +2495,143 @@ except Exception as error:
                 f"{actor} exact loaded avatar surfaces",
                 timeout=30,
             )
-        for actor, snapshot in snapshots.items():
-            expected_peer = self.ptids["bob" if actor == "alice" else "alice"]
-            entries = snapshot.get("identities", {}).get(expected_peer, [])
-            sources = {entry.get("src") for entry in entries if entry.get("src")}
-            if len(entries) < 3 or len(sources) != 1 or not all(
-                entry.get("loaded") for entry in entries
+
+        for ptid in self.ptids.values():
+            client_sources = []
+            for actor in ("alice", "bob"):
+                entries = snapshots[actor]["identities"].get(ptid, [])
+                client_sources.append({
+                    "canonical": {
+                        entry.get("canonical")
+                        for entry in entries
+                        if entry.get("canonical")
+                    },
+                    "raw": {
+                        entry.get("src")
+                        for entry in entries
+                        if entry.get("src")
+                    },
+                    "current": {
+                        entry.get("currentSrc")
+                        for entry in entries
+                        if entry.get("currentSrc")
+                    },
+                })
+            raw_sources = client_sources[0]["raw"]
+            expected_cache_key = (
+                hashlib.sha256(next(iter(raw_sources)).encode("utf-8"))
+                .hexdigest()[:16]
+                if len(raw_sources) == 1
+                else ""
+            )
+            if (
+                len(client_sources) != 2
+                or len(client_sources[0]["canonical"]) != 1
+                or len(client_sources[0]["raw"]) != 1
+                or client_sources[0]["canonical"]
+                != client_sources[1]["canonical"]
+                or client_sources[0]["raw"] != client_sources[1]["raw"]
+                or not expected_cache_key
+                or any(
+                    not sources["current"]
+                    or any(
+                        expected_cache_key not in str(current)
+                        for current in sources["current"]
+                    )
+                    for sources in client_sources
+                )
             ):
                 raise GateError(
-                    f"{actor} avatar surfaces diverged for {expected_peer}: {entries}"
+                    f"avatar identity diverged across clients for {ptid}: "
+                    f"{client_sources}"
                 )
         self.assert_condition("avatar_exact_loaded", True)
+        slot_sets = {
+            actor: [
+                {
+                    "ptid": str(slot.get("ptid") or ""),
+                    "src": str(slot.get("src") or ""),
+                    "canonical": str(slot.get("canonical") or ""),
+                    "currentSrc": str(slot.get("currentSrc") or ""),
+                    "loaded": bool(slot.get("loaded")),
+                }
+                for slot in snapshot["groupSlots"]
+            ]
+            for actor, snapshot in snapshots.items()
+        }
+        expected_slot_ptids = sorted(set(self.ptids.values()))
+        self.assert_condition(
+            "group_avatar_slots_exact",
+            slot_sets["alice"] == slot_sets["bob"]
+            and [slot["ptid"] for slot in slot_sets["alice"]]
+            == expected_slot_ptids
+            and all(
+                slot["src"]
+                and slot["canonical"]
+                and slot["currentSrc"]
+                and hashlib.sha256(slot["src"].encode("utf-8"))
+                .hexdigest()[:16] in slot["currentSrc"]
+                and slot["loaded"]
+                for slot in slot_sets["alice"]
+            ),
+            json.dumps(slot_sets, sort_keys=True),
+        )
 
-        station_sets = []
-        for snapshot in snapshots.values():
+        station_sets: dict[str, set[Any]] = {}
+        engine_authorities: dict[str, str] = {}
+        for actor, snapshot in snapshots.items():
             nodes = snapshot.get("stationNodes", [])
             ids = {
                 node.get("id")
                 for node in nodes
                 if node.get("state") == "available" and node.get("visible")
             }
-            station_sets.append(ids)
+            station_sets[actor] = ids
+            conversations = gateway_read(
+                self.clients[actor],
+                "messaging_list_conversations",
+                {},
+            ).get("conversations")
+            conversation = next(
+                (
+                    item
+                    for item in conversations or []
+                    if isinstance(item, dict)
+                    and (
+                        item.get("conversation_id")
+                        or item.get("conversationId")
+                    )
+                    == group_id
+                ),
+                None,
+            )
+            if not isinstance(conversation, dict):
+                raise GateError(
+                    f"{actor} Engine conversation projection is missing"
+                )
+            engine_authorities[actor] = str(
+                conversation.get("authority_station_id")
+                or conversation.get("authorityStationId")
+                or ""
+            )
         station_sets_detail = [
             sorted(str(station_id) for station_id in station_ids if station_id)
-            for station_ids in station_sets
+            for station_ids in station_sets.values()
         ]
+        expected_authority = engine_authorities["alice"]
         self.assert_condition(
             "station_attribution_exact",
-            len(station_sets) == 2
-            and len(station_sets[0]) == 1
-            and station_sets[0] == station_sets[1],
-            json.dumps(station_sets_detail),
+            bool(expected_authority)
+            and engine_authorities["bob"] == expected_authority
+            and station_sets["alice"] == {expected_authority}
+            and station_sets["bob"] == {expected_authority},
+            json.dumps(
+                {
+                    "dom": station_sets_detail,
+                    "engine": engine_authorities,
+                },
+                sort_keys=True,
+            ),
         )
         self.structured_evidence["identityStation"] = snapshots
 
@@ -2136,6 +2645,9 @@ except Exception as error:
               pinned: panel.getAttribute('data-chat-detail-pinned') || '',
               background: panel.getAttribute('data-chat-detail-background') || '',
               backgroundImage: panel.getAttribute('data-chat-detail-background-image') || '',
+              clearedAt: Number(
+                panel.getAttribute('data-chat-detail-cleared-at') || 0
+              ),
               pending: panel.getAttribute('data-chat-detail-action-pending') || '',
               backgroundRetry:
                 panel.getAttribute('data-chat-detail-background-retry') || '',
@@ -2143,6 +2655,50 @@ except Exception as error:
             """,
             panel,
         )
+
+    def background_resource_snapshot(self, actor: str) -> dict[str, Any]:
+        client = self.clients[actor]
+        value = client.execute_script(
+            """
+            const pane = document.querySelector('[data-chat-conversation-pane]');
+            const surface = pane?.querySelector('.chat-message-scroll');
+            const css = surface ? getComputedStyle(surface).backgroundImage : '';
+            const matches = Array.from(css.matchAll(/url\\(["']?([^"')]+)["']?\\)/g));
+            const src = matches.at(-1)?.[1] || '';
+            const existing = window.__PT_BACKGROUND_RESOURCE_PROBE__;
+            if (!existing || existing.src !== src) {
+              const state = {
+                reference: pane?.getAttribute('data-chat-background-image') || '',
+                css,
+                src,
+                loaded: false,
+                width: 0,
+                height: 0,
+              };
+              const image = new Image();
+              const capture = () => {
+                state.loaded = image.complete && image.naturalWidth > 0;
+                state.width = image.naturalWidth;
+                state.height = image.naturalHeight;
+              };
+              image.onload = capture;
+              image.onerror = capture;
+              image.src = src;
+              capture();
+              window.__PT_BACKGROUND_RESOURCE_PROBE__ = {
+                src,
+                state,
+                image,
+              };
+            }
+            const probe = window.__PT_BACKGROUND_RESOURCE_PROBE__;
+            probe.state.reference =
+              pane?.getAttribute('data-chat-background-image') || '';
+            probe.state.css = css;
+            return { ...probe.state };
+            """
+        )
+        return value if isinstance(value, dict) else {}
 
     def open_background_modal(self, actor: str) -> None:
         client = self.clients[actor]
@@ -2391,6 +2947,28 @@ except Exception as error:
                 "window.__PT_BACKGROUND_RETRY_PROBE__?.cleanup?.();"
             )
         self.assert_condition("background_upload_recovery", True)
+        rendered = wait_until(
+            lambda: (
+                snapshot
+                if (
+                    (snapshot := self.background_resource_snapshot("alice")).get(
+                        "reference"
+                    )
+                    == final_state["backgroundImage"]
+                    and snapshot.get("loaded") is True
+                    and int(snapshot.get("width") or 0) > 0
+                    and int(snapshot.get("height") or 0) > 0
+                )
+                else None
+            ),
+            "uploaded background CSS resource",
+            timeout=60,
+        )
+        self.assert_condition(
+            "background_rendered",
+            True,
+            json.dumps(rendered, sort_keys=True),
+        )
 
         station = gateway_read(
             self.clients["alice"],
@@ -2418,6 +2996,7 @@ except Exception as error:
             "ui": final_state,
             "station": normalized,
             "retryTransitions": retry_transitions,
+            "rendered": rendered,
         }
 
     def prove_attachment_failure(self, empty_file: Path) -> None:
@@ -2455,31 +3034,42 @@ except Exception as error:
         self,
         actor: str,
         expected_count: int,
+        message_id: str = "",
     ) -> dict[str, Any] | None:
         client = self.clients[actor]
         value = client.execute_script(
             """
             const expected = Number(arguments[0]);
+            const expectedId = arguments[1];
             const row = Array.from(document.querySelectorAll('[data-message-ulid]'))
               .find((item) =>
                 Number(item.getAttribute('data-message-attachment-count') || 0) === expected
+                && (!expectedId || item.getAttribute('data-message-ulid') === expectedId)
               );
             if (!row) return null;
             return {
               id: row.getAttribute('data-message-ulid') || '',
               count: Number(row.getAttribute('data-message-attachment-count') || 0),
+              content: row.querySelector('[data-message-content]')?.innerText || '',
               attachments: Array.from(
                 row.querySelectorAll('[data-messaging-attachment-id]')
-              ).map((item) => ({
-                id: item.getAttribute('data-messaging-attachment-id') || '',
-                kind: item.getAttribute('data-messaging-attachment-kind') || '',
-                state: item.getAttribute('data-messaging-attachment-state') || '',
-                imageLoaded: Array.from(item.querySelectorAll('img'))
-                  .every((image) => image.complete && image.naturalWidth > 0),
-              })),
+              ).map((item) => {
+                const images = Array.from(item.querySelectorAll('img'));
+                return {
+                  id: item.getAttribute('data-messaging-attachment-id') || '',
+                  kind: item.getAttribute('data-messaging-attachment-kind') || '',
+                  state: item.getAttribute('data-messaging-attachment-state') || '',
+                  imageCount: images.length,
+                  imageLoaded: images.length > 0
+                    && images.every(
+                      (image) => image.complete && image.naturalWidth > 0
+                    ),
+                };
+              }),
             };
             """,
             expected_count,
+            message_id,
         )
         return value if isinstance(value, dict) and value.get("id") else None
 
@@ -2544,6 +3134,9 @@ except Exception as error:
             return {
                 "revision": revision,
                 "state": composer.get_attribute("data-chat-send-outcome-state"),
+                "messageId": composer.get_attribute(
+                    "data-chat-send-outcome-message-id"
+                ) or "",
                 "count": int(
                     composer.get_attribute(
                         "data-chat-send-outcome-attachment-count"
@@ -2569,13 +3162,21 @@ except Exception as error:
         )
         if outcome["state"] != "pending":
             raise GateError(f"Composer send outcome was not queued: {outcome}")
-        if outcome["count"] != 2 or len(outcome["ids"]) != 2:
+        if (
+            not outcome["messageId"]
+            or outcome["count"] != 2
+            or len(outcome["ids"]) != 2
+        ):
             raise GateError(f"Composer send outcome count mismatch: {outcome}")
         if self.clients["alice"].find_elements("[data-chat-attachment-draft]"):
             raise GateError("queued attachment send did not clear Composer drafts")
 
         def rendered_attachment_message(actor: str) -> dict[str, Any] | None:
-            row = self.attachment_message(actor, 2)
+            row = self.attachment_message(
+                actor,
+                2,
+                str(outcome["messageId"]),
+            )
             if not row:
                 return None
             image_attachments = [
@@ -2586,7 +3187,13 @@ except Exception as error:
             return (
                 row
                 if len(image_attachments) == 1
-                and all(attachment["imageLoaded"] for attachment in image_attachments)
+                and {
+                    attachment["id"]
+                    for attachment in row["attachments"]
+                }
+                == set(outcome["ids"])
+                and image_attachments[0]["imageCount"] > 0
+                and image_attachments[0]["imageLoaded"]
                 else None
             )
 
@@ -2600,78 +3207,197 @@ except Exception as error:
             "Bob two-attachment row",
             timeout=180,
         )
-        if sender_row["id"] != receiver_row["id"]:
-            raise GateError("sender and receiver attachment message IDs differ")
+        if (
+            sender_row != receiver_row
+            or str(sender_row["content"]).strip()
+        ):
+            raise GateError(
+                "attachment-only sender/receiver rows diverged or contain text: "
+                f"{json.dumps({'sender': sender_row, 'receiver': receiver_row}, sort_keys=True)}"
+            )
+
+        previous_outcome_revision = int(outcome["revision"])
+        self.choose_native_file(
+            "alice",
+            trigger_selector="[data-chat-attachment-picker]",
+            file_path=text_file,
+        )
+        wait_until(
+            lambda: (
+                items
+                if len(
+                    items := self.clients["alice"].find_elements(
+                        '[data-chat-attachment-draft]'
+                        '[data-chat-attachment-status="ready"]'
+                    )
+                )
+                == 1
+                else None
+            ),
+            "one ready text-plus-attachment draft",
+            timeout=120,
+        )
+        text_attachment_content = f"w13-text-attachment-{os.getpid()}"
+        self.composer_send("alice", text_attachment_content)
+        text_outcome = wait_until(
+            current_send_outcome,
+            "queued text-plus-attachment send outcome",
+            timeout=180,
+        )
+        if (
+            text_outcome["state"] != "pending"
+            or not text_outcome["messageId"]
+            or text_outcome["count"] != 1
+            or len(text_outcome["ids"]) != 1
+        ):
+            raise GateError(
+                f"text-plus-attachment outcome count mismatch: {text_outcome}"
+            )
+        if self.clients["alice"].find_elements("[data-chat-attachment-draft]"):
+            raise GateError(
+                "queued text-plus-attachment send did not clear Composer draft"
+            )
+        text_message = self.wait_message_text("alice", text_attachment_content)
+        self.wait_message_text("bob", text_attachment_content)
+        if str(text_message["id"]) != text_outcome["messageId"]:
+            raise GateError(
+                "text-plus-attachment outcome and DOM message IDs differ: "
+                f"{json.dumps({'outcome': text_outcome, 'dom': text_message}, sort_keys=True)}"
+            )
+        text_rows = {
+            actor: wait_until(
+                lambda actor=actor: self.attachment_message(
+                    actor,
+                    1,
+                    str(text_outcome["messageId"]),
+                ),
+                f"{actor} text-plus-attachment row",
+                timeout=180,
+            )
+            for actor in ("alice", "bob")
+        }
+        if (
+            text_rows["alice"] != text_rows["bob"]
+            or text_rows["alice"]["content"] != text_attachment_content
+            or {
+                attachment["id"]
+                for attachment in text_rows["alice"]["attachments"]
+            }
+            != set(text_outcome["ids"])
+        ):
+            raise GateError(
+                "text-plus-attachment rows diverged: "
+                f"{json.dumps(text_rows, sort_keys=True)}"
+            )
 
         engine: dict[str, Any] = {}
         byte_hashes: dict[str, Any] = {}
-        expected_hashes = {
-            image_file.name: file_sha256(image_file),
-            text_file.name: file_sha256(text_file),
+        message_expectations = {
+            "attachmentOnly": {
+                "messageId": str(outcome["messageId"]),
+                "count": 2,
+                "hashes": {
+                    image_file.name: file_sha256(image_file),
+                    text_file.name: file_sha256(text_file),
+                },
+            },
+            "textPlusAttachment": {
+                "messageId": str(text_outcome["messageId"]),
+                "count": 1,
+                "hashes": {text_file.name: file_sha256(text_file)},
+            },
         }
         for actor in ("alice", "bob"):
             messages = self.engine_messages(actor, group_id)
-            message = next(
-                (
-                    item
-                    for item in messages
-                    if item.get("message_id") == sender_row["id"]
-                ),
-                None,
-            )
-            if not isinstance(message, dict):
-                raise GateError(f"{actor} Engine attachment message is missing")
-            attachments = message.get("attachments")
-            if not isinstance(attachments, list) or len(attachments) != 2:
-                raise GateError(f"{actor} Engine attachment count mismatch: {attachments}")
-            engine[actor] = message
-            actor_hashes: dict[str, str] = {}
-            for attachment in attachments:
-                attachment_id = str(attachment.get("attachment_id") or "")
-                filename = str(attachment.get("filename") or "")
-                selector = (
-                    f'[data-messaging-attachment-id="{attachment_id}"]'
+            engine[actor] = {}
+            byte_hashes[actor] = {}
+            for label, expectation in message_expectations.items():
+                message = next(
+                    (
+                        item
+                        for item in messages
+                        if item.get("message_id") == expectation["messageId"]
+                    ),
+                    None,
                 )
-                attachment_element = self.clients[actor].find_element(selector, 20)
-                if (
-                    attachment_element.get_attribute(
-                        "data-messaging-attachment-open-state"
+                if not isinstance(message, dict):
+                    raise GateError(
+                        f"{actor} Engine {label} attachment message is missing"
                     )
-                    != "ready"
+                attachments = message.get("attachments")
+                if (
+                    not isinstance(attachments, list)
+                    or len(attachments) != expectation["count"]
                 ):
-                    self.click_element(actor, attachment_element)
-                wait_until(
-                    lambda: (
-                        element
-                        if (
-                            element := self.clients[actor].find_element(
-                                selector,
-                                5,
-                            )
-                        ).get_attribute(
+                    raise GateError(
+                        f"{actor} Engine {label} attachment count mismatch: "
+                        f"{attachments}"
+                    )
+                engine_attachment_ids = {
+                    str(attachment.get("attachment_id") or "")
+                    for attachment in attachments
+                    if isinstance(attachment, dict)
+                }
+                expected_attachment_ids = set(
+                    outcome["ids"]
+                    if label == "attachmentOnly"
+                    else text_outcome["ids"]
+                )
+                if engine_attachment_ids != expected_attachment_ids:
+                    raise GateError(
+                        f"{actor} Engine {label} attachment IDs differ: "
+                        f"expected={sorted(expected_attachment_ids)} "
+                        f"actual={sorted(engine_attachment_ids)}"
+                    )
+                engine[actor][label] = message
+                actor_hashes: dict[str, str] = {}
+                for attachment in attachments:
+                    attachment_id = str(attachment.get("attachment_id") or "")
+                    filename = str(attachment.get("filename") or "")
+                    selector = f'[data-messaging-attachment-id="{attachment_id}"]'
+                    attachment_element = self.clients[actor].find_element(
+                        selector,
+                        20,
+                    )
+                    if (
+                        attachment_element.get_attribute(
                             "data-messaging-attachment-open-state"
                         )
-                        == "ready"
-                        else None
-                    ),
-                    f"{actor} attachment {attachment_id} Native open",
-                    timeout=60,
-                )
-                opened = gateway_read(
-                    self.clients[actor],
-                    "messaging_open_attachment",
-                    {"attachment_id": attachment_id},
-                )
-                local_path = Path(str(opened.get("local_path") or ""))
-                if not local_path.is_file():
-                    raise GateError(f"{actor} attachment cache path is missing")
-                actor_hashes[filename] = file_sha256(local_path)
-            if actor_hashes != expected_hashes:
-                raise GateError(
-                    f"{actor} attachment byte hashes differ: "
-                    f"expected={expected_hashes} actual={actor_hashes}"
-                )
-            byte_hashes[actor] = actor_hashes
+                        != "ready"
+                    ):
+                        self.click_element(actor, attachment_element)
+                    wait_until(
+                        lambda: (
+                            element
+                            if (
+                                element := self.clients[actor].find_element(
+                                    selector,
+                                    5,
+                                )
+                            ).get_attribute(
+                                "data-messaging-attachment-open-state"
+                            )
+                            == "ready"
+                            else None
+                        ),
+                        f"{actor} attachment {attachment_id} Native open",
+                        timeout=60,
+                    )
+                    opened = gateway_read(
+                        self.clients[actor],
+                        "messaging_open_attachment",
+                        {"attachment_id": attachment_id},
+                    )
+                    local_path = Path(str(opened.get("local_path") or ""))
+                    if not local_path.is_file():
+                        raise GateError(f"{actor} attachment cache path is missing")
+                    actor_hashes[filename] = file_sha256(local_path)
+                if actor_hashes != expectation["hashes"]:
+                    raise GateError(
+                        f"{actor} {label} attachment byte hashes differ: "
+                        f"expected={expectation['hashes']} actual={actor_hashes}"
+                    )
+                byte_hashes[actor][label] = actor_hashes
 
         for actor in ("alice", "bob"):
             self.open_details(actor)
@@ -2691,11 +3417,17 @@ except Exception as error:
         conserved = (
             outcome["count"] == 2
             and len(outcome["ids"]) == 2
-            and len(engine["alice"]["attachments"]) == 2
-            and len(engine["bob"]["attachments"]) == 2
+            and text_outcome["count"] == 1
+            and len(text_outcome["ids"]) == 1
+            and len(engine["alice"]["attachmentOnly"]["attachments"]) == 2
+            and len(engine["bob"]["attachmentOnly"]["attachments"]) == 2
+            and len(engine["alice"]["textPlusAttachment"]["attachments"]) == 1
+            and len(engine["bob"]["textPlusAttachment"]["attachments"]) == 1
             and sender_row["count"] == 2
             and receiver_row["count"] == 2
-            and all(value == {"media": 1, "files": 1} for value in details.values())
+            and text_rows["alice"]["count"] == 1
+            and text_rows["bob"]["count"] == 1
+            and all(value == {"media": 1, "files": 2} for value in details.values())
         )
         self.assert_condition(
             "attachment_count_conservation",
@@ -2703,8 +3435,10 @@ except Exception as error:
             json.dumps(
                 {
                     "outcome": outcome,
+                    "textOutcome": text_outcome,
                     "sender": sender_row,
                     "receiver": receiver_row,
+                    "textRows": text_rows,
                     "details": details,
                 }
             ),
@@ -2722,165 +3456,539 @@ except Exception as error:
         self.assert_condition("attachment_byte_exact", True, json.dumps(byte_hashes))
         return {
             "outcome": outcome,
+            "textOutcome": text_outcome,
             "engine": engine,
             "senderRow": sender_row,
             "receiverRow": receiver_row,
+            "textRows": text_rows,
             "details": details,
             "byteHashes": byte_hashes,
         }
+
+    def open_existing_group(self, actor: str, group_id: str) -> None:
+        self.enter_chat_page(actor)
+        self.clients[actor].find_element(
+            f'[data-chat-group-ulid="{group_id}"]',
+            180,
+        )
+        self.click(actor, f'[data-chat-group-ulid="{group_id}"]')
+        self.clients[actor].find_element(
+            f'[data-chat-conversation-pane="{group_id}"]',
+            180,
+        )
+
+    def prove_offline_recovery(
+        self,
+        group_id: str,
+        thread_root_id: str,
+        reaction_message_id: str,
+        reaction_emoji: str,
+        attachment_messages: dict[str, int],
+    ) -> dict[str, Any]:
+        before = {
+            actor: self.conversation_snapshot(
+                actor,
+                thread_root_id,
+                reaction_message_id,
+                reaction_emoji,
+                attachment_messages,
+            )
+            for actor in ("alice", "bob")
+        }
+        if before["alice"] != before["bob"]:
+            raise GateError("Alice and Bob diverged before offline recovery")
+
+        self.clients["bob"].stop()
+        offline_text = f"w13-offline-{os.getpid()}"
+        self.composer_send("alice", offline_text)
+        self.wait_message_text("alice", offline_text)
+
+        self.restart_actor("bob")
+        self.open_existing_group("bob", group_id)
+        wait_until(
+            lambda: (
+                value
+                if (
+                    (value := self.transcript("bob"))
+                    == self.transcript("alice")
+                    and any(
+                        offline_text in str(item.get("content") or "")
+                        for item in value
+                    )
+                )
+                else None
+            ),
+            "Bob offline exact transcript recovery",
+            timeout=180,
+        )
+        after = {
+            actor: self.conversation_snapshot(
+                actor,
+                thread_root_id,
+                reaction_message_id,
+                reaction_emoji,
+                attachment_messages,
+            )
+            for actor in ("alice", "bob")
+        }
+        self.assert_condition(
+            "offline_recovery_exact",
+            after["alice"] == after["bob"],
+            json.dumps(after, sort_keys=True),
+        )
+        return {"before": before, "after": after, "offlineText": offline_text}
 
     def prove_restart(
         self,
         group_id: str,
         settings_before: dict[str, Any],
-    ) -> None:
-        restart_snapshots: list[dict[str, Any]] = []
-
-        def capture_restart_snapshot(phase: str) -> dict[str, Any]:
-            snapshot = self.clients["alice"].execute_script(
-                """
-                const targetGroupId = arguments[0];
-                const visible = (node) => {
-                  if (!node) return false;
-                  const rect = node.getBoundingClientRect();
-                  const style = getComputedStyle(node);
-                  return Boolean(
-                    node.getClientRects().length
-                    && rect.width > 0
-                    && rect.height > 0
-                    && style.display !== 'none'
-                    && style.visibility !== 'hidden'
-                  );
-                };
-                const describe = (node) => {
-                  if (!node) return null;
-                  const rect = node.getBoundingClientRect();
-                  return {
-                    visible: visible(node),
-                    rect: {
-                      left: rect.left,
-                      top: rect.top,
-                      right: rect.right,
-                      bottom: rect.bottom,
-                      width: rect.width,
-                      height: rect.height,
-                    },
-                  };
-                };
-                const groups = Array.from(
-                  document.querySelectorAll(`[data-chat-group-ulid="${CSS.escape(targetGroupId)}"]`)
-                ).map((node) => ({
-                  ...describe(node),
-                  id: node.getAttribute('data-chat-group-ulid') || '',
-                }));
-                const panes = Array.from(
-                  document.querySelectorAll('[data-chat-conversation-pane]')
-                ).map((node) => ({
-                  ...describe(node),
-                  id: node.getAttribute('data-chat-conversation-pane') || '',
-                  security: node.getAttribute('data-group-security') || '',
-                  messageIds: Array.from(
-                    node.querySelectorAll('[data-message-ulid]')
-                  ).map((row) => row.getAttribute('data-message-ulid') || ''),
-                }));
-                const detailPanels = Array.from(
-                  document.querySelectorAll("[data-chat-detail-panel='open']")
-                ).map(describe);
-                const detailToggles = Array.from(
-                  document.querySelectorAll('[data-chat-detail-toggle]')
-                ).map(describe);
-                return {
-                  url: location.href,
-                  readyState: document.readyState,
-                  documentFocused: document.hasFocus(),
-                  chatSurface: describe(document.querySelector('[data-social-chat-layout]')),
-                  chatSubpage: Array.from(
-                    document.querySelectorAll('[data-chat-subpage]')
-                  ).map((node) => ({
-                    ...describe(node),
-                    id: node.getAttribute('data-chat-subpage') || '',
-                  })),
-                  groups,
-                  panes,
-                  detailPanels,
-                  detailToggles,
-                  transcriptIds: Array.from(
-                    document.querySelectorAll('[data-message-ulid]')
-                  ).map((row) => row.getAttribute('data-message-ulid') || ''),
-                };
-                """,
-                group_id,
-            )
-            record = {
-                "phase": phase,
-                "snapshot": snapshot if isinstance(snapshot, dict) else {},
-            }
-            restart_snapshots.append(record)
-            return record
-
-        try:
-            self.restart_actor("alice")
-            capture_restart_snapshot("after-restart")
-            self.enter_chat_page("alice")
-            capture_restart_snapshot("after-enter-chat")
-            self.click("alice", f'[data-chat-group-ulid="{group_id}"]')
-            capture_restart_snapshot("after-group-click")
-            wait_until(
-                lambda: len(self.transcript("alice")) == len(self.transcript("bob")),
-                "Alice transcript after restart",
-                timeout=180,
-            )
-            capture_restart_snapshot("after-transcript-match")
-            self.open_details("alice")
-            capture_restart_snapshot("after-details-open")
-            state = wait_until(
-                lambda: (
-                    value
-                    if (
-                        (value := self.setting_state("alice")).get("muted") == "true"
-                        and value.get("pinned") == "true"
-                        and value.get("background") == "paper"
-                        and value.get("backgroundImage")
-                        == settings_before["ui"]["backgroundImage"]
+        thread_root_id: str,
+        reaction_message_id: str,
+        reaction_emoji: str,
+        attachment_messages: dict[str, int],
+    ) -> dict[str, Any]:
+        expected = self.conversation_snapshot(
+            "bob",
+            thread_root_id,
+            reaction_message_id,
+            reaction_emoji,
+            attachment_messages,
+        )
+        self.restart_actor("alice")
+        self.open_existing_group("alice", group_id)
+        wait_until(
+            lambda: (
+                value
+                if (value := self.transcript("alice"))
+                == expected["transcript"]
+                else None
+            ),
+            "Alice exact transcript after restart",
+            timeout=180,
+        )
+        actual = self.conversation_snapshot(
+            "alice",
+            thread_root_id,
+            reaction_message_id,
+            reaction_emoji,
+            attachment_messages,
+        )
+        self.assert_condition(
+            "restart_exact",
+            actual == expected,
+            json.dumps({"expected": expected, "actual": actual}, sort_keys=True),
+        )
+        state = wait_until(
+            lambda: (
+                value
+                if (
+                    (value := self.setting_state("alice")).get("muted") == "true"
+                    and value.get("pinned") == "true"
+                    and value.get("background") == "paper"
+                    and value.get("backgroundImage")
+                    == settings_before["ui"]["backgroundImage"]
+                )
+                else None
+            ),
+            "settings and background after client restart",
+            timeout=180,
+        )
+        rendered = wait_until(
+            lambda: (
+                value
+                if (
+                    (value := self.background_resource_snapshot("alice")).get(
+                        "reference"
                     )
-                    else None
-                ),
-                "settings and background after client restart",
-                timeout=180,
+                    == settings_before["ui"]["backgroundImage"]
+                    and value.get("loaded") is True
+                )
+                else None
+            ),
+            "background resource after client restart",
+            timeout=60,
+        )
+        station = gateway_read(
+            self.clients["alice"],
+            "conversation_get_member_settings",
+            {"conversation_id": group_id},
+        )
+        normalized_station = (
+            station.get("settings")
+            if isinstance(station.get("settings"), dict)
+            else station
+        )
+        station_matches = (
+            bool(normalized_station.get("muted"))
+            and bool(normalized_station.get("pinned"))
+            and normalized_station.get("background") == "paper"
+            and str(
+                normalized_station.get("background_image")
+                or normalized_station.get("backgroundImage")
+                or ""
             )
-            station = gateway_read(
-                self.clients["alice"],
-                "conversation_get_member_settings",
-                {"conversation_id": group_id},
+            == settings_before["ui"]["backgroundImage"]
+            and int(
+                normalized_station.get("cleared_at_unix_ms")
+                or normalized_station.get("clearedAtUnixMs")
+                or 0
             )
-            self.assert_condition(
-                "settings_restart_recovery",
-                bool(state) and bool(station),
-                json.dumps({"ui": state, "station": station}),
-            )
-        except Exception as error:
-            client = self.clients.get("alice")
-            if client is not None and client.is_alive():
-                capture_restart_snapshot("restart-failure")
-                self.save_screenshot(client, "alice-restart-detail-failure")
-                self.save_dom(client, "alice-restart-detail-failure")
-                self.save_app_log(client, "alice-restart-detail-failure")
-            self.write_json_evidence("restart-detail-failure", restart_snapshots)
-            last_snapshot = restart_snapshots[-1] if restart_snapshots else {}
+            == 0
+        )
+        self.assert_condition(
+            "settings_restart_recovery",
+            bool(state) and station_matches and bool(rendered),
+            json.dumps(
+                {
+                    "ui": state,
+                    "station": normalized_station,
+                    "rendered": rendered,
+                },
+                sort_keys=True,
+            ),
+        )
+        result = {
+            "expected": expected,
+            "actual": actual,
+            "settings": state,
+            "station": normalized_station,
+            "background": rendered,
+        }
+        self.write_json_evidence("restart-detail-ready", result)
+        return result
+
+    def click_confirmation(self, actor: str) -> None:
+        buttons = self.clients[actor].find_elements(
+            ".ant-modal-confirm .ant-btn-primary"
+        )
+        visible = [button for button in buttons if button.is_displayed()]
+        if not visible:
+            raise GateError(f"{actor} confirmation action is unavailable")
+        self.click_element(actor, visible[-1])
+
+    def prove_clear_cursor(self, group_id: str) -> dict[str, Any]:
+        self.open_details("alice")
+        self.click("alice", '[data-chat-history-action="clear"]')
+        self.click_confirmation("alice")
+        cleared = wait_until(
+            lambda: (
+                value
+                if (value := self.setting_state("alice")).get("clearedAt", 0) > 0
+                else None
+            ),
+            "clear cursor projection",
+            timeout=60,
+        )
+        station_cleared = gateway_read(
+            self.clients["alice"],
+            "conversation_get_member_settings",
+            {"conversation_id": group_id},
+        )
+        normalized = (
+            station_cleared.get("settings")
+            if isinstance(station_cleared.get("settings"), dict)
+            else station_cleared
+        )
+        station_value = int(
+            normalized.get("cleared_at_unix_ms")
+            or normalized.get("clearedAtUnixMs")
+            or 0
+        )
+        if station_value != int(cleared["clearedAt"]):
             raise GateError(
-                "Alice restart recovery failed: "
-                f"{json.dumps(last_snapshot, sort_keys=True)}"
-            ) from error
-        else:
-            self.write_json_evidence("restart-detail-ready", restart_snapshots)
+                "clear cursor Station readback diverged: "
+                f"ui={cleared['clearedAt']} station={station_value}"
+            )
+
+        self.restart_actor("alice")
+        self.open_existing_group("alice", group_id)
+        restored = wait_until(
+            lambda: (
+                value
+                if (
+                    (value := self.setting_state("alice")).get("clearedAt")
+                    == cleared["clearedAt"]
+                    and self.transcript("alice") == []
+                )
+                else None
+            ),
+            "clear cursor restart recovery",
+            timeout=180,
+        )
+        self.click("alice", '[data-chat-history-action="restore"]')
+        self.click_confirmation("alice")
+        wait_until(
+            lambda: (
+                value
+                if (value := self.setting_state("alice")).get("clearedAt") == 0
+                else None
+            ),
+            "clear cursor restore",
+            timeout=60,
+        )
+        expected = wait_until(
+            lambda: (
+                value
+                if (value := self.transcript("alice"))
+                == self.transcript("bob")
+                else None
+            ),
+            "restored exact transcript",
+            timeout=180,
+        )
+        station_restored = gateway_read(
+            self.clients["alice"],
+            "conversation_get_member_settings",
+            {"conversation_id": group_id},
+        )
+        restored_settings = (
+            station_restored.get("settings")
+            if isinstance(station_restored.get("settings"), dict)
+            else station_restored
+        )
+        station_restored_cursor = int(
+            restored_settings.get("cleared_at_unix_ms")
+            or restored_settings.get("clearedAtUnixMs")
+            or 0
+        )
+        self.assert_condition(
+            "clear_cursor_station_readback",
+            bool(expected) and station_restored_cursor == 0,
+            json.dumps(
+                {
+                    "cleared": cleared,
+                    "station": normalized,
+                    "restart": restored,
+                    "restoredStation": restored_settings,
+                },
+                sort_keys=True,
+            ),
+        )
+        return {
+            "cleared": cleared,
+            "station": normalized,
+            "restart": restored,
+            "restoredStation": restored_settings,
+            "restoredTranscript": expected,
+        }
+
+    def create_recovery_revision(self, actor: str) -> str:
+        client = self.clients[actor]
+        self.click(actor, RECOVERY_SELECTORS["settings_nav"])
+        self.click(actor, RECOVERY_SELECTORS["security_section"])
+        self.click(actor, RECOVERY_SELECTORS["generate"])
+        self.click(actor, RECOVERY_SELECTORS["reveal"])
+        phrase = str(
+            client.execute_script(
+                """
+                return Array.from(
+                  document.querySelectorAll(
+                    '[data-recovery-phrase] span:last-child'
+                  )
+                )
+                  .map((element) => element.textContent?.trim())
+                  .filter(Boolean)
+                  .join(' ');
+                """
+            )
+            or ""
+        )
+        if len(phrase.split()) != 24:
+            raise GateError("recovery phrase does not contain exactly 24 words")
+        self.click(actor, RECOVERY_SELECTORS["backup"])
+        WebDriverWait(client.driver, 120).until(
+            lambda driver: bool(
+                driver.find_elements(By.CSS_SELECTOR, ".ant-message-success")
+            )
+        )
+        return phrase
+
+    def restore_recovery_revision(self, actor: str, phrase: str) -> None:
+        client = self.clients[actor]
+        self.click(actor, RECOVERY_SELECTORS["settings_nav"])
+        self.click(actor, RECOVERY_SELECTORS["security_section"])
+        self.click(actor, RECOVERY_SELECTORS["restore_open"])
+        restore_input = client.find_element(
+            RECOVERY_SELECTORS["restore_input"],
+            20,
+        )
+        self.click_element(actor, restore_input)
+        restore_input.send_keys(Keys.COMMAND, "a")
+        restore_input.send_keys(Keys.BACKSPACE)
+        restore_input.send_keys(phrase)
+        self.click(actor, RECOVERY_SELECTORS["restore_submit"])
+        WebDriverWait(client.driver, 180).until(
+            lambda driver: (
+                not driver.find_elements(
+                    By.CSS_SELECTOR,
+                    RECOVERY_SELECTORS["restore_input"],
+                )
+                and bool(
+                    driver.find_elements(By.CSS_SELECTOR, ".ant-message-success")
+                )
+            )
+        )
+
+    def prove_second_device(
+        self,
+        group_id: str,
+        expected_settings: dict[str, Any],
+    ) -> dict[str, Any]:
+        recovery_phrase = self.create_recovery_revision("alice")
+        self.save_screenshot(self.clients["alice"], "alice-final")
+        self.save_dom(self.clients["alice"], "alice-final")
+        self.save_app_log(self.clients["alice"], "alice-final")
+        first_device_id = self.device_ids["alice"]
+        self.clients["alice"].stop()
+        self.launch_actor("alice2", wait_for_device=False)
+        self.restore_recovery_revision("alice2", recovery_phrase)
+        second_device_id = self.bind_recovered_device("alice2")
+        if (
+            self.ptids["alice2"] != self.ptids["alice"]
+            or second_device_id == first_device_id
+        ):
+            raise GateError("Alice second-device identity is not isolated")
+        self.open_existing_group("alice2", group_id)
+        state = wait_until(
+            lambda: (
+                value
+                if (
+                    (value := self.setting_state("alice2")).get("muted") == "true"
+                    and value.get("pinned") == "true"
+                    and value.get("background") == "paper"
+                    and value.get("backgroundImage")
+                    == expected_settings["backgroundImage"]
+                    and value.get("clearedAt") == 0
+                )
+                else None
+            ),
+            "Alice second-device settings recovery",
+            timeout=180,
+        )
+        rendered = wait_until(
+            lambda: (
+                value
+                if (
+                    (value := self.background_resource_snapshot("alice2")).get(
+                        "reference"
+                    )
+                    == expected_settings["backgroundImage"]
+                    and value.get("loaded") is True
+                )
+                else None
+            ),
+            "Alice second-device background render",
+            timeout=60,
+        )
+        station = gateway_read(
+            self.clients["alice2"],
+            "conversation_get_member_settings",
+            {"conversation_id": group_id},
+        )
+        normalized = (
+            station.get("settings")
+            if isinstance(station.get("settings"), dict)
+            else station
+        )
+        station_matches = (
+            bool(normalized.get("muted"))
+            and bool(normalized.get("pinned"))
+            and normalized.get("background") == "paper"
+            and str(
+                normalized.get("background_image")
+                or normalized.get("backgroundImage")
+                or ""
+            )
+            == expected_settings["backgroundImage"]
+            and int(
+                normalized.get("cleared_at_unix_ms")
+                or normalized.get("clearedAtUnixMs")
+                or 0
+            )
+            == 0
+        )
+        client_isolated = all(
+            self.client_specs["alice"][field]
+            != self.client_specs["alice2"][field]
+            for field in (
+                "webdriver_port",
+                "gateway_port",
+                "profile",
+                "storage_root",
+            )
+        )
+        result = {
+            "firstDeviceId": first_device_id,
+            "secondDeviceId": second_device_id,
+            "ptid": self.ptids["alice2"],
+            "settings": state,
+            "station": station,
+            "background": rendered,
+        }
+        self.assert_condition(
+            "background_second_device_recovery",
+            station_matches and client_isolated,
+            json.dumps(result, sort_keys=True),
+        )
+        return result
+
+    def audit_runtime_logs(self) -> dict[str, Any]:
+        forbidden = (
+            re.compile(r"/group-chat/members"),
+            re.compile(r"messaging read cursor is incomplete"),
+            re.compile(r"unhandled(?: promise)? rejection"),
+            re.compile(r"last_read_sequence[\"']?\s*[:=]\s*0(?=\D|$)"),
+            re.compile(r"lastreadsequence[\"']?\s*[:=]\s*0(?=\D|$)"),
+        )
+        matches: list[dict[str, str]] = []
+        audit: list[dict[str, Any]] = []
+        for index, client in enumerate(self.runtime_instances):
+            if not client.log_path or not client.log_path.is_file():
+                matches.append({
+                    "profile": client.profile,
+                    "marker": "runtime log missing",
+                })
+                continue
+            raw = client.log_path.read_bytes()
+            if not raw:
+                matches.append({
+                    "profile": client.profile,
+                    "marker": "runtime log empty",
+                })
+                continue
+            content = raw.decode(
+                encoding="utf-8",
+                errors="replace",
+            ).lower()
+            audit.append({
+                "launch": index + 1,
+                "profile": client.profile,
+                "bytes": len(raw),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+            })
+            for pattern in forbidden:
+                if pattern.search(content):
+                    matches.append({
+                        "profile": client.profile,
+                        "marker": pattern.pattern,
+                    })
+        return {
+            "logs": audit,
+            "matches": matches,
+            "clean": (
+                len(audit) == len(self.runtime_instances)
+                and not matches
+            ),
+        }
 
     def collect_final_evidence(self) -> None:
-        for actor in ("alice", "bob"):
+        for actor in ("bob", "alice2"):
             self.save_screenshot(self.clients[actor], f"{actor}-final")
             self.save_dom(self.clients[actor], f"{actor}-final")
             self.save_app_log(self.clients[actor], f"{actor}-final")
 
     def cleanup_clients(self) -> dict[str, Any]:
+        pids = sorted(self.runtime_pids)
         ports = sorted(
             {
                 int(spec["webdriver_port"])
@@ -2890,24 +3998,137 @@ except Exception as error:
                 int(spec["gateway_port"])
                 for spec in self.client_specs.values()
             }
+            | {
+                int(spec["renderer_port"])
+                for spec in self.client_specs.values()
+            }
             | (
                 {self.reaction_proxy.port}
                 if self.reaction_proxy is not None
                 else set()
             )
         )
-        for client in self.clients.values():
-            client.stop()
+        storage_roots = sorted({
+            Path(str(spec["storage_root"]))
+            for spec in self.client_specs.values()
+        })
+        log_paths = [
+            client.log_path
+            for client in self.runtime_instances
+            if client.log_path is not None
+        ]
+        cleanup_errors: list[dict[str, str]] = []
+        for index in reversed(range(len(self.runtime_instances))):
+            client = self.runtime_instances[index]
+            attempt = self.runtime_launches[index]
+            try:
+                client.stop()
+                attempt["cleanupStatus"] = "stopped"
+            except Exception as error:
+                attempt["cleanupStatus"] = "failed"
+                cleanup_errors.append({
+                    "resource": f"client:{client.profile}",
+                    "error": str(error),
+                })
         if self.reaction_proxy is not None:
-            self.reaction_proxy.disarm()
-            self.reaction_proxy.stop()
-        released = wait_until(
-            lambda: all(port_is_free(port) for port in ports),
-            "Native client and fault proxy port release",
-            timeout=30,
+            try:
+                self.reaction_proxy.disarm()
+                self.reaction_proxy.stop()
+            except Exception as error:
+                cleanup_errors.append({
+                    "resource": "reaction-proxy",
+                    "error": str(error),
+                })
+        runtime_log_audit = self.audit_runtime_logs()
+        self.write_json_evidence("runtime-log-audit", runtime_log_audit)
+        self.write_json_evidence(
+            "runtime-launch-ledger",
+            self.runtime_launches,
         )
-        result = {"ports": ports, "released": bool(released)}
-        self.assert_condition("cleanup_ports_released", bool(released), json.dumps(result))
+        for index, log_path in enumerate(log_paths):
+            try:
+                if log_path.is_file():
+                    self.report.add_evidence_file(
+                        f"runtime-{index:02d}-app-log",
+                        log_path,
+                        destination_dir=self.evidence_dir,
+                    )
+            except Exception as error:
+                cleanup_errors.append({
+                    "resource": f"log-evidence:{log_path}",
+                    "error": str(error),
+                })
+
+        try:
+            ports_released = bool(wait_until(
+                lambda: all(port_is_free(port) for port in ports),
+                "Native client port release",
+                timeout=30,
+            ))
+        except GateError:
+            ports_released = False
+        try:
+            processes_released = bool(wait_until(
+                lambda: all(pid_is_stopped(pid) for pid in pids),
+                "Native client process release",
+                timeout=30,
+            ))
+        except GateError:
+            processes_released = False
+
+        storage_errors: list[dict[str, str]] = []
+        for storage_root in storage_roots:
+            try:
+                shutil.rmtree(storage_root)
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                storage_errors.append({
+                    "path": str(storage_root),
+                    "error": str(error),
+                })
+        storage_released = (
+            not storage_errors
+            and all(not storage_root.exists() for storage_root in storage_roots)
+        )
+        for log_path in log_paths:
+            try:
+                log_path.unlink(missing_ok=True)
+            except OSError as error:
+                cleanup_errors.append({
+                    "resource": f"log:{log_path}",
+                    "error": str(error),
+                })
+        logs_released = all(not path.exists() for path in log_paths)
+        result = {
+            "ports": ports,
+            "pids": pids,
+            "storageRoots": [str(path) for path in storage_roots],
+            "storageErrors": storage_errors,
+            "cleanupErrors": cleanup_errors,
+            "logs": [str(path) for path in log_paths],
+            "portsReleased": bool(ports_released),
+            "processesReleased": bool(processes_released),
+            "storageReleased": storage_released,
+            "logsReleased": logs_released,
+        }
+        detail = json.dumps(result, sort_keys=True)
+        assertions = {
+            "runtime_logs_clean": bool(runtime_log_audit["clean"]),
+            "cleanup_ports_released": bool(result["portsReleased"]),
+            "cleanup_processes_released": bool(result["processesReleased"]),
+            "cleanup_storage_released": (
+                bool(result["storageReleased"])
+                and bool(result["logsReleased"])
+                and not cleanup_errors
+            ),
+        }
+        for name, passed in assertions.items():
+            self.report.add_assertion(name, passed, detail)
+        self.write_json_evidence("cleanup", result)
+        failed = [name for name, passed in assertions.items() if not passed]
+        if failed:
+            raise GateError(f"cleanup assertions failed: {failed}; {detail}")
         return result
 
     def run(self) -> dict[str, Any]:
@@ -2921,13 +4142,20 @@ except Exception as error:
             "binary": str(self.binary),
             "binarySha256": file_sha256(self.binary),
         }
+        source_commit = str(
+            source.get("commit") if isinstance(source, dict) else ""
+        )
+        station_commit = str(
+            station.get("liveCommit") if isinstance(station, dict) else ""
+        )
         self.assert_condition(
             "source_build_runtime_identity",
             isinstance(source, dict)
-            and bool(source.get("commit"))
-            and bool(source.get("workspaceDigest"))
+            and bool(source_commit)
+            and source.get("workspaceDigest") == "clean"
             and isinstance(station, dict)
-            and bool(station.get("liveCommit"))
+            and bool(station_commit)
+            and commits_match(source_commit, station_commit)
             and bool(station.get("protoDigest"))
             and len(source_identity["binarySha256"]) == 64,
             json.dumps(source_identity),
@@ -2965,9 +4193,12 @@ except Exception as error:
             )
             reaction = self.step(
                 "reaction.ui",
-                lambda: self.prove_reaction(action_message_id),
+                lambda: self.prove_reaction(group_id, action_message_id),
             )
-            self.step("identity.station.dom", self.prove_identity_station)
+            self.step(
+                "identity.station.dom",
+                lambda: self.prove_identity_station(group_id, action_message_id),
+            )
             settings = self.step(
                 "settings.background.ui",
                 lambda: self.prove_settings_background(
@@ -2984,9 +4215,38 @@ except Exception as error:
                 "attachments.ui",
                 lambda: self.prove_attachments(group_id, image_file, text_file),
             )
-            self.step(
+            attachment_messages = {
+                str(attachments["senderRow"]["id"]): 2,
+                str(attachments["textRows"]["alice"]["id"]): 1,
+            }
+            offline = self.step(
+                "bob.offline.recovery.ui",
+                lambda: self.prove_offline_recovery(
+                    group_id,
+                    action_message_id,
+                    action_message_id,
+                    str(reaction["failureEmoji"]),
+                    attachment_messages,
+                ),
+            )
+            restart = self.step(
                 "client.restart.ui",
-                lambda: self.prove_restart(group_id, {"ui": settings["ui"]}),
+                lambda: self.prove_restart(
+                    group_id,
+                    {"ui": settings["ui"]},
+                    action_message_id,
+                    action_message_id,
+                    str(reaction["failureEmoji"]),
+                    attachment_messages,
+                ),
+            )
+            clear_cursor = self.step(
+                "clear.cursor.restart.ui",
+                lambda: self.prove_clear_cursor(group_id),
+            )
+            second_device = self.step(
+                "alice.second-device.recovery.ui",
+                lambda: self.prove_second_device(group_id, settings["ui"]),
             )
             self.collect_final_evidence()
 
@@ -3003,11 +4263,24 @@ except Exception as error:
                 "identity-station",
                 self.structured_evidence["identityStation"],
             )
-            self.write_json_evidence("settings-background", settings)
+            self.write_json_evidence(
+                "settings-background",
+                {
+                    "initial": settings,
+                    "clearCursor": clear_cursor,
+                    "secondDevice": second_device,
+                },
+            )
             self.write_json_evidence("attachment-ledger", attachments)
+            self.write_json_evidence(
+                "recovery-ledger",
+                {"offline": offline, "restart": restart},
+            )
         finally:
-            cleanup = self.cleanup_clients()
-            self.write_json_evidence("cleanup", cleanup)
+            try:
+                cleanup = self.cleanup_clients()
+            finally:
+                shutil.rmtree(self.fixture_root, ignore_errors=True)
 
         assertion_names = {assertion.name for assertion in self.report.assertions}
         missing_assertions = REQUIRED_ASSERTIONS - assertion_names
