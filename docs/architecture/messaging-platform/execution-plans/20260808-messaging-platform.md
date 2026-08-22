@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` preserve whole-journey restart diagnostics and require loaded attachment images |
+| Current step | `MP-W13-E/F` close the real attachment open/download state machine before restart proof |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
 | Last completed | Source-bound run `20260821T233451461621Z-f0a7b1bb1f65dee54addee44fab05862` matched clean source/live Station `d71c08067`, proved Alice/Bob Details `media=1/files=1`, complete attachment count conservation, and byte-exact opens, then failed after Alice restart while locating the Details toggle; cleanup released `3330/3331/4445/4446/61118` |
-| Current action | Persist DOM/screenshot/app-log evidence for any post-restart failure, including a missing group row, and require loaded sender/receiver image DOM before attachment assertions pass |
-| Next action | Rerun the same source-bound Native Gate, classify the preserved restart snapshot, and fix the owning product or Gate layer without weakening restart or image-render assertions |
-| Blockers | MP-W13 remains `UNPROVEN`; chooser baseline recovery is fixed and attachment count/byte equality is proven, but restart can lose the target group row and receiver image rendering was sampled unloaded in the latest run; settings/background/transcript restart recovery remains unproven; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Current action | Commit the locally verified Engine-owned attachment open/retry state machine, exact cache authorization, visible message/Details states, and Native-click Gate path |
+| Next action | Deploy the exact clean HEAD, rebuild the dedicated Acceptance binary, run Driver smoke, then rerun the full Native Gate through attachment image/open proof and preserved restart diagnostics |
+| Blockers | MP-W13 remains `UNPROVEN`; the latest run exposed retryable attachment download as a silent one-shot UI failure and direct-command Gate action; restart recovery remains unproven; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260821T235706759149Z-f65fe44d9f9e89d1e4f7f9f3f212e09a` matched source/live Station `e210e7b01`, crossed all real chooser paths, proved attachment count and byte equality, sampled Bob image `imageLoaded=false`, and failed after restart while locating the target group row; cleanup released `3330/3331/4445/4446/52450` |
+| Evidence | Run `20260822T000832375892Z-87488d6a9fc487419d73f865916197b1` matched source/live Station `16a45a5b0`, crossed every real chooser, and failed at attachment open with typed detail `messaging attachment download is pending`; local repair checks pass: Desktop check, 338 unit tests with 1 environment-backed skip, production build, Rust check, 2 Engine attachment-open binary tests, and Chat static Gate 20/20; Native proof remains pending |
 | Last updated | 2026-08-22 |
 
 ## 1. Plan Sources And Gate
