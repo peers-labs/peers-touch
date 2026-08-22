@@ -414,3 +414,51 @@ Hypothesis AI is now the dependency-ready test. Timer schedule/cancel/fire
 events are routed to the active `7785` session and record whether the action
 surface is still hovered or focused at fire time. Product close behavior is
 unchanged for this pre-fix comparison.
+
+Timer-instrumented source-bound run:
+`20260822T021501765957Z-880ac7d7689837399f03a59df41663b9`.
+
+- Source, dedicated binary, and live Station matched clean commit
+  `e1893b5511c34906c54ece12eebfd52034f3fa20`; the binary SHA-256 was
+  `6951e88f3aa2517fc1b1bdbd2e9827ee2c8610e9ece7cfe44676058032eefb44`.
+- The complete Native product-closure Gate passed all 17 product and cleanup
+  assertions, including target-owned Reply and Reaction presses.
+- Timer log lines 36, 38, and 42 fired only after the overlay was neither
+  hovered nor focused. Every transient timer observed while focus or pointer
+  ownership moved into the action surface was cancelled before firing.
+- Actor ports `3330`, `3331`, `4445`, and `4446` were released.
+
+| ID | Status | Evidence |
+|---|---|---|
+| AI | Inconclusive | The instrumented run did not reproduce the prior Reply teardown; all observed timer fires were legitimate departures with `overlayHovered=false` and `overlayFocused=false` |
+
+One passing run does not invalidate the earlier source-bound failure. The next
+diagnostic must turn the intermittent boundary into a deterministic real-Native
+press lifecycle assertion while preserving target-owned down, up, and click
+requirements. No product close behavior is authorized to change until that
+comparison confirms or rejects the timer race.
+
+Cross-run ordering conclusion:
+
+- In the timer-instrumented run, log line 1 recorded overlay `pointerenter` at
+  `1787365066308`, then line 2 recorded a new row-owned close timer at
+  `1787365066309`. This proves portal enter can be followed by row leave and
+  leave a stale timer armed while the pointer has already entered the action
+  surface.
+- The successful path cancelled that timer from focus at line 3. The earlier
+  `2f8b93a4f` failure showed the complementary boundary: Reply received owned
+  down, then the overlay unmounted before up.
+- The race therefore depends on focus cancellation arriving before the 140 ms
+  timer, even though a pointer press already proves ownership of the overlay.
+
+| ID | Status | Evidence |
+|---|---|---|
+| AI | Confirmed | Overlay `pointerenter -> row leave schedule` ordering is recorded directly; the earlier Reply run proves that an uncancelled instance removes the target before Native up |
+
+Minimal fix:
+
+- The overlay captures `pointerdown`, marks pointer containment, and cancels the
+  parent close timer before focus/blur ordering can dismiss the pressed target.
+- Pointer leave, true keyboard-focus departure, outside press dismissal, and
+  target-owned Native down/up/click requirements remain unchanged.
+- Instrumentation remains active for the post-fix comparison.
