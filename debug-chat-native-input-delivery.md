@@ -32,6 +32,7 @@
 | AF | The posted down reaches combined-session state but not the target DOM despite stable WindowServer ownership | Medium | Low | `before-click.mouseButtonDown=false`, timeout becomes true, target remains hit-owned, and the scoped probe is empty |
 | AG | Reaction picker focus/leave handling closes the transient overlay after target-owned down but before Native up | High | Low | Picker focus/blur or leave schedules the 140 ms close timer between emoji down and unowned up |
 | AH | The emoji action runs before click and intentionally replaces the target before Native up | Low | Low | Reaction mutation begins before any target-owned mouseup/click event |
+| AI | Portal enter and message-row leave are observed in an order that leaves a stale 140 ms close timer armed while the pointer is inside the action surface | High | Low | Timer `schedule` follows the overlay's last `cancel`; `fire` reports the overlay still hovered or focused before target removal |
 
 ## Log Evidence
 Source-bound run:
@@ -397,3 +398,19 @@ timer removes the picker before release. The minimal product fix records
 pointer containment and ignores blur dismissal while the pointer remains
 inside. Pointer-leave and true keyboard-focus departure continue to use the
 existing close path. Instrumentation remains active for post-fix comparison.
+
+Final-source recurrence:
+`20260822T020418110879Z-bcf32d0f07da8955c07074ac9f342470`.
+
+- Source, dedicated binary, and live Station matched clean commit `2f8b93a4f`.
+- The failure moved earlier to the Reply toolbar.
+- The Reply button received target-owned `pointerdown/mousedown`; Native
+  `pointerup/mouseup` arrived at the same coordinates on the underlying row
+  after the toolbar disappeared.
+- No picker blur path was involved, so the picker-local guard is insufficient.
+- The remaining timer owner is `ChatMessageTimeline.scheduleActionClose`.
+
+Hypothesis AI is now the dependency-ready test. Timer schedule/cancel/fire
+events are routed to the active `7785` session and record whether the action
+surface is still hovered or focused at fire time. Product close behavior is
+unchanged for this pre-fix comparison.
