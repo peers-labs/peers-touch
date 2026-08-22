@@ -147,3 +147,16 @@ cards. The Engine retry driver has deterministic unit coverage for
 This is implementation evidence only. The session remains `[OPEN]` and the
 repair remains `UNPROVEN` until a clean source-bound Native run reaches
 attachment `ready`, byte-exact readback, and restart recovery.
+
+Run `20260822T004237818803Z-2a73ae509e64f3f810528a4c06a0e8c0`
+matched clean source, dedicated binary, and live Station `2eff7abe4`. It passed:
+
+- loaded sender and receiver image DOM;
+- Composer, send outcome, Engine, sender row, receiver row, and Details count
+  conservation;
+- real Native attachment clicks reaching `ready`;
+- byte-exact cache readback for both attachments on both actors.
+
+The attachment open/download repair is source-bound Native-proven within this
+run. The full Gate remains `FAIL/UNPROVEN` because restart subsequently exposed
+the Gate lifecycle defect tracked in `debug-chat-restart-detail.md`.

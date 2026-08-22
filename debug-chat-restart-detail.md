@@ -19,6 +19,7 @@
 | C | The Native click targets a duplicate hidden/prewarmed group row instead of the visible Chat page row. | Medium | Low | Multiple group nodes exist and the clicked node has no client rect or belongs to a hidden page host. |
 | D | Restart leaves the Chat surface in a transient loading/placeholder state longer than the current readiness predicate. | Medium | Low | The target group exists, but pane/toggle appears only after projection or page readiness changes. |
 | E | The product loses the selected group after restart because a projection or membership failure resets active selection. | Medium | Medium | Active pane changes or disappears after the group click while logs show projection/member errors. |
+| F | The Gate reuses initial-launch logout/login setup during restart, racing restored-session navigation against an injected logout. | High | Low | App logs show successful `auth_restore_session`, followed by Gate-issued `auth_logout`/fresh login, while the final DOM returns to the account chooser. |
 
 ## Log Evidence
 - Source, live Station, and runtime identity all match clean commit
@@ -80,3 +81,21 @@ Run `20260822T000832375892Z-87488d6a9fc487419d73f865916197b1`
 did not reach restart because it exposed an earlier attachment-open product
 failure. Restart hypotheses A-E remain pending until that user path is repaired
 and the complete Gate reaches restart again.
+
+Run `20260822T004237818803Z-2a73ae509e64f3f810528a4c06a0e8c0`
+matched clean source, binary, and live Station `2eff7abe4`. It proved the
+attachment image-load, count-conservation, real Native open, and byte-exact
+assertions, then preserved the full restart boundary:
+
+- `after-restart` and `after-enter-chat` show the target group row on the Chat
+  surface;
+- `after-group-click` and `restart-failure` show the account chooser with no
+  Chat surface;
+- the app log shows successful `auth_restore_session`, then the Gate's
+  initial-launch path issues `auth_logout` and a fresh Harness login.
+
+Hypothesis F is confirmed. The product's persisted session restored
+successfully; the Gate invalidated it during restart and introduced a logout
+navigation race. The repair separates initial fixture login from restart:
+restart now waits read-only for the existing session's canonical PTID and
+device identity and never invokes logout/login.

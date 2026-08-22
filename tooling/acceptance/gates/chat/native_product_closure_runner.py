@@ -399,7 +399,33 @@ class NativeProductClosureGate(AcceptanceGate):
             station.station_add(station_url)
             station.station_set_active(station_url)
 
-    def launch_actor(self, actor: str) -> None:
+    def wait_for_realtime_device(
+        self,
+        client: TauriDriver,
+        expected_ptid: str,
+    ) -> dict[str, Any]:
+        def restored_device() -> dict[str, Any] | None:
+            device = call_async_harness(
+                client,
+                "getRealtimeDevice",
+                {},
+                namespace="chat",
+                script_timeout=10,
+            )
+            return (
+                device
+                if str((device or {}).get("actorId") or "") == expected_ptid
+                and str((device or {}).get("deviceId") or "")
+                else None
+            )
+
+        return wait_until(
+            restored_device,
+            f"restored identity {expected_ptid}",
+            timeout=60,
+        )
+
+    def launch_actor(self, actor: str, *, restore_session: bool = False) -> None:
         spec = self.client_specs[actor]
         window_actors = ("alice", "bob")
         actor_station_url = (
@@ -423,33 +449,30 @@ class NativeProductClosureGate(AcceptanceGate):
         self.register_driver(client)
         try:
             client.wait_for_acceptance_harness(30)
-            self.configure_station(client, actor_station_url)
-            with StationDriver(
-                f"http://127.0.0.1:{client.gateway_port}"
-            ) as station:
-                station.auth_logout()
-            account_ref = str(self.actor_specs[actor].get("accountRef") or "")
-            account = account_ref.removeprefix("station-account:")
-            login = call_async_harness(
-                client,
-                "loginWithPassword",
-                {"account": account, "password": public_fixture_password()},
-                namespace="chat",
-                script_timeout=30,
-            )
-            ptid = str((login or {}).get("actorId") or "")
             expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
-            if not (login or {}).get("authenticated") or ptid != expected_ptid:
-                raise GateError(
-                    f"{actor} login identity mismatch: expected={expected_ptid} actual={ptid}"
+            if not restore_session:
+                self.configure_station(client, actor_station_url)
+                with StationDriver(
+                    f"http://127.0.0.1:{client.gateway_port}"
+                ) as station:
+                    station.auth_logout()
+                account_ref = str(self.actor_specs[actor].get("accountRef") or "")
+                account = account_ref.removeprefix("station-account:")
+                login = call_async_harness(
+                    client,
+                    "loginWithPassword",
+                    {"account": account, "password": public_fixture_password()},
+                    namespace="chat",
+                    script_timeout=30,
                 )
-            device = call_async_harness(
-                client,
-                "getRealtimeDevice",
-                {},
-                namespace="chat",
-                script_timeout=30,
-            )
+                ptid = str((login or {}).get("actorId") or "")
+                if not (login or {}).get("authenticated") or ptid != expected_ptid:
+                    raise GateError(
+                        f"{actor} login identity mismatch: "
+                        f"expected={expected_ptid} actual={ptid}"
+                    )
+            device = self.wait_for_realtime_device(client, expected_ptid)
+            ptid = str(device.get("actorId") or "")
             device_id = str((device or {}).get("deviceId") or "")
             if not device_id:
                 raise GateError(f"{actor} messaging device identity is missing")
@@ -474,7 +497,7 @@ class NativeProductClosureGate(AcceptanceGate):
     def restart_actor(self, actor: str) -> None:
         previous_device = self.device_ids[actor]
         self.clients[actor].stop()
-        self.launch_actor(actor)
+        self.launch_actor(actor, restore_session=True)
         if self.device_ids[actor] != previous_device:
             raise GateError(f"{actor} device identity changed across restart")
 
