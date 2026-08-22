@@ -37,10 +37,12 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use ulid::Ulid;
 
 const INTERACTION_PREFLIGHT_DRAIN_LIMIT: u32 = 100;
+const ATTACHMENT_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
+const ATTACHMENT_OPEN_RETRY_FLOOR: Duration = Duration::from_millis(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessagingProjectionChange {
@@ -77,6 +79,43 @@ pub struct LocalAttachmentIntent {
     pub source_local_ref: String,
     pub filename: String,
     pub mime_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AttachmentOpenProgress {
+    Ready(String),
+    Pending { next_attempt_at_unix_ms: i64 },
+}
+
+fn drive_attachment_open<F, S>(
+    deadline: Instant,
+    mut open_once: F,
+    mut sleep: S,
+) -> Result<String, String>
+where
+    F: FnMut() -> Result<AttachmentOpenProgress, String>,
+    S: FnMut(Duration),
+{
+    loop {
+        match open_once()? {
+            AttachmentOpenProgress::Ready(path) => return Ok(path),
+            AttachmentOpenProgress::Pending {
+                next_attempt_at_unix_ms,
+            } => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Err(
+                        "messaging attachment download did not complete before open deadline"
+                            .to_string(),
+                    );
+                }
+                let retry_delay_ms = next_attempt_at_unix_ms
+                    .saturating_sub(now_unix_ms())
+                    .max(ATTACHMENT_OPEN_RETRY_FLOOR.as_millis() as i64);
+                sleep(Duration::from_millis(retry_delay_ms as u64).min(remaining));
+            }
+        }
+    }
 }
 
 pub struct MessagingEngine {
@@ -339,6 +378,18 @@ impl MessagingEngine {
     }
 
     pub fn open_attachment(&self, token: &str, attachment_id: &str) -> Result<String, String> {
+        drive_attachment_open(
+            Instant::now() + ATTACHMENT_OPEN_TIMEOUT,
+            || self.open_attachment_once(token, attachment_id),
+            std::thread::sleep,
+        )
+    }
+
+    fn open_attachment_once(
+        &self,
+        token: &str,
+        attachment_id: &str,
+    ) -> Result<AttachmentOpenProgress, String> {
         if token.trim().is_empty() || attachment_id.trim().is_empty() {
             return Err("messaging attachment open intent is incomplete".to_string());
         }
@@ -355,7 +406,7 @@ impl MessagingEngine {
         if let Some(cache_path) = projection.local_cache_path.as_deref() {
             let path = Path::new(cache_path);
             if path.is_file() && sha256_path(path)? == expected_plaintext_sha256 {
-                return Ok(cache_path.to_string());
+                return Ok(AttachmentOpenProgress::Ready(cache_path.to_string()));
             }
         }
         let download_transfer =
@@ -364,7 +415,7 @@ impl MessagingEngine {
             Some(transfer) if transfer.direction == 1 => {
                 let source = Path::new(&transfer.source_local_ref);
                 if source.is_file() && sha256_path(source)? == expected_plaintext_sha256 {
-                    return Ok(transfer.source_local_ref);
+                    return Ok(AttachmentOpenProgress::Ready(transfer.source_local_ref));
                 }
                 self.store
                     .replace_completed_upload_with_download(&download_transfer)?;
@@ -389,11 +440,17 @@ impl MessagingEngine {
             &cache_path,
             now_unix_ms(),
         )? {
-            AttachmentTransferProgress::Complete => Ok(cache_path.display().to_string()),
-            AttachmentTransferProgress::Deferred { .. }
-            | AttachmentTransferProgress::RetryScheduled { .. } => {
-                Err("messaging attachment download is pending".to_string())
+            AttachmentTransferProgress::Complete => Ok(AttachmentOpenProgress::Ready(
+                cache_path.display().to_string(),
+            )),
+            AttachmentTransferProgress::Deferred {
+                next_attempt_at_unix_ms,
             }
+            | AttachmentTransferProgress::RetryScheduled {
+                next_attempt_at_unix_ms,
+            } => Ok(AttachmentOpenProgress::Pending {
+                next_attempt_at_unix_ms,
+            }),
             AttachmentTransferProgress::Terminal { .. } => {
                 Err("messaging attachment download failed".to_string())
             }
@@ -408,7 +465,7 @@ impl MessagingEngine {
         let Some(attachment_id) = self.store.next_due_attachment_download(now_unix_ms)? else {
             return Ok(false);
         };
-        self.open_attachment(token, &attachment_id)?;
+        self.open_attachment_once(token, &attachment_id)?;
         Ok(true)
     }
 
@@ -1917,12 +1974,54 @@ pub(crate) fn now_unix_ms() -> i64 {
 mod tests {
     use super::*;
     use crate::domain::mls_group::MlsMemberKeyPackage;
+    use std::collections::VecDeque;
 
     fn endpoint(device_id: &str) -> EngineEndpoint {
         EngineEndpoint {
             ptid: "ptid:alice".to_string(),
             device_id: device_id.to_string(),
         }
+    }
+
+    #[test]
+    fn attachment_open_retries_pending_transfer_until_ready() {
+        let mut attempts = VecDeque::from([
+            AttachmentOpenProgress::Pending {
+                next_attempt_at_unix_ms: now_unix_ms(),
+            },
+            AttachmentOpenProgress::Ready("/tmp/verified-cache".to_string()),
+        ]);
+        let mut sleeps = Vec::new();
+
+        let path = drive_attachment_open(
+            Instant::now() + Duration::from_secs(1),
+            || Ok(attempts.pop_front().expect("attachment open attempt")),
+            |delay| sleeps.push(delay),
+        )
+        .expect("pending attachment should become ready");
+
+        assert_eq!(path, "/tmp/verified-cache");
+        assert!(attempts.is_empty());
+        assert_eq!(sleeps, vec![ATTACHMENT_OPEN_RETRY_FLOOR]);
+    }
+
+    #[test]
+    fn attachment_open_stops_at_deadline() {
+        let error = drive_attachment_open(
+            Instant::now(),
+            || {
+                Ok(AttachmentOpenProgress::Pending {
+                    next_attempt_at_unix_ms: now_unix_ms(),
+                })
+            },
+            |_| panic!("expired attachment open must not sleep"),
+        )
+        .expect_err("expired attachment open must fail");
+
+        assert_eq!(
+            error,
+            "messaging attachment download did not complete before open deadline"
+        );
     }
 
     #[test]

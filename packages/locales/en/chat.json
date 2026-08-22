@@ -560,6 +560,8 @@
   "chat.social.messageArea.voicePlay": "Play voice message",
   "chat.social.messageArea.attachmentOpen": "Open",
   "chat.social.messageArea.attachmentOpenOrDownload": "Open or download attachment",
+  "chat.social.messageArea.attachmentStateDownloading": "Downloading...",
+  "chat.social.messageArea.attachmentDownloadFailed": "Download failed. Click to retry.",
   "chat.social.messageArea.attachmentStateUploading": "Uploading...",
   "chat.social.messageArea.attachmentStateFailed": "Attachment failed",
   "chat.social.messageArea.actionReply": "Reply",
