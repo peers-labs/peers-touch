@@ -110,3 +110,40 @@ showed that the attachment-count assertion could sample Bob's image row while
 open passed, but that does not prove receiver DOM rendering. The Gate now waits
 for the one image attachment to report `imageLoaded=true` on both sender and
 receiver rows and requires the separate `attachment_images_loaded` assertion.
+
+Run `20260822T000832375892Z-87488d6a9fc487419d73f865916197b1`
+matched clean source and Station `16a45a5b0`, crossed every real chooser, and
+then failed when the first direct `messaging_open_attachment` readback returned
+`messaging attachment download is pending`.
+
+The evidence exposes two product/proof defects:
+
+1. `AttachmentItem` caught a retryable open result, logged it, and returned
+   without a visible pending/error state or a completion path.
+2. The Gate used the command itself to trigger download, so its byte check did
+   not prove the user-visible open path.
+
+The repair keeps transfer ownership in the Messaging Engine:
+
+- one open intent waits within a 30-second bound across the existing durable
+  retry schedule;
+- lifecycle reconciliation remains single-step and non-blocking;
+- Tauri authorizes only the exact verified cache file returned to the renderer;
+- the UI exposes `idle/pending/ready/error`, with failed clicks retryable;
+- the Gate performs real Native attachment clicks, waits for `ready`, and uses
+  the command afterward only as byte-exact cache readback.
+
+The same open state is now rendered on message rows and Details attachment
+cards. The Engine retry driver has deterministic unit coverage for
+`pending -> ready` and deadline exhaustion. Local verification passed:
+
+- Desktop type and boundary checks;
+- Desktop unit suite: 338 passed, 1 environment-backed test skipped;
+- Desktop production build;
+- Rust binary tests: 2 attachment-open tests passed;
+- Rust `acceptance-webdriver` check;
+- Chat Native product closure static Gate: 20 passed.
+
+This is implementation evidence only. The session remains `[OPEN]` and the
+repair remains `UNPROVEN` until a clean source-bound Native run reaches
+attachment `ready`, byte-exact readback, and restart recovery.

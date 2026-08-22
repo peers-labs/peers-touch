@@ -75,3 +75,8 @@ Details-open failure handler, so no restart snapshot artifact survived.
 The instrumentation boundary now covers the whole restart journey. Any failure
 after actor restart preserves the latest phase snapshot, screenshot, DOM, and
 app log before cleanup.
+
+Run `20260822T000832375892Z-87488d6a9fc487419d73f865916197b1`
+did not reach restart because it exposed an earlier attachment-open product
+failure. Restart hypotheses A-E remain pending until that user path is repaired
+and the complete Gate reaches restart again.
