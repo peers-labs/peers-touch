@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` remove Gate-induced logout from real client restart proof |
+| Current step | `MP-W13-F` isolate Native reaction-picker press teardown, then continue attachment/restart proof |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Source-bound run `20260822T004237818803Z-2a73ae509e64f3f810528a4c06a0e8c0` matched clean source/live Station `2eff7abe4`, proved loaded Alice/Bob image DOM, complete attachment count conservation, real Native attachment clicks and byte-exact opens, then failed in restart after the Gate invalidated the successfully restored Alice session |
-| Current action | Commit the generic list-artifact enrichment repair after the Chat Gate lifecycle correction, preserving the separation between Infra evidence semantics and Chat business assertions |
-| Next action | Deploy/rebuild the exact clean HEAD, rerun Driver smoke, then execute `chat-native-product-closure-e2e` through the standard provisioned runner |
-| Blockers | MP-W13 remains `UNPROVEN`; restart recovery has not passed after removing the Gate-induced logout; the generic list-artifact enrichment repair is locally verified but not yet source-bound; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Last completed | Clean source/live Station `d67a48a0d` was deployed and exercised twice. Run `20260822T010924602481Z-a64c43011e439381755a81255648dbd5` reached attachment send and rejected a newer `draft` outcome with two IDs; run `20260822T011615401653Z-6b0dc83ae55bc3aa3e19f5faa39bce61` stopped earlier when a reaction emoji received target-owned down events but its picker disappeared before up. Both runs released actor/proxy ports, and the standard wrapper retained list-shaped evidence without crashing. |
+| Current action | Instrument the existing Native-input debug session at the reaction-picker focus, pointer and emoji press boundaries to determine why the transient target unmounts between down and up without changing product behavior or weakening target-owned acknowledgement |
+| Next action | Rebuild the dedicated binary, run Driver smoke, execute the provisioned Native Gate once, and classify picker teardown before returning to the attachment `draft` transition |
+| Blockers | MP-W13 remains `UNPROVEN`; restart recovery has not passed after removing Gate-induced logout; attachment `draft(count=2)` has one observation only because the second run failed earlier; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260822T004237818803Z-2a73ae509e64f3f810528a4c06a0e8c0` matched source/live Station `2eff7abe4`; `attachment_images_loaded`, `attachment_count_conservation`, and `attachment_byte_exact` passed after real Native clicks; restart snapshots show the group before click and the account chooser afterward; app logs show successful restore followed by Gate-issued logout/login; cleanup released all actor/fault-proxy ports |
+| Evidence | Run `20260822T010924602481Z-a64c43011e439381755a81255648dbd5` matched `d67a48a0d` and observed attachment outcome `{revision:3,state:draft,count:2,ids:2}`; run `20260822T011615401653Z-6b0dc83ae55bc3aa3e19f5faa39bce61` matched the same clean source/runtime, passed thread/transcript/toolbar, then recorded target-owned reaction down and unowned up after picker teardown; wrapper run `20260822T011615194181Z-3e168bfa496c64e51ccfc03ec5bc9c7b` completed as `PARTIAL/UNPROVEN`; actor ports are free and Debug Servers `7783/7785` remain open by protocol |
 | Last updated | 2026-08-22 |
 
 ## 1. Plan Sources And Gate
