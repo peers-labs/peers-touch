@@ -94,7 +94,6 @@ export function ChatMessageArea() {
     peerProfiles,
     sessions,
     groupMembers,
-    loadGroupMembers,
     scrollToMessageUlid,
     setScrollToMessageUlid,
     encryptionEnabled,
@@ -134,7 +133,6 @@ export function ChatMessageArea() {
     peerProfiles: s.peerProfiles,
     sessions: s.sessions,
     groupMembers: s.groupMembers,
-    loadGroupMembers: s.loadGroupMembers,
     scrollToMessageUlid: s.scrollToMessageUlid,
     setScrollToMessageUlid: s.setScrollToMessageUlid,
     encryptionEnabled: s.encryptionEnabled,
@@ -248,13 +246,6 @@ export function ChatMessageArea() {
       loadMessages(activeUlid);
     }
   }, [activeUlid, loadMessages]);
-
-  useEffect(() => {
-    if (activeTab !== 'group' || !activeUlid) return;
-    loadGroupMembers(activeUlid).catch((error) => {
-      log.warn('socialChat', 'message area loadGroupMembers failed', error);
-    });
-  }, [activeTab, activeUlid, loadGroupMembers]);
 
   useEffect(() => {
     if (prependRestoreRef.current && scrollContainerRef.current) {

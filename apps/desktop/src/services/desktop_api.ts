@@ -31,7 +31,6 @@ import {
   LeaveGroupResponseSchema,
   TransferGroupOwnershipResponseSchema,
   DissolveGroupResponseSchema,
-  GetGroupMembersResponseSchema,
   RemoveMemberResponseSchema,
   UpdateMemberResponseSchema,
   RecallGroupMessageResponseSchema,
@@ -4913,9 +4912,6 @@ export const api = {
 
   groupChatDissolveGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_dissolve_group', DissolveGroupResponseSchema, { group_ulid: groupUlid }),
-
-  groupChatGetMembers: (groupUlid: string, limit?: number, offset?: number) =>
-    invokeRustProto('group_chat_get_members', GetGroupMembersResponseSchema, { group_ulid: groupUlid, limit, offset }),
 
   groupChatRemoveMember: (groupUlid: string, memberDid: string) =>
     invokeRustProto('group_chat_remove_member', RemoveMemberResponseSchema, { group_ulid: groupUlid, member_did: memberDid }),
