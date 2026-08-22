@@ -18,15 +18,15 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` verify reaction-picker hold safety and final source-bound Gate bundle |
-| Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Run `20260822T013542398002Z-baa3ad2dbb0fd615b5eda703d4393ba2` completed `PASS/DONE/PROVEN` on clean source, dedicated binary, and live Station `eec57c834`; all product assertions including attachment conservation/open and restart recovery passed. Picker instrumentation confirmed a blur-to-BODY race during an in-surface press, and the stale Station EventID test was corrected locally. |
-| Current action | Verify the pointer-contained blur guard and corrected `read:` plus 56-hex EventID test, then bind the complete Gate bundle to the final clean source commit |
-| Next action | Commit the two minimal fixes, deploy/rebuild exact HEAD, run `station-messaging-unit`, Desktop checks/tests/build, Native product closure, and Chat `--require-proven` validation |
-| Blockers | MP-W13 remains `UNPROVEN` for the current dirty source until final-source Gates pass; Debug Server instrumentation and OPEN records must remain until explicit user confirmation |
+| Current step | `MP-W13-F` close intermittent transient-toolbar press lifecycle and final source-bound Gate bundle |
+| Progress | W13 implementation closures A-E are present; the latest clean source has 1/1 complete Native product-proof run plus current static/type/unit evidence. Cross-run timer ordering confirmed the Reply press-lifecycle race, and the owning overlay now cancels stale close timers from pointer-down capture; post-fix Native proof is pending on the dirty worktree. |
+| Last completed | Run `20260822T021501765957Z-880ac7d7689837399f03a59df41663b9` completed `PASS/DONE/PROVEN` on clean source, dedicated binary, and live Station `e1893b551`; all 17 product and cleanup assertions passed. Timer instrumentation observed only legitimate dismissals with `overlayHovered=false` and `overlayFocused=false`, so hypothesis AI was not reproduced and remains inconclusive. |
+| Current action | Commit the pointer-down ownership fix and source guard, deploy exact HEAD, rebuild the dedicated binary, and collect post-fix Native timer/input evidence |
+| Next action | Run Driver smoke and `chat-native-product-closure-e2e` on the exact deployed commit, then execute the final clean Gate bundle and Chat proof validation |
+| Blockers | MP-W13 remains `PARTIAL / UNPROVEN` for the dirty fix until exact-source Native proof and the final Gate bundle pass; Debug Server instrumentation and OPEN records must remain until explicit user confirmation |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Wrapper run `20260822T013542196463Z-6263f936b8dc23b845767d2b5038b0a4` and Gate run `20260822T013542398002Z-baa3ad2dbb0fd615b5eda703d4393ba2` are `DONE/PROVEN` for `eec57c834`, with all 15 product assertions plus cleanup passing; Desktop check, 338 tests, Rust attachment-open tests, static Gate 20/20, and corrected targeted Station test pass locally; remote root disk recovered from 100% to 60% by pruning only unused Docker build cache |
-| Last updated | 2026-08-22 |
+| Evidence | Latest Gate `20260822T021501765957Z-880ac7d7689837399f03a59df41663b9` is `PASS/DONE/PROVEN` for source and live Station `e1893b551`, dedicated binary SHA-256 `6951e88f3aa2517fc1b1bdbd2e9827ee2c8610e9ece7cfe44676058032eefb44`, with all 17 assertions and Actor-port cleanup passing. Current-head `desktop-check`, 338 Desktop tests, `station-messaging-unit`, `chat-native-visible-static`, and 2 Rust attachment-open tests pass. Cross-run evidence confirms overlay `pointerenter` can be followed by row-owned close scheduling; the dirty pointer-down ownership fix passes 21 focused static tests and Desktop check. |
+| Last updated | 2026-08-22 10:23 CST |
 
 ## 1. Plan Sources And Gate
 

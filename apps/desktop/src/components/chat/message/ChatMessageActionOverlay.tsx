@@ -306,6 +306,15 @@ export function ChatMessageActionOverlay({
       data-message-action-overlay={pickerOpen ? 'reaction-picker' : 'toolbar'}
       data-message-action-message={message.ulid}
       data-message-action-placement={geometry?.placement ?? 'unplaced'}
+      onPointerDownCapture={() => {
+        // #region debug-point AI:surface-pointer-down
+        reportReactionPickerInput(message.ulid, pickerOpen, 'surface pointer down', {
+          pointerInside: pointerInsideRef.current,
+        });
+        // #endregion
+        pointerInsideRef.current = true;
+        onPointerEnter();
+      }}
       onPointerEnter={() => {
         // #region debug-point AG:pointer-enter
         reportReactionPickerInput(message.ulid, pickerOpen, 'pointer enter');

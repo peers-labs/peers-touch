@@ -9,6 +9,10 @@ ROOT = Path(__file__).resolve().parents[4]
 RUNNER = ROOT / "tooling/acceptance/gates/chat/native_product_closure_runner.py"
 DESKTOP_MAIN = ROOT / "apps/desktop/src-tauri/src/main.rs"
 DESKTOP_CARGO = ROOT / "apps/desktop/src-tauri/Cargo.toml"
+MESSAGE_ACTION_OVERLAY = (
+    ROOT
+    / "apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx"
+)
 
 
 class NativeProductClosureStaticTests(unittest.TestCase):
@@ -16,6 +20,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.source = RUNNER.read_text(encoding="utf-8")
         self.desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
         self.desktop_cargo = DESKTOP_CARGO.read_text(encoding="utf-8")
+        self.message_action_overlay = MESSAGE_ACTION_OVERLAY.read_text(
+            encoding="utf-8"
+        )
         self.tree = ast.parse(self.source)
 
     def test_runner_is_a_real_acceptance_gate(self) -> None:
@@ -232,6 +239,20 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source.index("self.focus_actor_window(actor)"),
             click_source.index("client.find_element(selector, timeout)"),
         )
+
+    def test_transient_action_surface_owns_the_complete_pointer_press(self) -> None:
+        pointer_down = self.message_action_overlay.index(
+            "      onPointerDownCapture={() => {"
+        )
+        pointer_enter = self.message_action_overlay.index(
+            "      onPointerEnter={() => {",
+            pointer_down,
+        )
+        pointer_down_source = self.message_action_overlay[
+            pointer_down:pointer_enter
+        ]
+        self.assertIn("pointerInsideRef.current = true;", pointer_down_source)
+        self.assertIn("onPointerEnter();", pointer_down_source)
 
     def test_acceptance_window_owns_the_native_overlay_level(self) -> None:
         self.assertIn('feature = "acceptance-webdriver"', self.desktop_main)
