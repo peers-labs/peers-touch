@@ -249,6 +249,7 @@ REQUIRED_ASSERTIONS = {
     "settings_restart_recovery",
     "background_upload_recovery",
     "attachment_failure_draft_retained",
+    "attachment_images_loaded",
     "attachment_count_conservation",
     "attachment_byte_exact",
     "cleanup_ports_released",
@@ -3262,13 +3263,29 @@ except Exception as error:
         if self.clients["alice"].find_elements("[data-chat-attachment-draft]"):
             raise GateError("queued attachment send did not clear Composer drafts")
 
+        def rendered_attachment_message(actor: str) -> dict[str, Any] | None:
+            row = self.attachment_message(actor, 2)
+            if not row:
+                return None
+            image_attachments = [
+                attachment
+                for attachment in row["attachments"]
+                if attachment["kind"] == "image"
+            ]
+            return (
+                row
+                if len(image_attachments) == 1
+                and all(attachment["imageLoaded"] for attachment in image_attachments)
+                else None
+            )
+
         sender_row = wait_until(
-            lambda: self.attachment_message("alice", 2),
+            lambda: rendered_attachment_message("alice"),
             "Alice two-attachment row",
             timeout=180,
         )
         receiver_row = wait_until(
-            lambda: self.attachment_message("bob", 2),
+            lambda: rendered_attachment_message("bob"),
             "Bob two-attachment row",
             timeout=180,
         )
@@ -3350,6 +3367,16 @@ except Exception as error:
                     "sender": sender_row,
                     "receiver": receiver_row,
                     "details": details,
+                }
+            ),
+        )
+        self.assert_condition(
+            "attachment_images_loaded",
+            True,
+            json.dumps(
+                {
+                    "sender": sender_row["attachments"],
+                    "receiver": receiver_row["attachments"],
                 }
             ),
         )
@@ -3452,56 +3479,61 @@ except Exception as error:
             restart_snapshots.append(record)
             return record
 
-        self.restart_actor("alice")
-        capture_restart_snapshot("after-restart")
-        self.enter_chat_page("alice")
-        capture_restart_snapshot("after-enter-chat")
-        self.click("alice", f'[data-chat-group-ulid="{group_id}"]')
-        capture_restart_snapshot("after-group-click")
-        wait_until(
-            lambda: len(self.transcript("alice")) == len(self.transcript("bob")),
-            "Alice transcript after restart",
-            timeout=180,
-        )
-        capture_restart_snapshot("after-transcript-match")
         try:
+            self.restart_actor("alice")
+            capture_restart_snapshot("after-restart")
+            self.enter_chat_page("alice")
+            capture_restart_snapshot("after-enter-chat")
+            self.click("alice", f'[data-chat-group-ulid="{group_id}"]')
+            capture_restart_snapshot("after-group-click")
+            wait_until(
+                lambda: len(self.transcript("alice")) == len(self.transcript("bob")),
+                "Alice transcript after restart",
+                timeout=180,
+            )
+            capture_restart_snapshot("after-transcript-match")
             self.open_details("alice")
+            capture_restart_snapshot("after-details-open")
+            state = wait_until(
+                lambda: (
+                    value
+                    if (
+                        (value := self.setting_state("alice")).get("muted") == "true"
+                        and value.get("pinned") == "true"
+                        and value.get("background") == "paper"
+                        and value.get("backgroundImage")
+                        == settings_before["ui"]["backgroundImage"]
+                    )
+                    else None
+                ),
+                "settings and background after client restart",
+                timeout=180,
+            )
+            station = gateway_read(
+                self.clients["alice"],
+                "conversation_get_member_settings",
+                {"conversation_id": group_id},
+            )
+            self.assert_condition(
+                "settings_restart_recovery",
+                bool(state) and bool(station),
+                json.dumps({"ui": state, "station": station}),
+            )
         except Exception as error:
-            capture_restart_snapshot("detail-toggle-failure")
-            self.save_screenshot(self.clients["alice"], "alice-restart-detail-failure")
-            self.save_dom(self.clients["alice"], "alice-restart-detail-failure")
-            self.save_app_log(self.clients["alice"], "alice-restart-detail-failure")
+            client = self.clients.get("alice")
+            if client is not None and client.is_alive():
+                capture_restart_snapshot("restart-failure")
+                self.save_screenshot(client, "alice-restart-detail-failure")
+                self.save_dom(client, "alice-restart-detail-failure")
+                self.save_app_log(client, "alice-restart-detail-failure")
             self.write_json_evidence("restart-detail-failure", restart_snapshots)
+            last_snapshot = restart_snapshots[-1] if restart_snapshots else {}
             raise GateError(
-                "Alice Details unavailable after restart: "
-                f"{json.dumps(restart_snapshots[-1], sort_keys=True)}"
+                "Alice restart recovery failed: "
+                f"{json.dumps(last_snapshot, sort_keys=True)}"
             ) from error
-        self.write_json_evidence("restart-detail-ready", restart_snapshots)
-        state = wait_until(
-            lambda: (
-                value
-                if (
-                    (value := self.setting_state("alice")).get("muted") == "true"
-                    and value.get("pinned") == "true"
-                    and value.get("background") == "paper"
-                    and value.get("backgroundImage")
-                    == settings_before["ui"]["backgroundImage"]
-                )
-                else None
-            ),
-            "settings and background after client restart",
-            timeout=180,
-        )
-        station = gateway_read(
-            self.clients["alice"],
-            "conversation_get_member_settings",
-            {"conversation_id": group_id},
-        )
-        self.assert_condition(
-            "settings_restart_recovery",
-            bool(state) and bool(station),
-            json.dumps({"ui": state, "station": station}),
-        )
+        else:
+            self.write_json_evidence("restart-detail-ready", restart_snapshots)
 
     def collect_final_evidence(self) -> None:
         for actor in ("alice", "bob"):
