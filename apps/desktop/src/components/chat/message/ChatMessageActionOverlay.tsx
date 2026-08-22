@@ -130,6 +130,7 @@ export function ChatMessageActionOverlay({
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const pointerInsideRef = useRef(false);
   const restoreReactionFocusRef = useRef(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [geometry, setGeometry] = useState<MessageActionGeometryResult | null>(null);
@@ -309,12 +310,14 @@ export function ChatMessageActionOverlay({
         // #region debug-point AG:pointer-enter
         reportReactionPickerInput(message.ulid, pickerOpen, 'pointer enter');
         // #endregion
+        pointerInsideRef.current = true;
         onPointerEnter();
       }}
       onPointerLeave={() => {
         // #region debug-point AG:pointer-leave
         reportReactionPickerInput(message.ulid, pickerOpen, 'pointer leave');
         // #endregion
+        pointerInsideRef.current = false;
         onPointerLeave();
       }}
       onFocusCapture={() => {
@@ -332,9 +335,10 @@ export function ChatMessageActionOverlay({
           relatedTag: event.relatedTarget instanceof Element
             ? event.relatedTarget.tagName
             : '',
+          pointerInside: pointerInsideRef.current,
         });
         // #endregion
-        if (relatedContained) return;
+        if (relatedContained || pointerInsideRef.current) return;
         onPointerLeave();
       }}
       style={{

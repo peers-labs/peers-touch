@@ -160,3 +160,16 @@ matched clean source, dedicated binary, and live Station `2eff7abe4`. It passed:
 The attachment open/download repair is source-bound Native-proven within this
 run. The full Gate remains `FAIL/UNPROVEN` because restart subsequently exposed
 the Gate lifecycle defect tracked in `debug-chat-restart-detail.md`.
+
+Full closure run
+`20260822T013542398002Z-baa3ad2dbb0fd615b5eda703d4393ba2`
+matched clean source, dedicated binary, and live Station `eec57c834` and
+completed `PASS/DONE/PROVEN`. The run reconfirmed:
+
+- attachment-only send outcome `pending` with exactly two attachment IDs;
+- Engine, sender row, receiver row, and both Details surfaces each retained
+  exactly two attachments;
+- sender and receiver image DOM loaded successfully;
+- real Native attachment clicks reached `ready`;
+- Alice and Bob cache readback matched the source SHA-256 bytes;
+- restart preserved the same attachment and settings projections.

@@ -655,3 +655,11 @@ Transient-baseline source-bound run:
   acknowledgement, callback, and terminal chooser checks remain unchanged.
 - The run remained `PARTIAL/UNPROVEN`; cleanup released
   `3330/3331/4445/4446/65288`.
+
+Full closure run
+`20260822T013542398002Z-baa3ad2dbb0fd615b5eda703d4393ba2`
+matched clean source, dedicated binary, and live Station `eec57c834` and
+completed `PASS/DONE/PROVEN`. It exercised the real macOS chooser, the failed
+upload retry on the same file intent, Station readback, rendered background,
+and restart recovery. The debug session remains `[OPEN]` until user
+confirmation.

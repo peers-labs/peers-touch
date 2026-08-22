@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` isolate Native reaction-picker press teardown, then continue attachment/restart proof |
+| Current step | `MP-W13-F` verify reaction-picker hold safety and final source-bound Gate bundle |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Clean source/live Station `d67a48a0d` was deployed and exercised twice. Run `20260822T010924602481Z-a64c43011e439381755a81255648dbd5` reached attachment send and rejected a newer `draft` outcome with two IDs; run `20260822T011615401653Z-6b0dc83ae55bc3aa3e19f5faa39bce61` stopped earlier when a reaction emoji received target-owned down events but its picker disappeared before up. Both runs released actor/proxy ports, and the standard wrapper retained list-shaped evidence without crashing. |
-| Current action | Instrument the existing Native-input debug session at the reaction-picker focus, pointer and emoji press boundaries to determine why the transient target unmounts between down and up without changing product behavior or weakening target-owned acknowledgement |
-| Next action | Rebuild the dedicated binary, run Driver smoke, execute the provisioned Native Gate once, and classify picker teardown before returning to the attachment `draft` transition |
-| Blockers | MP-W13 remains `UNPROVEN`; restart recovery has not passed after removing Gate-induced logout; attachment `draft(count=2)` has one observation only because the second run failed earlier; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Last completed | Run `20260822T013542398002Z-baa3ad2dbb0fd615b5eda703d4393ba2` completed `PASS/DONE/PROVEN` on clean source, dedicated binary, and live Station `eec57c834`; all product assertions including attachment conservation/open and restart recovery passed. Picker instrumentation confirmed a blur-to-BODY race during an in-surface press, and the stale Station EventID test was corrected locally. |
+| Current action | Verify the pointer-contained blur guard and corrected `read:` plus 56-hex EventID test, then bind the complete Gate bundle to the final clean source commit |
+| Next action | Commit the two minimal fixes, deploy/rebuild exact HEAD, run `station-messaging-unit`, Desktop checks/tests/build, Native product closure, and Chat `--require-proven` validation |
+| Blockers | MP-W13 remains `UNPROVEN` for the current dirty source until final-source Gates pass; Debug Server instrumentation and OPEN records must remain until explicit user confirmation |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260822T010924602481Z-a64c43011e439381755a81255648dbd5` matched `d67a48a0d` and observed attachment outcome `{revision:3,state:draft,count:2,ids:2}`; run `20260822T011615401653Z-6b0dc83ae55bc3aa3e19f5faa39bce61` matched the same clean source/runtime, passed thread/transcript/toolbar, then recorded target-owned reaction down and unowned up after picker teardown; wrapper run `20260822T011615194181Z-3e168bfa496c64e51ccfc03ec5bc9c7b` completed as `PARTIAL/UNPROVEN`; actor ports are free and Debug Servers `7783/7785` remain open by protocol |
+| Evidence | Wrapper run `20260822T013542196463Z-6263f936b8dc23b845767d2b5038b0a4` and Gate run `20260822T013542398002Z-baa3ad2dbb0fd615b5eda703d4393ba2` are `DONE/PROVEN` for `eec57c834`, with all 15 product assertions plus cleanup passing; Desktop check, 338 tests, Rust attachment-open tests, static Gate 20/20, and corrected targeted Station test pass locally; remote root disk recovered from 100% to 60% by pruning only unused Docker build cache |
 | Last updated | 2026-08-22 |
 
 ## 1. Plan Sources And Gate
