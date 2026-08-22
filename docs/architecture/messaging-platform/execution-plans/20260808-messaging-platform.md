@@ -18,14 +18,14 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-E/F` close the real attachment open/download state machine before restart proof |
+| Current step | `MP-W13-F` remove Gate-induced logout from real client restart proof |
 | Progress | W13 implementation closures A-E are present with static/type/unit evidence; 0/1 Native product-proof closure is complete |
-| Last completed | Source-bound run `20260821T233451461621Z-f0a7b1bb1f65dee54addee44fab05862` matched clean source/live Station `d71c08067`, proved Alice/Bob Details `media=1/files=1`, complete attachment count conservation, and byte-exact opens, then failed after Alice restart while locating the Details toggle; cleanup released `3330/3331/4445/4446/61118` |
-| Current action | Commit the locally verified Engine-owned attachment open/retry state machine, exact cache authorization, visible message/Details states, and Native-click Gate path |
-| Next action | Deploy the exact clean HEAD, rebuild the dedicated Acceptance binary, run Driver smoke, then rerun the full Native Gate through attachment image/open proof and preserved restart diagnostics |
-| Blockers | MP-W13 remains `UNPROVEN`; the latest run exposed retryable attachment download as a silent one-shot UI failure and direct-command Gate action; restart recovery remains unproven; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
+| Last completed | Source-bound run `20260822T004237818803Z-2a73ae509e64f3f810528a4c06a0e8c0` matched clean source/live Station `2eff7abe4`, proved loaded Alice/Bob image DOM, complete attachment count conservation, real Native attachment clicks and byte-exact opens, then failed in restart after the Gate invalidated the successfully restored Alice session |
+| Current action | Separate initial fixture authentication from restart so the Gate observes the persisted Native session instead of injecting logout/login during the restart journey |
+| Next action | Commit the Gate lifecycle correction, deploy/rebuild exact clean source, rerun Driver smoke, then rerun the Native Gate through restart recovery |
+| Blockers | MP-W13 remains `UNPROVEN`; restart recovery has not passed after removing the Gate-induced logout; `acceptance-run.py` separately crashes while summarizing a list-shaped evidence artifact; `station-messaging-unit` still fails independently at `receipt_service_test.go:141` because the queued `read:` digest is 56 rather than 64 hex characters |
 | Decisions required | none; product behavior and ownership are already defined by Messaging, Social Runtime, Chat UX, and Desktop projection contracts |
-| Evidence | Run `20260822T000832375892Z-87488d6a9fc487419d73f865916197b1` matched source/live Station `16a45a5b0`, crossed every real chooser, and failed at attachment open with typed detail `messaging attachment download is pending`; local repair checks pass: Desktop check, 338 unit tests with 1 environment-backed skip, production build, Rust check, 2 Engine attachment-open binary tests, and Chat static Gate 20/20; Native proof remains pending |
+| Evidence | Run `20260822T004237818803Z-2a73ae509e64f3f810528a4c06a0e8c0` matched source/live Station `2eff7abe4`; `attachment_images_loaded`, `attachment_count_conservation`, and `attachment_byte_exact` passed after real Native clicks; restart snapshots show the group before click and the account chooser afterward; app logs show successful restore followed by Gate-issued logout/login; cleanup released all actor/fault-proxy ports |
 | Last updated | 2026-08-22 |
 
 ## 1. Plan Sources And Gate
