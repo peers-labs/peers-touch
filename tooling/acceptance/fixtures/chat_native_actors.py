@@ -26,7 +26,7 @@ from tooling.acceptance.core.provisioning import (
 ACTOR_ACCOUNTS = {
     "alice": "alice@p.t",
     "bob": "bob@p.t",
-    "charlie": "charlie@p.t",
+    "charlie": "carol@p.t",
 }
 
 
