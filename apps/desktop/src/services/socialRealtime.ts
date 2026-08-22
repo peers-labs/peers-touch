@@ -112,14 +112,16 @@ export async function refreshSocialProjection(label: string, includeNotification
     await Promise.allSettled([
       chat.loadFriendRequests(),
       chat.loadSessions(),
-      chat.loadGroups(),
       notifications.refreshUnreadCounts(),
       includeNotifications ? notifications.loadNotifications() : Promise.resolve(),
     ]);
 
     const refreshed = useSocialChatStore.getState();
     const peerPtids = Array.from(new Set(
-      Object.values(refreshed.conversationMembers)
+      [
+        ...Object.values(refreshed.conversationMembers),
+        ...Object.values(refreshed.groupMembers),
+      ]
         .flat()
         .map((member) => member.ptid)
         .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserDid),
@@ -183,7 +185,6 @@ async function bootstrapSocialProjection(actorId: string, sequence: number): Pro
     chat.loadCurrentUserProfile(),
     chat.initEncryption(),
     chat.loadSessions(),
-    chat.loadGroups(),
     chat.loadFriendRequests(),
     notifications.refreshUnreadCounts(),
   ]);
@@ -423,11 +424,6 @@ function onGroupMembershipChange(payload: RealtimeGroupMembershipChangePayload):
     await Promise.allSettled([
       store.loadGroups(),
       store.loadGroupUnreadCounts(),
-      payload.kind === 'DISSOLVED'
-        ? Promise.resolve()
-        : payload.kind === 'ADDED' || payload.kind === 'UPDATED' || payload.kind === 'TRANSFERRED' || store.activeGroupUlid === payload.groupUlid
-        ? store.loadGroupMembers(payload.groupUlid)
-        : Promise.resolve(),
     ]);
   });
 }
@@ -490,7 +486,6 @@ async function executeColdResync(payload: RealtimeResyncPayload): Promise<void> 
 
   await Promise.allSettled([
     chat.loadSessions(),
-    chat.loadGroups(),
     chat.loadFriendRequests(),
     notifications.loadNotifications(),
     notifications.refreshUnreadCounts(),

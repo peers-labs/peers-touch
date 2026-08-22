@@ -222,7 +222,7 @@ describe('social realtime group membership side effects', () => {
     await vi.waitFor(() => {
       expect(mocks.loadSessions).toHaveBeenCalledTimes(2);
     });
-    expect(mocks.loadGroups).toHaveBeenCalledTimes(2);
+    expect(mocks.loadGroups).not.toHaveBeenCalled();
   });
 });
 
