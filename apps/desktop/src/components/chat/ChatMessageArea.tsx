@@ -158,7 +158,6 @@ export function ChatMessageArea() {
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
   const [replyToUlid, setReplyToUlid] = useState<string | null>(null);
-  const previousReplyToUlidRef = useRef<string | null>(null);
   const [highlightedMessageUlid, setHighlightedMessageUlid] = useState<string | null>(null);
   // When set, the input field operates in "edit" mode: pressing
   // Send dispatches `editFriendMessage(activeUlid, editingUlid, …)`
@@ -187,32 +186,6 @@ export function ChatMessageArea() {
     ? getIMConversations().find((conversation) => conversation.kind === activeKind && conversation.id === activeUlid)
     : undefined;
   const currentMessages = activeUlid ? getIMMessages(activeKind, activeUlid) : [];
-  useEffect(() => {
-    if (previousReplyToUlidRef.current === replyToUlid) return;
-    // #region debug-point W-Y:reply-state-commit
-    fetch('http://127.0.0.1:7778/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'thread-summary-projection',
-        runId: 'reply-lifecycle-pre-fix',
-        hypothesisId: 'W-Y',
-        location: 'ChatMessageArea:replyStateCommit',
-        msg: '[DEBUG] reply state committed',
-        data: {
-          activeConversationId: activeUlid,
-          previousReplyToMessageId: previousReplyToUlidRef.current || '',
-          replyToMessageId: replyToUlid || '',
-          replyTargetAvailable: Boolean(
-            replyToUlid
-            && currentMessages.some(message => message.ulid === replyToUlid)
-          ),
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-    previousReplyToUlidRef.current = replyToUlid;
-  }, [activeUlid, currentMessages, replyToUlid]);
   const mainTimelineMessages = currentMessages.filter((message) => !messageThreadRootUlid(message));
   const activeLocalState = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`] : undefined;
   const activeBackground = activeLocalState?.background;
@@ -473,31 +446,6 @@ export function ChatMessageArea() {
     const content = draft.text;
     const replyRef = replyToUlid || undefined;
     const editTarget = editingUlid;
-    // #region debug-point A:inline-reply-intent
-    if (replyRef) {
-      const replyTarget = currentMessages.find(message => message.ulid === replyRef);
-      fetch('http://127.0.0.1:7778/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'thread-summary-projection',
-          runId: 'post-fix',
-          hypothesisId: 'A',
-          location: 'ChatMessageArea:handleSend',
-          msg: '[DEBUG] inline reply intent relation',
-          data: {
-            activeConversationId: activeUlid,
-            kind: activeKind,
-            replyToMessageId: replyRef,
-            replyTargetThreadRootMessageId: replyTarget
-              ? messageThreadRootUlid(replyTarget)
-              : '',
-            explicitThreadRootMessageId: '',
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-    }
-    // #endregion
     setInputValue('');
     setReplyToUlid(null);
     setEditingUlid(null);
@@ -618,49 +566,10 @@ export function ChatMessageArea() {
     const existingTimeout = reactionTimeoutsRef.current.get(message.ulid);
     if (existingTimeout !== undefined) window.clearTimeout(existingTimeout);
     reactionTimeoutsRef.current.delete(message.ulid);
-    // #region debug-point E-H:reaction-mutation-begin
-    fetch('http://127.0.0.1:7781/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'chat-reaction-recovery',
-        runId: 'mutation-source-pre-fix',
-        hypothesisId: 'E-H',
-        location: 'ChatMessageArea:handleReaction:begin',
-        msg: '[DEBUG] reaction mutation began',
-        data: {
-          conversationId: activeUlid,
-          messageId: message.ulid,
-          emoji,
-          requestId,
-          remove: mutation.remove,
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     setReactionMutations(current => ({ ...current, [message.ulid]: mutation }));
 
     try {
       await reactToMessage(activeUlid, message.ulid, emoji, mutation.remove);
-      // #region debug-point F-G:reaction-command-accepted
-      fetch('http://127.0.0.1:7781/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'chat-reaction-recovery',
-          runId: 'mutation-source-pre-fix',
-          hypothesisId: 'F-G',
-          location: 'ChatMessageArea:handleReaction:accepted',
-          msg: '[DEBUG] reaction command returned accepted',
-          data: {
-            conversationId: activeUlid,
-            messageId: message.ulid,
-            emoji,
-            requestId,
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       setReactionMutations((current) => {
         const activeMutation = current[message.ulid];
         if (!activeMutation || activeMutation.requestId !== requestId) return current;
@@ -691,25 +600,6 @@ export function ChatMessageArea() {
             delete next[message.ulid];
             return next;
           }
-          // #region debug-point G:reaction-projection-timeout
-          fetch('http://127.0.0.1:7781/event', {
-            method: 'POST',
-            body: JSON.stringify({
-              sessionId: 'chat-reaction-recovery',
-              runId: 'mutation-source-pre-fix',
-              hypothesisId: 'G',
-              location: 'ChatMessageArea:handleReaction:timeout',
-              msg: '[DEBUG] reaction projection timed out',
-              data: {
-                conversationId: activeUlid,
-                messageId: message.ulid,
-                emoji,
-                requestId,
-              },
-              ts: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
           return {
             ...current,
             [message.ulid]: {
@@ -722,36 +612,6 @@ export function ChatMessageArea() {
       }, REACTION_PROJECTION_TIMEOUT_MS);
       reactionTimeoutsRef.current.set(message.ulid, timeout);
     } catch (error) {
-      // #region debug-point F:reaction-command-catch
-      fetch('http://127.0.0.1:7781/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'chat-reaction-recovery',
-          runId: 'mutation-source-pre-fix',
-          hypothesisId: 'F',
-          location: 'ChatMessageArea:handleReaction:catch',
-          msg: '[DEBUG] reaction command rejected',
-          data: {
-            conversationId: activeUlid,
-            messageId: message.ulid,
-            emoji,
-            requestId,
-            errorName: error instanceof Error ? error.name : typeof error,
-            errorCode: (
-              typeof error === 'object'
-              && error !== null
-              && 'code' in error
-            )
-              ? String((error as { code?: unknown }).code ?? '')
-              : '',
-            errorMessage: error instanceof Error
-              ? error.message.slice(0, 500)
-              : '',
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       log.error('chat', 'message reaction failed', {
         conversationId: activeUlid,
         messageId: message.ulid,
@@ -1075,26 +935,6 @@ export function ChatMessageArea() {
             }}
             onRecall={handleRecall}
             onReply={(messageUlid) => {
-              // #region debug-point W-X:reply-callback
-              fetch('http://127.0.0.1:7778/event', {
-                method: 'POST',
-                body: JSON.stringify({
-                  sessionId: 'thread-summary-projection',
-                  runId: 'reply-lifecycle-pre-fix',
-                  hypothesisId: 'W-X',
-                  location: 'ChatMessageArea:onReply',
-                  msg: '[DEBUG] reply callback entered',
-                  data: {
-                    activeConversationId: activeUlid,
-                    messageId: messageUlid,
-                    messageAvailable: currentMessages.some(
-                      message => message.ulid === messageUlid
-                    ),
-                  },
-                  ts: Date.now(),
-                }),
-              }).catch(() => {});
-              // #endregion
               setEditingUlid(null);
               setReplyToUlid(messageUlid);
             }}
@@ -1123,38 +963,6 @@ export function ChatMessageArea() {
               const threadKey = socialThreadKey(activeKind, activeUlid, message.ulid);
               const threadSummary = threadCounts[threadKey];
               const replyIds = loadedThreadReplyIds(currentMessages, message.ulid);
-              // #region debug-point C-D:thread-summary-input
-              const relationCandidates = currentMessages
-                .filter(candidate => (
-                  candidate.replyToUlid === message.ulid
-                  || messageThreadRootUlid(candidate) === message.ulid
-                ))
-                .map(candidate => ({
-                  messageId: candidate.ulid,
-                  replyToMessageId: candidate.replyToUlid || '',
-                  threadRootMessageId: messageThreadRootUlid(candidate),
-                }));
-              if (relationCandidates.length > 0) {
-                fetch('http://127.0.0.1:7778/event', {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    sessionId: 'thread-summary-projection',
-                    runId: 'post-fix',
-                    hypothesisId: 'C-D',
-                    location: 'ChatMessageArea:resolveThreadStats',
-                    msg: '[DEBUG] thread summary render inputs',
-                    data: {
-                      rootMessageId: message.ulid,
-                      loadedReplyIds: replyIds,
-                      threadCountReplyCount: threadSummary?.replyCount ?? 0,
-                      threadCountLatestReplyId: threadSummary?.latestReplyUlid ?? '',
-                      relationCandidates,
-                    },
-                    ts: Date.now(),
-                  }),
-                }).catch(() => {});
-              }
-              // #endregion
               return {
                 replyCount: loadedThreadReplyCount(currentMessages, message.ulid),
                 replyIds,

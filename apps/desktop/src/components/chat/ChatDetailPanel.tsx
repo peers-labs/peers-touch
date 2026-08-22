@@ -283,28 +283,7 @@ function Toggle({
       aria-busy={disabled}
       aria-checked={checked}
       role="switch"
-      onClick={() => {
-        // #region debug-point A-E:conversation-toggle-click
-        fetch('http://127.0.0.1:7782/event', {
-          method: 'POST',
-          body: JSON.stringify({
-            sessionId: 'chat-mute-projection',
-            runId: 'pre-fix',
-            hypothesisId: 'A-E',
-            location: 'ChatDetailPanel:Toggle:onClick',
-            msg: '[DEBUG] conversation toggle click entered',
-            data: {
-              action,
-              checked,
-              nextChecked: !checked,
-              disabled,
-            },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
-        onChange(!checked);
-      }}
+      onClick={() => onChange(!checked)}
       style={{
         appearance: 'none',
         width: 36,
@@ -821,77 +800,11 @@ export function ChatDetailPanel() {
     patch: Parameters<typeof updateConversationLocalState>[2],
   ): Promise<boolean> => {
     if (!activeUlid || conversationActionPending) return false;
-    // #region debug-point A-B:conversation-action-start
-    fetch('http://127.0.0.1:7782/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'chat-mute-projection',
-        runId: 'pre-fix',
-        hypothesisId: 'A-B',
-        location: 'ChatDetailPanel:runConversationAction:start',
-        msg: '[DEBUG] conversation action started',
-        data: {
-          action,
-          kind: activeTab,
-          conversationId: activeUlid,
-          patch,
-          currentMuted: Boolean(activeLocalState?.muted),
-          currentPinned: Boolean(activeLocalState?.sticky),
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     setConversationActionPending(action);
     try {
       await updateConversationLocalState(activeTab, activeUlid, patch);
-      // #region debug-point B-C:conversation-action-success
-      fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'chat-mute-projection',
-          runId: 'pre-fix',
-          hypothesisId: 'B-C',
-          location: 'ChatDetailPanel:runConversationAction:success',
-          msg: '[DEBUG] conversation action resolved',
-          data: {
-            action,
-            kind: activeTab,
-            conversationId: activeUlid,
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       return true;
     } catch (error) {
-      // #region debug-point B:conversation-action-error
-      fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'chat-mute-projection',
-          runId: 'pre-fix',
-          hypothesisId: 'B',
-          location: 'ChatDetailPanel:runConversationAction:error',
-          msg: '[DEBUG] conversation action rejected',
-          data: {
-            action,
-            kind: activeTab,
-            conversationId: activeUlid,
-            errorName: error instanceof Error ? error.name : typeof error,
-            errorCode: (
-              typeof error === 'object'
-              && error !== null
-              && 'code' in error
-            )
-              ? String((error as { code?: unknown }).code ?? '')
-              : '',
-            errorMessage: error instanceof Error ? error.message.slice(0, 500) : '',
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       log.error('chat', 'conversation action failed', {
         action,
         kind: activeTab,
@@ -904,24 +817,6 @@ export function ChatDetailPanel() {
       });
       return false;
     } finally {
-      // #region debug-point C-E:conversation-action-finally
-      fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'chat-mute-projection',
-          runId: 'pre-fix',
-          hypothesisId: 'C-E',
-          location: 'ChatDetailPanel:runConversationAction:finally',
-          msg: '[DEBUG] conversation action pending cleared',
-          data: {
-            action,
-            kind: activeTab,
-            conversationId: activeUlid,
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       setConversationActionPending(null);
     }
   };
