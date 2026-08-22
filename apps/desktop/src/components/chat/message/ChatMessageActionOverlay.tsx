@@ -42,6 +42,33 @@ const REACTION_EMOJIS = [
 
 const FRIEND_RECALL_WINDOW_MS = 4 * 60 * 1000 + 30 * 1000;
 
+// #region debug-point AG-AH:reaction-picker-press-lifecycle
+function reportReactionPickerInput(
+  messageId: string,
+  pickerOpen: boolean,
+  phase: string,
+  data: Record<string, unknown> = {},
+) {
+  fetch('http://127.0.0.1:7785/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'chat-native-input-delivery',
+      runId: 'pre-fix-transient-picker',
+      hypothesisId: 'AG-AH',
+      location: 'ChatMessageActionOverlay:reactionPicker',
+      msg: `[DEBUG] Reaction picker ${phase}`,
+      data: {
+        messageId,
+        pickerOpen,
+        activeTag: document.activeElement?.tagName || '',
+        ...data,
+      },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 export interface MessageActionTarget {
   activatedAtMs: number;
   anchorElement: HTMLElement;
@@ -278,11 +305,36 @@ export function ChatMessageActionOverlay({
       data-message-action-overlay={pickerOpen ? 'reaction-picker' : 'toolbar'}
       data-message-action-message={message.ulid}
       data-message-action-placement={geometry?.placement ?? 'unplaced'}
-      onPointerEnter={onPointerEnter}
-      onPointerLeave={onPointerLeave}
-      onFocusCapture={onPointerEnter}
+      onPointerEnter={() => {
+        // #region debug-point AG:pointer-enter
+        reportReactionPickerInput(message.ulid, pickerOpen, 'pointer enter');
+        // #endregion
+        onPointerEnter();
+      }}
+      onPointerLeave={() => {
+        // #region debug-point AG:pointer-leave
+        reportReactionPickerInput(message.ulid, pickerOpen, 'pointer leave');
+        // #endregion
+        onPointerLeave();
+      }}
+      onFocusCapture={() => {
+        // #region debug-point AG:focus
+        reportReactionPickerInput(message.ulid, pickerOpen, 'focus');
+        // #endregion
+        onPointerEnter();
+      }}
       onBlurCapture={(event) => {
-        if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+        const relatedContained = event.relatedTarget instanceof Node
+          && event.currentTarget.contains(event.relatedTarget);
+        // #region debug-point AG:blur
+        reportReactionPickerInput(message.ulid, pickerOpen, 'blur', {
+          relatedContained,
+          relatedTag: event.relatedTarget instanceof Element
+            ? event.relatedTarget.tagName
+            : '',
+        });
+        // #endregion
+        if (relatedContained) return;
         onPointerLeave();
       }}
       style={{
@@ -306,7 +358,35 @@ export function ChatMessageActionOverlay({
           type="button"
           data-reaction-emoji={emoji}
           aria-label={emoji}
+          onPointerDown={() => {
+            // #region debug-point AG-AH:emoji-pointer-down
+            reportReactionPickerInput(
+              message.ulid,
+              pickerOpen,
+              'emoji pointer down',
+              { emoji },
+            );
+            // #endregion
+          }}
+          onMouseUp={() => {
+            // #region debug-point AG-AH:emoji-mouse-up
+            reportReactionPickerInput(
+              message.ulid,
+              pickerOpen,
+              'emoji mouse up',
+              { emoji },
+            );
+            // #endregion
+          }}
           onClick={() => {
+            // #region debug-point AH:emoji-click
+            reportReactionPickerInput(
+              message.ulid,
+              pickerOpen,
+              'emoji click',
+              { emoji },
+            );
+            // #endregion
             onReact(message, emoji);
             restoreReactionFocusRef.current = true;
             setPickerOpen(false);

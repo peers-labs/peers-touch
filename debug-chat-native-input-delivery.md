@@ -30,6 +30,8 @@
 | AD | The focused fast path inherits a combined-session left-button-down state because normalization only runs after `focus_actor_window` decides activation is required | High | Low | `before-click.mouseButtonDown=true` while document focus and WindowServer ownership already pass |
 | AE | The button state starts released but the posted down is intermittently absent from both combined-session state and the target DOM | Medium | Low | `before-click.mouseButtonDown=false`, timeout remains false, and the scoped probe is empty |
 | AF | The posted down reaches combined-session state but not the target DOM despite stable WindowServer ownership | Medium | Low | `before-click.mouseButtonDown=false`, timeout becomes true, target remains hit-owned, and the scoped probe is empty |
+| AG | Reaction picker focus/leave handling closes the transient overlay after target-owned down but before Native up | High | Low | Picker focus/blur or leave schedules the 140 ms close timer between emoji down and unowned up |
+| AH | The emoji action runs before click and intentionally replaces the target before Native up | Low | Low | Reaction mutation begins before any target-owned mouseup/click event |
 
 ## Log Evidence
 Source-bound run:
@@ -354,3 +356,20 @@ posts the event. The correction keeps the failure snapshots, removes the
 blocking pre-click report, and performs a final connected/enabled/hit-owned
 geometry read immediately before `leftMouseDown`. The Gate still rejects any
 event whose actual DOM target is not owned by the intended element.
+
+Reaction-picker mouseup recurrence:
+`20260822T011615401653Z-6b0dc83ae55bc3aa3e19f5faa39bce61`.
+
+- Clean source, dedicated binary, and live Station matched `d67a48a0d`.
+- Thread exactness, transcript exactness, and toolbar geometry passed.
+- The reaction emoji was connected, enabled, and center-owned before input.
+- Its probe recorded target-owned `pointerdown/mousedown`, followed by
+  `pointerup/mouseup` at the same coordinates on an unowned message-row `DIV`.
+- Alice remained document-focused and WindowServer index `0`; combined-session
+  button state returned to released.
+
+This rejects a lost Native up event for this run. The picker target was removed
+between down and up. Existing logs do not identify whether focus/leave close
+logic or an early reaction mutation caused the teardown, so AG and AH remain
+inconclusive. The next instrumentation records picker focus, pointer boundary,
+and emoji press/click order without changing behavior.
