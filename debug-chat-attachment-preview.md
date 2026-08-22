@@ -103,3 +103,10 @@ Native Gate proves preview load and the downstream attachment ledger.
 The attachment preview and live Details projection fix now have source-bound
 post-fix evidence. This debug session remains `[OPEN]` until user confirmation;
 its instrumentation and debug files must not be removed before that gate.
+
+Run `20260821T235706759149Z-f65fe44d9f9e89d1e4f7f9f3f212e09a`
+showed that the attachment-count assertion could sample Bob's image row while
+`imageLoaded=false` and still pass because it checked counts only. Byte-exact
+open passed, but that does not prove receiver DOM rendering. The Gate now waits
+for the one image attachment to report `imageLoaded=true` on both sender and
+receiver rows and requires the separate `attachment_images_loaded` assertion.

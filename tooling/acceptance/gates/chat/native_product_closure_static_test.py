@@ -295,12 +295,16 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "toolbar_geometry",
             "transcript_exact",
             "thread_exact",
+            "attachment_images_loaded",
             "attachment_count_conservation",
             "attachment_byte_exact",
             "cleanup_ports_released",
             "binarySha256",
             "save_screenshot",
             "save_dom",
+            "capture_restart_snapshot",
+            "restart-detail-failure",
+            "alice-restart-detail-failure",
         ):
             self.assertIn(required, self.source)
 

@@ -63,3 +63,15 @@ restart. It failed earlier in the fourth Native file chooser because a
 transient zero-window Accessibility sample was used as the chooser baseline.
 That independent Gate state-machine defect is tracked in
 `debug-chat-background-picker.md`; restart hypotheses A-E remain pending.
+
+The next source-bound run,
+`20260821T235706759149Z-f65fe44d9f9e89d1e4f7f9f3f212e09a`, matched clean
+source and Station `e210e7b01`, crossed all Native chooser paths, and reached
+restart. It failed earlier than the prior restart run while locating the target
+`[data-chat-group-ulid]`. The initial instrumentation captured in memory after
+restart and Chat navigation but persisted evidence only inside the later
+Details-open failure handler, so no restart snapshot artifact survived.
+
+The instrumentation boundary now covers the whole restart journey. Any failure
+after actor restart preserves the latest phase snapshot, screenshot, DOM, and
+app log before cleanup.
