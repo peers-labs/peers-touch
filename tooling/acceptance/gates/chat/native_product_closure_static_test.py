@@ -94,7 +94,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"click"', self.source)
         self.assertIn("CGEventSourceButtonState", self.source)
         self.assertIn("native_window_stack_at_point", self.source)
-        self.assertIn('"windowStack": self.native_window_stack_at_point(point)', self.source)
         self.assertIn(
             "int(frontmost_app.processIdentifier()) if frontmost_app else -1",
             self.source,
@@ -110,13 +109,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         click_source = self.source[click_start:click_end]
         self.assertNotIn('"mousemove"', click_source)
-        self.assertIn('"mousedown-timeout"', click_source)
-        self.assertIn('"mouseup-timeout"', click_source)
-        self.assertIn('"click-timeout"', click_source)
-        self.assertIn(
-            '"mouseButtonDown": self.native_mouse_button_down()',
-            click_source,
-        )
+        self.assertIn('"mousedown"', click_source)
+        self.assertIn('"mouseup"', click_source)
+        self.assertIn('"click"', click_source)
+        self.assertNotIn("report_native_input_delivery", click_source)
         self.assertIn(
             "if mouse_down_posted and self.native_mouse_button_down():",
             click_source,
@@ -204,8 +200,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source.index('tell application "System Events"'),
         )
         self.assertIn('perform action "AXRaise"', self.source)
-        self.assertIn('report_focus_snapshot("after-owner")', focus_source)
-        self.assertIn('report_focus_snapshot("after-focus-click")', focus_source)
+        self.assertNotIn("report_focus_snapshot", focus_source)
         self.assertLess(recovery_index, cooperative_index)
         self.assertLess(cooperative_index, activation_index)
         self.assertLess(recovery_index, activation_index)
@@ -387,7 +382,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "    def native_focused_control("
         )
         focused_control_end = self.source.index(
-            "    # #region debug-point AA-AC:native-window-server-ownership",
+            "    def native_window_stack_at_point(",
             focused_control_start,
         )
         focused_control_source = self.source[
@@ -478,12 +473,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn("NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS", self.source)
+        self.assertIn("def native_app_baseline_ready(", self.source)
         self.assertIn('def native_window_restored(', self.source)
-        self.assertIn('include_webview=False', self.source)
         self.assertIn('and bool(control.get("role"))', self.source)
-        self.assertIn('"snapshotSkipped": "native recovery poll"', self.source)
-        self.assertIn('"snapshotSkipped": "native window unavailable"', self.source)
-        self.assertIn('"snapshotError": f"{type(error).__name__}: {error}"', self.source)
+        self.assertNotIn("report_native_file_snapshot", self.source)
         self.assertIn("self.focus_actor_window(actor)", self.source)
         self.assertIn('trigger_selector="[data-chat-background-upload]"', self.source)
         self.assertIn('trigger_selector="[data-chat-attachment-picker]"', self.source)
@@ -509,7 +502,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "action && (hit === action || action.contains(hit))",
             self.source,
         )
-        self.assertIn('"[DEBUG] background modal handoff"', self.source)
+        self.assertIn(").until(background_action_ready)", self.source)
         self.assertIn("name.includes('-leave')", self.source)
 
     def test_background_recovery_uses_the_visible_retry_action(self) -> None:

@@ -1153,33 +1153,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         loadError: null,
         ...(!get().currentUserDid && actorId ? { currentUserDid: actorId } : {}),
       });
-      // #region debug-point C-D:settings-reconcile-commit
-      fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'chat-mute-projection',
-          runId: 'pre-fix',
-          hypothesisId: 'C-D',
-          location: 'socialChat:loadSessions:settingsCommit',
-          msg: '[DEBUG] reconciled conversation settings committed',
-          data: {
-            actorId,
-            settings: conversationSnapshots
-              .filter(item => item.settings)
-              .map(item => ({
-                conversationId: item.conversation.conversationId,
-                kind: item.conversation.kind,
-                muted: item.settings?.muted ?? false,
-                alertEnabled: item.settings?.alertEnabled ?? true,
-                pinned: item.settings?.pinned ?? false,
-                background: item.settings?.background ?? 'default',
-                backgroundImage: item.settings?.backgroundImage ?? '',
-              })),
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       log.info('socialChat', 'loadConversations completed', {
         direct: directConversations.length,
         group: allConversations.length - directConversations.length,
@@ -1268,36 +1241,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       const msgs = projections.map(projection =>
         projectMessagingProjection(activeTab, ulid, projection),
       );
-      // #region debug-point B-D:message-relation-projection
-      const relationProjections = projections
-        .filter(projection => (
-          Boolean(projection.replyToMessageId)
-          || Boolean(projection.threadRootMessageId)
-        ))
-        .map(projection => ({
-          messageId: projection.messageId,
-          replyToMessageId: projection.replyToMessageId ?? '',
-          threadRootMessageId: projection.threadRootMessageId ?? '',
-        }));
-      if (relationProjections.length > 0) {
-        fetch('http://127.0.0.1:7778/event', {
-          method: 'POST',
-          body: JSON.stringify({
-            sessionId: 'thread-summary-projection',
-            runId: 'post-fix',
-            hypothesisId: 'B-D',
-            location: 'socialChat:loadMessages',
-            msg: '[DEBUG] Messaging relation projection loaded',
-            data: {
-              conversationId: ulid,
-              kind: activeTab,
-              relationProjections,
-            },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-      }
-      // #endregion
       const visibleMsgs = filterClearedMessages(
         msgs,
         get().conversationLocalState,
@@ -1917,26 +1860,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   updateConversationLocalState: async (kind, ulid, patch) => {
     const key = conversationKey(kind, ulid);
     let stationSettings: MemberSettingsResult | null = null;
-    // #region debug-point B-C:update-settings-request
-    fetch('http://127.0.0.1:7782/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'chat-mute-projection',
-        runId: 'pre-fix',
-        hypothesisId: 'B-C',
-        location: 'socialChat:updateConversationLocalState:request',
-        msg: '[DEBUG] conversation settings request started',
-        data: {
-          kind,
-          conversationId: ulid,
-          key,
-          patch,
-          before: get().conversationLocalState[key] ?? null,
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     try {
       const hasStationPatch = patch.muted !== undefined
         || patch.sticky !== undefined
@@ -1953,52 +1876,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           backgroundImage: patch.backgroundImage,
           clearedAtUnixMs: patch.clearedAt,
         });
-        // #region debug-point B-C:update-settings-response
-        fetch('http://127.0.0.1:7782/event', {
-          method: 'POST',
-          body: JSON.stringify({
-            sessionId: 'chat-mute-projection',
-            runId: 'pre-fix',
-            hypothesisId: 'B-C',
-            location: 'socialChat:updateConversationLocalState:response',
-            msg: '[DEBUG] Station settings response received',
-            data: {
-              kind,
-              conversationId: ulid,
-              settings: stationSettings,
-            },
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
       }
     } catch (error) {
-      // #region debug-point B:update-settings-error
-      fetch('http://127.0.0.1:7782/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'chat-mute-projection',
-          runId: 'pre-fix',
-          hypothesisId: 'B',
-          location: 'socialChat:updateConversationLocalState:error',
-          msg: '[DEBUG] Station settings request rejected',
-          data: {
-            kind,
-            conversationId: ulid,
-            errorName: error instanceof Error ? error.name : typeof error,
-            errorCode: (
-              typeof error === 'object'
-              && error !== null
-              && 'code' in error
-            )
-              ? String((error as { code?: unknown }).code ?? '')
-              : '',
-            errorMessage: error instanceof Error ? error.message.slice(0, 500) : '',
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       log.error('socialChat', 'update conversation settings failed', { kind, ulid, error });
       throw error;
     }
@@ -2017,25 +1896,6 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       saveConversationLocalState(state.currentUserDid, nextLocalState);
       return { conversationLocalState: nextLocalState };
     });
-    // #region debug-point C-D:update-settings-store-commit
-    fetch('http://127.0.0.1:7782/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'chat-mute-projection',
-        runId: 'pre-fix',
-        hypothesisId: 'C-D',
-        location: 'socialChat:updateConversationLocalState:storeCommit',
-        msg: '[DEBUG] authoritative settings projection committed',
-        data: {
-          kind,
-          conversationId: ulid,
-          key,
-          committed: get().conversationLocalState[key] ?? null,
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
   },
 
   hideConversation: async (kind, ulid, keepHistory) => {

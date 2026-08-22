@@ -406,9 +406,6 @@ export function ChatComposer({
   );
 
   const submit = async () => {
-    // #region debug-point T:composer-submit-entry
-    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'T', location: 'ChatComposer:submit', msg: '[DEBUG] composer submit entered', data: { activeConversationId, canSend, valueLength: value.length, readyAttachmentCount: readyAttachments.length }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     if (!canSend) return;
     const messageType = chatMessageTypeForAttachments(readyAttachments);
     const previousOutcomeRevision = useSocialChatStore.getState()
@@ -418,9 +415,6 @@ export function ChatComposer({
       attachments: readyAttachments,
       messageType,
     });
-    // #region debug-point U:composer-send-returned
-    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'U', location: 'ChatComposer:submit', msg: '[DEBUG] composer onSend returned', data: { activeConversationId, readyAttachmentCount: readyAttachments.length }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     if (
       readyAttachments.length === 0
       || didQueueExpectedChatAttachments(
@@ -803,25 +797,7 @@ export function ChatComposer({
                 type="button"
                 data-chat-send
                 aria-label={t('chat.composer.send')}
-                onPointerDown={() => {
-                  // #region debug-point Q:send-pointer-down
-                  fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'Q', location: 'ChatComposer:sendButton', msg: '[DEBUG] send pointer down', data: { activeConversationId }, ts: Date.now() }) }).catch(() => {});
-                  // #endregion
-                }}
-                onMouseDown={() => {
-                  // #region debug-point R:send-mouse-down
-                  fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'R', location: 'ChatComposer:sendButton', msg: '[DEBUG] send mouse down', data: { activeConversationId }, ts: Date.now() }) }).catch(() => {});
-                  // #endregion
-                }}
-                onMouseUp={() => {
-                  // #region debug-point R:send-mouse-up
-                  fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'R', location: 'ChatComposer:sendButton', msg: '[DEBUG] send mouse up', data: { activeConversationId }, ts: Date.now() }) }).catch(() => {});
-                  // #endregion
-                }}
                 onClick={() => {
-                  // #region debug-point S:send-click
-                  fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'S', location: 'ChatComposer:sendButton', msg: '[DEBUG] send click entered', data: { activeConversationId }, ts: Date.now() }) }).catch(() => {});
-                  // #endregion
                   submit().catch((error) => {
                     log.error('chat', 'composer send failed', error);
                   });
