@@ -438,60 +438,6 @@ export function ChatThreadPanel() {
     }
   };
 
-  useEffect(() => {
-    if (!openThreadRootUlid) return;
-    const frame = window.requestAnimationFrame(() => {
-      const layout = document.querySelector('[data-social-chat-layout]');
-      const list = document.querySelector('[data-chat-conversation-list-shell]');
-      const pane = document.querySelector('[data-chat-conversation-pane]');
-      const panel = document.querySelector('[data-chat-thread-panel="open"]');
-      const closeControls = document.querySelectorAll('[data-chat-thread-close]');
-      const close = closeControls.item(0);
-      const rect = (element: Element | null) => {
-        if (!element) return null;
-        const value = element.getBoundingClientRect();
-        return {
-          left: value.left,
-          right: value.right,
-          top: value.top,
-          bottom: value.bottom,
-          width: value.width,
-          height: value.height,
-        };
-      };
-      // #region debug-point J-N:thread-panel-layout
-      fetch('http://127.0.0.1:7779/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'thread-panel-viewport',
-          runId: 'post-fix',
-          hypothesisId: 'J-N',
-          location: 'ChatThreadPanel:layoutCommit',
-          msg: '[DEBUG] thread panel layout committed',
-          data: {
-            viewport: {
-              width: window.innerWidth,
-              height: window.innerHeight,
-            },
-            layout: {
-              rect: rect(layout),
-              clientWidth: layout?.clientWidth ?? 0,
-              scrollWidth: layout?.scrollWidth ?? 0,
-            },
-            conversationList: rect(list),
-            conversationPane: rect(pane),
-            panel: rect(panel),
-            close: rect(close),
-            closeControlCount: closeControls.length,
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [openThreadRootUlid]);
-
   if (!openThreadRootUlid) return null;
 
   const replyPreview = replyPreviewForMessage(replyTarget, {
