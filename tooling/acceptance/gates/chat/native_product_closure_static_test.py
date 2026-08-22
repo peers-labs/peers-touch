@@ -45,6 +45,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.assertIsInstance(node.args[1], ast.Constant)
             methods.append(str(node.args[1].value))
         self.assertEqual(sorted(methods), ["getRealtimeDevice", "loginWithPassword"])
+        self.assertIn(
+            "self.launch_actor(actor, restore_session=True)",
+            self.source,
+        )
+        self.assertEqual(self.source.count("station.auth_logout()"), 1)
 
     def test_claimed_actions_cannot_use_store_or_command_bypasses(self) -> None:
         for forbidden in (
