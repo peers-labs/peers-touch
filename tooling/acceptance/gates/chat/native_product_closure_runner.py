@@ -3318,6 +3318,34 @@ except Exception as error:
             for attachment in attachments:
                 attachment_id = str(attachment.get("attachment_id") or "")
                 filename = str(attachment.get("filename") or "")
+                selector = (
+                    f'[data-messaging-attachment-id="{attachment_id}"]'
+                )
+                attachment_element = self.clients[actor].find_element(selector, 20)
+                if (
+                    attachment_element.get_attribute(
+                        "data-messaging-attachment-open-state"
+                    )
+                    != "ready"
+                ):
+                    self.click_element(actor, attachment_element)
+                wait_until(
+                    lambda: (
+                        element
+                        if (
+                            element := self.clients[actor].find_element(
+                                selector,
+                                5,
+                            )
+                        ).get_attribute(
+                            "data-messaging-attachment-open-state"
+                        )
+                        == "ready"
+                        else None
+                    ),
+                    f"{actor} attachment {attachment_id} Native open",
+                    timeout=60,
+                )
                 opened = gateway_read(
                     self.clients[actor],
                     "messaging_open_attachment",
