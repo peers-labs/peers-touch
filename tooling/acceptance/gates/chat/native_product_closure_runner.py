@@ -818,38 +818,6 @@ if not request_accepted:
             text=True,
             check=False,
         )
-        # #region debug-point R-T:appkit-activation-boundary
-        try:
-            appkit_snapshot = json.loads(appkit_activation.stdout)
-        except json.JSONDecodeError:
-            appkit_snapshot = {
-                "snapshotError": f"invalid AppKit response: {appkit_activation.stdout!r}",
-            }
-        request = urllib.request.Request(
-            "http://127.0.0.1:7784/event",
-            data=json.dumps(
-                {
-                    "sessionId": "chat-native-window-focus",
-                    "runId": "post-fix-appkit-boundary",
-                    "hypothesisId": "R-T",
-                    "location":
-                        "NativeProductClosureGate:activate_native_process",
-                    "msg": "[DEBUG] AppKit activation request completed",
-                    "data": {
-                        "processId": process_id,
-                        "returnCode": appkit_activation.returncode,
-                        "snapshot": appkit_snapshot,
-                    },
-                }
-            ).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            urllib.request.urlopen(request, timeout=2).read()
-        except OSError:
-            pass
-        # #endregion
         if appkit_activation.returncode != 0:
             raise GateError(
                 "Native actor AppKit activation failed: "
@@ -887,32 +855,6 @@ if not request_accepted:
             raise GateError(
                 f"Native actor process {process_id} did not become frontmost"
             )
-        # #region debug-point R-T:appkit-activation-boundary
-        request = urllib.request.Request(
-            "http://127.0.0.1:7784/event",
-            data=json.dumps(
-                {
-                    "sessionId": "chat-native-window-focus",
-                    "runId": "post-fix-appkit-boundary",
-                    "hypothesisId": "R-T",
-                    "location":
-                        "NativeProductClosureGate:activate_native_process",
-                    "msg": "[DEBUG] Accessibility activation completed",
-                    "data": {
-                        "processId": process_id,
-                        "systemEventsFrontmost": completed.stdout.strip(),
-                        "focusedControl": self.native_focused_control(process_id),
-                    },
-                }
-            ).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            urllib.request.urlopen(request, timeout=2).read()
-        except OSError:
-            pass
-        # #endregion
 
     def native_focused_control(self, process_id: int) -> dict[str, Any]:
         try:
@@ -938,7 +880,6 @@ if not request_accepted:
             return {"error": f"unexpected AX response: {completed.stdout!r}"}
         return value if isinstance(value, dict) else {"error": "invalid AX response"}
 
-    # #region debug-point AA-AC:native-window-server-ownership
     def native_window_stack_at_point(
         self,
         point: tuple[float, float],
@@ -1004,7 +945,6 @@ except Exception as error:
         except json.JSONDecodeError:
             return {"error": f"invalid window stack probe: {completed.stdout!r}"}
         return value if isinstance(value, dict) else {"error": "invalid window stack"}
-    # #endregion
 
     def choose_native_file(
         self,
@@ -1020,84 +960,8 @@ except Exception as error:
         if not selected_path.is_file():
             raise GateError(f"Native file selection source is missing: {selected_path}")
 
-        # #region debug-point L-M:native-file-chooser-handoff
-        last_native_file_snapshot = ""
-
-        def report_native_file_snapshot(
-            phase: str,
-            focused_control: dict[str, Any] | None = None,
-            *,
-            include_webview: bool = True,
-        ) -> None:
-            nonlocal last_native_file_snapshot
-            control = (
-                focused_control
-                if focused_control is not None
-                else self.native_focused_control(client.process_id or 0)
-            )
-            if not include_webview:
-                snapshot = {
-                    "snapshotSkipped": "native recovery poll",
-                }
-            elif int(control.get("windowCount", 0)) == 0:
-                snapshot = {
-                    "snapshotSkipped": "native window unavailable",
-                }
-            else:
-                try:
-                    snapshot = client.execute_script(
-                        """
-                        return {
-                          documentFocused: document.hasFocus(),
-                          visibilityState: document.visibilityState,
-                          activeElement: {
-                            tag: document.activeElement?.tagName || '',
-                            role: document.activeElement?.getAttribute?.('role') || '',
-                            classes: document.activeElement?.className?.baseVal
-                              || document.activeElement?.className
-                              || '',
-                          },
-                        };
-                        """
-                    )
-                except Exception as error:
-                    snapshot = {
-                        "snapshotError": f"{type(error).__name__}: {error}",
-                    }
-            snapshot["focusedControl"] = control
-            signature = json.dumps(
-                {"phase": phase, "snapshot": snapshot},
-                sort_keys=True,
-            )
-            if signature == last_native_file_snapshot:
-                return
-            last_native_file_snapshot = signature
-            request = urllib.request.Request(
-                "http://127.0.0.1:7783/event",
-                data=json.dumps(
-                    {
-                        "sessionId": "chat-background-picker",
-                        "runId": "native-file-post-fix",
-                        "hypothesisId": "L-M",
-                        "location":
-                            "NativeProductClosureGate:choose_native_file",
-                        "msg": f"[DEBUG] Native file chooser {phase}",
-                        "data": snapshot,
-                    }
-                ).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            try:
-                urllib.request.urlopen(request, timeout=2).read()
-            except OSError:
-                pass
-
         def native_app_baseline_ready(_: Any) -> dict[str, Any] | None:
             control = self.native_focused_control(client.process_id or 0)
-            # #region debug-point L-M:native-file-chooser-handoff
-            report_native_file_snapshot("baseline-poll", control)
-            # #endregion
             return (
                 control
                 if int(control.get("windowCount", 0)) >= 1
@@ -1113,12 +977,7 @@ except Exception as error:
             NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(native_app_baseline_ready)
-        report_native_file_snapshot("before-trigger", baseline_control)
-        # #endregion
         self.click(actor, trigger_selector)
-        # #region debug-point L-M:native-file-chooser-handoff
-        report_native_file_snapshot("after-trigger")
-        # #endregion
 
         def panel_open(control: dict[str, Any]) -> bool:
             return (
@@ -1134,9 +993,6 @@ except Exception as error:
 
         def native_panel_ready(_: Any) -> dict[str, Any] | None:
             control = self.native_focused_control(client.process_id or 0)
-            # #region debug-point L-M:native-file-chooser-handoff
-            report_native_file_snapshot("panel-poll", control)
-            # #endregion
             return control if panel_open(control) else None
 
         WebDriverWait(
@@ -1147,26 +1003,16 @@ except Exception as error:
 
         command = 0x00100000
         shift = 0x00020000
-        # #region debug-point S-W:native-file-shortcut-delivery
-        report_native_file_snapshot("before-go-to-shortcut")
-        # #endregion
         self.post_key_chord(5, ((55, command), (56, shift)))
-        # #region debug-point S-W:native-file-shortcut-delivery
-        report_native_file_snapshot("after-go-to-shortcut")
 
         def go_to_field_ready(_: Any) -> dict[str, Any] | None:
             control = self.native_focused_control(client.process_id or 0)
-            report_native_file_snapshot("go-to-poll", control)
             return control if control.get("role") == "AXTextField" else None
-        # #endregion
-        go_to_control = WebDriverWait(
+        WebDriverWait(
             client.driver,
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(go_to_field_ready)
-        # #region debug-point M:native-file-path-entry
-        report_native_file_snapshot("go-to-field", go_to_control)
-        # #endregion
 
         self.post_key_chord(0, ((55, command),))
         self.post_key(51, private_source=True)
@@ -1231,16 +1077,10 @@ except Exception as error:
             if restored.returncode != 0:
                 raise GateError("Native file chooser could not restore the clipboard")
         self.post_key(36, private_source=True)
-        # #region debug-point M:native-file-path-entry
-        report_native_file_snapshot("after-path-confirmation")
-        # #endregion
 
         baseline_window_count = int(baseline_control.get("windowCount", 0))
         def selection_or_browser_ready(_: Any) -> dict[str, Any] | None:
             control = self.native_focused_control(client.process_id or 0)
-            # #region debug-point M:native-file-path-entry
-            report_native_file_snapshot("selection-poll", control)
-            # #endregion
             if (
                 int(control.get("windowCount", 0)) < baseline_window_count
                 or not control.get("role")
@@ -1265,13 +1105,6 @@ except Exception as error:
 
         def native_window_restored(_: Any) -> dict[str, Any] | None:
             control = self.native_focused_control(client.process_id or 0)
-            # #region debug-point L-M:native-file-chooser-handoff
-            report_native_file_snapshot(
-                "window-recovery-poll",
-                control,
-                include_webview=False,
-            )
-            # #endregion
             return (
                 control
                 if int(control.get("windowCount", 0))
@@ -1288,9 +1121,6 @@ except Exception as error:
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(native_window_restored)
         self.focus_actor_window(actor)
-        # #region debug-point L-M:native-file-chooser-handoff
-        report_native_file_snapshot("selected")
-        # #endregion
         return {
             "name": selected_path.name,
             "size": selected_path.stat().st_size,
@@ -1306,33 +1136,6 @@ except Exception as error:
         ]
         core_graphics.CGEventSourceButtonState.restype = ctypes.c_bool
         return bool(core_graphics.CGEventSourceButtonState(0, 0))
-
-    # #region debug-point R-V:native-input-delivery
-    def native_cursor_position(self) -> tuple[float, float]:
-        class CGPoint(ctypes.Structure):
-            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
-
-        core_graphics = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-        )
-        core_foundation = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
-        )
-        core_graphics.CGEventCreate.argtypes = [ctypes.c_void_p]
-        core_graphics.CGEventCreate.restype = ctypes.c_void_p
-        core_graphics.CGEventGetLocation.argtypes = [ctypes.c_void_p]
-        core_graphics.CGEventGetLocation.restype = CGPoint
-        core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
-
-        event = core_graphics.CGEventCreate(None)
-        if not event:
-            raise GateError("CoreGraphics failed to read the Native cursor")
-        try:
-            point = core_graphics.CGEventGetLocation(event)
-            return (float(point.x), float(point.y))
-        finally:
-            core_foundation.CFRelease(event)
-    # #endregion
 
     def install_native_input_probe(
         self,
@@ -1486,46 +1289,6 @@ except Exception as error:
             and actor_window_owns_point()
         ):
             return client
-        # #region debug-point N-Q:native-window-focus
-        def report_focus_snapshot(phase: str) -> None:
-            request = urllib.request.Request(
-                "http://127.0.0.1:7784/event",
-                data=json.dumps(
-                    {
-                        "sessionId": "chat-native-window-focus",
-                        "runId": "post-fix-foreground-owner",
-                        "hypothesisId": "N-Q",
-                        "location":
-                            "NativeProductClosureGate:focus_actor_window",
-                        "msg": f"[DEBUG] Native window focus {phase}",
-                        "data": {
-                            "actor": actor,
-                            "processId": client.process_id,
-                            "documentFocused": bool(
-                                client.driver.execute_script(
-                                    "return document.hasFocus()"
-                                )
-                            ),
-                            "mouseButtonDown": self.native_mouse_button_down(),
-                            "window": window,
-                            "point": point,
-                            "windowStack": self.native_window_stack_at_point(point),
-                            "focusedControl": self.native_focused_control(
-                                client.process_id or 0
-                            ),
-                        },
-                    }
-                ).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            try:
-                urllib.request.urlopen(request, timeout=2).read()
-            except OSError:
-                pass
-
-        report_focus_snapshot("before-move")
-        # #endregion
         if self.native_mouse_button_down():
             self.post_mouse((2,), point)
             WebDriverWait(
@@ -1535,9 +1298,6 @@ except Exception as error:
             ).until(
                 lambda _: not self.native_mouse_button_down()
             )
-            # #region debug-point N-Q:native-window-focus
-            report_focus_snapshot("after-recovery-up")
-            # #endregion
         cooperative_activation = self.request_cooperative_activation(client)
         if cooperative_activation:
             WebDriverWait(
@@ -1559,9 +1319,6 @@ except Exception as error:
         ).until(
             lambda _: actor_window_owns_point()
         )
-        # #region debug-point N-Q:native-window-focus
-        report_focus_snapshot("after-owner")
-        # #endregion
         if not bool(client.driver.execute_script("return document.hasFocus()")):
             focus_mouse_down = False
             try:
@@ -1579,9 +1336,6 @@ except Exception as error:
             finally:
                 if focus_mouse_down and self.native_mouse_button_down():
                     self.post_mouse((2,), point)
-            # #region debug-point N-Q:native-window-focus
-            report_focus_snapshot("after-focus-click")
-            # #endregion
             WebDriverWait(
                 client.driver,
                 5,
@@ -1589,9 +1343,6 @@ except Exception as error:
             ).until(
                 lambda driver: bool(driver.execute_script("return document.hasFocus()"))
             )
-        # #region debug-point N-Q:native-window-focus
-        report_focus_snapshot("after-activate")
-        # #endregion
         return client
 
     def click_element(self, actor: str, element: Any) -> Any:
@@ -1664,28 +1415,6 @@ except Exception as error:
             element,
         )
         if not target.get("hit"):
-            # #region debug-point M-P:native-click-occlusion
-            request = urllib.request.Request(
-                "http://127.0.0.1:7777/event",
-                data=json.dumps(
-                    {
-                        "sessionId": "chat-hover-overlay",
-                        "runId": "post-fix",
-                        "hypothesisId": "M-P",
-                        "location": "NativeProductClosureGate:click_element",
-                        "msg": "[DEBUG] Native click target center is occluded",
-                        "data": target,
-                    }
-                ).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            try:
-                with urllib.request.urlopen(request, timeout=2):
-                    pass
-            except OSError:
-                pass
-            # #endregion
             raise GateError(
                 "Native click target center is occluded: "
                 f"{json.dumps(target, sort_keys=True)}"
@@ -1704,57 +1433,6 @@ except Exception as error:
             window["top"] + content_offset_y + float(target["y"]),
         )
         probe_id = self.install_native_input_probe(client, element)
-        # #region debug-point R-V:native-input-delivery
-        def report_native_input_delivery(phase: str) -> None:
-            probe_events = client.execute_script(
-                """
-                return (
-                  window.__PT_NATIVE_INPUT_PROBES__?.[arguments[0]]?.events
-                  || []
-                );
-                """,
-                probe_id,
-            )
-            request = urllib.request.Request(
-                "http://127.0.0.1:7785/event",
-                data=json.dumps(
-                    {
-                        "sessionId": "chat-native-input-delivery",
-                        "runId": "post-fix",
-                        "hypothesisId": "R-V",
-                        "location":
-                            "NativeProductClosureGate:click_element",
-                        "msg": f"[DEBUG] Native input delivery {phase}",
-                        "data": {
-                            "actor": actor,
-                            "processId": client.process_id,
-                            "documentFocused": bool(
-                                client.driver.execute_script(
-                                    "return document.hasFocus()"
-                                )
-                            ),
-                            "focusedControl": self.native_focused_control(
-                                client.process_id or 0
-                            ),
-                            "mouseButtonDown": self.native_mouse_button_down(),
-                            "cursor": self.native_cursor_position(),
-                            "point": point,
-                            "windowStack": self.native_window_stack_at_point(point),
-                            "window": window,
-                            "target": target,
-                            "probeEvents": probe_events,
-                        },
-                    }
-                ).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            try:
-                urllib.request.urlopen(request, timeout=2).read()
-            except OSError:
-                pass
-
-        # #endregion
         mouse_down_posted = False
         try:
             cursor = 0
@@ -1780,7 +1458,6 @@ except Exception as error:
                 or current_target.get("disabled")
                 or not current_target.get("hit")
             ):
-                report_native_input_delivery("pre-post-target-invalid")
                 raise GateError(
                     "Native click target changed before event delivery"
                 )
@@ -1797,47 +1474,29 @@ except Exception as error:
                 point,
             )
             mouse_down_posted = True
-            try:
-                cursor = self.wait_native_input_event(
-                    client,
-                    probe_id,
-                    "mousedown",
-                    cursor,
-                )
-            except GateError:
-                # #region debug-point R-V:native-input-delivery
-                report_native_input_delivery("mousedown-timeout")
-                # #endregion
-                raise
+            cursor = self.wait_native_input_event(
+                client,
+                probe_id,
+                "mousedown",
+                cursor,
+            )
             self.post_mouse(
                 (2,),
                 point,
             )
             mouse_down_posted = False
-            try:
-                cursor = self.wait_native_input_event(
-                    client,
-                    probe_id,
-                    "mouseup",
-                    cursor,
-                )
-            except GateError:
-                # #region debug-point R-V:native-input-delivery
-                report_native_input_delivery("mouseup-timeout")
-                # #endregion
-                raise
-            try:
-                self.wait_native_input_event(
-                    client,
-                    probe_id,
-                    "click",
-                    cursor,
-                )
-            except GateError:
-                # #region debug-point R-V:native-input-delivery
-                report_native_input_delivery("click-timeout")
-                # #endregion
-                raise
+            cursor = self.wait_native_input_event(
+                client,
+                probe_id,
+                "mouseup",
+                cursor,
+            )
+            self.wait_native_input_event(
+                client,
+                probe_id,
+                "click",
+                cursor,
+            )
         finally:
             if mouse_down_posted and self.native_mouse_button_down():
                 self.post_mouse((2,), point)
@@ -1853,10 +1512,9 @@ except Exception as error:
         client = self.focus_actor_window(actor)
         neutral = client.find_element("[data-chat-send]", 30)
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 30)
-        native_window: dict[str, float] | None = None
 
-        def report_probe(phase: str) -> dict[str, Any]:
-            snapshot = client.execute_script(
+        def inspect_targets() -> dict[str, Any]:
+            return client.execute_script(
                 """
                 const neutral = arguments[0];
                 const row = arguments[1];
@@ -1906,36 +1564,8 @@ except Exception as error:
                 neutral,
                 row,
             )
-            # #region debug-point G-I:hover-probe
-            request = urllib.request.Request(
-                "http://127.0.0.1:7777/event",
-                data=json.dumps(
-                    {
-                        "sessionId": "chat-hover-overlay",
-                        "runId": "post-fix",
-                        "hypothesisId": "G-I",
-                        "location": "NativeProductClosureGate:hover_message",
-                        "msg": f"[DEBUG] hover geometry probe {phase}",
-                        "data": {
-                            "phase": phase,
-                            "messageId": message_id,
-                            "nativeWindow": native_window,
-                            **snapshot,
-                        },
-                    }
-                ).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            try:
-                with urllib.request.urlopen(request, timeout=2):
-                    pass
-            except OSError:
-                pass
-            # #endregion
-            return snapshot
 
-        before = report_probe("before")
+        before = inspect_targets()
         native_window = self.native_window(client)
         content_offset_x = max(
             0.0,
@@ -1964,7 +1594,6 @@ except Exception as error:
                 ),
             )
 
-        report_probe("after")
         return WebDriverWait(client.driver, 15).until(
             lambda driver: driver.find_element(
                 By.CSS_SELECTOR,
@@ -2161,41 +1790,6 @@ except Exception as error:
         )
         self.click("alice", "[data-chat-thread-close]")
 
-        transcript_probe = {
-            actor: [
-                {
-                    **{key: value for key, value in item.items() if key != "content"},
-                    "contentSha256": hashlib.sha256(
-                        str(item.get("content", "")).encode("utf-8")
-                    ).hexdigest(),
-                    "contentLength": len(str(item.get("content", ""))),
-                }
-                for item in self.transcript(actor)
-            ]
-            for actor in ("alice", "bob")
-        }
-        # #region debug-point O-S:top-level-transcript
-        request = urllib.request.Request(
-            "http://127.0.0.1:7780/event",
-            data=json.dumps(
-                {
-                    "sessionId": "chat-transcript-projection",
-                    "runId": "post-fix",
-                    "hypothesisId": "O-S",
-                    "location": "NativeProductClosureGate:prove_transcript_thread",
-                    "msg": "[DEBUG] top-level transcript after thread close",
-                    "data": transcript_probe,
-                }
-            ).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            urllib.request.urlopen(request, timeout=2).read()
-        except OSError:
-            pass
-        # #endregion
-
         expected_top_level_ids = [str(root["id"]), str(bob_root["id"])]
         expected_top_level_content = [root_text, bob_text]
         alice_transcript = wait_until(
@@ -2366,10 +1960,8 @@ except Exception as error:
         try:
             proxy.arm_connection_loss()
             self.choose_reaction("alice", message_id, failure_emoji)
-            last_error_snapshot: dict[str, Any] | None = None
 
             def actionable_error() -> Any | None:
-                nonlocal last_error_snapshot
                 row = self.clients["alice"].find_element(
                     f'[data-message-ulid="{message_id}"]',
                     5,
@@ -2393,31 +1985,6 @@ except Exception as error:
                     row,
                 )
                 snapshot["proxy"] = proxy.evidence()
-                if snapshot != last_error_snapshot:
-                    # #region debug-point A-D:reaction-error-surface
-                    request = urllib.request.Request(
-                        "http://127.0.0.1:7781/event",
-                        data=json.dumps(
-                            {
-                                "sessionId": "chat-reaction-recovery",
-                                "runId": "pre-fix",
-                                "hypothesisId": "A-D",
-                                "location":
-                                    "NativeProductClosureGate:prove_reaction",
-                                "msg":
-                                    "[DEBUG] reaction failure surface snapshot",
-                                "data": snapshot,
-                            }
-                        ).encode("utf-8"),
-                        headers={"Content-Type": "application/json"},
-                        method="POST",
-                    )
-                    try:
-                        urllib.request.urlopen(request, timeout=2).read()
-                    except OSError:
-                        pass
-                    # #endregion
-                    last_error_snapshot = snapshot
                 error_surfaces = row.find_elements(
                     By.CSS_SELECTOR,
                     '[data-message-reaction-state="error"]',
@@ -2595,11 +2162,8 @@ except Exception as error:
         )
         if active_select is not None:
             return
-        # #region debug-point N-R:background-modal-handoff
-        last_handoff_snapshot = ""
 
         def background_action_ready(_: Any) -> dict[str, Any] | None:
-            nonlocal last_handoff_snapshot
             snapshot = client.execute_script(
                 """
                 const describe = (node) => {
@@ -2650,29 +2214,6 @@ except Exception as error:
                 };
                 """
             )
-            signature = json.dumps(snapshot, sort_keys=True)
-            if signature != last_handoff_snapshot:
-                request = urllib.request.Request(
-                    "http://127.0.0.1:7783/event",
-                    data=json.dumps(
-                        {
-                            "sessionId": "chat-background-picker",
-                            "runId": "post-fix",
-                            "hypothesisId": "N-R",
-                            "location":
-                                "NativeProductClosureGate:open_background_modal",
-                            "msg": "[DEBUG] background modal handoff",
-                            "data": snapshot,
-                        }
-                    ).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                try:
-                    urllib.request.urlopen(request, timeout=2).read()
-                except OSError:
-                    pass
-                last_handoff_snapshot = signature
             return snapshot if snapshot.get("ready") else None
 
         WebDriverWait(
@@ -2680,233 +2221,27 @@ except Exception as error:
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(background_action_ready)
-        # #endregion
         self.click(actor, '[data-chat-conversation-action="background"]')
         client.find_element("[data-chat-background-select]", 15)
 
     def select_second_background(self, actor: str) -> None:
         client = self.clients[actor]
         select = client.find_element("[data-chat-background-select]", 15)
+        self.click_element(actor, select)
 
-        # #region debug-point A-E:background-picker-probe
-        client.execute_script(
-            """
-            window.__PT_BACKGROUND_PICKER_PROBE__?.cleanup?.();
-            const describe = (node) => {
-              if (!(node instanceof Element)) return null;
-              return {
-                tag: node.tagName,
-                role: node.getAttribute('role') || '',
-                classes: node.className?.baseVal || node.className || '',
-                text: (node.textContent || '').trim().slice(0, 80),
-              };
-            };
-            const events = [];
-            const mutations = [];
-            const eventTypes = [
-              'pointerdown',
-              'mousedown',
-              'pointerup',
-              'mouseup',
-              'click',
-            ];
-            const listener = (event) => {
-              const target = event.target;
-              if (!(target instanceof Element)) return;
-              if (
-                !target.closest('[data-chat-background-select]')
-                && !target.closest('.ant-select-dropdown')
-              ) return;
-              events.push({
-                type: event.type,
-                target: describe(target),
-                expanded: document.querySelector(
-                  '[data-chat-background-select] [role="combobox"]'
-                )?.getAttribute('aria-expanded') || '',
-              });
-            };
-            eventTypes.forEach((type) => {
-              document.addEventListener(type, listener, true);
-            });
-            const observer = new MutationObserver((records) => {
-              records.forEach((record) => {
-                ['addedNodes', 'removedNodes'].forEach((key) => {
-                  Array.from(record[key]).forEach((node) => {
-                    if (!(node instanceof Element)) return;
-                    const relevant = (
-                      node.matches('.ant-select-dropdown, [role="option"]')
-                      || node.querySelector(
-                        '.ant-select-dropdown, [role="option"]'
-                      )
-                    );
-                    if (!relevant) return;
-                    mutations.push({
-                      kind: key === 'addedNodes' ? 'added' : 'removed',
-                      node: describe(node),
-                    });
-                  });
-                });
-              });
-            });
-            observer.observe(document.body, { childList: true, subtree: true });
-            window.__PT_BACKGROUND_PICKER_PROBE__ = {
-              events,
-              mutations,
-              cleanup: () => {
-                observer.disconnect();
-                eventTypes.forEach((type) => {
-                  document.removeEventListener(type, listener, true);
-                });
-                delete window.__PT_BACKGROUND_PICKER_PROBE__;
-              },
-            };
-            """
-        )
-
-        def picker_snapshot() -> dict[str, Any]:
-            return client.execute_script(
-                """
-                const select = arguments[0];
-                const describe = (node) => {
-                  if (!(node instanceof Element)) return null;
-                  const rect = node.getBoundingClientRect();
-                  const style = getComputedStyle(node);
-                  const x = rect.left + rect.width / 2;
-                  const y = rect.top + rect.height / 2;
-                  const hit = (
-                    rect.width > 0 && rect.height > 0
-                      ? document.elementFromPoint(x, y)
-                      : null
-                  );
-                  return {
-                    tag: node.tagName,
-                    role: node.getAttribute('role') || '',
-                    classes: node.className?.baseVal || node.className || '',
-                    text: (node.textContent || '').trim().slice(0, 80),
-                    connected: node.isConnected,
-                    display: style.display,
-                    visibility: style.visibility,
-                    opacity: style.opacity,
-                    rect: {
-                      left: rect.left,
-                      top: rect.top,
-                      right: rect.right,
-                      bottom: rect.bottom,
-                      width: rect.width,
-                      height: rect.height,
-                    },
-                    hit: hit
-                      ? {
-                          tag: hit.tagName,
-                          role: hit.getAttribute('role') || '',
-                          classes:
-                            hit.className?.baseVal || hit.className || '',
-                        }
-                      : null,
-                  };
-                };
-                const collect = (selector) => (
-                  Array.from(document.querySelectorAll(selector)).map(describe)
-                );
-                const probe = window.__PT_BACKGROUND_PICKER_PROBE__ || {};
-                return {
-                  documentFocused: document.hasFocus(),
-                  activeElement: describe(document.activeElement),
-                  select: describe(select),
-                  expanded:
-                    select.querySelector('[role="combobox"]')
-                      ?.getAttribute('aria-expanded') || '',
-                  modals: collect('.ant-modal'),
-                  dropdowns: collect('.ant-select-dropdown'),
-                  roleOptions: collect('[role="option"]'),
-                  classOptions: collect('.ant-select-item-option'),
-                  events: Array.from(probe.events || []),
-                  mutations: Array.from(probe.mutations || []),
-                };
-                """,
-                select,
+        def rendered_options(driver: Any) -> list[Any] | None:
+            options = driver.find_elements(
+                By.CSS_SELECTOR,
+                ".ant-select-item-option",
             )
+            return options if len(options) >= 2 else None
 
-        def report_picker_snapshot(phase: str, snapshot: dict[str, Any]) -> None:
-            request = urllib.request.Request(
-                "http://127.0.0.1:7783/event",
-                data=json.dumps(
-                    {
-                        "sessionId": "chat-background-picker",
-                        "runId": "post-fix",
-                        "hypothesisId": "A-E",
-                        "location":
-                            "NativeProductClosureGate:select_second_background",
-                        "msg": f"[DEBUG] background picker {phase}",
-                        "data": snapshot,
-                    }
-                ).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            try:
-                urllib.request.urlopen(request, timeout=2).read()
-            except OSError:
-                pass
-
-        report_picker_snapshot("before-click", picker_snapshot())
-        last_snapshot = ""
-        try:
-            self.click_element(actor, select)
-            report_picker_snapshot("after-click", picker_snapshot())
-
-            def rendered_options(driver: Any) -> list[Any] | None:
-                nonlocal last_snapshot
-                options = driver.find_elements(
-                    By.CSS_SELECTOR,
-                    ".ant-select-item-option",
-                )
-                snapshot = picker_snapshot()
-                signature = json.dumps(snapshot, sort_keys=True)
-                if signature != last_snapshot:
-                    report_picker_snapshot("option-poll", snapshot)
-                    last_snapshot = signature
-                return options if len(options) >= 2 else None
-
-            options = WebDriverWait(
-                client.driver,
-                10,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(rendered_options)
-            before_option_click = picker_snapshot()
-            before_option_click["intendedOption"] = client.execute_script(
-                """
-                const option = arguments[0];
-                const rect = option.getBoundingClientRect();
-                return {
-                  text: (option.textContent || '').trim(),
-                  connected: option.isConnected,
-                  rect: {
-                    left: rect.left,
-                    top: rect.top,
-                    right: rect.right,
-                    bottom: rect.bottom,
-                    width: rect.width,
-                    height: rect.height,
-                  },
-                };
-                """,
-                options[1],
-            )
-            report_picker_snapshot(
-                "before-option-click",
-                before_option_click,
-            )
-            self.click_element(actor, options[1])
-            report_picker_snapshot("after-option-click", picker_snapshot())
-        except Exception:
-            report_picker_snapshot("failure", picker_snapshot())
-            raise
-        finally:
-            client.execute_script(
-                "window.__PT_BACKGROUND_PICKER_PROBE__?.cleanup?.();"
-            )
-        # #endregion
+        options = WebDriverWait(
+            client.driver,
+            10,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(rendered_options)
+        self.click_element(actor, options[1])
 
     def prove_settings_background(
         self,
@@ -2916,56 +2251,9 @@ except Exception as error:
     ) -> dict[str, Any]:
         self.open_details("alice")
         self.click("alice", '[data-chat-conversation-action="mute"]')
-        last_mute_snapshot: dict[str, Any] | None = None
 
         def mute_projection() -> dict[str, Any] | None:
-            nonlocal last_mute_snapshot
             state = self.setting_state("alice")
-            try:
-                station = gateway_read(
-                    self.clients["alice"],
-                    "conversation_get_member_settings",
-                    {"conversation_id": group_id},
-                )
-            except Exception as error:
-                station = {
-                    "errorType": type(error).__name__,
-                    "error": str(error),
-                }
-            normalized = (
-                station.get("settings")
-                if isinstance(station.get("settings"), dict)
-                else station
-            )
-            snapshot = {
-                "conversationId": group_id,
-                "ui": state,
-                "station": normalized,
-            }
-            if snapshot != last_mute_snapshot:
-                # #region debug-point B-E:mute-projection-snapshot
-                request = urllib.request.Request(
-                    "http://127.0.0.1:7782/event",
-                    data=json.dumps(
-                        {
-                            "sessionId": "chat-mute-projection",
-                            "runId": "pre-fix",
-                            "hypothesisId": "B-E",
-                            "location":
-                                "NativeProductClosureGate:prove_settings_background:mute",
-                            "msg": "[DEBUG] mute projection snapshot",
-                            "data": snapshot,
-                        }
-                    ).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                try:
-                    urllib.request.urlopen(request, timeout=2).read()
-                except OSError:
-                    pass
-                # #endregion
-                last_mute_snapshot = snapshot
             return state if state.get("muted") == "true" else None
 
         wait_until(
