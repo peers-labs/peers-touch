@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react';
+import { memo, useRef, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Tooltip } from '@lobehub/ui';
 import { Popover, Spin, theme, Typography } from 'antd';
@@ -172,36 +172,6 @@ function ThreadReplyPreviewList({
   const openLabel = unreadCount > 0
     ? t('chat.social.thread.summaryUnread', { count: totalCount, unread: unreadCount })
     : t('chat.social.thread.summary', { count: totalCount });
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      const previewId = previewMessages[0]?.ulid || '';
-      const marker = previewId
-        ? document.querySelector(`[data-thread-preview-message-id="${previewId}"]`)
-        : null;
-      const content = marker?.querySelector('[data-thread-preview-message-content]');
-      // #region debug-point G-I:thread-preview-commit
-      fetch('http://127.0.0.1:7778/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'thread-summary-projection',
-          runId: 'post-fix',
-          hypothesisId: 'G-I',
-          location: 'ThreadReplyPreviewList:commit',
-          msg: '[DEBUG] thread preview committed',
-          data: {
-            totalCount,
-            previewIds: previewMessages.map(message => message.ulid),
-            markerFound: Boolean(marker),
-            contentFound: Boolean(content),
-            contentLength: content?.textContent?.length ?? 0,
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [previewMessages, totalCount]);
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
@@ -446,27 +416,11 @@ export const ChatMessageRow = memo(function ChatMessageRow({
       className={`msg-row ${highlighted ? 'highlighted' : ''}`}
       tabIndex={0}
       onMouseEnter={() => {
-        // #region debug-point A:row-mouse-enter
-        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'A', location: 'ChatMessageRow:onMouseEnter', msg: '[DEBUG] message row mouse enter', data: { messageId: message.ulid, hasContentAnchor: Boolean(messageContentRef.current), showHoverActions }, ts: Date.now() }) }).catch(() => {});
-        // #endregion
         if (showHoverActions && messageContentRef.current) {
           onActionTargetChange(message, messageContentRef.current, false);
         }
       }}
-      onMouseOver={() => {
-        // #region debug-point F:row-mouse-over
-        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'F', location: 'ChatMessageRow:onMouseOver', msg: '[DEBUG] message row mouse over', data: { messageId: message.ulid }, ts: Date.now() }) }).catch(() => {});
-        // #endregion
-      }}
-      onPointerEnter={(event) => {
-        // #region debug-point F:row-pointer-enter
-        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'F', location: 'ChatMessageRow:onPointerEnter', msg: '[DEBUG] message row pointer enter', data: { messageId: message.ulid, pointerType: event.pointerType }, ts: Date.now() }) }).catch(() => {});
-        // #endregion
-      }}
       onMouseLeave={() => {
-        // #region debug-point D:row-mouse-leave
-        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-hover-overlay', runId: 'post-fix', hypothesisId: 'D', location: 'ChatMessageRow:onMouseLeave', msg: '[DEBUG] message row mouse leave', data: { messageId: message.ulid }, ts: Date.now() }) }).catch(() => {});
-        // #endregion
         onActionTargetLeave();
       }}
       onFocusCapture={() => {
