@@ -177,9 +177,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         toast.error(t('chat.social.createGroup.failed'));
         return;
       }
-      if (created.state === 'pending') {
-        trackPendingGroupCreation(conversationId, created.commandId);
-      }
+      trackPendingGroupCreation(conversationId, created.commandId);
       await loadGroups();
       const projectionReady = useSocialChatStore.getState().conversations.some(
         conversation => conversation.conversationId === conversationId,
