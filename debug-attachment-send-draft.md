@@ -57,3 +57,14 @@ The original `draft` outcome did not reproduce and none of hypotheses A-E explai
 The latest boundary is a distinct DOM semantic ownership defect: the message-content marker
 represents the entire bubble instead of the visible message plaintext. The debug session remains
 open because intermittent `draft` evidence has not yet been reproduced or closed.
+
+## Post-Fix Attempts
+- Commit `6887f2f2c90dba26a183614f964cc5171955acbb` is deployed to Profile Three and
+  bound to the dedicated `acceptance-webdriver` binary.
+- Runs `20260823T212227617712Z-4d06da18937af7e522b49ee3a83ca0ed` and
+  `20260823T212411163739Z-a8615d3a18a8784e7945e270c6b71f80` both stopped before
+  the first product action because the Alice Native process could not become frontmost.
+- Environment evidence: `NSWorkspace.frontmostApplication` is `loginwindow` PID 416 and
+  `IOConsoleUsers.CGSSessionScreenIsLocked=Yes`.
+- Both failed runs released Actor processes, ports, logs, and storage. The post-fix debug log
+  remains empty because neither run reached the attachment journey.
