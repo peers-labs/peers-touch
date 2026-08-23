@@ -23,14 +23,26 @@
 - Line 4: the reaction trigger received another `Tab`, not `Enter`.
 - Lines 5-6: focus moved from reaction to `data-message-action="pin"`.
 - No `picker open requested` or `picker focus transfer completed` event exists.
+- Post-fix lines 1-7: focus moved `thread -> reaction`, the reaction trigger
+  received `Enter`, the picker opened, and the first emoji button retained
+  focus.
+- Native run
+  `20260823T152722156227Z-6455d091a25364eb575cd9428173ef3d`
+  passed `toolbar_keyboard_reachable` and `reaction_picker_success`.
 
 ## Verification Conclusion
 The Native runner reads focus immediately after posting a CoreGraphics Tab. The
 read can observe the previous action and post another Tab before WKWebView has
 processed the first event, skipping the reaction trigger. The product picker
-open and focus lifecycle was not reached in the failing reproduction.
+open and focus lifecycle was not reached in the pre-fix reproduction.
 
 Minimal fix: after each native Tab event, the Chat Gate now waits until
 `document.activeElement[data-message-action]` changes before deciding whether
 to send another Tab. Product behavior changes that were not supported by the
 evidence were removed; the localized accessible label remains.
+
+Post-fix evidence confirms the keyboard focus defect is fixed. The overall Gate
+remains failed at a later reaction retry boundary because a transient React
+retry element was cached across a re-render and became stale before native
+click delivery. Debug instrumentation and the server remain active until the
+user confirmation gate permits cleanup.

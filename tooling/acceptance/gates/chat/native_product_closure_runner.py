@@ -1457,6 +1457,9 @@ except Exception as error:
 
     def click_element(self, actor: str, element: Any) -> Any:
         client = self.focus_actor_window(actor)
+        return self._click_focused_element(client, element)
+
+    def _click_focused_element(self, client: TauriDriver, element: Any) -> Any:
         WebDriverWait(client.driver, 30).until(
             lambda _: element.is_displayed() and element.is_enabled()
         )
@@ -1616,7 +1619,7 @@ except Exception as error:
     def click(self, actor: str, selector: str, timeout: float = 30) -> Any:
         client = self.focus_actor_window(actor)
         element = client.find_element(selector, timeout)
-        return self.click_element(actor, element)
+        return self._click_focused_element(client, element)
 
     def hover_message(self, actor: str, message_id: str) -> Any:
         client = self.focus_actor_window(actor)
@@ -2225,7 +2228,7 @@ except Exception as error:
             proxy.arm_connection_loss()
             self.choose_reaction("alice", message_id, failure_emoji)
 
-            def actionable_error() -> Any | None:
+            def actionable_error() -> bool:
                 row = self.clients["alice"].find_element(
                     f'[data-message-ulid="{message_id}"]',
                     5,
@@ -2261,9 +2264,9 @@ except Exception as error:
                     and bool(command_hashes)
                     and len(set(command_hashes)) == 1
                 )
-                return error_surfaces[0] if error_surfaces and controlled_loss else None
+                return bool(error_surfaces and controlled_loss)
 
-            error_surface = wait_until(
+            wait_until(
                 actionable_error,
                 "reaction actionable error",
                 timeout=30,
@@ -2271,11 +2274,11 @@ except Exception as error:
             if self.reaction_visible("alice", message_id, failure_emoji):
                 raise GateError("failed reaction remained as terminal optimistic state")
             proxy.disarm()
-            retry = error_surface.find_element(
-                By.CSS_SELECTOR,
+            self.click(
+                "alice",
+                f'[data-message-ulid="{message_id}"] '
                 f'[data-message-reaction-retry="{message_id}"]',
             )
-            self.click_element("alice", retry)
             wait_until(
                 lambda: self.reaction_visible("alice", message_id, failure_emoji)
                 and self.reaction_visible("bob", message_id, failure_emoji),
