@@ -20,6 +20,8 @@ CHAT_DETAIL_PANEL = (
     ROOT / "apps/desktop/src/components/chat/ChatDetailPanel.tsx"
 )
 CHAT_COMPOSER = ROOT / "apps/desktop/src/components/chat/ChatComposer.tsx"
+CHAT_MESSAGE_AREA = ROOT / "apps/desktop/src/components/chat/ChatMessageArea.tsx"
+CHAT_SESSION_LIST = ROOT / "apps/desktop/src/components/chat/ChatSessionList.tsx"
 CREATE_GROUP_MODAL = (
     ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
 )
@@ -39,6 +41,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.chat_detail_panel = CHAT_DETAIL_PANEL.read_text(encoding="utf-8")
         self.chat_composer = CHAT_COMPOSER.read_text(encoding="utf-8")
+        self.chat_message_area = CHAT_MESSAGE_AREA.read_text(encoding="utf-8")
+        self.chat_session_list = CHAT_SESSION_LIST.read_text(encoding="utf-8")
         self.create_group_modal = CREATE_GROUP_MODAL.read_text(encoding="utf-8")
         self.http_gateway = HTTP_GATEWAY.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
@@ -754,6 +758,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         ]
         self.assertIn('.get("conversation_id")', browser_group_create)
         self.assertNotIn("ulid::Ulid::new()", browser_group_create)
+
+    def test_conversation_pane_stays_inside_the_native_viewport(self) -> None:
+        self.assertIn("width: 'clamp(180px, 28vw, 280px)'", self.chat_session_list)
+        self.assertIn("minWidth: 180", self.chat_session_list)
+        self.assertIn("minWidth: 0", self.chat_message_area)
+        self.assertNotIn("minWidth: 380", self.chat_message_area)
 
     def test_attachment_ledger_binds_outcome_engine_and_dom_ids(self) -> None:
         self.assertIn(

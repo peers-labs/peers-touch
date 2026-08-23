@@ -304,8 +304,8 @@ export function ChatSessionList() {
       <Flexbox
         gap={0}
         style={{
-          width: 280,
-          minWidth: 280,
+          width: 'clamp(180px, 28vw, 280px)',
+          minWidth: 180,
           flexShrink: 0,
           height: '100%',
           borderRight: `1px solid ${token.colorBorderSecondary}`,
