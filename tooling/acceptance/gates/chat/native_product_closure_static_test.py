@@ -682,6 +682,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("json.dumps(station_sets)", self.source)
 
     def test_avatar_proof_waits_for_exact_loaded_surfaces(self) -> None:
+        member_avatar_start = self.chat_detail_panel.index("function MemberAvatar(")
+        member_avatar_end = self.chat_detail_panel.index(
+            "function MemberPreviewCard(",
+            member_avatar_start,
+        )
+        member_avatar = self.chat_detail_panel[
+            member_avatar_start:member_avatar_end
+        ]
+        self.assertIn("<SquareAvatar", member_avatar)
+        self.assertIn("remoteUrl={member.avatar}", member_avatar)
+        self.assertNotIn("<img", member_avatar)
         self.assertIn("def loaded_snapshot()", self.source)
         self.assertIn('f"{actor} exact loaded avatar surfaces"', self.source)
         self.assertIn('"conversation-list"', self.source)

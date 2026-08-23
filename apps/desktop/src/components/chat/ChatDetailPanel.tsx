@@ -55,6 +55,7 @@ import {
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useMessagingAttachmentUrl } from './AttachmentItem';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
+import { SquareAvatar } from '../common/SquareAvatar';
 import { getGroupMemberControlState } from './chatGroupPermissions';
 import { presentError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
@@ -153,25 +154,15 @@ function MemberAvatar({ member, size = 32 }: { member: GroupMemberDisplay; size?
         overflow: 'hidden',
       }}
     >
-      {member.avatar ? (
-        <img
-          src={member.avatar}
-          alt={member.displayName}
-          onLoad={(event) => {
-            // #region debug-point A,B,D:details-avatar-load
-            fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'avatar-details-load', runId: 'pre-fix', hypothesisId: 'A,B,D', location: 'ChatDetailPanel:MemberAvatar:onLoad', msg: '[DEBUG] Details avatar loaded', data: { ptid: member.ptid, source: member.avatar, currentSrc: event.currentTarget.currentSrc, naturalWidth: event.currentTarget.naturalWidth }, ts: Date.now() }) }).catch(() => {});
-            // #endregion
-          }}
-          onError={(event) => {
-            // #region debug-point A,B,D:details-avatar-error
-            fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'avatar-details-load', runId: 'pre-fix', hypothesisId: 'A,B,D', location: 'ChatDetailPanel:MemberAvatar:onError', msg: '[DEBUG] Details avatar failed', data: { ptid: member.ptid, source: member.avatar, currentSrc: event.currentTarget.currentSrc, complete: event.currentTarget.complete, naturalWidth: event.currentTarget.naturalWidth }, ts: Date.now() }) }).catch(() => {});
-            // #endregion
-          }}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-        />
-      ) : (
-        getInitial(member.displayName)
-      )}
+      <SquareAvatar
+        remoteUrl={member.avatar}
+        name={member.displayName}
+        size={size}
+        radius={Math.round(size * 0.32)}
+        style={{ display: 'block' }}
+      >
+        {getInitial(member.displayName)}
+      </SquareAvatar>
     </Flexbox>
   );
 }
