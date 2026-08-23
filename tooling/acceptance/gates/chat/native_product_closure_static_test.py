@@ -13,6 +13,7 @@ MESSAGE_ACTION_OVERLAY = (
     ROOT
     / "apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx"
 )
+MESSAGE_ROW = ROOT / "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
 HOME_STATION_PROVISIONER = (
     ROOT / "tooling/acceptance/provisioners/home_station.py"
 )
@@ -36,6 +37,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.message_action_overlay = MESSAGE_ACTION_OVERLAY.read_text(
             encoding="utf-8"
         )
+        self.message_row = MESSAGE_ROW.read_text(encoding="utf-8")
         self.home_station_provisioner = HOME_STATION_PROVISIONER.read_text(
             encoding="utf-8"
         )
@@ -764,6 +766,16 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("minWidth: 180", self.chat_session_list)
         self.assertIn("minWidth: 0", self.chat_message_area)
         self.assertNotIn("minWidth: 380", self.chat_message_area)
+
+    def test_message_action_anchor_includes_reaction_and_metadata_rows(self) -> None:
+        anchor_index = self.message_row.index("data-message-action-anchor")
+        bubble_index = self.message_row.index("data-message-content", anchor_index)
+        reaction_index = self.message_row.index("data-message-reaction={emoji}", bubble_index)
+        metadata_index = self.message_row.index("formatMsgTime(message.sentAtMs)", reaction_index)
+        self.assertLess(anchor_index, bubble_index)
+        self.assertLess(bubble_index, reaction_index)
+        self.assertLess(reaction_index, metadata_index)
+        self.assertNotIn("ref={messageContentRef}", self.message_row)
 
     def test_attachment_ledger_binds_outcome_engine_and_dom_ids(self) -> None:
         self.assertIn(
