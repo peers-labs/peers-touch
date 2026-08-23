@@ -1504,6 +1504,29 @@ const messagingService: MessagingServiceContract = {
   },
 
   async sendMessage(conversationId, conversationKind, plaintext, attachments = [], relation = {}) {
+    // #region debug-point A,D,E:messaging-send-request
+    fetch('http://127.0.0.1:7780/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'attachment-send-draft',
+        runId: 'pre-fix',
+        hypothesisId: 'A,D,E',
+        location: 'im-service:sendMessage:request',
+        msg: '[DEBUG] Renderer submitting messaging send request',
+        data: {
+          conversationId,
+          conversationKind,
+          attachmentCount: attachments.length,
+          attachments: attachments.map((attachment) => ({
+            mimeType: attachment.mimeType,
+            filenameLength: attachment.filename.length,
+            hasFilePath: Boolean(attachment.filePath),
+          })),
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
     const response = await cmd<
       {
         conversation_id: string
@@ -1535,6 +1558,20 @@ const messagingService: MessagingServiceContract = {
         mime_type: attachment.mimeType,
       })),
     })
+    // #region debug-point B,C,D:messaging-send-response
+    fetch('http://127.0.0.1:7780/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'attachment-send-draft',
+        runId: 'pre-fix',
+        hypothesisId: 'B,C,D',
+        location: 'im-service:sendMessage:response',
+        msg: '[DEBUG] Renderer received raw messaging send response',
+        data: response,
+        ts: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
     return {
       commandId: response.command_id || undefined,
       messageId: response.message_id,

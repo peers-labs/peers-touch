@@ -3105,6 +3105,31 @@ except Exception as error:
         self.click_element("alice", buttons[-1])
         self.assert_condition("attachment_failure_draft_retained", True)
         self.wait_for_dialogs_to_stop_intercepting("alice")
+        # #region debug-point E:failure-journey-released
+        self.clients["alice"].execute_script(
+            """
+            fetch('http://127.0.0.1:7780/event', {
+              method: 'POST',
+              body: JSON.stringify({
+                sessionId: 'attachment-send-draft',
+                runId: 'pre-fix',
+                hypothesisId: 'E',
+                location: 'native_product_closure_runner:prove_attachment_failure',
+                msg: '[DEBUG] Failed attachment journey released its dialog',
+                data: {
+                  failedDraftCount: document.querySelectorAll(
+                    '[data-chat-attachment-draft][data-chat-attachment-status="failed"]'
+                  ).length,
+                  hitTestableDialogCount: Array.from(
+                    document.querySelectorAll('[role="dialog"]')
+                  ).filter((dialog) => getComputedStyle(dialog).pointerEvents !== 'none').length,
+                },
+                ts: Date.now(),
+              }),
+            }).catch(() => {});
+            """
+        )
+        # #endregion
 
     def attachment_message(
         self,
@@ -3236,6 +3261,25 @@ except Exception as error:
             "queued two-attachment send outcome",
             timeout=180,
         )
+        # #region debug-point B,C,D:gate-observed-outcome
+        self.clients["alice"].execute_script(
+            """
+            fetch('http://127.0.0.1:7780/event', {
+              method: 'POST',
+              body: JSON.stringify({
+                sessionId: 'attachment-send-draft',
+                runId: 'pre-fix',
+                hypothesisId: 'B,C,D',
+                location: 'native_product_closure_runner:prove_attachments',
+                msg: '[DEBUG] Native Gate observed composer send outcome',
+                data: arguments[0],
+                ts: Date.now(),
+              }),
+            }).catch(() => {});
+            """,
+            outcome,
+        )
+        # #endregion
         if outcome["state"] != "pending":
             raise GateError(f"Composer send outcome was not queued: {outcome}")
         if (
