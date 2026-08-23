@@ -194,7 +194,13 @@ export function ChatMessageActionOverlay({
 
   useLayoutEffect(() => {
     if (!pickerOpen) return;
-    surfaceRef.current?.querySelector<HTMLButtonElement>('[data-reaction-emoji]')?.focus();
+    const reactionButton = surfaceRef.current?.querySelector<HTMLButtonElement>(
+      '[data-reaction-emoji]',
+    );
+    reactionButton?.focus();
+    // #region debug-point B:picker-focus-transfer
+    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'pre-fix', hypothesisId: 'B,C,D', location: 'ChatMessageActionOverlay:pickerFocusLayoutEffect', msg: '[DEBUG] picker focus transfer completed', data: { pickerOpen, targetFound: Boolean(reactionButton), focusedReaction: document.activeElement?.hasAttribute('data-reaction-emoji') ?? false, activeTag: document.activeElement?.tagName ?? '' }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
   }, [pickerOpen]);
 
   useLayoutEffect(() => {
@@ -261,6 +267,9 @@ export function ChatMessageActionOverlay({
     onDismiss();
   };
   const openReactionPicker = () => {
+    // #region debug-point B:picker-open-request
+    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'pre-fix', hypothesisId: 'B,C', location: 'ChatMessageActionOverlay:openReactionPicker', msg: '[DEBUG] picker open requested', data: { pickerOpen, activeAction: document.activeElement?.getAttribute('data-message-action') ?? '', pointerInside: pointerInsideRef.current }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     onPointerEnter();
     setPickerOpen(true);
   };
@@ -288,11 +297,17 @@ export function ChatMessageActionOverlay({
         onPointerLeave();
       }}
       onFocusCapture={() => {
+        // #region debug-point D:overlay-focus-capture
+        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'pre-fix', hypothesisId: 'C,D', location: 'ChatMessageActionOverlay:onFocusCapture', msg: '[DEBUG] overlay captured focus', data: { pickerOpen, activeAction: document.activeElement?.getAttribute('data-message-action') ?? '', activeReaction: document.activeElement?.getAttribute('data-reaction-emoji') ?? '' }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
         onPointerEnter();
       }}
       onBlurCapture={(event) => {
         const relatedContained = event.relatedTarget instanceof Node
           && event.currentTarget.contains(event.relatedTarget);
+        // #region debug-point C:overlay-blur-capture
+        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'pre-fix', hypothesisId: 'C,D', location: 'ChatMessageActionOverlay:onBlurCapture', msg: '[DEBUG] overlay captured blur', data: { pickerOpen, relatedContained, pointerInside: pointerInsideRef.current, relatedTag: event.relatedTarget instanceof Element ? event.relatedTarget.tagName : '' }, ts: Date.now() }) }).catch(() => {});
+        // #endregion
         if (relatedContained || pointerInsideRef.current) return;
         onPointerLeave();
       }}
@@ -362,6 +377,9 @@ export function ChatMessageActionOverlay({
               aria-expanded={pickerOpen}
               onClick={openReactionPicker}
               onKeyDown={(event) => {
+                // #region debug-point A:reaction-trigger-keydown
+                fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'pre-fix', hypothesisId: 'A', location: 'ChatMessageActionOverlay:reactionKeyDown', msg: '[DEBUG] reaction trigger keydown received', data: { key: event.key, activeAction: document.activeElement?.getAttribute('data-message-action') ?? '' }, ts: Date.now() }) }).catch(() => {});
+                // #endregion
                 if (event.key !== 'Enter' && event.key !== ' ') return;
                 event.preventDefault();
                 event.stopPropagation();
