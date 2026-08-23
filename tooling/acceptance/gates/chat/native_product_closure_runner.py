@@ -2747,10 +2747,16 @@ except Exception as error:
               document.querySelectorAll('[data-chat-background-select]')
             );
             return candidates.find((select) => {
-              const modal = select.closest('.ant-modal');
-              if (!modal) return false;
-              return !Array.from(modal.classList).some(
-                (name) => name.includes('-leave')
+              const dialog = select.closest('[role="dialog"]');
+              if (!dialog) return false;
+              const style = getComputedStyle(dialog);
+              const rect = dialog.getBoundingClientRect();
+              return (
+                style.display !== 'none'
+                && style.visibility !== 'hidden'
+                && style.pointerEvents !== 'none'
+                && rect.width > 0
+                && rect.height > 0
               );
             }) || null;
             """
@@ -2830,10 +2836,10 @@ except Exception as error:
                 driver.execute_script(
                     """
                     return !Array.from(
-                      document.querySelectorAll('.ant-modal-wrap')
-                    ).some((modal) => {
-                      const style = getComputedStyle(modal);
-                      const rect = modal.getBoundingClientRect();
+                      document.querySelectorAll('[role="dialog"]')
+                    ).some((dialog) => {
+                      const style = getComputedStyle(dialog);
+                      const rect = dialog.getBoundingClientRect();
                       return (
                         style.display !== 'none'
                         && style.visibility !== 'hidden'

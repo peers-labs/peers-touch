@@ -19,14 +19,14 @@
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-D/F` prove uploaded conversation background rendering through the canonical OSS resolver, then continue source-bound Native proof from the next first failure |
-| Progress | Commit `8b1243d94` canonicalizes the `oss://self` host through the bound Station and authenticates private local-mirror downloads. Exact-HEAD Native run `20260823T163659827915Z-24fcd3bb8f461899848653911281dc25` passed `background_rendered` and `settings_station_readback`, then advanced to an attachment click attempted while the background modal was still hit-testable during dismissal. |
+| Progress | Commit `8b1243d94` canonicalizes the `oss://self` host through the bound Station and authenticates private local-mirror downloads. Exact-HEAD Native runs `20260823T163659827915Z-24fcd3bb8f461899848653911281dc25` and `20260823T164444452062Z-7bee30052321748453cfd2fcf8a6e4ef` passed `background_rendered` and `settings_station_readback`, then exposed that the Gate's background-modal synchronization incorrectly depended on default Ant class names while this app uses a custom prefix. |
 | Last completed | Uploaded background upload/retry, authenticated cache resolution, CSS rendering, and Station readback are source-bound Native-proven. Post-fix logs show a local cache file and inline PNG loading at `1x1`; runtime log audit and process/port/storage cleanup pass. |
-| Current action | Synchronize the Native runner with the background modal dismissal lifecycle before starting the attachment journey |
+| Current action | Bind background modal reuse/dismissal synchronization to semantic `role=dialog` state before starting the attachment journey |
 | Next action | Align exact HEAD, rerun Native proof, and diagnose only the next first failed product boundary |
 | Blockers | Native product proof is blocked by the Gate racing the Ant modal leave transition before the attachment picker click. Generic Gap Detector over-selection and G15 offline group recovery remain separate scopes and will not be modified here. |
 | Decisions required | none; Owner approved the root-cause plan and the accepted Messaging architecture already defines one Station authority membership truth |
-| Evidence | Fix commit `8b1243d94954212436e3c5258c0ca3c6307881ed`; Native run `20260823T163659827915Z-24fcd3bb8f461899848653911281dc25`; `background_rendered` PASS with inline PNG `loaded=true`, width/height `1x1`; `settings_station_readback` PASS; next failure reports the attachment picker center occluded by an outgoing `role=dialog` modal. Source/build/runtime identity, all prior assertions, runtime log audit, and cleanup PASS. Attachments, restart, second-device recovery, and later assertions remain unproven. MP-W13 remains `PARTIAL / UNPROVEN`. |
-| Last updated | 2026-08-24 01:43 CST |
+| Evidence | Fix commit `8b1243d94954212436e3c5258c0ca3c6307881ed`; latest Native run `20260823T164444452062Z-7bee30052321748453cfd2fcf8a6e4ef`; `background_rendered` PASS with inline PNG `loaded=true`, width/height `1x1`; `settings_station_readback` PASS; next failure reports the attachment picker center occluded by a custom-prefix `role=dialog` surface. Source/build/runtime identity, all prior assertions, runtime log audit, and cleanup PASS. Attachments, restart, second-device recovery, and later assertions remain unproven. MP-W13 remains `PARTIAL / UNPROVEN`. |
+| Last updated | 2026-08-24 01:54 CST |
 
 ## 1. Plan Sources And Gate
 
