@@ -39,6 +39,7 @@ const REACTION_EMOJIS = [
   '🔥', '💯', '🤔', '👀', '🙌', '✨', '✅', '💪',
   '🤝', '🥳', '😍', '😊', '😅', '🤯', '😎', '💡',
 ] as const;
+const REACTION_PICKER_COLUMNS = 6;
 
 const FRIEND_RECALL_WINDOW_MS = 4 * 60 * 1000 + 30 * 1000;
 
@@ -294,7 +295,9 @@ export function ChatMessageActionOverlay({
       style={{
         position: 'absolute',
         display: pickerOpen ? 'grid' : 'flex',
-        gridTemplateColumns: pickerOpen ? 'repeat(8, 28px)' : undefined,
+        gridTemplateColumns: pickerOpen
+          ? `repeat(${REACTION_PICKER_COLUMNS}, 28px)`
+          : undefined,
         gap: pickerOpen ? 4 : 3,
         padding: pickerOpen ? 8 : 3,
         background: token.colorBgElevated,
