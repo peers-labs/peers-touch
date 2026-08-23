@@ -1509,7 +1509,7 @@ const messagingService: MessagingServiceContract = {
       method: 'POST',
       body: JSON.stringify({
         sessionId: 'attachment-send-draft',
-        runId: 'pre-fix',
+        runId: 'post-fix',
         hypothesisId: 'A,D,E',
         location: 'im-service:sendMessage:request',
         msg: '[DEBUG] Renderer submitting messaging send request',
@@ -1563,7 +1563,7 @@ const messagingService: MessagingServiceContract = {
       method: 'POST',
       body: JSON.stringify({
         sessionId: 'attachment-send-draft',
-        runId: 'pre-fix',
+        runId: 'post-fix',
         hypothesisId: 'B,C,D',
         location: 'im-service:sendMessage:response',
         msg: '[DEBUG] Renderer received raw messaging send response',
