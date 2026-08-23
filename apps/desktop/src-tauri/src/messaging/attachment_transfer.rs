@@ -2479,7 +2479,7 @@ mod tests {
         };
         if let Some(projection) = &projection {
             assert!(
-                projection.member_ptids.iter().any(|member| member == &ptid),
+                projection.members.iter().any(|member| member.ptid == ptid),
                 "native endpoint must be an active conversation member"
             );
         }

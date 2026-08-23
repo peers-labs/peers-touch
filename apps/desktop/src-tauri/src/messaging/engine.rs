@@ -75,6 +75,12 @@ pub struct SubmitMessageOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedGroupConversation {
+    pub conversation_id: String,
+    pub command_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalAttachmentIntent {
     pub source_local_ref: String,
     pub filename: String,
@@ -1211,6 +1217,13 @@ impl MessagingEngine {
         self.store.conversation_projections()
     }
 
+    pub fn command_status(
+        &self,
+        command_id: &str,
+    ) -> Result<Option<super::CommandStatusProjection>, String> {
+        self.store.command_status(command_id)
+    }
+
     pub fn group_security_status(
         &self,
         conversation_id: &str,
@@ -1250,17 +1263,20 @@ impl MessagingEngine {
         conversation_id: &str,
         name: &str,
         member_ptids: &[String],
-    ) -> Result<String, String> {
+    ) -> Result<PreparedGroupConversation, String> {
         let transport =
             StationGroupGenesisTransport::new(token.to_string(), self.endpoint.clone())?;
         let plan = transport.prepare(conversation_id, name, member_ptids)?;
-        GroupGenesisPreparer::new(
+        let command = GroupGenesisPreparer::new(
             self.store.clone(),
             self.mls_manager.clone(),
             self.endpoint.clone(),
         )?
         .prepare(&plan, conversation_id, now_unix_ms())?;
-        Ok(conversation_id.to_string())
+        Ok(PreparedGroupConversation {
+            conversation_id: conversation_id.to_string(),
+            command_id: command.command_id,
+        })
     }
 
     pub fn prepare_membership_transition(

@@ -10,12 +10,12 @@ use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
 use crate::infrastructure::storage::open_database;
 use crate::model::chat::{
     AttachmentPlaintextMetadata, AttachmentTransferState, EncryptedObjectDescriptor,
-    EncryptedObjectUploadSpec,
+    EncryptedObjectUploadSpec, MemberRole,
 };
 use prost::Message;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::{Mutex, MutexGuard};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +25,14 @@ pub struct CommandOutboxEntry {
     pub command_bytes: Vec<u8>,
     pub attempt_count: u32,
     pub next_attempt_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandStatusProjection {
+    pub command_id: String,
+    pub conversation_id: String,
+    pub state: String,
+    pub last_error_code: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,13 +175,19 @@ pub struct ConversationMessageProjection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationMemberProjection {
+    pub ptid: String,
+    pub role: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationProjection {
     pub conversation_id: String,
     pub authority_station_id: String,
     pub kind: i32,
     pub name: String,
     pub owner_ptid: String,
-    pub member_ptids: Vec<String>,
+    pub members: Vec<ConversationMemberProjection>,
     pub membership_epoch: i64,
     pub mls_epoch: i64,
     pub active: bool,
@@ -924,6 +938,32 @@ impl MessagingStore {
                         command_bytes: row.get(2)?,
                         attempt_count: row.get(3)?,
                         next_attempt_at_unix_ms: row.get(4)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn command_status(
+        &self,
+        command_id: &str,
+    ) -> Result<Option<CommandStatusProjection>, String> {
+        if command_id.trim().is_empty() {
+            return Err("messaging command status requires command ID".to_string());
+        }
+        self.connection()?
+            .query_row(
+                "SELECT command_id, conversation_id, state, last_error_code
+                 FROM messaging_command_outbox
+                 WHERE command_id = ?1",
+                params![command_id],
+                |row| {
+                    Ok(CommandStatusProjection {
+                        command_id: row.get(0)?,
+                        conversation_id: row.get(1)?,
+                        state: row.get(2)?,
+                        last_error_code: row.get(3)?,
                     })
                 },
             )
@@ -2357,15 +2397,20 @@ impl MessagingStore {
                     active,
                     updated_at_unix_ms,
                 )| {
-                    let mut members = connection
+                    let mut members_statement = connection
                         .prepare(
-                            "SELECT ptid FROM messaging_conversation_members
+                            "SELECT ptid, role FROM messaging_conversation_members
                              WHERE conversation_id = ?1 AND active = 1
                              ORDER BY ptid",
                         )
                         .map_err(|error| error.to_string())?;
-                    let member_ptids = members
-                        .query_map(params![conversation_id], |row| row.get::<_, String>(0))
+                    let members = members_statement
+                        .query_map(params![conversation_id], |row| {
+                            Ok(ConversationMemberProjection {
+                                ptid: row.get::<_, String>(0)?,
+                                role: row.get::<_, i32>(1)?,
+                            })
+                        })
                         .map_err(|error| error.to_string())?
                         .collect::<Result<Vec<_>, _>>()
                         .map_err(|error| error.to_string())?;
@@ -2375,7 +2420,7 @@ impl MessagingStore {
                         kind,
                         name,
                         owner_ptid,
-                        member_ptids,
+                        members,
                         membership_epoch,
                         mls_epoch,
                         active,
@@ -2437,14 +2482,16 @@ impl MessagingStore {
             .map_err(|error| error.to_string())?;
         if changed == 1 {
             let connection = self.connection()?;
-            for ptid in &projection.member_ptids {
+            for member in &projection.members {
                 connection
                     .execute(
                         "INSERT INTO messaging_conversation_members(
-                            conversation_id, ptid, active
-                         ) VALUES (?1, ?2, 1)
-                         ON CONFLICT(conversation_id, ptid) DO NOTHING",
-                        params![projection.conversation_id, ptid],
+                            conversation_id, ptid, role, active
+                         ) VALUES (?1, ?2, ?3, 1)
+                         ON CONFLICT(conversation_id, ptid) DO UPDATE SET
+                            role=excluded.role,
+                            active=1",
+                        params![projection.conversation_id, member.ptid, member.role],
                     )
                     .map_err(|error| error.to_string())?;
             }
@@ -3592,16 +3639,23 @@ impl MessagingStore {
         for row in conversation_rows {
             let mut member_statement = connection
                 .prepare(
-                    "SELECT ptid FROM messaging_conversation_members
+                    "SELECT ptid, role FROM messaging_conversation_members
                      WHERE conversation_id = ?1 AND active = 1
                      ORDER BY ptid",
                 )
                 .map_err(|error| error.to_string())?;
-            let member_ptids = member_statement
-                .query_map(params![row.0], |member| member.get::<_, String>(0))
+            let members = member_statement
+                .query_map(params![row.0], |member| {
+                    Ok((member.get::<_, String>(0)?, member.get::<_, i32>(1)?))
+                })
                 .map_err(|error| error.to_string())?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|error| error.to_string())?;
+            let member_ptids = members
+                .iter()
+                .map(|(ptid, _)| ptid.clone())
+                .collect::<Vec<_>>();
+            let member_roles = members.into_iter().collect::<BTreeMap<_, _>>();
             conversations.push(RecoveryConversationProjection {
                 conversation_id: row.0,
                 authority_station_id: row.1,
@@ -3609,6 +3663,7 @@ impl MessagingStore {
                 name: row.3,
                 owner_ptid: row.4,
                 member_ptids,
+                member_roles,
                 membership_epoch: row.5,
                 mls_epoch: row.6,
                 active: row.7,
@@ -3796,12 +3851,21 @@ impl MessagingStore {
                 )
                 .map_err(|error| error.to_string())?;
             for member_ptid in &conversation.member_ptids {
+                let role = conversation
+                    .member_roles
+                    .get(member_ptid)
+                    .copied()
+                    .unwrap_or(if member_ptid == &conversation.owner_ptid {
+                        MemberRole::Owner as i32
+                    } else {
+                        MemberRole::Unspecified as i32
+                    });
                 transaction
                     .execute(
                         "INSERT INTO messaging_conversation_members(
-                            conversation_id, ptid, active
-                         ) VALUES (?1, ?2, 1)",
-                        params![conversation.conversation_id, member_ptid],
+                            conversation_id, ptid, role, active
+                         ) VALUES (?1, ?2, ?3, 1)",
+                        params![conversation.conversation_id, member_ptid, role],
                     )
                     .map_err(|error| error.to_string())?;
             }
@@ -4489,14 +4553,16 @@ impl MessagingStore {
                     params![input.conversation_id],
                 )
                 .map_err(|error| error.to_string())?;
-            for ptid in &input.projection.member_ptids {
+            for member in &input.projection.members {
                 transaction
                     .execute(
                         "INSERT INTO messaging_conversation_members(
-                            conversation_id, ptid, active
-                         ) VALUES (?1, ?2, 1)
-                         ON CONFLICT(conversation_id, ptid) DO UPDATE SET active=1",
-                        params![input.conversation_id, ptid],
+                            conversation_id, ptid, role, active
+                         ) VALUES (?1, ?2, ?3, 1)
+                         ON CONFLICT(conversation_id, ptid) DO UPDATE SET
+                            role=excluded.role,
+                            active=1",
+                        params![input.conversation_id, member.ptid, member.role],
                     )
                     .map_err(|error| error.to_string())?;
             }
@@ -4681,7 +4747,7 @@ impl MessagingStore {
                     || projection.membership_epoch != input.to_membership_epoch
                     || projection.mls_epoch != input.to_mls_epoch
                     || !projection.active
-                    || projection.member_ptids.is_empty()
+                    || projection.members.is_empty()
                 {
                     return Err("messaging MLS join projection binding mismatch".to_string());
                 }
@@ -4721,13 +4787,13 @@ impl MessagingStore {
                         params![projection.conversation_id],
                     )
                     .map_err(|error| error.to_string())?;
-                for ptid in &projection.member_ptids {
+                for member in &projection.members {
                     transaction
                         .execute(
                             "INSERT INTO messaging_conversation_members(
-                                conversation_id, ptid, active
-                             ) VALUES (?1, ?2, 1)",
-                            params![projection.conversation_id, ptid],
+                                conversation_id, ptid, role, active
+                             ) VALUES (?1, ?2, ?3, 1)",
+                            params![projection.conversation_id, member.ptid, member.role],
                         )
                         .map_err(|error| error.to_string())?;
                 }
@@ -4797,7 +4863,7 @@ impl MessagingStore {
             || input.projection.authority_station_id.trim().is_empty()
             || input.projection.membership_epoch != input.membership_epoch
             || input.projection.mls_epoch != input.mls_epoch
-            || input.projection.member_ptids.is_empty()
+            || input.projection.members.is_empty()
         {
             return Err("messaging MLS retirement binding is invalid".to_string());
         }
@@ -4882,13 +4948,13 @@ impl MessagingStore {
                     params![input.conversation_id],
                 )
                 .map_err(|error| error.to_string())?;
-            for ptid in &input.projection.member_ptids {
+            for member in &input.projection.members {
                 transaction
                     .execute(
                         "INSERT INTO messaging_conversation_members(
-                            conversation_id, ptid, active
-                         ) VALUES (?1, ?2, 1)",
-                        params![input.conversation_id, ptid],
+                            conversation_id, ptid, role, active
+                         ) VALUES (?1, ?2, ?3, 1)",
+                        params![input.conversation_id, member.ptid, member.role],
                     )
                     .map_err(|error| error.to_string())?;
             }
@@ -6424,7 +6490,7 @@ fn validate_conversation_state_receive(
         || projection.authority_station_id.trim().is_empty()
         || projection.kind == 0
         || projection.owner_ptid.trim().is_empty()
-        || projection.member_ptids.len() < 2
+        || projection.members.len() < 2
         || projection.membership_epoch < 0
         || projection.mls_epoch < 0
         || projection.updated_at_unix_ms <= 0
@@ -6433,15 +6499,24 @@ fn validate_conversation_state_receive(
         return Err("messaging conversation-state receive input is incomplete".to_string());
     }
     let mut previous = None;
-    for ptid in &projection.member_ptids {
-        if ptid.trim().is_empty()
+    for member in &projection.members {
+        if member.ptid.trim().is_empty()
+            || !matches!(
+                MemberRole::try_from(member.role),
+                Ok(MemberRole::Member | MemberRole::Admin | MemberRole::Owner)
+            )
             || previous
                 .as_ref()
-                .is_some_and(|value: &&String| value.as_str() >= ptid.as_str())
+                .is_some_and(|value: &&String| value.as_str() >= member.ptid.as_str())
         {
             return Err("messaging conversation members are not strictly sorted".to_string());
         }
-        previous = Some(ptid);
+        previous = Some(&member.ptid);
+    }
+    if !projection.members.iter().any(|member| {
+        member.ptid == projection.owner_ptid && member.role == MemberRole::Owner as i32
+    }) {
+        return Err("messaging conversation owner role is not projected".to_string());
     }
     Ok(())
 }
@@ -7297,6 +7372,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
              CREATE TABLE IF NOT EXISTS messaging_conversation_members (
                 conversation_id TEXT NOT NULL,
                 ptid TEXT NOT NULL,
+                role INTEGER NOT NULL,
                 active INTEGER NOT NULL,
                 PRIMARY KEY(conversation_id, ptid),
                 FOREIGN KEY(conversation_id)
@@ -7665,6 +7741,38 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             )
             .map_err(|error| error.to_string())?;
     }
+    let conversation_member_columns = connection
+        .prepare("PRAGMA table_info(messaging_conversation_members)")
+        .map_err(|error| error.to_string())?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    if !conversation_member_columns
+        .iter()
+        .any(|column| column == "role")
+    {
+        connection
+            .execute(
+                "ALTER TABLE messaging_conversation_members
+                 ADD COLUMN role INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+        connection
+            .execute(
+                "UPDATE messaging_conversation_members
+                 SET role = 3
+                 WHERE ptid = (
+                    SELECT owner_ptid
+                    FROM messaging_conversations
+                    WHERE messaging_conversations.conversation_id =
+                          messaging_conversation_members.conversation_id
+                 )",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
     let pending_columns = connection
         .prepare("PRAGMA table_info(messaging_pending_messages)")
         .map_err(|error| error.to_string())?
@@ -7758,6 +7866,69 @@ mod tests {
     use super::*;
     use crate::messaging::private_content::test_attachment_metadata;
     use crate::model::chat::AttachmentTransferErrorCode;
+
+    #[test]
+    fn conversation_projection_round_trip_preserves_member_roles() {
+        let store = MessagingStore::in_memory().unwrap();
+        let projection = ConversationProjection {
+            conversation_id: "group-role-projection".to_string(),
+            authority_station_id: "station-local".to_string(),
+            kind: 2,
+            name: "Role group".to_string(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![
+                ConversationMemberProjection {
+                    ptid: "ptid:alice".to_string(),
+                    role: MemberRole::Owner as i32,
+                },
+                ConversationMemberProjection {
+                    ptid: "ptid:bob".to_string(),
+                    role: MemberRole::Admin as i32,
+                },
+            ],
+            membership_epoch: 1,
+            mls_epoch: 1,
+            active: true,
+            updated_at_unix_ms: 100,
+        };
+
+        assert!(store.bootstrap_conversation_projection(&projection).unwrap());
+        assert_eq!(
+            store.conversation_projections().unwrap()[0].members,
+            projection.members
+        );
+    }
+
+    #[test]
+    fn command_status_projects_terminal_outbox_state() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_local_commands(
+                    command_id, conversation_id, command_bytes, state, created_at_unix_ms
+                 ) VALUES ('group-command', 'group-1', X'01', 'failed', 100)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_command_outbox(
+                    command_id, conversation_id, command_bytes, state,
+                    attempt_count, next_attempt_at_unix_ms, last_error_code,
+                    created_at_unix_ms
+                 ) VALUES ('group-command', 'group-1', X'01', 'failed', 1, 0,
+                           'authority_rejected', 100)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let status = store.command_status("group-command").unwrap().unwrap();
+        assert_eq!(status.conversation_id, "group-1");
+        assert_eq!(status.state, "failed");
+        assert_eq!(status.last_error_code, "authority_rejected");
+    }
 
     fn attachment_transfer() -> AttachmentTransferRecord {
         AttachmentTransferRecord {
@@ -7875,6 +8046,10 @@ mod tests {
                 name: String::new(),
                 owner_ptid: "ptid:alice".to_string(),
                 member_ptids: vec!["ptid:alice".to_string(), "ptid:bob".to_string()],
+                member_roles: BTreeMap::from([
+                    ("ptid:alice".to_string(), MemberRole::Owner as i32),
+                    ("ptid:bob".to_string(), MemberRole::Member as i32),
+                ]),
                 membership_epoch: 1,
                 mls_epoch: 0,
                 active: true,
@@ -8371,8 +8546,8 @@ mod tests {
                 .unwrap();
             connection
                 .execute(
-                    "INSERT INTO messaging_conversation_members(conversation_id, ptid, active)
-                     VALUES (?1, 'ptid:alice', 1), (?1, 'ptid:bob', 1)",
+                    "INSERT INTO messaging_conversation_members(conversation_id, ptid, role, active)
+                     VALUES (?1, 'ptid:alice', 3, 1), (?1, 'ptid:bob', 1, 1)",
                     params![conversation_id],
                 )
                 .unwrap();

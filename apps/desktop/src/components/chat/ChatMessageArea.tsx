@@ -718,6 +718,8 @@ export function ChatMessageArea() {
       ? t('chat.social.encryption.establishing')
       : groupSecurityState[activeUlid] === 'crypto-desynced'
         ? t('chat.social.encryption.cryptoDesynced')
+        : groupSecurityState[activeUlid] === 'error'
+          ? t('chat.social.encryption.unavailable')
         : subtitle;
   const conversationEncrypted = activeTab === 'friend'
     ? directSecurityState === 'ready'

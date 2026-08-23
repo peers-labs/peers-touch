@@ -1,5 +1,6 @@
 use crate::error::{AppResult, ErrorCode};
-use crate::model::chat::{ConversationKind, MessagingMembershipAction};
+use crate::messaging::CommandDispatchProgress;
+use crate::model::chat::{ConversationKind, MemberStatus, MessagingMembershipAction};
 use crate::state::AppState;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -151,6 +152,106 @@ pub struct MessagingMembershipTransitionInput {
     pub role: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct MessagingCommandStatusInput {
+    pub command_id: String,
+}
+
+pub(crate) fn group_creation_state(
+    progress: &CommandDispatchProgress,
+    target_command_id: &str,
+    projection_ready: bool,
+) -> &'static str {
+    let dispatched_command_id = match progress {
+        CommandDispatchProgress::Idle => return "pending",
+        CommandDispatchProgress::Submitted { command_id }
+        | CommandDispatchProgress::RetryScheduled { command_id, .. }
+        | CommandDispatchProgress::Failed { command_id, .. }
+        | CommandDispatchProgress::StaleDeliveryPlan { command_id, .. }
+        | CommandDispatchProgress::StaleAuthorityPlan { command_id, .. } => command_id,
+    };
+    if dispatched_command_id != target_command_id {
+        return "pending";
+    }
+    match progress {
+        CommandDispatchProgress::Submitted { .. } if projection_ready => "projected",
+        CommandDispatchProgress::Submitted { .. }
+        | CommandDispatchProgress::RetryScheduled { .. } => "pending",
+        CommandDispatchProgress::Failed { .. }
+        | CommandDispatchProgress::StaleDeliveryPlan { .. }
+        | CommandDispatchProgress::StaleAuthorityPlan { .. } => "failed",
+        CommandDispatchProgress::Idle => "pending",
+    }
+}
+
+fn conversation_member_json(
+    conversation_id: &str,
+    member: &crate::messaging::ConversationMemberProjection,
+) -> Value {
+    json!({
+        "conversation_id": conversation_id,
+        "ptid": member.ptid,
+        "role": member.role,
+        "member_status": MemberStatus::Active as i32,
+    })
+}
+
+pub(crate) fn conversation_projection_json(
+    engine: &crate::messaging::MessagingEngine,
+    conversation: &crate::messaging::ConversationProjection,
+) -> Result<Value, String> {
+    let mls_status = if conversation.kind == ConversationKind::Group as i32 {
+        Some(engine.group_security_status(&conversation.conversation_id, conversation.mls_epoch)?)
+    } else {
+        None
+    };
+    let members = conversation
+        .members
+        .iter()
+        .map(|member| conversation_member_json(&conversation.conversation_id, member))
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "conversation_id": conversation.conversation_id,
+        "authority_station_id": conversation.authority_station_id,
+        "kind": conversation.kind,
+        "name": conversation.name,
+        "owner_ptid": conversation.owner_ptid,
+        "members": members,
+        "membership_epoch": conversation.membership_epoch,
+        "mls_epoch": conversation.mls_epoch,
+        "mls_status": mls_status,
+        "active": conversation.active,
+        "updated_at_unix_ms": conversation.updated_at_unix_ms,
+    }))
+}
+
+pub(crate) fn command_status_json(
+    engine: &crate::messaging::MessagingEngine,
+    command_id: &str,
+) -> AppResult<Value> {
+    if command_id.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "messaging command status requires command ID",
+            None,
+        );
+    }
+    match engine.command_status(command_id) {
+        Ok(Some(status)) => AppResult::success(json!({
+            "command_id": status.command_id,
+            "conversation_id": status.conversation_id,
+            "state": status.state,
+            "last_error_code": status.last_error_code,
+        })),
+        Ok(None) => AppResult::fail(
+            ErrorCode::NotFound,
+            "messaging command status not found",
+            None,
+        ),
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
+}
+
 fn active_engine(
     state: &Arc<AppState>,
     window: &Window,
@@ -298,33 +399,27 @@ pub fn messaging_list_conversations(
     };
     let mut projected = Vec::with_capacity(conversations.len());
     for conversation in conversations {
-        let mls_status = if conversation.kind == ConversationKind::Group as i32 {
-            match engine
-                .group_security_status(&conversation.conversation_id, conversation.mls_epoch)
-            {
-                Ok(status) => Some(status),
-                Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
-            }
-        } else {
-            None
-        };
-        projected.push(json!({
-            "conversation_id": conversation.conversation_id,
-            "authority_station_id": conversation.authority_station_id,
-            "kind": conversation.kind,
-            "name": conversation.name,
-            "owner_ptid": conversation.owner_ptid,
-            "member_ptids": conversation.member_ptids,
-            "membership_epoch": conversation.membership_epoch,
-            "mls_epoch": conversation.mls_epoch,
-            "mls_status": mls_status,
-            "active": conversation.active,
-            "updated_at_unix_ms": conversation.updated_at_unix_ms,
-        }));
+        match conversation_projection_json(&engine, &conversation) {
+            Ok(value) => projected.push(value),
+            Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+        }
     }
     AppResult::success(json!({
         "conversations": projected
     }))
+}
+
+#[tauri::command]
+pub fn messaging_command_status(
+    input: MessagingCommandStatusInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    command_status_json(&engine, &input.command_id)
 }
 
 #[tauri::command]
@@ -347,43 +442,70 @@ pub fn messaging_create_group(
         Ok(value) => value,
         Err(error) => return error,
     };
-    let conversation_id = match engine.create_group_conversation(
+    let prepared = match engine.create_group_conversation(
         &token,
         &input.conversation_id,
         &input.name,
         &input.member_ptids,
     ) {
-        Ok(conversation_id) => conversation_id,
+        Ok(prepared) => prepared,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    let progress = engine.dispatch_command_once(
+    let progress = match engine.dispatch_command_once(
         &token,
         crate::messaging::now_unix_ms(),
         crate::messaging::CommandRetryPolicy {
             initial_delay_ms: 1_000,
             maximum_delay_ms: 300_000,
         },
-    );
-    if !matches!(
-        progress,
-        Ok(crate::messaging::CommandDispatchProgress::Submitted { .. })
-            | Ok(crate::messaging::CommandDispatchProgress::Idle)
     ) {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!("messaging group genesis dispatch incomplete: {progress:?}"),
-            None,
+        Ok(progress) => progress,
+        Err(error) => {
+            tracing::warn!(
+                command_id = %prepared.command_id,
+                conversation_id = %prepared.conversation_id,
+                error = %error,
+                "messaging group dispatch assist failed after durable preparation"
+            );
+            CommandDispatchProgress::Idle
+        }
+    };
+    if let Err(error) = engine.drain_once(&token, 100) {
+        tracing::warn!(
+            command_id = %prepared.command_id,
+            conversation_id = %prepared.conversation_id,
+            error = %error,
+            "messaging group drain assist failed after durable preparation"
         );
     }
-    if let Err(error) = engine.drain_once(&token, 100) {
-        return AppResult::fail(ErrorCode::InternalError, error, None);
-    }
     if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
-        return AppResult::fail(ErrorCode::InternalError, error, None);
+        tracing::warn!(
+            command_id = %prepared.command_id,
+            conversation_id = %prepared.conversation_id,
+            error = %error,
+            "messaging group lifecycle wake failed after durable preparation"
+        );
     }
+    let projection_ready = match engine.conversations() {
+        Ok(conversations) => conversations
+            .iter()
+            .any(|conversation| conversation.conversation_id == prepared.conversation_id),
+        Err(error) => {
+            tracing::warn!(
+                command_id = %prepared.command_id,
+                conversation_id = %prepared.conversation_id,
+                error = %error,
+                "messaging group projection read failed after durable preparation"
+            );
+            false
+        }
+    };
+    let creation_state =
+        group_creation_state(&progress, &prepared.command_id, projection_ready);
     AppResult::success(json!({
-        "conversation_id": conversation_id,
-        "state": "projected",
+        "conversation_id": prepared.conversation_id,
+        "command_id": prepared.command_id,
+        "state": creation_state,
     }))
 }
 
@@ -988,4 +1110,90 @@ pub fn messaging_search_messages(
             "read_by_ptids": message.read_by_ptids,
         })).collect::<Vec<_>>()
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{conversation_member_json, group_creation_state};
+    use crate::messaging::CommandDispatchProgress;
+    use crate::model::chat::{MemberRole, MemberStatus};
+
+    #[test]
+    fn group_creation_only_reports_projected_for_its_own_consumed_command() {
+        let target = CommandDispatchProgress::Submitted {
+            command_id: "group-command".to_string(),
+        };
+        assert_eq!(
+            group_creation_state(&target, "group-command", true),
+            "projected"
+        );
+        assert_eq!(
+            group_creation_state(&target, "group-command", false),
+            "pending"
+        );
+
+        let other = CommandDispatchProgress::Submitted {
+            command_id: "older-command".to_string(),
+        };
+        assert_eq!(
+            group_creation_state(&other, "group-command", true),
+            "pending"
+        );
+        let other_failed = CommandDispatchProgress::Failed {
+            command_id: "older-command".to_string(),
+            code: "terminal".to_string(),
+        };
+        assert_eq!(
+            group_creation_state(&other_failed, "group-command", false),
+            "pending"
+        );
+        assert_eq!(
+            group_creation_state(&CommandDispatchProgress::Idle, "group-command", true),
+            "pending"
+        );
+        let retrying = CommandDispatchProgress::RetryScheduled {
+            command_id: "group-command".to_string(),
+            next_attempt_at_unix_ms: 10,
+        };
+        assert_eq!(
+            group_creation_state(&retrying, "group-command", false),
+            "pending"
+        );
+    }
+
+    #[test]
+    fn group_creation_projects_target_dispatch_failure() {
+        let failed = CommandDispatchProgress::Failed {
+            command_id: "group-command".to_string(),
+            code: "terminal".to_string(),
+        };
+        assert_eq!(
+            group_creation_state(&failed, "group-command", false),
+            "failed"
+        );
+    }
+
+    #[test]
+    fn conversation_member_projection_preserves_identity_and_owner_role() {
+        let owner = conversation_member_json(
+            "group-1",
+            &crate::messaging::ConversationMemberProjection {
+                ptid: "ptid:alice".to_string(),
+                role: MemberRole::Owner as i32,
+            },
+        );
+        assert_eq!(owner["conversation_id"], "group-1");
+        assert_eq!(owner["ptid"], "ptid:alice");
+        assert_eq!(owner["role"], MemberRole::Owner as i32);
+        assert_eq!(owner["member_status"], MemberStatus::Active as i32);
+
+        let admin = conversation_member_json(
+            "group-1",
+            &crate::messaging::ConversationMemberProjection {
+                ptid: "ptid:bob".to_string(),
+                role: MemberRole::Admin as i32,
+            },
+        );
+        assert_eq!(admin["role"], MemberRole::Admin as i32);
+    }
 }

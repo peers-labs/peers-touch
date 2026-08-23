@@ -84,7 +84,6 @@ import {
   normalizeFriendRequestData,
   normalizeFriendRequests,
   normalizeConversations,
-  normalizeConversationMembers,
   type FriendRequestData,
 } from './socialNormalizers';
 import { currentAuthenticatedActorId } from './session';
@@ -451,6 +450,10 @@ interface SocialChatState {
   sessionSecurityState: Record<string, 'idle' | 'establishing' | 'ready' | 'error'>;
   sessionCryptoVersion: Record<string, number>;
   groupSecurityState: Record<string, GroupSecurityState>;
+  pendingGroupCreations: Record<string, {
+    commandId: string;
+    requestedAtUnixMs: number;
+  }>;
   setSessionSecurityState: (
     sessionUlid: string,
     state: 'idle' | 'establishing' | 'ready' | 'error',
@@ -460,6 +463,7 @@ interface SocialChatState {
     groupUlid: string,
     state: GroupSecurityState,
   ) => void;
+  trackPendingGroupCreation: (groupUlid: string, commandId: string) => void;
   /**
    * Per-session WebRTC status. `transport` is the in-use ICE candidate type:
    *   - `'direct'` = host/srflx/prflx (P2P)
@@ -957,6 +961,7 @@ const initialSocialState: Pick<
   | 'sessionSecurityState'
   | 'sessionCryptoVersion'
   | 'groupSecurityState'
+  | 'pendingGroupCreations'
   | 'friendP2pStatus'
   | 'peerOnline'
   | 'typingPeers'
@@ -1011,6 +1016,7 @@ const initialSocialState: Pick<
   sessionSecurityState: {},
   sessionCryptoVersion: {},
   groupSecurityState: {},
+  pendingGroupCreations: {},
   friendP2pStatus: {},
   peerOnline: {},
   typingPeers: {},
@@ -1047,6 +1053,16 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ...state.groupSecurityState,
         [groupUlid]: securityState,
       },
+    })),
+  trackPendingGroupCreation: (groupUlid, commandId) =>
+    set((state) => ({
+      pendingGroupCreations: {
+        ...state.pendingGroupCreations,
+        [groupUlid]: { commandId, requestedAtUnixMs: Date.now() },
+      },
+      activeTab: 'group',
+      activeGroupUlid: groupUlid,
+      openThreadRootUlid: null,
     })),
 
   hydrate: async (actorId: string) => {
@@ -1096,9 +1112,36 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     set({ loading: true });
     try {
       const projections = await imServiceV1.messaging.listConversations();
+      const projectedConversationIds = new Set(
+        projections.map(conversation => conversation.conversationId),
+      );
+      const pendingCommandStatuses = new Map<string, 'failed' | 'superseded'>();
+      await Promise.all(
+        Object.entries(get().pendingGroupCreations)
+          .filter(([conversationId]) => !projectedConversationIds.has(conversationId))
+          .map(async ([conversationId, pending]) => {
+            try {
+              const status = await imServiceV1.messaging.getCommandStatus(pending.commandId);
+              if (
+                status.commandId !== pending.commandId
+                || status.conversationId !== conversationId
+              ) {
+                throw new Error('messaging_pending_group_command_binding_mismatch');
+              }
+              if (status.state === 'failed' || status.state === 'superseded') {
+                pendingCommandStatuses.set(conversationId, status.state);
+              }
+            } catch (error) {
+              log.warn('socialChat', 'pending group command status refresh failed', {
+                conversationId,
+                commandId: pending.commandId,
+                error,
+              });
+            }
+          }),
+      );
       const conversationSnapshots = await Promise.all(projections.map(async (conversation) => {
         let settings: MemberSettingsResult | null = null;
-        let members: ConversationMember[] | null = null;
         try {
           settings = await imServiceV1.conversation.getMemberSettings(
             conversation.conversationId,
@@ -1109,17 +1152,12 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
             error,
           });
         }
-        if (conversation.kind === 2) {
-          members = await imServiceV1.conversation.getMembers(
-            conversation.conversationId,
-          );
-        }
 
         const groupSecurityState = conversation.kind === 2 && conversation.mlsStatus
           ? projectGroupSecurityState(conversation.mlsStatus)
           : undefined;
 
-        return { conversation, settings, members, groupSecurityState };
+        return { conversation, settings, groupSecurityState };
       }));
       const allConversations = normalizeConversations(projections.map(conversation => ({
         conversation_id: conversation.conversationId,
@@ -1134,15 +1172,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       })));
       const directConversations = allConversations.filter((c) => c.kind === 1);
       const memberMap: Record<string, ConversationMember[]> = {};
-      for (const conversation of projections.filter(item => item.kind === 1)) {
-        memberMap[conversation.conversationId] = normalizeConversationMembers(
-          conversation.memberPtids.map(ptid => ({
-            conversation_id: conversation.conversationId,
-            ptid,
-            role: ptid === conversation.ownerPtid ? 3 : 1,
-            member_status: 1,
-          })),
-        );
+      for (const conversation of projections) {
+        memberMap[conversation.conversationId] =
+          activeConversationMembers(conversation.members);
       }
 
       if (
@@ -1153,12 +1185,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }
 
       const groupMembersUpdate: Record<string, GroupMember[]> = {};
-      for (const { conversation, members } of conversationSnapshots) {
+      for (const { conversation } of conversationSnapshots) {
         if (conversation.kind !== 2) continue;
-        if (members) {
-          groupMembersUpdate[conversation.conversationId] =
-            activeConversationMembers(members).map(projectConversationGroupMember);
-        }
+        groupMembersUpdate[conversation.conversationId] =
+          activeConversationMembers(conversation.members).map(projectConversationGroupMember);
       }
 
       const isSelfMember = (member: Pick<ConversationMember, 'ptid'>): boolean => {
@@ -1166,9 +1196,32 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       };
       const nextConversationLocalState = { ...get().conversationLocalState };
       const nextGroupSecurityState = { ...get().groupSecurityState };
+      const nextPendingGroupCreations = { ...get().pendingGroupCreations };
+      let projectedPendingGroup: {
+        conversationId: string;
+        commandId: string;
+        requestedAtUnixMs: number;
+      } | null = null;
+      for (const conversationId of pendingCommandStatuses.keys()) {
+        delete nextPendingGroupCreations[conversationId];
+        nextGroupSecurityState[conversationId] = 'error';
+      }
       for (const { conversation, settings, groupSecurityState } of conversationSnapshots) {
         if (groupSecurityState) {
           nextGroupSecurityState[conversation.conversationId] = groupSecurityState;
+        }
+        const pendingCreation = nextPendingGroupCreations[conversation.conversationId];
+        if (conversation.kind === 2 && pendingCreation) {
+          delete nextPendingGroupCreations[conversation.conversationId];
+          if (
+            !projectedPendingGroup
+            || pendingCreation.requestedAtUnixMs > projectedPendingGroup.requestedAtUnixMs
+          ) {
+            projectedPendingGroup = {
+              conversationId: conversation.conversationId,
+              ...pendingCreation,
+            };
+          }
         }
         if (!settings) continue;
         const kind = conversation.kind === 1 ? 'friend' : 'group';
@@ -1185,16 +1238,30 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         groupMembers: groupMembersUpdate,
         conversationLocalState: nextConversationLocalState,
         groupSecurityState: nextGroupSecurityState,
+        pendingGroupCreations: nextPendingGroupCreations,
         sessions: [],
         groups: [],
         loading: false,
         loadError: null,
+        ...(projectedPendingGroup
+          ? {
+              activeTab: 'group' as const,
+              activeGroupUlid: projectedPendingGroup.conversationId,
+              openThreadRootUlid: null,
+            }
+          : {}),
         ...(!get().currentUserDid ? { currentUserDid: actorId } : {}),
       });
       log.info('socialChat', 'loadConversations completed', {
         direct: directConversations.length,
         group: allConversations.length - directConversations.length,
       });
+      if (projectedPendingGroup) {
+        log.info('socialChat', 'pending group creation projected', {
+          conversationId: projectedPendingGroup.conversationId,
+          commandId: projectedPendingGroup.commandId,
+        });
+      }
 
       // Resolve every conversation member through the same PTID profile
       // projection so list, message, thread, and Details surfaces converge.

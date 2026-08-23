@@ -846,7 +846,20 @@ describe('Messaging conversation projection', () => {
           kind: 2,
           name: 'Group',
           owner_ptid: 'ptid:test:alice',
-          member_ptids: ['ptid:test:alice', 'ptid:test:bob'],
+          members: [
+            {
+              conversation_id: 'conversation-1',
+              ptid: 'ptid:test:alice',
+              role: 3,
+              member_status: 1,
+            },
+            {
+              conversation_id: 'conversation-1',
+              ptid: 'ptid:test:bob',
+              role: 1,
+              member_status: 1,
+            },
+          ],
           membership_epoch: 3,
           mls_epoch: 4,
           mls_status: 'active',
@@ -862,7 +875,20 @@ describe('Messaging conversation projection', () => {
       kind: 2,
       name: 'Group',
       ownerPtid: 'ptid:test:alice',
-      memberPtids: ['ptid:test:alice', 'ptid:test:bob'],
+      members: [
+        expect.objectContaining({
+          conversationId: 'conversation-1',
+          ptid: 'ptid:test:alice',
+          role: 3,
+          memberStatus: 1,
+        }),
+        expect.objectContaining({
+          conversationId: 'conversation-1',
+          ptid: 'ptid:test:bob',
+          role: 1,
+          memberStatus: 1,
+        }),
+      ],
       membershipEpoch: 3,
       mlsEpoch: 4,
       mlsStatus: 'active',
@@ -983,5 +1009,60 @@ describe('Messaging membership intent boundary', () => {
     expect(input).not.toHaveProperty('observed_membership_epoch')
     expect(input).not.toHaveProperty('key_package')
     expect(input).not.toHaveProperty('mls_commit')
+  })
+})
+
+describe('Messaging group creation boundary', () => {
+  it.each(['pending', 'projected', 'failed'] as const)(
+    'preserves the exact command identity for %s state',
+    async (state) => {
+      invokeMock.mockResolvedValueOnce({
+        ok: true,
+        data: {
+          conversation_id: 'group-1',
+          command_id: 'group-command-1',
+          state,
+        },
+      })
+
+      await expect(imServiceV1.messaging.createGroup(
+        'group-1',
+        'Project group',
+        ['ptid:bob'],
+      )).resolves.toEqual({
+        conversationId: 'group-1',
+        commandId: 'group-command-1',
+        state,
+      })
+
+      expect(invokeMock).toHaveBeenCalledWith('messaging_create_group', {
+        input: {
+          conversation_id: 'group-1',
+          name: 'Project group',
+          member_ptids: ['ptid:bob'],
+        },
+      })
+    },
+  )
+
+  it('projects terminal status for the exact pending group command', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        command_id: 'group-command-1',
+        conversation_id: 'group-1',
+        state: 'failed',
+        last_error_code: 'authority_rejected',
+      },
+    })
+
+    await expect(
+      imServiceV1.messaging.getCommandStatus('group-command-1'),
+    ).resolves.toEqual({
+      commandId: 'group-command-1',
+      conversationId: 'group-1',
+      state: 'failed',
+      lastErrorCode: 'authority_rejected',
+    })
   })
 })

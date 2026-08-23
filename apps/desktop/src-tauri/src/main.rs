@@ -712,6 +712,7 @@ fn main() {
             messaging_commands::messaging_create_group,
             messaging_commands::messaging_membership_transition,
             messaging_commands::messaging_list_conversations,
+            messaging_commands::messaging_command_status,
             messaging_commands::messaging_pick_attachment_source,
             messaging_commands::messaging_stage_attachment_source,
             messaging_commands::messaging_discard_attachment_source,

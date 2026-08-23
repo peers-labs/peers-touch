@@ -20,6 +20,10 @@ CHAT_DETAIL_PANEL = (
     ROOT / "apps/desktop/src/components/chat/ChatDetailPanel.tsx"
 )
 CHAT_COMPOSER = ROOT / "apps/desktop/src/components/chat/ChatComposer.tsx"
+CREATE_GROUP_MODAL = (
+    ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
+)
+HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
 
 
 class NativeProductClosureStaticTests(unittest.TestCase):
@@ -35,6 +39,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.chat_detail_panel = CHAT_DETAIL_PANEL.read_text(encoding="utf-8")
         self.chat_composer = CHAT_COMPOSER.read_text(encoding="utf-8")
+        self.create_group_modal = CREATE_GROUP_MODAL.read_text(encoding="utf-8")
+        self.http_gateway = HTTP_GATEWAY.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
 
     def test_runner_is_a_real_acceptance_gate(self) -> None:
@@ -678,6 +684,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
     def test_runtime_audit_fails_closed_on_missing_resources(self) -> None:
         self.assertIn('"runtime log missing"', self.source)
         self.assertIn('"runtime log empty"', self.source)
+        self.assertIn(
+            're.compile(r"active conversation membership required")',
+            self.source,
+        )
+        self.assertIn(
+            're.compile(r"/conversation/members")',
+            self.source,
+        )
         self.assertIn(r"unhandled(?: promise)? rejection", self.source)
         self.assertIn('int(spec["renderer_port"])', self.source)
         self.assertIn('"storageReleased": storage_released', self.source)
@@ -710,6 +724,32 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'self.step("runtime.logs.clean"',
             self.source,
         )
+
+    def test_group_creation_waits_for_exact_projected_state_once(self) -> None:
+        self.assertIn(
+            "trackPendingGroupCreation(conversationId, created.commandId);",
+            self.create_group_modal,
+        )
+        self.assertIn(
+            "if (created.state === 'failed') {",
+            self.create_group_modal,
+        )
+        self.assertIn(
+            "conversation => conversation.conversationId === conversationId",
+            self.create_group_modal,
+        )
+        self.assertIn(
+            "t('chat.social.encryption.establishing')",
+            self.create_group_modal,
+        )
+        self.assertEqual(self.create_group_modal.count("await loadGroups();"), 1)
+        self.assertNotIn("await loadSessions();", self.create_group_modal)
+        browser_group_create = self.http_gateway[
+            self.http_gateway.index('"messaging_create_group" => {'):
+            self.http_gateway.index('"messaging_membership_transition" => {')
+        ]
+        self.assertIn('.get("conversation_id")', browser_group_create)
+        self.assertNotIn("ulid::Ulid::new()", browser_group_create)
 
     def test_attachment_ledger_binds_outcome_engine_and_dom_ids(self) -> None:
         self.assertIn(
