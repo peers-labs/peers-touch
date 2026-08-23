@@ -260,6 +260,10 @@ export function ChatMessageActionOverlay({
     action();
     onDismiss();
   };
+  const openReactionPicker = () => {
+    onPointerEnter();
+    setPickerOpen(true);
+  };
 
   return createPortal(
     <div
@@ -353,8 +357,16 @@ export function ChatMessageActionOverlay({
               type="text"
               size="small"
               icon={<SmilePlus size={14} />}
+              aria-label={t('chat.social.messageArea.actionReact')}
+              aria-haspopup="dialog"
               aria-expanded={pickerOpen}
-              onClick={() => setPickerOpen(true)}
+              onClick={openReactionPicker}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                event.stopPropagation();
+                openReactionPicker();
+              }}
               style={actionButtonStyle}
             />
           </Tooltip>

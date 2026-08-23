@@ -784,6 +784,38 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "'[data-reaction-emoji]')?.focus();",
             self.message_action_overlay,
         )
+        self.assertIn(
+            "const openReactionPicker = () => {\n"
+            "    onPointerEnter();\n"
+            "    setPickerOpen(true);\n"
+            "  };",
+            self.message_action_overlay,
+        )
+        self.assertIn(
+            "aria-label={t('chat.social.messageArea.actionReact')}",
+            self.message_action_overlay,
+        )
+        reaction_button_start = self.message_action_overlay.index(
+            '<Button\n              data-message-action="reaction"',
+        )
+        reaction_button_end = self.message_action_overlay.index(
+            "style={actionButtonStyle}",
+            reaction_button_start,
+        )
+        reaction_button = self.message_action_overlay[
+            reaction_button_start:reaction_button_end
+        ]
+        key_filter = reaction_button.index(
+            "if (event.key !== 'Enter' && event.key !== ' ') return;",
+        )
+        prevent_default = reaction_button.index("event.preventDefault();")
+        stop_propagation = reaction_button.index("event.stopPropagation();")
+        activation = reaction_button.index("openReactionPicker();")
+        self.assertIn('aria-haspopup="dialog"', reaction_button)
+        self.assertIn("onKeyDown={(event) => {", reaction_button)
+        self.assertLess(key_filter, prevent_default)
+        self.assertLess(prevent_default, stop_propagation)
+        self.assertLess(stop_propagation, activation)
 
     def test_attachment_ledger_binds_outcome_engine_and_dom_ids(self) -> None:
         self.assertIn(
