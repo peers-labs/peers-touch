@@ -706,6 +706,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('sources["current"]', self.source)
         self.assertIn('snapshot["groupSlots"]', self.source)
         self.assertIn('slot["ptid"] for slot in slot_sets["alice"]', self.source)
+        self.assertIn('slot_identity["alice"] == slot_identity["bob"]', self.source)
+        group_slots_start = self.source.index("const groupSlots = Array.from(")
+        group_slots_end = self.source.index(
+            "return { identities, stationNodes, groupSlots };",
+            group_slots_start,
+        )
+        group_slots_source = self.source[group_slots_start:group_slots_end]
+        self.assertIn("`${url.pathname}${url.search}`", group_slots_source)
+        self.assertNotIn("new URL(src, document.baseURI).href", group_slots_source)
         self.assertNotIn(
             'if entry.get("surface") == "conversation-list"',
             self.source,

@@ -2399,7 +2399,8 @@ except Exception as error:
               const image = node.querySelector('img');
               let canonical = src;
               try {
-                canonical = new URL(src, document.baseURI).href;
+                const url = new URL(src, document.baseURI);
+                canonical = `${url.pathname}${url.search}`;
               } catch {
                 // Preserve the source value so malformed identities fail equality.
               }
@@ -2569,9 +2570,21 @@ except Exception as error:
             for actor, snapshot in snapshots.items()
         }
         expected_slot_ptids = sorted(set(self.ptids.values()))
+        slot_identity = {
+            actor: [
+                {
+                    "ptid": slot["ptid"],
+                    "src": slot["src"],
+                    "canonical": slot["canonical"],
+                    "loaded": slot["loaded"],
+                }
+                for slot in slots
+            ]
+            for actor, slots in slot_sets.items()
+        }
         self.assert_condition(
             "group_avatar_slots_exact",
-            slot_sets["alice"] == slot_sets["bob"]
+            slot_identity["alice"] == slot_identity["bob"]
             and [slot["ptid"] for slot in slot_sets["alice"]]
             == expected_slot_ptids
             and all(
