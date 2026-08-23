@@ -1,6 +1,6 @@
 # Debug Session: reaction-picker-focus
 - **Status**: [OPEN]
-- **Issue**: Native WKWebView reaction picker does not retain keyboard focus after Enter activation.
+- **Issue**: Native keyboard traversal can skip the reaction trigger before Enter activation.
 - **Debug Server**: http://127.0.0.1:7777/event
 - **Log File**: `.dbg/trae-debug-log-reaction-picker-focus.ndjson`
 
@@ -13,13 +13,24 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | Native Return does not reach the reaction trigger handler. | Medium | Low | Pending |
-| B | The picker opens before its first reaction button can be focused. | Medium | Low | Pending |
-| C | Focus reaches the picker, then the blur close timer removes the overlay. | High | Low | Pending |
-| D | Focus is redirected to another element after the picker opens. | Medium | Low | Pending |
+| A | Native Return does not reach the reaction trigger handler. | Medium | Low | Confirmed as downstream symptom: no Return event reached reaction. |
+| B | The picker opens before its first reaction button can be focused. | Medium | Low | Rejected: no picker-open event occurred. |
+| C | Focus reaches the picker, then the blur close timer removes the overlay. | High | Low | Rejected: no picker focus or picker-state blur event occurred. |
+| D | Focus is redirected to another element after the picker opens. | Medium | Low | Confirmed at an earlier boundary: a second unsynchronized Tab moved focus from reaction to pin before Return. |
 
 ## Log Evidence
-Pending pre-fix instrumentation run.
+- Line 3: focus reached `data-message-action="reaction"`.
+- Line 4: the reaction trigger received another `Tab`, not `Enter`.
+- Lines 5-6: focus moved from reaction to `data-message-action="pin"`.
+- No `picker open requested` or `picker focus transfer completed` event exists.
 
 ## Verification Conclusion
-Pending.
+The Native runner reads focus immediately after posting a CoreGraphics Tab. The
+read can observe the previous action and post another Tab before WKWebView has
+processed the first event, skipping the reaction trigger. The product picker
+open and focus lifecycle was not reached in the failing reproduction.
+
+Minimal fix: after each native Tab event, the Chat Gate now waits until
+`document.activeElement[data-message-action]` changes before deciding whether
+to send another Tab. Product behavior changes that were not supported by the
+evidence were removed; the localized accessible label remains.
