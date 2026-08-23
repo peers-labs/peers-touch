@@ -10,7 +10,7 @@ export interface GeometrySize {
   height: number;
 }
 
-export type MessageActionPlacement = 'above' | 'below' | 'left' | 'right';
+export type MessageActionPlacement = 'above' | 'below' | 'left' | 'right' | 'detached';
 
 export interface MessageActionGeometryRequest {
   surfaceSize: GeometrySize;
@@ -160,6 +160,20 @@ function placementCandidates(
   size: GeometrySize,
   gap: number,
 ): Point[] {
+  if (placement === 'detached') {
+    const horizontal = horizontalCandidates(anchor, obstacles, bounds, size.width);
+    const vertical = verticalCandidates(anchor, obstacles, bounds, size.height);
+    const preferredLeft = anchor.left + ((anchor.right - anchor.left) - size.width) / 2;
+    const preferredTop = anchor.top + ((anchor.bottom - anchor.top) - size.height) / 2;
+
+    return horizontal
+      .flatMap((left) => vertical.map((top) => ({ left, top })))
+      .sort((first, second) => (
+        Math.abs(first.left - preferredLeft) + Math.abs(first.top - preferredTop)
+        - Math.abs(second.left - preferredLeft) - Math.abs(second.top - preferredTop)
+      ));
+  }
+
   if (placement === 'above' || placement === 'below') {
     const top = placement === 'above'
       ? anchor.top - gap - size.height
@@ -222,8 +236,11 @@ export function placeMessageActionSurface(
   const placementOrder = preferredPlacements.length > 0
     ? preferredPlacements
     : DEFAULT_PLACEMENT_ORDER;
+  const completePlacementOrder = placementOrder.includes('detached')
+    ? placementOrder
+    : [...placementOrder, 'detached' as const];
 
-  for (const placement of placementOrder) {
+  for (const placement of completePlacementOrder) {
     const candidates = placementCandidates(
       placement,
       selectedContentRect,
