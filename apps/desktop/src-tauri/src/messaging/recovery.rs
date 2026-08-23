@@ -18,6 +18,7 @@ use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
@@ -44,6 +45,8 @@ pub struct RecoveryConversationProjection {
     pub name: String,
     pub owner_ptid: String,
     pub member_ptids: Vec<String>,
+    #[serde(default)]
+    pub member_roles: BTreeMap<String, i32>,
     pub membership_epoch: i64,
     pub mls_epoch: i64,
     pub active: bool,
@@ -351,6 +354,21 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
                 || conversation.kind == 0
                 || conversation.owner_ptid.trim().is_empty()
                 || conversation.member_ptids.len() < 2
+                || (!conversation.member_roles.is_empty()
+                    && (conversation.member_roles.len() != conversation.member_ptids.len()
+                        || conversation
+                            .member_ptids
+                            .iter()
+                            .any(|ptid| !conversation.member_roles.contains_key(ptid))))
+                || conversation.member_roles.iter().any(|(ptid, role)| {
+                    ptid.trim().is_empty()
+                        || !matches!(
+                            crate::model::chat::MemberRole::try_from(*role),
+                            Ok(crate::model::chat::MemberRole::Member
+                                | crate::model::chat::MemberRole::Admin
+                                | crate::model::chat::MemberRole::Owner)
+                        )
+                })
                 || conversation.membership_epoch < 0
                 || conversation.mls_epoch < 0
                 || conversation.updated_at_unix_ms <= 0
@@ -518,6 +536,16 @@ mod tests {
                 name: String::new(),
                 owner_ptid: "ptid:alice".to_string(),
                 member_ptids: vec!["ptid:alice".to_string(), "ptid:bob".to_string()],
+                member_roles: BTreeMap::from([
+                    (
+                        "ptid:alice".to_string(),
+                        crate::model::chat::MemberRole::Owner as i32,
+                    ),
+                    (
+                        "ptid:bob".to_string(),
+                        crate::model::chat::MemberRole::Member as i32,
+                    ),
+                ]),
                 membership_epoch: 1,
                 mls_epoch: 0,
                 active: true,
@@ -544,6 +572,27 @@ mod tests {
                 verified_at_unix_ms: 11,
             }],
         }
+    }
+
+    #[test]
+    fn legacy_conversation_projection_decodes_without_member_roles() {
+        let projection: RecoveryConversationProjection = serde_json::from_value(
+            serde_json::json!({
+                "conversation_id": "conversation-legacy",
+                "authority_station_id": "station-local",
+                "kind": 2,
+                "name": "Legacy group",
+                "owner_ptid": "ptid:alice",
+                "member_ptids": ["ptid:alice", "ptid:bob"],
+                "membership_epoch": 1,
+                "mls_epoch": 1,
+                "active": true,
+                "updated_at_unix_ms": 100,
+            }),
+        )
+        .unwrap();
+
+        assert!(projection.member_roles.is_empty());
     }
 
     #[test]
