@@ -19,14 +19,14 @@
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-C/F` prove transport-independent avatar identity across every Native Chat surface, then continue source-bound Native proof from the next first failure |
-| Progress | Commit `691bc86cb` removed the transient reaction retry element lifetime violation. Exact-HEAD Native run `20260823T153657869796Z-3918a4af89e6867a5989e5fdcd3c9c5f` passed keyboard picker, reaction authority readback, and failed-command retry recovery, then reached `identity.station.dom`. |
-| Last completed | Reaction interaction closure is source-bound Native-proven for the latest run: `toolbar_keyboard_reachable`, `reaction_picker_success`, `reaction_authority_readback`, and `reaction_failure_recovery` all passed. The next first failure is `timed out waiting for alice loaded avatar surfaces ['details']`; runtime log audit and process/port/storage cleanup passed. |
-| Current action | Instrument the Details member avatar load/error path to distinguish projection source, local-cache resolution, and WKWebView image loading without changing product behavior |
-| Next action | Run an exact-HEAD instrumented Native reproduction, inspect per-PTID raw/current avatar sources, then fix only the confirmed identity owner boundary |
+| Progress | Instrumentation commit `1c7718a9e` reproduced the Details avatar timeout with exact source/build/runtime identity. Debug events prove Alice's Station-relative media identity became `tauri://localhost/sub-oss/...` with `naturalWidth=0`, while Bob's external HTTPS avatar loaded; runtime logs show the shared avatar resolver succeeds on other surfaces. |
+| Last completed | Native run `20260823T154640828949Z-7d91fb4d44962b9909df53fc55a618e7` confirmed `ChatDetailPanel.MemberAvatar` bypasses the shared resolver-backed `SquareAvatar`. Reaction keyboard, authority readback, and failure recovery remained PASS; runtime log audit and process/port/storage cleanup passed. |
+| Current action | Route Details member avatars through `SquareAvatar` while preserving PTID and raw media identity attributes; retain instrumentation for post-fix comparison |
+| Next action | Run Desktop/static checks, commit the resolver reuse, align exact HEAD, rebuild the dedicated binary, and rerun Native proof from `identity.station.dom` |
 | Blockers | Native product proof is blocked at Alice Details avatar loading in `identity.station.dom`. Generic Gap Detector over-selection and G15 offline group recovery remain separate scopes and will not be modified here. |
 | Decisions required | none; Owner approved the root-cause plan and the accepted Messaging architecture already defines one Station authority membership truth |
-| Evidence | Commit `691bc86cba4dae957dca092f6649fdab43ebe332`; latest Native run `20260823T153657869796Z-3918a4af89e6867a5989e5fdcd3c9c5f`; reaction keyboard, success, authority readback, and failure recovery assertions PASS; first failure is Alice Details avatar load timeout in `identity.station.dom`; source/build/runtime identity, Native runtime logs, and cleanup PASS. Pre-run Chat Native static `57/57`, Python compile, dedicated binary build, and driver smoke PASS. `avatar_exact_loaded`, Station attribution, settings/background, attachments, and restart assertions remain unrun. MP-W13 remains `PARTIAL / UNPROVEN`. |
-| Last updated | 2026-08-23 23:44 CST |
+| Evidence | Commit `1c7718a9ecdc`; latest Native run `20260823T154640828949Z-7d91fb4d44962b9909df53fc55a618e7`; `.dbg/trae-debug-log-avatar-details-load.ndjson` line 1 records Alice relative source resolving to the Tauri origin and failing, line 2 records Bob HTTPS source loading; reaction assertions, source/build/runtime identity, runtime log audit, and cleanup PASS. `avatar_exact_loaded`, Station attribution, settings/background, attachments, and restart assertions remain unrun. MP-W13 remains `PARTIAL / UNPROVEN`. |
+| Last updated | 2026-08-23 23:52 CST |
 
 ## 1. Plan Sources And Gate
 
