@@ -13,10 +13,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | Details member projection supplies an empty or incorrect raw avatar URL. | High | Low | Pending |
-| B | Rust avatar cache resolves a source, but the returned local URL cannot load in WKWebView. | High | Low | Pending |
-| C | Details mounts before profile convergence and does not react to the updated member profile. | Medium | Medium | Pending |
-| D | Only one source class, external or Station-relative, fails while other surfaces use a different resolved source. | Medium | Low | Pending |
+| A | Details member projection supplies an empty or incorrect raw avatar URL. | High | Low | Confirmed: Alice receives a Station-relative source that raw `<img>` cannot resolve from the Tauri origin. |
+| B | Rust avatar cache resolves a source, but the returned local URL cannot load in WKWebView. | High | Low | Rejected: the Details component never invokes the shared resolver; runtime logs show `avatar_resolve_local` succeeds elsewhere. |
+| C | Details mounts before profile convergence and does not react to the updated member profile. | Medium | Medium | Rejected: both final member sources are present and Bob loads successfully. |
+| D | Only one source class, external or Station-relative, fails while other surfaces use a different resolved source. | Medium | Low | Confirmed: Station-relative Alice fails while external Bob loads. |
 
 ## Instrumentation Plan
 - Capture the complete per-PTID Details identity snapshot on every not-ready poll.
@@ -24,7 +24,22 @@
 - Retain exact actor, required surface, and source-bound Native run context.
 
 ## Log Evidence
-Pending pre-fix instrumentation run.
+- Native run
+  `20260823T154640828949Z-7d91fb4d44962b9909df53fc55a618e7`
+  reproduced the same Alice Details timeout with exact source/build/runtime identity.
+- Line 1: Alice source is `/sub-oss/file?...`, current source becomes
+  `tauri://localhost/sub-oss/file?...`, and `naturalWidth=0`.
+- Line 2: Bob's external HTTPS source loads with `naturalWidth=1832`.
+- Desktop runtime logs show `avatar_resolve_local` succeeds for the same
+  Station-relative source on surfaces using `SquareAvatar`.
 
 ## Verification Conclusion
-Pending.
+`ChatDetailPanel.MemberAvatar` bypasses the shared resolver-backed
+`SquareAvatar` and sends a Station-relative media identity directly to a raw
+`img`. WKWebView resolves that path against the `tauri://localhost` transport,
+so the identity is correct but the image request is not.
+
+Minimal fix: render Details member images through `SquareAvatar`, preserving
+the raw `data-chat-avatar-src` identity on the outer member surface while
+resolving the image through the Rust avatar cache. Instrumentation remains
+active for post-fix comparison.
