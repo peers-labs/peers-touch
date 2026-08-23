@@ -31,7 +31,7 @@ function getFirstLetter(name: string): string {
 export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sessions, friendRequests, currentUserDid, loadGroups, selectGroup, setActiveTab, getIMConversations, loadSessions } = useActiveSocialChatSlice((s) => ({
+  const { sessions, friendRequests, currentUserDid, loadGroups, selectGroup, setActiveTab, getIMConversations, trackPendingGroupCreation } = useActiveSocialChatSlice((s) => ({
     sessions: s.sessions,
     friendRequests: s.friendRequests,
     currentUserDid: s.currentUserDid,
@@ -39,7 +39,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
     selectGroup: s.selectGroup,
     setActiveTab: s.setActiveTab,
     getIMConversations: s.getIMConversations,
-    loadSessions: s.loadSessions,
+    trackPendingGroupCreation: s.trackPendingGroupCreation,
   }));
   const sessionActorId = useActiveChatSessionSlice((s) => s.currentUser?.actorId ?? null);
   const ownDid = currentUserDid || sessionActorId;
@@ -167,10 +167,30 @@ export function CreateGroupModal({ open, onClose }: Props) {
     const conversationId = crypto.randomUUID();
     useSocialChatStore.getState().setGroupSecurityState(conversationId, 'establishing');
     try {
-      await imServiceV1.messaging.createGroup(conversationId, groupName, memberDids);
-      useSocialChatStore.getState().setGroupSecurityState(conversationId, 'ready');
+      const created = await imServiceV1.messaging.createGroup(
+        conversationId,
+        groupName,
+        memberDids,
+      );
+      if (created.state === 'failed') {
+        useSocialChatStore.getState().setGroupSecurityState(conversationId, 'error');
+        toast.error(t('chat.social.createGroup.failed'));
+        return;
+      }
+      if (created.state === 'pending') {
+        trackPendingGroupCreation(conversationId, created.commandId);
+      }
       await loadGroups();
-      await loadSessions();
+      const projectionReady = useSocialChatStore.getState().conversations.some(
+        conversation => conversation.conversationId === conversationId,
+      );
+      if (!projectionReady) {
+        toast.info({
+          description: t('chat.social.encryption.establishing'),
+          placement: 'top',
+        });
+        return;
+      }
       setActiveTab('group');
       selectGroup(conversationId);
       toast.success({
