@@ -415,7 +415,7 @@ export function ChatComposer({
       method: 'POST',
       body: JSON.stringify({
         sessionId: 'attachment-send-draft',
-        runId: 'pre-fix',
+        runId: 'post-fix',
         hypothesisId: 'A',
         location: 'ChatComposer:submit',
         msg: '[DEBUG] Composer attachment state before send',
@@ -446,7 +446,7 @@ export function ChatComposer({
       method: 'POST',
       body: JSON.stringify({
         sessionId: 'attachment-send-draft',
-        runId: 'pre-fix',
+        runId: 'post-fix',
         hypothesisId: 'B,C',
         location: 'ChatComposer:submit:outcome',
         msg: '[DEBUG] Composer observed send outcome',

@@ -14,6 +14,9 @@ MESSAGE_ACTION_OVERLAY = (
     / "apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx"
 )
 MESSAGE_ROW = ROOT / "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
+MESSAGE_CONTENT = (
+    ROOT / "apps/desktop/src/components/chat/message/ChatMessageContent.tsx"
+)
 HOME_STATION_PROVISIONER = (
     ROOT / "tooling/acceptance/provisioners/home_station.py"
 )
@@ -38,6 +41,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.message_row = MESSAGE_ROW.read_text(encoding="utf-8")
+        self.message_content = MESSAGE_CONTENT.read_text(encoding="utf-8")
         self.home_station_provisioner = HOME_STATION_PROVISIONER.read_text(
             encoding="utf-8"
         )
@@ -435,6 +439,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("data-chat-detail-attachment-open-state", details)
         self.assertIn("attachment_images_loaded", self.source)
         self.assertIn("Native open", self.source)
+
+    def test_attachment_content_uses_the_visible_plaintext_marker(self) -> None:
+        self.assertIn("data-message-text={message.ulid}", self.message_content)
+        self.assertIn(
+            "content: row.querySelector('[data-message-text]')?.innerText || ''",
+            self.source,
+        )
+        self.assertIn("data-message-content={message.ulid}", self.message_row)
 
     def test_product_files_use_real_native_chooser(self) -> None:
         self.assertIn("def choose_native_file(", self.source)
