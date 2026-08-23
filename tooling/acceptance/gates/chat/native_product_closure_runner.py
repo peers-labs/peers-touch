@@ -2819,6 +2819,35 @@ except Exception as error:
         self.click(actor, '[data-chat-conversation-action="background"]')
         client.find_element("[data-chat-background-select]", 15)
 
+    def wait_for_background_modal_dismissal(self, actor: str) -> None:
+        client = self.clients[actor]
+        WebDriverWait(
+            client.driver,
+            10,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(
+            lambda driver: bool(
+                driver.execute_script(
+                    """
+                    return !Array.from(
+                      document.querySelectorAll('.ant-modal-wrap')
+                    ).some((modal) => {
+                      const style = getComputedStyle(modal);
+                      const rect = modal.getBoundingClientRect();
+                      return (
+                        style.display !== 'none'
+                        && style.visibility !== 'hidden'
+                        && style.pointerEvents !== 'none'
+                        && rect.width > 0
+                        && rect.height > 0
+                      );
+                    });
+                    """
+                )
+            ),
+            "background modal remained hit-testable after dismissal",
+        )
+
     def select_second_background(self, actor: str) -> None:
         client = self.clients[actor]
         select = client.find_element("[data-chat-background-select]", 15)
@@ -3031,6 +3060,7 @@ except Exception as error:
             station_matches,
             json.dumps({"ui": final_state, "station": normalized}),
         )
+        self.wait_for_background_modal_dismissal("alice")
         return {
             "ui": final_state,
             "station": normalized,

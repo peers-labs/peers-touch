@@ -45,3 +45,12 @@ after host canonicalization, this private object requires the current local
 session bearer for the cache GET. The fix belongs in the Rust OSS cache:
 canonicalize the sentinel to the configured Station origin and authenticate
 the bound-station mirror request.
+
+Post-fix Native run
+`20260823T163659827915Z-24fcd3bb8f461899848653911281dc25`
+passed `background_rendered` and `settings_station_readback`. Debug log lines
+25-28 show the resolver returning the bound local gateway host, an authenticated
+cache file, and an inline PNG that loads at `1x1`. The overall Gate then
+advanced to `attachment.failure.ui`, where an outgoing Ant modal transition
+still intercepted the next Native click. That later harness synchronization
+failure does not invalidate the background resolver fix.
