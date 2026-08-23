@@ -153,6 +153,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'report_native_input_delivery("before-click")',
             click_source,
         )
+        selector_click_start = self.source.index(
+            "    def click(self, actor: str, selector: str",
+            click_end,
+        )
+        selector_click_end = self.source.index(
+            "    def hover_message(",
+            selector_click_start,
+        )
+        selector_click_source = self.source[selector_click_start:selector_click_end]
+        self.assertLess(
+            selector_click_source.index("self.focus_actor_window(actor)"),
+            selector_click_source.index("client.find_element(selector, timeout)"),
+        )
+        self.assertIn(
+            "return self._click_focused_element(client, element)",
+            selector_click_source,
+        )
+        self.assertNotIn("self.click_element(actor, element)", selector_click_source)
         self.assertNotIn("staging_point", self.source)
         post_mouse_start = self.source.index("    def post_mouse(")
         post_mouse_end = self.source.index(
@@ -800,6 +818,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         changed_focus = keyboard_path.index("!= action", focus_wait)
         self.assertLess(tab_post, focus_wait)
         self.assertLess(focus_wait, changed_focus)
+
+    def test_reaction_retry_reacquires_transient_dom_action(self) -> None:
+        reaction_start = self.source.index("def prove_reaction(")
+        reaction_end = self.source.index(
+            "def prove_identity_station(",
+            reaction_start,
+        )
+        reaction_source = self.source[reaction_start:reaction_end]
+
+        self.assertIn(
+            "return bool(error_surfaces and controlled_loss)",
+            reaction_source,
+        )
+        self.assertIn(
+            "f'[data-message-reaction-retry=\"{message_id}\"]'",
+            reaction_source,
+        )
+        self.assertNotIn("error_surface.find_element(", reaction_source)
 
     def test_attachment_ledger_binds_outcome_engine_and_dom_ids(self) -> None:
         self.assertIn(
