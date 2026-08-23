@@ -143,6 +143,22 @@ describe('message action geometry', () => {
     expect(adjacentContentRects.every(rect => !overlaps(result!.rect, rect))).toBe(true);
   });
 
+  it('places the compact reaction picker below a full message stack in a narrow pane', () => {
+    const result = placeMessageActionSurface(request({
+      paneRect: { left: 286, top: 0, right: 576, bottom: 768 },
+      viewportRect: { left: 286, top: 96, right: 576, bottom: 680 },
+      selectedContentRect: { left: 350, top: 217, right: 500, bottom: 297 },
+      adjacentContentRects: [
+        { left: 371, top: 121, right: 512, bottom: 179 },
+      ],
+      surfaceSize: { width: 206, height: 142 },
+      boundaryPadding: 8,
+    }));
+
+    expect(result?.placement).toBe('below');
+    expect(result?.rect.top).toBe(305);
+  });
+
   it('returns null when no placement avoids selected and adjacent content', () => {
     const result = placeMessageActionSurface(request({
       paneRect: { left: 0, top: 0, right: 300, bottom: 300 },
