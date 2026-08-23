@@ -2825,7 +2825,7 @@ except Exception as error:
         self.click(actor, '[data-chat-conversation-action="background"]')
         client.find_element("[data-chat-background-select]", 15)
 
-    def wait_for_background_modal_dismissal(self, actor: str) -> None:
+    def wait_for_dialogs_to_stop_intercepting(self, actor: str) -> None:
         client = self.clients[actor]
         WebDriverWait(
             client.driver,
@@ -2851,7 +2851,7 @@ except Exception as error:
                     """
                 )
             ),
-            "background modal remained hit-testable after dismissal",
+            "dialog remained hit-testable after dismissal",
         )
 
     def select_second_background(self, actor: str) -> None:
@@ -3066,7 +3066,7 @@ except Exception as error:
             station_matches,
             json.dumps({"ui": final_state, "station": normalized}),
         )
-        self.wait_for_background_modal_dismissal("alice")
+        self.wait_for_dialogs_to_stop_intercepting("alice")
         return {
             "ui": final_state,
             "station": normalized,
@@ -3104,6 +3104,7 @@ except Exception as error:
             raise GateError("failed attachment draft has no recovery controls")
         self.click_element("alice", buttons[-1])
         self.assert_condition("attachment_failure_draft_retained", True)
+        self.wait_for_dialogs_to_stop_intercepting("alice")
 
     def attachment_message(
         self,
