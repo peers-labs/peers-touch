@@ -2142,19 +2142,25 @@ except Exception as error:
             )
             == message_id
         )
+        focused_action_script = """
+            return document.activeElement
+              ?.getAttribute('data-message-action') || '';
+        """
         for _ in range(10):
-            action = str(
-                client.execute_script(
-                    """
-                    return document.activeElement
-                      ?.getAttribute('data-message-action') || '';
-                    """
-                )
-                or ""
-            )
+            action = str(client.execute_script(focused_action_script) or "")
             if action == "reaction":
                 break
             self.post_key(48, private_source=True)
+            WebDriverWait(client.driver, 5).until(
+                lambda driver: str(
+                    driver.execute_script(focused_action_script) or ""
+                )
+                != action,
+                (
+                    "native Tab did not move message action focus "
+                    f"from {action!r} for message {message_id}"
+                ),
+            )
         else:
             raise GateError("reaction action is not keyboard reachable")
         self.post_key(36, private_source=True)

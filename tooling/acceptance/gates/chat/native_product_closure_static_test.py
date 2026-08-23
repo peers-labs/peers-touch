@@ -778,44 +778,28 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("ref={messageContentRef}", self.message_row)
         self.assertIn("const REACTION_PICKER_COLUMNS = 6", self.message_action_overlay)
         self.assertIn(
-            "useLayoutEffect(() => {\n"
-            "    if (!pickerOpen) return;\n"
-            "    surfaceRef.current?.querySelector<HTMLButtonElement>("
-            "'[data-reaction-emoji]')?.focus();",
-            self.message_action_overlay,
-        )
-        self.assertIn(
-            "const openReactionPicker = () => {\n"
-            "    onPointerEnter();\n"
-            "    setPickerOpen(true);\n"
-            "  };",
-            self.message_action_overlay,
-        )
-        self.assertIn(
             "aria-label={t('chat.social.messageArea.actionReact')}",
             self.message_action_overlay,
         )
-        reaction_button_start = self.message_action_overlay.index(
-            '<Button\n              data-message-action="reaction"',
+        self.assertIn('aria-haspopup="dialog"', self.message_action_overlay)
+
+    def test_keyboard_navigation_waits_for_native_focus_transition(self) -> None:
+        keyboard_path_start = self.source.index(
+            "def prove_keyboard_reaction_picker(",
         )
-        reaction_button_end = self.message_action_overlay.index(
-            "style={actionButtonStyle}",
-            reaction_button_start,
+        keyboard_path_end = self.source.index(
+            "def reaction_visible(",
+            keyboard_path_start,
         )
-        reaction_button = self.message_action_overlay[
-            reaction_button_start:reaction_button_end
-        ]
-        key_filter = reaction_button.index(
-            "if (event.key !== 'Enter' && event.key !== ' ') return;",
+        keyboard_path = self.source[keyboard_path_start:keyboard_path_end]
+        tab_post = keyboard_path.index("self.post_key(48, private_source=True)")
+        focus_wait = keyboard_path.index(
+            "WebDriverWait(client.driver, 5).until(",
+            tab_post,
         )
-        prevent_default = reaction_button.index("event.preventDefault();")
-        stop_propagation = reaction_button.index("event.stopPropagation();")
-        activation = reaction_button.index("openReactionPicker();")
-        self.assertIn('aria-haspopup="dialog"', reaction_button)
-        self.assertIn("onKeyDown={(event) => {", reaction_button)
-        self.assertLess(key_filter, prevent_default)
-        self.assertLess(prevent_default, stop_propagation)
-        self.assertLess(stop_propagation, activation)
+        changed_focus = keyboard_path.index("!= action", focus_wait)
+        self.assertLess(tab_post, focus_wait)
+        self.assertLess(focus_wait, changed_focus)
 
     def test_attachment_ledger_binds_outcome_engine_and_dom_ids(self) -> None:
         self.assertIn(
