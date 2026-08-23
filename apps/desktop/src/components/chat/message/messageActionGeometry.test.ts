@@ -117,6 +117,32 @@ describe('message action geometry', () => {
     expect(overlaps(result!.rect, selectedContentRect)).toBe(false);
   });
 
+  it('uses a detached free region when every anchored side is blocked', () => {
+    const selectedContentRect = { left: 350, top: 217, right: 500, bottom: 344 };
+    const adjacentContentRects = [
+      { left: 371, top: 121, right: 512, bottom: 179 },
+      { left: 320, top: 352, right: 520, bottom: 410 },
+    ];
+    const result = placeMessageActionSurface(request({
+      paneRect: { left: 286, top: 0, right: 576, bottom: 768 },
+      viewportRect: { left: 0, top: 0, right: 576, bottom: 768 },
+      selectedContentRect,
+      adjacentContentRects,
+      surfaceSize: { width: 191, height: 36 },
+      boundaryPadding: 8,
+    }));
+
+    expect(result?.placement).toBe('detached');
+    expect(result?.rect).toEqual({
+      left: 329.5,
+      top: 181,
+      right: 520.5,
+      bottom: 217,
+    });
+    expect(overlaps(result!.rect, selectedContentRect)).toBe(false);
+    expect(adjacentContentRects.every(rect => !overlaps(result!.rect, rect))).toBe(true);
+  });
+
   it('returns null when no placement avoids selected and adjacent content', () => {
     const result = placeMessageActionSurface(request({
       paneRect: { left: 0, top: 0, right: 300, bottom: 300 },
