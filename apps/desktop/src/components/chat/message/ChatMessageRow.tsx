@@ -383,7 +383,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const layout = chatVisualLayoutForSurface(compact ? 'desktop-thread' : 'desktop-main');
   const avatarSize = layout.avatarSize;
   const avatarGap = layout.avatarGap;
-  const messageContentRef = useRef<HTMLDivElement>(null);
+  const messageActionAnchorRef = useRef<HTMLDivElement>(null);
 
   const bubbleBg = mediaOnlyMessage
     ? 'transparent'
@@ -416,16 +416,16 @@ export const ChatMessageRow = memo(function ChatMessageRow({
       className={`msg-row ${highlighted ? 'highlighted' : ''}`}
       tabIndex={0}
       onMouseEnter={() => {
-        if (showHoverActions && messageContentRef.current) {
-          onActionTargetChange(message, messageContentRef.current, false);
+        if (showHoverActions && messageActionAnchorRef.current) {
+          onActionTargetChange(message, messageActionAnchorRef.current, false);
         }
       }}
       onMouseLeave={() => {
         onActionTargetLeave();
       }}
       onFocusCapture={() => {
-        if (showHoverActions && messageContentRef.current) {
-          onActionTargetChange(message, messageContentRef.current, false);
+        if (showHoverActions && messageActionAnchorRef.current) {
+          onActionTargetChange(message, messageActionAnchorRef.current, false);
         }
       }}
       onBlurCapture={(event) => {
@@ -437,12 +437,12 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           event.target !== event.currentTarget
           || (event.key !== 'Enter' && event.key !== ' ')
           || !showHoverActions
-          || !messageContentRef.current
+          || !messageActionAnchorRef.current
         ) {
           return;
         }
         event.preventDefault();
-        onActionTargetChange(message, messageContentRef.current, true);
+        onActionTargetChange(message, messageActionAnchorRef.current, true);
       }}
       horizontal
       align="flex-start"
@@ -484,6 +484,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
       )}
 
       <Flexbox
+        ref={messageActionAnchorRef}
+        data-message-action-anchor={message.ulid}
         align={isOwn ? 'flex-end' : 'flex-start'}
         style={{
           position: 'relative',
@@ -508,7 +510,6 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         )}
 
         <Flexbox
-          ref={messageContentRef}
           data-message-content={message.ulid}
           className="msg-bubble"
           style={{
