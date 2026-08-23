@@ -3935,6 +3935,8 @@ except Exception as error:
     def audit_runtime_logs(self) -> dict[str, Any]:
         forbidden = (
             re.compile(r"/group-chat/members"),
+            re.compile(r"/conversation/members"),
+            re.compile(r"active conversation membership required"),
             re.compile(r"messaging read cursor is incomplete"),
             re.compile(r"unhandled(?: promise)? rejection"),
             re.compile(r"last_read_sequence[\"']?\s*[:=]\s*0(?=\D|$)"),

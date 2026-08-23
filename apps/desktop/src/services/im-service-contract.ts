@@ -350,12 +350,19 @@ export interface MessagingConversationProjection {
   kind: 1 | 2
   name: string
   ownerPtid: string
-  memberPtids: string[]
+  members: ConversationMember[]
   membershipEpoch: number
   mlsEpoch: number
   mlsStatus: MlsRecipientStatusResult['status'] | null
   active: boolean
   updatedAtUnixMs: number
+}
+
+export interface MessagingCommandStatus {
+  commandId: string
+  conversationId: string
+  state: 'pending' | 'retry_wait' | 'submitted' | 'committed' | 'failed' | 'superseded'
+  lastErrorCode: string
 }
 
 export interface MessagingServiceContract {
@@ -364,10 +371,15 @@ export interface MessagingServiceContract {
     conversationId: string,
     name: string,
     memberPtids: string[],
-  ): Promise<{ conversationId: string; state: 'projected' }>
+  ): Promise<{
+    conversationId: string
+    commandId: string
+    state: 'pending' | 'projected' | 'failed'
+  }>
   submitMembershipIntent(
     intent: MessagingActorMembershipIntent,
   ): Promise<{ commandId: string; state: 'pending' }>
+  getCommandStatus(commandId: string): Promise<MessagingCommandStatus>
   listConversations(): Promise<MessagingConversationProjection[]>
   pickAttachmentSource(): Promise<MessagingLocalAttachmentIntent>
   stageAttachmentSource(filename: string, bytes: Uint8Array): Promise<string>
