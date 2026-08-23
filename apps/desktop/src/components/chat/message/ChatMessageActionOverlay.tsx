@@ -147,7 +147,7 @@ export function ChatMessageActionOverlay({
         const adjacentContentRects = Array.from(
           viewportElement.querySelectorAll<HTMLElement>('[data-message-content]'),
         )
-          .filter(element => element !== anchor)
+          .filter(element => !anchor.contains(element))
           .map(element => element.getBoundingClientRect())
           .filter(rect => isVisibleWithin(rect, viewportRect))
           .map(toGeometryRect);
