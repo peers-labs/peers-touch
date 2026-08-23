@@ -19,14 +19,14 @@
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-D/F` prove uploaded conversation background rendering through the canonical OSS resolver, then continue source-bound Native proof from the next first failure |
-| Progress | Commit `77ab9c510` compares group-avatar transport-independent identity while validating actor-local cache paths separately. Exact-HEAD Native run `20260823T160452737677Z-afcb99b007520a3d2583db8a27683ef9` passed `group_avatar_slots_exact`, `station_attribution_exact`, and `background_upload_recovery`; the next first failure is the uploaded background CSS resource load. |
-| Last completed | Group avatar slot identity and Station attribution are source-bound Native-proven. Uploaded background failure/retry also converges to the final `oss://self/...` Station projection, while runtime log audit and process/port/storage cleanup pass. |
-| Current action | Collect pre-fix runtime evidence for the final OSS resolver output, rendered CSS URL, and image probe state without changing product behavior |
-| Next action | Fix only the evidence-confirmed OSS owner boundary, align exact HEAD, and rerun Native proof from `background_rendered` |
+| Progress | Exact-HEAD Native run `20260823T162313856137Z-fe189b365c4727d2a9a3d090b52d0e48` reproduced the uploaded background failure and proved the `oss://self/...` CID was resolved to `self/sub-oss/file?...`, then to a failing `tauri://localhost/self/...` CSS request. The Rust OSS cache fix now canonicalizes the `self` sentinel to the bound Station and authenticates private local-mirror downloads; Native post-fix evidence is pending. |
+| Last completed | Pre-fix runtime evidence isolated the uploaded-background defect to Rust OSS capability/cache resolution rather than projection ordering or the CSS Gate parser. The failed run preserved source/build/runtime identity and passed process/port/storage cleanup. |
+| Current action | Verify the Rust OSS cache fix with post-fix logs and the unchanged `background_rendered` Native assertion |
+| Next action | Commit the verified fix, align exact HEAD across Profile Three and the dedicated binary, then rerun Native proof from `background_rendered` |
 | Blockers | Native product proof is blocked by the uploaded background CSS resource not reaching a loaded state after `background_upload_recovery` passes. Generic Gap Detector over-selection and G15 offline group recovery remain separate scopes and will not be modified here. |
 | Decisions required | none; Owner approved the root-cause plan and the accepted Messaging architecture already defines one Station authority membership truth |
-| Evidence | Commit `77ab9c510bab67e85c6d697b884876fbcb466466`; latest Native run `20260823T160452737677Z-afcb99b007520a3d2583db8a27683ef9`; `avatar_exact_loaded`, `group_avatar_slots_exact`, `station_attribution_exact`, and `background_upload_recovery` PASS. Runtime logs show `oss_resolve_url` returns after `attachment_ensure` reports `oss network error: builder error`; `background_rendered` remains unproven because the CSS resource probe times out. Source/build/runtime identity, prior reaction assertions, runtime log audit, and cleanup PASS. Attachments, restart, second-device recovery, and later assertions remain unrun. MP-W13 remains `PARTIAL / UNPROVEN`. |
-| Last updated | 2026-08-24 01:10 CST |
+| Evidence | Instrumentation commit `c392981b1156d44f2c2b84a88a428b2e3c896982`; Native run `20260823T162313856137Z-fe189b365c4727d2a9a3d090b52d0e48`; debug lines 25-28 bind the final CID to `host=self`, empty local mirror, relative fallback, WKWebView `tauri://localhost/self/...` URL, and image error. Direct unauthenticated GET of the same private object returns 403. Rust OSS cache tests pass 20/20 with the declared Station URL. `background_rendered` and all later assertions remain unproven. MP-W13 remains `PARTIAL / UNPROVEN`. |
+| Last updated | 2026-08-24 01:32 CST |
 
 ## 1. Plan Sources And Gate
 
