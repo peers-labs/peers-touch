@@ -3112,7 +3112,7 @@ except Exception as error:
               method: 'POST',
               body: JSON.stringify({
                 sessionId: 'attachment-send-draft',
-                runId: 'pre-fix',
+                runId: 'post-fix',
                 hypothesisId: 'E',
                 location: 'native_product_closure_runner:prove_attachment_failure',
                 msg: '[DEBUG] Failed attachment journey released its dialog',
@@ -3151,7 +3151,7 @@ except Exception as error:
             return {
               id: row.getAttribute('data-message-ulid') || '',
               count: Number(row.getAttribute('data-message-attachment-count') || 0),
-              content: row.querySelector('[data-message-content]')?.innerText || '',
+              content: row.querySelector('[data-message-text]')?.innerText || '',
               attachments: Array.from(
                 row.querySelectorAll('[data-messaging-attachment-id]')
               ).map((item) => {
@@ -3268,7 +3268,7 @@ except Exception as error:
               method: 'POST',
               body: JSON.stringify({
                 sessionId: 'attachment-send-draft',
-                runId: 'pre-fix',
+                runId: 'post-fix',
                 hypothesisId: 'B,C,D',
                 location: 'native_product_closure_runner:prove_attachments',
                 msg: '[DEBUG] Native Gate observed composer send outcome',
