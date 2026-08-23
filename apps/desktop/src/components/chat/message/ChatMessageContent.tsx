@@ -62,7 +62,10 @@ export function ChatMessageContent({
           </Text>
         </Flexbox>
       ) : (
-        <span style={isEmojiOnly(message.content) ? { fontSize: 32, lineHeight: '40px' } : undefined}>
+        <span
+          data-message-text={message.ulid}
+          style={isEmojiOnly(message.content) ? { fontSize: 32, lineHeight: '40px' } : undefined}
+        >
           {message.content}
         </span>
       )}

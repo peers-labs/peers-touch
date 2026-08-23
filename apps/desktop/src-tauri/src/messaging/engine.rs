@@ -684,7 +684,7 @@ impl MessagingEngine {
                     .post("http://127.0.0.1:7780/event")
                     .json(&serde_json::json!({
                         "sessionId": "attachment-send-draft",
-                        "runId": "pre-fix",
+                        "runId": "post-fix",
                         "hypothesisId": hypothesis_id,
                         "location": location,
                         "msg": msg,

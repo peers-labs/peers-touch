@@ -14,11 +14,11 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Expected signal | Evidence |
 |----|------------|------------|--------|-----------------|----------|
-| A | Native send fires before attachment hydration completes. | High | Low | Submit entry observes attachment records that are still uploading or incomplete. | Pending |
-| B | The Engine accepts submit but writes the composer state back to `draft` in the same transition. | Medium | Medium | Engine transition logs show a queued command followed by a draft state update. | Pending |
-| C | Rust-to-TypeScript outcome mapping converts a queued result into `draft`. | Medium | Low | Rust outcome and renderer outcome disagree for the same message ID/revision. | Pending |
-| D | One attachment upload or metadata operation fails after IDs are allocated, preventing outbox enqueue. | High | Low | Attachment result contains a failed/non-ready item or upload error before submit returns. | Pending |
-| E | The preceding failure injection remains active and contaminates the normal send. | Medium | Low | Fault state remains enabled at normal submit entry or the normal path reports the injected failure. | Pending |
+| A | Native send fires before attachment hydration completes. | High | Low | Submit entry observes attachment records that are still uploading or incomplete. | Rejected |
+| B | The Engine accepts submit but writes the composer state back to `draft` in the same transition. | Medium | Medium | Engine transition logs show a queued command followed by a draft state update. | Rejected |
+| C | Rust-to-TypeScript outcome mapping converts a queued result into `draft`. | Medium | Low | Rust outcome and renderer outcome disagree for the same message ID/revision. | Rejected |
+| D | One attachment upload or metadata operation fails after IDs are allocated, preventing outbox enqueue. | High | Low | Attachment result contains a failed/non-ready item or upload error before submit returns. | Rejected in the reproduction |
+| E | The preceding failure injection remains active and contaminates the normal send. | Medium | Low | Fault state remains enabled at normal submit entry or the normal path reports the injected failure. | Rejected |
 
 ## Log Evidence
 - Pre-instrumentation Native run `20260823T170346937849Z-df8e52a09b8fcec409c868892409bcb6`:
@@ -27,6 +27,17 @@
   `messaging_send_outcome:not_queued:draft`.
 - Assertions through `attachment_failure_draft_retained` passed.
 - Actor ports, processes, logs, and storage were released by the Gate.
+- Instrumented Native run `20260823T171841857361Z-14eded7ef7d01d037840bf1f38352ed6`:
+  - NDJSON line 19: failed draft count and hit-testable dialog count are both zero.
+  - NDJSON line 21: both Composer drafts are `ready`; `uploading=false`, `failed=false`.
+  - NDJSON lines 23-24: both Engine attachment transfers return `Complete`.
+  - NDJSON lines 25-28: Engine, raw Tauri response, store projection, and Gate all observe the same `pending` outcome and command ID.
+- The new first failure is:
+  `attachment-only sender/receiver rows diverged or contain text`.
+- Runtime DOM evidence shows identical attachment IDs/kinds/states on both actors, but
+  `[data-message-content]` includes attachment filename, size, and sender-only visibility badge text.
+- Source inspection confirms `data-message-content` marks the whole `.msg-bubble`, while
+  `ChatMessageContent` renders both message plaintext and attachment cards inside that element.
 
 ## Instrumentation
 - `ChatComposer:submit`: draft readiness and attachment conservation before send.
@@ -34,5 +45,15 @@
 - `messaging::engine:submit_message`: Engine entry, per-attachment transfer progress, and prepare result.
 - `native_product_closure_runner`: failed-attachment dialog release and Gate-observed outcome.
 
+## Fix
+- Preserve `data-message-content` as the full message bubble geometry marker.
+- Add `data-message-text` to the rendered plaintext span.
+- Read `data-message-text` for attachment-only plaintext equality while retaining all attachment
+  identity, kind, state, image-load, and byte-exact assertions.
+- Keep all instrumentation enabled with `runId=post-fix` until user confirmation.
+
 ## Verification Conclusion
-Pending pre-fix instrumentation.
+The original `draft` outcome did not reproduce and none of hypotheses A-E explains this run.
+The latest boundary is a distinct DOM semantic ownership defect: the message-content marker
+represents the entire bubble instead of the visible message plaintext. The debug session remains
+open because intermittent `draft` evidence has not yet been reproduced or closed.
