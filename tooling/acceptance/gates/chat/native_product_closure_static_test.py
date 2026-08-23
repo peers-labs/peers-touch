@@ -573,13 +573,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("select.closest('[role=\"dialog\"]')", self.source)
         self.assertIn("style.pointerEvents !== 'none'", self.source)
 
-    def test_background_flow_waits_for_modal_hit_testing_to_end(self) -> None:
+    def test_transient_dialogs_stop_hit_testing_before_next_journey(self) -> None:
         self.assertIn(
-            "def wait_for_background_modal_dismissal(self, actor: str)",
+            "def wait_for_dialogs_to_stop_intercepting(self, actor: str)",
             self.source,
         )
         self.assertIn(
-            "background modal remained hit-testable after dismissal",
+            "dialog remained hit-testable after dismissal",
             self.source,
         )
         self.assertIn(
@@ -593,8 +593,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         settings_source = self.source[settings_start:settings_end]
         self.assertIn(
-            'self.wait_for_background_modal_dismissal("alice")',
+            'self.wait_for_dialogs_to_stop_intercepting("alice")',
             settings_source,
+        )
+        attachment_end = self.source.index(
+            "    def attachment_message(",
+            settings_end,
+        )
+        attachment_failure_source = self.source[settings_end:attachment_end]
+        self.assertIn(
+            'self.wait_for_dialogs_to_stop_intercepting("alice")',
+            attachment_failure_source,
         )
 
     def test_background_recovery_uses_the_visible_retry_action(self) -> None:
