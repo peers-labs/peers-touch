@@ -570,7 +570,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn(").until(background_action_ready)", self.source)
-        self.assertIn("name.includes('-leave')", self.source)
+        self.assertIn("select.closest('[role=\"dialog\"]')", self.source)
+        self.assertIn("style.pointerEvents !== 'none'", self.source)
 
     def test_background_flow_waits_for_modal_hit_testing_to_end(self) -> None:
         self.assertIn(
@@ -579,6 +580,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn(
             "background modal remained hit-testable after dismissal",
+            self.source,
+        )
+        self.assertIn(
+            "document.querySelectorAll('[role=\"dialog\"]')",
             self.source,
         )
         settings_start = self.source.index("    def prove_settings_background(")
