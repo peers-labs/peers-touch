@@ -572,6 +572,26 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn(").until(background_action_ready)", self.source)
         self.assertIn("name.includes('-leave')", self.source)
 
+    def test_background_flow_waits_for_modal_hit_testing_to_end(self) -> None:
+        self.assertIn(
+            "def wait_for_background_modal_dismissal(self, actor: str)",
+            self.source,
+        )
+        self.assertIn(
+            "background modal remained hit-testable after dismissal",
+            self.source,
+        )
+        settings_start = self.source.index("    def prove_settings_background(")
+        settings_end = self.source.index(
+            "    def prove_attachment_failure(",
+            settings_start,
+        )
+        settings_source = self.source[settings_start:settings_end]
+        self.assertIn(
+            'self.wait_for_background_modal_dismissal("alice")',
+            settings_source,
+        )
+
     def test_background_recovery_uses_the_visible_retry_action(self) -> None:
         start = self.source.index("    def prove_settings_background(")
         end = self.source.index("    def prove_attachment_failure(", start)
