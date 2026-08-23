@@ -54,7 +54,7 @@ async function resolve(cid: string): Promise<Resolved> {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'uploaded-background-resource',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'A,B',
           location: 'useOssAttachmentUrl:resolve',
           msg: '[DEBUG] OSS attachment resolver selected renderer source',

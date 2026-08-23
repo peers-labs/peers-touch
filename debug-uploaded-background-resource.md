@@ -13,10 +13,10 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | Rust authenticated attachment cache request construction fails before a local mirror is created. | High | Low | Pending: capture resolver result and correlate with the existing `builder error`. |
-| B | Resolver fallback returns a URL that CSS loads without required Station authentication. | High | Low | Pending: capture `data_url`, `local_path`, fallback `url`, selected `src`, and image probe result. |
-| C | The resource loads, but Gate CSS extraction or image probing misclassifies the computed background. | Medium | Low | Pending: capture computed CSS, extracted source, dimensions, and error state. |
-| D | Projection/render ordering leaves the rendered CID or resolved URL behind the final Station background reference. | Medium | Medium | Pending: correlate projected reference, hook input, resolved source, and final CSS in one Native run. |
+| A | Rust authenticated attachment cache request construction fails before a local mirror is created. | High | Low | Confirmed: resolver returns `host=self`, and the cache GET reports `oss network error: builder error`. |
+| B | Resolver fallback returns a URL that CSS loads without required Station authentication. | High | Low | Confirmed: fallback is `self/sub-oss/file?...`, WKWebView resolves it under `tauri://localhost`, and the private Station object returns 403 without bearer auth. |
+| C | The resource loads, but Gate CSS extraction or image probing misclassifies the computed background. | Medium | Low | Rejected: the probe extracts the exact CSS URL and receives an image error with zero dimensions. |
+| D | Projection/render ordering leaves the rendered CID or resolved URL behind the final Station background reference. | Medium | Medium | Rejected: projected reference, hook CID, and CSS key are identical in the failing run. |
 
 ## Instrumentation Plan
 - Report the `ossResolveUrl()` result shape and the source selected by `useOssAttachmentUrl`.
@@ -29,7 +29,19 @@ Instrumentation source checks:
 - Native Chat static suites: 57/57 PASS.
 - `git diff --check`: PASS.
 
-Pending pre-fix Native reproduction.
+Pre-fix Native run:
+- Run `20260823T162313856137Z-fe189b365c4727d2a9a3d090b52d0e48` reproduces the timeout at `uploaded background CSS resource`.
+- Debug log line 25: `ossResolveUrl()` returns `host=self`, no local path or data URL, and selects `self/sub-oss/file?...`.
+- Debug log line 27: computed CSS resolves that fallback to `tauri://localhost/self/sub-oss/file?...`.
+- Debug log line 28: the image probe reports `errored=true`, `loaded=false`, and zero dimensions.
+- Direct unauthenticated GET of the same private object returns HTTP 403.
+- Runtime cleanup evidence passes; actor ports 3330/3331 and WebDriver ports 4445/4446 are released.
 
 ## Verification Conclusion
-Pending runtime evidence. No business logic modification is permitted before the hypotheses are resolved.
+The Rust OSS cache accepts `self` as a bound-station sentinel but preserves the
+Station capability response's `host=self`. It therefore constructs an invalid
+relative cache URL and returns the same value as the renderer fallback. Even
+after host canonicalization, this private object requires the current local
+session bearer for the cache GET. The fix belongs in the Rust OSS cache:
+canonicalize the sentinel to the configured Station origin and authenticate
+the bound-station mirror request.

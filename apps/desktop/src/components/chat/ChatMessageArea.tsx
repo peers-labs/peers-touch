@@ -195,7 +195,7 @@ export function ChatMessageArea() {
       method: 'POST',
       body: JSON.stringify({
         sessionId: 'uploaded-background-resource',
-        runId: 'pre-fix',
+        runId: 'post-fix',
         hypothesisId: 'B,D',
         location: 'ChatMessageArea:background-render-input',
         msg: '[DEBUG] Chat background render input changed',
