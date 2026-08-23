@@ -18,15 +18,15 @@
 | Branch | `refactor/chat-acceptance-cutover` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-D/F` prove uploaded conversation background rendering through the canonical OSS resolver, then continue source-bound Native proof from the next first failure |
-| Progress | Commit `8b1243d94` canonicalizes the `oss://self` host through the bound Station and authenticates private local-mirror downloads. Exact-HEAD Native run `20260823T165232772963Z-a08f65c1b01a680ef92f106e9592edb1` passed `background_rendered`, `settings_station_readback`, and `attachment_failure_draft_retained`, then exposed that the Gate starts the normal attachment journey before the transient failure dialog stops intercepting input. |
-| Last completed | Uploaded background rendering and attachment failure draft retention are source-bound Native-proven. Semantic `role=dialog` synchronization now closes the background modal race; runtime log audit and process/port/storage cleanup pass. |
-| Current action | Reuse semantic dialog dismissal acknowledgment after the attachment failure state before starting the normal attachment journey |
-| Next action | Align exact HEAD, rerun Native proof, and diagnose only the next first failed product boundary |
-| Blockers | Native product proof is blocked by the Gate racing the Ant modal leave transition before the attachment picker click. Generic Gap Detector over-selection and G15 offline group recovery remain separate scopes and will not be modified here. |
+| Current step | `MP-W13-D/F` prove normal attachment send through the Device Engine after the uploaded-background and transient-dialog boundaries passed |
+| Progress | Commit `a7ad859cb` waits for semantic `role=dialog` dismissal after failed attachment recovery. Exact-HEAD Native run `20260823T170346937849Z-df8e52a09b8fcec409c868892409bcb6` passed through `attachment_failure_draft_retained`, reached the normal two-attachment send, and then received Engine outcome `state=draft` with one message ID and two conserved attachment IDs. |
+| Last completed | Uploaded background rendering, Station settings readback, failed attachment draft retention, and transition into the normal attachment journey are source-bound Native-proven. Runtime log audit and process/port/storage cleanup pass. |
+| Current action | Run debug session `attachment-send-draft` to distinguish attachment transfer deferral, message prepare failure, cross-runtime outcome mapping, and stale failure-state contamination without changing business logic |
+| Next action | Rebuild the instrumented exact-HEAD binary, reproduce once, classify the hypotheses from `.dbg/trae-debug-log-attachment-send-draft.ndjson`, then fix only the evidence-confirmed owner boundary |
+| Blockers | Normal attachment product proof is blocked because Engine returns `state=draft` after allocating a message ID and two attachment IDs; the specific transfer/prepare cause is not yet proven. Generic Gap Detector over-selection and G15 offline group recovery remain separate scopes and will not be modified here. |
 | Decisions required | none; Owner approved the root-cause plan and the accepted Messaging architecture already defines one Station authority membership truth |
-| Evidence | Commits `8b1243d94954212436e3c5258c0ca3c6307881ed` and `ab4dc39c2388f8fce9a4aff5b9667d0e9e232b44`; latest Native run `20260823T165232772963Z-a08f65c1b01a680ef92f106e9592edb1`; all assertions through `attachment_failure_draft_retained` PASS. The next normal attachment picker click is blocked by a transient custom-prefix `role=dialog` failure surface. Source/build/runtime identity, runtime log audit, and cleanup PASS. Normal attachments, restart, second-device recovery, and later assertions remain unproven. MP-W13 remains `PARTIAL / UNPROVEN`. |
-| Last updated | 2026-08-24 02:02 CST |
+| Evidence | Commit `a7ad859cb6ea5257db3617d42281d557b38b86ce`; Native run `20260823T170346937849Z-df8e52a09b8fcec409c868892409bcb6`; all assertions through `attachment_failure_draft_retained` PASS. The normal picker is now reachable and stages two ready drafts, but send returns `state=draft`, `command_id` absent, one message ID, and two attachment IDs. Source/build/runtime identity, runtime log audit, and cleanup PASS. Normal attachment delivery, restart, second-device recovery, and later assertions remain unproven. MP-W13 remains `PARTIAL / UNPROVEN`. |
+| Last updated | 2026-08-24 01:12 CST |
 
 ## 1. Plan Sources And Gate
 
