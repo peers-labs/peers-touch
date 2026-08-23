@@ -776,6 +776,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertLess(bubble_index, reaction_index)
         self.assertLess(reaction_index, metadata_index)
         self.assertNotIn("ref={messageContentRef}", self.message_row)
+        self.assertIn("const REACTION_PICKER_COLUMNS = 6", self.message_action_overlay)
 
     def test_attachment_ledger_binds_outcome_engine_and_dom_ids(self) -> None:
         self.assertIn(
