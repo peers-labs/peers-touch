@@ -43,3 +43,12 @@ Minimal fix: render Details member images through `SquareAvatar`, preserving
 the raw `data-chat-avatar-src` identity on the outer member surface while
 resolving the image through the Rust avatar cache. Instrumentation remains
 active for post-fix comparison.
+
+Post-fix run
+`20260823T155613482927Z-3574ddbb28bad437491511025927363f`
+passed `avatar_exact_loaded`. The log contains only successful resolver-backed
+`asset://localhost/...` loads for both source classes. The overall Gate then
+failed at `group_avatar_slots_exact` because the assertion compared
+client-local `currentSrc` storage paths across isolated clients even though it
+also required those paths to be client-local. That later Gate defect does not
+invalidate the Details avatar fix.

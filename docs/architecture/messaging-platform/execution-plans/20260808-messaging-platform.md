@@ -19,14 +19,14 @@
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
 | Current step | `MP-W13-C/F` prove transport-independent avatar identity across every Native Chat surface, then continue source-bound Native proof from the next first failure |
-| Progress | Instrumentation commit `1c7718a9e` reproduced the Details avatar timeout with exact source/build/runtime identity. Debug events prove Alice's Station-relative media identity became `tauri://localhost/sub-oss/...` with `naturalWidth=0`, while Bob's external HTTPS avatar loaded; runtime logs show the shared avatar resolver succeeds on other surfaces. |
-| Last completed | Native run `20260823T154640828949Z-7d91fb4d44962b9909df53fc55a618e7` confirmed `ChatDetailPanel.MemberAvatar` bypasses the shared resolver-backed `SquareAvatar`. Reaction keyboard, authority readback, and failure recovery remained PASS; runtime log audit and process/port/storage cleanup passed. |
-| Current action | Route Details member avatars through `SquareAvatar` while preserving PTID and raw media identity attributes; retain instrumentation for post-fix comparison |
-| Next action | Run Desktop/static checks, commit the resolver reuse, align exact HEAD, rebuild the dedicated binary, and rerun Native proof from `identity.station.dom` |
-| Blockers | Native product proof is blocked at Alice Details avatar loading in `identity.station.dom`. Generic Gap Detector over-selection and G15 offline group recovery remain separate scopes and will not be modified here. |
+| Progress | Commit `1c8866e41` routes Details avatars through the shared local cache. Exact-HEAD Native run `20260823T155613482927Z-3574ddbb28bad437491511025927363f` passed `avatar_exact_loaded`; post-fix logs show both Station-relative and external identities loading from actor-local `asset://` cache paths. |
+| Last completed | Details avatar rendering and cross-client avatar identity are source-bound Native-proven through `avatar_exact_loaded`. The run advanced to `group_avatar_slots_exact`, where the Gate incorrectly compared actor-local `currentSrc` storage paths for equality despite requiring isolated storage; runtime log audit and process/port/storage cleanup passed. |
+| Current action | Correct the group avatar assertion to compare transport-independent identity fields while validating each actor-local cache path separately |
+| Next action | Run static checks, commit the Gate assertion correction, align exact HEAD, and continue Native proof from the next first failed boundary |
+| Blockers | Native product proof is blocked by the contradictory `group_avatar_slots_exact` Gate assertion. Generic Gap Detector over-selection and G15 offline group recovery remain separate scopes and will not be modified here. |
 | Decisions required | none; Owner approved the root-cause plan and the accepted Messaging architecture already defines one Station authority membership truth |
-| Evidence | Commit `1c7718a9ecdc`; latest Native run `20260823T154640828949Z-7d91fb4d44962b9909df53fc55a618e7`; `.dbg/trae-debug-log-avatar-details-load.ndjson` line 1 records Alice relative source resolving to the Tauri origin and failing, line 2 records Bob HTTPS source loading; reaction assertions, source/build/runtime identity, runtime log audit, and cleanup PASS. `avatar_exact_loaded`, Station attribution, settings/background, attachments, and restart assertions remain unrun. MP-W13 remains `PARTIAL / UNPROVEN`. |
-| Last updated | 2026-08-23 23:52 CST |
+| Evidence | Commit `1c8866e41435a76675d2ba4af75172996f1b2c7c`; latest Native run `20260823T155613482927Z-3574ddbb28bad437491511025927363f`; post-fix avatar debug log lines 1-30 show resolver-backed `asset://` loads with positive natural width; `avatar_exact_loaded` PASS; `group_avatar_slots_exact` FAIL because otherwise-identical slots contain intentionally different actor storage roots in `currentSrc`; source/build/runtime identity, reaction assertions, runtime log audit, and cleanup PASS. Station attribution, settings/background, attachments, and restart assertions remain unrun. MP-W13 remains `PARTIAL / UNPROVEN`. |
+| Last updated | 2026-08-24 00:02 CST |
 
 ## 1. Plan Sources And Gate
 
