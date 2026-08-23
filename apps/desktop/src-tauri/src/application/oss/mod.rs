@@ -410,7 +410,7 @@ pub fn oss_resolve_url(
     // distinguish "couldn't reach the network" from "denied by
     // policy" (the badge component renders different states).
     let local_path = if bound_station {
-        match oss_cache::attachment_ensure(&uri, None) {
+        match oss_cache::attachment_ensure(&uri, None, Some(home_token)) {
             Ok(p) => Some(p.to_string_lossy().to_string()),
             Err(err) => {
                 tracing::warn!(error = %err, uri = %input, "OSS attachment cache miss (local)");
