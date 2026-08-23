@@ -730,6 +730,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "trackPendingGroupCreation(conversationId, created.commandId);",
             self.create_group_modal,
         )
+        self.assertNotIn(
+            "if (created.state === 'pending')",
+            self.create_group_modal,
+        )
         self.assertIn(
             "if (created.state === 'failed') {",
             self.create_group_modal,
