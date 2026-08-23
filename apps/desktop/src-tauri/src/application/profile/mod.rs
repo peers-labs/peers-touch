@@ -148,8 +148,7 @@ fn upload_and_set_profile_image(
     }
     tracing::info!(url = %url, field = %field, "OSS URL obtained, updating profile");
 
-    // Resolve relative OSS URL to absolute for local identity sync.
-    let absolute_url = absolute_profile_url(&url);
+    let media_identity = profile_media_identity(&url);
 
     // Step 2: Update profile with the relative URL (Station stores relative paths)
     let mut body = UpdateProfileRequest::default();
@@ -175,7 +174,7 @@ fn upload_and_set_profile_image(
         Ok(()) => {
             // Sync avatar to local auth identity and download to local cache.
             if field == "avatar" {
-                let _ = sync_avatar_with_download(token, &absolute_url);
+                let _ = sync_avatar_with_download(token, &media_identity);
             }
             match station_client::request_peers_proto_no_body::<ActorProfile>(
                 Method::GET,
@@ -290,8 +289,8 @@ fn actor_profile_to_value(p: &ActorProfile) -> Value {
         "username": p.username,
         "display_name": p.display_name,
         "note": p.note,
-        "avatar": absolute_profile_url(&p.avatar),
-        "header": absolute_profile_url(&p.header),
+        "avatar": profile_media_identity(&p.avatar),
+        "header": profile_media_identity(&p.header),
         "region": p.region,
         "timezone": p.timezone,
         "tags": p.tags,
@@ -363,14 +362,10 @@ fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
     r
 }
 
-/// Resolve Station-relative profile media to the same absolute URL for every
-/// self and peer profile response.
-fn absolute_profile_url(url: &str) -> String {
-    if !url.is_empty() && url.starts_with('/') {
-        format!("{}{}", station_client::station_base_url(), url)
-    } else {
-        url.to_string()
-    }
+/// Keep Station-owned media identity independent of the current transport
+/// endpoint. The avatar cache resolves relative paths only when downloading.
+fn profile_media_identity(url: &str) -> String {
+    avatar_cache::canonical_remote_identity(url).unwrap_or_else(|_| url.trim().to_string())
 }
 
 fn success_with_data(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -459,7 +454,7 @@ pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> 
     }
 
     // Resolve avatar URL through the same self/peer profile normalization.
-    let avatar_url = absolute_profile_url(&profile.avatar);
+    let avatar_url = profile_media_identity(&profile.avatar);
 
     // Pick the LocalAccount whose `provider_user_id` matches `actor_id`. This
     // is the only correct destination — `active_account_id` is a UI/router
@@ -629,7 +624,7 @@ mod tests {
     }
 
     #[test]
-    fn profile_value_exposes_canonical_ptid_and_normalized_media_urls() {
+    fn profile_value_exposes_canonical_ptid_and_transport_independent_media() {
         let profile = ActorProfile {
             id: "350519971299721219".to_string(),
             avatar: "/sub-oss/avatar/alice".to_string(),
@@ -641,10 +636,6 @@ mod tests {
         };
 
         let value = actor_profile_to_value(&profile);
-        let expected_avatar = format!(
-            "{}/sub-oss/avatar/alice",
-            crate::infrastructure::station_client::station_base_url()
-        );
 
         assert_eq!(
             value.get("id").and_then(|id| id.as_str()),
@@ -659,7 +650,7 @@ mod tests {
         );
         assert_eq!(
             value.get("avatar").and_then(|avatar| avatar.as_str()),
-            Some(expected_avatar.as_str())
+            Some("/sub-oss/avatar/alice")
         );
         assert_eq!(
             value.get("header").and_then(|header| header.as_str()),
