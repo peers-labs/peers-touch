@@ -2694,19 +2694,36 @@ except Exception as error:
                 css,
                 src,
                 loaded: false,
+                errored: false,
                 width: 0,
                 height: 0,
               };
               const image = new Image();
-              const capture = () => {
+              const report = (phase) => {
+                fetch('http://127.0.0.1:7779/event', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    sessionId: 'uploaded-background-resource',
+                    runId: 'pre-fix',
+                    hypothesisId: 'C,D',
+                    location: 'native_product_closure_runner:background_resource_snapshot',
+                    msg: '[DEBUG] Background CSS resource probe changed',
+                    data: { phase, ...state },
+                    ts: Date.now(),
+                  }),
+                }).catch(() => {});
+              };
+              const capture = (phase, errored = false) => {
                 state.loaded = image.complete && image.naturalWidth > 0;
+                state.errored = errored;
                 state.width = image.naturalWidth;
                 state.height = image.naturalHeight;
+                report(phase);
               };
-              image.onload = capture;
-              image.onerror = capture;
+              image.onload = () => capture('load');
+              image.onerror = () => capture('error', true);
               image.src = src;
-              capture();
+              capture('assigned');
               window.__PT_BACKGROUND_RESOURCE_PROBE__ = {
                 src,
                 state,
