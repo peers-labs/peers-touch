@@ -1,0 +1,38 @@
+# Debug Session: attachment-send-draft
+- **Status**: [OPEN]
+- **Issue**: A normal two-attachment Native send allocates a message ID and attachment IDs but returns composer state `draft` instead of `queued`.
+- **Debug Server**: http://127.0.0.1:7780/event
+- **Log File**: `.dbg/trae-debug-log-attachment-send-draft.ndjson`
+
+## Reproduction Steps
+1. Build the dedicated Desktop binary from exact HEAD with `make acceptance-driver-build`.
+2. Deploy the same HEAD to Profile Three and verify `/app-meta/version`.
+3. Run `CHAT_ACCEPTANCE_RESET=1 CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1 make acceptance-chat-native-product-closure`.
+4. Complete the failed-attachment recovery journey, then select the normal image and text attachments and send.
+5. Observe `messaging_send_outcome:not_queued:draft`.
+
+## Hypotheses & Verification
+| ID | Hypothesis | Likelihood | Effort | Expected signal | Evidence |
+|----|------------|------------|--------|-----------------|----------|
+| A | Native send fires before attachment hydration completes. | High | Low | Submit entry observes attachment records that are still uploading or incomplete. | Pending |
+| B | The Engine accepts submit but writes the composer state back to `draft` in the same transition. | Medium | Medium | Engine transition logs show a queued command followed by a draft state update. | Pending |
+| C | Rust-to-TypeScript outcome mapping converts a queued result into `draft`. | Medium | Low | Rust outcome and renderer outcome disagree for the same message ID/revision. | Pending |
+| D | One attachment upload or metadata operation fails after IDs are allocated, preventing outbox enqueue. | High | Low | Attachment result contains a failed/non-ready item or upload error before submit returns. | Pending |
+| E | The preceding failure injection remains active and contaminates the normal send. | Medium | Low | Fault state remains enabled at normal submit entry or the normal path reports the injected failure. | Pending |
+
+## Log Evidence
+- Pre-instrumentation Native run `20260823T170346937849Z-df8e52a09b8fcec409c868892409bcb6`:
+  `Composer send outcome was not queued: {'revision': 3, 'state': 'draft', 'messageId': '01M0QSEVDAW61C8NNABWBR16GW', 'count': 2, 'ids': ['01M0QSEVDB0JNY476ATKMHRB7J', '01M0QSEVDB7G86M5HQM5TAS4BC']}`.
+- Runtime frontend error:
+  `messaging_send_outcome:not_queued:draft`.
+- Assertions through `attachment_failure_draft_retained` passed.
+- Actor ports, processes, logs, and storage were released by the Gate.
+
+## Instrumentation
+- `ChatComposer:submit`: draft readiness and attachment conservation before send.
+- `im-service:sendMessage`: renderer request shape and raw Tauri response.
+- `messaging::engine:submit_message`: Engine entry, per-attachment transfer progress, and prepare result.
+- `native_product_closure_runner`: failed-attachment dialog release and Gate-observed outcome.
+
+## Verification Conclusion
+Pending pre-fix instrumentation.
