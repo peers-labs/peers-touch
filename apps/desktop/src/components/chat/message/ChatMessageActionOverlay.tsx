@@ -192,7 +192,7 @@ export function ChatMessageActionOverlay({
     surfaceRef.current?.querySelector<HTMLButtonElement>('[data-message-action]')?.focus();
   }, [geometry, pickerOpen, target]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!pickerOpen) return;
     surfaceRef.current?.querySelector<HTMLButtonElement>('[data-reaction-emoji]')?.focus();
   }, [pickerOpen]);
