@@ -1369,7 +1369,11 @@ const messagingService: MessagingServiceContract = {
   async createGroup(conversationId, name, memberPtids) {
     const response = await cmd<
       { conversation_id: string; name: string; member_ptids: string[] },
-      { conversation_id: string; state: 'projected' }
+      {
+        conversation_id: string
+        command_id: string
+        state: 'pending' | 'projected' | 'failed'
+      }
     >('messaging_create_group', {
       conversation_id: conversationId,
       name,
@@ -1377,6 +1381,7 @@ const messagingService: MessagingServiceContract = {
     })
     return {
       conversationId: response.conversation_id,
+      commandId: response.command_id,
       state: response.state,
     }
   },
@@ -1400,6 +1405,24 @@ const messagingService: MessagingServiceContract = {
     }
   },
 
+  async getCommandStatus(commandId) {
+    const response = await cmd<
+      { command_id: string },
+      {
+        command_id: string
+        conversation_id: string
+        state: 'pending' | 'retry_wait' | 'submitted' | 'committed' | 'failed' | 'superseded'
+        last_error_code: string
+      }
+    >('messaging_command_status', { command_id: commandId })
+    return {
+      commandId: response.command_id,
+      conversationId: response.conversation_id,
+      state: response.state,
+      lastErrorCode: response.last_error_code,
+    }
+  },
+
   async listConversations() {
     const response = await cmd<
       void,
@@ -1410,7 +1433,7 @@ const messagingService: MessagingServiceContract = {
           kind: number
           name: string
           owner_ptid: string
-          member_ptids: string[]
+          members: JsonValue[]
           membership_epoch: number
           mls_epoch: number
           mls_status: 'idle' | 'active' | 'establishing' | 'crypto_desynced' | null
@@ -1425,7 +1448,9 @@ const messagingService: MessagingServiceContract = {
       kind: conversation.kind as 1 | 2,
       name: conversation.name,
       ownerPtid: conversation.owner_ptid,
-      memberPtids: conversation.member_ptids,
+      members: conversation.members.map(member =>
+        fromJson(ConversationMemberSchema, member)
+      ),
       membershipEpoch: conversation.membership_epoch,
       mlsEpoch: conversation.mls_epoch,
       mlsStatus: conversation.mls_status,

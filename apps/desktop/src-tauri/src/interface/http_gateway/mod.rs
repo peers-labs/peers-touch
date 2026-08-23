@@ -7165,17 +7165,25 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(Some(e)) => e,
                 _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
             };
+            let conversation_id = args
+                .get("conversation_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
             let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let member_ptids: Vec<String> = args.get("member_ptids")
                 .and_then(|v| v.as_array())
                 .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
                 .unwrap_or_default();
-            if member_ptids.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "member_ptids required", None));
+            if conversation_id.is_empty() || member_ptids.is_empty() {
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::InvalidArgument,
+                    "conversation_id and member_ptids required",
+                    None,
+                ));
             }
-            let conversation_id = format!("g-{}", ulid::Ulid::new().to_string().to_lowercase());
             match engine.create_group_conversation(&token, &conversation_id, &name, &member_ptids) {
-                Ok(id) => {
+                Ok(prepared) => {
                     let now_unix_ms = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
@@ -7184,12 +7192,58 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         initial_delay_ms: 1000,
                         maximum_delay_ms: 30000,
                     };
-                    let _ = engine.dispatch_command_once(&token, now_unix_ms, retry_policy);
-                    let _ = engine.drain_once(&token, 100);
-                    let _ = state.messaging_engines.wake_profile(&account_id);
+                    let progress = match engine.dispatch_command_once(&token, now_unix_ms, retry_policy) {
+                        Ok(progress) => progress,
+                        Err(error) => {
+                            tracing::warn!(
+                                command_id = %prepared.command_id,
+                                conversation_id = %prepared.conversation_id,
+                                error = %error,
+                                "browser messaging group dispatch assist failed after durable preparation"
+                            );
+                            crate::messaging::CommandDispatchProgress::Idle
+                        }
+                    };
+                    if let Err(error) = engine.drain_once(&token, 100) {
+                        tracing::warn!(
+                            command_id = %prepared.command_id,
+                            conversation_id = %prepared.conversation_id,
+                            error = %error,
+                            "browser messaging group drain assist failed after durable preparation"
+                        );
+                    }
+                    if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+                        tracing::warn!(
+                            command_id = %prepared.command_id,
+                            conversation_id = %prepared.conversation_id,
+                            error = %error,
+                            "browser messaging group lifecycle wake failed after durable preparation"
+                        );
+                    }
+                    let projection_ready = match engine.conversations() {
+                        Ok(conversations) => conversations.iter().any(
+                            |conversation| conversation.conversation_id == prepared.conversation_id,
+                        ),
+                        Err(error) => {
+                            tracing::warn!(
+                                command_id = %prepared.command_id,
+                                conversation_id = %prepared.conversation_id,
+                                error = %error,
+                                "browser messaging group projection read failed after durable preparation"
+                            );
+                            false
+                        }
+                    };
+                    let creation_state = crate::interface::tauri_commands::messaging::
+                        group_creation_state(
+                            &progress,
+                            &prepared.command_id,
+                            projection_ready,
+                        );
                     to_json(AppResult::success(json!({
-                        "conversation_id": id,
-                        "state": "created",
+                        "conversation_id": prepared.conversation_id,
+                        "command_id": prepared.command_id,
+                        "state": creation_state,
                     })))
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
@@ -7270,22 +7324,54 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             match engine.conversations() {
                 Ok(conversations) => {
-                    let items: Vec<Value> = conversations.iter().map(|c| json!({
-                        "conversation_id": c.conversation_id,
-                        "authority_station_id": c.authority_station_id,
-                        "kind": c.kind,
-                        "name": c.name,
-                        "owner_ptid": c.owner_ptid,
-                        "member_ptids": c.member_ptids,
-                        "membership_epoch": c.membership_epoch,
-                        "mls_epoch": c.mls_epoch,
-                        "active": c.active,
-                        "updated_at_unix_ms": c.updated_at_unix_ms,
-                    })).collect();
-                    to_json(AppResult::success(json!({ "conversations": items })))
+                    let items = conversations
+                        .iter()
+                        .map(|conversation| {
+                            crate::interface::tauri_commands::messaging::
+                                conversation_projection_json(&engine, conversation)
+                        })
+                        .collect::<Result<Vec<_>, _>>();
+                    match items {
+                        Ok(items) => {
+                            to_json(AppResult::success(json!({ "conversations": items })))
+                        }
+                        Err(error) => to_json(AppResult::<Value>::fail(
+                            ErrorCode::InternalError,
+                            &error,
+                            None,
+                        )),
+                    }
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
+        }
+        "messaging_command_status" => {
+            let guard = state.session.lock().map_err(|_| ()).ok();
+            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
+            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            drop(guard);
+            if actor_id.is_empty() {
+                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+            }
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(engine)) => engine,
+                _ => return to_json(AppResult::<Value>::fail(
+                    ErrorCode::InternalError,
+                    "messaging engine not active",
+                    None,
+                )),
+            };
+            let command_id = args
+                .get("command_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            to_json(
+                crate::interface::tauri_commands::messaging::command_status_json(
+                    &engine,
+                    command_id,
+                ),
+            )
         }
         "messaging_hydrate" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
@@ -7331,7 +7417,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     kind: kind_i32,
                     name: conv.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     owner_ptid: conv.get("owner_ptid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    member_ptids: Vec::new(),
+                    members: Vec::new(),
                     membership_epoch: conv.get("membership_epoch").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()).unwrap_or(0),
                     mls_epoch: conv.get("mls_epoch").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()).unwrap_or(0),
                     active: true,

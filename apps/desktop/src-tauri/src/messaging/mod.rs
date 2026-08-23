@@ -55,7 +55,7 @@ pub(crate) use engine::now_unix_ms;
 pub use engine::{
     EngineEndpoint, EngineRegistry, LocalAttachmentIntent, MessagingEngine,
     MessagingProjectionChange, MessagingProjectionNotifier, MetadataInteraction,
-    SubmitMessageOutcome,
+    PreparedGroupConversation, SubmitMessageOutcome,
 };
 pub use group_genesis::{GroupGenesisPreparer, StationGroupGenesisTransport};
 pub use identity::{FreshDeviceEnrollment, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION};
@@ -87,14 +87,15 @@ pub use recovery::{
 pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextIntent};
 pub use store::{
     ActorReadReceiveCommit, AttachmentDownloadProjection, AttachmentTransferRecord,
-    CommandOutboxEntry, ConversationMessageProjection, ConversationProjection,
-    ConversationStateReceiveCommit, DeliveryReceiptOutboxEntry, DeliveryReceiptReceiveCommit,
-    DirectEditCommit, DirectReceiveCommit, DirectSendCommit, InteractionCommandCommit,
-    MessageProjection, MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
-    MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, MlsTransitionSendCommit,
-    PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft, PendingMlsKeyPackage,
-    PendingMlsTransitionState, PendingPreKeyBundle, PendingSenderProjection,
-    PublicEventReceiveCommit, ReceiveCommitResult,
+    CommandOutboxEntry, CommandStatusProjection, ConversationMemberProjection,
+    ConversationMessageProjection, ConversationProjection, ConversationStateReceiveCommit,
+    DeliveryReceiptOutboxEntry, DeliveryReceiptReceiveCommit, DirectEditCommit,
+    DirectReceiveCommit, DirectSendCommit, InteractionCommandCommit, MessageProjection,
+    MessagingStore, MlsReceiveCommit,
+    MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
+    MlsTransitionReceiveCommit, MlsTransitionSendCommit, PendingAttachmentUpload,
+    PendingMembershipIntent, PendingMessageDraft, PendingMlsKeyPackage, PendingMlsTransitionState,
+    PendingPreKeyBundle, PendingSenderProjection, PublicEventReceiveCommit, ReceiveCommitResult,
 };
 pub use transport::{
     StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,
