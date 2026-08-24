@@ -1521,14 +1521,38 @@ except Exception as error:
                     f"{json.dumps(snapshot, sort_keys=True, default=str)}"
                 ) from None
         else:
+            self.capture_native_activation_diagnostic(
+                actor,
+                client,
+                point,
+                "before-fallback-activation",
+            )
             self.activate_native_process(client.process_id)
-        WebDriverWait(
-            client.driver,
-            5,
-            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(
-            lambda _: actor_window_owns_point()
-        )
+            self.capture_native_activation_diagnostic(
+                actor,
+                client,
+                point,
+                "after-fallback-activation",
+            )
+        try:
+            WebDriverWait(
+                client.driver,
+                5,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(
+                lambda _: actor_window_owns_point()
+            )
+        except TimeoutException:
+            snapshot = self.capture_native_activation_diagnostic(
+                actor,
+                client,
+                point,
+                "point-ownership-timeout",
+            )
+            raise GateError(
+                "Native actor window did not own the activation point: "
+                f"{json.dumps(snapshot, sort_keys=True, default=str)}"
+            ) from None
         if not bool(client.driver.execute_script("return document.hasFocus()")):
             focus_mouse_down = False
             try:
