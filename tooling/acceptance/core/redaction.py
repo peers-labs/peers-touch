@@ -22,7 +22,7 @@ SENSITIVE_KEY_PARTS = (
 _SENSITIVE_ASSIGNMENT = re.compile(
     r"(?i)(\b(?:api[_-]?key|authorization|credential|password|passwd|"
     r"private[_-]?key|secret|session[_-]?token|token)\b\s*[:=]\s*)"
-    r"([\"']?)([^\"'\s,;}\]]+)([\"']?)"
+    rf"([\"']?)(?!{re.escape(REDACTED)})([^\"'\s,;}}\]]+)([\"']?)"
 )
 _BEARER_TOKEN = re.compile(r"(?i)(\bbearer\s+)[A-Za-z0-9._~+/=-]+")
 _PRIVATE_KEY = re.compile(
