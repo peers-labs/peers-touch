@@ -506,6 +506,18 @@ class NativeProductClosureGate(AcceptanceGate):
             NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(native_app_baseline_ready)
+        # #region debug-point A,B,C,D:file-chooser-baseline
+        report_native_mousedown_debug(
+            "A,B,C,D",
+            "native_product_closure_runner.py:choose_native_file:baseline",
+            "Native file chooser baseline",
+            {
+                "actor": actor,
+                "processId": client.process_id,
+                "control": baseline_control.to_dict(),
+            },
+        )
+        # #endregion
         self.click(actor, trigger_selector)
 
         def panel_open(control: NativeControlSnapshot) -> bool:
@@ -518,8 +530,25 @@ class NativeProductClosureGate(AcceptanceGate):
                 )
             )
 
+        observed_panel_states: set[str] = set()
+
         def native_panel_ready(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
+            # #region debug-point A,B,C,D:file-chooser-poll
+            state = json.dumps(control.to_dict(), sort_keys=True)
+            if state not in observed_panel_states:
+                observed_panel_states.add(state)
+                report_native_mousedown_debug(
+                    "A,B,C,D",
+                    "native_product_closure_runner.py:choose_native_file:panel",
+                    "Native file chooser panel state",
+                    {
+                        "actor": actor,
+                        "processId": client.process_id,
+                        "control": control.to_dict(),
+                    },
+                )
+            # #endregion
             return control if panel_open(control) else None
 
         WebDriverWait(
