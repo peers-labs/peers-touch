@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from typing import TYPE_CHECKING, Any
 
 from tooling.acceptance.core.errors import DriverError
 from tooling.acceptance.drivers.native.base import (
@@ -13,10 +14,10 @@ from tooling.acceptance.drivers.native.base import (
     NativeWindowSnapshot,
     NativeWindowStack,
 )
-from tooling.acceptance.drivers.native.runtime import (
-    NativeDesktopRuntimeBinding,
-    resolve_native_desktop_runtime,
-)
+if TYPE_CHECKING:
+    from tooling.acceptance.drivers.native.runtime import (
+        NativeDesktopRuntimeBinding,
+    )
 
 __all__ = [
     "MouseAction",
@@ -52,3 +53,14 @@ def create_native_desktop_adapter(
     raise DriverError(
         f"NativeDesktopAdapter is not implemented for platform {resolved_platform!r}"
     )
+
+
+def __getattr__(name: str) -> Any:
+    if name in {
+        "NativeDesktopRuntimeBinding",
+        "resolve_native_desktop_runtime",
+    }:
+        from tooling.acceptance.drivers.native import runtime
+
+        return getattr(runtime, name)
+    raise AttributeError(name)
