@@ -182,7 +182,7 @@ _NATIVE_ADAPTER_PROBE_SCRIPT = textwrap.dedent(
         active.value[0],
     )
     geometry = active_window.get_geometry()
-    origin = active_window.translate_coords(root, 0, 0)
+    origin = root.translate_coords(active_window, 0, 0)
     point = (
         origin.x + geometry.width / 2,
         origin.y + geometry.height / 2,
