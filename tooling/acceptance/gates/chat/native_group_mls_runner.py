@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     async_harness,
@@ -75,7 +75,7 @@ class NativeGroupMlsGate(AcceptanceGate):
         self.tested_commit = current_commit()
         self.workspace_digest = current_workspace_digest()
         self.steps: list[dict[str, Any]] = []
-        self.clients: dict[str, TauriDriver] = {}
+        self.clients: dict[str, TauriSession] = {}
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
 
