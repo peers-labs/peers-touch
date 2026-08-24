@@ -141,6 +141,96 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         self.assertEqual(bounds.width, 860)
         self.assertEqual(bounds.height, 800)
 
+    def test_focused_control_owns_active_descendant_dialog(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        application_window = Mock()
+        dialog_window = Mock()
+        display.get_input_focus.return_value.focus = dialog_window
+
+        def window_pid(_display: object, window: object) -> int:
+            return 42 if window is application_window else 84
+
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(
+                adapter,
+                "_client_windows",
+                return_value=(application_window,),
+            ),
+            patch.object(adapter, "_active_window", return_value=dialog_window),
+            patch.object(adapter, "_window_pid", side_effect=window_pid),
+            patch.object(
+                adapter,
+                "_is_dialog",
+                side_effect=lambda _display, window: window is dialog_window,
+            ),
+            patch.object(
+                adapter,
+                "_is_descendant_process",
+                side_effect=lambda process_id, ancestor_id: (
+                    process_id == 84 and ancestor_id == 42
+                ),
+            ),
+            patch.object(
+                adapter,
+                "_focused_accessible",
+                return_value={
+                    "kind": "unknown",
+                    "title": "Upload background from local file",
+                    "role": "push button",
+                },
+            ),
+        ):
+            control = adapter.focused_control(42)
+
+        self.assertEqual(control.kind, "application-dialog")
+        self.assertEqual(control.window_count, 2)
+        self.assertEqual(control.dialog_count, 1)
+        self.assertTrue(control.frontmost)
+        self.assertTrue(control.focused_window)
+        self.assertFalse(control.main_window)
+        self.assertEqual(control.actual_frontmost_pid, 84)
+        display.close.assert_called_once_with()
+
+    def test_focused_control_rejects_unrelated_active_dialog(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        application_window = Mock()
+        unrelated_dialog = Mock()
+        display.get_input_focus.return_value.focus = unrelated_dialog
+
+        def window_pid(_display: object, window: object) -> int:
+            return 42 if window is application_window else 84
+
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(
+                adapter,
+                "_client_windows",
+                return_value=(application_window,),
+            ),
+            patch.object(adapter, "_active_window", return_value=unrelated_dialog),
+            patch.object(adapter, "_window_pid", side_effect=window_pid),
+            patch.object(
+                adapter,
+                "_is_dialog",
+                side_effect=lambda _display, window: window is unrelated_dialog,
+            ),
+            patch.object(adapter, "_is_descendant_process", return_value=False),
+            patch.object(adapter, "_focused_accessible", return_value={}),
+        ):
+            control = adapter.focused_control(42)
+
+        self.assertEqual(control.kind, "application")
+        self.assertEqual(control.window_count, 1)
+        self.assertEqual(control.dialog_count, 0)
+        self.assertFalse(control.frontmost)
+        self.assertFalse(control.focused_window)
+        self.assertFalse(control.main_window)
+        self.assertEqual(control.actual_frontmost_pid, 84)
+        display.close.assert_called_once_with()
+
     def test_clipboard_commands_are_bound_to_the_declared_display(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
         read = subprocess.CompletedProcess(

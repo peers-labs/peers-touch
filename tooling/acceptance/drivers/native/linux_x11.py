@@ -182,23 +182,42 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
                 if focused_window is not None
                 else -1
             )
-            dialog_count = sum(
+            owned_dialog_count = sum(
                 self._is_dialog(display, window) for window in windows
+            )
+            active_descendant_dialog = bool(
+                active_window is not None
+                and active_pid != process_id
+                and self._is_descendant_process(active_pid, process_id)
+                and self._is_dialog(display, active_window)
+            )
+            dialog_count = owned_dialog_count + int(active_descendant_dialog)
+            actor_frontmost = active_pid == process_id or active_descendant_dialog
+            actor_focused = (
+                focused_pid == process_id
+                or (
+                    active_descendant_dialog
+                    and self._is_descendant_process(focused_pid, process_id)
+                )
             )
             accessible = self._focused_accessible()
             return NativeControlSnapshot(
-                kind=str(accessible.get("kind") or (
+                kind=(
                     "application-dialog"
-                    if dialog_count > 0 and active_pid == process_id
-                    else "application"
-                )),
+                    if active_descendant_dialog
+                    else str(accessible.get("kind") or (
+                        "application-dialog"
+                        if owned_dialog_count > 0 and active_pid == process_id
+                        else "application"
+                    ))
+                ),
                 title=str(accessible.get("title") or ""),
                 value=str(accessible.get("value") or ""),
-                window_count=len(windows),
+                window_count=len(windows) + int(active_descendant_dialog),
                 dialog_count=dialog_count,
-                frontmost=active_pid == process_id,
+                frontmost=actor_frontmost,
                 main_window=active_pid == process_id and dialog_count == 0,
-                focused_window=focused_pid == process_id,
+                focused_window=actor_focused,
                 actual_frontmost_pid=active_pid,
                 platform_role=str(accessible.get("role") or ""),
                 platform_subrole=str(accessible.get("subrole") or ""),
@@ -306,6 +325,24 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
         if value <= 0:
             raise DriverError("Native process ID must be a positive integer")
         return value
+
+    @staticmethod
+    def _is_descendant_process(process_id: int, ancestor_id: int) -> bool:
+        current = process_id
+        for _ in range(32):
+            if current <= 1:
+                return False
+            try:
+                stat = Path(f"/proc/{current}/stat").read_text(encoding="utf-8")
+                parent_id = int(stat.rsplit(")", 1)[1].split()[1])
+            except (IndexError, OSError, ValueError):
+                return False
+            if parent_id == ancestor_id:
+                return True
+            if parent_id == current:
+                return False
+            current = parent_id
+        return False
 
     @staticmethod
     def _keycode(display: Any, key_symbol: int) -> int:
