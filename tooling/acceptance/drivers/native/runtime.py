@@ -108,6 +108,14 @@ class NativeDesktopRuntimeBinding(ABC):
         ...
 
     @abstractmethod
+    def request_cooperative_activation(
+        self,
+        target: TauriSession,
+        sessions: Sequence[TauriSession],
+    ) -> bool:
+        ...
+
+    @abstractmethod
     def binary_identity(self) -> dict[str, str]:
         ...
 
@@ -330,6 +338,14 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
         self._endpoint_ids.append(endpoint_id)
         return RuntimeEndpoint(url=exposed_url, lease_id=endpoint_id)
 
+    def request_cooperative_activation(
+        self,
+        target: TauriSession,
+        sessions: Sequence[TauriSession],
+    ) -> bool:
+        del target, sessions
+        return False
+
     def binary_identity(self) -> dict[str, str]:
         return self._cell.binary_identity()
 
@@ -422,6 +438,42 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
     def expose_orchestrator_endpoint(self, url: str) -> RuntimeEndpoint:
         return RuntimeEndpoint(url=url, lease_id="local-direct")
 
+    def request_cooperative_activation(
+        self,
+        target: TauriSession,
+        sessions: Sequence[TauriSession],
+    ) -> bool:
+        if target.process_id is None:
+            raise DriverError(
+                "Native activation target process is unavailable"
+            )
+        source = next(
+            (
+                session
+                for session in sessions
+                if session.process_id not in (None, target.process_id)
+                and bool(
+                    session.driver.execute_script(
+                        "return document.hasFocus()"
+                    )
+                )
+            ),
+            None,
+        )
+        if source is None:
+            return False
+        _invoke_tauri_activation_command(
+            source,
+            "acceptance_yield_activation",
+            {"targetPid": target.process_id},
+        )
+        _invoke_tauri_activation_command(
+            target,
+            "acceptance_request_activation",
+            {},
+        )
+        return True
+
     def binary_identity(self) -> dict[str, str]:
         digest = hashlib.sha256()
         with self._binary.open("rb") as stream:
@@ -512,6 +564,68 @@ def _remove_paths(paths: Sequence[Path]) -> list[dict[str, str]]:
         except OSError as error:
             errors.append({"path": str(path), "error": str(error)})
     return errors
+
+
+def _invoke_tauri_activation_command(
+    session: TauriSession,
+    command: str,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    request_id = f"native-activation-{time.monotonic_ns()}"
+    session.driver.execute_script(
+        """
+        const [command, commandArguments, requestId] = arguments;
+        const requests = window.__PT_NATIVE_ACTIVATION_REQUESTS__ ||= {};
+        requests[requestId] = { done: false };
+        window.__TAURI_INTERNALS__.invoke(
+          command,
+          commandArguments,
+        ).then((result) => {
+          requests[requestId] = { done: true, result };
+        }).catch((error) => {
+          requests[requestId] = {
+            done: true,
+            result: {
+              ok: false,
+              error: { message: String(error) },
+            },
+          };
+        });
+        """,
+        command,
+        arguments,
+        request_id,
+    )
+    result: Any = None
+    deadline = time.monotonic() + 5
+    try:
+        while time.monotonic() < deadline:
+            result = session.driver.execute_script(
+                """
+                const request = window.__PT_NATIVE_ACTIVATION_REQUESTS__
+                  ?.[arguments[0]];
+                return request?.done ? request.result : null;
+                """,
+                request_id,
+            )
+            if result is not None:
+                break
+            time.sleep(0.01)
+    finally:
+        session.driver.execute_script(
+            """
+            if (window.__PT_NATIVE_ACTIVATION_REQUESTS__) {
+              delete window.__PT_NATIVE_ACTIVATION_REQUESTS__[arguments[0]];
+            }
+            """,
+            request_id,
+        )
+    if not isinstance(result, dict) or not result.get("ok"):
+        raise DriverError(
+            f"Native actor {command} failed: "
+            f"{result!r}"
+        )
+    return result
 
 
 def _wait_for(predicate: Any, *, timeout: float) -> bool:

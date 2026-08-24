@@ -434,102 +434,6 @@ class NativeProductClosureGate(AcceptanceGate):
         }
 
 
-    def invoke_native_activation_command(
-        self,
-        client: TauriSession,
-        command: str,
-        arguments: dict[str, Any],
-    ) -> dict[str, Any]:
-        request_id = secrets.token_hex(8)
-        client.driver.execute_script(
-            """
-            const command = arguments[0];
-            const commandArguments = arguments[1];
-            const requestId = arguments[2];
-            const requests = window.__PT_NATIVE_ACTIVATION_REQUESTS__ ||= {};
-            requests[requestId] = { done: false };
-            window.__TAURI_INTERNALS__.invoke(
-              command,
-              commandArguments,
-            ).then((result) => {
-              requests[requestId] = { done: true, result };
-            }).catch((error) => {
-              requests[requestId] = {
-                done: true,
-                result: {
-                  ok: false,
-                  error: { message: String(error) },
-                },
-              };
-            });
-            """,
-            command,
-            arguments,
-            request_id,
-        )
-        try:
-            result = WebDriverWait(
-                client.driver,
-                5,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(
-                lambda driver: driver.execute_script(
-                    """
-                    const request = window.__PT_NATIVE_ACTIVATION_REQUESTS__
-                      ?.[arguments[0]];
-                    return request?.done ? request.result : null;
-                    """,
-                    request_id,
-                )
-            )
-        finally:
-            client.driver.execute_script(
-                """
-                if (window.__PT_NATIVE_ACTIVATION_REQUESTS__) {
-                  delete window.__PT_NATIVE_ACTIVATION_REQUESTS__[arguments[0]];
-                }
-                """,
-                request_id,
-            )
-        if not isinstance(result, dict) or not result.get("ok"):
-            raise GateError(
-                f"Native actor {command} failed: "
-                f"{json.dumps(result, sort_keys=True, default=str)}"
-            )
-        return result
-
-    def request_cooperative_activation(self, target: TauriSession) -> bool:
-        if target.process_id is None:
-            raise GateError("Native activation target process is unavailable")
-        source = next(
-            (
-                client
-                for client in self.clients.values()
-                if client.process_id not in (None, target.process_id)
-                and bool(
-                    client.driver.execute_script(
-                        "return document.hasFocus()"
-                    )
-                )
-            ),
-            None,
-        )
-        if source is None or source.process_id is None:
-            return False
-
-        self.invoke_native_activation_command(
-            source,
-            "acceptance_yield_activation",
-            {"targetPid": target.process_id},
-        )
-        self.invoke_native_activation_command(
-            target,
-            "acceptance_request_activation",
-            {},
-        )
-        return True
-
-
     def choose_native_file(
         self,
         actor: str,
@@ -893,7 +797,12 @@ class NativeProductClosureGate(AcceptanceGate):
             ).until(
                 lambda _: not self.native_adapter.mouse_button_down()
             )
-        cooperative_activation = self.request_cooperative_activation(client)
+        cooperative_activation = (
+            self.runtime_binding.request_cooperative_activation(
+                client,
+                tuple(self.clients.values()),
+            )
+        )
         if cooperative_activation:
             self.capture_native_activation_diagnostic(
                 actor,
