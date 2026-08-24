@@ -263,6 +263,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             focus_source,
         )
         self.assertIn(
+            '"before-fallback-activation"',
+            focus_source,
+        )
+        self.assertIn(
+            '"after-fallback-activation"',
+            focus_source,
+        )
+        self.assertIn(
+            '"point-ownership-timeout"',
+            focus_source,
+        )
+        self.assertIn(
             "except TimeoutException:",
             focus_source,
         )

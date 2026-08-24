@@ -26,4 +26,15 @@
   changing focus behavior or weakening the Native interaction contract.
 
 ## Verification Conclusion
-Pending runtime evidence.
+Run `20260824T014750099197Z-47e3f53fb567f303db17e5708f24a31a`
+produced the first immutable `native-activation-diagnostics` artifact:
+
+- Before activation, Alice had `documentFocused=false`, AX `windowCount=0`,
+  `pointOwned=false`, and actual frontmost PID `64981` (`WeChat`).
+- The sampled point was occupied by the full-screen WeChat window and its Dock
+  fullscreen backdrop.
+- No `after-cooperative-request` snapshot was emitted, so cooperative activation
+  was unavailable and the runner selected the AppKit fallback.
+- The timeout occurred in the subsequent point-ownership wait. The first probe
+  did not capture post-fallback state, so hypotheses B and C remain
+  inconclusive and require one bounded instrumentation iteration.
