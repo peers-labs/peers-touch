@@ -366,9 +366,18 @@ class RemoteSourceSynchronizer:
         request: SourceSyncRequest,
         *,
         source_lease_held: bool = False,
+        source_lease_owner: str = "",
     ) -> None:
+        normalized_owner = source_lease_owner.strip()
+        if source_lease_held and not normalized_owner:
+            raise ValueError(
+                "source-sync held lease mode requires source_lease_owner"
+            )
+        if "\n" in normalized_owner or "\r" in normalized_owner:
+            raise ValueError("source-sync lease owner must be one line")
         self.request = request
         self.source_lease_held = source_lease_held
+        self.source_lease_owner = normalized_owner
         self.transport = SshTransport(
             SshTarget(
                 host=request.host,
@@ -416,7 +425,10 @@ class RemoteSourceSynchronizer:
                     request.branch,
                     commit,
                     source_digest,
-                    f"source-sync:{request.environment_name}",
+                    (
+                        self.source_lease_owner
+                        or f"source-sync:{request.environment_name}"
+                    ),
                     "held" if self.source_lease_held else "acquire",
                 ],
                 timeout=300,

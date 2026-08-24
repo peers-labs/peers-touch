@@ -66,9 +66,10 @@ def main() -> int:
         )
         if command:
             RemoteSourceSynchronizer(request).preflight()
+            source_lease_owner = f"source-sync:{request.environment_name}"
             lease = RemoteGitSourceLease(
                 request.environment_name,
-                f"source-sync:{request.environment_name}",
+                source_lease_owner,
                 host=request.host,
                 user=request.user,
                 deploy_path=request.deploy_path,
@@ -79,6 +80,7 @@ def main() -> int:
                 result = RemoteSourceSynchronizer(
                     request,
                     source_lease_held=True,
+                    source_lease_owner=source_lease_owner,
                 ).sync()
                 _write_result(result.to_dict(), as_json=args.json)
                 environment = os.environ.copy()

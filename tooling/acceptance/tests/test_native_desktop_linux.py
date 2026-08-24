@@ -131,6 +131,16 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
             'remote_control = Path(str(acquired["controlPath"]))',
             source,
         )
+        self.assertIn(
+            "source_lease_owner=source_lease_owner",
+            source,
+        )
+        self.assertEqual(
+            source.count(
+                "f\"runtime-cell:{self.contract.cell_id}:{run_id}\""
+            ),
+            1,
+        )
 
     def test_make_exposes_the_four_cell_lifecycle_commands(self) -> None:
         source = (

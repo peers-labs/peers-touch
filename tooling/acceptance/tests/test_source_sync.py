@@ -17,6 +17,7 @@ from pathlib import Path
 
 from tooling.acceptance.core.errors import ProvisioningError
 from tooling.acceptance.core.source_sync import (
+    RemoteSourceSynchronizer,
     SourceSyncRequest,
     _git_tree_digest,
     _remote_checkout_script,
@@ -104,6 +105,7 @@ class RemoteCheckoutIntegrationTests(unittest.TestCase):
         commit: str,
         expected_digest: str = "",
         lease_mode: str = "acquire",
+        lease_owner: str = "test-owner",
     ) -> subprocess.CompletedProcess[str]:
         source_digest = expected_digest or _git_tree_digest(
             self.source,
@@ -121,7 +123,7 @@ class RemoteCheckoutIntegrationTests(unittest.TestCase):
                 self.branch,
                 commit,
                 source_digest,
-                "test-owner",
+                lease_owner,
                 lease_mode,
             ],
             env={**_git_environment(), "HOME": str(self.home)},
@@ -234,8 +236,60 @@ class RemoteCheckoutIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 81)
         self.assertIn("BLOCKED:source-lease-not-held", result.stdout)
 
+    def test_caller_held_mode_rejects_different_owner(self) -> None:
+        commit = self._push()
+        lock_path = (
+            self.home
+            / ".cache"
+            / "peers-touch"
+            / "source-leases"
+            / "test-cell.lock"
+        )
+        lock_path.parent.mkdir(parents=True)
+        with lock_path.open("a+", encoding="utf-8") as lease:
+            fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lease.write("runtime-cell:test:run-1\n")
+            lease.flush()
+            result = self._checkout(
+                commit,
+                lease_mode="held",
+                lease_owner="source-sync:test-cell",
+            )
+        self.assertEqual(result.returncode, 80)
+        self.assertIn(
+            "BLOCKED:lease-owner-mismatch:runtime-cell:test:run-1",
+            result.stdout,
+        )
+
 
 class SourceSyncContractTests(unittest.TestCase):
+    @staticmethod
+    def _request() -> SourceSyncRequest:
+        return SourceSyncRequest(
+            environment_name="test-cell",
+            source_root=REPO_ROOT,
+            branch="main",
+            host="station.example",
+            user="acceptance",
+            deploy_path="runtime/linux-cell",
+            source_mode="direct",
+        )
+
+    def test_held_source_lease_requires_explicit_owner(self) -> None:
+        with self.assertRaisesRegex(ValueError, "source_lease_owner"):
+            RemoteSourceSynchronizer(
+                self._request(),
+                source_lease_held=True,
+            )
+
+    def test_source_lease_owner_must_be_one_line(self) -> None:
+        with self.assertRaisesRegex(ValueError, "one line"):
+            RemoteSourceSynchronizer(
+                self._request(),
+                source_lease_held=True,
+                source_lease_owner="runtime-cell:test\nforged-owner",
+            )
+
     def test_ssh_transport_imports_before_core_without_cycle(self) -> None:
         completed = subprocess.run(
             [

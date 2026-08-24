@@ -523,9 +523,12 @@ class NativeDesktopLinuxProvisioner:
             ),
             require_clean=self.contract.source.clean_commit_required_for_proof,
         )
+        source_lease_owner = (
+            f"runtime-cell:{self.contract.cell_id}:{run_id}"
+        )
         lease = RemoteGitSourceLease(
             request.environment_name,
-            f"runtime-cell:{self.contract.cell_id}:{run_id}",
+            source_lease_owner,
             host=request.host,
             user=request.user,
             deploy_path=request.deploy_path,
@@ -539,6 +542,7 @@ class NativeDesktopLinuxProvisioner:
             source = RemoteSourceSynchronizer(
                 request,
                 source_lease_held=True,
+                source_lease_owner=source_lease_owner,
             ).sync()
             remote_home = self._remote_home()
             remote_source = remote_home / request.deploy_path
