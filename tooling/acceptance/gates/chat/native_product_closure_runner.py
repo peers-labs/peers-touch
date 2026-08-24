@@ -1161,6 +1161,17 @@ class NativeProductClosureGate(AcceptanceGate):
               connected: element.isConnected,
               disabled: Boolean(element.disabled),
               hit: hit === element || element.contains(hit),
+              hitTarget: {
+                tag: hit?.tagName || '',
+                id: hit?.id || '',
+                classes: hit?.className || '',
+              },
+              rect: {
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+              },
             };
             """,
             element,
@@ -1170,7 +1181,11 @@ class NativeProductClosureGate(AcceptanceGate):
             or pointer_target.get("disabled")
             or not pointer_target.get("hit")
         ):
-            raise GateError("Native click target changed after pointer positioning")
+            raise GateError(
+                "Native click target changed after pointer positioning"
+                ": "
+                f"{json.dumps(pointer_target, sort_keys=True)}"
+            )
 
         probe_id = self.install_native_input_probe(client, element)
         mouse_down_posted = False
