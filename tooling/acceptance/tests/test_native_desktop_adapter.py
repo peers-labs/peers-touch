@@ -90,6 +90,8 @@ class SyntheticLinuxRuntimeCell:
         self.launches: list[tuple[str, dict[str, object], dict[str, str]]] = []
         self.responses: dict[str, dict[str, object]] = {}
         self.validations: list[tuple[str, str]] = []
+        self.exposed_endpoints: list[tuple[str, str]] = []
+        self.released_endpoints: list[str] = []
 
     def validate_binding(self, gate_id: str, source_commit: str) -> None:
         self.validations.append((gate_id, source_commit))
@@ -117,6 +119,27 @@ class SyntheticLinuxRuntimeCell:
             "path": "runtime-cell:binary",
             "sha256": "a" * 64,
             "sourceCommit": "abc123",
+        }
+
+    def expose_orchestrator_endpoint(
+        self,
+        endpoint_id: str,
+        url: str,
+    ) -> dict[str, object]:
+        self.exposed_endpoints.append((endpoint_id, url))
+        return {
+            "endpointId": endpoint_id,
+            "url": "http://127.0.0.1:48080",
+        }
+
+    def release_endpoint(self, endpoint_id: str) -> dict[str, object]:
+        self.released_endpoints.append(endpoint_id)
+        return {"endpointId": endpoint_id, "released": True}
+
+    def endpoint_cleanup_audit(self) -> dict[str, object]:
+        return {
+            "activeEndpointLeases": [],
+            "endpointsReleased": True,
         }
 
     def actor_cleanup_audit(self) -> dict[str, object]:
@@ -190,6 +213,36 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
             cell.validations,
             [("chat-native-product-closure-e2e", "abc123")],
         )
+
+    def test_linux_runtime_binding_owns_explicit_endpoint_leases(self) -> None:
+        cell = SyntheticLinuxRuntimeCell()
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native-product-closure-e2e",
+            "abc123",
+            cell,
+        )
+
+        endpoint = binding.expose_orchestrator_endpoint(
+            "http://127.0.0.1:51219"
+        )
+        cleanup = binding.finalize_cleanup((), {})
+
+        self.assertEqual(endpoint.url, "http://127.0.0.1:48080")
+        self.assertEqual(endpoint.lease_id, "orchestrator-endpoint-1")
+        self.assertEqual(
+            cell.exposed_endpoints,
+            [
+                (
+                    "orchestrator-endpoint-1",
+                    "http://127.0.0.1:51219",
+                )
+            ],
+        )
+        self.assertEqual(
+            cell.released_endpoints,
+            ["orchestrator-endpoint-1"],
+        )
+        self.assertTrue(cleanup["endpointsReleased"])
 
     def test_runtime_binding_rejects_unknown_and_unready_cells(self) -> None:
         with self.assertRaisesRegex(DriverError, "not implemented"):
@@ -296,11 +349,16 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
                 },
                 {"PEERS_STATION_URL": "http://127.0.0.1:18080"},
             )
+            endpoint = binding.expose_orchestrator_endpoint(
+                "http://127.0.0.1:51219"
+            )
             binary_identity = binding.binary_identity()
 
         self.assertEqual(binding.cell_id, "desktop-macos-native")
         self.assertEqual(session.port, 4445)
         self.assertEqual(session.gateway_port, 3330)
+        self.assertEqual(endpoint.url, "http://127.0.0.1:51219")
+        self.assertEqual(endpoint.lease_id, "local-direct")
         self.assertEqual(
             binary_identity["sha256"],
             "a37cdd0591588a0016117ba6b84e7182977a007c332bccbc55ba656e74e6f45a",
