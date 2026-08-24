@@ -18,6 +18,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -297,6 +298,7 @@ REQUIRED_EVIDENCE = {
     "settings-background",
     "attachment-ledger",
     "recovery-ledger",
+    "native-activation-diagnostics",
     "runtime-launch-ledger",
     "runtime-log-audit",
     "cleanup",
@@ -421,6 +423,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.device_ids: dict[str, str] = {}
         self.steps: list[dict[str, Any]] = []
         self.structured_evidence: dict[str, Any] = {}
+        self.native_activation_diagnostics: list[dict[str, Any]] = []
         self.reaction_proxy: ProfileThreeSubmitFaultProxy | None = None
         self.fixture_root = Path(tempfile.mkdtemp(prefix="pt-chat-product-closure-"))
         self.binary = Path(find_app_binary()).resolve()
@@ -1372,6 +1375,79 @@ except Exception as error:
             probe_id,
         )
 
+    def capture_native_activation_diagnostic(
+        self,
+        actor: str,
+        client: TauriDriver,
+        point: tuple[float, float],
+        phase: str,
+    ) -> dict[str, Any]:
+        try:
+            document_focused: bool | str = bool(
+                client.driver.execute_script("return document.hasFocus()")
+            )
+        except Exception as error:
+            document_focused = f"{type(error).__name__}: {error}"
+        window_stack = self.native_window_stack_at_point(point)
+        windows = window_stack.get("windows")
+        point_owned = bool(
+            isinstance(windows, list)
+            and any(
+                isinstance(window, dict)
+                and float(window.get("alpha") or 0) > 0
+                and window.get("ownerPid") == client.process_id
+                for window in windows
+            )
+        )
+        snapshot = {
+            "actor": actor,
+            "phase": phase,
+            "expectedProcessId": client.process_id,
+            "documentFocused": document_focused,
+            "point": {"x": point[0], "y": point[1]},
+            "pointOwned": point_owned,
+            "window": self.native_window(client),
+            "windowStack": window_stack,
+            "focusedControl": self.native_focused_control(client.process_id or 0),
+        }
+        self.native_activation_diagnostics.append(snapshot)
+
+        # #region debug-point A-C:native-window-activation
+        debug_url = "http://127.0.0.1:7781/event"
+        debug_session = "native-window-activation"
+        try:
+            for line in (
+                REPO_ROOT / ".dbg" / "native-window-activation.env"
+            ).read_text(encoding="utf-8").splitlines():
+                if line.startswith("DEBUG_SERVER_URL="):
+                    debug_url = line.split("=", 1)[1]
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    debug_session = line.split("=", 1)[1]
+        except OSError:
+            pass
+        request = urllib.request.Request(
+            debug_url,
+            data=json.dumps(
+                {
+                    "sessionId": debug_session,
+                    "runId": "pre-fix",
+                    "hypothesisId": "A-C",
+                    "location":
+                        "NativeProductClosureGate:capture_native_activation_diagnostic",
+                    "msg": f"[DEBUG] Native activation {phase}",
+                    "data": snapshot,
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(request, timeout=2).read()
+        except OSError:
+            pass
+        # #endregion
+        return snapshot
+
     def focus_actor_window(self, actor: str) -> TauriDriver:
         client = self.clients[actor]
         if client.process_id is None:
@@ -1399,6 +1475,12 @@ except Exception as error:
             and actor_window_owns_point()
         ):
             return client
+        self.capture_native_activation_diagnostic(
+            actor,
+            client,
+            point,
+            "before-activation",
+        )
         if self.native_mouse_button_down():
             self.post_mouse((2,), point)
             WebDriverWait(
@@ -1410,16 +1492,34 @@ except Exception as error:
             )
         cooperative_activation = self.request_cooperative_activation(client)
         if cooperative_activation:
-            WebDriverWait(
-                client.driver,
-                5,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(
-                lambda driver: (
-                    bool(driver.execute_script("return document.hasFocus()"))
-                    and actor_window_owns_point()
-                )
+            self.capture_native_activation_diagnostic(
+                actor,
+                client,
+                point,
+                "after-cooperative-request",
             )
+            try:
+                WebDriverWait(
+                    client.driver,
+                    5,
+                    poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+                ).until(
+                    lambda driver: (
+                        bool(driver.execute_script("return document.hasFocus()"))
+                        and actor_window_owns_point()
+                    )
+                )
+            except TimeoutException:
+                snapshot = self.capture_native_activation_diagnostic(
+                    actor,
+                    client,
+                    point,
+                    "cooperative-timeout",
+                )
+                raise GateError(
+                    "Native cooperative activation timed out: "
+                    f"{json.dumps(snapshot, sort_keys=True, default=str)}"
+                ) from None
         else:
             self.activate_native_process(client.process_id)
         WebDriverWait(
@@ -4166,6 +4266,10 @@ except Exception as error:
         self.write_json_evidence(
             "runtime-launch-ledger",
             self.runtime_launches,
+        )
+        self.write_json_evidence(
+            "native-activation-diagnostics",
+            self.native_activation_diagnostics,
         )
         for index, log_path in enumerate(log_paths):
             try:
