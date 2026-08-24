@@ -83,6 +83,8 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
         self.assertIn("libwebkit2gtk-4.1-dev", source)
         self.assertIn("xserver-xorg-video-dummy", source)
         self.assertIn("x11vnc", source)
+        self.assertIn("zenity", source)
+        self.assertIn("command -v zenity", source)
         self.assertNotIn("xvfb", source.lower())
 
     def test_supervisor_uses_real_xorg_and_loopback_observer(self) -> None:

@@ -64,6 +64,7 @@ RUN apt-get update \
         xdotool \
         xserver-xorg-core \
         xserver-xorg-video-dummy \
+        zenity \
     && rm -rf /var/lib/apt/lists/*
 
 RUN set -eu; \
@@ -103,6 +104,7 @@ RUN chmod 0755 /usr/local/bin/peers-touch-linux-cell \
     && node --version \
     && pnpm --version \
     && rustc --version \
-    && cargo --version
+    && cargo --version \
+    && command -v zenity
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/peers-touch-linux-cell"]
