@@ -336,6 +336,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"Native click target changed before event delivery"',
             click_source,
         )
+        pointer_move = (
+            "self.native_adapter.post_mouse((MouseAction.MOVE,), point)"
+        )
+        self.assertIn(pointer_move, click_source)
+        self.assertIn(
+            '"Native click target changed after pointer positioning"',
+            click_source,
+        )
+        self.assertLess(
+            click_source.index(pointer_move),
+            click_source.index("probe_id = self.install_native_input_probe("),
+        )
         self.assertLess(
             click_source.index("current_target = client.driver.execute_script("),
             click_source.index(
@@ -348,7 +360,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertEqual(
             click_source.count("self.native_adapter.post_mouse("),
-            1,
+            2,
         )
         self.assertNotIn(
             'report_native_input_delivery("before-click")',
