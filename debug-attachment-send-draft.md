@@ -81,3 +81,14 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
   evidence does not distinguish `document.hasFocus()` from Native point ownership,
   so the next change must be evidence-only activation instrumentation. Runtime
   cleanup passed and the post-fix attachment log remains empty.
+- After the Acceptance-only cross-Space window fix, exact-HEAD run
+  `20260824T020842025058Z-dff949138ed1919b0a9b946d8b7cd55c` crossed Native
+  activation and reached `attachments.ui`. Attachment-only sender/receiver
+  plaintext semantics passed. The next first failure was text-plus-attachment
+  exact plaintext: both actors rendered the identical prefix
+  `\ue03da\ue003` before the expected text.
+- Python inspection proves the prefix is exactly
+  `Keys.COMMAND + "a" + Keys.BACKSPACE`. The embedded WebDriver serialized the
+  clearing shortcut as text. The fix routes select-all and backspace through the
+  existing CoreGraphics keyboard path and waits until the Composer value is
+  empty before inserting the intended text.
