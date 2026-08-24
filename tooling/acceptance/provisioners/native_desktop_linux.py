@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from tooling.acceptance.core import (
     AppLaunchMetadata,
@@ -52,6 +53,7 @@ _HTTPS_URL = re.compile(r"^https://[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$")
 _CARGO_INDEX = re.compile(
     r"^(?:sparse\+)?https://[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$"
 )
+_ENDPOINT_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _DEFAULT_PROFILE_ROOT = REPO_ROOT / ".local" / "acceptance" / "runtime-cells"
 _DEFAULT_DEPLOY_ROOT = REPO_ROOT / ".local" / "deploy" / "envs"
 _DEFAULT_RUNTIME_ROOT = ".cache/peers-touch/acceptance-cells"
@@ -384,6 +386,16 @@ class _ActorRuntime:
     released: bool = False
 
 
+@dataclass
+class _EndpointRuntime:
+    endpoint_id: str
+    tunnel: SshTunnel
+    tunnel_pid: int
+    local_port: int
+    remote_port: int
+    released: bool = False
+
+
 def _required(values: dict[str, str], key: str, source: Path) -> str:
     value = values.get(key, "").strip()
     if not value:
@@ -522,6 +534,7 @@ class NativeDesktopLinuxProvisioner:
         )
         self.transport = SshTransport(self.target)
         self._actors: dict[str, _ActorRuntime] = {}
+        self._endpoints: dict[str, _EndpointRuntime] = {}
 
     def ready(self, gate_id: str = "runtime-cell-preflight") -> RuntimeCellManifest:
         if self.state_path.exists():
@@ -896,6 +909,125 @@ class NativeDesktopLinuxProvisioner:
             alive=lambda: self.actor_is_alive(actor),
         )
 
+    def expose_orchestrator_endpoint(
+        self,
+        endpoint_id: str,
+        url: str,
+    ) -> dict[str, Any]:
+        normalized_id = endpoint_id.strip()
+        if not _ENDPOINT_ID.fullmatch(normalized_id):
+            raise ProvisioningError(
+                "Linux runtime-cell endpoint id is invalid"
+            )
+        if normalized_id in self._endpoints:
+            raise ProvisioningError(
+                f"Linux runtime-cell endpoint {normalized_id!r} is already exposed"
+            )
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ProvisioningError(
+                "orchestrator endpoint must be an HTTP(S) loopback URL "
+                "without credentials"
+            )
+        try:
+            local_port = parsed.port
+        except ValueError as error:
+            raise ProvisioningError(
+                "orchestrator endpoint port is invalid"
+            ) from error
+        if local_port is None:
+            raise ProvisioningError(
+                "orchestrator endpoint must declare an explicit port"
+            )
+        tunnel = self.transport.start_reverse_forward(
+            local_port=local_port,
+            remote_port=local_port,
+        )
+        runtime = _EndpointRuntime(
+            endpoint_id=normalized_id,
+            tunnel=tunnel,
+            tunnel_pid=tunnel.process_id,
+            local_port=local_port,
+            remote_port=local_port,
+        )
+        self._endpoints[normalized_id] = runtime
+        return {
+            "endpointId": normalized_id,
+            "url": urlunsplit(
+                (
+                    parsed.scheme,
+                    f"127.0.0.1:{runtime.remote_port}",
+                    parsed.path,
+                    parsed.query,
+                    parsed.fragment,
+                )
+            ),
+            "tunnelPid": runtime.tunnel_pid,
+            "localPort": runtime.local_port,
+            "remotePort": runtime.remote_port,
+        }
+
+    def release_endpoint(self, endpoint_id: str) -> dict[str, Any]:
+        runtime = self._endpoints.get(endpoint_id)
+        if runtime is None:
+            return {
+                "endpointId": endpoint_id,
+                "released": True,
+                "alreadyReleased": True,
+            }
+        if not runtime.released:
+            runtime.tunnel.stop()
+            runtime.released = True
+        deadline = time.monotonic() + 5
+        while (
+            time.monotonic() < deadline
+            and self.transport.remote_loopback_port_listening(
+                runtime.remote_port
+            )
+        ):
+            time.sleep(0.05)
+        released = (
+            not runtime.tunnel.is_alive()
+            and not self.transport.remote_loopback_port_listening(
+                runtime.remote_port
+            )
+        )
+        result = {
+            "endpointId": endpoint_id,
+            "tunnelPid": runtime.tunnel_pid,
+            "localPort": runtime.local_port,
+            "remotePort": runtime.remote_port,
+            "released": released,
+        }
+        if released:
+            self._endpoints.pop(endpoint_id, None)
+            return result
+        runtime.released = False
+        raise ProvisioningError(
+            f"Linux runtime-cell endpoint {endpoint_id!r} did not release"
+        )
+
+    def endpoint_cleanup_audit(self) -> dict[str, Any]:
+        active = [
+            {
+                "endpointId": endpoint_id,
+                "tunnelPid": runtime.tunnel_pid,
+                "localPort": runtime.local_port,
+                "remotePort": runtime.remote_port,
+            }
+            for endpoint_id, runtime in sorted(self._endpoints.items())
+            if not runtime.released
+        ]
+        return {
+            "activeEndpointLeases": active,
+            "endpointsReleased": not active,
+        }
+
     def release_actor(self, actor: str) -> None:
         runtime = self._actors.get(actor)
         if runtime is None or runtime.released:
@@ -945,6 +1077,11 @@ class NativeDesktopLinuxProvisioner:
             else _local_port_listening(runtime.webdriver_local_port)
         )
         if not webdriver_alive or not runtime.gateway_tunnel.is_alive():
+            return False
+        if any(
+            not endpoint.released and not endpoint.tunnel.is_alive()
+            for endpoint in self._endpoints.values()
+        ):
             return False
         actors = self.status().get("actors")
         return isinstance(actors, list) and any(
@@ -1075,6 +1212,11 @@ class NativeDesktopLinuxProvisioner:
         for actor in reversed(tuple(self._actors)):
             try:
                 self.release_actor(actor)
+            except ProvisioningError as error:
+                actor_cleanup_failures.append(str(error))
+        for endpoint_id in reversed(tuple(self._endpoints)):
+            try:
+                self.release_endpoint(endpoint_id)
             except ProvisioningError as error:
                 actor_cleanup_failures.append(str(error))
         if not state:

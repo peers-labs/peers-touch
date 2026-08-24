@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
@@ -47,6 +48,19 @@ class LinuxRuntimeCell(Protocol):
     ) -> Any:
         ...
 
+    def expose_orchestrator_endpoint(
+        self,
+        endpoint_id: str,
+        url: str,
+    ) -> dict[str, Any]:
+        ...
+
+    def release_endpoint(self, endpoint_id: str) -> dict[str, Any]:
+        ...
+
+    def endpoint_cleanup_audit(self) -> dict[str, Any]:
+        ...
+
     def binary_identity(self) -> dict[str, str]:
         ...
 
@@ -59,6 +73,12 @@ class LinuxRuntimeCell(Protocol):
 
     def actor_cleanup_audit(self) -> dict[str, Any]:
         ...
+
+
+@dataclass(frozen=True)
+class RuntimeEndpoint:
+    url: str
+    lease_id: str
 
 
 class NativeDesktopRuntimeBinding(ABC):
@@ -81,6 +101,10 @@ class NativeDesktopRuntimeBinding(ABC):
         client_spec: Mapping[str, Any],
         environment: Mapping[str, str],
     ) -> TauriSession:
+        ...
+
+    @abstractmethod
+    def expose_orchestrator_endpoint(self, url: str) -> RuntimeEndpoint:
         ...
 
     @abstractmethod
@@ -271,6 +295,7 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
         cell.validate_binding(gate_id, source_commit)
         self._cell = cell
         self._native_adapter = RemoteLinuxNativeDesktopAdapter(cell)
+        self._endpoint_ids: list[str] = []
 
     @property
     def cell_id(self) -> str:
@@ -293,6 +318,18 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
         )
         return TauriSession(launcher)
 
+    def expose_orchestrator_endpoint(self, url: str) -> RuntimeEndpoint:
+        endpoint_id = f"orchestrator-endpoint-{len(self._endpoint_ids) + 1}"
+        exposed = self._cell.expose_orchestrator_endpoint(endpoint_id, url)
+        exposed_id = str(exposed.get("endpointId") or "")
+        exposed_url = str(exposed.get("url") or "")
+        if exposed_id != endpoint_id or not exposed_url:
+            raise DriverError(
+                "Linux runtime-cell returned an invalid endpoint lease"
+            )
+        self._endpoint_ids.append(endpoint_id)
+        return RuntimeEndpoint(url=exposed_url, lease_id=endpoint_id)
+
     def binary_identity(self) -> dict[str, str]:
         return self._cell.binary_identity()
 
@@ -302,7 +339,24 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
         client_specs: Mapping[str, Mapping[str, Any]],
     ) -> dict[str, Any]:
         del client_specs
+        endpoint_releases: list[dict[str, Any]] = []
+        endpoint_errors: list[dict[str, str]] = []
+        for endpoint_id in reversed(self._endpoint_ids):
+            try:
+                endpoint_releases.append(
+                    self._cell.release_endpoint(endpoint_id)
+                )
+            except Exception as error:
+                endpoint_errors.append(
+                    {
+                        "resource": f"endpoint:{endpoint_id}",
+                        "error": str(error),
+                    }
+                )
+        if not endpoint_errors:
+            self._endpoint_ids.clear()
         audit = self._cell.actor_cleanup_audit()
+        endpoint_audit = self._cell.endpoint_cleanup_audit()
         log_paths = tuple(
             session.log_path
             for session in sessions
@@ -311,6 +365,8 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
         cleanup_errors = _remove_paths(log_paths)
         return {
             **audit,
+            **endpoint_audit,
+            "endpointReleases": endpoint_releases,
             "storageRoots": [
                 session.storage_root
                 for session in sessions
@@ -320,7 +376,7 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
                 not cleanup_errors
                 and all(not path.exists() for path in log_paths)
             ),
-            "cleanupErrors": cleanup_errors,
+            "cleanupErrors": [*endpoint_errors, *cleanup_errors],
         }
 
 
@@ -362,6 +418,9 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 environment=environment,
             )
         )
+
+    def expose_orchestrator_endpoint(self, url: str) -> RuntimeEndpoint:
+        return RuntimeEndpoint(url=url, lease_id="local-direct")
 
     def binary_identity(self) -> dict[str, str]:
         digest = hashlib.sha256()
