@@ -3,6 +3,7 @@
 .PHONY: acceptance-plan acceptance-run acceptance-run-ci acceptance-run-local-evidence \
         acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-infra-validate acceptance-validate \
         acceptance-driver-build acceptance-driver-smoke \
+        acceptance-cell-ready acceptance-cell-status acceptance-cell-logs acceptance-cell-stop \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-desktop-gateway \
         acceptance-chat-native-static acceptance-chat-native-two-client \
@@ -32,6 +33,7 @@ ACCEPTANCE_RANGE ?= HEAD
 ACCEPTANCE_PLAN ?= tooling/acceptance/reports/latest-plan.json
 ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),--plan $(ACCEPTANCE_PLAN))
 ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
+CELL ?= desktop-linux-native
 
 acceptance-driver-build:
 	VITE_ACCEPTANCE_HARNESS=1 pnpm --dir apps/desktop run build
@@ -45,6 +47,18 @@ acceptance-driver-build:
 
 acceptance-driver-smoke:
 	python3 -m tooling.acceptance.drivers.tauri
+
+acceptance-cell-ready:
+	python3 tooling/scripts/acceptance-cell.py ready --cell "$(CELL)"
+
+acceptance-cell-status:
+	python3 tooling/scripts/acceptance-cell.py status --cell "$(CELL)"
+
+acceptance-cell-logs:
+	python3 tooling/scripts/acceptance-cell.py logs --cell "$(CELL)"
+
+acceptance-cell-stop:
+	python3 tooling/scripts/acceptance-cell.py stop --cell "$(CELL)"
 
 acceptance-plan:
 	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)"

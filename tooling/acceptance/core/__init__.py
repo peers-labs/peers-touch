@@ -1,4 +1,9 @@
-from ._paths import REPO_ROOT, ENVIRONMENTS_DIR, REPORTS_DIR
+from ._paths import (
+    REPO_ROOT,
+    ENVIRONMENTS_DIR,
+    RUNTIME_CELLS_DIR,
+    REPORTS_DIR,
+)
 from .errors import (
     GateError,
     DriverError,
@@ -41,7 +46,7 @@ from .evidence_store import (
 from .evidence import EvidenceReport, new_report, ActorRuntime
 from .gate import AcceptanceGate
 from .harness import call_async_harness, harness_ready
-from .drivers.base import BaseDriver, DomDriver
+from .drivers import AppLauncher, AppLaunchMetadata, BaseDriver, DomDriver
 from .fixtures.base import BaseFixture
 from .provisioning import (
     ProvisioningState,
@@ -59,6 +64,25 @@ from .provisioning import (
     load_runtime_manifest,
 )
 from .provisioner import EnvironmentProvisioner
+from .runtime_cell import (
+    RuntimeCellState,
+    CellProofState,
+    TransportContract,
+    DisplayContract,
+    WebDriverContract,
+    NativeAdapterContract,
+    SourceContract,
+    IsolationContract,
+    RuntimeCellContract,
+    CellPlatformIdentity,
+    CellTransportIdentity,
+    CellDisplayIdentity,
+    CellSourceIdentity,
+    CellAdapterIdentity,
+    RuntimeCellManifest,
+    CellResult,
+    aggregate_matrix,
+)
 
 __all__ = [
     "GateError",
@@ -83,11 +107,14 @@ __all__ = [
     "AcceptanceGate",
     "BaseDriver",
     "DomDriver",
+    "AppLauncher",
+    "AppLaunchMetadata",
     "BaseFixture",
     "call_async_harness",
     "harness_ready",
     "REPO_ROOT",
     "ENVIRONMENTS_DIR",
+    "RUNTIME_CELLS_DIR",
     "REPORTS_DIR",
     "ActorRuntime",
     "ProvisioningState",
@@ -104,6 +131,23 @@ __all__ = [
     "load_json_artifact",
     "load_runtime_manifest",
     "EnvironmentProvisioner",
+    "RuntimeCellState",
+    "CellProofState",
+    "TransportContract",
+    "DisplayContract",
+    "WebDriverContract",
+    "NativeAdapterContract",
+    "SourceContract",
+    "IsolationContract",
+    "RuntimeCellContract",
+    "CellPlatformIdentity",
+    "CellTransportIdentity",
+    "CellDisplayIdentity",
+    "CellSourceIdentity",
+    "CellAdapterIdentity",
+    "RuntimeCellManifest",
+    "CellResult",
+    "aggregate_matrix",
     "ARTIFACT_ROOT_ENV",
     "RUN_GATE_ENV",
     "RUN_ID_ENV",

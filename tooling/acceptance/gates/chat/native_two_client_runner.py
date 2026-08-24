@@ -17,7 +17,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPO_ROOT, REPORTS_DIR
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     async_harness,
@@ -121,7 +121,7 @@ def wait_until(
     raise GateError(f"timed out waiting for {description}{suffix}")
 
 
-def send_text(client: TauriDriver, text: str) -> dict[str, Any]:
+def send_text(client: TauriSession, text: str) -> dict[str, Any]:
     composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
     client.execute_script(
         """
@@ -150,7 +150,7 @@ def send_text(client: TauriDriver, text: str) -> dict[str, Any]:
     )
 
 
-def message_snapshot(client: TauriDriver, text: str) -> dict[str, Any] | None:
+def message_snapshot(client: TauriSession, text: str) -> dict[str, Any] | None:
     value = client.execute_script(
         """
         const text = arguments[0];
@@ -182,7 +182,7 @@ class NativeTwoClientGate(AcceptanceGate):
         self.tested_commit = current_commit()
         self.workspace_digest = current_workspace_digest()
         self.steps: list[dict[str, Any]] = []
-        self.clients: dict[str, TauriDriver] = {}
+        self.clients: dict[str, TauriSession] = {}
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
 
