@@ -954,9 +954,23 @@ def adapter(args: argparse.Namespace) -> int:
     encoded = base64.b64encode(
         json.dumps(parsed, sort_keys=True).encode("utf-8")
     ).decode("ascii")
+    dbus = _container_command(
+        container_name,
+        "sed",
+        "-n",
+        "1p",
+        "/workspace/run/dbus.state",
+        timeout=args.timeout,
+    ).stdout.strip()
+    if not dbus:
+        raise RuntimeError(
+            "runtime-cell D-Bus session address is unavailable"
+        )
     completed = _container_command(
         container_name,
         "env",
+        f"DBUS_SESSION_BUS_ADDRESS={dbus}",
+        "NO_AT_BRIDGE=0",
         "PYTHONPATH=/workspace/source",
         "python3",
         "-c",
