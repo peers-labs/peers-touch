@@ -488,6 +488,21 @@ def status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cache_entry_stats(path: Path) -> tuple[float, int]:
+    descendants = (
+        tuple(path.rglob("*"))
+        if path.is_dir() and not path.is_symlink()
+        else ()
+    )
+    entries = (path, *descendants)
+    latest_mtime = max(entry.lstat().st_mtime for entry in entries)
+    file_count = sum(
+        entry.is_file() or entry.is_symlink()
+        for entry in entries
+    )
+    return latest_mtime, file_count
+
+
 def prune(args: argparse.Namespace) -> int:
     root = _runtime_root(args.runtime_root)
     cache_root = _runtime_root(args.cache_root)
@@ -507,29 +522,23 @@ def prune(args: argparse.Namespace) -> int:
                 continue
             _remove_tree(run_root)
             removed.append(run_root.name)
+    removed_cache_entries: list[str] = []
     removed_cache_files = 0
-    for path in cache_root.rglob("*") if cache_root.is_dir() else ():
-        if not path.is_file() or path.stat().st_mtime >= cutoff:
+    for path in cache_root.iterdir() if cache_root.is_dir() else ():
+        latest_mtime, file_count = _cache_entry_stats(path)
+        if latest_mtime >= cutoff:
             continue
-        path.unlink()
-        removed_cache_files += 1
-    for path in sorted(
-        (
-            item
-            for item in cache_root.rglob("*")
-            if item.is_dir()
-        ),
-        key=lambda item: len(item.parts),
-        reverse=True,
-    ):
-        try:
-            path.rmdir()
-        except OSError:
-            continue
+        if path.is_dir() and not path.is_symlink():
+            _remove_tree(path)
+        else:
+            path.unlink()
+        removed_cache_entries.append(path.name)
+        removed_cache_files += file_count
     sys.stdout.write(
         json.dumps(
             {
                 "removedRunIds": sorted(removed),
+                "removedCacheEntries": sorted(removed_cache_entries),
                 "removedCacheFiles": removed_cache_files,
             }
         )

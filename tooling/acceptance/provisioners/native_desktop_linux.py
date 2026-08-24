@@ -1250,6 +1250,8 @@ class NativeDesktopLinuxProvisioner:
                 "--env",
                 "HOME=/workspace/cache/home",
                 "--env",
+                "COREPACK_HOME=/opt/corepack",
+                "--env",
                 "CARGO_HOME=/workspace/cache/cargo/home",
                 "--env",
                 "CARGO_TARGET_DIR=/workspace/cache/cargo/target",
