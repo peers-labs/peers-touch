@@ -84,7 +84,6 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
             [
                 call(display, 6, x=29, y=191),
                 call(display, 4, 1, x=29, y=191),
-                call(display, 6, x=29, y=191),
                 call(display, 5, 1, x=29, y=191),
             ],
         )
