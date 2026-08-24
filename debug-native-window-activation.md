@@ -38,3 +38,28 @@ produced the first immutable `native-activation-diagnostics` artifact:
 - The timeout occurred in the subsequent point-ownership wait. The first probe
   did not capture post-fallback state, so hypotheses B and C remain
   inconclusive and require one bounded instrumentation iteration.
+
+Run `20260824T015227003626Z-acf922f1d95eb52797070976b3148b37`
+captured the complete fallback boundary:
+
+- Before fallback, Alice had no current-Space window and WeChat owned the
+  sampled point.
+- Immediately after fallback, Alice became the actual frontmost process and
+  `documentFocused=true`, but Alice still had no current-Space WindowServer
+  entry and `pointOwned=false`.
+- Five seconds later, frontmost and document focus returned to full-screen
+  WeChat while Alice remained absent from the current Space.
+
+| ID | Status | Evidence |
+|----|--------|----------|
+| A | Rejected as root cause | Alice reported `documentFocused=true` immediately after fallback activation. |
+| B | Confirmed | Alice never owned the sampled point because its window was absent from the current full-screen Space. |
+| C | Consequence, not root cause | Frontmost moved to Alice transiently, then returned to WeChat after the target window failed to join the active Space. |
+
+## Fix
+- Keep the immutable activation diagnostic artifact and its static contract.
+- Configure only the `acceptance-webdriver` macOS window with
+  `CanJoinAllSpaces | FullScreenAuxiliary` in addition to its existing
+  screen-saver level.
+- Preserve the real CoreGraphics input path and all focus/point-ownership
+  assertions.

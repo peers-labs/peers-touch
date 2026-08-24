@@ -367,6 +367,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('feature = "acceptance-webdriver"', self.desktop_main)
         self.assertIn("target_os = \"macos\"", self.desktop_main)
         self.assertIn("NSScreenSaverWindowLevel", self.desktop_main)
+        self.assertIn(
+            "NSWindowCollectionBehavior::CanJoinAllSpaces",
+            self.desktop_main,
+        )
+        self.assertIn(
+            "NSWindowCollectionBehavior::FullScreenAuxiliary",
+            self.desktop_main,
+        )
+        self.assertIn(
+            "ns_window.setCollectionBehavior(collection_behavior)",
+            self.desktop_main,
+        )
         self.assertIn("DispatchQueue::main().exec_async", self.desktop_main)
         self.assertIn("configure_acceptance_window_level(window)?", self.desktop_main)
         self.assertIn("fn acceptance_yield_activation(", self.desktop_main)

@@ -1430,7 +1430,7 @@ except Exception as error:
             data=json.dumps(
                 {
                     "sessionId": debug_session,
-                    "runId": "pre-fix",
+                    "runId": "post-fix",
                     "hypothesisId": "A-C",
                     "location":
                         "NativeProductClosureGate:capture_native_activation_diagnostic",
