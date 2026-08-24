@@ -559,7 +559,10 @@ working AT-SPI snapshot, then attempted the macOS-only
 `acceptance_yield_activation` Tauri command on Linux. Cooperative activation is
 therefore dispatched through `NativeDesktopRuntimeBinding`: macOS preserves the
 existing command sequence, while Linux uses its X11 adapter activation path.
-The Chat runner remains platform-neutral.
+The Chat runner remains platform-neutral. The following exact-source cell
+preflight also exposed a transient actor-directory cleanup race after process
+termination; cleanup now retries bounded `EBUSY`/`ENOTEMPTY` failures and still
+fails closed when the directory remains.
 
 ## 13. Final Readiness Gate
 
