@@ -93,6 +93,10 @@ On the first failed boundary, capture:
 
 - both DOM snapshots;
 - both Desktop logs from the last successful step;
+- Native activation predicate snapshots when focus acquisition fails, including
+  expected process ID, actual frontmost process ID, `document.hasFocus()`,
+  Accessibility main/focused-window state, sampled point, point ownership, and
+  the ordered window stack at that point;
 - Station logs correlated by conversation, command, envelope, and device IDs;
 - current device registry and bundle publication timestamps;
 - session state keyed by both endpoint tuples;
@@ -100,6 +104,8 @@ On the first failed boundary, capture:
 - composer value and visible error.
 
 Do not continue through later assertions after a prerequisite fails.
+Native activation failures must emit these fields into immutable Gate evidence;
+an unstructured `TimeoutException` is insufficient for diagnosis or review.
 
 Cleanup evidence is mandatory on both success and failure. Every client process
 must stop, gateway/renderer/WebDriver ports must have no listener, and run

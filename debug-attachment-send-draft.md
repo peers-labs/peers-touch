@@ -73,3 +73,11 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
   `20260824T005920933280Z-ae94692e7e51697d3d77abbecd5781d4` again stopped before
   `group.create.ui`; immediate recheck showed `loginwindow` frontmost and
   `CGSSessionScreenIsLocked=Yes`. The debug log remained empty and cleanup passed.
+- Exact HEAD `c52950e10d350396310a4ff94bbfd41e216a6c11` passed the dedicated WebDriver
+  smoke and matched Profile Three `build_commit=c52950e10d35`. Run
+  `20260824T013241143244Z-e4945039f87e362b28ede31d5b5a9e8f` ran while the console
+  had no lock marker and Alice emitted `host:app-resume:window-focus`, but the
+  cooperative activation wait still timed out before `group.create.ui`. Current
+  evidence does not distinguish `document.hasFocus()` from Native point ownership,
+  so the next change must be evidence-only activation instrumentation. Runtime
+  cleanup passed and the post-fix attachment log remains empty.
