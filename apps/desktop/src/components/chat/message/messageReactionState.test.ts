@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   beginMessageReactionMutation,
+  blocksMessageActionOverlay,
   messageReactionProjectionMatches,
   reactionMutationForProjection,
   visibleMessageReactions,
@@ -9,6 +10,13 @@ import {
 } from './messageReactionState';
 
 describe('message reaction state', () => {
+  it('reserves the message action surface for active reaction recovery', () => {
+    expect(blocksMessageActionOverlay(undefined)).toBe(false);
+    expect(blocksMessageActionOverlay('pending')).toBe(true);
+    expect(blocksMessageActionOverlay('awaiting-projection')).toBe(true);
+    expect(blocksMessageActionOverlay('error')).toBe(true);
+  });
+
   it('optimistically adds the selected emoji for the current actor', () => {
     const mutation = beginMessageReactionMutation(
       [{ actorId: 'peer', emoji: '👍' }],
