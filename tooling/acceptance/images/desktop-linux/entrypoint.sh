@@ -4,8 +4,6 @@ set -euo pipefail
 : "${PT_CELL_RUN_ROOT:?PT_CELL_RUN_ROOT is required}"
 : "${PT_CELL_APP_BINARY:?PT_CELL_APP_BINARY is required}"
 : "${PT_CELL_RUN_ID:?PT_CELL_RUN_ID is required}"
-: "${TAURI_WEBDRIVER_PORT:?TAURI_WEBDRIVER_PORT is required}"
-: "${PT_GATEWAY_PORT:?PT_GATEWAY_PORT is required}"
 
 export DISPLAY="${PT_CELL_DISPLAY:-:99}"
 export XDG_RUNTIME_DIR="$PT_CELL_RUN_ROOT/runtime"
@@ -18,7 +16,6 @@ dbus_pid=""
 keyring_pid=""
 openbox_pid=""
 vnc_pid=""
-app_pid=""
 
 mkdir -p "$PT_CELL_RUN_ROOT" "$XDG_RUNTIME_DIR" "$HOME"
 chmod 0700 "$PT_CELL_RUN_ROOT" "$XDG_RUNTIME_DIR" "$HOME"
@@ -37,7 +34,6 @@ stop_process() {
 
 cleanup() {
   trap - EXIT INT TERM
-  stop_process "$app_pid"
   stop_process "$vnc_pid"
   stop_process "$openbox_pid"
   stop_process "$keyring_pid"
@@ -119,20 +115,6 @@ x11vnc \
   >/dev/null 2>&1 &
 vnc_pid=$!
 
-"$PT_CELL_APP_BINARY" >"$PT_CELL_RUN_ROOT/app.log" 2>&1 &
-app_pid=$!
-
-for _ in $(seq 1 600); do
-  if nc -z 127.0.0.1 "$TAURI_WEBDRIVER_PORT"; then
-    break
-  fi
-  kill -0 "$app_pid" 2>/dev/null || {
-    printf 'Tauri Desktop exited before WebDriver readiness\n' >&2
-    exit 1
-  }
-  sleep 0.25
-done
-nc -z 127.0.0.1 "$TAURI_WEBDRIVER_PORT"
 for _ in $(seq 1 100); do
   nc -z 127.0.0.1 "$vnc_port" && break
   kill -0 "$vnc_pid" 2>/dev/null || {
@@ -161,13 +143,10 @@ jq -n \
   --argjson keyringPid "${keyring_pid:-0}" \
   --argjson openboxPid "$openbox_pid" \
   --argjson vncPid "$vnc_pid" \
-  --argjson appPid "$app_pid" \
-  --argjson webdriverPort "$TAURI_WEBDRIVER_PORT" \
-  --argjson gatewayPort "$PT_GATEWAY_PORT" \
   --argjson vncPort "$vnc_port" \
   '{
     runId: $runId,
-    state: "DRIVER_READY",
+    state: "SESSION_READY",
     display: $display,
     webkitVersion: $webkitVersion,
     processes: {
@@ -175,12 +154,9 @@ jq -n \
       dbus: $dbusPid,
       keyring: $keyringPid,
       windowManager: $openboxPid,
-      observer: $vncPid,
-      app: $appPid
+      observer: $vncPid
     },
     ports: {
-      webdriver: $webdriverPort,
-      gateway: $gatewayPort,
       observer: $vncPort
     }
   }' >"$PT_CELL_RUN_ROOT/ready.json.tmp"
@@ -189,8 +165,7 @@ mv "$PT_CELL_RUN_ROOT/ready.json.tmp" "$PT_CELL_RUN_ROOT/ready.json"
 while
   kill -0 "$xorg_pid" 2>/dev/null \
     && kill -0 "$openbox_pid" 2>/dev/null \
-    && kill -0 "$vnc_pid" 2>/dev/null \
-    && kill -0 "$app_pid" 2>/dev/null
+    && kill -0 "$vnc_pid" 2>/dev/null
 do
   sleep 1
 done

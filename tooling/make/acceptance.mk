@@ -34,6 +34,7 @@ ACCEPTANCE_PLAN ?= tooling/acceptance/reports/latest-plan.json
 ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),--plan $(ACCEPTANCE_PLAN))
 ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
 CELL ?= desktop-linux-native
+RUNTIME_CELL ?= desktop-macos-native
 
 acceptance-driver-build:
 	VITE_ACCEPTANCE_HARNESS=1 pnpm --dir apps/desktop run build
@@ -129,7 +130,10 @@ acceptance-chat-native-interactions:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-interactions-e2e
 
 acceptance-chat-native-product-closure:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-product-closure-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-product-closure-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-typing:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-typing-e2e
