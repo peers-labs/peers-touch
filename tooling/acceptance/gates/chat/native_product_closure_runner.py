@@ -1187,12 +1187,16 @@ class NativeProductClosureGate(AcceptanceGate):
                 },
             )
             # #endregion
+            mouse_down_posted = True
             self.native_adapter.post_mouse(
-                (MouseAction.LEFT_DOWN,),
+                (
+                    MouseAction.LEFT_DOWN,
+                    MouseAction.LEFT_UP,
+                ),
                 point,
             )
-            mouse_down_posted = True
-            # #region debug-point B,C,D,E:after-native-mousedown
+            mouse_down_posted = False
+            # #region debug-point B,C,D,E:after-native-pointer-press
             post_down = client.driver.execute_script(
                 """
                 const probe = window.__PT_NATIVE_INPUT_PROBES__?.[arguments[0]];
@@ -1218,8 +1222,8 @@ class NativeProductClosureGate(AcceptanceGate):
             )
             report_native_mousedown_debug(
                 "B,C,D,E",
-                "native_product_closure_runner:_click_focused_element:after-down",
-                "Native mouse-down was posted",
+                "native_product_closure_runner:_click_focused_element:after-press",
+                "Complete native pointer press was posted",
                 {
                     "processId": client.process_id,
                     "point": point,
@@ -1240,11 +1244,6 @@ class NativeProductClosureGate(AcceptanceGate):
                 "mousedown",
                 cursor,
             )
-            self.native_adapter.post_mouse(
-                (MouseAction.LEFT_UP,),
-                point,
-            )
-            mouse_down_posted = False
             cursor = self.wait_native_input_event(
                 client,
                 probe_id,

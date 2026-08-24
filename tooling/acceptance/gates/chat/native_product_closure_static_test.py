@@ -339,8 +339,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source.index("current_target = client.driver.execute_script("),
             click_source.index(
                 "self.native_adapter.post_mouse(\n"
-                "                (MouseAction.LEFT_DOWN,),"
+                "                (\n"
+                "                    MouseAction.LEFT_DOWN,\n"
+                "                    MouseAction.LEFT_UP,\n"
+                "                ),"
             ),
+        )
+        self.assertEqual(
+            click_source.count("self.native_adapter.post_mouse("),
+            1,
         )
         self.assertNotIn(
             'report_native_input_delivery("before-click")',
