@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
@@ -182,6 +183,42 @@ def gateway_read(
 def port_is_free(port: int) -> bool:
     with socket.socket() as probe:
         return probe.connect_ex(("127.0.0.1", port)) != 0
+
+
+# #region debug-point A,B,C,D,E:native-mousedown-reporting
+def report_native_mousedown_debug(
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict[str, Any],
+) -> None:
+    url = os.environ.get("DEBUG_SERVER_URL", "").strip()
+    if not url:
+        return
+    payload = {
+        "sessionId": os.environ.get(
+            "DEBUG_SESSION_ID",
+            "native-mousedown-ack",
+        ),
+        "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "msg": f"[DEBUG] {message}",
+        "data": data,
+        "ts": int(time.time() * 1000),
+    }
+    try:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload, default=str).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=2):
+            pass
+    except Exception:
+        pass
+# #endregion
 
 
 class NativeProductClosureGate(AcceptanceGate):
@@ -628,6 +665,7 @@ class NativeProductClosureGate(AcceptanceGate):
               'click',
             ];
             const events = [];
+            const documentEvents = [];
             const describe = (candidate) => {
               if (!(candidate instanceof Element)) return null;
               return {
@@ -658,14 +696,31 @@ class NativeProductClosureGate(AcceptanceGate):
                 target: describe(eventTarget),
               });
             };
+            const documentListener = (event) => {
+              documentEvents.push({
+                type: event.type,
+                button: event.button,
+                buttons: event.buttons,
+                clientX: event.clientX,
+                clientY: event.clientY,
+                target: describe(event.target),
+                path: event.composedPath()
+                  .filter((candidate) => candidate instanceof Element)
+                  .slice(0, 8)
+                  .map(describe),
+              });
+            };
             eventTypes.forEach((type) => {
               document.addEventListener(type, listener, true);
+              window.addEventListener(type, documentListener, true);
             });
             registry[probeId] = {
               events,
+              documentEvents,
               cleanup: () => {
                 eventTypes.forEach((type) => {
                   document.removeEventListener(type, listener, true);
+                  window.removeEventListener(type, documentListener, true);
                 });
                 delete registry[probeId];
               },
@@ -714,6 +769,39 @@ class NativeProductClosureGate(AcceptanceGate):
                 ).until(observed)
             )
         except Exception as error:
+            # #region debug-point C,D:native-input-timeout
+            snapshot = client.driver.execute_script(
+                """
+                const probe = window.__PT_NATIVE_INPUT_PROBES__?.[arguments[0]];
+                const target = document.elementFromPoint(
+                  innerWidth / 2,
+                  innerHeight / 2
+                );
+                return {
+                  activeElement: {
+                    tag: document.activeElement?.tagName || '',
+                    id: document.activeElement?.id || '',
+                    classes: document.activeElement?.className || '',
+                  },
+                  documentEvents: probe?.documentEvents || [],
+                  events: probe?.events || [],
+                  hasFocus: document.hasFocus(),
+                  viewportCenterTarget: {
+                    tag: target?.tagName || '',
+                    id: target?.id || '',
+                    classes: target?.className || '',
+                  },
+                };
+                """,
+                probe_id,
+            )
+            report_native_mousedown_debug(
+                "C,D",
+                "native_product_closure_runner:wait_native_input_event",
+                f"Native {event_type} acknowledgement timed out",
+                snapshot if isinstance(snapshot, dict) else {"snapshot": snapshot},
+            )
+            # #endregion
             raise GateError(
                 f"Native {event_type} was not acknowledged by the target DOM"
             ) from error
@@ -965,6 +1053,22 @@ class NativeProductClosureGate(AcceptanceGate):
               },
               viewportWidth: innerWidth,
               viewportHeight: innerHeight,
+              devicePixelRatio,
+              outerWidth,
+              outerHeight,
+              screenX,
+              screenY,
+              scrollX,
+              scrollY,
+              visualViewport: window.visualViewport ? {
+                offsetLeft: window.visualViewport.offsetLeft,
+                offsetTop: window.visualViewport.offsetTop,
+                pageLeft: window.visualViewport.pageLeft,
+                pageTop: window.visualViewport.pageTop,
+                scale: window.visualViewport.scale,
+                width: window.visualViewport.width,
+                height: window.visualViewport.height,
+              } : null,
             };
             """,
             element,
@@ -987,6 +1091,29 @@ class NativeProductClosureGate(AcceptanceGate):
             window["left"] + content_offset_x + float(target["x"]),
             window["top"] + content_offset_y + float(target["y"]),
         )
+        # #region debug-point A,B,E:computed-native-point
+        initial_stack = self.native_adapter.window_stack_at_point(point)
+        initial_focus = self.native_adapter.focused_control(
+            client.process_id or 0
+        )
+        report_native_mousedown_debug(
+            "A,B,E",
+            "native_product_closure_runner:_click_focused_element:computed",
+            "Computed native click point",
+            {
+                "processId": client.process_id,
+                "target": target,
+                "window": window,
+                "contentOffset": {
+                    "x": content_offset_x,
+                    "y": content_offset_y,
+                },
+                "point": point,
+                "windowStack": initial_stack.to_dict(),
+                "focusedControl": initial_focus.to_dict(),
+            },
+        )
+        # #endregion
         probe_id = self.install_native_input_probe(client, element)
         mouse_down_posted = False
         try:
@@ -1002,8 +1129,26 @@ class NativeProductClosureGate(AcceptanceGate):
                   connected: element.isConnected,
                   disabled: Boolean(element.disabled),
                   hit: hit === element || element.contains(hit),
+                  hitTarget: {
+                    tag: hit?.tagName || '',
+                    id: hit?.id || '',
+                    classes: hit?.className || '',
+                  },
                   x,
                   y,
+                  hasFocus: document.hasFocus(),
+                  activeElement: {
+                    tag: document.activeElement?.tagName || '',
+                    id: document.activeElement?.id || '',
+                    classes: document.activeElement?.className || '',
+                  },
+                  devicePixelRatio,
+                  outerWidth,
+                  outerHeight,
+                  screenX,
+                  screenY,
+                  viewportWidth: innerWidth,
+                  viewportHeight: innerHeight,
                 };
                 """,
                 element,
@@ -1024,11 +1169,71 @@ class NativeProductClosureGate(AcceptanceGate):
                 + content_offset_y
                 + float(current_target["y"]),
             )
+            # #region debug-point A,C,E:before-native-mousedown
+            report_native_mousedown_debug(
+                "A,C,E",
+                "native_product_closure_runner:_click_focused_element:before-down",
+                "Native mouse-down is about to be posted",
+                {
+                    "processId": client.process_id,
+                    "currentTarget": current_target,
+                    "point": point,
+                    "windowStack": self.native_adapter.window_stack_at_point(
+                        point
+                    ).to_dict(),
+                    "focusedControl": self.native_adapter.focused_control(
+                        client.process_id or 0
+                    ).to_dict(),
+                },
+            )
+            # #endregion
             self.native_adapter.post_mouse(
                 (MouseAction.LEFT_DOWN,),
                 point,
             )
             mouse_down_posted = True
+            # #region debug-point B,C,D,E:after-native-mousedown
+            post_down = client.driver.execute_script(
+                """
+                const probe = window.__PT_NATIVE_INPUT_PROBES__?.[arguments[0]];
+                const element = arguments[1];
+                const rect = element.getBoundingClientRect();
+                const x = rect.left + rect.width / 2;
+                const y = rect.top + rect.height / 2;
+                const hit = document.elementFromPoint(x, y);
+                return {
+                  documentEvents: probe?.documentEvents || [],
+                  events: probe?.events || [],
+                  hasFocus: document.hasFocus(),
+                  hitOwned: hit === element || element.contains(hit),
+                  hitTarget: {
+                    tag: hit?.tagName || '',
+                    id: hit?.id || '',
+                    classes: hit?.className || '',
+                  },
+                };
+                """,
+                probe_id,
+                element,
+            )
+            report_native_mousedown_debug(
+                "B,C,D,E",
+                "native_product_closure_runner:_click_focused_element:after-down",
+                "Native mouse-down was posted",
+                {
+                    "processId": client.process_id,
+                    "point": point,
+                    "dom": post_down,
+                    "mouseButtonDown": self.native_adapter.mouse_button_down(),
+                    "windowStack": self.native_adapter.window_stack_at_point(
+                        point
+                    ).to_dict(),
+                    "focusedControl": self.native_adapter.focused_control(
+                        client.process_id or 0
+                    ).to_dict(),
+                },
+            )
+            # #endregion
             cursor = self.wait_native_input_event(
                 client,
                 probe_id,
