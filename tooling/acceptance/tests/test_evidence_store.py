@@ -36,7 +36,7 @@ from tooling.acceptance.core.errors import (
     EvidenceRunActive,
     EvidenceSymlinkRejected,
 )
-from tooling.acceptance.core.redaction import REDACTED
+from tooling.acceptance.core.redaction import REDACTED, redact_text
 
 
 def _process_writer(
@@ -64,6 +64,18 @@ def _process_writer(
         result_queue.put(
             {"error": f"{type(error).__name__}: {error}"}
         )
+
+
+class RedactionTests(unittest.TestCase):
+    def test_sensitive_assignment_redaction_is_idempotent(self) -> None:
+        original = (
+            "resource=fixture-authorization:CHAT_ACCEPTANCE_RESET=1"
+        )
+
+        redacted = redact_text(original)
+
+        self.assertEqual(redact_text(redacted), redacted)
+        self.assertIn(f"authorization:{REDACTED}", redacted)
 
 
 class ArtifactRootResolverTests(unittest.TestCase):
