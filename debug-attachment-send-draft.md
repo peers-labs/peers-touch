@@ -68,3 +68,8 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
   `IOConsoleUsers.CGSSessionScreenIsLocked=Yes`.
 - Both failed runs released Actor processes, ports, logs, and storage. The post-fix debug log
   remains empty because neither run reached the attachment journey.
+- After the console briefly appeared unlocked, exact-HEAD commit
+  `b27f3bd898f4c95d841e3dd4a805fb53115035c8` was deployed and rebuilt. Run
+  `20260824T005920933280Z-ae94692e7e51697d3d77abbecd5781d4` again stopped before
+  `group.create.ui`; immediate recheck showed `loginwindow` frontmost and
+  `CGSSessionScreenIsLocked=Yes`. The debug log remained empty and cleanup passed.
