@@ -435,6 +435,28 @@ def _json_output(completed: subprocess.CompletedProcess[str], operation: str) ->
     return payload
 
 
+def _json_document_output(
+    completed: subprocess.CompletedProcess[str],
+    operation: str,
+) -> dict[str, Any]:
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise ProvisioningError(
+            f"Linux runtime-cell {operation} failed: {detail[-4000:]}"
+        )
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise ProvisioningError(
+            f"Linux runtime-cell {operation} returned invalid JSON"
+        ) from error
+    if not isinstance(payload, dict):
+        raise ProvisioningError(
+            f"Linux runtime-cell {operation} returned a non-object"
+        )
+    return payload
+
+
 class NativeDesktopLinuxProvisioner:
     """Owns one remote Linux Desktop runtime cell lifecycle."""
 
@@ -1467,7 +1489,7 @@ class NativeDesktopLinuxProvisioner:
                 check=False,
             )
             if completed.returncode == 0:
-                return _json_output(completed, "readiness")
+                return _json_document_output(completed, "readiness")
             last_detail = completed.stderr.strip() or completed.stdout.strip()
             state = self.transport.run_argv(
                 (

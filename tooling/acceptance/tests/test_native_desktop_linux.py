@@ -158,6 +158,42 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
                 source,
             )
 
+    def test_wait_for_ready_parses_complete_multiline_document(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner.transport = Mock()
+        expected = {
+            "runId": "run-1",
+            "state": "DRIVER_READY",
+            "processes": {"app": 123},
+        }
+        provisioner.transport.run_argv.return_value = (
+            subprocess.CompletedProcess(
+                args=(),
+                returncode=0,
+                stdout=json.dumps(expected, indent=2) + "\n",
+                stderr="",
+            )
+        )
+
+        actual = provisioner._wait_for_ready("runtime-cell", timeout=0.1)
+
+        self.assertEqual(actual, expected)
+
+    def test_wait_for_ready_rejects_invalid_document(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner.transport = Mock()
+        provisioner.transport.run_argv.return_value = (
+            subprocess.CompletedProcess(
+                args=(),
+                returncode=0,
+                stdout="}\n",
+                stderr="",
+            )
+        )
+
+        with self.assertRaisesRegex(ProvisioningError, "invalid JSON"):
+            provisioner._wait_for_ready("runtime-cell", timeout=0.1)
+
 
 class LinuxCellProfileTests(unittest.TestCase):
     def test_profile_loads_non_sensitive_runtime_settings(self) -> None:
