@@ -121,6 +121,7 @@ class ProfileLease:
 def _remote_git_source_lease_script(
     deploy_path: str,
     owner: str,
+    resource: str = "",
 ) -> str:
     relative_path = Path(deploy_path.strip())
     if (
@@ -132,27 +133,18 @@ def _remote_git_source_lease_script(
             "remote deployment path must be relative to the remote home"
         )
     normalized_path = relative_path.as_posix()
+    normalized_resource = normalize_lease_resource(resource or normalized_path)
     python_script = "\n".join(
         (
             "import fcntl",
             "import os",
             "import pathlib",
             "import signal",
-            "import subprocess",
             "import sys",
             "",
-            "repo = pathlib.Path.home() / sys.argv[1].strip('/')",
-            "identity = subprocess.run(",
-            "    ['git', '-C', str(repo), 'rev-parse', '--absolute-git-dir'],",
-            "    capture_output=True,",
-            "    text=True,",
-            ")",
-            "if identity.returncode != 0:",
-            "    print('BLOCKED:not-a-git-worktree', flush=True)",
-            "    raise SystemExit(72)",
-            "git_dir = pathlib.Path(identity.stdout.strip())",
-            "lease_path = git_dir / 'acceptance-profile.lock'",
-            "index_path = git_dir / 'index.lock'",
+            "lock_root = pathlib.Path.home() / '.cache/peers-touch/source-leases'",
+            "lock_root.mkdir(parents=True, exist_ok=True)",
+            "lease_path = lock_root / (sys.argv[3] + '.lock')",
             "lease = lease_path.open('a+', encoding='utf-8')",
             "try:",
             "    fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)",
@@ -166,16 +158,6 @@ def _remote_git_source_lease_script(
             "lease.write(sys.argv[2] + '\\n')",
             "lease.flush()",
             "os.fsync(lease.fileno())",
-            "try:",
-            "    index_fd = os.open(",
-            "        index_path,",
-            "        os.O_CREAT | os.O_EXCL | os.O_WRONLY,",
-            "        0o600,",
-            "    )",
-            "except FileExistsError:",
-            "    print('BLOCKED:index-lock-exists', flush=True)",
-            "    raise SystemExit(74)",
-            "os.close(index_fd)",
             "",
             "def stop(*_args):",
             "    raise SystemExit(0)",
@@ -186,15 +168,13 @@ def _remote_git_source_lease_script(
             "    print('READY', flush=True)",
             "    sys.stdin.readline()",
             "finally:",
-            "    try:",
-            "        index_path.unlink()",
-            "    except FileNotFoundError:",
-            "        pass",
+            "    fcntl.flock(lease.fileno(), fcntl.LOCK_UN)",
         )
     )
     return (
         f"exec python3 -c {shlex.quote(python_script)} "
-        f"{shlex.quote(normalized_path)} {shlex.quote(owner)}"
+        f"{shlex.quote(normalized_path)} {shlex.quote(owner)} "
+        f"{shlex.quote(normalized_resource)}"
     )
 
 
@@ -207,6 +187,8 @@ class RemoteGitSourceLease:
         host: str,
         user: str,
         deploy_path: str,
+        port: int = 22,
+        known_hosts_file: str = "",
         acquire_timeout: float = 15,
     ) -> None:
         self.resource = normalize_lease_resource(resource)
@@ -214,6 +196,16 @@ class RemoteGitSourceLease:
         self.host = host.strip()
         self.user = user.strip()
         self.deploy_path = deploy_path.strip()
+        from tooling.acceptance.transports.ssh import SshTarget, SshTransport
+
+        self.transport = SshTransport(
+            SshTarget(
+                host=self.host,
+                user=self.user,
+                port=port,
+                known_hosts_file=known_hosts_file,
+            )
+        )
         self.acquire_timeout = acquire_timeout
         self._process: subprocess.Popen[str] | None = None
         if not self.host or not self.user or not self.deploy_path:
@@ -223,19 +215,12 @@ class RemoteGitSourceLease:
 
     def _command(self) -> list[str]:
         return [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "ConnectionAttempts=1",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{self.user}@{self.host}",
+            *self.transport.command_prefix(),
+            self.transport.target.destination,
             _remote_git_source_lease_script(
                 self.deploy_path,
                 self.owner,
+                self.resource,
             ),
         ]
 
@@ -316,10 +301,6 @@ class RemoteGitSourceLease:
                 if current_owner
                 else "deployment worktree lease is already held"
             )
-        elif detail == "BLOCKED:index-lock-exists":
-            detail = "deployment worktree already has .git/index.lock"
-        elif detail == "BLOCKED:not-a-git-worktree":
-            detail = "deployment path is not a Git worktree"
         raise RemoteGitSourceLeaseUnavailable(self.resource, detail)
 
     def release(self) -> None:
