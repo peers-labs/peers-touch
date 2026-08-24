@@ -91,6 +91,29 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         display.sync.assert_called_once_with()
         display.close.assert_called_once_with()
 
+    def test_window_bounds_translate_client_origin_into_root_coordinates(
+        self,
+    ) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        root = Mock()
+        window = Mock()
+        display.screen.return_value.root = root
+        window.get_geometry.return_value = types.SimpleNamespace(
+            width=860,
+            height=800,
+        )
+        root.translate_coords.return_value = types.SimpleNamespace(x=641, y=52)
+
+        bounds = adapter._window_bounds(display, window)
+
+        root.translate_coords.assert_called_once_with(window, 0, 0)
+        window.translate_coords.assert_not_called()
+        self.assertEqual(bounds.left, 641)
+        self.assertEqual(bounds.top, 52)
+        self.assertEqual(bounds.width, 860)
+        self.assertEqual(bounds.height, 800)
+
     def test_clipboard_commands_are_bound_to_the_declared_display(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
         read = subprocess.CompletedProcess(
