@@ -243,14 +243,28 @@ def _stop_actor_record(
     process_id = int(record.get("processId") or 0)
     if process_id > 0:
         subprocess.run(
-            ("docker", "exec", container_name, "kill", "-TERM", str(process_id)),
+            (
+                "docker",
+                "exec",
+                container_name,
+                "/bin/bash",
+                "-lc",
+                f"kill -TERM -- -{process_id}",
+            ),
             capture_output=True,
             check=False,
         )
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             alive = subprocess.run(
-                ("docker", "exec", container_name, "kill", "-0", str(process_id)),
+                (
+                    "docker",
+                    "exec",
+                    container_name,
+                    "/bin/bash",
+                    "-lc",
+                    f"kill -0 -- -{process_id}",
+                ),
                 capture_output=True,
                 check=False,
             )
@@ -259,7 +273,14 @@ def _stop_actor_record(
             time.sleep(0.05)
         else:
             subprocess.run(
-                ("docker", "exec", container_name, "kill", "-KILL", str(process_id)),
+                (
+                    "docker",
+                    "exec",
+                    container_name,
+                    "/bin/bash",
+                    "-lc",
+                    f"kill -KILL -- -{process_id}",
+                ),
                 capture_output=True,
                 check=False,
             )
@@ -270,9 +291,9 @@ def _stop_actor_record(
                         "docker",
                         "exec",
                         container_name,
-                        "kill",
-                        "-0",
-                        str(process_id),
+                        "/bin/bash",
+                        "-lc",
+                        f"kill -0 -- -{process_id}",
                     ),
                     capture_output=True,
                     check=False,
@@ -828,9 +849,11 @@ def actor_start(args: argparse.Namespace) -> int:
                 "set -euo pipefail; "
                 "export DBUS_SESSION_BUS_ADDRESS="
                 "\"$(sed -n '1p' /workspace/run/dbus.state)\"; "
-                "printf '%s\\n' \"$$\" > \"$PT_ACTOR_ROOT/app.pid\"; "
-                "exec \"$PT_CELL_APP_BINARY\" "
-                ">\"$PT_ACTOR_ROOT/app.log\" 2>&1"
+                "setsid \"$PT_CELL_APP_BINARY\" "
+                ">\"$PT_ACTOR_ROOT/app.log\" 2>&1 & "
+                "actor_pid=$!; "
+                "printf '%s\\n' \"$actor_pid\" > \"$PT_ACTOR_ROOT/app.pid\"; "
+                "wait \"$actor_pid\""
             ),
         )
     )
