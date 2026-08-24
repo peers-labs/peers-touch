@@ -139,6 +139,10 @@ class NativeDesktopAdapter(ABC):
         ...
 
     @abstractmethod
+    def reveal_file_chooser_location(self) -> None:
+        ...
+
+    @abstractmethod
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         ...
 
