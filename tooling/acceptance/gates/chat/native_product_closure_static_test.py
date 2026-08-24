@@ -819,6 +819,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('control.value == str(selected_path)', self.source)
         self.assertIn(
+            "self.native_adapter.reveal_file_chooser_location()",
+            self.source,
+        )
+        self.assertNotIn(
             "NativeKey.G,\n"
             "            modifiers=(NativeModifier.PRIMARY, NativeModifier.SHIFT),",
             self.source,
