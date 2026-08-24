@@ -84,6 +84,7 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
         self.assertIn("xserver-xorg-video-dummy", source)
         self.assertIn("x11vnc", source)
         self.assertIn("zenity", source)
+        self.assertIn("command -v setsid", source)
         self.assertIn("command -v zenity", source)
         self.assertNotIn("xvfb", source.lower())
 
@@ -105,6 +106,9 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
         self.assertIn("time.sleep(delay)", source)
         self.assertIn("--cache-root", source)
         self.assertIn("removedCacheFiles", source)
+        self.assertIn('setsid \\"$PT_CELL_APP_BINARY\\"', source)
+        self.assertIn('f"kill -TERM -- -{process_id}"', source)
+        self.assertIn('f"kill -KILL -- -{process_id}"', source)
 
     def test_local_tunnel_supervisor_owns_bounded_forwards(self) -> None:
         source = (
