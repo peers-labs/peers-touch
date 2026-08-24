@@ -1125,6 +1125,7 @@ class NativeProductClosureGate(AcceptanceGate):
             window["left"] + content_offset_x + float(target["x"]),
             window["top"] + content_offset_y + float(target["y"]),
         )
+        self.native_adapter.post_mouse((MouseAction.MOVE,), point)
         if native_mousedown_debug_enabled():
             # #region debug-point A,B,E:computed-native-point
             initial_stack = self.native_adapter.window_stack_at_point(point)
@@ -1149,6 +1150,28 @@ class NativeProductClosureGate(AcceptanceGate):
                 },
             )
             # #endregion
+        pointer_target = client.driver.execute_script(
+            """
+            const element = arguments[0];
+            const rect = element.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+            const hit = document.elementFromPoint(x, y);
+            return {
+              connected: element.isConnected,
+              disabled: Boolean(element.disabled),
+              hit: hit === element || element.contains(hit),
+            };
+            """,
+            element,
+        )
+        if (
+            not pointer_target.get("connected")
+            or pointer_target.get("disabled")
+            or not pointer_target.get("hit")
+        ):
+            raise GateError("Native click target changed after pointer positioning")
+
         probe_id = self.install_native_input_probe(client, element)
         mouse_down_posted = False
         try:
