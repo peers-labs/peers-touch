@@ -34,6 +34,7 @@ ACCEPTANCE_PLAN ?= tooling/acceptance/reports/latest-plan.json
 ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),--plan $(ACCEPTANCE_PLAN))
 ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
 CELL ?= desktop-linux-native
+CELL_GATE ?= runtime-cell-preflight
 RUNTIME_CELL ?= desktop-macos-native
 
 acceptance-driver-build:
@@ -50,7 +51,9 @@ acceptance-driver-smoke:
 	python3 -m tooling.acceptance.drivers.tauri
 
 acceptance-cell-ready:
-	python3 tooling/scripts/acceptance-cell.py ready --cell "$(CELL)"
+	python3 tooling/scripts/acceptance-cell.py ready \
+		--cell "$(CELL)" \
+		--gate "$(CELL_GATE)"
 
 acceptance-cell-status:
 	python3 tooling/scripts/acceptance-cell.py status --cell "$(CELL)"
