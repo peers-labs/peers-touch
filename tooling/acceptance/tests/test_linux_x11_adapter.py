@@ -160,9 +160,10 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
             ),
             patch.object(adapter, "_active_window", return_value=dialog_window),
             patch.object(adapter, "_window_pid", side_effect=window_pid),
+            patch.object(adapter, "_is_dialog", return_value=False),
             patch.object(
                 adapter,
-                "_is_dialog",
+                "_is_native_dialog",
                 side_effect=lambda _display, window: window is dialog_window,
             ),
             patch.object(
@@ -212,11 +213,8 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
             ),
             patch.object(adapter, "_active_window", return_value=unrelated_dialog),
             patch.object(adapter, "_window_pid", side_effect=window_pid),
-            patch.object(
-                adapter,
-                "_is_dialog",
-                side_effect=lambda _display, window: window is unrelated_dialog,
-            ),
+            patch.object(adapter, "_is_dialog", return_value=False),
+            patch.object(adapter, "_is_native_dialog", return_value=True),
             patch.object(adapter, "_is_descendant_process", return_value=False),
             patch.object(adapter, "_focused_accessible", return_value={}),
         ):
@@ -230,6 +228,21 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         self.assertFalse(control.main_window)
         self.assertEqual(control.actual_frontmost_pid, 84)
         display.close.assert_called_once_with()
+
+    def test_zenity_normal_window_is_a_native_dialog(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        window = Mock()
+
+        with (
+            patch.object(adapter, "_is_dialog", return_value=False),
+            patch.object(
+                adapter,
+                "_window_class",
+                return_value="zenity.zenity",
+            ),
+        ):
+            self.assertTrue(adapter._is_native_dialog(display, window))
 
     def test_clipboard_commands_are_bound_to_the_declared_display(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")

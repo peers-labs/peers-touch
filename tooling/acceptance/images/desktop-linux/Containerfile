@@ -105,6 +105,7 @@ RUN chmod 0755 /usr/local/bin/peers-touch-linux-cell \
     && pnpm --version \
     && rustc --version \
     && cargo --version \
+    && command -v setsid \
     && command -v zenity
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/peers-touch-linux-cell"]
