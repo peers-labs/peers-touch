@@ -18,7 +18,11 @@ stale-run cleanup, and bounded run-directory retention even after the shared
 checkout changes. Cleanup fails closed and retains lease metadata if a
 container, port, source checkout, or run directory cannot be released.
 Persistent Git and build caches are outside run directories and are never
-mounted into source identity checks.
+mounted into source identity checks. The pinned pnpm payload lives in the
+immutable image under `COREPACK_HOME`; mutable XDG cache state cannot replace
+the declared toolchain. Retention removes a top-level cache unit only when its
+entire tree is stale. It never deletes individual files from a live package
+manager cache.
 
 The image may be pulled through a profile-selected registry mirror, but the
 base reference must preserve the canonical digest declared by `Containerfile`.
