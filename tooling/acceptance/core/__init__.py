@@ -82,6 +82,7 @@ from .runtime_cell import (
     RuntimeCellManifest,
     CellResult,
     aggregate_matrix,
+    parse_required_runtime_cells,
 )
 
 __all__ = [
@@ -148,6 +149,7 @@ __all__ = [
     "RuntimeCellManifest",
     "CellResult",
     "aggregate_matrix",
+    "parse_required_runtime_cells",
     "ARTIFACT_ROOT_ENV",
     "RUN_GATE_ENV",
     "RUN_ID_ENV",

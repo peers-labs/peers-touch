@@ -4,9 +4,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import base64
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from tooling.acceptance.core import AppLaunchMetadata
 from tooling.acceptance.core.errors import DriverError
 from tooling.acceptance.drivers.native import (
     MouseAction,
@@ -18,9 +20,16 @@ from tooling.acceptance.drivers.native import (
     NativeWindowSnapshot,
     NativeWindowStack,
     create_native_desktop_adapter,
+    resolve_native_desktop_runtime,
+)
+from tooling.acceptance.drivers.native.runtime import (
+    LinuxNativeDesktopRuntimeBinding,
+    LocalMacOSRuntimeBinding,
+    RemoteLinuxNativeDesktopAdapter,
 )
 from tooling.acceptance.drivers.native import macos
 from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
+from tooling.acceptance.drivers.tauri import ProvisionedTauriLauncher
 
 
 class SyntheticNativeDesktopAdapter(NativeDesktopAdapter):
@@ -75,6 +84,57 @@ class SyntheticNativeDesktopAdapter(NativeDesktopAdapter):
         return None
 
 
+class SyntheticLinuxRuntimeCell:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.launches: list[tuple[str, dict[str, object], dict[str, str]]] = []
+        self.responses: dict[str, dict[str, object]] = {}
+        self.validations: list[tuple[str, str]] = []
+
+    def validate_binding(self, gate_id: str, source_commit: str) -> None:
+        self.validations.append((gate_id, source_commit))
+
+    def launch_actor(
+        self,
+        actor: str,
+        client_spec: dict[str, object],
+        environment: dict[str, str],
+    ) -> ProvisionedTauriLauncher:
+        self.launches.append((actor, client_spec, environment))
+        return ProvisionedTauriLauncher(
+            AppLaunchMetadata(
+                webdriver_host="127.0.0.1",
+                webdriver_port=int(client_spec["webdriver_port"]),
+                gateway_port=int(client_spec["gateway_port"]),
+                profile=str(client_spec["profile"]),
+                storage_root=f"/workspace/run/actors/{actor}/storage",
+                process_id=100 + len(self.launches),
+            )
+        )
+
+    def binary_identity(self) -> dict[str, str]:
+        return {
+            "path": "runtime-cell:binary",
+            "sha256": "a" * 64,
+            "sourceCommit": "abc123",
+        }
+
+    def actor_cleanup_audit(self) -> dict[str, object]:
+        return {
+            "portsReleased": True,
+            "processesReleased": True,
+            "storageReleased": True,
+        }
+
+    def execute_adapter(
+        self,
+        operation: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        self.calls.append((operation, payload))
+        return self.responses.get(operation, {})
+
+
 class NativeDesktopAdapterContractTests(unittest.TestCase):
     def test_contract_is_abstract(self) -> None:
         with self.assertRaises(TypeError):
@@ -95,6 +155,156 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
     def test_unimplemented_windows_slot_fails_closed(self) -> None:
         with self.assertRaisesRegex(DriverError, "not implemented"):
             create_native_desktop_adapter("win32")
+
+    def test_runtime_binding_resolves_linux_without_local_fallback(self) -> None:
+        cell = SyntheticLinuxRuntimeCell()
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native-product-closure-e2e",
+            "abc123",
+            cell,
+        )
+        session = binding.create_session(
+            "alice",
+            {
+                "webdriver_port": 4445,
+                "gateway_port": 3330,
+                "profile": "chat-native-alice",
+                "storage_root": "/local/unused",
+            },
+            {"PEERS_STATION_URL": "http://127.0.0.1:18080"},
+        )
+
+        self.assertEqual(binding.cell_id, "desktop-linux-native")
+        self.assertIsInstance(
+            binding.native_adapter,
+            RemoteLinuxNativeDesktopAdapter,
+        )
+        self.assertEqual(session.port, 4445)
+        self.assertEqual(
+            session.storage_root,
+            "/workspace/run/actors/alice/storage",
+        )
+        self.assertEqual(cell.launches[0][0], "alice")
+        self.assertEqual(binding.binary_identity()["sha256"], "a" * 64)
+        self.assertEqual(
+            cell.validations,
+            [("chat-native-product-closure-e2e", "abc123")],
+        )
+
+    def test_runtime_binding_rejects_unknown_and_unready_cells(self) -> None:
+        with self.assertRaisesRegex(DriverError, "not implemented"):
+            resolve_native_desktop_runtime(
+                "desktop-windows-native",
+                gate_id="gate",
+                source_commit="abc123",
+            )
+        with self.assertRaisesRegex(DriverError, "unknown"):
+            resolve_native_desktop_runtime(
+                "desktop-unknown-native",
+                gate_id="gate",
+                source_commit="abc123",
+            )
+
+    def test_remote_linux_adapter_maps_commands_and_typed_results(self) -> None:
+        cell = SyntheticLinuxRuntimeCell()
+        cell.responses = {
+            "focused_control": {
+                "kind": "text-field",
+                "frontmost": True,
+                "actualFrontmostPid": 42,
+            },
+            "window_stack_at_point": {
+                "windows": [
+                    {
+                        "index": 0,
+                        "ownerPid": 42,
+                        "ownerName": "Peers Touch",
+                        "windowName": "Chat",
+                        "layer": 0,
+                        "alpha": 1,
+                        "bounds": {
+                            "left": 1,
+                            "top": 2,
+                            "width": 3,
+                            "height": 4,
+                        },
+                    }
+                ]
+            },
+            "mouse_button_down": {"down": True},
+            "capture_screenshot": {
+                "content": base64.b64encode(b"png").decode("ascii")
+            },
+            "read_clipboard": {
+                "content": base64.b64encode(b"clipboard").decode("ascii")
+            },
+        }
+        adapter = RemoteLinuxNativeDesktopAdapter(cell)
+        adapter.activate_process(42)
+        adapter.post_mouse((MouseAction.MOVE,), (10.5, 20.5))
+        adapter.post_key(
+            NativeKey.V,
+            modifiers=(NativeModifier.PRIMARY,),
+            text="value",
+            private_source=True,
+        )
+        control = adapter.focused_control(42)
+        stack = adapter.window_stack_at_point((10.5, 20.5))
+        with tempfile.TemporaryDirectory() as tmp:
+            screenshot = Path(tmp) / "shot.png"
+            adapter.capture_screenshot(screenshot)
+            self.assertEqual(screenshot.read_bytes(), b"png")
+        self.assertTrue(adapter.mouse_button_down())
+        self.assertEqual(adapter.read_clipboard(), b"clipboard")
+        adapter.write_clipboard(b"value")
+
+        self.assertTrue(control.frontmost)
+        self.assertEqual(control.actual_frontmost_pid, 42)
+        self.assertTrue(stack.point_owned_by(42))
+        self.assertEqual(
+            [operation for operation, _ in cell.calls],
+            [
+                "activate_process",
+                "post_mouse",
+                "post_key",
+                "focused_control",
+                "window_stack_at_point",
+                "capture_screenshot",
+                "mouse_button_down",
+                "read_clipboard",
+                "write_clipboard",
+            ],
+        )
+
+    def test_local_runtime_binding_owns_local_session_construction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / "desktop"
+            binary.write_bytes(b"desktop-binary")
+            with patch(
+                "tooling.acceptance.drivers.native.runtime.find_app_binary",
+                return_value=str(binary),
+            ):
+                binding = LocalMacOSRuntimeBinding()
+
+            session = binding.create_session(
+                "alice",
+                {
+                    "webdriver_port": 4445,
+                    "gateway_port": 3330,
+                    "profile": "chat-native-alice",
+                    "storage_root": str(Path(tmp) / "storage"),
+                },
+                {"PEERS_STATION_URL": "http://127.0.0.1:18080"},
+            )
+            binary_identity = binding.binary_identity()
+
+        self.assertEqual(binding.cell_id, "desktop-macos-native")
+        self.assertEqual(session.port, 4445)
+        self.assertEqual(session.gateway_port, 3330)
+        self.assertEqual(
+            binary_identity["sha256"],
+            "a37cdd0591588a0016117ba6b84e7182977a007c332bccbc55ba656e74e6f45a",
+        )
 
     def test_darwin_factory_returns_macos_adapter(self) -> None:
         self.assertIsInstance(

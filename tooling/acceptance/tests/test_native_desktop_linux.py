@@ -24,6 +24,18 @@ from tooling.acceptance.provisioners.native_desktop_linux import (
 )
 
 
+class SyntheticTunnel:
+    def __init__(self, local_port: int) -> None:
+        self.local_port = local_port
+        self.stopped = False
+
+    def is_alive(self) -> bool:
+        return not self.stopped
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
 IMAGE_ROOT = REPO_ROOT / "tooling" / "acceptance" / "images" / "desktop-linux"
 CONTRACT_PATH = (
     REPO_ROOT
@@ -370,6 +382,145 @@ class LinuxCellProfileTests(unittest.TestCase):
                 gid="1000",
             )
 
+    def test_actor_launcher_owns_isolated_tunnels_without_stopping_cell(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+            provisioner.contract = SimpleNamespace(
+                cell_id="desktop-linux-native",
+            )
+            provisioner.profile = SimpleNamespace(runtime_root=".cache/runtime")
+            provisioner.state_path = Path(tmp) / "cell.json"
+            provisioner._actors = {}
+            provisioner.transport = Mock()
+            webdriver = SyntheticTunnel(4445)
+            gateway = SyntheticTunnel(3330)
+            provisioner.transport.start_local_forward.side_effect = (
+                webdriver,
+                gateway,
+            )
+            state = {
+                "runId": "run-1",
+                "containerName": "runtime-cell",
+                "remoteControl": "/remote/control.py",
+            }
+            remote = {
+                "actor": "alice",
+                "processId": 101,
+                "webdriverPort": 4445,
+                "gatewayPort": 3330,
+                "profile": "chat-native-alice",
+                "storageRoot": "/workspace/run/actors/alice/storage",
+            }
+            provisioner._require_state = Mock(return_value=state)
+            provisioner._read_state = Mock(return_value=state)
+            provisioner._start_remote_actor = Mock(return_value=remote)
+            provisioner._stop_remote_actor = Mock(
+                return_value={
+                    "actor": "alice",
+                    "stopped": True,
+                    "logContent": "",
+                }
+            )
+            provisioner.stop = Mock()
+
+            launcher = provisioner.launch_actor(
+                "alice",
+                {
+                    "webdriver_port": 4445,
+                    "gateway_port": 3330,
+                    "profile": "chat-native-alice",
+                },
+                {"PEERS_STATION_URL": "http://127.0.0.1:18080"},
+            )
+            launcher.start()
+            launcher.stop()
+            launcher.stop()
+
+        self.assertTrue(webdriver.stopped)
+        self.assertTrue(gateway.stopped)
+        provisioner._stop_remote_actor.assert_called_once()
+        provisioner.stop.assert_not_called()
+        self.assertNotIn("alice", provisioner._actors)
+
+    def test_runtime_binding_requires_exact_gate_and_source_identity(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner._require_state = Mock(
+            return_value={
+                "manifest": {
+                    "gateId": "chat-native-product-closure-e2e",
+                    "source": {"commit": "abc123"},
+                }
+            }
+        )
+
+        provisioner.validate_binding(
+            "chat-native-product-closure-e2e",
+            "abc123",
+        )
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "Gate identity",
+        ):
+            provisioner.validate_binding("other-gate", "abc123")
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "source commit",
+        ):
+            provisioner.validate_binding(
+                "chat-native-product-closure-e2e",
+                "def456",
+            )
+
+    def test_actor_launch_failure_cleans_tunnel_and_remote_process(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner.contract = SimpleNamespace(
+            cell_id="desktop-linux-native",
+        )
+        provisioner.profile = SimpleNamespace(runtime_root=".cache/runtime")
+        provisioner.state_path = Path("/tmp/cell.json")
+        provisioner._actors = {}
+        provisioner.transport = Mock()
+        webdriver = SyntheticTunnel(4445)
+        provisioner.transport.start_local_forward.side_effect = (
+            webdriver,
+            ProvisioningError("gateway tunnel failed"),
+        )
+        provisioner._require_state = Mock(
+            return_value={
+                "runId": "run-1",
+                "containerName": "runtime-cell",
+                "remoteControl": "/remote/control.py",
+            }
+        )
+        provisioner._start_remote_actor = Mock(
+            return_value={
+                "actor": "alice",
+                "processId": 101,
+                "webdriverPort": 4445,
+                "gatewayPort": 3330,
+                "profile": "chat-native-alice",
+                "storageRoot": "/workspace/run/actors/alice/storage",
+            }
+        )
+        provisioner._stop_remote_actor = Mock(return_value={"stopped": True})
+
+        with self.assertRaisesRegex(ProvisioningError, "gateway tunnel failed"):
+            provisioner.launch_actor(
+                "alice",
+                {
+                    "webdriver_port": 4445,
+                    "gateway_port": 3330,
+                    "profile": "chat-native-alice",
+                },
+                {},
+            )
+
+        self.assertTrue(webdriver.stopped)
+        provisioner._stop_remote_actor.assert_called_once()
+        self.assertEqual(provisioner._actors, {})
+
 
 class RemoteLinuxCellControlTests(unittest.TestCase):
     def _args(self, action: str, root: str, run_id: str = "run-1") -> argparse.Namespace:
@@ -386,9 +537,140 @@ class RemoteLinuxCellControlTests(unittest.TestCase):
             "webdriver_port": 45_445,
             "gateway_port": 41_310,
             "observer_port": 45_909,
+            "actor": "alice",
+            "display": ":99",
+            "profile": "chat-native-alice",
+            "environment_json": "{}",
+            "timeout": 1,
             "retention_days": 14,
         }
         return argparse.Namespace(**values)
+
+    def test_actor_start_allocates_isolated_process_storage_and_ports(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            args = self._args("acquire", ".cache/runtime")
+            with patch.dict(os.environ, {"HOME": str(home)}), patch.object(
+                remote_control,
+                "_spawn_reaper",
+                return_value=123,
+            ), patch("sys.stdout"):
+                self.assertEqual(remote_control.acquire(args), 0)
+            run_root = (
+                home
+                / ".cache"
+                / "runtime"
+                / "desktop-linux-native"
+                / "runs"
+                / "run-1"
+            )
+
+            def launch(command, **_kwargs):
+                if "--detach" in command:
+                    actor = "alice" if "PT_PROFILE=chat-native-alice" in command else "bob"
+                    actor_root = run_root / "actors" / actor
+                    actor_root.mkdir(parents=True, exist_ok=True)
+                    (actor_root / "app.pid").write_text(
+                        "101" if actor == "alice" else "102",
+                        encoding="utf-8",
+                    )
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+
+            with patch.dict(os.environ, {"HOME": str(home)}), patch.object(
+                remote_control,
+                "_container_command",
+            ), patch.object(
+                remote_control,
+                "_wait_actor_port",
+            ), patch.object(
+                remote_control.subprocess,
+                "run",
+                side_effect=launch,
+            ), patch("sys.stdout"):
+                self.assertEqual(remote_control.actor_start(args), 0)
+                bob = self._args("actor-start", ".cache/runtime")
+                bob.actor = "bob"
+                bob.profile = "chat-native-bob"
+                bob.webdriver_port = 45_446
+                bob.gateway_port = 41_311
+                self.assertEqual(remote_control.actor_start(bob), 0)
+
+            lease = json.loads(
+                (
+                    home
+                    / ".cache"
+                    / "runtime"
+                    / "desktop-linux-native"
+                    / "lease"
+                    / "lease.json"
+                ).read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(
+            [actor["actor"] for actor in lease["actors"]],
+            ["alice", "bob"],
+        )
+        self.assertEqual(
+            {actor["processId"] for actor in lease["actors"]},
+            {101, 102},
+        )
+        self.assertEqual(
+            {actor["storageRoot"] for actor in lease["actors"]},
+            {
+                "/workspace/run/actors/alice/storage",
+                "/workspace/run/actors/bob/storage",
+            },
+        )
+
+    def test_outer_cleanup_stops_actors_in_reverse_launch_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cell_root = Path(tmp) / "desktop-linux-native"
+            run_root = cell_root / "runs" / "run-1"
+            run_root.mkdir(parents=True)
+            remote_control._write_json(
+                cell_root / "lease" / "lease.json",
+                {
+                    "runId": "run-1",
+                    "containerName": "runtime-cell",
+                    "actors": [
+                        {"actor": "alice", "processId": 101},
+                        {"actor": "bob", "processId": 102},
+                        {"actor": "alice2", "processId": 103},
+                    ],
+                    "ports": [],
+                },
+            )
+            stopped: list[str] = []
+
+            def stop_actor(_container, _run_root, actor):
+                stopped.append(str(actor["actor"]))
+                return {"stopped": True}
+
+            with patch.object(
+                remote_control,
+                "_stop_actor_record",
+                side_effect=stop_actor,
+            ), patch.object(remote_control, "_docker_remove"), patch.object(
+                remote_control,
+                "_clean_source",
+            ), patch.object(remote_control, "_assert_ports_released"):
+                self.assertTrue(
+                    remote_control._cleanup_owned_run(
+                        cell_root,
+                        run_id="run-1",
+                        container_name="runtime-cell",
+                        stop_reaper=False,
+                    )
+                )
+
+        self.assertEqual(stopped, ["alice2", "bob", "alice"])
 
     def test_acquire_status_and_stop_preserve_run_ownership(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

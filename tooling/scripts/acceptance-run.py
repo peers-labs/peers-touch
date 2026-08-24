@@ -259,6 +259,7 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
         "timeout_seconds": definition.get("timeout_seconds", 600),
         "environment": definition.get("environment", "local"),
         "provisioner": definition.get("provisioner", ""),
+        "requiredRuntimeCells": definition.get("requiredRuntimeCells", []),
         "tier": definition.get("tier", "local-evidence"),
         "description": definition.get("description", ""),
         "required_by": ["manual"],
@@ -275,8 +276,6 @@ def plan_gate_from_entry(entry: Any, definitions: dict[str, Any]) -> dict[str, A
     gate_id = entry.get("id")
     if not isinstance(gate_id, str) or not gate_id:
         raise SystemExit(f"plan selected_gates object is missing id: {entry!r}")
-    if "command" in entry:
-        return dict(entry)
     if gate_id not in definitions:
         raise SystemExit(f"gate {gate_id!r} is missing from gate definitions")
     gate = gate_from_definition(gate_id, definitions[gate_id])
@@ -293,6 +292,36 @@ def filter_gates_by_tier(gates: list[dict[str, Any]], tiers: list[str]) -> list[
         return gates
     selected = set(tiers)
     return [gate for gate in gates if gate.get("tier", "local-evidence") in selected]
+
+
+def select_runtime_cell(
+    gate: dict[str, Any],
+    requested_cell: str,
+) -> str:
+    from tooling.acceptance.core import parse_required_runtime_cells
+
+    gate_id = str(gate.get("id") or "")
+    try:
+        required_cells = parse_required_runtime_cells(
+            gate_id,
+            gate.get("requiredRuntimeCells"),
+        )
+    except Exception as error:
+        raise SystemExit(str(error)) from error
+    selected = requested_cell.strip()
+    if required_cells:
+        if not selected:
+            raise SystemExit(
+                f"gate {gate_id!r} requires explicit --runtime-cell; "
+                f"choose one of {required_cells}"
+            )
+        if selected not in required_cells:
+            raise SystemExit(
+                f"gate {gate_id!r} does not declare runtime cell "
+                f"{selected!r}; expected one of {required_cells}"
+            )
+        return selected
+    return ""
 
 
 def load_json_artifact(path: Path) -> Any | None:
@@ -753,6 +782,7 @@ def main() -> int:
     parser.add_argument("--gates", default="tooling/acceptance/gates.yaml")
     parser.add_argument("--gate", action="append", default=[])
     parser.add_argument("--tier", action="append", default=[])
+    parser.add_argument("--runtime-cell")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -806,6 +836,10 @@ def main() -> int:
             timeout = int(gate.get("timeout_seconds") or 600)
             environment = gate.get("environment", "local")
             tier = gate.get("tier", "local-evidence")
+            runtime_cell = select_runtime_cell(
+                gate,
+                str(args.runtime_cell or ""),
+            )
             print(f"[RUN] {gate_id} [{tier}/{environment}]: {command}")
             started = time.time()
 
@@ -815,6 +849,7 @@ def main() -> int:
                         "id": gate_id,
                         "command": command,
                         "environment": environment,
+                        "runtimeCell": runtime_cell or None,
                         "tier": tier,
                         "status": "dry-run",
                         "duration_seconds": 0,
@@ -908,6 +943,8 @@ def main() -> int:
                         gate_env["PT_ACCEPTANCE_RUNTIME_MANIFEST"] = str(
                             manifest_path
                         )
+                    if runtime_cell:
+                        gate_env["PT_ACCEPTANCE_RUNTIME_CELL"] = runtime_cell
                     runtime_secrets = credential_values(manifest)
                     try:
                         completed = subprocess.run(
@@ -966,6 +1003,7 @@ def main() -> int:
                     "id": gate_id,
                     "command": command,
                     "environment": environment,
+                    "runtimeCell": runtime_cell or None,
                     "tier": tier,
                     "status": status,
                     "exit_code": exit_code,

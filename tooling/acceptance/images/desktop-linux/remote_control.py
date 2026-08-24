@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -16,6 +17,71 @@ from pathlib import Path
 
 _SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
+_ENVIRONMENT_NAME = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}$")
+_ADAPTER_OPERATIONS = frozenset(
+    {
+        "activate_process",
+        "capture_screenshot",
+        "focused_control",
+        "mouse_button_down",
+        "post_key",
+        "post_mouse",
+        "read_clipboard",
+        "window_stack_at_point",
+        "write_clipboard",
+    }
+)
+_ADAPTER_SCRIPT = """
+import base64
+import json
+import pathlib
+import sys
+
+from tooling.acceptance.drivers.native.base import MouseAction, NativeKey, NativeModifier
+from tooling.acceptance.drivers.native.linux_x11 import LinuxX11NativeDesktopAdapter
+
+operation = sys.argv[1]
+payload = json.loads(base64.b64decode(sys.argv[2]).decode("utf-8"))
+adapter = LinuxX11NativeDesktopAdapter(payload["display"])
+if operation == "activate_process":
+    adapter.activate_process(int(payload["processId"]))
+    result = {}
+elif operation == "post_mouse":
+    adapter.post_mouse(
+        tuple(MouseAction(value) for value in payload["actions"]),
+        tuple(float(value) for value in payload["point"]),
+    )
+    result = {}
+elif operation == "post_key":
+    adapter.post_key(
+        NativeKey(payload["key"]),
+        modifiers=tuple(NativeModifier(value) for value in payload["modifiers"]),
+        text=str(payload.get("text") or ""),
+        private_source=bool(payload.get("privateSource")),
+    )
+    result = {}
+elif operation == "focused_control":
+    result = adapter.focused_control(int(payload["processId"])).to_dict()
+elif operation == "window_stack_at_point":
+    result = adapter.window_stack_at_point(
+        tuple(float(value) for value in payload["point"])
+    ).to_dict()
+elif operation == "mouse_button_down":
+    result = {"down": adapter.mouse_button_down()}
+elif operation == "capture_screenshot":
+    path = pathlib.Path("/workspace/run/adapter-screenshot.png")
+    adapter.capture_screenshot(path)
+    result = {"content": base64.b64encode(path.read_bytes()).decode("ascii")}
+    path.unlink(missing_ok=True)
+elif operation == "read_clipboard":
+    result = {"content": base64.b64encode(adapter.read_clipboard()).decode("ascii")}
+elif operation == "write_clipboard":
+    adapter.write_clipboard(base64.b64decode(payload["content"]))
+    result = {}
+else:
+    raise ValueError(f"unsupported adapter operation: {operation}")
+sys.stdout.write(json.dumps(result, sort_keys=True))
+""".strip()
 
 
 def _runtime_root(value: str) -> Path:
@@ -65,6 +131,172 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
     )
     os.chmod(temporary, 0o600)
     temporary.replace(path)
+
+
+def _port(value: int, name: str) -> int:
+    if value < 1024 or value > 65535:
+        raise ValueError(f"{name} must be between 1024 and 65535")
+    return value
+
+
+def _actor_environment(raw: str) -> dict[str, str]:
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError("actor environment must be an object")
+    environment: dict[str, str] = {}
+    for name, value in payload.items():
+        if not isinstance(name, str) or not _ENVIRONMENT_NAME.fullmatch(name):
+            raise ValueError("actor environment contains an invalid name")
+        if not isinstance(value, str) or "\x00" in value:
+            raise ValueError(f"actor environment {name} must be a string")
+        environment[name] = value
+    return environment
+
+
+def _owned_lease(
+    root: Path,
+    *,
+    cell_id: str,
+    run_id: str,
+    container_name: str,
+) -> tuple[Path, dict[str, object]]:
+    lease_path = root / cell_id / "lease" / "lease.json"
+    lease = _read_json(lease_path)
+    if (
+        lease.get("runId") != run_id
+        or lease.get("containerName") != container_name
+    ):
+        raise RuntimeError("runtime-cell lease ownership mismatch")
+    return lease_path, lease
+
+
+def _container_command(
+    container_name: str,
+    *arguments: str,
+    timeout: float = 30,
+) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        ("docker", "exec", container_name, *arguments),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise RuntimeError(
+            f"runtime-cell container command failed: "
+            f"{detail[-4000:] or f'exit {completed.returncode}'}"
+        )
+    return completed
+
+
+def _actor_record(
+    lease: dict[str, object],
+    actor: str,
+) -> dict[str, object] | None:
+    actors = lease.get("actors")
+    if not isinstance(actors, list):
+        return None
+    return next(
+        (
+            item
+            for item in actors
+            if isinstance(item, dict) and item.get("actor") == actor
+        ),
+        None,
+    )
+
+
+def _wait_actor_port(
+    container_name: str,
+    process_id: int,
+    port: int,
+    deadline: float,
+) -> None:
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                return
+        except OSError:
+            alive = subprocess.run(
+                ("docker", "exec", container_name, "kill", "-0", str(process_id)),
+                capture_output=True,
+                check=False,
+            )
+            if alive.returncode != 0:
+                raise RuntimeError(
+                    f"runtime-cell actor process {process_id} exited before "
+                    f"port {port} became ready"
+                )
+            time.sleep(0.1)
+    raise RuntimeError(f"runtime-cell actor port {port} readiness timed out")
+
+
+def _stop_actor_record(
+    container_name: str,
+    run_root: Path,
+    record: dict[str, object],
+) -> dict[str, object]:
+    actor = _slug(str(record.get("actor") or ""), "actor")
+    process_id = int(record.get("processId") or 0)
+    if process_id > 0:
+        subprocess.run(
+            ("docker", "exec", container_name, "kill", "-TERM", str(process_id)),
+            capture_output=True,
+            check=False,
+        )
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            alive = subprocess.run(
+                ("docker", "exec", container_name, "kill", "-0", str(process_id)),
+                capture_output=True,
+                check=False,
+            )
+            if alive.returncode != 0:
+                break
+            time.sleep(0.05)
+        else:
+            subprocess.run(
+                ("docker", "exec", container_name, "kill", "-KILL", str(process_id)),
+                capture_output=True,
+                check=False,
+            )
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                final_probe = subprocess.run(
+                    (
+                        "docker",
+                        "exec",
+                        container_name,
+                        "kill",
+                        "-0",
+                        str(process_id),
+                    ),
+                    capture_output=True,
+                    check=False,
+                )
+                if final_probe.returncode != 0:
+                    break
+                time.sleep(0.05)
+            else:
+                raise RuntimeError(
+                    f"runtime-cell actor process {process_id} remains active"
+                )
+    actor_root = run_root / "actors" / actor
+    log_path = actor_root / "app.log"
+    log_content = (
+        base64.b64encode(log_path.read_bytes()).decode("ascii")
+        if log_path.is_file()
+        else ""
+    )
+    _remove_tree(actor_root)
+    return {
+        "actor": actor,
+        "processId": process_id,
+        "logContent": log_content,
+        "stopped": True,
+    }
 
 
 def _docker_inspect(container_name: str) -> subprocess.CompletedProcess[str]:
@@ -249,6 +481,18 @@ def _cleanup_owned_run(
     if stop_reaper:
         _stop_reaper(lease)
     failures: list[str] = []
+    run_root = cell_root / "runs" / run_id
+    actors = lease.get("actors")
+    if isinstance(actors, list):
+        for actor in reversed(actors):
+            if not isinstance(actor, dict):
+                continue
+            try:
+                _stop_actor_record(owned_container, run_root, actor)
+            except (OSError, RuntimeError, ValueError) as error:
+                failures.append(
+                    f"actor {actor.get('actor', '<unknown>')}: {error}"
+                )
     for name in (
         owned_container,
         str(lease.get("buildContainerName") or ""),
@@ -282,7 +526,7 @@ def _cleanup_owned_run(
         _write_json(lease_path, lease)
         raise RuntimeError("; ".join(failures))
     try:
-        _remove_tree(cell_root / "runs" / run_id)
+        _remove_tree(run_root)
     except (OSError, RuntimeError) as error:
         lease["cleanupState"] = "CLEANUP_FAILED"
         lease["cleanupErrors"] = [
@@ -364,6 +608,7 @@ def acquire(args: argparse.Namespace) -> int:
         "expiresAtEpoch": args.expires_at,
         "reaperPid": 0,
         "ports": list(ports),
+        "actors": [],
         "cleanupState": "REGISTERED",
     }
     _write_json(lease_path, lease)
@@ -480,11 +725,247 @@ def status(args: argparse.Namespace) -> int:
                 "container": inspected.stdout.strip() or "missing",
                 "cleanupState": lease.get("cleanupState"),
                 "cleanupErrors": lease.get("cleanupErrors", []),
+                "actors": lease.get("actors", []),
             },
             sort_keys=True,
         )
         + "\n"
     )
+    return 0
+
+
+def actor_start(args: argparse.Namespace) -> int:
+    root = _runtime_root(args.runtime_root)
+    cell_id = _slug(args.cell_id, "cell id")
+    run_id = _slug(args.run_id, "run id")
+    container_name = _slug(args.container_name, "container name")
+    actor = _slug(args.actor, "actor")
+    profile = _slug(args.profile, "profile")
+    webdriver_port = _port(args.webdriver_port, "WebDriver port")
+    gateway_port = _port(args.gateway_port, "gateway port")
+    if webdriver_port == gateway_port:
+        raise ValueError("actor WebDriver and gateway ports must be distinct")
+    environment = _actor_environment(args.environment_json)
+    lease_path, lease = _owned_lease(
+        root,
+        cell_id=cell_id,
+        run_id=run_id,
+        container_name=container_name,
+    )
+    existing = _actor_record(lease, actor)
+    if existing is not None:
+        sys.stdout.write(json.dumps(existing, sort_keys=True) + "\n")
+        return 0
+    actors = lease.get("actors")
+    if not isinstance(actors, list):
+        raise RuntimeError("runtime-cell actor registry is invalid")
+    allocated_ports = {
+        int(port)
+        for item in actors
+        if isinstance(item, dict)
+        for port in (
+            item.get("webdriverPort"),
+            item.get("gatewayPort"),
+        )
+        if int(port or 0) > 0
+    }
+    requested_ports = {webdriver_port, gateway_port}
+    if allocated_ports & requested_ports:
+        raise RuntimeError("runtime-cell actor ports are already allocated")
+
+    cell_root = root / cell_id
+    run_root = cell_root / "runs" / run_id
+    actor_root = run_root / "actors" / actor
+    container_actor_root = f"/workspace/run/actors/{actor}"
+    _container_command(
+        container_name,
+        "mkdir",
+        "-p",
+        f"{container_actor_root}/home",
+        f"{container_actor_root}/runtime",
+        f"{container_actor_root}/storage",
+    )
+    launch = [
+        "docker",
+        "exec",
+        "--detach",
+        "--env",
+        f"DISPLAY={args.display}",
+        "--env",
+        f"TAURI_WEBDRIVER_PORT={webdriver_port}",
+        "--env",
+        f"PT_GATEWAY_PORT={gateway_port}",
+        "--env",
+        f"PT_PROFILE={profile}",
+        "--env",
+        f"PEERS_STORAGE_ROOT={container_actor_root}/storage",
+        "--env",
+        f"HOME={container_actor_root}/home",
+        "--env",
+        f"XDG_RUNTIME_DIR={container_actor_root}/runtime",
+        "--env",
+        f"PT_ACTOR_ROOT={container_actor_root}",
+    ]
+    for name, value in sorted(environment.items()):
+        launch.extend(("--env", f"{name}={value}"))
+    launch.extend(
+        (
+            container_name,
+            "/bin/bash",
+            "-lc",
+            (
+                "set -euo pipefail; "
+                "export DBUS_SESSION_BUS_ADDRESS="
+                "\"$(sed -n '1p' /workspace/run/dbus.state)\"; "
+                "printf '%s\\n' \"$$\" > \"$PT_ACTOR_ROOT/app.pid\"; "
+                "exec \"$PT_CELL_APP_BINARY\" "
+                ">\"$PT_ACTOR_ROOT/app.log\" 2>&1"
+            ),
+        )
+    )
+    completed = subprocess.run(
+        tuple(launch),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        _remove_tree(actor_root)
+        raise RuntimeError(
+            f"runtime-cell actor {actor} launch failed: {detail[-4000:]}"
+        )
+    try:
+        deadline = time.monotonic() + args.timeout
+        pid_path = actor_root / "app.pid"
+        while time.monotonic() < deadline and not pid_path.is_file():
+            time.sleep(0.05)
+        process_id = int(pid_path.read_text(encoding="utf-8").strip())
+        _wait_actor_port(
+            container_name,
+            process_id,
+            webdriver_port,
+            deadline,
+        )
+        _wait_actor_port(
+            container_name,
+            process_id,
+            gateway_port,
+            deadline,
+        )
+    except (OSError, RuntimeError, ValueError):
+        if pid_path.is_file():
+            _stop_actor_record(
+                container_name,
+                run_root,
+                {"actor": actor, "processId": pid_path.read_text().strip()},
+            )
+        else:
+            _remove_tree(actor_root)
+        raise
+    record: dict[str, object] = {
+        "actor": actor,
+        "processId": process_id,
+        "webdriverPort": webdriver_port,
+        "gatewayPort": gateway_port,
+        "profile": profile,
+        "storageRoot": f"{container_actor_root}/storage",
+        "logPath": f"{container_actor_root}/app.log",
+    }
+    actors.append(record)
+    lease["actors"] = actors
+    lease["ports"] = [
+        *lease.get("ports", []),
+        webdriver_port,
+        gateway_port,
+    ]
+    _write_json(lease_path, lease)
+    sys.stdout.write(json.dumps(record, sort_keys=True) + "\n")
+    return 0
+
+
+def actor_stop(args: argparse.Namespace) -> int:
+    root = _runtime_root(args.runtime_root)
+    cell_id = _slug(args.cell_id, "cell id")
+    run_id = _slug(args.run_id, "run id")
+    container_name = _slug(args.container_name, "container name")
+    actor = _slug(args.actor, "actor")
+    lease_path, lease = _owned_lease(
+        root,
+        cell_id=cell_id,
+        run_id=run_id,
+        container_name=container_name,
+    )
+    record = _actor_record(lease, actor)
+    if record is None:
+        sys.stdout.write(
+            json.dumps(
+                {"actor": actor, "alreadyStopped": True, "stopped": False},
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        return 0
+    result = _stop_actor_record(
+        container_name,
+        root / cell_id / "runs" / run_id,
+        record,
+    )
+    stopped_ports = {
+        int(record.get("webdriverPort") or 0),
+        int(record.get("gatewayPort") or 0),
+    }
+    _assert_ports_released(
+        tuple(port for port in stopped_ports if port > 0)
+    )
+    actors = [
+        item
+        for item in lease.get("actors", [])
+        if isinstance(item, dict) and item.get("actor") != actor
+    ]
+    lease["actors"] = actors
+    lease["ports"] = [
+        port
+        for port in lease.get("ports", [])
+        if int(port) not in stopped_ports
+    ]
+    _write_json(lease_path, lease)
+    sys.stdout.write(json.dumps(result, sort_keys=True) + "\n")
+    return 0
+
+
+def adapter(args: argparse.Namespace) -> int:
+    root = _runtime_root(args.runtime_root)
+    cell_id = _slug(args.cell_id, "cell id")
+    run_id = _slug(args.run_id, "run id")
+    container_name = _slug(args.container_name, "container name")
+    _owned_lease(
+        root,
+        cell_id=cell_id,
+        run_id=run_id,
+        container_name=container_name,
+    )
+    if args.operation not in _ADAPTER_OPERATIONS:
+        raise ValueError("unsupported remote Native adapter operation")
+    payload = base64.b64decode(args.payload).decode("utf-8")
+    parsed = json.loads(payload)
+    if not isinstance(parsed, dict):
+        raise ValueError("remote Native adapter payload must be an object")
+    encoded = base64.b64encode(
+        json.dumps(parsed, sort_keys=True).encode("utf-8")
+    ).decode("ascii")
+    completed = _container_command(
+        container_name,
+        "env",
+        "PYTHONPATH=/workspace/source",
+        "python3",
+        "-c",
+        _ADAPTER_SCRIPT,
+        args.operation,
+        encoded,
+        timeout=args.timeout,
+    )
+    sys.stdout.write(completed.stdout)
     return 0
 
 
@@ -571,6 +1052,30 @@ def parser() -> argparse.ArgumentParser:
     status_parser.add_argument("--runtime-root", required=True)
     status_parser.add_argument("--cell-id", required=True)
 
+    for name in ("actor-start", "actor-stop"):
+        command = subparsers.add_parser(name)
+        command.add_argument("--runtime-root", required=True)
+        command.add_argument("--cell-id", required=True)
+        command.add_argument("--run-id", required=True)
+        command.add_argument("--container-name", required=True)
+        command.add_argument("--actor", required=True)
+        if name == "actor-start":
+            command.add_argument("--display", required=True)
+            command.add_argument("--webdriver-port", type=int, required=True)
+            command.add_argument("--gateway-port", type=int, required=True)
+            command.add_argument("--profile", required=True)
+            command.add_argument("--environment-json", required=True)
+            command.add_argument("--timeout", type=float, default=30)
+
+    adapter_parser = subparsers.add_parser("adapter")
+    adapter_parser.add_argument("--runtime-root", required=True)
+    adapter_parser.add_argument("--cell-id", required=True)
+    adapter_parser.add_argument("--run-id", required=True)
+    adapter_parser.add_argument("--container-name", required=True)
+    adapter_parser.add_argument("--operation", required=True)
+    adapter_parser.add_argument("--payload", required=True)
+    adapter_parser.add_argument("--timeout", type=float, default=30)
+
     prune_parser = subparsers.add_parser("prune")
     prune_parser.add_argument("--runtime-root", required=True)
     prune_parser.add_argument("--cache-root", required=True)
@@ -587,6 +1092,9 @@ def main() -> int:
             "reap": reap,
             "stop": stop,
             "status": status,
+            "actor-start": actor_start,
+            "actor-stop": actor_stop,
+            "adapter": adapter,
             "prune": prune,
         }[args.command](args)
     except (

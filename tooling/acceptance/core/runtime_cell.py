@@ -87,6 +87,28 @@ def _looks_like_literal_target(value: str) -> bool:
     return False
 
 
+def parse_required_runtime_cells(
+    gate_id: str,
+    raw_cells: object,
+) -> tuple[str, ...]:
+    if raw_cells is None:
+        return ()
+    if not isinstance(raw_cells, (list, tuple)):
+        raise ProvisioningError(
+            f"gate {gate_id}: requiredRuntimeCells must be a list"
+        )
+    cells = tuple(str(cell_id) for cell_id in raw_cells)
+    if len(set(cells)) != len(cells):
+        raise ProvisioningError(
+            f"gate {gate_id}: requiredRuntimeCells contains duplicates"
+        )
+    if any(not _is_slug(cell_id) for cell_id in cells):
+        raise ProvisioningError(
+            f"gate {gate_id}: requiredRuntimeCells contains an invalid id"
+        )
+    return cells
+
+
 @dataclass(frozen=True)
 class TransportContract:
     kind: str
@@ -754,17 +776,10 @@ def aggregate_matrix(
         raise ProvisioningError("gate id must be a non-empty slug")
     if not source_commit:
         raise ProvisioningError(f"gate {gate_id}: source commit is required")
+    required_cells = parse_required_runtime_cells(gate_id, required_cells)
     if not required_cells:
         raise ProvisioningError(
             f"gate {gate_id}: requiredRuntimeCells must not be empty"
-        )
-    if len(set(required_cells)) != len(required_cells):
-        raise ProvisioningError(
-            f"gate {gate_id}: requiredRuntimeCells contains duplicates"
-        )
-    if any(not _is_slug(cell_id) for cell_id in required_cells):
-        raise ProvisioningError(
-            f"gate {gate_id}: requiredRuntimeCells contains an invalid id"
         )
     unexpected_cells = sorted(set(cell_results) - set(required_cells))
     if unexpected_cells:

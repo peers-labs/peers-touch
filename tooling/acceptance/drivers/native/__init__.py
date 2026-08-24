@@ -13,17 +13,23 @@ from tooling.acceptance.drivers.native.base import (
     NativeWindowSnapshot,
     NativeWindowStack,
 )
+from tooling.acceptance.drivers.native.runtime import (
+    NativeDesktopRuntimeBinding,
+    resolve_native_desktop_runtime,
+)
 
 __all__ = [
     "MouseAction",
     "NativeControlSnapshot",
     "NativeDesktopAdapter",
+    "NativeDesktopRuntimeBinding",
     "NativeKey",
     "NativeModifier",
     "NativeWindowBounds",
     "NativeWindowSnapshot",
     "NativeWindowStack",
     "create_native_desktop_adapter",
+    "resolve_native_desktop_runtime",
 ]
 
 

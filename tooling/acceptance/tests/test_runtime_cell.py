@@ -28,6 +28,7 @@ from tooling.acceptance.core import (
     RuntimeCellManifest,
     RuntimeCellState,
     aggregate_matrix,
+    parse_required_runtime_cells,
 )
 
 
@@ -242,6 +243,21 @@ class RuntimeCellManifestTests(unittest.TestCase):
 
 class MatrixAggregationTests(unittest.TestCase):
     REQUIRED = ("desktop-macos-native", "desktop-linux-native", "desktop-windows-native")
+
+    def test_required_runtime_cells_parse_fail_closed(self) -> None:
+        self.assertEqual(
+            parse_required_runtime_cells("g", list(self.REQUIRED)),
+            self.REQUIRED,
+        )
+        self.assertEqual(parse_required_runtime_cells("g", None), ())
+        for invalid in (
+            "desktop-linux-native",
+            ["desktop-linux-native", "desktop-linux-native"],
+            ["not a slug"],
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ProvisioningError):
+                    parse_required_runtime_cells("g", invalid)
 
     def test_all_proven_same_commit_is_proven(self) -> None:
         commit = "abc123"

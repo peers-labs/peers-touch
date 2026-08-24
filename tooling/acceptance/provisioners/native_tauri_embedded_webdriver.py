@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -80,6 +81,12 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
     def provision(self, gate_id: str) -> RuntimeManifest:
         manifest = super().provision(gate_id)
         if not manifest.is_ready():
+            return manifest
+        runtime_cell = os.environ.get(
+            "PT_ACCEPTANCE_RUNTIME_CELL",
+            "",
+        ).strip()
+        if runtime_cell and runtime_cell != "desktop-macos-native":
             return manifest
         try:
             self._run_preflight_command(

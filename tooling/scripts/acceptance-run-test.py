@@ -62,6 +62,57 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(gates[1]["command"], "python3 tooling/scripts/desktop-performance-report.py")
         self.assertEqual(gates[1]["timeout_seconds"], 42)
 
+    def test_plan_gate_preserves_required_runtime_cells_from_catalog(self) -> None:
+        module = load_module()
+
+        gate = module.plan_gate_from_entry(
+            {
+                "id": "native-gate",
+                "command": "python3 run.py",
+            },
+            {
+                "native-gate": {
+                    "command": "python3 default.py",
+                    "requiredRuntimeCells": [
+                        "desktop-macos-native",
+                        "desktop-linux-native",
+                    ],
+                },
+            },
+        )
+
+        self.assertEqual(gate["command"], "python3 run.py")
+        self.assertEqual(
+            gate["requiredRuntimeCells"],
+            ["desktop-macos-native", "desktop-linux-native"],
+        )
+
+    def test_runtime_cell_selection_is_explicit_and_declared(self) -> None:
+        module = load_module()
+        gate = {
+            "id": "native-gate",
+            "requiredRuntimeCells": [
+                "desktop-macos-native",
+                "desktop-linux-native",
+            ],
+        }
+
+        self.assertEqual(
+            module.select_runtime_cell(gate, "desktop-linux-native"),
+            "desktop-linux-native",
+        )
+        with self.assertRaisesRegex(SystemExit, "requires explicit"):
+            module.select_runtime_cell(gate, "")
+        with self.assertRaisesRegex(SystemExit, "does not declare"):
+            module.select_runtime_cell(gate, "desktop-windows-native")
+        self.assertEqual(
+            module.select_runtime_cell(
+                {"id": "local-gate"},
+                "desktop-macos-native",
+            ),
+            "",
+        )
+
     def test_enrich_result_with_evidence_from_log_artifact(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:

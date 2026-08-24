@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -40,6 +41,7 @@ from tooling.acceptance.core.source_sync import (
 from tooling.acceptance.transports.ssh import (
     SshTarget,
     SshTransport,
+    SshTunnel,
 )
 
 
@@ -372,6 +374,16 @@ class LinuxCellProfile:
             raise ProvisioningError("Linux runtime-cell ports must be distinct")
 
 
+@dataclass
+class _ActorRuntime:
+    actor: str
+    webdriver_tunnel: SshTunnel | None
+    webdriver_local_port: int
+    gateway_tunnel: SshTunnel
+    log_path: Path
+    released: bool = False
+
+
 def _required(values: dict[str, str], key: str, source: Path) -> str:
     value = values.get(key, "").strip()
     if not value:
@@ -509,6 +521,7 @@ class NativeDesktopLinuxProvisioner:
             ),
         )
         self.transport = SshTransport(self.target)
+        self._actors: dict[str, _ActorRuntime] = {}
 
     def ready(self, gate_id: str = "runtime-cell-preflight") -> RuntimeCellManifest:
         if self.state_path.exists():
@@ -634,13 +647,31 @@ class NativeDesktopLinuxProvisioner:
             self._assert_running_image(container_name, image_digest)
             ready = self._wait_for_ready(container_name)
 
-            tunnels = self._start_tunnel_supervisor(expires_epoch)
-            self._probe_observer(int(tunnels["observer"]["localPort"]))
-            adapter = self._probe_native_adapter(
-                container_name,
-                run_root,
-                ready,
+            probe_actor = self._start_remote_actor(
+                remote_control=remote_control,
+                run_id=run_id,
+                container_name=container_name,
+                actor="cell-probe",
+                webdriver_port=self.profile.webdriver_port,
+                gateway_port=self.profile.gateway_port,
+                profile=f"{self.profile.name}-probe",
+                environment={},
             )
+            try:
+                adapter = self._probe_native_adapter(
+                    container_name,
+                    run_root,
+                    int(probe_actor["processId"]),
+                )
+                tunnels = self._start_tunnel_supervisor(expires_epoch)
+            finally:
+                self._stop_remote_actor(
+                    remote_control=remote_control,
+                    run_id=run_id,
+                    container_name=container_name,
+                    actor="cell-probe",
+                )
+            self._probe_observer(int(tunnels["observer"]["localPort"]))
             manifest = self._manifest(
                 gate_id=gate_id,
                 run_id=run_id,
@@ -680,9 +711,6 @@ class NativeDesktopLinuxProvisioner:
                     ),
                     "observerLocalPort": int(
                         tunnels["observer"]["localPort"]
-                    ),
-                    "processId": int(
-                        (ready.get("processes") or {}).get("app") or 0
                     ),
                     "manifest": manifest.to_dict(),
                 }
@@ -782,23 +810,246 @@ class NativeDesktopLinuxProvisioner:
         payload["manifest"] = state.get("manifest")
         return payload
 
-    def launcher(self) -> ProvisionedTauriLauncher:
+    def launch_actor(
+        self,
+        actor: str,
+        client_spec: dict[str, Any],
+        environment: dict[str, str],
+    ) -> ProvisionedTauriLauncher:
         state = self._require_state()
+        if actor in self._actors:
+            raise ProvisioningError(
+                f"Linux runtime-cell actor {actor!r} is already launched"
+            )
+        remote = self._start_remote_actor(
+            remote_control=Path(str(state["remoteControl"])),
+            run_id=str(state["runId"]),
+            container_name=str(state["containerName"]),
+            actor=actor,
+            webdriver_port=int(client_spec["webdriver_port"]),
+            gateway_port=int(client_spec["gateway_port"]),
+            profile=str(client_spec["profile"]),
+            environment=environment,
+        )
+        webdriver_tunnel: SshTunnel | None = None
+        gateway_tunnel: SshTunnel | None = None
+        try:
+            if int(remote["webdriverPort"]) == getattr(
+                self.profile,
+                "webdriver_port",
+                -1,
+            ):
+                cell_tunnels = self._validated_tunnel_state(
+                    self._read_tunnel_state()
+                )
+                webdriver_local_port = int(
+                    cell_tunnels["webdriver"]["localPort"]
+                )
+            else:
+                webdriver_tunnel = self.transport.start_local_forward(
+                    remote_port=int(remote["webdriverPort"]),
+                    local_port=int(client_spec["webdriver_port"]),
+                )
+                webdriver_local_port = webdriver_tunnel.local_port
+            gateway_tunnel = self.transport.start_local_forward(
+                remote_port=int(remote["gatewayPort"]),
+                local_port=int(client_spec["gateway_port"]),
+            )
+        except BaseException:
+            for tunnel in (gateway_tunnel, webdriver_tunnel):
+                if tunnel is not None:
+                    tunnel.stop()
+            self._stop_remote_actor(
+                remote_control=Path(str(state["remoteControl"])),
+                run_id=str(state["runId"]),
+                container_name=str(state["containerName"]),
+                actor=actor,
+            )
+            raise
+        log_path = (
+            self.state_path.parent
+            / "logs"
+            / str(state["runId"])
+            / f"{actor}.log"
+        )
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        runtime = _ActorRuntime(
+            actor=actor,
+            webdriver_tunnel=webdriver_tunnel,
+            webdriver_local_port=webdriver_local_port,
+            gateway_tunnel=gateway_tunnel,
+            log_path=log_path,
+        )
+        self._actors[actor] = runtime
         metadata = AppLaunchMetadata(
             webdriver_host="127.0.0.1",
-            webdriver_port=int(state["webdriverLocalPort"]),
-            gateway_port=self.profile.gateway_port,
-            profile=self.profile.name,
-            storage_root=(
-                f"runtime-cell:{self.contract.cell_id}:{state['runId']}"
-            ),
-            process_id=int(state.get("processId") or 0),
+            webdriver_port=webdriver_local_port,
+            gateway_port=gateway_tunnel.local_port,
+            profile=str(remote["profile"]),
+            storage_root=str(remote["storageRoot"]),
+            process_id=int(remote["processId"]),
+            log_path=log_path,
         )
         return ProvisionedTauriLauncher(
             metadata,
-            release=lambda: self.stop(),
-            alive=lambda: self.status().get("container") == "running",
+            release=lambda: self.release_actor(actor),
+            alive=lambda: self.actor_is_alive(actor),
         )
+
+    def release_actor(self, actor: str) -> None:
+        runtime = self._actors.get(actor)
+        if runtime is None or runtime.released:
+            return
+        runtime.released = True
+        failures: list[str] = []
+        for name, tunnel in (
+            ("gateway tunnel", runtime.gateway_tunnel),
+            ("WebDriver tunnel", runtime.webdriver_tunnel),
+        ):
+            if tunnel is None:
+                continue
+            try:
+                tunnel.stop()
+            except Exception as error:
+                failures.append(f"{name}: {error}")
+        state = self._read_state()
+        if state:
+            try:
+                stopped = self._stop_remote_actor(
+                    remote_control=Path(str(state["remoteControl"])),
+                    run_id=str(state["runId"]),
+                    container_name=str(state["containerName"]),
+                    actor=actor,
+                )
+                content = str(stopped.get("logContent") or "")
+                if content:
+                    runtime.log_path.write_bytes(base64.b64decode(content))
+            except Exception as error:
+                failures.append(f"remote actor: {error}")
+        if not failures:
+            self._actors.pop(actor, None)
+        if failures:
+            runtime.released = False
+            raise ProvisioningError(
+                f"Linux runtime-cell actor {actor!r} cleanup failed: "
+                + "; ".join(failures)
+            )
+
+    def actor_is_alive(self, actor: str) -> bool:
+        runtime = self._actors.get(actor)
+        if runtime is None or runtime.released:
+            return False
+        webdriver_alive = (
+            runtime.webdriver_tunnel.is_alive()
+            if runtime.webdriver_tunnel is not None
+            else _local_port_listening(runtime.webdriver_local_port)
+        )
+        if not webdriver_alive or not runtime.gateway_tunnel.is_alive():
+            return False
+        actors = self.status().get("actors")
+        return isinstance(actors, list) and any(
+            isinstance(item, dict) and item.get("actor") == actor
+            for item in actors
+        )
+
+    def actor_cleanup_audit(self) -> dict[str, Any]:
+        status = self.status()
+        remote_actors = status.get("actors")
+        if not isinstance(remote_actors, list):
+            remote_actors = []
+        active_local = sorted(
+            actor
+            for actor, runtime in self._actors.items()
+            if not runtime.released
+        )
+        active_remote = sorted(
+            str(actor.get("actor") or "")
+            for actor in remote_actors
+            if isinstance(actor, dict) and actor.get("actor")
+        )
+        return {
+            "activeLocalActors": active_local,
+            "activeRemoteActors": active_remote,
+            "portsReleased": not active_local and not active_remote,
+            "processesReleased": not active_remote,
+            "storageReleased": not active_remote,
+        }
+
+    def validate_binding(
+        self,
+        gate_id: str,
+        source_commit: str,
+    ) -> None:
+        state = self._require_state()
+        manifest = state.get("manifest")
+        if not isinstance(manifest, dict):
+            raise ProvisioningError(
+                "Linux runtime-cell manifest is missing"
+            )
+        if manifest.get("gateId") != gate_id:
+            raise ProvisioningError(
+                "Linux runtime-cell Gate identity does not match the "
+                "requested product Gate"
+            )
+        source = manifest.get("source")
+        if (
+            not isinstance(source, dict)
+            or source.get("commit") != source_commit
+        ):
+            raise ProvisioningError(
+                "Linux runtime-cell source commit does not match the "
+                "product runtime manifest"
+            )
+
+    def binary_identity(self) -> dict[str, str]:
+        state = self._require_state()
+        manifest = state.get("manifest")
+        source = manifest.get("source") if isinstance(manifest, dict) else None
+        if not isinstance(source, dict):
+            raise ProvisioningError(
+                "Linux runtime-cell manifest source identity is missing"
+            )
+        return {
+            "path": (
+                f"runtime-cell:{self.contract.cell_id}:"
+                f"{state['runId']}:{_BINARY_RELATIVE_PATH}"
+            ),
+            "sha256": _digest(
+                str(source.get("binarySha256") or ""),
+                "runtime-cell manifest binary digest",
+            ),
+            "sourceCommit": str(source.get("commit") or ""),
+        }
+
+    def execute_adapter(
+        self,
+        operation: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        state = self._require_state()
+        request = {
+            **payload,
+            "display": self.profile.display,
+        }
+        completed = self._remote_control(
+            Path(str(state["remoteControl"])),
+            "adapter",
+            "--runtime-root",
+            self.profile.runtime_root,
+            "--cell-id",
+            self.contract.cell_id,
+            "--run-id",
+            str(state["runId"]),
+            "--container-name",
+            str(state["containerName"]),
+            "--operation",
+            operation,
+            "--payload",
+            base64.b64encode(
+                json.dumps(request, sort_keys=True).encode("utf-8")
+            ).decode("ascii"),
+        )
+        return _json_output(completed, f"Native adapter {operation}")
 
     def logs(self, tail: int = 200) -> str:
         state = self._require_state()
@@ -820,14 +1071,25 @@ class NativeDesktopLinuxProvisioner:
 
     def stop(self) -> dict[str, Any]:
         state = self._read_state()
+        actor_cleanup_failures: list[str] = []
+        for actor in reversed(tuple(self._actors)):
+            try:
+                self.release_actor(actor)
+            except ProvisioningError as error:
+                actor_cleanup_failures.append(str(error))
         if not state:
             self._stop_tunnel_supervisor()
+            if actor_cleanup_failures:
+                raise ProvisioningError(
+                    "Linux runtime-cell actor cleanup failed: "
+                    + "; ".join(actor_cleanup_failures)
+                )
             return {
                 "cellId": self.contract.cell_id,
                 "state": RuntimeCellState.CLEANED.value,
                 "alreadyClean": True,
             }
-        cleanup_failures: list[str] = []
+        cleanup_failures = actor_cleanup_failures
         try:
             self._stop_tunnel_supervisor()
         except (OSError, ProvisioningError) as error:
@@ -1516,16 +1778,74 @@ class NativeDesktopLinuxProvisioner:
             resource=f"runtime-cell-container:{container_name}",
         )
 
+    def _start_remote_actor(
+        self,
+        *,
+        remote_control: Path,
+        run_id: str,
+        container_name: str,
+        actor: str,
+        webdriver_port: int,
+        gateway_port: int,
+        profile: str,
+        environment: dict[str, str],
+    ) -> dict[str, Any]:
+        completed = self._remote_control(
+            remote_control,
+            "actor-start",
+            "--runtime-root",
+            self.profile.runtime_root,
+            "--cell-id",
+            self.contract.cell_id,
+            "--run-id",
+            run_id,
+            "--container-name",
+            container_name,
+            "--actor",
+            actor,
+            "--display",
+            self.profile.display,
+            "--webdriver-port",
+            str(webdriver_port),
+            "--gateway-port",
+            str(gateway_port),
+            "--profile",
+            profile,
+            "--environment-json",
+            json.dumps(environment, sort_keys=True),
+        )
+        return _json_output(completed, f"actor {actor} start")
+
+    def _stop_remote_actor(
+        self,
+        *,
+        remote_control: Path,
+        run_id: str,
+        container_name: str,
+        actor: str,
+    ) -> dict[str, Any]:
+        completed = self._remote_control(
+            remote_control,
+            "actor-stop",
+            "--runtime-root",
+            self.profile.runtime_root,
+            "--cell-id",
+            self.contract.cell_id,
+            "--run-id",
+            run_id,
+            "--container-name",
+            container_name,
+            "--actor",
+            actor,
+        )
+        return _json_output(completed, f"actor {actor} stop")
+
     def _probe_native_adapter(
         self,
         container_name: str,
         run_root: Path,
-        ready: dict[str, Any],
+        app_pid: int,
     ) -> dict[str, Any]:
-        processes = ready.get("processes")
-        if not isinstance(processes, dict):
-            raise ProvisioningError("Linux runtime-cell readiness lacks processes")
-        app_pid = int(processes.get("app") or 0)
         completed = self.transport.run_argv(
             (
                 "docker",
