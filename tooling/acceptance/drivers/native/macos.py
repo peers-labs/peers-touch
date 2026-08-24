@@ -304,6 +304,7 @@ except Exception as error:
 _KEY_CODES = {
     NativeKey.A: 0,
     NativeKey.G: 5,
+    NativeKey.L: 37,
     NativeKey.V: 9,
     NativeKey.DELETE: 51,
     NativeKey.ENTER: 36,

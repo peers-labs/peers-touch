@@ -46,6 +46,7 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
     def test_key_mapping_uses_x11_control_as_primary_modifier(self) -> None:
         self.assertEqual(_KEY_SYMBOLS[NativeKey.DELETE], "Delete")
         self.assertEqual(_KEY_SYMBOLS[NativeKey.ENTER], "Return")
+        self.assertEqual(_KEY_SYMBOLS[NativeKey.L], "l")
         self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.PRIMARY], "Control_L")
         self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.SHIFT], "Shift_L")
 
@@ -55,7 +56,7 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
             adapter.reveal_file_chooser_location()
 
         post_key.assert_called_once_with(
-            NativeKey.G,
+            NativeKey.L,
             modifiers=(NativeModifier.PRIMARY,),
         )
 

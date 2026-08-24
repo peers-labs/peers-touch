@@ -172,7 +172,7 @@ class RemoteLinuxNativeDesktopAdapter(NativeDesktopAdapter):
 
     def reveal_file_chooser_location(self) -> None:
         self.post_key(
-            NativeKey.G,
+            NativeKey.L,
             modifiers=(NativeModifier.PRIMARY,),
         )
 

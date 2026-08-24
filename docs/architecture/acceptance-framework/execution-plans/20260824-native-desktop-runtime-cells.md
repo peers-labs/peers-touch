@@ -592,7 +592,7 @@ then reached the native Settings image chooser. The chooser was detected, but
 the Gate timed out waiting for a location text field after sending the
 macOS-only `Primary+Shift+G` shortcut. The adapter contract now owns the semantic
 `reveal_file_chooser_location` operation: macOS preserves
-`Primary+Shift+G`, while Linux and Remote Linux use GTK/Zenity `Primary+G`.
+`Primary+Shift+G`, while Linux and Remote Linux use GTK/Zenity `Primary+L`.
 The Chat Gate remains platform-neutral and its chooser assertions are unchanged.
 
 ## 13. Final Readiness Gate

@@ -22,6 +22,7 @@ from tooling.acceptance.drivers.native.base import (
 _KEY_SYMBOLS = {
     NativeKey.A: "a",
     NativeKey.G: "g",
+    NativeKey.L: "l",
     NativeKey.V: "v",
     NativeKey.DELETE: "Delete",
     NativeKey.ENTER: "Return",
@@ -163,7 +164,7 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
 
     def reveal_file_chooser_location(self) -> None:
         self.post_key(
-            NativeKey.G,
+            NativeKey.L,
             modifiers=(NativeModifier.PRIMARY,),
         )
 

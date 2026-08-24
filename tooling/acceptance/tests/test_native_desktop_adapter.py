@@ -486,6 +486,7 @@ class MacOSNativeDesktopAdapterTests(unittest.TestCase):
         )
         self.assertEqual(macos._KEY_CODES[NativeKey.A], 0)
         self.assertEqual(macos._KEY_CODES[NativeKey.G], 5)
+        self.assertEqual(macos._KEY_CODES[NativeKey.L], 37)
         self.assertEqual(macos._KEY_CODES[NativeKey.V], 9)
         self.assertEqual(macos._KEY_CODES[NativeKey.DELETE], 51)
         self.assertEqual(macos._KEY_CODES[NativeKey.ENTER], 36)

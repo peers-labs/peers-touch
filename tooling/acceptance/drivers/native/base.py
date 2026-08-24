@@ -15,6 +15,7 @@ class MouseAction(str, Enum):
 class NativeKey(str, Enum):
     A = "a"
     G = "g"
+    L = "l"
     V = "v"
     DELETE = "delete"
     ENTER = "enter"
