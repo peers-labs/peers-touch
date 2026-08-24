@@ -1218,6 +1218,8 @@ class NativeProductClosureGate(AcceptanceGate):
             ):
                 raise GateError(
                     "Native click target changed before event delivery"
+                    ": "
+                    f"{json.dumps(current_target, sort_keys=True)}"
                 )
             point = (
                 window["left"]
