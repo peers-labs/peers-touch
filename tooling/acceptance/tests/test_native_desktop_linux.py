@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import importlib.util
 import io
 import json
@@ -662,6 +663,36 @@ class RemoteLinuxCellControlTests(unittest.TestCase):
                 "D-Bus session address is unavailable",
             ):
                 remote_control.adapter(args)
+
+    def test_actor_storage_cleanup_retries_transient_directory_churn(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            actor_root = Path(tmp) / "actor"
+            actor_root.mkdir()
+            (actor_root / "log").write_text("data", encoding="utf-8")
+            remove_tree = remote_control.shutil.rmtree
+            attempts = 0
+
+            def transient_remove(path):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise OSError(
+                        errno.ENOTEMPTY,
+                        "Directory not empty",
+                        str(path),
+                    )
+                remove_tree(path)
+
+            with patch.object(
+                remote_control.shutil,
+                "rmtree",
+                side_effect=transient_remove,
+            ):
+                remote_control._remove_tree(actor_root)
+
+        self.assertEqual(attempts, 2)
 
     def test_actor_start_allocates_isolated_process_storage_and_ports(
         self,
