@@ -3,7 +3,7 @@
 # deploy.sh — Remote deployment via pull model
 #
 # Source modes (PT_DEPLOY_SOURCE):
-#   direct  — Push straight to target station's .bare.git via SSH (simplest)
+#   direct  — Push to the target's external source repository via SSH
 #   central — Push to central bare repo, remote fetches from it (recommended)
 #   local   — Remote fetches from local git daemon via SSH reverse tunnel
 #   github  — Remote fetches from GitHub origin
@@ -18,7 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 ENVS_DIR="$PROJECT_ROOT/.local/deploy/envs"
-GIT_SERVER_ENV="$PROJECT_ROOT/.local/deploy/git-server.env"
+SOURCE_SYNC_SCRIPT="$SCRIPT_DIR/source-sync.sh"
 
 cmd="${1:-}"
 env_name="${2:-$cmd}"
@@ -72,87 +72,21 @@ source "$ENV_FILE"
 : "${PT_DEPLOY_ROLE:?PT_DEPLOY_ROLE not set in $ENV_FILE}"
 
 BRANCH="${BRANCH:-${PT_DEPLOY_BRANCH:-main}}"
-SOURCE="${PT_DEPLOY_SOURCE:-central}"
 SSH_TARGET="${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}"
-SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 -o StrictHostKeyChecking=no"
-ORIGIN_URL="${PT_DEPLOY_REPO_URL:-$(git -C "$PROJECT_ROOT" remote get-url origin 2>/dev/null || true)}"
-
-# Load central git server config if needed
-if [[ "$SOURCE" == "central" ]]; then
-  if [[ ! -f "$GIT_SERVER_ENV" ]]; then
-    echo "[ERROR] PT_DEPLOY_SOURCE=central but $GIT_SERVER_ENV not found"
-    exit 1
-  fi
-  # shellcheck disable=SC1090
-  source "$GIT_SERVER_ENV"
-  : "${PT_GIT_SERVER_HOST:?PT_GIT_SERVER_HOST not set}"
-  : "${PT_GIT_SERVER_USER:?PT_GIT_SERVER_USER not set}"
-  : "${PT_GIT_SERVER_BARE_PATH:?PT_GIT_SERVER_BARE_PATH not set}"
-  GIT_SERVER_DAEMON_PORT="${PT_GIT_SERVER_DAEMON_PORT:-9418}"
-  GIT_SERVER_SSH_URL="ssh://${PT_GIT_SERVER_USER}@${PT_GIT_SERVER_HOST}/home/${PT_GIT_SERVER_USER}/${PT_GIT_SERVER_BARE_PATH}"
+SSH_OPTS=(
+  -o BatchMode=yes
+  -o ConnectTimeout=10
+  -o ConnectionAttempts=1
+  -o StrictHostKeyChecking=yes
+  -p "${PT_DEPLOY_SSH_PORT:-22}"
+)
+if [[ -n "${PT_DEPLOY_KNOWN_HOSTS_FILE:-}" ]]; then
+  SSH_OPTS+=(-o "UserKnownHostsFile=$PT_DEPLOY_KNOWN_HOSTS_FILE")
 fi
 
 ssh_run() {
-  # shellcheck disable=SC2086
-  ssh $SSH_OPTS "$SSH_TARGET" "$@"
-}
-
-# ─── Central mode: push to bare repo ───
-push_to_central() {
-  echo "[INFO] Pushing to central bare repo: ${PT_GIT_SERVER_HOST}:${PT_GIT_SERVER_BARE_PATH}"
-  git -C "$PROJECT_ROOT" push --force "$GIT_SERVER_SSH_URL" "HEAD:refs/heads/$BRANCH" 2>&1 | sed 's/^/       /'
-}
-
-# ─── Direct mode: push straight to target station ───
-push_direct() {
-  echo "[INFO] Pushing directly to: ${PT_DEPLOY_HOST}:${PT_DEPLOY_PATH}"
-  ssh_run "mkdir -p \$HOME/$PT_DEPLOY_PATH && cd \$HOME/$PT_DEPLOY_PATH && git init --bare .bare.git 2>/dev/null || true"
-  git -C "$PROJECT_ROOT" push --force "ssh://${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}/home/${PT_DEPLOY_USER}/${PT_DEPLOY_PATH}/.bare.git" "HEAD:refs/heads/$BRANCH" 2>&1 | sed 's/^/       /'
-}
-
-# ─── Resolve fetch URL for the remote ───
-resolve_fetch_url() {
-  case "$SOURCE" in
-    direct)
-      echo "\$HOME/$PT_DEPLOY_PATH/.bare.git"
-      ;;
-    central)
-      if [[ "$PT_DEPLOY_HOST" == "$PT_GIT_SERVER_HOST" ]]; then
-        # Target IS the git server → local path fetch (fast)
-        echo "/home/${PT_GIT_SERVER_USER}/${PT_GIT_SERVER_BARE_PATH}"
-      else
-        # Target is another host → fetch from git daemon on the git server
-        echo "git://${PT_GIT_SERVER_HOST}:${GIT_SERVER_DAEMON_PORT}/$(basename "${PT_GIT_SERVER_BARE_PATH}")"
-      fi
-      ;;
-    github)
-      if [[ -z "$ORIGIN_URL" ]]; then
-        echo "[ERROR] PT_DEPLOY_SOURCE=github but no origin URL available" >&2
-        exit 1
-      fi
-      echo "$ORIGIN_URL"
-      ;;
-    local)
-      # Legacy: local git daemon + reverse tunnel
-      GIT_PORT="${PT_GIT_SERVE_PORT:-9418}"
-      TUNNEL_PORT="${PT_DEPLOY_GIT_TUNNEL_PORT:-19418}"
-      /bin/bash "$SCRIPT_DIR/git-serve.sh" start >&2
-      # Try reverse tunnel
-      if /usr/bin/ssh $SSH_OPTS -N -f -R "127.0.0.1:$TUNNEL_PORT:127.0.0.1:$GIT_PORT" "$SSH_TARGET" 2>/dev/null; then
-        sleep 0.5
-        if ssh_run "git ls-remote git://127.0.0.1:$TUNNEL_PORT/$(basename "$PROJECT_ROOT") HEAD >/dev/null 2>&1"; then
-          echo "git://127.0.0.1:$TUNNEL_PORT/$(basename "$PROJECT_ROOT")"
-          return
-        fi
-      fi
-      echo "[WARN] Local mode: tunnel failed, falling back to github" >&2
-      echo "$ORIGIN_URL"
-      ;;
-    *)
-      echo "[ERROR] Unknown PT_DEPLOY_SOURCE: $SOURCE" >&2
-      exit 1
-      ;;
-  esac
+  # shellcheck disable=SC2029 # Callers intentionally provide the remote command.
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$@"
 }
 
 case "$cmd" in
@@ -176,18 +110,14 @@ case "$cmd" in
   *)
     # ═══ Deploy ═══
 
-    # Step 0: Push code to target
-    if [[ "$SOURCE" == "central" ]]; then
-      echo "[0/4] Pushing to central git server ..."
-      push_to_central
-    elif [[ "$SOURCE" == "direct" ]]; then
-      echo "[0/4] Pushing directly to target station ..."
-      push_direct
-    else
-      echo "[0/4] Resolving deploy source ..."
+    if [[ "${PT_SOURCE_LEASE_HELD:-0}" != "1" ]]; then
+      echo "[0/4] Synchronizing exact Git source ..."
+      exec /bin/bash "$SOURCE_SYNC_SCRIPT" \
+        "$env_name" \
+        --branch "$BRANCH" \
+        -- \
+        /bin/bash "$SCRIPT_DIR/deploy.sh" "$@"
     fi
-
-    FETCH_URL="$(resolve_fetch_url)"
 
     echo ""
     echo "═══════════════════════════════════════════════"
@@ -196,30 +126,12 @@ case "$cmd" in
     echo "  Path:      \$HOME/$PT_DEPLOY_PATH"
     echo "  Branch:    $BRANCH"
     echo "  Role:      $PT_DEPLOY_ROLE"
-    echo "  Source:    $FETCH_URL"
+    echo "  Source:    exact Git commit via source-sync"
     echo "═══════════════════════════════════════════════"
     echo ""
 
-    echo "[1/4] Fetching code ..."
-    ssh_run "
-      set -e
-      DEPLOY_PATH=\"\$HOME/$PT_DEPLOY_PATH\"
-      if [ ! -d \"\$DEPLOY_PATH/.git\" ]; then
-        mkdir -p \"\$DEPLOY_PATH\"
-        cd \"\$DEPLOY_PATH\"
-        git init
-      else
-        cd \"\$DEPLOY_PATH\"
-      fi
-      if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
-        git add -A >/dev/null 2>&1 || true
-      fi
-      git fetch \"$FETCH_URL\" +$BRANCH:refs/remotes/deploy/$BRANCH
-      git checkout -f -B $BRANCH refs/remotes/deploy/$BRANCH
-      git reset --hard refs/remotes/deploy/$BRANCH
-      echo '[remote] HEAD:'
-      git log --oneline -1
-    "
+    echo "[1/4] Verifying synchronized source ..."
+    ssh_run "git -C \$HOME/$PT_DEPLOY_PATH log --oneline -1"
 
     echo "[2/4] Building ..."
     if [[ -n "${PT_DEPLOY_BUILD_CMD:-}" ]]; then
@@ -227,10 +139,10 @@ case "$cmd" in
     else
       case "$PT_DEPLOY_ROLE" in
         station)
-          ssh_run "cd \$HOME/$PT_DEPLOY_PATH && mkdir -p .cache/go/mod .cache/go/build apps/station/app/bin && cd apps/station/app && GOMODCACHE=\$HOME/$PT_DEPLOY_PATH/.cache/go/mod GOCACHE=\$HOME/$PT_DEPLOY_PATH/.cache/go/build go build -o bin/station ."
+          ssh_run "CACHE_ROOT=\$HOME/.cache/peers-touch/build/$env_name && mkdir -p \$CACHE_ROOT/go/mod \$CACHE_ROOT/go/build \$HOME/$PT_DEPLOY_PATH/apps/station/app/bin && cd \$HOME/$PT_DEPLOY_PATH/apps/station/app && GOMODCACHE=\$CACHE_ROOT/go/mod GOCACHE=\$CACHE_ROOT/go/build go build -o bin/station ."
           ;;
         relay)
-          ssh_run "cd \$HOME/$PT_DEPLOY_PATH && mkdir -p .cache/go/mod .cache/go/build && GOMODCACHE=\$HOME/$PT_DEPLOY_PATH/.cache/go/mod GOCACHE=\$HOME/$PT_DEPLOY_PATH/.cache/go/build make build-relay"
+          ssh_run "CACHE_ROOT=\$HOME/.cache/peers-touch/build/$env_name && mkdir -p \$CACHE_ROOT/go/mod \$CACHE_ROOT/go/build && cd \$HOME/$PT_DEPLOY_PATH && GOMODCACHE=\$CACHE_ROOT/go/mod GOCACHE=\$CACHE_ROOT/go/build make build-relay"
           ;;
         *)
           ssh_run "cd \$HOME/$PT_DEPLOY_PATH && make build"

@@ -135,6 +135,11 @@ class EnvironmentProvisioner(ABC):
                 host=environment.get("PT_DEPLOY_HOST", ""),
                 user=environment.get("PT_DEPLOY_USER", ""),
                 deploy_path=environment.get("PT_DEPLOY_PATH", ""),
+                port=int(environment.get("PT_DEPLOY_SSH_PORT", "22")),
+                known_hosts_file=environment.get(
+                    "PT_DEPLOY_KNOWN_HOSTS_FILE",
+                    "",
+                ),
             )
             lease.acquire()
         except (ValueError, RemoteGitSourceLeaseUnavailable) as error:

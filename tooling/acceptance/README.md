@@ -14,6 +14,18 @@ run for a changed path, and which artifacts should be produced for human review.
 - `gates.yaml` defines gate commands, timeouts, environments, tiers, and artifact expectations.
 - `features/` contains product feature contracts.
 - `gates/` contains stable cross-system acceptance implementations.
+- `drivers/native/` defines the platform-neutral Native Desktop interaction
+  contract and OS-specific adapters; business Gates inject this boundary and
+  contain no AppKit, Quartz, CoreGraphics, X11, or Win32 implementation.
+- `runtime-cells/` contains non-sensitive platform capability contracts.
+- `images/desktop-linux/` owns the digest-pinned Linux userland, persistent
+  Xorg session, Window Manager, observer, and in-container process supervisor.
+- `provisioners/native_desktop_linux.py` resolves the local
+  `profile:acceptance-linux` reference, performs exact Git object sync, builds
+  and attests the Desktop binary, and coordinates source-bound remote cleanup.
+- `provisioners/local_tunnel_supervisor.py` owns run-scoped local SSH forwards,
+  applies the cell TTL independently of the lifecycle command, and verifies
+  reverse-order tunnel teardown.
 - `playbooks/` explains how agents should run, diagnose, and preserve acceptance flows.
 - `desktop-performance-cohort.json` is the canonical P0c-3 profile, account,
   dataset, window, warmup, build, runtime, and scenario manifest.
@@ -61,6 +73,33 @@ This creates a two-way proof:
     `tooling/acceptance/playbooks/chat-native-visible-clients.md`; visible
     observers, source matching, isolated profiles, bounded steps, and composer
     cleanup are mandatory.
+
+## Native Desktop Runtime Cells
+
+The Linux cell is managed through:
+
+```bash
+make acceptance-cell-ready CELL=desktop-linux-native
+make acceptance-cell-status CELL=desktop-linux-native
+make acceptance-cell-logs CELL=desktop-linux-native
+make acceptance-cell-stop CELL=desktop-linux-native
+```
+
+`profile:acceptance-linux` resolves locally from
+`.local/acceptance/runtime-cells/acceptance-linux.env`. The profile names a
+separate deploy environment under `.local/deploy/envs/`; neither file is
+committed. The runtime contract contains no host, username, credential, or
+remote absolute path. `ready` requires a clean Git worktree and synchronizes
+only Git objects before the remote image and Desktop build.
+Profiles may select HTTPS mirrors for the base image, Node distribution,
+rustup, and the Cargo registry; immutable image/toolchain pins remain enforced.
+
+The remote controller is copied into the run directory before its detached
+reaper starts. Cleanup retains ownership metadata and reports
+`CLEANUP_FAILED` when any container, port, source, or storage resource remains.
+The running container is launched by immutable image ID, and readiness requires
+an observed XTest input effect in addition to focus, point ownership, and
+desktop screenshot probes.
 
 ### W8 Native Chat Operations
 

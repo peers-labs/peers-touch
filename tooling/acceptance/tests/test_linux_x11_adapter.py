@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from tooling.acceptance.core.errors import DriverError
+from tooling.acceptance.drivers.native import create_native_desktop_adapter
+from tooling.acceptance.drivers.native.base import (
+    NativeKey,
+    NativeModifier,
+)
+from tooling.acceptance.drivers.native.linux_x11 import (
+    LinuxX11NativeDesktopAdapter,
+    _KEY_SYMBOLS,
+    _MODIFIER_SYMBOLS,
+)
+
+
+class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
+    def test_factory_returns_linux_adapter_for_linux_platform(self) -> None:
+        with patch.dict("os.environ", {"DISPLAY": ":99"}):
+            adapter = create_native_desktop_adapter("linux")
+
+        self.assertIsInstance(adapter, LinuxX11NativeDesktopAdapter)
+        self.assertEqual(adapter.platform, "linux")
+        self.assertEqual(adapter.display_name, ":99")
+
+    def test_display_is_required(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaisesRegex(DriverError, "requires DISPLAY"):
+                LinuxX11NativeDesktopAdapter()
+
+    def test_process_operations_reject_invalid_pid(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        for process_id in (0, -1, "not-a-pid"):
+            with self.subTest(process_id=process_id):
+                with self.assertRaisesRegex(DriverError, "process ID"):
+                    adapter.activate_process(process_id)  # type: ignore[arg-type]
+
+    def test_key_mapping_uses_x11_control_as_primary_modifier(self) -> None:
+        self.assertEqual(_KEY_SYMBOLS[NativeKey.DELETE], "Delete")
+        self.assertEqual(_KEY_SYMBOLS[NativeKey.ENTER], "Return")
+        self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.PRIMARY], "Control_L")
+        self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.SHIFT], "Shift_L")
+
+    def test_clipboard_commands_are_bound_to_the_declared_display(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        read = subprocess.CompletedProcess(
+            args=(),
+            returncode=0,
+            stdout=b"clipboard",
+            stderr=b"",
+        )
+        write = subprocess.CompletedProcess(
+            args=(),
+            returncode=0,
+            stdout=b"",
+            stderr=b"",
+        )
+        with patch(
+            "tooling.acceptance.drivers.native.linux_x11.subprocess.run",
+            side_effect=(read, write),
+        ) as run:
+            self.assertEqual(adapter.read_clipboard(), b"clipboard")
+            adapter.write_clipboard(b"next")
+
+        self.assertEqual(run.call_args_list[0].args[0], (
+            "xclip",
+            "-selection",
+            "clipboard",
+            "-out",
+        ))
+        self.assertEqual(run.call_args_list[0].kwargs["env"]["DISPLAY"], ":99")
+        self.assertEqual(run.call_args_list[1].kwargs["input"], b"next")
+
+    def test_screenshot_must_create_a_nonempty_file(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "desktop.png"
+
+            def create_screenshot(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                path.write_bytes(b"png")
+                return subprocess.CompletedProcess(args=(), returncode=0, stdout="", stderr="")
+
+            with patch.object(adapter, "_run", side_effect=create_screenshot):
+                adapter.capture_screenshot(path)
+
+            self.assertEqual(path.read_bytes(), b"png")
+
+
+if __name__ == "__main__":
+    unittest.main()

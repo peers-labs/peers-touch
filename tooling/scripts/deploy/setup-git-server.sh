@@ -27,75 +27,83 @@ source "$GIT_SERVER_ENV"
 : "${PT_GIT_SERVER_USER:?not set}"
 : "${PT_GIT_SERVER_BARE_PATH:?not set}"
 DAEMON_PORT="${PT_GIT_SERVER_DAEMON_PORT:-9418}"
+SSH_PORT="${PT_GIT_SERVER_SSH_PORT:-22}"
 
 SSH_TARGET="${PT_GIT_SERVER_USER}@${PT_GIT_SERVER_HOST}"
-SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
-BARE_ABS="/home/${PT_GIT_SERVER_USER}/${PT_GIT_SERVER_BARE_PATH}"
-BASE_PATH="$(dirname "$BARE_ABS")"
+SSH_OPTS=(
+  -o BatchMode=yes
+  -o ConnectTimeout=10
+  -o ConnectionAttempts=1
+  -o StrictHostKeyChecking=yes
+  -p "$SSH_PORT"
+)
+if [[ -n "${PT_GIT_SERVER_KNOWN_HOSTS_FILE:-}" ]]; then
+  SSH_OPTS+=(-o "UserKnownHostsFile=$PT_GIT_SERVER_KNOWN_HOSTS_FILE")
+fi
+if [[ "$PT_GIT_SERVER_BARE_PATH" = /* || "$PT_GIT_SERVER_BARE_PATH" == *".."* ]]; then
+  echo "[ERROR] PT_GIT_SERVER_BARE_PATH must be relative to the remote home"
+  exit 1
+fi
+REMOTE_COMMAND="$(printf 'bash -s -- %q %q' "$PT_GIT_SERVER_BARE_PATH" "$DAEMON_PORT")"
 
 echo "═══════════════════════════════════════════════"
 echo "  Central Git Server Setup"
 echo "  Host:      $SSH_TARGET"
-echo "  Bare repo: $BARE_ABS"
+echo "  Bare repo: \$HOME/$PT_GIT_SERVER_BARE_PATH"
 echo "  Daemon:    :$DAEMON_PORT"
 echo "═══════════════════════════════════════════════"
 echo ""
 
 # Step 1: Create bare repo
-echo "[1/3] Creating bare repo ..."
-# shellcheck disable=SC2086
-ssh $SSH_OPTS "$SSH_TARGET" "
-  set -e
-  if [ -d '$BARE_ABS/HEAD' ] || [ -f '$BARE_ABS/HEAD' ]; then
-    echo '       Bare repo already exists: $BARE_ABS'
-  else
-    mkdir -p '$BARE_ABS'
-    git init --bare '$BARE_ABS'
-    echo '       Created: $BARE_ABS'
-  fi
-"
+echo "[1/2] Creating bare repo ..."
+# shellcheck disable=SC2029 # REMOTE_COMMAND contains shell-escaped remote arguments.
+ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$REMOTE_COMMAND" <<'REMOTE_SETUP'
+set -euo pipefail
 
-# Step 2: Push initial content
-echo "[2/3] Pushing current HEAD to bare repo ..."
-GIT_SERVER_SSH_URL="ssh://${PT_GIT_SERVER_USER}@${PT_GIT_SERVER_HOST}${BARE_ABS}"
-BRANCH="$(git -C "$PROJECT_ROOT" branch --show-current 2>/dev/null || echo main)"
-git -C "$PROJECT_ROOT" push --force "$GIT_SERVER_SSH_URL" "HEAD:refs/heads/$BRANCH" 2>&1 | sed 's/^/       /'
+bare_path="$1"
+daemon_port="$2"
+bare_abs="$HOME/$bare_path"
+base_path="$(dirname "$bare_abs")"
 
-# Step 3: Start git daemon (if not already running)
-echo "[3/3] Ensuring git daemon on :$DAEMON_PORT ..."
-# shellcheck disable=SC2086
-ssh $SSH_OPTS "$SSH_TARGET" "
-  set -e
-  if ss -tlnp 2>/dev/null | grep -q ':$DAEMON_PORT '; then
-    echo '       git daemon already listening on :$DAEMON_PORT'
-  else
-    nohup git daemon \\
-      --reuseaddr \\
-      --listen=0.0.0.0 \\
-      --port=$DAEMON_PORT \\
-      --base-path='$BASE_PATH' \\
-      --export-all \\
-      --enable=upload-pack \\
-      --detach \\
-      '$BASE_PATH'
+if [[ -f "$bare_abs/HEAD" ]]; then
+    echo "       Bare repo already exists: $bare_abs"
+else
+    mkdir -p "$bare_abs"
+    git init --bare "$bare_abs"
+    echo "       Created: $bare_abs"
+fi
+
+echo "[2/2] Ensuring git daemon on :$daemon_port ..."
+if ss -tlnp 2>/dev/null | grep -q ":$daemon_port "; then
+    echo "       git daemon already listening on :$daemon_port"
+else
+    nohup git daemon \
+      --reuseaddr \
+      --listen=0.0.0.0 \
+      --port="$daemon_port" \
+      --base-path="$base_path" \
+      --export-all \
+      --enable=upload-pack \
+      --detach \
+      "$base_path"
     sleep 0.5
-    if ss -tlnp 2>/dev/null | grep -q ':$DAEMON_PORT '; then
-      echo '       git daemon started on :$DAEMON_PORT'
+    if ss -tlnp 2>/dev/null | grep -q ":$daemon_port "; then
+        echo "       git daemon started on :$daemon_port"
     else
-      echo '       [ERROR] git daemon failed to start'
-      exit 1
+        echo "       [ERROR] git daemon failed to start"
+        exit 1
     fi
-  fi
-"
+fi
+REMOTE_SETUP
 
 echo ""
 echo "[OK] Central git server ready."
 echo ""
 echo "  Push URL (from local):"
-echo "    $GIT_SERVER_SSH_URL"
+echo "    ${PT_GIT_SERVER_USER}@${PT_GIT_SERVER_HOST}:${PT_GIT_SERVER_BARE_PATH}"
 echo ""
 echo "  Fetch URL (for $PT_GIT_SERVER_HOST itself):"
-echo "    $BARE_ABS"
+echo "    \$HOME/$PT_GIT_SERVER_BARE_PATH"
 echo ""
 echo "  Fetch URL (for other hosts via LAN):"
 echo "    git://$PT_GIT_SERVER_HOST:$DAEMON_PORT/$(basename "$PT_GIT_SERVER_BARE_PATH")"

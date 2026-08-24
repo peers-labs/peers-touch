@@ -12,7 +12,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import profile_three_environment
 from tooling.acceptance.fixtures.chat_contact_message_fault_proxy import (
     ProfileThreeContactMessageFaultProxy,
@@ -49,7 +49,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
             "CHAT_NATIVE_STATION_URL",
             DEFAULT_STATION,
         ).rstrip("/")
-        self.client: TauriDriver | None = None
+        self.client: TauriSession | None = None
         self.proxy: ProfileThreeContactMessageFaultProxy | None = None
         self.ptid = ""
         self.bob_ptid = ""
