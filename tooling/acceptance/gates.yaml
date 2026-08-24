@@ -53,10 +53,15 @@
       "description": "Run isolated Native Direct and Group clients and prove reply/thread, author-only edit/retract, reaction, pin, read, offline, replay and restart convergence with Station and Engine durable readback."
     },
     "chat-native-product-closure-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.chat.native_product_closure_runner",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_product_closure_entry",
       "timeout_seconds": 3600,
       "environment": "native-tauri-embedded-webdriver",
       "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run Alice and Bob through real Native Chat DOM actions and prove transcript, thread, reaction, toolbar geometry, identity, Station attribution, settings/background, attachment conservation, restart and cleanup."
     },
