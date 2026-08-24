@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-17
+> **Created**: 2026-06-03 | **Updated**: 2026-08-24
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -18,6 +18,7 @@
 - 非 local Gate 如何获取 Profile、服务、Fixture、凭据引用和 source attestation。
 - Agent 如何在普通开发任务中发现并上报 Acceptance 责任缺口。
 - Runtime evidence如何在source tree之外隔离、持久化、引用和清理。
+- Native Desktop Gate如何在macOS、Linux和Windows runtime cells中独立取证。
 - Federation 与 Acceptance Framework 双边互验证的架构闭环。
 - 新产品域如何按统一标准接入项目级 acceptance。
 
@@ -58,6 +59,7 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 8. Station Dashboard、Chat 等产品域必须作为 managed domain 接入，验证框架可泛化，而不是复制 Federation 特例。
 9. 非 local Gate 必须通过 Environment Provisioning Contract 形成 runtime manifest 后才能执行。
 10. 缺少 contract、resource 或 evidence 时必须结构化上报并保持 `UNPROVEN`，禁止 silent pass。
+11. 跨平台 Native 声明必须由 Gate × Runtime Cell 矩阵证明，任何平台不得替代另一平台。
 
 ---
 
@@ -77,6 +79,7 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | [execution-plans/20260816-runtime-provisioning-contract-implementation.md](./execution-plans/20260816-runtime-provisioning-contract-implementation.md) | Runtime Provisioning Contract 实现计划（No Silent Pass 落地） |
 | [execution-plans/20260817-acceptance-evidence-store.md](./execution-plans/20260817-acceptance-evidence-store.md) | Runtime evidence source-tree外迁与atomic Evidence Store执行计划 |
 | [execution-plans/20260817-domain-structural-validation-context-anchor.md](./execution-plans/20260817-domain-structural-validation-context-anchor.md) | Domain structural closure 与 Context Anchor 治理修复计划 |
+| [execution-plans/20260824-native-desktop-runtime-cells.md](./execution-plans/20260824-native-desktop-runtime-cells.md) | macOS/Linux/Windows Native Desktop runtime cells 与远端 Linux proof 计划 |
 
 当前Evidence Store architecture由`D-11`约束：
 
@@ -85,6 +88,14 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 - immutable run manifests与atomic `latest.json` pointer；
 - writer/readers/validators/cleanup共享唯一resolver；
 - source tree只保留code、schemas、templates和intentional fixtures。
+
+Native Desktop Runtime Cell architecture由accepted `D-13` ~ `D-16`约束：
+
+- 产品 Gate identity 与平台 cell identity 分离；
+- macOS、Linux、Windows evidence 按 cell 独立存储和判定；
+- 远端 embedded WebDriver 只监听 loopback，经 run-scoped SSH tunnel 访问；
+- Linux 使用 connected virtual output + persistent Xorg session，不要求物理显示器，
+  也不以 Xvfb 冒充最终 Native proof。
 
 ---
 

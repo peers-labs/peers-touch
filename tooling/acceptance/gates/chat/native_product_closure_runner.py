@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import ctypes
 import hashlib
 import json
 import os
@@ -19,7 +18,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from selenium.common.exceptions import TimeoutException
-from selenium.webdriver import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -33,8 +31,20 @@ from tooling.acceptance.core import (
     call_async_harness,
 )
 from tooling.acceptance.core.provisioning import load_runtime_manifest
+from tooling.acceptance.drivers.native import (
+    MouseAction,
+    NativeControlSnapshot,
+    NativeDesktopAdapter,
+    NativeKey,
+    NativeModifier,
+    create_native_desktop_adapter,
+)
 from tooling.acceptance.drivers.station import StationDriver
-from tooling.acceptance.drivers.tauri import TauriDriver, find_app_binary
+from tooling.acceptance.drivers.tauri import (
+    LocalTauriLauncher,
+    TauriSession,
+    find_app_binary,
+)
 from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
     ProfileThreeSubmitFaultProxy,
 )
@@ -59,195 +69,6 @@ RECOVERY_SELECTORS = {
 }
 NATIVE_INPUT_ACK_POLL_SECONDS = 0.01
 NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS = 30
-NATIVE_FILE_PANEL_FOCUSED_ROLES = frozenset({"AXList", "AXTextField"})
-NATIVE_ACCESSIBILITY_PROBE = r"""
-import ctypes
-import json
-import sys
-
-import AppKit
-
-process_id = int(sys.argv[1])
-application_services = ctypes.CDLL(
-    "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
-)
-core_foundation = ctypes.CDLL(
-    "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
-)
-CFRef = ctypes.c_void_p
-CFIndex = ctypes.c_long
-CFTypeID = ctypes.c_ulong
-UTF8 = 0x08000100
-
-application_services.AXUIElementCreateApplication.argtypes = [ctypes.c_int32]
-application_services.AXUIElementCreateApplication.restype = CFRef
-application_services.AXUIElementCopyAttributeValue.argtypes = [
-    CFRef,
-    CFRef,
-    ctypes.POINTER(CFRef),
-]
-application_services.AXUIElementCopyAttributeValue.restype = ctypes.c_int32
-application_services.AXUIElementSetMessagingTimeout.argtypes = [
-    CFRef,
-    ctypes.c_float,
-]
-application_services.AXUIElementSetMessagingTimeout.restype = ctypes.c_int32
-core_foundation.CFStringCreateWithCString.argtypes = [
-    CFRef,
-    ctypes.c_char_p,
-    ctypes.c_uint32,
-]
-core_foundation.CFStringCreateWithCString.restype = CFRef
-core_foundation.CFStringGetTypeID.restype = CFTypeID
-core_foundation.CFBooleanGetTypeID.restype = CFTypeID
-core_foundation.CFArrayGetTypeID.restype = CFTypeID
-core_foundation.CFGetTypeID.argtypes = [CFRef]
-core_foundation.CFGetTypeID.restype = CFTypeID
-core_foundation.CFStringGetLength.argtypes = [CFRef]
-core_foundation.CFStringGetLength.restype = CFIndex
-core_foundation.CFStringGetMaximumSizeForEncoding.argtypes = [
-    CFIndex,
-    ctypes.c_uint32,
-]
-core_foundation.CFStringGetMaximumSizeForEncoding.restype = CFIndex
-core_foundation.CFStringGetCString.argtypes = [
-    CFRef,
-    ctypes.c_char_p,
-    CFIndex,
-    ctypes.c_uint32,
-]
-core_foundation.CFStringGetCString.restype = ctypes.c_bool
-core_foundation.CFBooleanGetValue.argtypes = [CFRef]
-core_foundation.CFBooleanGetValue.restype = ctypes.c_bool
-core_foundation.CFArrayGetCount.argtypes = [CFRef]
-core_foundation.CFArrayGetCount.restype = CFIndex
-core_foundation.CFArrayGetValueAtIndex.argtypes = [CFRef, CFIndex]
-core_foundation.CFArrayGetValueAtIndex.restype = CFRef
-core_foundation.CFRelease.argtypes = [CFRef]
-
-
-def create_attribute(name):
-    return core_foundation.CFStringCreateWithCString(
-        None,
-        name.encode("utf-8"),
-        UTF8,
-    )
-
-
-def copy_attribute(element, name):
-    key = create_attribute(name)
-    value = CFRef()
-    try:
-        error = application_services.AXUIElementCopyAttributeValue(
-            element,
-            key,
-            ctypes.byref(value),
-        )
-    finally:
-        core_foundation.CFRelease(key)
-    return value if error == 0 else None
-
-
-def decode_text(value):
-    if (
-        not value
-        or core_foundation.CFGetTypeID(value)
-        != core_foundation.CFStringGetTypeID()
-    ):
-        return ""
-    size = (
-        core_foundation.CFStringGetMaximumSizeForEncoding(
-            core_foundation.CFStringGetLength(value),
-            UTF8,
-        )
-        + 1
-    )
-    buffer = ctypes.create_string_buffer(size)
-    if not core_foundation.CFStringGetCString(value, buffer, size, UTF8):
-        return ""
-    return buffer.value.decode("utf-8")
-
-
-def decode_boolean(value):
-    return bool(
-        value
-        and core_foundation.CFGetTypeID(value)
-        == core_foundation.CFBooleanGetTypeID()
-        and core_foundation.CFBooleanGetValue(value)
-    )
-
-
-def array_items(value):
-    if (
-        not value
-        or core_foundation.CFGetTypeID(value)
-        != core_foundation.CFArrayGetTypeID()
-    ):
-        return []
-    return [
-        core_foundation.CFArrayGetValueAtIndex(value, index)
-        for index in range(core_foundation.CFArrayGetCount(value))
-    ]
-
-
-def copied_text(element, name):
-    value = copy_attribute(element, name)
-    try:
-        return decode_text(value)
-    finally:
-        if value:
-            core_foundation.CFRelease(value)
-
-
-def copied_boolean(element, name):
-    value = copy_attribute(element, name)
-    try:
-        return decode_boolean(value)
-    finally:
-        if value:
-            core_foundation.CFRelease(value)
-
-
-application = application_services.AXUIElementCreateApplication(process_id)
-application_services.AXUIElementSetMessagingTimeout(application, 0.5)
-focused = copy_attribute(application, "AXFocusedUIElement")
-windows_value = copy_attribute(application, "AXWindows")
-windows = array_items(windows_value)
-sheet_count = 0
-for window in windows:
-    sheets_value = copy_attribute(window, "AXSheets")
-    try:
-        sheet_count += len(array_items(sheets_value))
-    finally:
-        if sheets_value:
-            core_foundation.CFRelease(sheets_value)
-front_window = windows[0] if windows else None
-frontmost_app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
-result = {
-    "role": copied_text(focused, "AXRole") if focused else "",
-    "subrole": copied_text(focused, "AXSubrole") if focused else "",
-    "title": copied_text(focused, "AXTitle") if focused else "",
-    "value": copied_text(focused, "AXValue") if focused else "",
-    "windowCount": len(windows),
-    "sheetCount": sheet_count,
-    "frontmost": copied_boolean(application, "AXFrontmost"),
-    "mainWindow": (
-        copied_boolean(front_window, "AXMain") if front_window else False
-    ),
-    "focusedWindow": (
-        copied_boolean(front_window, "AXFocused") if front_window else False
-    ),
-    "actualFrontmostPid": (
-        int(frontmost_app.processIdentifier()) if frontmost_app else -1
-    ),
-}
-sys.stdout.write(json.dumps(result))
-if windows_value:
-    core_foundation.CFRelease(windows_value)
-if focused:
-    core_foundation.CFRelease(focused)
-core_foundation.CFRelease(application)
-"""
 READBACK_COMMANDS = {
     "conversation_get_member_settings",
     "messaging_list_conversations",
@@ -348,7 +169,7 @@ def runtime_manifest() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def gateway_read(
-    client: TauriDriver,
+    client: TauriSession,
     command: str,
     args: dict[str, Any],
 ) -> dict[str, Any]:
@@ -390,8 +211,14 @@ def pid_is_stopped(pid: int) -> bool:
 class NativeProductClosureGate(AcceptanceGate):
     gate_id = GATE_ID
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        native_adapter: NativeDesktopAdapter | None = None,
+    ) -> None:
         super().__init__()
+        self.native_adapter = (
+            native_adapter or create_native_desktop_adapter()
+        )
         self.manifest, self.actor_manifest = runtime_manifest()
         station = self.manifest.get("station")
         self.station_url = str(
@@ -415,8 +242,8 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         if set(self.actor_specs) != {"alice", "bob"}:
             raise GateError("actor manifest must contain canonical Alice and Bob identities")
-        self.clients: dict[str, TauriDriver] = {}
-        self.runtime_instances: list[TauriDriver] = []
+        self.clients: dict[str, TauriSession] = {}
+        self.runtime_instances: list[TauriSession] = []
         self.runtime_pids: set[int] = set()
         self.runtime_launches: list[dict[str, Any]] = []
         self.ptids: dict[str, str] = {}
@@ -448,14 +275,14 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         self.report.add_evidence_file(key, path)
 
-    def configure_station(self, client: TauriDriver, station_url: str) -> None:
+    def configure_station(self, client: TauriSession, station_url: str) -> None:
         with StationDriver(f"http://127.0.0.1:{client.gateway_port}") as station:
             station.station_add(station_url)
             station.station_set_active(station_url)
 
     def wait_for_realtime_device(
         self,
-        client: TauriDriver,
+        client: TauriSession,
         expected_ptid: str,
     ) -> dict[str, Any]:
         def restored_device() -> dict[str, Any] | None:
@@ -494,17 +321,19 @@ class NativeProductClosureGate(AcceptanceGate):
             if actor == "alice" and self.reaction_proxy is not None
             else self.station_url
         )
-        client = TauriDriver(
-            app_binary=str(self.binary),
-            port=int(spec["webdriver_port"]),
-            gateway_port=int(spec["gateway_port"]),
-            profile=str(spec["profile"]),
-            storage_root=str(spec["storage_root"]),
-            environment={
-                "PEERS_STATION_URL": actor_station_url,
-                "PT_ACCEPTANCE_WINDOW_SLOT": str(window_actors.index(actor)),
-                "PT_ACCEPTANCE_WINDOW_COUNT": str(len(window_actors)),
-            },
+        client = TauriSession(
+            LocalTauriLauncher(
+                app_binary=str(self.binary),
+                port=int(spec["webdriver_port"]),
+                gateway_port=int(spec["gateway_port"]),
+                profile=str(spec["profile"]),
+                storage_root=str(spec["storage_root"]),
+                environment={
+                    "PEERS_STATION_URL": actor_station_url,
+                    "PT_ACCEPTANCE_WINDOW_SLOT": str(window_actors.index(actor)),
+                    "PT_ACCEPTANCE_WINDOW_COUNT": str(len(window_actors)),
+                },
+            )
         )
         attempt = {
             "sequence": len(self.runtime_launches) + 1,
@@ -614,7 +443,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 break
         return device_id
 
-    def native_window(self, client: TauriDriver) -> dict[str, float]:
+    def native_window(self, client: TauriSession) -> dict[str, float]:
         rect = client.driver.get_window_rect()
         scale = float(
             client.driver.execute_script("return window.devicePixelRatio || 1")
@@ -628,164 +457,10 @@ class NativeProductClosureGate(AcceptanceGate):
             "height": float(rect["height"]) / scale,
         }
 
-    def post_mouse(
-        self,
-        event_types: tuple[int, ...],
-        point: tuple[float, float],
-    ) -> None:
-        class CGPoint(ctypes.Structure):
-            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
-
-        core_graphics = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-        )
-        core_foundation = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
-        )
-        core_graphics.CGEventCreateMouseEvent.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_uint32,
-            CGPoint,
-            ctypes.c_uint32,
-        ]
-        core_graphics.CGEventCreateMouseEvent.restype = ctypes.c_void_p
-        core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
-        core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
-
-        native_point = CGPoint(*point)
-        for event_type in event_types:
-            event = core_graphics.CGEventCreateMouseEvent(
-                None,
-                event_type,
-                native_point,
-                0,
-            )
-            if not event:
-                raise GateError("CoreGraphics failed to create Native mouse event")
-            core_graphics.CGEventPost(0, event)
-            core_foundation.CFRelease(event)
-
-    def post_key(
-        self,
-        key_code: int,
-        *,
-        flags: int = 0,
-        text: str = "",
-        private_source: bool = False,
-    ) -> None:
-        core_graphics = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-        )
-        core_foundation = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
-        )
-        core_graphics.CGEventCreateKeyboardEvent.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_uint16,
-            ctypes.c_bool,
-        ]
-        core_graphics.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
-        core_graphics.CGEventSourceCreate.argtypes = [ctypes.c_int32]
-        core_graphics.CGEventSourceCreate.restype = ctypes.c_void_p
-        core_graphics.CGEventSetFlags.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_uint64,
-        ]
-        core_graphics.CGEventKeyboardSetUnicodeString.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_ulong,
-            ctypes.POINTER(ctypes.c_uint16),
-        ]
-        core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
-        core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
-
-        encoded = text.encode("utf-16-le")
-        unicode_units = (ctypes.c_uint16 * (len(encoded) // 2)).from_buffer_copy(
-            encoded
-        )
-        source = core_graphics.CGEventSourceCreate(-1) if private_source else None
-        try:
-            if private_source and not source:
-                raise GateError("CoreGraphics failed to create Native private event source")
-            for pressed in (True, False):
-                event = core_graphics.CGEventCreateKeyboardEvent(
-                    source,
-                    key_code,
-                    pressed,
-                )
-                if not event:
-                    raise GateError("CoreGraphics failed to create Native keyboard event")
-                if flags:
-                    core_graphics.CGEventSetFlags(event, flags)
-                if text:
-                    core_graphics.CGEventKeyboardSetUnicodeString(
-                        event,
-                        len(unicode_units),
-                        unicode_units,
-                    )
-                core_graphics.CGEventPost(0, event)
-                core_foundation.CFRelease(event)
-        finally:
-            if source:
-                core_foundation.CFRelease(source)
-
-    def post_key_chord(
-        self,
-        key_code: int,
-        modifiers: tuple[tuple[int, int], ...],
-    ) -> None:
-        core_graphics = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-        )
-        core_foundation = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
-        )
-        core_graphics.CGEventCreateKeyboardEvent.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_uint16,
-            ctypes.c_bool,
-        ]
-        core_graphics.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
-        core_graphics.CGEventSourceCreate.argtypes = [ctypes.c_int32]
-        core_graphics.CGEventSourceCreate.restype = ctypes.c_void_p
-        core_graphics.CGEventSetFlags.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_uint64,
-        ]
-        core_graphics.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
-        core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
-
-        source = core_graphics.CGEventSourceCreate(-1)
-        if not source:
-            raise GateError("CoreGraphics failed to create Native private event source")
-
-        active_flags = 0
-
-        def post(key: int, pressed: bool, flags: int) -> None:
-            event = core_graphics.CGEventCreateKeyboardEvent(source, key, pressed)
-            if not event:
-                raise GateError("CoreGraphics failed to create Native keyboard event")
-            try:
-                core_graphics.CGEventSetFlags(event, flags)
-                core_graphics.CGEventPost(0, event)
-            finally:
-                core_foundation.CFRelease(event)
-
-        try:
-            for modifier_key, modifier_flag in modifiers:
-                active_flags |= modifier_flag
-                post(modifier_key, True, active_flags)
-            post(key_code, True, active_flags)
-            post(key_code, False, active_flags)
-            for modifier_key, modifier_flag in reversed(modifiers):
-                active_flags &= ~modifier_flag
-                post(modifier_key, False, active_flags)
-        finally:
-            core_foundation.CFRelease(source)
 
     def invoke_native_activation_command(
         self,
-        client: TauriDriver,
+        client: TauriSession,
         command: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
@@ -847,7 +522,7 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         return result
 
-    def request_cooperative_activation(self, target: TauriDriver) -> bool:
+    def request_cooperative_activation(self, target: TauriSession) -> bool:
         if target.process_id is None:
             raise GateError("Native activation target process is unavailable")
         source = next(
@@ -878,186 +553,6 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         return True
 
-    def activate_native_process(self, process_id: int) -> None:
-        appkit_script = r"""
-import json
-import sys
-
-import AppKit
-
-application = AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(
-    int(sys.argv[1])
-)
-if application is None:
-    raise SystemExit("Native actor process is unavailable")
-workspace = AppKit.NSWorkspace.sharedWorkspace()
-frontmost_before = workspace.frontmostApplication()
-target_active_before = bool(application.isActive())
-options = (
-    AppKit.NSApplicationActivateAllWindows
-    | AppKit.NSApplicationActivateIgnoringOtherApps
-)
-request_accepted = bool(application.activateWithOptions_(options))
-frontmost_after = workspace.frontmostApplication()
-sys.stdout.write(
-    json.dumps(
-        {
-            "activationMode": "uncoordinated-fallback",
-            "activationPolicy": int(application.activationPolicy()),
-            "finishedLaunching": bool(application.isFinishedLaunching()),
-            "hidden": bool(application.isHidden()),
-            "targetActiveBefore": target_active_before,
-            "requestAccepted": request_accepted,
-            "targetActiveAfter": bool(application.isActive()),
-            "frontmostPidBefore": (
-                int(frontmost_before.processIdentifier())
-                if frontmost_before is not None
-                else -1
-            ),
-            "frontmostPidAfter": (
-                int(frontmost_after.processIdentifier())
-                if frontmost_after is not None
-                else -1
-            ),
-        }
-    )
-)
-if not request_accepted:
-    raise SystemExit("AppKit rejected Native actor activation")
-"""
-        appkit_activation = subprocess.run(
-            (sys.executable, "-c", appkit_script, str(process_id)),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if appkit_activation.returncode != 0:
-            raise GateError(
-                "Native actor AppKit activation failed: "
-                f"{appkit_activation.stderr.strip() or appkit_activation.stdout.strip()}"
-            )
-
-        script = f"""
-        tell application "System Events"
-          set targetProcess to first application process whose unix id is {process_id}
-          set frontmost of targetProcess to true
-          try
-            perform action "AXRaise" of front window of targetProcess
-          end try
-          try
-            set value of attribute "AXMain" of front window of targetProcess to true
-          end try
-          try
-            perform action "AXRaise" of front window of targetProcess
-          end try
-          return frontmost of targetProcess
-        end tell
-        """
-        completed = subprocess.run(
-            ("osascript", "-e", script),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            raise GateError(
-                "Native actor activation failed: "
-                f"{completed.stderr.strip() or completed.stdout.strip()}"
-            )
-        if completed.stdout.strip() != "true":
-            raise GateError(
-                f"Native actor process {process_id} did not become frontmost"
-            )
-
-    def native_focused_control(self, process_id: int) -> dict[str, Any]:
-        try:
-            completed = subprocess.run(
-                (
-                    sys.executable,
-                    "-c",
-                    NATIVE_ACCESSIBILITY_PROBE,
-                    str(process_id),
-                ),
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=2,
-            )
-        except subprocess.TimeoutExpired:
-            return {"error": "Native Accessibility probe timed out"}
-        if completed.returncode != 0:
-            return {"error": completed.stderr.strip()}
-        try:
-            value = json.loads(completed.stdout)
-        except json.JSONDecodeError:
-            return {"error": f"unexpected AX response: {completed.stdout!r}"}
-        return value if isinstance(value, dict) else {"error": "invalid AX response"}
-
-    def native_window_stack_at_point(
-        self,
-        point: tuple[float, float],
-    ) -> dict[str, Any]:
-        script = r"""
-import json
-import sys
-
-try:
-    import Quartz
-
-    point_x = float(sys.argv[1])
-    point_y = float(sys.argv[2])
-    windows = Quartz.CGWindowListCopyWindowInfo(
-        Quartz.kCGWindowListOptionOnScreenOnly,
-        Quartz.kCGNullWindowID,
-    )
-    owners = []
-    for index, window in enumerate(windows):
-        bounds = window.get(Quartz.kCGWindowBounds) or {}
-        left = float(bounds.get("X", 0))
-        top = float(bounds.get("Y", 0))
-        width = float(bounds.get("Width", 0))
-        height = float(bounds.get("Height", 0))
-        if not (
-            left <= point_x < left + width
-            and top <= point_y < top + height
-        ):
-            continue
-        owners.append(
-            {
-                "index": index,
-                "ownerPid": int(window.get(Quartz.kCGWindowOwnerPID, 0)),
-                "ownerName": str(window.get(Quartz.kCGWindowOwnerName, "")),
-                "windowName": str(window.get(Quartz.kCGWindowName, "")),
-                "layer": int(window.get(Quartz.kCGWindowLayer, 0)),
-                "alpha": float(window.get(Quartz.kCGWindowAlpha, 0)),
-                "bounds": {
-                    "left": left,
-                    "top": top,
-                    "width": width,
-                    "height": height,
-                },
-            }
-        )
-    print(json.dumps({"windows": owners[:16]}))
-except Exception as error:
-    print(json.dumps({"error": f"{type(error).__name__}: {error}"}))
-"""
-        completed = subprocess.run(
-            (sys.executable, "-c", script, str(point[0]), str(point[1])),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            return {
-                "error": completed.stderr.strip()
-                or f"window stack probe exited {completed.returncode}"
-            }
-        try:
-            value = json.loads(completed.stdout)
-        except json.JSONDecodeError:
-            return {"error": f"invalid window stack probe: {completed.stdout!r}"}
-        return value if isinstance(value, dict) else {"error": "invalid window stack"}
 
     def choose_native_file(
         self,
@@ -1073,15 +568,15 @@ except Exception as error:
         if not selected_path.is_file():
             raise GateError(f"Native file selection source is missing: {selected_path}")
 
-        def native_app_baseline_ready(_: Any) -> dict[str, Any] | None:
-            control = self.native_focused_control(client.process_id or 0)
+        def native_app_baseline_ready(_: Any) -> NativeControlSnapshot | None:
+            control = self.native_adapter.focused_control(client.process_id or 0)
             return (
                 control
-                if int(control.get("windowCount", 0)) >= 1
-                and bool(control.get("mainWindow"))
-                and bool(control.get("frontmost"))
-                and control.get("role") not in NATIVE_FILE_PANEL_FOCUSED_ROLES
-                and control.get("subrole") != "AXApplicationDialog"
+                if control.window_count >= 1
+                and control.main_window
+                and control.frontmost
+                and control.kind not in {"list", "text-field"}
+                and control.kind != "application-dialog"
                 else None
             )
 
@@ -1092,20 +587,18 @@ except Exception as error:
         ).until(native_app_baseline_ready)
         self.click(actor, trigger_selector)
 
-        def panel_open(control: dict[str, Any]) -> bool:
+        def panel_open(control: NativeControlSnapshot) -> bool:
             return (
-                int(control.get("windowCount", 0))
-                > int(baseline_control.get("windowCount", 0))
-                or int(control.get("sheetCount", 0))
-                > int(baseline_control.get("sheetCount", 0))
+                control.window_count > baseline_control.window_count
+                or control.dialog_count > baseline_control.dialog_count
                 or (
-                    control.get("role") in NATIVE_FILE_PANEL_FOCUSED_ROLES
-                    and control.get("role") != baseline_control.get("role")
+                    control.kind in {"list", "text-field"}
+                    and control.kind != baseline_control.kind
                 )
             )
 
-        def native_panel_ready(_: Any) -> dict[str, Any] | None:
-            control = self.native_focused_control(client.process_id or 0)
+        def native_panel_ready(_: Any) -> NativeControlSnapshot | None:
+            control = self.native_adapter.focused_control(client.process_id or 0)
             return control if panel_open(control) else None
 
         WebDriverWait(
@@ -1114,21 +607,25 @@ except Exception as error:
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(native_panel_ready)
 
-        command = 0x00100000
-        shift = 0x00020000
-        self.post_key_chord(5, ((55, command), (56, shift)))
+        self.native_adapter.post_key(
+            NativeKey.G,
+            modifiers=(NativeModifier.PRIMARY, NativeModifier.SHIFT),
+        )
 
-        def go_to_field_ready(_: Any) -> dict[str, Any] | None:
-            control = self.native_focused_control(client.process_id or 0)
-            return control if control.get("role") == "AXTextField" else None
+        def go_to_field_ready(_: Any) -> NativeControlSnapshot | None:
+            control = self.native_adapter.focused_control(client.process_id or 0)
+            return control if control.kind == "text-field" else None
         WebDriverWait(
             client.driver,
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(go_to_field_ready)
 
-        self.post_key_chord(0, ((55, command),))
-        self.post_key(51, private_source=True)
+        self.native_adapter.post_key(
+            NativeKey.A,
+            modifiers=(NativeModifier.PRIMARY,),
+        )
+        self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
         WebDriverWait(
             client.driver,
             10,
@@ -1137,32 +634,24 @@ except Exception as error:
             lambda _: (
                 control
                 if (
-                    (control := self.native_focused_control(
+                    (control := self.native_adapter.focused_control(
                         client.process_id or 0
-                    )).get("role")
-                    == "AXTextField"
-                    and control.get("value") == ""
+                    )).kind
+                    == "text-field"
+                    and control.value == ""
                 )
                 else None
             )
         )
-        original_clipboard = subprocess.run(
-            ("/usr/bin/pbpaste",),
-            capture_output=True,
-            check=False,
-        )
-        if original_clipboard.returncode != 0:
-            raise GateError("Native file chooser could not read the current clipboard")
+        original_clipboard = self.native_adapter.read_clipboard()
         try:
-            copied = subprocess.run(
-                ("/usr/bin/pbcopy",),
-                input=str(selected_path).encode("utf-8"),
-                capture_output=True,
-                check=False,
+            self.native_adapter.write_clipboard(
+                str(selected_path).encode("utf-8")
             )
-            if copied.returncode != 0:
-                raise GateError("Native file chooser could not stage the selected path")
-            self.post_key_chord(9, ((55, command),))
+            self.native_adapter.post_key(
+                NativeKey.V,
+                modifiers=(NativeModifier.PRIMARY,),
+            )
             WebDriverWait(
                 client.driver,
                 10,
@@ -1171,37 +660,31 @@ except Exception as error:
                 lambda _: (
                     control
                     if (
-                        (control := self.native_focused_control(
+                        (control := self.native_adapter.focused_control(
                             client.process_id or 0
-                        )).get("role")
-                        == "AXTextField"
-                        and control.get("value") == str(selected_path)
+                        )).kind
+                        == "text-field"
+                        and control.value == str(selected_path)
                     )
                     else None
                 )
             )
         finally:
-            restored = subprocess.run(
-                ("/usr/bin/pbcopy",),
-                input=original_clipboard.stdout,
-                capture_output=True,
-                check=False,
-            )
-            if restored.returncode != 0:
-                raise GateError("Native file chooser could not restore the clipboard")
-        self.post_key(36, private_source=True)
+            self.native_adapter.write_clipboard(original_clipboard)
+        self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
 
-        baseline_window_count = int(baseline_control.get("windowCount", 0))
-        def selection_or_browser_ready(_: Any) -> dict[str, Any] | None:
-            control = self.native_focused_control(client.process_id or 0)
+        baseline_window_count = baseline_control.window_count
+
+        def selection_or_browser_ready(_: Any) -> dict[str, object] | None:
+            control = self.native_adapter.focused_control(client.process_id or 0)
             if (
-                int(control.get("windowCount", 0)) < baseline_window_count
-                or not control.get("role")
+                control.window_count < baseline_window_count
+                or control.kind == "unknown"
             ):
                 return None
-            if control.get("subrole") == "AXApplicationDialog":
+            if control.kind == "application-dialog":
                 return {"selected": False, "control": control}
-            if panel_open(control) and control.get("role") != "AXTextField":
+            if panel_open(control) and control.kind != "text-field":
                 return {"selected": False, "control": control}
             if not panel_open(control):
                 return {"selected": True, "control": control}
@@ -1214,17 +697,19 @@ except Exception as error:
         ).until(selection_or_browser_ready)
 
         if not intermediate["selected"]:
-            self.post_key(36, private_source=True)
+            self.native_adapter.post_key(
+                NativeKey.ENTER,
+                private_source=True,
+            )
 
-        def native_window_restored(_: Any) -> dict[str, Any] | None:
-            control = self.native_focused_control(client.process_id or 0)
+        def native_window_restored(_: Any) -> NativeControlSnapshot | None:
+            control = self.native_adapter.focused_control(client.process_id or 0)
             return (
                 control
-                if int(control.get("windowCount", 0))
-                >= baseline_window_count
+                if control.window_count >= baseline_window_count
                 and not panel_open(control)
-                and bool(control.get("role"))
-                and control.get("subrole") != "AXApplicationDialog"
+                and control.kind != "unknown"
+                and control.kind != "application-dialog"
                 else None
             )
 
@@ -1239,20 +724,10 @@ except Exception as error:
             "size": selected_path.stat().st_size,
         }
 
-    def native_mouse_button_down(self) -> bool:
-        core_graphics = ctypes.CDLL(
-            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-        )
-        core_graphics.CGEventSourceButtonState.argtypes = [
-            ctypes.c_int32,
-            ctypes.c_uint32,
-        ]
-        core_graphics.CGEventSourceButtonState.restype = ctypes.c_bool
-        return bool(core_graphics.CGEventSourceButtonState(0, 0))
 
     def install_native_input_probe(
         self,
-        client: TauriDriver,
+        client: TauriSession,
         element: Any,
     ) -> str:
         probe_id = secrets.token_hex(8)
@@ -1323,7 +798,7 @@ except Exception as error:
 
     def wait_native_input_event(
         self,
-        client: TauriDriver,
+        client: TauriSession,
         probe_id: str,
         event_type: str,
         after_index: int,
@@ -1365,7 +840,7 @@ except Exception as error:
 
     def remove_native_input_probe(
         self,
-        client: TauriDriver,
+        client: TauriSession,
         probe_id: str,
     ) -> None:
         client.execute_script(
@@ -1378,7 +853,7 @@ except Exception as error:
     def capture_native_activation_diagnostic(
         self,
         actor: str,
-        client: TauriDriver,
+        client: TauriSession,
         point: tuple[float, float],
         phase: str,
     ) -> dict[str, Any]:
@@ -1388,67 +863,25 @@ except Exception as error:
             )
         except Exception as error:
             document_focused = f"{type(error).__name__}: {error}"
-        window_stack = self.native_window_stack_at_point(point)
-        windows = window_stack.get("windows")
-        point_owned = bool(
-            isinstance(windows, list)
-            and any(
-                isinstance(window, dict)
-                and float(window.get("alpha") or 0) > 0
-                and window.get("ownerPid") == client.process_id
-                for window in windows
-            )
-        )
+        window_stack = self.native_adapter.window_stack_at_point(point)
         snapshot = {
             "actor": actor,
             "phase": phase,
+            "platform": self.native_adapter.platform,
             "expectedProcessId": client.process_id,
             "documentFocused": document_focused,
             "point": {"x": point[0], "y": point[1]},
-            "pointOwned": point_owned,
+            "pointOwned": window_stack.point_owned_by(client.process_id or 0),
             "window": self.native_window(client),
-            "windowStack": window_stack,
-            "focusedControl": self.native_focused_control(client.process_id or 0),
+            "windowStack": window_stack.to_dict(),
+            "focusedControl": self.native_adapter.focused_control(
+                client.process_id or 0
+            ).to_dict(),
         }
         self.native_activation_diagnostics.append(snapshot)
-
-        # #region debug-point A-C:native-window-activation
-        debug_url = "http://127.0.0.1:7781/event"
-        debug_session = "native-window-activation"
-        try:
-            for line in (
-                REPO_ROOT / ".dbg" / "native-window-activation.env"
-            ).read_text(encoding="utf-8").splitlines():
-                if line.startswith("DEBUG_SERVER_URL="):
-                    debug_url = line.split("=", 1)[1]
-                elif line.startswith("DEBUG_SESSION_ID="):
-                    debug_session = line.split("=", 1)[1]
-        except OSError:
-            pass
-        request = urllib.request.Request(
-            debug_url,
-            data=json.dumps(
-                {
-                    "sessionId": debug_session,
-                    "runId": "post-fix",
-                    "hypothesisId": "A-C",
-                    "location":
-                        "NativeProductClosureGate:capture_native_activation_diagnostic",
-                    "msg": f"[DEBUG] Native activation {phase}",
-                    "data": snapshot,
-                }
-            ).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            urllib.request.urlopen(request, timeout=2).read()
-        except OSError:
-            pass
-        # #endregion
         return snapshot
 
-    def focus_actor_window(self, actor: str) -> TauriDriver:
+    def focus_actor_window(self, actor: str) -> TauriSession:
         client = self.clients[actor]
         if client.process_id is None:
             raise GateError(f"{actor} Native window has no running process")
@@ -1460,15 +893,9 @@ except Exception as error:
         )
 
         def actor_window_owns_point() -> bool:
-            stack = self.native_window_stack_at_point(point)
-            windows = stack.get("windows")
-            if not isinstance(windows, list):
-                return False
-            for window in windows:
-                if not isinstance(window, dict) or float(window.get("alpha") or 0) <= 0:
-                    continue
-                return window.get("ownerPid") == client.process_id
-            return False
+            return self.native_adapter.window_stack_at_point(
+                point
+            ).point_owned_by(client.process_id or 0)
 
         if (
             bool(client.driver.execute_script("return document.hasFocus()"))
@@ -1481,14 +908,14 @@ except Exception as error:
             point,
             "before-activation",
         )
-        if self.native_mouse_button_down():
-            self.post_mouse((2,), point)
+        if self.native_adapter.mouse_button_down():
+            self.native_adapter.post_mouse((MouseAction.LEFT_UP,), point)
             WebDriverWait(
                 client.driver,
                 5,
                 poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
             ).until(
-                lambda _: not self.native_mouse_button_down()
+                lambda _: not self.native_adapter.mouse_button_down()
             )
         cooperative_activation = self.request_cooperative_activation(client)
         if cooperative_activation:
@@ -1527,7 +954,7 @@ except Exception as error:
                 point,
                 "before-fallback-activation",
             )
-            self.activate_native_process(client.process_id)
+            self.native_adapter.activate_process(client.process_id)
             self.capture_native_activation_diagnostic(
                 actor,
                 client,
@@ -1556,20 +983,26 @@ except Exception as error:
         if not bool(client.driver.execute_script("return document.hasFocus()")):
             focus_mouse_down = False
             try:
-                self.post_mouse((1,), point)
+                self.native_adapter.post_mouse(
+                    (MouseAction.LEFT_DOWN,),
+                    point,
+                )
                 focus_mouse_down = True
-                self.post_mouse((2,), point)
+                self.native_adapter.post_mouse(
+                    (MouseAction.LEFT_UP,),
+                    point,
+                )
                 focus_mouse_down = False
                 WebDriverWait(
                     client.driver,
                     5,
                     poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
                 ).until(
-                    lambda _: not self.native_mouse_button_down()
+                    lambda _: not self.native_adapter.mouse_button_down()
                 )
             finally:
-                if focus_mouse_down and self.native_mouse_button_down():
-                    self.post_mouse((2,), point)
+                if focus_mouse_down:
+                    self.native_adapter.release_stuck_mouse_button(point)
             WebDriverWait(
                 client.driver,
                 5,
@@ -1583,7 +1016,7 @@ except Exception as error:
         client = self.focus_actor_window(actor)
         return self._click_focused_element(client, element)
 
-    def _click_focused_element(self, client: TauriDriver, element: Any) -> Any:
+    def _click_focused_element(self, client: TauriSession, element: Any) -> Any:
         WebDriverWait(client.driver, 30).until(
             lambda _: element.is_displayed() and element.is_enabled()
         )
@@ -1706,8 +1139,8 @@ except Exception as error:
                 + content_offset_y
                 + float(current_target["y"]),
             )
-            self.post_mouse(
-                (1,),
+            self.native_adapter.post_mouse(
+                (MouseAction.LEFT_DOWN,),
                 point,
             )
             mouse_down_posted = True
@@ -1717,8 +1150,8 @@ except Exception as error:
                 "mousedown",
                 cursor,
             )
-            self.post_mouse(
-                (2,),
+            self.native_adapter.post_mouse(
+                (MouseAction.LEFT_UP,),
                 point,
             )
             mouse_down_posted = False
@@ -1735,8 +1168,8 @@ except Exception as error:
                 cursor,
             )
         finally:
-            if mouse_down_posted and self.native_mouse_button_down():
-                self.post_mouse((2,), point)
+            if mouse_down_posted:
+                self.native_adapter.release_stuck_mouse_button(point)
             self.remove_native_input_probe(client, probe_id)
         return element
 
@@ -1823,8 +1256,8 @@ except Exception as error:
         row_point = screen_point(before["row"]["center"])
         for step in range(13):
             ratio = step / 12
-            self.post_mouse(
-                (5,),
+            self.native_adapter.post_mouse(
+                (MouseAction.MOVE,),
                 (
                     neutral_point[0] + (row_point[0] - neutral_point[0]) * ratio,
                     neutral_point[1] + (row_point[1] - neutral_point[1]) * ratio,
@@ -1843,14 +1276,19 @@ except Exception as error:
         client = self.clients[actor]
         composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
         self.click_element(actor, composer)
-        command = 0x00100000
-        self.post_key_chord(0, ((55, command),))
-        self.post_key(51, private_source=True)
+        self.native_adapter.post_key(
+            NativeKey.A,
+            modifiers=(NativeModifier.PRIMARY,),
+        )
+        self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
         WebDriverWait(client.driver, 5).until(
             lambda _: (composer.get_attribute("value") or "") == ""
         )
         if text:
             composer.send_keys(text)
+            WebDriverWait(client.driver, 5).until(
+                lambda _: (composer.get_attribute("value") or "") == text
+            )
         self.click(actor, "[data-chat-send]")
 
     def wait_message_text(self, actor: str, text: str) -> dict[str, Any]:
@@ -2261,7 +1699,7 @@ except Exception as error:
         client = self.focus_actor_window(actor)
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 20)
         self.click_element(actor, row)
-        self.post_key(36, private_source=True)
+        self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
         WebDriverWait(client.driver, 15).until(
             lambda driver: driver.execute_script(
                 """
@@ -2281,7 +1719,7 @@ except Exception as error:
             action = str(client.execute_script(focused_action_script) or "")
             if action == "reaction":
                 break
-            self.post_key(48, private_source=True)
+            self.native_adapter.post_key(NativeKey.TAB, private_source=True)
             WebDriverWait(client.driver, 5).until(
                 lambda driver: str(
                     driver.execute_script(focused_action_script) or ""
@@ -2294,7 +1732,7 @@ except Exception as error:
             )
         else:
             raise GateError("reaction action is not keyboard reachable")
-        self.post_key(36, private_source=True)
+        self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
         WebDriverWait(client.driver, 15).until(
             lambda driver: bool(
                 driver.execute_script(
@@ -2310,7 +1748,7 @@ except Exception as error:
                 )
             )
         )
-        self.post_key(53, private_source=True)
+        self.native_adapter.post_key(NativeKey.ESCAPE, private_source=True)
         self.assert_condition("toolbar_keyboard_reachable", True)
 
     def reaction_visible(self, actor: str, message_id: str, emoji: str) -> bool:
@@ -4061,8 +3499,11 @@ except Exception as error:
             20,
         )
         self.click_element(actor, restore_input)
-        restore_input.send_keys(Keys.COMMAND, "a")
-        restore_input.send_keys(Keys.BACKSPACE)
+        self.native_adapter.post_key(
+            NativeKey.A,
+            modifiers=(NativeModifier.PRIMARY,),
+        )
+        self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
         restore_input.send_keys(phrase)
         self.click(actor, RECOVERY_SELECTORS["restore_submit"])
         WebDriverWait(client.driver, 180).until(
