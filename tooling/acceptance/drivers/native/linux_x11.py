@@ -189,7 +189,7 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
                 active_window is not None
                 and active_pid != process_id
                 and self._is_descendant_process(active_pid, process_id)
-                and self._is_dialog(display, active_window)
+                and self._is_native_dialog(display, active_window)
             )
             dialog_count = owned_dialog_count + int(active_descendant_dialog)
             actor_frontmost = active_pid == process_id or active_descendant_dialog
@@ -410,6 +410,12 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             return False
         dialog = display.intern_atom("_NET_WM_WINDOW_TYPE_DIALOG")
         return dialog in value.value
+
+    def _is_native_dialog(self, display: Any, window: Any) -> bool:
+        return (
+            self._is_dialog(display, window)
+            or self._window_class(window).lower() == "zenity.zenity"
+        )
 
     def _window_title(self, display: Any, window: Any) -> str:
         value = self._property(display, window, "_NET_WM_NAME", "UTF8_STRING")
