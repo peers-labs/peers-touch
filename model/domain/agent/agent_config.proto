@@ -80,9 +80,25 @@ message SubmitToolApprovalDecisionRequest {
   uint64 expected_revision = 4;
   bool approved = 5;
   string idempotency_key = 6;
+  string payload_hash = 7;
+}
+
+enum ToolApprovalDecisionErrorCode {
+  TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED = 0;
+  TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION = 1;
+  TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT = 2;
+  TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED = 3;
+  TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND = 4;
 }
 
 message SubmitToolApprovalDecisionResponse {
   bool accepted = 1;
   uint64 decision_revision = 2;
+  string approval_id = 3;
+  string tool_call_id = 4;
+  string decision_id = 5;
+  bool approved = 6;
+  string idempotency_key = 7;
+  string payload_hash = 8;
+  ToolApprovalDecisionErrorCode error_code = 9;
 }

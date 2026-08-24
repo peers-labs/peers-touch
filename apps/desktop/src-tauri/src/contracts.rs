@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 pub const CONTRACT_VERSION: &str = "2026-03-24.desktop-tauri-rust.v1";
 
@@ -320,7 +321,6 @@ pub struct ProviderUpdateInput {
     pub key_vaults: Option<String>,
     pub config_json: Option<String>,
     pub runtime_kind: Option<String>,
-    pub cli_command: Option<String>,
     pub protocol: Option<String>,
     #[serde(default)]
     pub version: i64,
@@ -341,7 +341,6 @@ pub struct ProviderCreateInput {
     pub key_vaults: String,
     pub config_json: String,
     pub runtime_kind: Option<String>,
-    pub cli_command: Option<String>,
     pub protocol: Option<String>,
 }
 
@@ -978,15 +977,11 @@ pub struct AgentExecuteTurnInput {
     pub attachments: Option<Vec<AttachmentInput>>,
     pub provider: Option<String>,
     pub model: Option<String>,
-    pub cli_command: Option<String>,
     pub workspace_mode: Option<String>,
-    pub runtime_backend: Option<String>,
-    pub rootfs_path: Option<String>,
     pub allowed_roots: Option<Vec<String>>,
     pub identity: Option<String>,
     pub agent_config_prompt: Option<String>,
     pub effort: Option<String>,
-    pub platform: Option<String>,
     pub workspace_root: Option<String>,
     pub context_window_size: Option<u32>,
     pub max_retries: Option<u32>,
@@ -997,7 +992,7 @@ pub struct AgentExecuteTurnInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTurnStreamCancelInput {
-    pub stream_id: String,
+    pub turn_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1012,6 +1007,11 @@ pub struct AgentTurnTraceListInput {
 pub struct AgentTurnTraceGetInput {
     pub trace_id: Option<String>,
     pub turn_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnDiagnosticsInput {
+    pub turn_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1037,6 +1037,17 @@ pub struct AgentConversationCreateInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationUpdateInput {
+    pub conversation_id: String,
+    pub expected_version: u64,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub model_name: Option<String>,
+    pub meta: Option<HashMap<String, String>>,
+    pub active_branch_message_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConversationMessagesInput {
     pub conversation_id: String,
     pub after_seq: Option<i64>,
@@ -1048,6 +1059,54 @@ pub struct AgentConversationMessagesInput {
 pub struct AgentConversationArchiveInput {
     pub conversation_id: String,
     pub permanent: Option<bool>,
+    pub expected_version: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRetryTurnInput {
+    pub conversation_id: String,
+    pub source_turn_id: String,
+    pub client_idempotency_key: String,
+    pub expected_conversation_version: u64,
+    pub requested_budget: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRegenerateTurnInput {
+    pub conversation_id: String,
+    pub source_assistant_message_id: String,
+    pub client_idempotency_key: String,
+    pub expected_conversation_version: u64,
+    pub requested_budget: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentEditAndResendInput {
+    pub conversation_id: String,
+    pub source_user_message_id: String,
+    pub revised_content: String,
+    pub attachments: Option<Vec<Value>>,
+    pub client_idempotency_key: String,
+    pub expected_conversation_version: u64,
+    pub requested_budget: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentSelectActiveBranchInput {
+    pub conversation_id: String,
+    pub active_branch_message_id: String,
+    pub client_idempotency_key: String,
+    pub expected_conversation_version: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTombstoneMessageInput {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub client_idempotency_key: String,
+    pub expected_conversation_version: u64,
+    pub destructive_confirmed: bool,
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1183,13 +1242,6 @@ pub struct AgentMessageTranslateInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentConversationReplayEventsInput {
-    pub stream_id: String,
-    pub conversation_id: String,
-    pub after_seq: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCollaborationCreateInput {
     pub title: String,
     pub description: String,
@@ -1280,22 +1332,13 @@ pub struct AgentCollaborationReleaseLeaseInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentLocalToolRequestInput {
-    pub source: String,
-    pub server_name: Option<String>,
-    pub tool_name: String,
-    pub arguments: Option<serde_json::Value>,
-    pub call_id: Option<String>,
-    pub turn_id: Option<String>,
-    pub workspace_root: Option<String>,
-    pub allowed_roots: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentToolApprovalDecisionInput {
+pub struct AgentToolDecisionIntentInput {
     pub approval_id: String,
+    pub tool_call_id: String,
+    pub decision_id: String,
+    pub expected_revision: u64,
     pub approved: bool,
-    pub actor: Option<String>,
+    pub idempotency_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,5 +1,5 @@
 id: modern-chat-agent-v2-runtime-matrix
-version: 2026-08-17.3
+version: 2026-08-23.1
 status: plan-review
 tuple_expansion:
   mode: cartesian
@@ -288,16 +288,31 @@ rows:
     gate: agent-v2-kernel-foundation-e2e
     platform: desktop_app
     runtime: direct_model
+    runtime_attestation_profile: direct_runtime
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, runtime-events, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, guard-report]
     cell_sets: [foundation_core, foundation_errors, quantitative]
   - id: foundation-browser-direct
     gate: agent-v2-kernel-foundation-e2e
     platform: browser
     runtime: direct_model
+    runtime_attestation_profile: direct_runtime
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, runtime-events, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, guard-report]
     cell_sets: [foundation_core, foundation_errors, quantitative]
   - id: foundation-mobile-contract
     gate: agent-v2-kernel-foundation-e2e
     platform: mobile_contract
     runtime: contract_only
+    runtime_attestation_profile: contract_only
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [contract-evidence]
+      not_applicable: [receiver-dom, station-readback, runtime-events, measurement-report, side-effect-count, replay, guard-report]
     locales: [contract]
     cell_sets: [mobile_foundation_contract]
     cells: [AS-F10, BASE-EXECUTOR_UNAVAILABLE, BASE-PERMISSION_DENIED, BASE-TARGET_DISCONNECTED]
@@ -305,26 +320,51 @@ rows:
     gate: agent-v2-kernel-foundation-e2e
     platform: station_web_rust
     runtime: orchestration_guard
+    runtime_attestation_profile: orchestration_guard
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [guard-report]
+      not_applicable: [receiver-dom, station-readback, runtime-events, measurement-report, side-effect-count, replay, contract-evidence]
     cells: [AS-D11]
   - id: foundation-desktop-cli-absent
     gate: agent-v2-kernel-foundation-e2e
     platform: desktop_app
     runtime: stateless_cli_absent
+    runtime_attestation_profile: non_advertised
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, side-effect-count]
+      not_applicable: [runtime-events, measurement-report, replay, contract-evidence, guard-report]
     cells: [AS-F13-NON_ADVERTISED]
   - id: foundation-browser-cli-absent
     gate: agent-v2-kernel-foundation-e2e
     platform: browser
     runtime: stateless_cli_absent
+    runtime_attestation_profile: non_advertised
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, side-effect-count]
+      not_applicable: [runtime-events, measurement-report, replay, contract-evidence, guard-report]
     cells: [AS-F13-NON_ADVERTISED]
   - id: foundation-desktop-external-absent
     gate: agent-v2-kernel-foundation-e2e
     platform: desktop_app
     runtime: external_agent_absent
+    runtime_attestation_profile: non_advertised
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, side-effect-count]
+      not_applicable: [runtime-events, measurement-report, replay, contract-evidence, guard-report]
     cells: [AS-F11-NON_ADVERTISED]
   - id: foundation-browser-external-absent
     gate: agent-v2-kernel-foundation-e2e
     platform: browser
     runtime: external_agent_absent
+    runtime_attestation_profile: non_advertised
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, side-effect-count]
+      not_applicable: [runtime-events, measurement-report, replay, contract-evidence, guard-report]
     cells: [AS-F11-NON_ADVERTISED]
   - id: home-desktop-direct
     gate: agent-v2-home-command-center-e2e

@@ -35,8 +35,6 @@ pub struct StationProvider {
     pub protocol: String,
     #[serde(default)]
     pub runtime_kind: String,
-    #[serde(default)]
-    pub cli_command: String,
     pub enabled: bool,
     #[serde(default, deserialize_with = "deserialize_proto_i64")]
     pub version: i64,

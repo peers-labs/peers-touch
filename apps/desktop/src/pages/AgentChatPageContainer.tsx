@@ -6,6 +6,7 @@ export function AgentChatPageContainer() {
   return (
     <AgentChatPage
       onNavigateAgentCanvas={() => navigation.navigateTo('agent-orchestration')}
+      onNavigateMarketplace={() => navigation.navigateTo('marketplace')}
     />
   );
 }

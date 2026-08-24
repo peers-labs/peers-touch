@@ -21,16 +21,22 @@
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
-| Current workstream | F1 Agent And Conversation Authority |
-| Current step | 原子落地 D11 fail-closed guard：覆盖 35 个 Web/Station/scheduler/recovery/Desktop worker 执行入口 |
-| Progress | PRODUCT accepted；DESIGN accepted；PLAN `PLAN_READY_FOR_EXECUTION`；implementation 1/14 workstreams |
-| Last completed | F1 修复 Browser resume 错路由；D11 inventory 已无 known route defect |
-| Current action | F1 保持 in progress；先定义共享 typed guard contract，再改 35 个入口，避免半迁移 |
-| Next action | 添加 `AGENT_CANVAS_SINGLE_AGENT_NOT_READY` guard/error contract，前置到全部 first effect，并用 zero-mutation rejection evidence 替换失效的 orchestration success tests |
-| Blockers | none；debugger cleanup 是独立未关闭债务 |
+| Current workstream | F2 Runtime, Stream, Capability, And Portability |
+| Current step | Q4 C06 admission capability/budget snapshot与zero-provider-call rejection |
+| Progress | PRODUCT accepted；DESIGN including `MCA-D08A` accepted；2/14 workstreams evidence-complete |
+| Last completed | Q3 C05已闭合per-turn persisted event sequence、cursor replay/snapshot、actor-scoped idempotent cancellation、App/Browser SSE parity与全部split replay/one-shot/task-cursor路径 |
+| Current action | 在原子Station snapshot cut前，对账C06 capability provenance、admission budget、provider call边界与client/catalog readiness inference |
+| Next action | 实现immutable Station capability/budget snapshot，并证明unsupported/stale/budget rejection的provider call为零 |
+| Autonomous execution window | 无需 Owner 交互持续执行 F2 source closure；F2 验证通过后并行执行 F3 Context/Resource 与 F4 Tool/Observability；二者通过后执行 G-F preflight，仅在 runtime/artifact 前置条件齐备时运行 Foundation Native Gate |
+| Overnight execution queue | `Q1` 补齐 F2 old-path checker 对 C06/C10 的覆盖并冻结完整 consumer/deletion inventory；`Q2` 闭合 C03 Station-only runtime resolution 与 P12/CLI non-advertisement；`Q3` 闭合 C05 persisted monotonic events、SSE replay/snapshot/cancel、App/Browser parity并删除 Browser one-shot fallback；`Q4` 闭合 C06 admission capability/budget snapshot 与 zero-provider-call reject；`Q5` 闭合 C10 platform-neutral client capability session及Desktop/Browser/Mobile adapters；`Q6` 运行F2全套checks与zero-old-path proof；`Q7A` F2后实现F3 typed ContextLedger与opaque authorized resource refs；`Q7B` F2后并行实现F4 Station Tool decision authority、toolRuntime、fenced Rust ingress、usage/feedback/diagnostic replay并删除重复approval authority；`Q8` reconcile F3/F4并运行全套checks；`Q9` 运行G-F preflight，前置条件齐备时执行Foundation Native Gate；`Q10` 仅在C01-C10全部current-source `PROVEN`后进入W1 |
+| Parallel policy | F2内部Q1-Q6保持依赖顺序，独立只读审计/测试可并行；Q7A/Q7B是首个允许并行的实现lane；G-F是join barrier；W1必须等待G-F `PROVEN` |
+| Overnight stop conditions | 遇到`PRODUCT_AMENDMENT_REQUIRED`或`DESIGN_AMENDMENT_REQUIRED`停止对应lane；机械inventory/plan drift允许自修计划后继续；Native环境/凭据/artifact root不可用时记录`BLOCKED/UNPROVEN`并继续独立lane；禁止伪造证据、降级Gate、fallback/dual-write或静默扩域 |
+| Overnight non-scope | 不commit/push/PR，不版本升级，不做package/release build，不移除Canvas guard，不advertise P12/CLI，不在G-F前激活W1，不清理/删除无关`.dbg`、`test-results`与Acceptance reports |
+| Runtime cleanup | 任何为checks/Gates启动的进程必须登记并显式回收；handoff时不得残留dev server |
+| Blockers | Q4源码执行无阻塞；Foundation Native Gate保持`UNPROVEN` |
 | Decisions required | none |
-| Evidence | W0 全部门 PASS。F1 Browser resume route 修复后 Rust compile PASS、D11 tests 6/6 PASS、inventory 68 entrypoints/31 aliases PASS 且 knownDefectCount=0；enforcement 对 35 个缺失 guard 预期 FAIL；7 个 production Gates 仍 `UNPROVEN` |
-| Last updated | 2026-08-18 |
+| Evidence | Q3：保留canonical typed `turn_stream.proto`并删除重复flat contract；Station per-turn event sequence/migration、actor-fenced replay/snapshot、running-text fold与idempotent cancellation测试PASS；Browser Gateway代理live/replay SSE；Desktop Rust在worker内cursor recovery且删除stream/replay registry；Browser one-shot与Chat task cursor已删除。Station Agent packages PASS；Desktop check + 306 tests PASS（1个environment E2E skipped）；Rust `agent_turn` 6 PASS且check PASS；Mobile Agent contract 4 PASS；checker 13 PASS；C05 `unresolvedCount=0`、`unregisteredMatches=0`；hard-rules/diff check PASS。所有产品Gates仍为`UNPROVEN` |
+| Last updated | 2026-08-19 11:23 CST |
 
 ---
 
@@ -413,7 +419,8 @@ Gate:
 | Phase 0 Product Contract | complete | 2026-08-17 | Owner prototype confirmation 与独立 PRODUCT review 通过 |
 | Phase 1 Architecture Contract | complete | 2026-08-17 | D14-D18/C11-C15/A15-A20 reconciliation 与独立 DESIGN review 通过 |
 | Execution W0 Contract/Evidence/Gates | complete | 2026-08-18 | Proto-first contracts、external candidate/proof chain、matrix、D11、locale 与七 Gate contracts 完成；产品 Gate 仍 `UNPROVEN` |
-| Execution F1 Agent/Conversation Authority | in progress | — | W0 完成后唯一 dependency-ready workstream |
+| Execution F1 Agent/Conversation Authority | complete | 2026-08-18 | C01/C02 source closure、D11 guard、Desktop full check 与 old-path deletion evidence PASS |
+| Execution F2 Runtime/Stream/Capability/Portability | in progress | — | F1 complete 后唯一 dependency-ready foundation workstream |
 | Phase 2 Home | pending execution dependencies | — | confirmed prototype 仅证明产品意图；生产能力 `UNPROVEN` |
 | Phase 3 Capability Plane | pending | — | 现有 foundations 不等于 product closure |
 | Phase 4 MCP | pending | — | 需要真实 disposable MCP |

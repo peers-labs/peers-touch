@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-17
+> **Created**: 2026-07-30 | **Updated**: 2026-08-22
 > **Owner**: Peers-Touch Agent Team
 > **Proto Root**: `model/domain/agent/`
 
@@ -288,8 +288,10 @@ Rejected payloads return a typed error and leave no partial runtime binding.
 | `binding_id`, `binding_revision`, `readiness_snapshot_id` | Admission facts |
 | `approval_id`, `decision_id`, `decision` | Unique human/policy decision |
 | `execution_claim_id`, `executor_lease_id`, `fencing_token` | Side-effect ownership |
-| `side_effect_receipt_id`, `external_idempotency_key` | Crash-safe execution receipt |
-| `dispatch_sequence`, `dispatch_committed_at`, `payload_hash`, `deadline` | Deduplication and linearization |
+| `side_effect_receipt_id` | Crash-safe execution receipt identity |
+| `dispatch_sequence`, `dispatch_committed_at`, `payload_hash` | Deduplication and linearization |
+| `execution_deadline`, `reconciliation_deadline` | Side-effect admission versus terminal settlement |
+| `replay_policy`, `external_idempotency_key` | Station-pinned restart semantics |
 | `status`, `result_id`, `result_ref`, `error_code` | Unique outcome |
 | `cancel_requested_at`, `cancel_ack_at`, `cleanup_outcome` | Cancellation/cleanup |
 | `started_at`, `ended_at` | Timing |
@@ -306,9 +308,12 @@ Constraints:
   `dispatch_committed_at`; network delivery is at-least-once from that outbox;
 - executor durably records `PREPARED(tool_call_id, fence, payload_hash)` before
   side effects and `APPLIED` after the side effect;
-- executor validates claim, lease, fence, payload hash, and deadline before
-  side effects;
-- external calls use `tool_call_id` as idempotency key when supported;
+- executor validates claim, lease revision, fence, payload hash, and
+  `execution_deadline` before side effects;
+- replay policy is resolved by Station from the pinned capability
+  manifest/readiness snapshot;
+- external calls use the exact Station-issued `external_idempotency_key` only
+  when replay policy permits;
 - duplicate dispatch returns the existing claim/result;
 - a `PREPARED` crash may replay only when the tool advertises external
   idempotency; otherwise it becomes `UNKNOWN_SIDE_EFFECT` and cannot be
@@ -340,6 +345,12 @@ work. Capability-session revoke does not grant or broaden it; device trust-key
 revoke invalidates it. Station consumes its nonce exactly once and CAS-applies
 one receipt attempt. If no valid signed receipt is available, Station commits
 `UNKNOWN_SIDE_EFFECT`; no automatic redispatch is allowed.
+
+The first valid terminal digest consumes the nonce and stores its
+acknowledgement. An identical retry returns that acknowledgement; a different
+digest conflicts. The credential is usable only after a matching PREPARED row
+and before `reconciliation_deadline`. It never authorizes PREPARED or a side
+effect after `execution_deadline`.
 
 ### 2.12 AttachmentRef And ArtifactRef
 
@@ -380,7 +391,7 @@ from current Agent configuration.
 ### 2.14 ClientCapabilitySession
 
 ```protobuf
-message ClientCapabilitySession {
+message ClientCapabilityLease {
   string capability_session_id = 1;
   string ptid = 2;
   string device_id = 3;
@@ -388,6 +399,10 @@ message ClientCapabilitySession {
   repeated ClientCapability capabilities = 5;
   google.protobuf.Timestamp expires_at = 6;
   string connection_id = 7;
+  string lease_id = 8;
+  uint64 lease_revision = 9;
+  string capability_set_hash = 10;
+  string device_signing_key_id = 11;
 }
 
 message ClientCapability {
@@ -401,16 +416,30 @@ message ClientCapability {
 Rules:
 
 - Station authenticates actor/device and issues the session lease.
+- Registration accepts only the client capability advertisement, connection
+  identity, and device signing-key ID. Station ignores or rejects
+  client-selected actor, lease/session ID, revision, or expiry and applies its
+  own maximum TTL.
 - Capabilities describe typed operations, not arbitrary commands.
+- Renewal requires the same authenticated actor/device/session, active lease,
+  expected lease revision, capability-set hash, connection identity, and device
+  signing-key ID. It advances revision and expiry only.
+- Capability or signing-key changes require a new session, never an in-place
+  renewal.
 - The lease expires on timeout, disconnect, logout, Station switch, or explicit
-  revocation.
+  revocation. Revoke/expiry stops pull, dispatch, and pre-PREPARED execution.
 - Multiple devices require explicit target selection or deterministic policy;
   Station never broadcasts a privileged request.
 - Mobile and Desktop may advertise different capabilities.
 
 `ClientResourceRef` is an opaque reference scoped to one actor, device,
-capability session, permission grant, and expiry. Only the owning client kernel
-may resolve it to a local path or native handle.
+capability session, capability, permission grant, integrity hash, and expiry.
+Only the owning client kernel may resolve it to a local path or native handle.
+Desktop Rust persists that mapping encrypted in an actor/device-scoped local
+registry. Station and Web persist only opaque identity and bounded metadata.
+An entry may survive session expiry only when a matching PREPARED receipt and
+declared-idempotent recovery require it, and never beyond reconciliation
+settlement or expiry.
 
 `ClientCapabilityRequest` and `ClientCapabilityResult` carry turn/tool IDs,
 capability/schema IDs, opaque resource references, bounded arguments/results,
@@ -492,10 +521,85 @@ Idempotent. Returns current terminal status if already terminal. Cancellation
 propagates to current attempt, provider process, approval/tool waiter, and
 queued children.
 
-### RegenerateTurn
+### Revision Commands (`MCA-D08A`)
+
+#### RegenerateTurn
 
 Requires source assistant message. Creates a new turn and sibling branch. It
 does not delete the source response.
+
+Request:
+
+- `conversation_id`
+- `source_assistant_message_id`
+- `client_idempotency_key`
+- `expected_conversation_version`
+- optional lower `requested_budget`
+
+Response returns the existing or newly created Turn, sibling assistant message,
+and updated Conversation. The source message must be terminal, visible, owned
+by the actor, and part of the named conversation.
+
+#### RetryTurn
+
+Requires one failed or cancelled `source_turn_id`. It creates a new
+`TurnAttempt` under that same Turn and does not create a message branch.
+Request carries conversation ID, source Turn ID, idempotency key, and expected
+conversation version. Retry is rejected for non-terminal, completed, or
+superseded Turns.
+
+#### EditAndResend
+
+Requires a visible source user message. Request carries conversation ID, source
+user message ID, revised text/attachments, idempotency key, expected
+conversation version, and optional lower runtime budget.
+
+One transaction creates:
+
+1. A user sibling with `parent_message_id` equal to the source parent and
+   `replaces_message_id` equal to the source user message.
+2. A new Turn rooted at that sibling.
+3. A new active branch head and incremented conversation version.
+
+The source message and all prior descendants remain immutable and selectable.
+
+#### SelectActiveBranch
+
+Request carries conversation ID, visible target message ID, idempotency key,
+and expected conversation version. Station verifies that the target belongs to
+the same conversation and is a valid branch head. The transaction changes only
+`active_branch_message_id`, increments conversation version, and emits a
+revision event. It never creates, edits, or deletes a message.
+
+#### TombstoneMessage
+
+Request carries conversation ID, message ID, idempotency key, expected
+conversation version, and explicit destructive confirmation.
+
+The transaction sets immutable tombstone metadata (`tombstoned_at`,
+`tombstoned_by_ptid`, reason), increments conversation version, and removes the
+message from normal timeline/context projection. It does not rewrite content,
+lineage, Turn, Trace, usage, feedback, approval, or tool evidence.
+
+If the active branch points at the tombstoned message or one of its
+descendants, Station atomically selects the nearest visible ancestor; if no
+valid visible branch remains, the active branch becomes empty. Active Turns,
+queued intents, unresolved approvals/tools, or retention locks return
+`ACTIVE_DEPENDENCY`.
+
+#### Shared Revision Command Semantics
+
+All five commands:
+
+- derive `ptid` from authenticated context, never request payload;
+- require `expected_conversation_version > 0`;
+- deduplicate by `(ptid, command_kind, client_idempotency_key)`;
+- return the original result for identical replay;
+- return `IDEMPOTENCY_CONFLICT` for payload mismatch;
+- return `VERSION_CONFLICT` for stale conversation revision;
+- return `NOT_FOUND` for missing or foreign resources;
+- return `INVALID_SOURCE_STATE` for incompatible source role/status;
+- commit message/turn/attempt/branch/version/event changes atomically.
 
 ### ResetConversationRuntime
 
@@ -884,3 +988,543 @@ Child retry run records `parent_run_id`; each child attempt records exact
 - Connector: OAuth expired, scope denied, resource removed, manifest stale.
 - Evaluation: dataset revision conflict, target snapshot invalid, run not
   cancellable, case retry conflict, evaluator unavailable.
+
+### 8.9 Fenced Client Capability Execution
+
+The core contract is accepted by `MCA-D19`. The recovery additions below are
+accepted by `MCA-D19A`; G1-C remains blocked until they are generated
+proto-first and implemented in Station.
+
+`ClientCapabilityRequest` extends the portable execution envelope with:
+
+```protobuf
+message ClientCapabilityRequest {
+  string request_id = 1;
+  string turn_id = 2;
+  string tool_call_id = 3;
+  string capability_session_id = 4;
+  string capability_id = 5;
+  string schema_version = 6;
+  repeated ClientResourceRef resource_refs = 7;
+  bytes bounded_arguments = 8;
+  string approval_id = 9;
+  uint64 sequence = 10;
+  string attempt_id = 11;
+  string target_device_id = 12;
+  string decision_id = 13;
+  uint64 decision_revision = 14;
+  string execution_claim_id = 15;
+  string executor_lease_id = 16;
+  uint64 fencing_token = 17;
+  uint64 dispatch_sequence = 18;
+  string payload_hash = 19;
+  google.protobuf.Timestamp execution_deadline = 20;
+  string tool_batch_id = 21;
+  ClientExecutionReplayPolicy replay_policy = 22;
+  string external_idempotency_key = 23;
+  ReceiptRecoveryCredential recovery_credential = 24;
+  google.protobuf.Timestamp reconciliation_deadline = 25;
+  uint64 capability_lease_revision = 26;
+}
+```
+
+```protobuf
+enum ClientExecutionReplayPolicy {
+  CLIENT_EXECUTION_REPLAY_POLICY_UNSPECIFIED = 0;
+  CLIENT_EXECUTION_REPLAY_POLICY_NO_REPLAY_AFTER_PREPARED = 1;
+  CLIENT_EXECUTION_REPLAY_POLICY_WITH_EXTERNAL_IDEMPOTENCY = 2;
+}
+
+message ReceiptRecoveryCredential {
+  string credential_id = 1;
+  string device_signing_key_id = 2;
+  bytes nonce = 3;
+  string scope_hash = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+
+message ReceiptRecoveryScopePayload {
+  string actor_ptid = 1;
+  string device_id = 2;
+  string request_id = 3;
+  string tool_call_id = 4;
+  string execution_claim_id = 5;
+  uint64 capability_lease_revision = 6;
+  uint64 fencing_token = 7;
+  string payload_hash = 8;
+  ClientExecutionReplayPolicy replay_policy = 9;
+  google.protobuf.Timestamp execution_deadline = 10;
+  google.protobuf.Timestamp reconciliation_deadline = 11;
+  string credential_id = 12;
+  string device_signing_key_id = 13;
+  bytes nonce = 14;
+}
+```
+
+`scope_hash` is Station-computed over actor, device, request, ToolCall,
+execution claim, lease revision, fence, payload hash, replay policy, and both
+deadlines. It is descriptive input to the signature and is always checked
+against the persisted credential row; it is not trusted from the client. The
+terminal `result_id` is bound when the nonce CAS stores the first valid receipt
+digest.
+
+Envelope construction is two-stage to avoid a circular hash:
+
+```text
+payload_hash = SHA-256(
+  deterministic-protobuf(
+    ClientCapabilityRequest with
+      payload_hash = ""
+      recovery_credential = absent
+  )
+)
+scope_hash = SHA-256(
+  deterministic-protobuf(
+    actor_id, device_id, request_id, tool_call_id, execution_claim_id,
+    capability_lease_revision, fencing_token, payload_hash, replay_policy,
+    execution_deadline, reconciliation_deadline, credential_id,
+    device_signing_key_id, nonce
+  )
+)
+```
+
+Station computes `payload_hash` first, then creates the credential and
+`scope_hash`, and commits both with the outbox. Client and Station verify the
+same two-stage definition. The credential is integrity-checked against its
+persisted row rather than recursively included in `payload_hash`.
+
+The executor acknowledgement/result contract is:
+
+```protobuf
+enum ClientCapabilityReceiptStatus {
+  CLIENT_CAPABILITY_RECEIPT_STATUS_UNSPECIFIED = 0;
+  CLIENT_CAPABILITY_RECEIPT_STATUS_PREPARED = 1;
+  CLIENT_CAPABILITY_RECEIPT_STATUS_APPLIED = 2;
+  CLIENT_CAPABILITY_RECEIPT_STATUS_FAILED = 3;
+  CLIENT_CAPABILITY_RECEIPT_STATUS_RECONCILED_UNKNOWN = 4;
+}
+
+message ClientCapabilityReceipt {
+  string request_id = 1;
+  string turn_id = 2;
+  string tool_call_id = 3;
+  string capability_session_id = 4;
+  string target_device_id = 5;
+  string decision_id = 6;
+  uint64 decision_revision = 7;
+  string execution_claim_id = 8;
+  string executor_lease_id = 9;
+  uint64 fencing_token = 10;
+  uint64 dispatch_sequence = 11;
+  string payload_hash = 12;
+  string side_effect_receipt_id = 13;
+  ClientCapabilityReceiptStatus status = 14;
+  bytes bounded_result = 15;
+  string error_code = 16;
+  uint64 sequence = 17;
+  google.protobuf.Timestamp occurred_at = 18;
+  string result_id = 19;
+  string tool_batch_id = 20;
+  ReceiptRecoveryProof recovery_proof = 21;
+}
+
+message ReceiptRecoveryProof {
+  string credential_id = 1;
+  bytes nonce = 2;
+  string device_signing_key_id = 3;
+  bytes signature = 4;
+}
+
+message ReceiptRecoverySigningPayload {
+  string domain = 1;
+  string credential_id = 2;
+  bytes nonce = 3;
+  string device_signing_key_id = 4;
+  string scope_hash = 5;
+  bytes receipt_digest = 6;
+}
+
+message ClientCapabilityAdvertisement {
+  string advertisement_id = 1;
+  ClientPlatform platform = 2;
+  repeated ClientCapability capabilities = 3;
+  string connection_id = 4;
+  string device_signing_key_id = 5;
+  string device_id = 6;
+}
+
+message RegisterClientCapabilityLeaseRequest {
+  reserved 1;
+  reserved "lease";
+  ClientCapabilityAdvertisement advertisement = 2;
+  ClientCapabilityCommandProof command_proof = 3;
+}
+
+message RegisterClientCapabilityLeaseResponse {
+  ClientCapabilityLease lease = 1;
+  ClientCapabilityCommandErrorCode error_code = 2;
+}
+
+message RenewClientCapabilityLeaseRequest {
+  string capability_session_id = 1;
+  string lease_id = 2;
+  uint64 expected_lease_revision = 3;
+  string capability_set_hash = 4;
+  string device_signing_key_id = 5;
+  ClientCapabilityCommandProof command_proof = 6;
+}
+
+message RenewClientCapabilityLeaseResponse {
+  ClientCapabilityLease lease = 1;
+  ClientCapabilityCommandErrorCode error_code = 2;
+}
+
+enum ClientCapabilityLeaseRevokeReason {
+  CLIENT_CAPABILITY_LEASE_REVOKE_REASON_UNSPECIFIED = 0;
+  CLIENT_CAPABILITY_LEASE_REVOKE_REASON_USER_LOGOUT = 1;
+  CLIENT_CAPABILITY_LEASE_REVOKE_REASON_STATION_SWITCH = 2;
+  CLIENT_CAPABILITY_LEASE_REVOKE_REASON_WORKER_SHUTDOWN = 3;
+  CLIENT_CAPABILITY_LEASE_REVOKE_REASON_DEVICE_KEY_REVOKED = 4;
+  CLIENT_CAPABILITY_LEASE_REVOKE_REASON_ADMIN_POLICY = 5;
+}
+
+message RevokeClientCapabilityLeaseRequest {
+  string capability_session_id = 1;
+  string lease_id = 2;
+  uint64 expected_lease_revision = 3;
+  ClientCapabilityLeaseRevokeReason reason = 4;
+  ClientCapabilityCommandProof command_proof = 5;
+}
+
+message RevokeClientCapabilityLeaseResponse {
+  string capability_session_id = 1;
+  string lease_id = 2;
+  uint64 lease_revision = 3;
+  google.protobuf.Timestamp revoked_at = 4;
+  ClientCapabilityLeaseRevokeReason reason = 5;
+  ClientCapabilityCommandErrorCode error_code = 6;
+}
+
+message PullClientCapabilityRequestsRequest {
+  string capability_session_id = 1;
+  string device_id = 2;
+  uint64 after_sequence = 3;
+  uint32 limit = 4;
+  ClientCapabilityCommandProof command_proof = 5;
+}
+
+message PullClientCapabilityRequestsResponse {
+  repeated ClientCapabilityRequest requests = 1;
+  uint64 last_sequence = 2;
+  ClientCapabilityCommandErrorCode error_code = 3;
+}
+
+message SubmitClientCapabilityReceiptRequest {
+  ClientCapabilityReceipt receipt = 1;
+  ClientCapabilityCommandProof command_proof = 2;
+}
+
+message SubmitClientCapabilityReceiptResponse {
+  bool accepted = 1;
+  bool replayed = 2;
+  string result_id = 3;
+  string continuation_id = 4;
+  ClientCapabilityReceiptErrorCode error_code = 5;
+  ClientCapabilityCommandErrorCode command_error_code = 6;
+}
+
+message SubmitClientCapabilityRecoveryReceiptRequest {
+  ClientCapabilityReceipt receipt = 1;
+}
+
+message SubmitClientCapabilityRecoveryReceiptResponse {
+  SubmitClientCapabilityReceiptResponse result = 1;
+}
+```
+
+```protobuf
+enum ClientCapabilityCommandDomain {
+  CLIENT_CAPABILITY_COMMAND_DOMAIN_UNSPECIFIED = 0;
+  CLIENT_CAPABILITY_COMMAND_DOMAIN_REGISTER_LEASE = 1;
+  CLIENT_CAPABILITY_COMMAND_DOMAIN_RENEW_LEASE = 2;
+  CLIENT_CAPABILITY_COMMAND_DOMAIN_REVOKE_LEASE = 3;
+  CLIENT_CAPABILITY_COMMAND_DOMAIN_PULL_REQUESTS = 4;
+  CLIENT_CAPABILITY_COMMAND_DOMAIN_SUBMIT_ACTIVE_RECEIPT = 5;
+}
+
+message ClientCapabilityCommandProof {
+  string command_id = 1;
+  string device_signing_key_id = 2;
+  bytes nonce = 3;
+  google.protobuf.Timestamp issued_at = 4;
+  bytes signature = 5;
+}
+
+message ClientCapabilityCommandSigningPayload {
+  ClientCapabilityCommandDomain domain = 1;
+  string actor_ptid = 2;
+  string device_id = 3;
+  string command_id = 4;
+  bytes body_hash = 5;
+  bytes nonce = 6;
+  google.protobuf.Timestamp issued_at = 7;
+}
+
+enum ClientCapabilityCommandErrorCode {
+  CLIENT_CAPABILITY_COMMAND_ERROR_CODE_UNSPECIFIED = 0;
+  CLIENT_CAPABILITY_COMMAND_ERROR_CODE_PROOF_REQUIRED = 1;
+  CLIENT_CAPABILITY_COMMAND_ERROR_CODE_KEY_NOT_FOUND = 2;
+  CLIENT_CAPABILITY_COMMAND_ERROR_CODE_DEVICE_KEY_REVOKED = 3;
+  CLIENT_CAPABILITY_COMMAND_ERROR_CODE_SIGNATURE_INVALID = 4;
+  CLIENT_CAPABILITY_COMMAND_ERROR_CODE_PROOF_EXPIRED = 5;
+  CLIENT_CAPABILITY_COMMAND_ERROR_CODE_NONCE_CONFLICT = 6;
+  CLIENT_CAPABILITY_COMMAND_ERROR_CODE_BODY_CONFLICT = 7;
+}
+```
+
+Typed Station endpoints:
+
+```text
+POST /agent/capability/lease/register
+POST /agent/capability/lease/renew
+POST /agent/capability/lease/revoke
+POST /agent/capability/requests/pull
+POST /agent/capability/receipt
+POST /agent/capability/receipt/recover
+```
+
+The active receipt endpoint requires actor JWT plus capability command proof.
+The recovery endpoint requires a terminal receipt plus D19A recovery proof and
+does not require a live actor JWT. It derives actor/device/key from the
+persisted credential and ignores header identity. Both endpoints invoke the
+same terminal-result CAS. Recovery is not exposed as an execution or lease
+endpoint.
+
+The active endpoint rejects `recovery_proof`; the recovery endpoint requires it
+and has no generic command-proof field. This endpoint split prevents proof-mode
+downgrade.
+
+Canonical capability-command signing:
+
+```text
+body_hash = SHA-256(
+  deterministic-protobuf(request with command_proof absent)
+)
+signed_bytes = deterministic-protobuf(
+  ClientCapabilityCommandSigningPayload {
+    domain,
+    authenticated_actor_ptid,
+    request_or_lease_device_id,
+    command_id,
+    body_hash,
+    nonce,
+    issued_at
+  }
+)
+signature = Ed25519.sign(actor_device_private_key, signed_bytes)
+```
+
+Station resolves the current verified key by authenticated actor, signed device
+ID, and signing-key ID. `X-Device-ID` must equal the signed device ID but never
+selects authority. Proof age may differ from Station time by at most 60 seconds.
+
+The new messages and field numbers above are reserved by accepted D19A.
+Registration field 1 is retired rather than reused: an old embedded
+`ClientCapabilityLease` payload must decode with no advertisement and fail
+closed. Renaming wire field 20 from `deadline` to `execution_deadline`
+preserves its field number and changes its semantics explicitly. No handwritten
+transport type may replace this shared contract.
+
+Canonical recovery signature:
+
+```text
+domain = "peers-touch/agent/tool-receipt-recovery/v1"
+receipt_digest = SHA-256(
+  deterministic-protobuf(ClientCapabilityReceipt without recovery_proof)
+)
+signed_bytes = deterministic-protobuf(
+  ReceiptRecoverySigningPayload
+)
+signature = Ed25519.sign(actor_device_private_key, signed_bytes)
+```
+
+Station loads actor/device from the persisted credential, resolves the active
+verified key by `(actor, device, device_signing_key_id)`, recomputes both
+hashes, and verifies the signature. Client-supplied or header actor/device
+fields never select the recovery key.
+
+State transitions:
+
+```text
+ToolCall:
+  waiting_approval
+    -> approved/denied/expired
+  approved
+    -> dispatch_committed
+  dispatch_committed
+    -> prepared
+  prepared
+    -> applied | failed | unknown_side_effect
+  applied
+    -> result_committed
+  result_committed
+    -> batch_settled
+
+ToolBatch:
+  open
+    -> ready_for_continuation | blocked
+
+TurnContinuation:
+  ready
+    -> claimed
+  claimed
+    -> completed | ready | reconciliation_required
+
+ReceiptAttempt:
+  none -> PREPARED -> APPLIED | FAILED | RECONCILED_UNKNOWN
+
+RecoveryCredential:
+  issued -> consumed
+  issued -> expired | invalidated_by_device_key_revoke
+
+CapabilityCommand:
+  unseen -> verified -> committed
+  verified -> identical_replay
+  verified -> nonce_conflict | expired | key_revoked
+```
+
+Transactional invariants:
+
+- Decision submission uses
+  `(approval_id, tool_call_id, decision_id, expected_revision,
+  idempotency_key, payload_hash)`.
+- The first valid decision increments `decision_revision`. Repeating the same
+  key and payload returns the original decision acknowledgement. Reusing the
+  key with another payload returns `IDEMPOTENCY_CONFLICT`; a stale expected
+  revision returns `STALE_REVISION`.
+- Decision, claim, dispatch sequence, and one targeted outbox envelope are
+  committed before delivery. The same transaction persists one recovery
+  credential/nonce record. No client claim command exists.
+- Envelope payload and recovery scope use the two-stage canonical hashes above;
+  neither implementation may hash a self-referential credential structure.
+- `(tool_call_id, fencing_token)` identifies one receipt attempt;
+  `(request_id, payload_hash)` is immutable.
+- `result_id` identifies the immutable terminal payload for one ToolCall.
+  `(tool_call_id, result_id)` is unique, and a ToolCall accepts at most one
+  terminal result.
+- `tool_batch_id` identifies all ToolCalls parsed from one provider response
+  under one Turn attempt. It is generated and persisted by Station before any
+  member dispatch.
+- `PREPARED` is persisted by the selected client kernel before side effects.
+  A duplicate envelope returns the existing receipt/result.
+- `PREPARED` is accepted only from the bound actor/device/session/lease
+  revision/claim/fence before `execution_deadline`.
+- A terminal receipt before `execution_deadline` may use the active lease. A
+  terminal receipt after lease revoke/expiry or execution-deadline expiry
+  requires a valid recovery proof, matching PREPARED row, and unexpired
+  `reconciliation_deadline`.
+- Recovery accepts only `APPLIED|FAILED|RECONCILED_UNKNOWN`; it cannot create
+  PREPARED, renew a lease, request work, redispatch, or continue a Turn.
+- Nonce consumption and terminal ToolResult CAS are one transaction. Identical
+  digest replay returns the stored acknowledgement; another digest returns
+  `RECOVERY_NONCE_CONFLICT`.
+- A late valid `APPLIED` receipt records the authoritative side-effect fact,
+  but a cancelled, expired, or otherwise blocked Turn/ToolBatch remains blocked
+  and cannot gain a continuation.
+- For such a late receipt, immutable `ToolResult` stores the observed APPLIED
+  fact while the already-terminal ToolCall/Turn lifecycle state remains
+  cancelled or expired. Result truth does not rewrite lifecycle truth.
+- Register, renew, revoke, pull, and active-lease receipt paths verify a
+  capability command proof before reading or mutating lease/outbox/result
+  authority.
+- The command ledger binds `(actor_id, device_id, signing_key_id, nonce)` to one
+  command ID and body digest. Identical write replay reconstructs the same
+  durable response; another digest conflicts. Identical pull may re-read the
+  same `after_sequence`.
+- Revoking the verified device key invalidates all subsequent generic command
+  proofs and recovery proofs for that key.
+- Key revocation is checked synchronously on every proof verification.
+  Outstanding PREPARED calls need no cross-subserver mutation hook; the
+  reconciliation worker settles them UNKNOWN at deadline when no valid proof
+  can arrive.
+- Each terminal receipt commits its unique ToolCall result atomically. When the
+  submitted receipt is the final member of a batch and every member is
+  `APPLIED`, the same transaction marks the batch ready and creates the unique
+  continuation key `(turn_id, attempt_id, tool_batch_id)`.
+- A batch containing `DENIED`, `EXPIRED`, `FAILED`, `CANCELLED`, or
+  `RECONCILED_UNKNOWN` becomes `blocked` and creates no automatic
+  continuation. "Continue without tool" is a separate explicit recovery
+  command and therefore cannot reuse or mutate the blocked continuation key.
+- Duplicate result delivery returns the original acknowledgement. It cannot
+  append a second ToolResult event or schedule another model step.
+- A Station continuation worker claims `ready` rows with a durable lease. An
+  expired claim returns to `ready` only when no provider request was emitted.
+  After provider request emission, replay uses the continuation key as provider
+  idempotency identity when supported; otherwise an ambiguous crash becomes
+  `reconciliation_required` and is never retried automatically.
+- Completion persists the provider response and marks the continuation
+  `completed` in one transaction. Restart recovery scans only `ready`, expired
+  pre-emission claims, and provider-idempotent emitted claims.
+- Lease takeover before `PREPARED` increments the fence and may redispatch.
+  After `PREPARED`, takeover requires external idempotency; otherwise the
+  terminal outcome is `UNKNOWN_SIDE_EFFECT`.
+- Post-restart execution is never authorized by the local receipt ledger or
+  recovery credential. For `REPLAY_WITH_EXTERNAL_IDEMPOTENCY`, Station may
+  CAS-take over a PREPARED ToolCall only under a current matching lease and
+  before the original execution deadline. It keeps ToolCall/decision/claim,
+  immutable arguments, and the external idempotency key; increments the fence;
+  rebinds lease/session/revision; and issues a new request/outbox envelope,
+  payload hash, and recovery credential.
+- The takeover transaction invalidates the prior recovery credential. Old-fence
+  terminal submissions are audit-only rejects. Resource-bearing takeover fails
+  closed until a separate cross-session resource-rebind contract is accepted.
+- `NO_REPLAY_AFTER_PREPARED` never executes again after restart.
+  `REPLAY_WITH_EXTERNAL_IDEMPOTENCY` requires a non-empty key and reuses that
+  exact key; an unspecified policy fails closed.
+- Reconciliation deadline expiry or device signing-key revoke converts
+  unresolved PREPARED work to `UNKNOWN_SIDE_EFFECT` without continuation.
+
+Delivery uses a Station-owned targeted capability-session outbox/stream. A
+TurnEvent may project proposal, decision, and terminal result to Web, but the
+executable envelope is consumed by the client capability kernel and is never a
+Web execution command. Actor identity is derived from authenticated transport
+context for lease registration, targeted pull, and receipt submission; it is
+never accepted from these request bodies.
+
+Station persistence adds:
+
+```text
+ClientCapabilityLease:
+  actor_id, device_id, capability_session_id, lease_id, lease_revision
+  capability_set_hash, device_signing_key_id, connection_id
+  expires_at, revoked_at?, revoke_reason?
+
+ReceiptRecoveryCredential:
+  credential_id, actor_id, device_id, device_signing_key_id
+  request_id, tool_call_id, execution_claim_id, capability_lease_revision
+  fencing_token, payload_hash, replay_policy
+  scope_hash, nonce_hash, issued_at, expires_at
+  consumed_receipt_digest?, consumed_result_id?, consumed_ack_ref?
+  consumed_at?, invalidated_at?
+
+ClientCapabilityCommand:
+  actor_id, device_id, device_signing_key_id, nonce_hash
+  command_id, command_domain, body_hash, issued_at
+  outcome_code, lease_id?, lease_revision?, response_ref?
+  committed_at, expires_at
+```
+
+Unique constraints:
+
+- one active lease revision per `(actor_id, device_id,
+  capability_session_id, lease_id)`;
+- one recovery credential per `(tool_call_id, fencing_token)`;
+- one consumed terminal digest per credential nonce;
+- one terminal result per ToolCall.
+- one command digest per `(actor_id, device_id, device_signing_key_id,
+  nonce_hash)`;
+
+Typed receipt errors add `RECOVERY_REQUIRED = 8`,
+`RECOVERY_CREDENTIAL_EXPIRED = 9`, `RECOVERY_SCOPE_MISMATCH = 10`,
+`RECOVERY_SIGNATURE_INVALID = 11`, `RECOVERY_DEVICE_KEY_REVOKED = 12`, and
+`RECOVERY_NONCE_CONFLICT = 13`.

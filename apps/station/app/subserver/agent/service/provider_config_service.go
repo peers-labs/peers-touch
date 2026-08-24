@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,12 +18,10 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
-type ProviderConfigService struct {
-	cliRegistry *CLIAdapterRegistry
-}
+type ProviderConfigService struct{}
 
-func NewProviderConfigService(cliRegistry *CLIAdapterRegistry) *ProviderConfigService {
-	return &ProviderConfigService{cliRegistry: cliRegistry}
+func NewProviderConfigService() *ProviderConfigService {
+	return &ProviderConfigService{}
 }
 
 type ProviderCreateRequest struct {
@@ -75,11 +74,9 @@ func (s *ProviderConfigService) Create(ctx context.Context, req ProviderCreateRe
 	}
 
 	provider := newProviderRecord(req)
-	if provider.RuntimeKind == "cli" && s.cliRegistry.IsRegistered(req.ProviderID) {
-		spec, ok := s.cliRegistry.Resolve(req.ProviderID)
-		if ok && provider.CliCommand == "" {
-			provider.CliCommand = spec.BinaryPath
-		}
+	if !providerRecordSupportedByFrozenProfile(provider) {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"provider runtime is not supported by the active Agent profile", nil)
 	}
 
 	if err := db.WithContext(ctx).Create(provider).Error; err != nil {
@@ -117,14 +114,24 @@ func newProviderRecord(req ProviderCreateRequest) *persistence.AgentProvider {
 		if provider.Protocol == "" {
 			provider.Protocol = cp.Protocol
 		}
-		if cp.RuntimeKind != "" {
-			provider.RuntimeKind = cp.RuntimeKind
-		}
-		provider.CliCommand = cp.CliCommand
-		provider.ModelsCommand = cp.ModelsCommand
 	}
 
 	return provider
+}
+
+func providerRecordSupportedByFrozenProfile(provider *persistence.AgentProvider) bool {
+	if provider == nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(provider.Protocol), providerRuntimeCLI) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(provider.RuntimeKind)) {
+	case "", "http":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRequest) (*persistence.AgentProvider, error) {
@@ -143,6 +150,10 @@ func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRe
 		}
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to query provider", err)
+	}
+	if !providerRecordSupportedByFrozenProfile(&provider) {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"provider runtime is not supported by the active Agent profile", nil)
 	}
 
 	if provider.Version != req.Version {

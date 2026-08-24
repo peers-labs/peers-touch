@@ -86,4 +86,27 @@ describe('Agent turn event identity projection', () => {
     expect(result.operations['conversation-1'].runState).toBe('reconciling');
     expect(isTerminalEvent(event)).toBe(false);
   });
+
+  it('keeps approval projection out of the generic streaming reducer', () => {
+    const message: ChatMessage = {
+      id: 'message-1',
+      role: 'assistant',
+      content: '',
+      loading: true,
+      timestamp: 1,
+    };
+
+    const reduced = reduceStreamEvent(message, {
+      event: 'tool_approval_required',
+      data: {
+        toolCallId: 'tool-call-1',
+        approvalId: 'approval-1',
+        decisionId: 'decision-1',
+        decisionRevision: 3,
+        payloadHash: 'payload-1',
+      },
+    });
+
+    expect(reduced.toolCalls).toBeUndefined();
+  });
 });

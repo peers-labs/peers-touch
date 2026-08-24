@@ -113,13 +113,23 @@ impl StationClientError {
                 AppResult::fail(ErrorCode::Unauthorized, "session revoked", self.details)
             }
             StationClientErrorKind::HttpStatus(status) => {
-                let code = match status {
-                    400 => ErrorCode::InvalidArgument,
-                    401 => ErrorCode::Unauthorized,
-                    403 => ErrorCode::Forbidden,
-                    404 => ErrorCode::NotFound,
-                    409 => ErrorCode::Conflict,
-                    _ => ErrorCode::InternalError,
+                let code = if self
+                    .details
+                    .as_ref()
+                    .and_then(|details| details.get("error_code"))
+                    .and_then(Value::as_str)
+                    == Some("AGENT_CANVAS_SINGLE_AGENT_NOT_READY")
+                {
+                    ErrorCode::AgentCanvasSingleAgentNotReady
+                } else {
+                    match status {
+                        400 => ErrorCode::InvalidArgument,
+                        401 => ErrorCode::Unauthorized,
+                        403 => ErrorCode::Forbidden,
+                        404 => ErrorCode::NotFound,
+                        409 => ErrorCode::Conflict,
+                        _ => ErrorCode::InternalError,
+                    }
                 };
                 AppResult::fail(code, context.into(), self.details)
             }
@@ -159,6 +169,15 @@ pub fn session_revoked_details_from_text(text: &str) -> Option<Value> {
 }
 
 fn build_error_for_status(status: u16, path: &str, body: &str) -> StationClientError {
+    build_error_for_status_with_headers(status, path, body, None)
+}
+
+fn build_error_for_status_with_headers(
+    status: u16,
+    path: &str,
+    body: &str,
+    headers: Option<&Value>,
+) -> StationClientError {
     if status == 401 && body.contains("session_revoked") {
         let reason = serde_json::from_str::<Value>(body)
             .ok()
@@ -171,10 +190,26 @@ fn build_error_for_status(status: u16, path: &str, body: &str) -> StationClientE
         tracing::warn!(path = %path, reason = %reason, "Session revoked by server");
         return StationClientError::session_revoked(body);
     }
+    let mut details = serde_json::json!({ "status": status, "body": body });
+    if let (Some(details), Some(headers)) =
+        (details.as_object_mut(), headers.and_then(Value::as_object))
+    {
+        for (header, field) in [
+            ("x-peers-error-code", "error_code"),
+            ("x-peers-error-locale-key", "locale_key"),
+            ("x-peers-error-retryable", "retryable"),
+            ("x-peers-error-terminal", "terminal"),
+            ("x-peers-required-gate", "required_gate"),
+        ] {
+            if let Some(value) = headers.get(header).and_then(Value::as_str) {
+                details.insert(field.to_string(), Value::String(value.to_string()));
+            }
+        }
+    }
     StationClientError::new(
         StationClientErrorKind::HttpStatus(status),
         format!("station returned {} : {}", status, body),
-        Some(serde_json::json!({ "status": status, "body": body })),
+        Some(details),
     )
 }
 
@@ -392,9 +427,15 @@ pub(crate) fn request_peers_proto_no_body<Payload: Message + Default>(
 
     if !status.is_success() {
         let code = status.as_u16();
+        let headers = headers_to_json(resp.headers());
         let text = resp.text().unwrap_or_default();
         tracing::warn!(path = %path, status = code, elapsed_ms = elapsed, body = %text, "← station FAIL");
-        return Err(build_error_for_status(code, path, &text));
+        return Err(build_error_for_status_with_headers(
+            code,
+            path,
+            &text,
+            Some(&headers),
+        ));
     }
 
     let bytes = resp.bytes().map_err(|e| {
@@ -601,6 +642,30 @@ where
     Req: Message,
     Payload: Message + Default,
 {
+    request_proto_for_device_at(
+        &station_base_url(),
+        method,
+        path,
+        token,
+        query,
+        body,
+        device_id,
+    )
+}
+
+pub(crate) fn request_proto_for_device_at<Req, Payload>(
+    station_url: &str,
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Req>,
+    device_id: &str,
+) -> Result<Payload, StationClientError>
+where
+    Req: Message,
+    Payload: Message + Default,
+{
     if device_id.trim().is_empty() {
         return Err(StationClientError::new(
             StationClientErrorKind::Decode,
@@ -608,7 +673,7 @@ where
             None,
         ));
     }
-    let url = format!("{}{}", station_base_url(), path);
+    let url = format!("{}{}", station_url.trim_end_matches('/'), path);
     let start = std::time::Instant::now();
     let client = build_client()?;
     let mut req = client
@@ -652,6 +717,74 @@ where
         status = status.as_u16(),
         elapsed_ms = start.elapsed().as_millis(),
         "← station OK (profile-scoped proto)"
+    );
+    Payload::decode(bytes.as_ref()).map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("decode proto response failed: {error}"),
+            None,
+        )
+    })
+}
+
+/// Unauthenticated protobuf call returning a direct typed response.
+///
+/// This is intentionally limited to endpoints whose authority is carried by
+/// their signed protobuf body, such as terminal capability-receipt recovery.
+pub(crate) fn request_proto_no_auth<Req, Payload>(
+    method: Method,
+    path: &str,
+    body: &Req,
+) -> Result<Payload, StationClientError>
+where
+    Req: Message,
+    Payload: Message + Default,
+{
+    request_proto_no_auth_at(&station_base_url(), method, path, body)
+}
+
+pub(crate) fn request_proto_no_auth_at<Req, Payload>(
+    station_url: &str,
+    method: Method,
+    path: &str,
+    body: &Req,
+) -> Result<Payload, StationClientError>
+where
+    Req: Message,
+    Payload: Message + Default,
+{
+    let url = format!("{}{}", station_url.trim_end_matches('/'), path);
+    let start = std::time::Instant::now();
+    let response = build_client()?
+        .request(method, &url)
+        .header("Content-Type", "application/protobuf")
+        .header("Accept", "application/protobuf")
+        .body(body.encode_to_vec())
+        .send()
+        .map_err(|error| {
+            StationClientError::new(
+                StationClientErrorKind::Network,
+                format!("request failed: {error}"),
+                None,
+            )
+        })?;
+    let status = response.status();
+    let bytes = response.bytes().map_err(|error| {
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("read body failed: {error}"),
+            None,
+        )
+    })?;
+    if !status.is_success() {
+        let body = String::from_utf8_lossy(&bytes).to_string();
+        return Err(build_error_for_status(status.as_u16(), path, &body));
+    }
+    tracing::debug!(
+        path = %path,
+        status = status.as_u16(),
+        elapsed_ms = start.elapsed().as_millis(),
+        "← station OK (signed no-auth proto)"
     );
     Payload::decode(bytes.as_ref()).map_err(|error| {
         StationClientError::new(
@@ -1308,4 +1441,40 @@ pub(crate) fn probe_station(url: &str) -> (bool, Option<String>, Option<String>,
     );
 
     (true, label, peer_id, peers_count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_error_for_status_with_headers;
+    use crate::error::ErrorCode;
+    use serde_json::json;
+
+    #[test]
+    fn typed_station_error_headers_survive_json_transport() {
+        let headers = json!({
+            "x-peers-error-code": "AGENT_CANVAS_SINGLE_AGENT_NOT_READY",
+            "x-peers-error-locale-key": "agent.errors.canvasSingleAgentNotReady",
+            "x-peers-error-retryable": "false",
+            "x-peers-error-terminal": "true",
+            "x-peers-required-gate": "agent-v2-kernel-foundation-e2e",
+        });
+        let error = build_error_for_status_with_headers(
+            409,
+            "/sub-agent/agent/collaboration/create",
+            "{\"error\":\"blocked\"}",
+            Some(&headers),
+        );
+        let result = error.into_app_result::<serde_json::Value>("collaboration blocked");
+        let app_error = result.error.expect("AppResult error");
+        assert_eq!(app_error.code, ErrorCode::AgentCanvasSingleAgentNotReady);
+        let details = app_error.details.expect("typed error details");
+        assert_eq!(details["error_code"], "AGENT_CANVAS_SINGLE_AGENT_NOT_READY");
+        assert_eq!(
+            details["locale_key"],
+            "agent.errors.canvasSingleAgentNotReady"
+        );
+        assert_eq!(details["retryable"], "false");
+        assert_eq!(details["terminal"], "true");
+        assert_eq!(details["required_gate"], "agent-v2-kernel-foundation-e2e");
+    }
 }

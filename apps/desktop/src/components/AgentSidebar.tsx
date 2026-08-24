@@ -148,7 +148,6 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     renameTopic,
     smartRenameTopic,
     revertGeneratedTitle,
-    duplicateTopic,
     pinTopic,
     favoriteTopic,
   } = useActiveAgentTopicSlice((s) => ({
@@ -161,7 +160,6 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     renameTopic: s.renameTopic,
     smartRenameTopic: s.smartRenameTopic,
     revertGeneratedTitle: s.revertGeneratedTitle,
-    duplicateTopic: s.duplicateTopic,
     pinTopic: s.pinTopic,
     favoriteTopic: s.favoriteTopic,
   }));
@@ -540,7 +538,6 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
                       onRenameTopic={renameTopic}
                       onSmartRenameTopic={smartRenameTopic}
                       onRevertGeneratedTitle={revertGeneratedTitle}
-                      onDuplicateTopic={duplicateTopic}
                       onPinTopic={pinTopic}
                       onFavoriteTopic={favoriteTopic}
                       sessionGroups={agentSessionGroups}
@@ -571,7 +568,6 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
                       onRenameTopic={renameTopic}
                       onSmartRenameTopic={smartRenameTopic}
                       onRevertGeneratedTitle={revertGeneratedTitle}
-                      onDuplicateTopic={duplicateTopic}
                       onPinTopic={pinTopic}
                       onFavoriteTopic={favoriteTopic}
                       onRenameGroup={renameSessionGroup}
@@ -620,7 +616,6 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
                 onRenameTopic={renameTopic}
                 onSmartRenameTopic={smartRenameTopic}
                 onRevertGeneratedTitle={revertGeneratedTitle}
-                onDuplicateTopic={duplicateTopic}
                 onPinTopic={pinTopic}
                 onFavoriteTopic={favoriteTopic}
                 sessionGroups={agentSessionGroups}
@@ -801,7 +796,6 @@ function SessionGroupSection({
   onRenameTopic,
   onSmartRenameTopic,
   onRevertGeneratedTitle,
-  onDuplicateTopic,
   onPinTopic,
   onFavoriteTopic,
   onRenameGroup,
@@ -821,7 +815,6 @@ function SessionGroupSection({
   onRenameTopic: (key: string, title: string) => Promise<void>;
   onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
   onRevertGeneratedTitle: (key: string) => Promise<void>;
-  onDuplicateTopic: (key: string) => Promise<void>;
   onPinTopic: (key: string, pinned: boolean) => Promise<void>;
   onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
   onRenameGroup: (groupId: string, name: string) => void;
@@ -950,7 +943,6 @@ function SessionGroupSection({
                 onRenameTopic={onRenameTopic}
                 onSmartRenameTopic={onSmartRenameTopic}
                 onRevertGeneratedTitle={onRevertGeneratedTitle}
-                onDuplicateTopic={onDuplicateTopic}
                 onPinTopic={onPinTopic}
                 onFavoriteTopic={onFavoriteTopic}
                 sessionGroups={sessionGroups}
@@ -977,7 +969,6 @@ function TopicGroup({
   onRenameTopic,
   onSmartRenameTopic,
   onRevertGeneratedTitle,
-  onDuplicateTopic,
   onPinTopic,
   onFavoriteTopic,
   sessionGroups,
@@ -995,7 +986,6 @@ function TopicGroup({
   onRenameTopic: (key: string, title: string) => Promise<void>;
   onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
   onRevertGeneratedTitle: (key: string) => Promise<void>;
-  onDuplicateTopic: (key: string) => Promise<void>;
   onPinTopic: (key: string, pinned: boolean) => Promise<void>;
   onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
   sessionGroups: SessionGroup[];
@@ -1045,7 +1035,6 @@ function TopicGroup({
               onRenameTopic={onRenameTopic}
               onSmartRenameTopic={onSmartRenameTopic}
               onRevertGeneratedTitle={onRevertGeneratedTitle}
-              onDuplicateTopic={onDuplicateTopic}
               onPinTopic={onPinTopic}
               onFavoriteTopic={onFavoriteTopic}
               sessionGroups={sessionGroups}
@@ -1076,7 +1065,6 @@ function TopicItem({
   onRenameTopic,
   onSmartRenameTopic,
   onRevertGeneratedTitle,
-  onDuplicateTopic,
   onPinTopic,
   onFavoriteTopic,
   sessionGroups,
@@ -1093,7 +1081,6 @@ function TopicItem({
   onRenameTopic: (key: string, title: string) => Promise<void>;
   onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
   onRevertGeneratedTitle: (key: string) => Promise<void>;
-  onDuplicateTopic: (key: string) => Promise<void>;
   onPinTopic: (key: string, pinned: boolean) => Promise<void>;
   onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
   sessionGroups?: SessionGroup[];
@@ -1160,17 +1147,6 @@ function TopicItem({
     }
   }, [topic.key, onRevertGeneratedTitle, onReload, t]);
 
-  const handleDuplicate = useCallback(async () => {
-    try {
-      await onDuplicateTopic(topic.key);
-      toast.success(t('agent.sidebar.toast.topicDuplicated'));
-      onReload();
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(message || t('agent.sidebar.toast.duplicateFailed'));
-    }
-  }, [topic.key, onDuplicateTopic, onReload, t]);
-
   const handleDeleteConfirm = useCallback(() => {
     Modal.confirm({
       title: t('agent.sidebar.deleteConfirm.title'),
@@ -1228,7 +1204,6 @@ function TopicItem({
       : []),
     { key: 'smart-rename', icon: <Sparkles size={14} />, label: t('agent.sidebar.menu.smartRename'), onClick: handleSmartRename },
     { key: 'rename', icon: <Pencil size={14} />, label: t('agent.sidebar.menu.rename'), onClick: handleRename },
-    { key: 'duplicate', icon: <Copy size={14} />, label: t('agent.sidebar.menu.duplicate'), onClick: handleDuplicate },
     { key: 'comments', icon: <MessageCircle size={14} />, label: t('agent.sidebar.menu.comments'), onClick: handleOpenComments },
     { type: 'divider' },
     { key: 'delete', icon: <Trash2 size={14} />, label: t('agent.sidebar.menu.delete'), danger: true, onClick: handleDeleteConfirm },

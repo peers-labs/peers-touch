@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "agent-native-capability-gate",
+  "phase": "agent-phase2-native",
+  "bom": "agent-phase2-native-current-worktree",
+  "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+  "gate": "agent-native-mention-e2e",
+  "capability": "I1",
+  "gateId": "agent-native-mention-e2e",
+  "runtime": "native-tauri-embedded-webdriver",
+  "socket": "/tmp/tauri-playwright.sock",
+  "station": "http://127.0.0.1:18080",
+  "startedAt": "2026-08-17T03:19:44Z",
+  "source": {
+    "gitHead": "76eba9b4f66793497ff1bff07d65db3482c7a1e0",
+    "branch": "feat/p0-streaming-runtime-message-actions",
+    "worktree": "<repo-root>",
+    "workspaceDigest": "35d9ceed11953b819d6c8018f2805082d1dced182b0e8d9a969e953ff2be0a94",
+    "changedPathCount": 426
+  },
+  "steps": [
+    {
+      "step": "runtime.native_window_ready",
+      "ts": 1786936784.331736,
+      "count": 1
+    },
+    {
+      "step": "runtime.ready_shell",
+      "ts": 1786936784.3334541,
+      "navCount": 11
+    },
+    {
+      "step": "fixture.ready",
+      "ts": 1786936784.498803,
+      "sendReady": true
+    },
+    {
+      "step": "I1.mention_selected",
+      "ts": 1786936784.583135,
+      "targetAgentId": "agent_3955219c23208c39a69a867e"
+    },
+    {
+      "step": "I1.mention_removed",
+      "ts": 1786936784.594134
+    },
+    {
+      "step": "I1.successful_send_cleared_mentions",
+      "ts": 1786936784.656854,
+      "marker": "mention-acceptance-1786936784"
+    }
+  ],
+  "windows": [
+    {
+      "label": "main",
+      "title": "Peers",
+      "url": "http://localhost:3210/#/agent",
+      "visible": true
+    }
+  ],
+  "fixture": {
+    "sourceAgentId": "agent_da774dbe9f5caa24e5296f25",
+    "targetAgentId": "agent_3955219c23208c39a69a867e",
+    "sendReady": true
+  },
+  "screenshot": "tooling/acceptance/reports/agent-native/i1.png",
+  "status": "passed",
+  "proofStatus": "PROVEN",
+  "cleanup": {
+    "deletedAgentIds": [
+      "agent_da774dbe9f5caa24e5296f25",
+      "agent_3955219c23208c39a69a867e"
+    ]
+  },
+  "durationMs": 679,
+  "completedAt": "2026-08-17T03:19:44Z"
+}

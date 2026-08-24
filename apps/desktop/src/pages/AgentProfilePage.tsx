@@ -812,7 +812,6 @@ const ACTIVITY_TRACE_REFRESH_EVENTS = new Set([
   'tool_result',
   'tool_approval_required',
   'tool_approval_decision',
-  'local_tool_request',
   'error',
   'done',
 ]);
@@ -1491,7 +1490,6 @@ export function AgentProfilePage({
     if (!agent) return;
     const intent = agent.description?.trim() || agent.title || agent.name;
     setDescriptionGenerating(true);
-    const sessionKey = `agent_description:${agent.id}`;
     const prompt = [
       'Rewrite this Agent description for A2A routing.',
       'Return one concise sentence only. Do not include markdown or quotes.',
@@ -1501,11 +1499,17 @@ export function AgentProfilePage({
     let content = '';
 
     try {
+      const builderAgent = agents.find((candidate) => candidate.name === 'agent-builder');
+      if (!builderAgent) {
+        throw new Error(t('agent.profile.notFound'));
+      }
       await new Promise<void>((resolve, reject) => {
         executeAgentTurn(
-          prompt,
-          sessionKey,
-          'agent-builder',
+          {
+            conversation_id: '',
+            agent_id: builderAgent.id,
+            user_input: prompt,
+          },
           (event) => {
             if (event.event === 'text') content += event.data?.content || '';
           },
@@ -1525,7 +1529,7 @@ export function AgentProfilePage({
     } finally {
       setDescriptionGenerating(false);
     }
-  }, [agent, loadAgents, t]);
+  }, [agent, agents, loadAgents, t]);
 
 
 

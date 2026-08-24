@@ -2,20 +2,22 @@ use crate::application::agent_turn as application_agent_turn;
 use crate::application::session_resolver;
 use crate::contracts::{
     AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
-    AgentConversationListInput, AgentConversationMessagesInput, AgentConversationReplayEventsInput,
-    AgentExecuteTurnInput, AgentGroupCreateInput, AgentGroupDeleteInput, AgentGroupUpdateInput,
-    AgentKnowledgeBindingCreateInput, AgentKnowledgeBindingDeleteInput,
-    AgentKnowledgeBindingListInput, AgentKnowledgeBindingUpdateInput, AgentLocalToolRequestInput,
-    AgentMessageTranslateInput, AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput,
-    AgentTaskStatusInput, AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput,
-    AgentThreadCreateInput, AgentThreadListInput, AgentThreadMessagesInput,
-    AgentToolApprovalDecisionInput, AgentTurnStreamCancelInput, AgentTurnTraceGetInput,
-    AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput, TopicCommentDeleteInput,
-    TopicCommentListInput,
+    AgentConversationListInput, AgentConversationMessagesInput, AgentConversationUpdateInput,
+    AgentEditAndResendInput, AgentExecuteTurnInput, AgentGroupCreateInput, AgentGroupDeleteInput,
+    AgentGroupUpdateInput, AgentKnowledgeBindingCreateInput, AgentKnowledgeBindingDeleteInput,
+    AgentKnowledgeBindingListInput, AgentKnowledgeBindingUpdateInput, AgentMessageTranslateInput,
+    AgentRegenerateTurnInput, AgentRetryTurnInput, AgentSelectActiveBranchInput,
+    AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput, AgentTaskStatusInput,
+    AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput, AgentThreadCreateInput,
+    AgentThreadListInput, AgentThreadMessagesInput, AgentTombstoneMessageInput,
+    AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput, AgentTurnStreamCancelInput,
+    AgentTurnTraceGetInput, AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput,
+    TopicCommentDeleteInput, TopicCommentListInput,
 };
 use crate::error::AppResult;
 use crate::error::ErrorCode;
 use crate::state::AppState;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::State;
 use tauri::Window;
@@ -33,13 +35,6 @@ pub fn agent_execute_turn(
     let actor_id =
         session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
     application_agent_turn::agent_execute_turn(input, &token, &actor_id)
-}
-
-#[tauri::command]
-pub fn agent_resolve_local_tool_request(
-    input: AgentLocalToolRequestInput,
-) -> AppResult<StubPayload> {
-    application_agent_turn::agent_resolve_local_tool_request(input)
 }
 
 #[tauri::command]
@@ -62,7 +57,7 @@ pub fn agent_execute_turn_stream(
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| format!("agent-turn-{}", ulid::Ulid::new()));
-    let cancel_flag = application_agent_turn::register_agent_turn_stream(&stream_id);
+    let cancel_flag = Arc::new(AtomicBool::new(false));
     let stream_id_for_task = stream_id.clone();
     tauri::async_runtime::spawn_blocking(move || {
         application_agent_turn::agent_execute_turn_stream(
@@ -73,7 +68,6 @@ pub fn agent_execute_turn_stream(
             actor_id,
             cancel_flag,
         );
-        application_agent_turn::unregister_agent_turn_stream(&stream_id_for_task);
     });
     AppResult::success(StubPayload {
         command: "agent_execute_turn_stream".to_string(),
@@ -82,13 +76,13 @@ pub fn agent_execute_turn_stream(
 }
 
 #[tauri::command]
-pub fn agent_cancel_turn_stream(
+pub fn agent_cancel_turn(
     input: AgentTurnStreamCancelInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::cancel_agent_turn_stream(&input.stream_id, &token)
+    application_agent_turn::cancel_agent_turn(&input.turn_id, &token)
 }
 
 #[tauri::command]
@@ -118,8 +112,29 @@ pub fn agent_turn_trace_get(
 }
 
 #[tauri::command]
-pub fn agent_decide_tool_approval(input: AgentToolApprovalDecisionInput) -> AppResult<StubPayload> {
-    application_agent_turn::decide_tool_approval(input)
+pub fn agent_turn_diagnostics_export(
+    input: AgentTurnDiagnosticsInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_turn_diagnostics_export(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_submit_tool_decision(
+    input: AgentToolDecisionIntentInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::submit_tool_decision(input, &token)
 }
 
 #[tauri::command]
@@ -175,6 +190,19 @@ pub fn agent_conversation_messages(
 }
 
 #[tauri::command]
+pub fn agent_conversation_update(
+    input: AgentConversationUpdateInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_conversation_update(input, &token)
+}
+
+#[tauri::command]
 pub fn agent_conversation_archive(
     input: AgentConversationArchiveInput,
     state: State<'_, Arc<AppState>>,
@@ -185,6 +213,56 @@ pub fn agent_conversation_archive(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     application_agent_turn::agent_conversation_archive(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_retry_turn(
+    input: AgentRetryTurnInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    application_agent_turn::agent_retry_turn(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_regenerate_turn(
+    input: AgentRegenerateTurnInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    application_agent_turn::agent_regenerate_turn(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_edit_and_resend(
+    input: AgentEditAndResendInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    application_agent_turn::agent_edit_and_resend(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_select_active_branch(
+    input: AgentSelectActiveBranchInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    application_agent_turn::agent_select_active_branch(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_tombstone_message(
+    input: AgentTombstoneMessageInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    application_agent_turn::agent_tombstone_message(input, &token)
 }
 
 #[tauri::command]
@@ -454,44 +532,4 @@ pub fn agent_message_translate(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     application_agent_turn::agent_message_translate(input, &token)
-}
-
-#[tauri::command]
-pub fn agent_replay_conversation_events(
-    input: AgentConversationReplayEventsInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-    app: tauri::AppHandle,
-) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    if token.trim().is_empty() {
-        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
-    }
-    let stream_id = input.stream_id.trim().to_string();
-    let stream_id_for_task = stream_id.clone();
-    let app_for_task = app.clone();
-    let input_for_task = input.clone();
-    let token_for_task = token.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Err(error) = application_agent_turn::replay_conversation_events_stream(
-            &app_for_task,
-            input_for_task,
-            &token_for_task,
-        ) {
-            tracing::error!(command = "agent_replay_conversation_events", error = %error, "Conversation events replay failed");
-            application_agent_turn::emit_turn_stream_event(
-                &app_for_task,
-                &stream_id_for_task,
-                "error",
-                serde_json::json!({
-                    "type": "error",
-                    "error": error,
-                }),
-            );
-        }
-    });
-    AppResult::success(StubPayload {
-        command: "agent_replay_conversation_events".to_string(),
-        status: serde_json::json!({ "stream_id": stream_id }).to_string(),
-    })
 }

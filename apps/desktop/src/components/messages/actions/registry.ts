@@ -52,7 +52,6 @@ function buildAssistantActions(ctx: MessageActionContext): { primary: MessageAct
       { key: 'readAloud', label: 'chat.message.action.readAloud', icon: Volume2, onClick: ctx.onReadAloud },
     ],
     menu: [
-      { key: 'edit', label: 'chat.message.action.edit', icon: Pencil, onClick: ctx.onEdit },
       { key: 'branch', label: 'chat.message.action.branch', icon: GitBranch, onClick: ctx.onBranch },
       { key: 'thread', label: 'chat.message.action.thread', icon: MessageSquareMore, onClick: ctx.onThread },
       { key: 'continue', label: 'chat.message.action.continue', icon: ChevronRight, onClick: ctx.onContinue },

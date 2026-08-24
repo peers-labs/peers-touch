@@ -9,7 +9,6 @@ pub mod agents;
 pub mod applets;
 pub mod auth;
 pub mod channels;
-pub mod chat;
 pub mod conversation;
 pub mod cron;
 pub mod crypto;

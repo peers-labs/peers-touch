@@ -27,6 +27,7 @@ import { api, streamAgentCollaborationEvents } from '../services/desktop_api';
 import type { Agent } from '../services/desktop_api';
 import { AgentIconTile } from '../components/agent/AgentIconTile';
 import { useAgentStore } from '../store/agent';
+import { enforce_canvas_single_agent_readiness } from '../services/agentCanvasReadinessGuard';
 
 type CanvasRunState = 'idle' | 'matched' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -385,6 +386,14 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
 
   const runCanvas = useCallback(() => {
     if (!canRun) return;
+    const blocker = enforce_canvas_single_agent_readiness();
+    if (blocker.terminal) {
+      setRunError(t(blocker.localeKey, {
+        required_gate: blocker.details.required_gate,
+      }));
+      return;
+    }
+
     const runSeq = runSeqRef.current + 1;
     runSeqRef.current = runSeq;
     desktopExecutorNodeIdsRef.current.clear();
@@ -553,8 +562,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
 
           const stationAgentId = fieldString(persisted, 'agentId', 'agent_id');
           const agent = agentById.get(stationAgentId) || nodes[index]?.agent;
-          const cliCommand = agent?.cliCommand?.trim();
-          if (!agent || !cliCommand) return;
+          if (!agent) return;
 
           desktopExecutorInFlightRef.current.add(nodeId);
           setNodes((current) => current.map((node) => (
@@ -598,18 +606,13 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
                   lease_ttl_ms: 300000,
                 }).catch(() => undefined);
               }, 15000);
-              const result = await api.executeAgentTurnOnce({
+              const result = await api.executeGuardedCanvasTurnOnce({
                 conversation_id: `${createdTaskId}:${nodeId}`,
                 agent_id: agent.id,
                 user_input: desktopExecutorPrompt(persisted, detail, prompt, t),
                 provider: agent.provider,
                 model: agent.model,
-                cli_command: cliCommand,
-                workspace_mode: agent.workspaceMode,
-                runtime_backend: agent.runtimeBackend,
-                rootfs_path: agent.rootfsPath,
                 effort: agent.effort,
-                platform: 'desktop',
               });
               if (runSeqRef.current !== runSeq) return;
               resultSummary = extractDesktopExecutorSummary(result) || t('agent.canvas.desktopExecutorCompleted');

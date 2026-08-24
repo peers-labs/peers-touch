@@ -1,0 +1,43 @@
+{
+  "id": "agent-attachment-reference",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/turn_handler.go",
+    "apps/station/app/subserver/agent/service/runtime_admission_service.go",
+    "apps/station/app/subserver/agent/handler/workspace_oss_handler.go",
+    "apps/desktop/src/components/agent/workbench/AttachmentBar.tsx"
+  ],
+  "truth_sources": [
+    "Station TurnConfig.AttachmentRefs",
+    "Station pre-admission capability check for file types",
+    "OSS object storage for uploaded files"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/chat/send (with attachment_refs)"},
+    {"type": "api", "route": "/agent/workspace/oss/upload"},
+    {"type": "api", "route": "/agent/workspace/oss/download"}
+  ],
+  "required_gates": ["agent-attachment-e2e"],
+  "acceptance": {
+    "service": [
+      "a user can attach files to a message and the agent receives them as part of the turn context",
+      "attached files are uploaded to OSS and referenced by stable URIs in the turn config",
+      "the pre-admission check rejects file types not supported by the active provider's capability set",
+      "attachment metadata (name, size, mime type) is persisted alongside the message",
+      "attachments are downloadable from conversation history"
+    ],
+    "visible": [
+      "the composer shows an attach button that opens a file picker",
+      "selected files appear as chips in the composer with size and type indicators",
+      "unsupported file types show an inline error explaining the capability gap",
+      "sent messages with attachments display file thumbnails or icons inline",
+      "clicking an attachment in history opens a preview or triggers download"
+    ]
+  },
+  "negative": [
+    "attachments must not be sent to a provider that does not support the file's mime type",
+    "upload failure must not silently proceed — the message must not send until upload completes or errors",
+    "attachment URIs must not be guessable — they require authenticated access"
+  ]
+}

@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-17
+> **Created**: 2026-07-30 | **Updated**: 2026-08-22
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -59,6 +59,8 @@ Downstream consumers:
 | `application/mcp/` and `application/tools/` | Device-local capability execution |
 | `application/agent_orchestration/` | Agent Canvas bridge, downstream of the single-Agent kernel |
 | `interface/http_gateway/` | Browser gateway to the same Station business contracts |
+| `domain/actor_device_identity.rs` | Existing actor/device Ed25519 identity used to sign terminal recovery proof |
+| `infrastructure/station_client.rs` | Typed per-device protobuf transport for lease and receipt APIs |
 
 ### Desktop Web
 
@@ -80,12 +82,17 @@ Downstream consumers:
 | Desktop in-memory `application/chat::ChatStore` | Station Agent conversation/message APIs | Delete |
 | Browser gateway one-shot chat path | Sequenced Station SSE gateway | Remove from interactive Agent chat |
 | `workspace_root` and client-submitted execution fields | Station config plus opaque client/Station resource refs | Delete from shared turn authority |
+| Raw local path/handle flow without a client resource registry | Encrypted actor/device-scoped opaque resource-ref registry | Delete before C08/C07 proof |
 | Desktop-specific local tool names/owner/guidance | Platform-neutral ClientCapabilitySession contract | Replace |
 | Local durable Agent definition/config files | Station AgentDefinition | Delete shared-state fields; retain local UI preference only |
 | Flat retry/regenerate mutation | Station message lineage and branch selection | Replace |
 | Metadata-only attachment turn path | Canonical opaque AttachmentRef | Replace |
 | Unsequenced ephemeral stream assumptions | TurnEvent cursor/replay/snapshot | Replace |
 | Phase labels that redefine P0-P2 | `MODERN_CHAT_AGENT_V1` capability IDs | Replace in revised plan |
+| Web `decideToolApproval` plus direct Rust invocation | `toolRuntime` decision projection plus Station-issued fenced envelope | Delete Web execution authority |
+| Rust approval registry/waiter and direct Web-to-waiter command | Client capability envelope consumer plus durable receipt ledger | Deleted in G1-E |
+| Station `LocalToolBroker` and `/turn/local-tool-result` continuation | ToolDispatch outbox, receipt/result acceptance, and unique turn continuation | Deleted in G1-E |
+| Client-only diagnostic export and feedback state | Station exact-turn redacted replay and immutable feedback/usage | Delete after readback evidence passes |
 
 ## 4. Document Reconciliation
 
@@ -218,6 +225,17 @@ Every runtime has:
 - Idempotent install/teardown.
 - No overlapping ownership.
 
+Under accepted `MCA-D08A`, Desktop message-action cutover is all-or-nothing.
+The legacy
+`updateMessage`, `deleteMessage`, destructive regenerate, and duplicated-topic
+branch construction are removed only when Desktop Web and Rust consume the
+canonical Station commands `RetryTurn`, `RegenerateTurn`, `EditAndResend`,
+`SelectActiveBranch`, and `TombstoneMessage`.
+
+The client may retain rebuildable message/branch caches and optimistic pending
+command state. It must not retain a writable message body, active branch,
+tombstone, idempotency result, or conversation revision as independent truth.
+
 Pages render these projections and do not fetch durable business state on mount.
 
 ## 8. Compatibility Policy
@@ -249,6 +267,111 @@ Architecture acceptance requires evidence plans for:
 
 If a runtime kind lacks evidence, the capability profile must mark it
 unsupported rather than silently partial.
+
+### 9.1 C07 Fenced Execution Cutover
+
+The `MCA-D19` core and `MCA-D19A` recovery semantics are accepted.
+`MCA-D19B` device-possession proof was accepted after G1-A verified that JWT
+binds actor only and `X-Device-ID` is an ordinary header. Until D19A/B are
+implemented proto-first through Station, G1-C, C07/C09, and G-F remain blocked
+or `UNPROVEN`.
+
+The cutover is atomic at the authority boundary:
+
+1. Model proto defines decision command/ack, targeted execution envelope,
+   Station-resolved replay policy, lease renew/revoke, signed recovery proof,
+   signed capability command proof, split deadlines, and receipt/result
+   identities from `data-model.md §8.9`.
+2. Station `TurnService` routes every client-owned ToolCall through
+   `ToolDispatchService`; it cannot execute a device-local tool directly.
+3. Station commits decision revision, claim, dispatch sequence, and outbox
+   envelope plus one recovery credential/nonce record before delivery.
+4. Desktop Rust consumes only Station-issued targeted envelopes, persists
+   `PREPARED`, resolves opaque refs locally, executes according to the pinned
+   replay policy, and submits the typed receipt/result.
+5. Station commits each immutable ToolCall result once. The final successful
+   member of a provider-response batch atomically creates the single
+   `(turn_id, attempt_id, tool_batch_id)` continuation.
+6. Desktop Web `toolRuntime` projects proposal/decision/result and submits only
+   user decision commands.
+7. A durable Station continuation worker claims and completes that continuation;
+   restart reclaims only pre-emission or provider-idempotent work.
+8. A matching PREPARED attempt may submit a device-signed terminal recovery
+   after lease loss or execution deadline, but only before reconciliation
+   deadline. Recovery cannot execute, pull, renew, or continue.
+9. Externally idempotent PREPARED work may execute after restart only after
+   Station CAS-takes over the existing claim, increments its fence, binds a
+   current matching lease, invalidates the prior recovery credential, and
+   emits a new targeted envelope with the exact original idempotency key.
+   Original execution deadline remains authoritative; resource-bearing
+   takeover fails closed until cross-session resource rebind is designed.
+10. Only after the new path passes duplicate, stale, crash, replay, cancel,
+   revoke, restart, and readback checks are the old Web/Rust/Station paths
+   deleted.
+
+Required negative evidence:
+
+- duplicate/stale decision cannot dispatch;
+- duplicate execution envelope cannot create a second side effect;
+- mismatched actor/device/session/lease revision/claim/fence/payload/execution
+  deadline rejects before side effects;
+- expired/revoked lease cannot pull or begin PREPARED; renew requires
+  same-scope CAS and cannot mutate capabilities or signing key;
+- lease registration cannot choose actor, device, lease/session ID, revision,
+  or expiry; Station derives/issues them and caps TTL;
+- actor JWT plus `X-Device-ID` is insufficient for device authority; every
+  capability command verifies the current actor-device signature before lease,
+  pull, outbox, or result access;
+- active receipt and terminal recovery use separate endpoints and proof modes;
+  neither endpoint may downgrade to the other's authority;
+- recovery remains available after actor JWT/capability-session revoke, but
+  only through persisted credential scope and the current unrevoked device key;
+- identical signed write replay returns the same durable outcome, while nonce
+  reuse with another command/body rejects;
+- post-deadline terminal settlement requires matching PREPARED, valid
+  credential scope/nonce/device signature, and live reconciliation deadline;
+- Desktop restart cannot execute from a persisted PREPARED row or recovery
+  credential; external-idempotency replay requires a new Station-issued fence
+  under a current matching lease;
+- takeover reuses the exact external idempotency key, never extends the
+  execution deadline, invalidates prior recovery authority, and rejects
+  resource-bearing replay without an accepted cross-session rebind contract;
+- duplicate signed recovery returns the original acknowledgement while a
+  conflicting digest consumes no second result;
+- late valid APPLIED recovery records the side-effect fact but cannot reopen a
+  cancelled/expired Turn or blocked ToolBatch;
+- device signing-key revoke invalidates recovery and settles unresolved work as
+  unknown without redispatch;
+- client cannot upgrade replay policy or substitute an external idempotency key;
+- duplicate result cannot append another continuation;
+- multiple ToolCalls from one provider response create one continuation only
+  after every member is `APPLIED`;
+- denied, expired, cancelled, failed, or unknown-side-effect batches create no
+  automatic continuation;
+- ambiguous non-idempotent post-emission continuation crashes require
+  reconciliation and are not replayed automatically;
+- non-idempotent crash after `PREPARED` becomes `UNKNOWN_SIDE_EFFECT`;
+- no portable contract or Station record contains a local path;
+- opaque refs resolve only through the Desktop encrypted actor/device registry
+  and are deleted after settlement/expiry;
+- no Web-to-native execution command remains;
+- old-path scanner reports zero unresolved C07/C09 matches.
+
+Operational defaults for the current v1 implementation are a five-minute
+capability lease, two-minute default execution deadline, ten-minute
+reconciliation window after execution deadline, and 60-second command-proof
+clock-skew allowance. Station owns these bounded policies; clients cannot
+extend them.
+
+The cutover is fail-closed:
+
+- pre-D19B active leases are revoked and clients must register again with
+  device proof;
+- the old `deadline` value becomes `execution_deadline`;
+- historical terminal results remain immutable;
+- historical PREPARED work without a persisted recovery credential settles as
+  `UNKNOWN_SIDE_EFFECT` without redispatch or continuation;
+- no recovery credential or signing proof is synthesized during migration.
 
 ## 10. Resolved Integration Policies
 

@@ -1,21 +1,8 @@
-// prompt_assembly_service.go — System Prompt layered assembly service.
-// Created: 2026-04-11 — initial implementation of the 6-layer prompt assembly pipeline.
-// 2026-04-11 — Phase 6: added InjectedTokens and CacheBreakpoints to
-//
-//	PromptAssemblyResult per architecture spec §3.2.
-//
-// 2026-04-11 — Phase 7: added L6 Context Files (.hermes.md / AGENTS.md / etc.)
-//
-//	and L8 Platform Hints. Renumbered old L6 Timestamp to L7. Assembly now
-//	composes eight ordered layers per architecture spec §3.2.
-//
-// 2026-06-17 — Agent rebuild P0-1: added local_mcp guidance so Station can
-//
-//	request Desktop-local MCP execution through the local tool bridge.
-//
-// 2026-06-17 — Agent rebuild P1-5: added Desktop-local builtin tool guidance
-//
-//	for schema-first file, clipboard, and safe workspace operations.
+// prompt_assembly_service.go — Typed ContextLedger pipeline assembly.
+// Refactored from string-concat layers to a processor pipeline that emits
+// typed ContextSegments (MCA-D04), inspired by LobeHub's ContextEngine
+// pipeline pattern but with Station-owned source attribution, content hashes,
+// token estimates, and inclusion/truncation decisions.
 package service
 
 import (
@@ -23,12 +10,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
@@ -58,30 +44,26 @@ local_clipboard_write, and local_shell_safe only for user-approved Desktop local
 operations. These tools execute in Desktop Rust through the local tool bridge;
 Station remains the turn owner and waits for the result before continuing.`
 
-// contextFileNames lists the files to scan for external knowledge injection,
-// in priority order (first match wins). Per architecture spec §3.2 Layer 6.
-var contextFileNames = []string{
-	".hermes.md", "HERMES.md",
-	"AGENTS.md", "agents.md",
-	"CLAUDE.md", "claude.md",
-	".cursorrules",
+// ContextSegment is one ordered piece of the assembled prompt with
+// provenance, hash, token estimate, and inclusion decision.
+type ContextSegment struct {
+	Type            model.ContextSegmentType
+	Content         string
+	SourceRefs      []string
+	ContentHash     string
+	EstimatedTokens int
+	Decision        model.ContextSegmentDecision
+	DecisionReason  string
+	// KnowledgeChunks is populated only for KNOWLEDGE segments to avoid
+	// a second retrieval call in the assembler.
+	KnowledgeChunks []domain.KnowledgeChunkReference
 }
 
-// contextFileMaxChars is the maximum characters to inject from a context file.
-// Per hermes: 20,000 chars, 70% head + 20% tail truncation.
-const contextFileMaxChars = 20000
-
-// platformHints provides platform-specific behavioral hints injected as L8.
-var platformHints = map[string]string{
-	"cli":      "You are running in a CLI terminal. Use plain text formatting. No markdown images.",
-	"desktop":  "You are running in a desktop application. Markdown is supported. Use concise formatting.",
-	"mobile":   "You are running on a mobile device. Keep responses short and scannable. Avoid wide code blocks.",
-	"whatsapp": "You are running on WhatsApp. Keep messages under 4096 chars. No markdown support.",
-	"telegram": "You are running on Telegram. Basic markdown supported. Keep messages concise.",
-}
-
+// PromptAssemblyResult contains the assembled system prompt plus the typed
+// ContextLedger segments for persistence and audit.
 type PromptAssemblyResult struct {
 	SystemPrompt       string
+	Segments           []ContextSegment
 	MemorySnapshotHash string
 	SkillIndexHash     string
 	SkillCount         int
@@ -89,7 +71,215 @@ type PromptAssemblyResult struct {
 	KnowledgeChunks    []domain.KnowledgeChunkReference
 }
 
+// promptBuildInput carries all data needed by segment processors.
+type promptBuildInput struct {
+	ctx               context.Context
+	agentID           string
+	identity          string
+	agentConfigPrompt string
+	availableTools    []string
+	userInput         string
+	knowledgeResources []domain.KnowledgeResource
+	memoryDisabled    bool
+}
+
+// segmentProcessor produces zero or more context segments.
+type segmentProcessor interface {
+	process(input *promptBuildInput) ([]ContextSegment, error)
+}
+
+// identityProcessor emits L1 Identity.
+type identityProcessor struct{}
+
+func (identityProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
+	if strings.TrimSpace(in.identity) == "" {
+		return nil, nil
+	}
+	return []ContextSegment{{
+		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_IDENTITY,
+		Content:         in.identity,
+		ContentHash:     sha256Hex(in.identity),
+		EstimatedTokens: estimateTokens(in.identity),
+		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+	}}, nil
+}
+
+// guidanceProcessor emits L2 Behavioral Guidance based on available tools.
+type guidanceProcessor struct{}
+
+func (guidanceProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
+	var parts []string
+	var sourceRefs []string
+
+	if hasToolAvailable(in.availableTools, "memory") {
+		parts = append(parts, memoryGuidance)
+		sourceRefs = append(sourceRefs, "guidance:memory")
+	}
+	if hasToolAvailable(in.availableTools, "skill_view") || hasToolAvailable(in.availableTools, "skill_manage") {
+		parts = append(parts, skillsGuidance)
+		sourceRefs = append(sourceRefs, "guidance:skills")
+	}
+	if hasToolAvailable(in.availableTools, "local_mcp") {
+		parts = append(parts, localMCPGuidance)
+		sourceRefs = append(sourceRefs, "guidance:local_mcp")
+	}
+	if hasAnyToolAvailable(in.availableTools,
+		"local_file_read", "local_workspace_list",
+		"local_clipboard_read", "local_clipboard_write", "local_shell_safe",
+	) {
+		parts = append(parts, localBuiltinGuidance)
+		sourceRefs = append(sourceRefs, "guidance:local_builtin")
+	}
+
+	if len(parts) == 0 {
+		return nil, nil
+	}
+	content := strings.Join(parts, "\n\n")
+	return []ContextSegment{{
+		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_POLICY,
+		Content:         content,
+		SourceRefs:      sourceRefs,
+		ContentHash:     sha256Hex(content),
+		EstimatedTokens: estimateTokens(content),
+		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+	}}, nil
+}
+
+// memoryProcessor emits L3 Memory Snapshot.
+type memoryProcessor struct {
+	memoryService *MemoryService
+}
+
+func (p memoryProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
+	if in.memoryDisabled || p.memoryService == nil {
+		return []ContextSegment{{
+			Type:   model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MEMORY,
+			Decision: model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED,
+			DecisionReason: "memory_disabled",
+		}}, nil
+	}
+
+	snapshot, err := p.memoryService.BuildRelevantSnapshot(in.ctx, in.agentID, in.userInput)
+	if err != nil {
+		return nil, fmt.Errorf("build memory snapshot: %w", err)
+	}
+
+	content := formatMemorySnapshot(snapshot)
+	return []ContextSegment{{
+		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MEMORY,
+		Content:         content,
+		SourceRefs:      []string{fmt.Sprintf("memory:agent=%s", in.agentID)},
+		ContentHash:     sha256Hex(content),
+		EstimatedTokens: estimateTokens(content),
+		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+	}}, nil
+}
+
+// skillsProcessor emits L4 Skills Index.
+type skillsProcessor struct {
+	skillService *SkillService
+}
+
+func (p skillsProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
+	if p.skillService == nil {
+		return nil, nil
+	}
+
+	skillIndex, skillCount, err := p.skillService.BuildSkillIndex(in.ctx, in.agentID, in.availableTools)
+	if err != nil {
+		return nil, fmt.Errorf("build skill index: %w", err)
+	}
+
+	if skillIndex == "" {
+		return []ContextSegment{{
+			Type:           model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_SKILL_INDEX,
+			Decision:       model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED,
+			DecisionReason: "no_skills_available",
+		}}, nil
+	}
+
+	return []ContextSegment{{
+		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_SKILL_INDEX,
+		Content:         skillIndex,
+		SourceRefs:      []string{fmt.Sprintf("skills:agent=%s:count=%d", in.agentID, skillCount)},
+		ContentHash:     sha256Hex(skillIndex),
+		EstimatedTokens: estimateTokens(skillIndex),
+		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+	}}, nil
+}
+
+// configPromptProcessor emits L5 Agent Config Prompt.
+type configPromptProcessor struct{}
+
+func (configPromptProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
+	if strings.TrimSpace(in.agentConfigPrompt) == "" {
+		return nil, nil
+	}
+	return []ContextSegment{{
+		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MODEL_FACTS,
+		Content:         in.agentConfigPrompt,
+		ContentHash:     sha256Hex(in.agentConfigPrompt),
+		EstimatedTokens: estimateTokens(in.agentConfigPrompt),
+		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+	}}, nil
+}
+
+// knowledgeProcessor emits L6 Agent Knowledge Resources.
+type knowledgeProcessor struct {
+	retrieval *KnowledgeRetrievalService
+}
+
+func (p knowledgeProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
+	if len(in.knowledgeResources) == 0 || p.retrieval == nil {
+		return nil, nil
+	}
+
+	result, err := p.retrieval.Retrieve(in.ctx, in.knowledgeResources, in.userInput)
+	if err != nil {
+		logger.Warnf(in.ctx, "prompt assembly: knowledge retrieval failed for agent %s: %v", in.agentID, err)
+		return []ContextSegment{{
+			Type:           model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_KNOWLEDGE,
+			Decision:       model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED,
+			DecisionReason: "retrieval_failed",
+		}}, nil
+	}
+
+	if result.PromptBlock == "" {
+		return nil, nil
+	}
+
+	refs := make([]string, 0, len(result.Chunks))
+	for _, c := range result.Chunks {
+		refs = append(refs, fmt.Sprintf("knowledge:%s", c.ResourceID))
+	}
+
+	return []ContextSegment{{
+		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_KNOWLEDGE,
+		Content:         result.PromptBlock,
+		SourceRefs:      refs,
+		ContentHash:     sha256Hex(result.PromptBlock),
+		EstimatedTokens: estimateTokens(result.PromptBlock),
+		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+		KnowledgeChunks: result.Chunks,
+	}}, nil
+}
+
+// timestampProcessor emits L7 Timestamp.
+type timestampProcessor struct{}
+
+func (timestampProcessor) process(_ *promptBuildInput) ([]ContextSegment, error) {
+	content := fmt.Sprintf("Current time: %s", time.Now().UTC().Format(time.RFC3339))
+	return []ContextSegment{{
+		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_CURRENT_INPUT,
+		Content:         content,
+		ContentHash:     sha256Hex(content),
+		EstimatedTokens: estimateTokens(content),
+		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+	}}, nil
+}
+
 type PromptAssemblyService struct {
+	processors         []segmentProcessor
 	memoryService      *MemoryService
 	skillService       *SkillService
 	knowledgeRetrieval *KnowledgeRetrievalService
@@ -100,140 +290,104 @@ func NewPromptAssemblyService(memSvc *MemoryService, skillSvc *SkillService) *Pr
 	if memSvc != nil {
 		embeddingProvider = memSvc.MemoryEmbeddingProvider()
 	}
+	knowledgeRetrieval := NewKnowledgeRetrievalService(embeddingProvider)
+
 	return &PromptAssemblyService{
 		memoryService:      memSvc,
 		skillService:       skillSvc,
-		knowledgeRetrieval: NewKnowledgeRetrievalService(embeddingProvider),
+		knowledgeRetrieval: knowledgeRetrieval,
+		processors: []segmentProcessor{
+			identityProcessor{},
+			guidanceProcessor{},
+			memoryProcessor{memoryService: memSvc},
+			skillsProcessor{skillService: skillSvc},
+			configPromptProcessor{},
+			knowledgeProcessor{retrieval: knowledgeRetrieval},
+			timestampProcessor{},
+		},
 	}
 }
 
-// Assemble builds the final system prompt by composing ordered layers:
-//
-//		L1 Identity → L2 Behavioral Guidance → L3 Memory Snapshot →
-//	     L4 Skills Index → L5 Agent Config Prompt → L6 Agent Knowledge →
-//	     L7 Context Files → L8 Timestamp → L9 Platform Hints
+// Assemble runs the segment pipeline and joins included segments into the
+// final system prompt. Each segment carries provenance for the ContextLedger.
 func (s *PromptAssemblyService) Assemble(
 	ctx context.Context,
 	agentID string,
 	identity string,
 	agentConfigPrompt string,
-	platform string,
 	availableTools []string,
-	workspaceRoot string,
 	userInput string,
 	knowledgeResources []domain.KnowledgeResource,
 	memoryDisabled bool,
 ) (*PromptAssemblyResult, error) {
 
+	input := &promptBuildInput{
+		ctx:               ctx,
+		agentID:           agentID,
+		identity:          identity,
+		agentConfigPrompt: agentConfigPrompt,
+		availableTools:    availableTools,
+		userInput:         userInput,
+		knowledgeResources: knowledgeResources,
+		memoryDisabled:    memoryDisabled,
+	}
+
+	var segments []ContextSegment
 	var layers []string
-
-	// L1 — Identity
-	layers = append(layers, identity)
-
-	// L2 — Behavioral Guidance (conditional)
-	if guidance := s.buildGuidanceLayer(availableTools); guidance != "" {
-		layers = append(layers, guidance)
-	}
-
-	// L3 — Memory Snapshot (skipped when client disables memory for this turn)
-	var memoryBlock string
-	if !memoryDisabled {
-		snapshot, err := s.memoryService.BuildRelevantSnapshot(ctx, agentID, userInput)
-		if err != nil {
-			logger.Errorf(ctx, "prompt assembly: failed to build memory snapshot for agent %s: %v", agentID, err)
-			return nil, fmt.Errorf("build memory snapshot: %w", err)
-		}
-		memoryBlock = formatMemorySnapshot(snapshot)
-		layers = append(layers, memoryBlock)
-	}
-
-	// L4 — Skills Index
-	skillIndex, skillCount, err := s.skillService.BuildSkillIndex(ctx, agentID, platform, availableTools)
-	if err != nil {
-		logger.Errorf(ctx, "prompt assembly: failed to build skill index for agent %s: %v", agentID, err)
-		return nil, fmt.Errorf("build skill index: %w", err)
-	}
-	if skillIndex != "" {
-		layers = append(layers, skillIndex)
-	}
-
-	// L5 — Agent Config System Prompt
-	if agentConfigPrompt != "" {
-		layers = append(layers, agentConfigPrompt)
-	}
-
-	// L6 — Agent Knowledge Resources
+	var memoryHash, skillHash string
+	var skillCount int
 	var knowledgeChunks []domain.KnowledgeChunkReference
-	if len(knowledgeResources) > 0 && s.knowledgeRetrieval != nil {
-		retrievalResult, retrievalErr := s.knowledgeRetrieval.Retrieve(ctx, knowledgeResources, userInput)
-		if retrievalErr != nil {
-			logger.Warnf(ctx, "prompt assembly: knowledge retrieval failed for agent %s: %v", agentID, retrievalErr)
-		} else if retrievalResult.PromptBlock != "" {
-			layers = append(layers, retrievalResult.PromptBlock)
-			knowledgeChunks = retrievalResult.Chunks
+
+	for _, proc := range s.processors {
+		procs, err := proc.process(input)
+		if err != nil {
+			return nil, err
 		}
-	}
-
-	// L7 — Context Files (.hermes.md / AGENTS.md / CLAUDE.md / .cursorrules)
-	if workspaceRoot != "" {
-		if ctxFileBlock := s.loadContextFile(ctx, workspaceRoot); ctxFileBlock != "" {
-			layers = append(layers, ctxFileBlock)
+		for _, seg := range procs {
+			segments = append(segments, seg)
+			if seg.Decision == model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED && seg.Content != "" {
+				layers = append(layers, seg.Content)
+			}
+			switch seg.Type {
+			case model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MEMORY:
+				memoryHash = seg.ContentHash
+			case model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_SKILL_INDEX:
+				skillHash = seg.ContentHash
+				skillCount = countSkillsFromRef(seg.SourceRefs)
+			case model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_KNOWLEDGE:
+				if len(seg.KnowledgeChunks) > 0 {
+					knowledgeChunks = seg.KnowledgeChunks
+				}
+			}
 		}
-	}
-
-	// L8 — Timestamp + Model Info
-	layers = append(layers, fmt.Sprintf("Current time: %s", time.Now().UTC().Format(time.RFC3339)))
-
-	// L9 — Platform Hints
-	if hint, ok := platformHints[platform]; ok {
-		layers = append(layers, hint)
 	}
 
 	systemPrompt := strings.Join(layers, "\n\n")
 
-	logger.Infof(ctx, "prompt assembly: assembled %d layers for agent %s, skill_count=%d",
-		len(layers), agentID, skillCount)
+	logger.Infof(ctx, "prompt assembly: assembled %d segments (%d included) for agent %s, skill_count=%d",
+		len(segments), len(layers), agentID, skillCount)
 
 	return &PromptAssemblyResult{
 		SystemPrompt:       systemPrompt,
-		MemorySnapshotHash: sha256Hex(memoryBlock),
-		SkillIndexHash:     sha256Hex(skillIndex),
+		Segments:           segments,
+		MemorySnapshotHash: memoryHash,
+		SkillIndexHash:     skillHash,
 		SkillCount:         skillCount,
 		InjectedTokens:     len(systemPrompt) / 4,
 		KnowledgeChunks:    knowledgeChunks,
 	}, nil
 }
 
-// buildGuidanceLayer composes the L2 behavioral guidance based on available tools.
-func (s *PromptAssemblyService) buildGuidanceLayer(availableTools []string) string {
-	var parts []string
-
-	if hasToolAvailable(availableTools, "memory") {
-		parts = append(parts, memoryGuidance)
+func countSkillsFromRef(refs []string) int {
+	for _, ref := range refs {
+		var count int
+		if _, err := fmt.Sscanf(ref, "skills:agent=%*[^:]:count=%d", &count); err == nil {
+			return count
+		}
 	}
-
-	if hasToolAvailable(availableTools, "skill_view") || hasToolAvailable(availableTools, "skill_manage") {
-		parts = append(parts, skillsGuidance)
-	}
-
-	if hasToolAvailable(availableTools, "local_mcp") {
-		parts = append(parts, localMCPGuidance)
-	}
-
-	if hasAnyToolAvailable(availableTools,
-		"local_file_read",
-		"local_workspace_list",
-		"local_clipboard_read",
-		"local_clipboard_write",
-		"local_shell_safe",
-	) {
-		parts = append(parts, localBuiltinGuidance)
-	}
-
-	return strings.Join(parts, "\n\n")
+	return 0
 }
 
-// formatMemorySnapshot renders the memory snapshot into the prompt-ready tagged block.
 func formatMemorySnapshot(snap *domain.MemorySnapshot) string {
 	memUsed := len(snap.MemoryContent)
 	memLimit := domain.MemoryCharLimitMemory
@@ -303,105 +457,15 @@ func hasAnyToolAvailable(tools []string, names ...string) bool {
 	return false
 }
 
-// loadContextFile walks from workspaceRoot upward through parent directories
-// (stopping at the git root or filesystem root) and scans each directory for
-// context files in priority order. Returns the first match's content wrapped
-// in <context_file> tags, truncated to contextFileMaxChars using 70% head +
-// 20% tail strategy. Performs security scanning before injection.
-func (s *PromptAssemblyService) loadContextFile(ctx context.Context, workspaceRoot string) string {
-	dirs := s.collectSearchDirs(workspaceRoot)
-
-	for _, dir := range dirs {
-		for _, name := range contextFileNames {
-			filePath := filepath.Join(dir, name)
-			data, err := os.ReadFile(filePath)
-			if err != nil {
-				continue
-			}
-
-			content := string(data)
-			if content == "" {
-				continue
-			}
-
-			if hasDangerousContent(content) {
-				logger.Warnf(ctx, "context file %s rejected: contains dangerous content", filePath)
-				continue
-			}
-
-			if len(content) > contextFileMaxChars {
-				headSize := contextFileMaxChars * 70 / 100
-				tailSize := contextFileMaxChars * 20 / 100
-				content = content[:headSize] + "\n\n[... truncated ...]\n\n" + content[len(content)-tailSize:]
-			}
-
-			logger.Infof(ctx, "context file loaded: %s (%d chars)", filePath, len(content))
-			return fmt.Sprintf("<context_file source=%q>\n%s\n</context_file>", name, content)
-		}
-	}
-
-	return ""
+// estimateTokens provides a rough token estimate (chars/4).
+func estimateTokens(content string) int {
+	return len(content) / 4
 }
 
-// collectSearchDirs returns workspaceRoot and its ancestors up to the git root
-// (inclusive). If no .git is found, only workspaceRoot is returned.
-func (s *PromptAssemblyService) collectSearchDirs(workspaceRoot string) []string {
-	dirs := []string{workspaceRoot}
-
-	dir := workspaceRoot
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			if dir != workspaceRoot {
-				dirs = append(dirs, dir)
-			}
-			break
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		if parent != workspaceRoot {
-			dirs = append(dirs, parent)
-		}
-		dir = parent
+// truncate shortens a string to maxLen with an ellipsis marker.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
 	}
-
-	return dirs
-}
-
-// hasDangerousContent performs a lightweight scan for prompt injection patterns
-// and invisible unicode characters in context file content.
-func hasDangerousContent(content string) bool {
-	lower := strings.ToLower(content)
-	dangerousPatterns := []string{
-		"ignore previous instructions",
-		"ignore all previous",
-		"you are now",
-		"new persona",
-		"system prompt:",
-		"<|im_start|>",
-		"[inst]",
-	}
-	for _, p := range dangerousPatterns {
-		if strings.Contains(lower, p) {
-			return true
-		}
-	}
-
-	// Check invisible unicode (zero-width characters).
-	invisibleChars := []rune{
-		'\u200B', '\u200C', '\u200D', '\u200E', '\u200F',
-		'\u202A', '\u202B', '\u202C', '\u202D', '\u202E',
-		'\u2060', '\u2061', '\u2062', '\u2063', '\u2064',
-		'\uFEFF', '\u00AD',
-	}
-	for _, c := range content {
-		for _, inv := range invisibleChars {
-			if c == inv {
-				return true
-			}
-		}
-	}
-
-	return false
+	return s[:maxLen] + "..."
 }

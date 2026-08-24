@@ -1605,4 +1605,4 @@ export function replyPreviewForChatMessage(
   return firstAttachment.filename || labels.file;
 }
 
-export * from './agentChatCache';
+export * from './agentChatCache.js';

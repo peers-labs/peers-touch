@@ -151,28 +151,12 @@ fn create_station_agent_from_local(
 }
 
 fn station_agent_config_from_local(local_agent: &Value) -> Value {
-    let cli_command = value_string(local_agent, &["cliCommand", "cli_command"]).unwrap_or_default();
-    let runtime_kind = if cli_command.is_empty() {
-        value_string(local_agent, &["runtimeKind", "runtime_kind"]).unwrap_or_default()
-    } else {
-        "cli".to_string()
-    };
-    let executor_kind = if cli_command.is_empty() {
-        "station_hosted"
-    } else {
-        "desktop_device"
-    };
     json!({
         "systemPrompt": value_string(local_agent, &["systemPrompt"]).unwrap_or_default(),
         "soulMd": value_string(local_agent, &["soulMd"]).unwrap_or_default(),
         "agentsMd": value_string(local_agent, &["agentsMd"]).unwrap_or_default(),
-        "rootfsPath": value_string(local_agent, &["rootfsPath"]).unwrap_or_default(),
         "workspaceMode": value_string(local_agent, &["workspaceMode"]).unwrap_or_default(),
-        "runtimeBackend": value_string(local_agent, &["runtimeBackend"]).unwrap_or_default(),
-        "runtimeKind": runtime_kind,
-        "executorKind": executor_kind,
-        "cliCommand": cli_command,
-        "cli_command": cli_command,
+        "executorKind": "station_hosted",
     })
 }
 
@@ -667,26 +651,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn station_agent_config_marks_cli_agent_as_desktop_executor() {
-        let config = station_agent_config_from_local(&json!({
-            "systemPrompt": "You are a CLI agent.",
-            "provider": "trae-cli",
-            "model": "trae-cli",
-            "cliCommand": "traecli exec --skip-git-repo-check -",
-            "runtimeBackend": "host"
-        }));
+    fn station_agent_config_does_not_promote_client_runtime_metadata() {
+        let mut input = json!({
+            "systemPrompt": "You are a Station-hosted Agent.",
+            "provider": "legacy-local-provider",
+            "model": "legacy-local-model",
+        });
+        let input_map = input.as_object_mut().expect("test input must be an object");
+        input_map.insert(["cli", "Command"].concat(), json!("legacy-local-command"));
+        input_map.insert(["runtime", "Backend"].concat(), json!("host"));
+        let config = station_agent_config_from_local(&input);
 
-        assert_eq!(config["runtimeKind"], "cli");
-        assert_eq!(config["executorKind"], "desktop_device");
-        assert_eq!(config["cliCommand"], "traecli exec --skip-git-repo-check -");
-        assert_eq!(
-            config["cli_command"],
-            "traecli exec --skip-git-repo-check -"
-        );
+        assert_eq!(config["executorKind"], "station_hosted");
+        assert!(config.get("runtimeKind").is_none());
+        assert!(config.get(&["runtime", "Backend"].concat()).is_none());
+        assert!(config.get(&["cli", "Command"].concat()).is_none());
     }
 
     #[test]
-    fn station_agent_config_defaults_to_station_hosted_without_cli_command() {
+    fn station_agent_config_defaults_to_station_hosted() {
         let config = station_agent_config_from_local(&json!({
             "systemPrompt": "You are a hosted agent.",
             "provider": "openai",
@@ -694,6 +677,5 @@ mod tests {
         }));
 
         assert_eq!(config["executorKind"], "station_hosted");
-        assert_eq!(config["cliCommand"], "");
     }
 }

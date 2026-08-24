@@ -22,13 +22,16 @@ export type AgentRole = 'system' | 'user' | 'assistant' | 'tool';
 export interface CachedAgentConversation {
   readonly conversationId: string;
   readonly agentId: string;
-  readonly userId?: string;
+  readonly ptid: string;
   readonly title: string;
   readonly description?: string;
   readonly providerId?: string;
   readonly modelName?: string;
   readonly status: string;
   readonly parentId?: string;
+  readonly activeBranchMessageId: string;
+  readonly queuedTurnCount: number;
+  readonly version: number;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -148,19 +151,17 @@ export function createAgentChatCache(deps: {
   return {
     async listConversations(agentId: string): Promise<readonly CachedAgentConversation[]> {
       const cached = await readConversationBundle(agentId);
-      void fetcher
-        .listConversations(agentId)
-        .then(async (result) => {
-          const next: Record<string, CachedAgentConversation> = { ...cached };
-          for (const conversation of result.conversations) {
-            next[conversation.conversationId] = conversation;
-          }
-          await conversationRepo.write(agentId, next);
-        })
-        .catch(() => {
-          // Background refresh must not throw into the UI; cache stays intact.
-        });
-      return Object.values(cached).sort(compareConversationByUpdatedAt);
+      try {
+        const result = await fetcher.listConversations(agentId);
+        const next: Record<string, CachedAgentConversation> = {};
+        for (const conversation of result.conversations) {
+          next[conversation.conversationId] = conversation;
+        }
+        await conversationRepo.write(agentId, next);
+        return Object.values(next).sort(compareConversationByUpdatedAt);
+      } catch {
+        return Object.values(cached).sort(compareConversationByUpdatedAt);
+      }
     },
 
     async getMessages(conversationId: string): Promise<readonly CachedAgentMessage[]> {

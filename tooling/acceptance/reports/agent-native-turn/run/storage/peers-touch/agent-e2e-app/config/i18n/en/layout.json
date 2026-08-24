@@ -1,0 +1,48 @@
+{
+  "layout.nav.search": "Search (⌘K)",
+  "layout.nav.chat": "Chat",
+  "layout.nav.agent": "Agent",
+  "layout.nav.notes": "Notes",
+  "layout.nav.applets": "Applet Box",
+  "layout.nav.contacts": "Contacts",
+  "layout.nav.settings": "Settings",
+
+  "layout.command.title": "Command palette",
+  "layout.command.placeholder": "Search commands or hotkeys",
+  "layout.command.empty": "No commands found",
+  "layout.command.openPaletteWithShortcut": "Command palette ({{shortcut}})",
+  "layout.command.search": "Open search",
+  "layout.command.searchDesc": "Jump to the search page.",
+  "layout.command.newChat": "New Agent chat",
+  "layout.command.newChatDesc": "Start a fresh Agent session.",
+  "layout.command.nextAgent": "Switch Agent",
+  "layout.command.nextAgentDesc": "Move to the next available Agent.",
+  "layout.command.togglePortal": "Toggle notebook panel",
+  "layout.command.togglePortalDesc": "Open or close the Agent notebook panel.",
+  "layout.command.notes": "Open notes",
+  "layout.command.notesDesc": "Jump to the notes workspace.",
+  "layout.command.settings": "Open settings",
+  "layout.command.settingsDesc": "Jump to application settings.",
+
+  "layout.online.tooltip": "{{count}} visitor(s) online in the last 5 minutes",
+
+  "layout.auth.noAccounts": "No accounts authorized — click to open Account settings",
+
+  "layout.error.title": "Something went wrong",
+  "layout.error.description": "The app encountered an unexpected error. You can try restarting to recover.",
+  "layout.error.restart": "Restart App",
+  "layout.error.details": "Error details",
+
+  "layout.crash.title": "App crashed",
+  "layout.crash.failedToStart": "Failed to start",
+
+  "layout.splash.peer": "Peer",
+  "layout.splash.peers": "Peers",
+
+  "layout.user.defaultName": "User",
+  "layout.user.accountsAvailable": "{{count}} account(s) available",
+  "layout.user.noAccount": "No account connected",
+  "layout.user.chooseActive": "Choose active account",
+  "layout.user.switchFailed": "Failed to switch account",
+  "layout.user.manageAccount": "Manage Account"
+}

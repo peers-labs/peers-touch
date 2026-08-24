@@ -17,8 +17,8 @@ from tooling.acceptance.core import ArtifactSession
 
 MATRIX = {
     "id": "modern-chat-agent-v2-runtime-matrix",
-    "version": "2026-08-17.3",
-    "sha256": "8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6",
+    "version": "2026-08-23.1",
+    "sha256": "dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0",
 }
 
 GATE_ROLES = {
@@ -32,6 +32,8 @@ GATE_ROLES = {
         "side-effect-count",
         "replay",
         "cleanup",
+        "contract-evidence",
+        "guard-report",
         "source-identity",
         "role-schema-report",
         "runner-attestation",

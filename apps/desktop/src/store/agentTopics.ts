@@ -45,7 +45,6 @@ interface AgentTopicState {
   renameTopic: (key: string, title: string) => Promise<void>;
   smartRenameTopic: (key: string) => Promise<{ title: string }>;
   revertGeneratedTitle: (key: string) => Promise<void>;
-  duplicateTopic: (key: string) => Promise<void>;
   pinTopic: (key: string, pinned: boolean) => Promise<void>;
   favoriteTopic: (key: string, favorite: boolean) => Promise<void>;
   setSearchQuery: (query: string) => void;
@@ -315,12 +314,6 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
     });
   },
 
-  duplicateTopic: async (key: string) => {
-    await chatService.duplicateSession(key);
-    const agentId = get().activeAgentId || findSelectedAgentId();
-    if (agentId) await get().loadTopicsForAgent(agentId, 'duplicate');
-  },
-
   pinTopic: async (key: string, pinned: boolean) => {
     const before = get().topicsByAgentId;
     set((state) => ({
@@ -330,7 +323,12 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
       })),
     }));
     try {
-      await api.pinSession(key, pinned);
+      const conversation = await api.getAgentConversation(key);
+      await api.updateAgentConversation({
+        conversation_id: key,
+        expected_version: conversation.version,
+        meta: { pinned: String(pinned) },
+      });
     } catch (error) {
       log.warn('agentTopics', 'Failed to persist pin state, rolling back', { key, pinned, error: String(error) });
       set({ topicsByAgentId: before });
@@ -346,7 +344,12 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
       })),
     }));
     try {
-      await api.favoriteSession(key, favorite);
+      const conversation = await api.getAgentConversation(key);
+      await api.updateAgentConversation({
+        conversation_id: key,
+        expected_version: conversation.version,
+        meta: { favorite: String(favorite) },
+      });
     } catch (error) {
       log.warn('agentTopics', 'Failed to persist favorite state, rolling back', { key, favorite, error: String(error) });
       set({ topicsByAgentId: before });

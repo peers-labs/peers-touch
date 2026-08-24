@@ -51,11 +51,12 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
-	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
@@ -66,37 +67,43 @@ import (
 
 // TurnConfig holds per-execution configuration for a single turn.
 type TurnConfig struct {
-	TurnID             string
-	ExecutionContext   context.Context
-	AgentID            string
-	ActorID            string
-	ConversationID     string
-	Identity           string
-	AgentConfigPrompt  string
-	Platform           string
-	AvailableTools     []string
-	ContextWindowSize  int
-	MaxRetries         int
-	Provider           string
-	Model              string
-	Effort             string // reasoning effort: "low" | "medium" | "high"
-	FallbackModel      string // Alternate model for billing/model_not_found fallback recovery.
-	WorkspaceRoot      string
-	KnowledgeResources []domain.KnowledgeResource
-	RotationStrategy   domain.RotationStrategy
-	Depth              int // Current delegation depth (0 = top-level).
-	EventSink          TurnEventSink
+	TurnID                    string
+	ExecutionContext          context.Context
+	AgentID                   string
+	ActorID                   string
+	ConversationID            string
+	Identity                  string
+	AgentConfigPrompt         string
+	Platform                  string
+	AvailableTools            []string
+	ContextWindowSize         int
+	MaxRetries                int
+	Provider                  string
+	Model                     string
+	Effort                    string // reasoning effort: "low" | "medium" | "high"
+	FallbackModel             string // Alternate model for billing/model_not_found fallback recovery.
+	WorkspaceRoot             string
+	KnowledgeResources        []domain.KnowledgeResource
+	PrecreatedTurnID          string
+	ExistingTurnID            string
+	SkipUserMessage           bool
+	ContextBranchHeadID       string
+	AssistantBranchID         string
+	AssistantMessageID        string
+	AssistantParentID         string
+	AssistantReplacesID       string
+	ClientCapabilitySessionID string
+	RequestedBudgetJSON       json.RawMessage
+	RotationStrategy          domain.RotationStrategy
+	Depth                     int // Current delegation depth (0 = top-level).
+	EventSink                 TurnEventSink
 	// TaskID/StepID bind this turn to a Station-owned task step. When TaskID is
 	// set, turn lifecycle events are written to the durable outbox (replayable
 	// source of truth) in addition to the realtime event bus.
 	TaskID string
 	StepID string
 
-	// CLI execution fields — when CliCommand is non-empty, the turn is routed
-	// to the CliExecutor instead of the standard LLM provider call path.
-	CliCommand     string   // Full CLI command (e.g. "trae", "codex", "claude")
-	RuntimeBackend string   // Backend identifier for the CLI runtime
-	AllowedRoots   []string // Filesystem roots the CLI process may access
+	AttemptID string
 
 	MemoryDisabled bool // When true, L3 memory snapshot is skipped in prompt assembly.
 }
@@ -104,23 +111,36 @@ type TurnConfig struct {
 type TurnEventSink func(ctx context.Context, event TurnEvent)
 
 type TurnEvent struct {
-	Type           string `json:"type"`
-	Seq            int64  `json:"seq,omitempty"`
-	TurnID         string `json:"turnId,omitempty"`
-	ConversationID string `json:"conversationId,omitempty"`
-	AgentID        string `json:"agentId,omitempty"`
-	Stage          string `json:"stage,omitempty"`
-	Text           string `json:"text,omitempty"`
-	ToolCallID     string `json:"toolCallId,omitempty"`
-	ToolName       string `json:"toolName,omitempty"`
-	Arguments      string `json:"arguments,omitempty"`
-	Source         string `json:"source,omitempty"`
-	ServerName     string `json:"serverName,omitempty"`
-	WorkspaceRoot  string `json:"workspaceRoot,omitempty"`
-	Result         string `json:"result,omitempty"`
-	Error          string `json:"error,omitempty"`
-	Iteration      int    `json:"iteration,omitempty"`
+	Type             string `json:"type"`
+	Seq              int64  `json:"seq,omitempty"`
+	TurnID           string `json:"turnId,omitempty"`
+	ConversationID   string `json:"conversationId,omitempty"`
+	AgentID          string `json:"agentId,omitempty"`
+	Stage            string `json:"stage,omitempty"`
+	Text             string `json:"text,omitempty"`
+	ToolCallID       string `json:"toolCallId,omitempty"`
+	ToolName         string `json:"toolName,omitempty"`
+	Arguments        string `json:"arguments,omitempty"`
+	ApprovalID       string `json:"approvalId,omitempty"`
+	DecisionID       string `json:"decisionId,omitempty"`
+	DecisionRevision uint64 `json:"decisionRevision,omitempty"`
+	Approved         bool   `json:"approved,omitempty"`
+	PayloadHash      string `json:"payloadHash,omitempty"`
+	Source           string `json:"source,omitempty"`
+	ServerName       string `json:"serverName,omitempty"`
+	Result           string `json:"result,omitempty"`
+	Error            string `json:"error,omitempty"`
+	Iteration        int    `json:"iteration,omitempty"`
 }
+
+type continuationProviderCall func(
+	context.Context,
+	*TurnConfig,
+	string,
+	*domain.TurnTrace,
+	string,
+	[]domain.Message,
+) (string, []domain.ProviderCallRecord, bool, error)
 
 // ---------------------------------------------------------------------------
 // TurnService
@@ -131,27 +151,41 @@ type TurnEvent struct {
 // credential lease → provider call → error recovery → tool dispatch →
 // nudge evaluation → persistence.
 type TurnService struct {
-	errorClassifier  *ErrorClassifierService
-	memoryService    *MemoryService
-	skillService     *SkillService
-	promptAssembly   *PromptAssemblyService
-	compression      *CompressionService
-	providerService  *ProviderService
-	credentialPool   *CredentialPoolService
-	contextReference *ContextReferenceService
-	delegation       *DelegationService
-	toolRegistry     *ToolRegistryService
-	reviewService    *ReviewService
-	growthMetrics    *GrowthMetricsService
-	convService      *ConversationService
-	cliExecutor      *cli.CliExecutor
-	nudgeState       *domain.NudgeState
-	localToolBroker  *LocalToolBroker
-	liveResumeBroker *LiveResumeBroker
-	eventBus         domain.EventBus
-	eventWriter      *TaskEventWriter
-	activeTurns      sync.Mutex
-	activeTurnCancel map[string]context.CancelFunc
+	errorClassifier    *ErrorClassifierService
+	memoryService      *MemoryService
+	skillService       *SkillService
+	promptAssembly     *PromptAssemblyService
+	compression        *CompressionService
+	providerService    *ProviderService
+	credentialPool     *CredentialPoolService
+	delegation         *DelegationService
+	toolRegistry       *ToolRegistryService
+	reviewService      *ReviewService
+	growthMetrics      *GrowthMetricsService
+	convService        *ConversationService
+	nudgeState         *domain.NudgeState
+	liveResumeBroker   *LiveResumeBroker
+	toolDispatch       *ToolDispatchService
+	chatTaskService    *ChatTaskService
+	eventBus           domain.EventBus
+	eventWriter        *TaskEventWriter
+	activeTurns        sync.Mutex
+	activeTurnCancel   map[string]context.CancelFunc
+	admissionResolver  *RuntimeAdmissionResolver
+	resumeProviderCall continuationProviderCall
+}
+
+func (s *TurnService) SetAdmissionResolver(r *RuntimeAdmissionResolver) {
+	s.admissionResolver = r
+}
+
+// SetToolDispatch injects the durable ToolDispatchService for F4 tool governance.
+func (s *TurnService) SetToolDispatch(td *ToolDispatchService) {
+	s.toolDispatch = td
+}
+
+func (s *TurnService) SetChatTaskService(chatTasks *ChatTaskService) {
+	s.chatTaskService = chatTasks
 }
 
 func NewTurnService(
@@ -162,7 +196,6 @@ func NewTurnService(
 	compression *CompressionService,
 	providerService *ProviderService,
 	credentialPool *CredentialPoolService,
-	contextReference *ContextReferenceService,
 	delegation *DelegationService,
 	toolRegistry *ToolRegistryService,
 	reviewService *ReviewService,
@@ -177,14 +210,12 @@ func NewTurnService(
 		compression:      compression,
 		providerService:  providerService,
 		credentialPool:   credentialPool,
-		contextReference: contextReference,
 		delegation:       delegation,
 		toolRegistry:     toolRegistry,
 		reviewService:    reviewService,
 		growthMetrics:    growthMetrics,
 		convService:      convService,
 		nudgeState:       domain.NewNudgeState(),
-		localToolBroker:  NewLocalToolBroker(),
 		liveResumeBroker: NewLiveResumeBroker(),
 		activeTurnCancel: make(map[string]context.CancelFunc),
 	}
@@ -192,10 +223,6 @@ func NewTurnService(
 
 func (s *TurnService) SetLiveResumeBroker(broker *LiveResumeBroker) {
 	s.liveResumeBroker = broker
-}
-
-func (s *TurnService) SetCliExecutor(executor *cli.CliExecutor) {
-	s.cliExecutor = executor
 }
 
 func (s *TurnService) SetEventBus(eventBus domain.EventBus) {
@@ -234,11 +261,93 @@ func (s *TurnService) publishDomainEvent(ctx context.Context, agentID, turnID, t
 	_ = s.eventBus.Publish(ctx, event)
 }
 
-func (s *TurnService) SubmitLocalToolResult(result LocalToolResult) error {
-	return s.localToolBroker.Submit(result)
+// SubmitToolDecision records an authenticated decision intent. Station owns
+// claim creation and targeted dispatch.
+func (s *TurnService) SubmitToolDecision(
+	ctx context.Context,
+	actorID string,
+	request *model.SubmitToolApprovalDecisionRequest,
+) (*model.SubmitToolApprovalDecisionResponse, error) {
+	if s.toolDispatch == nil {
+		return nil, fmt.Errorf("tool dispatch not configured")
+	}
+	return s.toolDispatch.SubmitDecision(ctx, actorID, request)
 }
 
-func (s *TurnService) CancelTurn(turnID string) bool {
+func (s *TurnService) RegisterClientCapabilityLease(
+	ctx context.Context,
+	actorID string,
+	authSessionID string,
+	deviceID string,
+	request *model.RegisterClientCapabilityLeaseRequest,
+) (*model.RegisterClientCapabilityLeaseResponse, error) {
+	if s.toolDispatch == nil {
+		return nil, fmt.Errorf("tool dispatch not configured")
+	}
+	return s.toolDispatch.RegisterCapabilityLease(ctx, actorID, authSessionID, deviceID, request)
+}
+
+func (s *TurnService) RenewClientCapabilityLease(
+	ctx context.Context,
+	actorID string,
+	authSessionID string,
+	deviceID string,
+	request *model.RenewClientCapabilityLeaseRequest,
+) (*model.RenewClientCapabilityLeaseResponse, error) {
+	if s.toolDispatch == nil {
+		return nil, fmt.Errorf("tool dispatch not configured")
+	}
+	return s.toolDispatch.RenewCapabilityLease(ctx, actorID, authSessionID, deviceID, request)
+}
+
+func (s *TurnService) RevokeClientCapabilityLease(
+	ctx context.Context,
+	actorID string,
+	authSessionID string,
+	deviceID string,
+	request *model.RevokeClientCapabilityLeaseRequest,
+) (*model.RevokeClientCapabilityLeaseResponse, error) {
+	if s.toolDispatch == nil {
+		return nil, fmt.Errorf("tool dispatch not configured")
+	}
+	return s.toolDispatch.RevokeCapabilityLease(ctx, actorID, authSessionID, deviceID, request)
+}
+
+func (s *TurnService) PullClientCapabilityRequests(
+	ctx context.Context,
+	actorID string,
+	deviceID string,
+	request *model.PullClientCapabilityRequestsRequest,
+) (*model.PullClientCapabilityRequestsResponse, error) {
+	if s.toolDispatch == nil {
+		return nil, fmt.Errorf("tool dispatch not configured")
+	}
+	return s.toolDispatch.PullCapabilityRequests(ctx, actorID, deviceID, request)
+}
+
+func (s *TurnService) SubmitClientCapabilityReceipt(
+	ctx context.Context,
+	actorID string,
+	deviceID string,
+	request *model.SubmitClientCapabilityReceiptRequest,
+) (*model.SubmitClientCapabilityReceiptResponse, error) {
+	if s.toolDispatch == nil {
+		return nil, fmt.Errorf("tool dispatch not configured")
+	}
+	return s.toolDispatch.SubmitReceipt(ctx, actorID, deviceID, request)
+}
+
+func (s *TurnService) SubmitClientCapabilityRecoveryReceipt(
+	ctx context.Context,
+	request *model.SubmitClientCapabilityRecoveryReceiptRequest,
+) (*model.SubmitClientCapabilityRecoveryReceiptResponse, error) {
+	if s.toolDispatch == nil {
+		return nil, fmt.Errorf("tool dispatch not configured")
+	}
+	return s.toolDispatch.SubmitRecoveryReceipt(ctx, request)
+}
+
+func (s *TurnService) cancelActiveTurn(turnID string) bool {
 	turnID = strings.TrimSpace(turnID)
 	if turnID == "" {
 		return false
@@ -251,6 +360,32 @@ func (s *TurnService) CancelTurn(turnID string) bool {
 	}
 	cancel()
 	return true
+}
+
+func (s *TurnService) RequestCancelTurn(ctx context.Context, ptid, turnID string) (string, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return "", err
+	}
+	var turn persistence.AgentTurn
+	if err := db.WithContext(ctx).Table("agent_turns AS turn").
+		Select("turn.*").
+		Joins("JOIN agent_conversations AS conversation ON conversation.id = turn.conversation_id").
+		Where("turn.id = ? AND conversation.ptid = ?", strings.TrimSpace(turnID), strings.TrimSpace(ptid)).
+		First(&turn).Error; err != nil {
+		return "", errcode.New(errcode.AgentNotFound, http.StatusNotFound, "turn not found", err)
+	}
+	if turn.Status != string(domain.TurnStatusRunning) &&
+		turn.Status != string(domain.TurnStatusWaitingLocalTool) {
+		return turn.Status, nil
+	}
+	if s.cancelActiveTurn(turn.ID) {
+		return "cancelling", nil
+	}
+	if err := s.cancelTurn(ctx, turn.AgentID, turn.ID, "", ""); err != nil {
+		return "", err
+	}
+	return string(domain.TurnStatusCancelled), nil
 }
 
 func (s *TurnService) RegisterTurn(
@@ -284,7 +419,7 @@ func (s *TurnService) AwaitLiveResume(ctx context.Context, taskID, stepID, turnI
 }
 
 func (s *TurnService) emitTurnEvent(ctx context.Context, config *TurnConfig, turnID string, event TurnEvent) {
-	if config == nil || config.EventSink == nil {
+	if config == nil {
 		return
 	}
 	event.TurnID = turnID
@@ -311,7 +446,9 @@ func (s *TurnService) emitTurnEvent(ctx context.Context, config *TurnConfig, tur
 			event.Seq = seq
 		}
 	}
-	config.EventSink(ctx, event)
+	if config.EventSink != nil {
+		config.EventSink(ctx, event)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -352,12 +489,18 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		defer release()
 	}
 
-	// Step 1 — Create turn record (status=running).
-	turnRecord, err := s.createTurnRecord(ctx, config, userInput)
+	// Step 1 — Create or reopen the turn record (status=running).
+	turnRecord, err := s.createOrReopenTurnRecord(ctx, config, userInput)
 	if err != nil {
 		return nil, err
 	}
 	turnID := turnRecord.ID
+	if config.AttemptID == "" {
+		config.AttemptID, err = s.ensureInitialTurnAttempt(ctx, turnID)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	trace := &domain.TurnTrace{
 		TraceID: generateID("trace"),
@@ -394,41 +537,22 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		mp.OnTurnStart(turnID, userInput)
 	}
 
-	// Persist user message.
-	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleUser), userInput, config.Model); err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist user message")
-		return nil, err
-	}
-
-	// CLI routing: when CliCommand is set or provider is trae-cli, delegate
-	// to the CLI executor which spawns a local CLI process.
-	if config.CliCommand != "" || config.Provider == "trae-cli" {
-		if config.CliCommand == "" {
-			config.CliCommand = "traecli"
+	// Persist user message unless a revision command already created or selected
+	// the immutable source branch.
+	if !config.SkipUserMessage {
+		if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleUser), userInput, config.Model); err != nil {
+			_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist user message")
+			return nil, err
 		}
-		return s.executeCLITurn(ctx, config, turnID, userInput)
 	}
 
-	// Preprocess context references (@file, @folder, @url, …).
 	processedInput := userInput
-	if config.WorkspaceRoot != "" {
-		refResult, refErr := s.contextReference.Process(ctx, userInput, config.WorkspaceRoot, config.ContextWindowSize)
-		if refErr != nil {
-			logger.Warnf(ctx, "context reference processing failed (non-fatal): turn_id=%s err=%v", turnID, refErr)
-		} else if refResult != nil && refResult.Message != refResult.OriginalMessage {
-			processedInput = refResult.Message
-			logger.Infof(ctx, "context references expanded: turn_id=%s expanded=%d blocked=%d injected_tokens=%d",
-				turnID, len(refResult.Expanded), len(refResult.Blocked), refResult.InjectedTokens)
-		}
-	}
 	assemblyResult, err := s.promptAssembly.Assemble(
 		ctx,
 		config.AgentID,
 		config.Identity,
 		config.AgentConfigPrompt,
-		config.Platform,
 		config.AvailableTools,
-		config.WorkspaceRoot,
 		processedInput,
 		config.KnowledgeResources,
 		config.MemoryDisabled,
@@ -463,6 +587,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to load conversation messages")
 		return nil, err
 	}
+	if config.ContextBranchHeadID != "" {
+		messages = projectMessageBranch(messages, config.ContextBranchHeadID)
+	}
 
 	// Replace the last user message content with the reference-expanded version
 	// so the provider receives the enriched input.
@@ -489,6 +616,40 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		}
 	}
 
+	// Persist ContextLedger to TurnAttempt (MCA-D04).
+	if config.AttemptID != "" {
+		if ledgerJSON, ledgerErr := json.Marshal(assemblyResult.Segments); ledgerErr == nil {
+			if db, dbErr := s.getDB(ctx); dbErr == nil {
+				_ = db.WithContext(ctx).Model(&persistence.TurnAttempt{}).
+					Where("id = ?", config.AttemptID).
+					Update("context_ledger", string(ledgerJSON)).Error
+			}
+		}
+	}
+
+	// Step 6 — Admission gate: resolve capability/budget snapshot BEFORE
+	// any provider call. Rejection here guarantees zero provider calls.
+	if s.admissionResolver != nil {
+		snapshot, admitErr := s.admissionResolver.Resolve(ctx, config.ActorID, config.Provider, config.Model)
+		if admitErr != nil {
+			_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "admission rejected")
+			s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+				Type:  "error",
+				Stage: "admission_rejected",
+				Error: admitErr.Error(),
+			})
+			return nil, admitErr
+		}
+		trace.CapabilitySnapshotID = snapshot.SnapshotID
+		if config.AttemptID != "" {
+			if db, dbErr := s.getDB(ctx); dbErr == nil {
+				_ = db.WithContext(ctx).Model(&persistence.TurnAttempt{}).
+					Where("id = ?", config.AttemptID).
+					Update("readiness_snapshot_id", snapshot.SnapshotID).Error
+			}
+		}
+	}
+
 	// Step 7 — Credential lease + provider call with error recovery loop.
 	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 		Type:  "progress",
@@ -497,7 +658,11 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	assistantResponse, providerCalls, streamed, err := s.providerCallWithRetry(
 		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages,
 	)
+	trace.ProviderCalls = providerCalls
 	if err != nil {
+		if usageErr := s.persistAttemptUsage(context.WithoutCancel(ctx), turnID, config.AttemptID, trace); usageErr != nil {
+			return nil, fmt.Errorf("persist failed-attempt usage: %w", usageErr)
+		}
 		if errors.Is(err, context.Canceled) {
 			_ = s.cancelTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID)
 			s.emitTurnEvent(context.WithoutCancel(ctx), config, turnID, TurnEvent{
@@ -513,7 +678,6 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		})
 		return nil, err
 	}
-	trace.ProviderCalls = providerCalls
 	if !streamed {
 		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 			Type:  "text",
@@ -523,9 +687,13 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	// Step 8 — Tool call iteration loop.
-	toolIterations, err := s.processToolCalls(
-		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages, &assistantResponse,
+	toolIterations, paused, err := s.processToolCalls(
+		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages, &assistantResponse, 0,
 	)
+	if usageErr := s.persistAttemptUsage(ctx, turnID, config.AttemptID, trace); usageErr != nil {
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist turn usage")
+		return nil, usageErr
+	}
 	if err != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, fmt.Sprintf("tool call processing failed: %v", err))
 		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
@@ -534,9 +702,66 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		})
 		return nil, err
 	}
+	if paused {
+		if err := s.markTurnWaitingForLocalTool(ctx, turnID, config.AttemptID, toolIterations); err != nil {
+			_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist local tool wait state")
+			return nil, err
+		}
+		if s.chatTaskService != nil && config.StepID != "" {
+			if err := s.chatTaskService.BindChatStepToTurn(
+				ctx,
+				config.TaskID,
+				config.StepID,
+				turnID,
+			); err != nil {
+				_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to bind local tool wait step")
+				return nil, err
+			}
+		}
+		if err := s.saveTurnTrace(ctx, trace); err != nil {
+			logger.Errorf(ctx, "failed to save paused turn trace: turn_id=%s err=%v", turnID, err)
+		}
+		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+			Type:      "progress",
+			Stage:     "waiting_local_tool",
+			Iteration: toolIterations,
+		})
+		return &domain.Turn{
+			TurnID:         turnID,
+			ConversationID: config.ConversationID,
+			AgentID:        config.AgentID,
+			UserInput:      userInput,
+			ToolIterations: toolIterations,
+			Status:         domain.TurnStatusRunning,
+			StartedAt:      turnRecord.StartedAt,
+			Model:          config.Model,
+		}, nil
+	}
 
 	assistantResponse = stripToolCallMarkup(assistantResponse)
+	return s.finishTurnExecution(
+		ctx,
+		config,
+		turnRecord,
+		trace,
+		messages,
+		userInput,
+		assistantResponse,
+		toolIterations,
+	)
+}
 
+func (s *TurnService) finishTurnExecution(
+	ctx context.Context,
+	config *TurnConfig,
+	turnRecord *persistence.AgentTurn,
+	trace *domain.TurnTrace,
+	messages []domain.Message,
+	userInput string,
+	assistantResponse string,
+	toolIterations int,
+) (*domain.Turn, error) {
+	turnID := turnRecord.ID
 	// Step 9 — Update nudge state counters and trigger background review.
 	// Fix 2026-04-11: use thread-safe accessor methods to avoid data race with
 	// the background review goroutine that resets these counters concurrently.
@@ -565,7 +790,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	// Step 10 — Persist assistant message and update turn status.
-	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleAssistant), assistantResponse, config.Model); err != nil {
+	if err := s.completeAssistantMessage(ctx, config, turnID, assistantResponse); err != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist assistant message")
 		return nil, err
 	}
@@ -589,9 +814,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	now := time.Now()
 	// Extract the model name from the last successful provider call record.
 	turnModel := config.Model
-	for i := len(providerCalls) - 1; i >= 0; i-- {
-		if providerCalls[i].Model != "" {
-			turnModel = providerCalls[i].Model
+	for i := len(trace.ProviderCalls) - 1; i >= 0; i-- {
+		if trace.ProviderCalls[i].Model != "" {
+			turnModel = trace.ProviderCalls[i].Model
 			break
 		}
 	}
@@ -624,7 +849,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		s.growthMetrics.RecordEvent(ctx, config.AgentID, EventTurnCompleted, CategoryTurn, turnID, fmt.Sprintf("iterations=%d", toolIterations), "success")
 	}
 
-	go s.memoryService.ExtractFromTurn(context.Background(), config.AgentID, config.ConversationID, turnID, userInput, assistantResponse)
+	if s.memoryService != nil {
+		go s.memoryService.ExtractFromTurn(context.Background(), config.AgentID, config.ConversationID, turnID, userInput, assistantResponse)
+	}
 
 	// Update skill usage stats for skills loaded during this turn.
 	if len(trace.SkillsLoaded) > 0 && s.skillService != nil {
@@ -632,6 +859,35 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	return turn, nil
+}
+
+func (s *TurnService) ensureInitialTurnAttempt(ctx context.Context, turnID string) (string, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return "", err
+	}
+	var existing persistence.TurnAttempt
+	err = db.WithContext(ctx).
+		Where("turn_id = ?", turnID).
+		Order("attempt_index ASC").
+		First(&existing).Error
+	if err == nil {
+		return existing.ID, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return "", fmt.Errorf("load initial turn attempt: %w", err)
+	}
+	attempt := &persistence.TurnAttempt{
+		ID:           generateID("attempt"),
+		TurnID:       turnID,
+		AttemptIndex: 1,
+		Status:       string(domain.TurnStatusRunning),
+		StartedAt:    time.Now().UTC(),
+	}
+	if err := db.WithContext(ctx).Create(attempt).Error; err != nil {
+		return "", fmt.Errorf("persist initial turn attempt: %w", err)
+	}
+	return attempt.ID, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -708,9 +964,7 @@ func (s *TurnService) runCompression(
 		config.AgentID,
 		config.Identity,
 		config.AgentConfigPrompt,
-		config.Platform,
 		config.AvailableTools,
-		config.WorkspaceRoot,
 		messages[len(messages)-1].Content,
 		config.KnowledgeResources,
 		config.MemoryDisabled,
@@ -808,7 +1062,7 @@ func (s *TurnService) splitSession(ctx context.Context, config *TurnConfig) (str
 	newConv := persistence.Conversation{
 		ID:         newID,
 		AgentID:    config.AgentID,
-		UserID:     "",
+		Ptid:       config.ActorID,
 		Title:      "Continued (post-compression)",
 		ProviderID: config.Provider,
 		Status:     "active",
@@ -1013,6 +1267,10 @@ func (s *TurnService) providerCallWithRetry(
 const (
 	maxToolIterations = 25
 	localToolTimeout  = 120 * time.Second
+
+	toolContinuationPollInterval      = 250 * time.Millisecond
+	toolContinuationLeaseTTL          = 2 * time.Minute
+	preparedTakeoverReconcileInterval = 5 * time.Second
 )
 
 // processToolCalls parses tool_calls from the assistant response, executes
@@ -1028,13 +1286,11 @@ func (s *TurnService) processToolCalls(
 	systemPrompt string,
 	messages []domain.Message,
 	responsePtr *string,
-) (int, error) {
-
-	iterations := 0
+	startingIterations int,
+) (int, bool, error) {
+	iterations := startingIterations
 
 	for iterations < maxToolIterations {
-
-		// Parse tool calls from the current assistant response.
 		toolCalls := s.parseToolCalls(*responsePtr)
 		if len(toolCalls) == 0 {
 			break
@@ -1043,6 +1299,16 @@ func (s *TurnService) processToolCalls(
 		iterations++
 		logger.Infof(ctx, "tool iteration %d: turn_id=%s tool_count=%d", iterations, turnID, len(toolCalls))
 
+		if err := s.persistMessage(
+			ctx,
+			config.ConversationID,
+			turnID,
+			string(domain.MessageRoleAssistant),
+			*responsePtr,
+			config.Model,
+		); err != nil {
+			return iterations, false, fmt.Errorf("persist assistant tool-call message: %w", err)
+		}
 		messages = append(messages, domain.Message{
 			MessageID:      generateID("msg"),
 			ConversationID: config.ConversationID,
@@ -1053,9 +1319,12 @@ func (s *TurnService) processToolCalls(
 			UpdatedAt:      time.Now(),
 		})
 
-		for _, tc := range toolCalls {
+		toolBatchID := stableToolBatchID(turnID, config.AttemptID, iterations)
+		clientProposals := make([]ClientToolProposal, 0, len(toolCalls))
+
+		for index, tc := range toolCalls {
 			callStart := time.Now()
-			callID := generateID("toolcall")
+			callID := stableToolCallID(toolBatchID, index, tc)
 			s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 				Type:       "tool_call",
 				ToolCallID: callID,
@@ -1064,30 +1333,35 @@ func (s *TurnService) processToolCalls(
 				Iteration:  iterations,
 			})
 
+			if isClientOwnedTool(tc.ToolName) {
+				capabilityID := capabilityIDForTool(tc.ToolName)
+				if capabilityID == "" {
+					return iterations, false, fmt.Errorf("client capability mapping missing for %s", tc.ToolName)
+				}
+				clientProposals = append(clientProposals, ClientToolProposal{
+					ToolCallID:    callID,
+					ToolName:      tc.ToolName,
+					CapabilityID:  capabilityID,
+					SchemaVersion: "1",
+					Arguments:     []byte(tc.Arguments),
+				})
+				continue
+			}
+
 			var toolResult string
 			var toolErr error
 
-			// Build per-call metadata for tool handlers.
 			meta := &domain.ToolCallMeta{
 				AgentID:        config.AgentID,
 				ConversationID: config.ConversationID,
 				TurnID:         turnID,
-				Platform:       config.Platform,
-				WorkspaceRoot:  config.WorkspaceRoot,
 			}
 
-			// Delegation: handle delegate_task via DelegationService with
-			// recursive mini turn-loop executor.
 			if tc.ToolName == "station_human_decision_resume" {
 				toolResult, toolErr = s.executeStationHumanDecisionResumeTool(ctx, config, turnID, tc)
-			} else if tc.ToolName == "local_mcp" {
-				toolResult, toolErr = s.executeLocalMCPTool(ctx, config, turnID, callID, tc)
-			} else if isDesktopLocalBuiltinTool(tc.ToolName) {
-				toolResult, toolErr = s.executeDesktopLocalBuiltinTool(ctx, config, turnID, callID, tc)
 			} else if tc.ToolName == "delegate_task" {
 				toolResult, toolErr = s.executeDelegation(ctx, turnID, tc, config)
 			} else {
-				// Central dispatch via ToolRegistryService.
 				result := s.toolRegistry.Dispatch(ctx, meta, tc.ToolName, tc.Arguments)
 				toolResult = result.Content
 				if result.IsError {
@@ -1095,83 +1369,72 @@ func (s *TurnService) processToolCalls(
 				}
 			}
 
-			callDuration := time.Since(callStart)
-
-			resultContent := toolResult
-			if toolErr != nil {
-				resultContent = fmt.Sprintf("[tool_error] %s: %v", tc.ToolName, toolErr)
-				logger.Warnf(ctx, "tool call failed: turn_id=%s tool=%s err=%v", turnID, tc.ToolName, toolErr)
+			if err := s.recordToolOutcome(
+				ctx,
+				config,
+				turnID,
+				trace,
+				&messages,
+				callID,
+				tc,
+				toolResult,
+				toolErr,
+				time.Since(callStart),
+				iterations,
+				true,
+			); err != nil {
+				return iterations, false, err
 			}
-			toolEvent := TurnEvent{
-				Type:       "tool_result",
-				ToolCallID: callID,
-				ToolName:   tc.ToolName,
-				Result:     resultContent,
-				Iteration:  iterations,
-			}
-			if toolErr != nil {
-				toolEvent.Error = toolErr.Error()
-			}
-			s.emitTurnEvent(ctx, config, turnID, toolEvent)
-
-			// Track skills loaded for growth attribution.
-			if tc.ToolName == "skill_view" && toolErr == nil {
-				var viewArgs struct {
-					Name string `json:"name"`
-				}
-				if json.Unmarshal([]byte(tc.Arguments), &viewArgs) == nil && viewArgs.Name != "" {
-					alreadyTracked := false
-					for _, s := range trace.SkillsLoaded {
-						if s == viewArgs.Name {
-							alreadyTracked = true
-							break
-						}
-					}
-					if !alreadyTracked {
-						trace.SkillsLoaded = append(trace.SkillsLoaded, viewArgs.Name)
-					}
-				}
-			}
-
-			// Record the tool call in trace.
-			trace.ToolCalls = append(trace.ToolCalls, domain.ToolCallRecord{
-				ToolName:  tc.ToolName,
-				Arguments: tc.Arguments,
-				Result:    resultContent,
-				Duration:  callDuration,
-			})
-
-			// Persist tool result as a tool-role message.
-			toolMsg := fmt.Sprintf("[%s] %s", tc.ToolName, resultContent)
-			if persistErr := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleTool), toolMsg, config.Model); persistErr != nil {
-				logger.Errorf(ctx, "failed to persist tool message: turn_id=%s tool=%s err=%v", turnID, tc.ToolName, persistErr)
-			}
-
-			// Append to in-memory message list for the next provider call.
-			messages = append(messages, domain.Message{
-				MessageID:      generateID("msg"),
-				ConversationID: config.ConversationID,
-				TurnID:         turnID,
-				Role:           domain.MessageRoleTool,
-				Content:        toolMsg,
-				CreatedAt:      time.Now(),
-				UpdatedAt:      time.Now(),
-			})
 		}
 
-		// Re-invoke the provider with tool results appended.
-		nextResponse, _, _, reCallErr := s.providerCallWithRetry(
+		if len(clientProposals) > 0 {
+			if s.toolDispatch == nil {
+				return iterations, false, fmt.Errorf("tool dispatch not configured")
+			}
+			if strings.TrimSpace(config.ClientCapabilitySessionID) == "" {
+				return iterations, false, errcode.New(
+					errcode.AgentInvalidRequest,
+					http.StatusConflict,
+					"client capability session is required for device-local tools",
+					nil,
+				)
+			}
+			decisions, err := s.toolDispatch.ProposeBatch(ctx, ToolBatchProposal{
+				ActorID:                   config.ActorID,
+				TurnID:                    turnID,
+				AttemptID:                 config.AttemptID,
+				ToolBatchID:               toolBatchID,
+				ConversationID:            config.ConversationID,
+				AgentID:                   config.AgentID,
+				Provider:                  config.Provider,
+				Model:                     config.Model,
+				Effort:                    config.Effort,
+				SystemPrompt:              systemPrompt,
+				Iteration:                 uint32(iterations),
+				MaxRetries:                uint32(config.MaxRetries),
+				ContextWindowSize:         uint32(config.ContextWindowSize),
+				TaskID:                    config.TaskID,
+				StepID:                    config.StepID,
+				ClientCapabilitySessionID: config.ClientCapabilitySessionID,
+				Deadline:                  time.Now().UTC().Add(localToolTimeout),
+				Calls:                     clientProposals,
+			})
+			if err != nil {
+				return iterations, false, err
+			}
+			for _, decision := range decisions {
+				s.emitTurnEvent(ctx, config, turnID, toolDecisionTurnEvent(decision, iterations))
+			}
+			return iterations, true, nil
+		}
+
+		nextResponse, providerCalls, _, reCallErr := s.providerCallWithRetry(
 			ctx, config, turnID, trace, systemPrompt, messages,
 		)
 		if reCallErr != nil {
-			logger.Warnf(ctx, "provider re-call failed after tool iteration %d (non-fatal): turn_id=%s err=%v",
-				iterations, turnID, reCallErr)
-			*responsePtr = stripToolCallMarkup(*responsePtr)
-			if strings.TrimSpace(*responsePtr) == "" {
-				*responsePtr = "I've noted that information."
-			}
-			return iterations, nil
+			return iterations, false, fmt.Errorf("provider re-call after tool iteration %d: %w", iterations, reCallErr)
 		}
+		trace.ProviderCalls = append(trace.ProviderCalls, providerCalls...)
 
 		*responsePtr = nextResponse
 	}
@@ -1181,21 +1444,590 @@ func (s *TurnService) processToolCalls(
 		*responsePtr = stripToolCallMarkup(*responsePtr)
 	}
 
-	return iterations, nil
+	return iterations, false, nil
 }
 
-func isDesktopLocalBuiltinTool(toolName string) bool {
-	switch toolName {
-	case "local_file_read",
-		"local_workspace_list",
-		"local_clipboard_read",
-		"local_clipboard_write",
-		"local_shell_safe",
-		"oauth_connector_call":
-		return true
-	default:
-		return false
+func toolDecisionTurnEvent(decision ProposalDecision, iteration int) TurnEvent {
+	if decision.Status == persistence.ToolCallStatusWaitingApproval {
+		return TurnEvent{
+			Type:             "tool_approval_required",
+			ToolCallID:       decision.ToolCallID,
+			ToolName:         decision.ToolName,
+			Arguments:        decision.Arguments,
+			ApprovalID:       decision.ApprovalID,
+			DecisionRevision: decision.DecisionRevision,
+			Iteration:        iteration,
+		}
 	}
+	return TurnEvent{
+		Type:       "tool_dispatch_state",
+		ToolCallID: decision.ToolCallID,
+		Stage:      decision.Status,
+		Iteration:  iteration,
+	}
+}
+
+func (s *TurnService) markTurnWaitingForLocalTool(
+	ctx context.Context,
+	turnID string,
+	attemptID string,
+	toolIterations int,
+) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&persistence.AgentTurn{}).
+			Where("id = ? AND status IN ?", turnID, []string{
+				string(domain.TurnStatusRunning),
+				string(domain.TurnStatusWaitingLocalTool),
+			}).
+			Updates(map[string]interface{}{
+				"status":          string(domain.TurnStatusWaitingLocalTool),
+				"tool_iterations": toolIterations,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("turn %s is not eligible to wait for a local tool", turnID)
+		}
+		return tx.Model(&persistence.TurnAttempt{}).
+			Where("id = ? AND turn_id = ?", attemptID, turnID).
+			Update("status", string(domain.TurnStatusWaitingLocalTool)).Error
+	})
+}
+
+func (s *TurnService) RunToolContinuationWorker(ctx context.Context) {
+	ticker := time.NewTicker(toolContinuationPollInterval)
+	defer ticker.Stop()
+	nextTakeoverReconciliation := time.Time{}
+
+	for {
+		now := time.Now()
+		if !now.Before(nextTakeoverReconciliation) {
+			if _, err := s.toolDispatch.ReconcilePreparedCapabilityTakeovers(ctx); err != nil {
+				logger.Errorf(ctx, "prepared capability takeover failed: %v", err)
+			}
+			nextTakeoverReconciliation = now.Add(preparedTakeoverReconcileInterval)
+		}
+		if _, err := s.toolDispatch.SettleExpiredToolCalls(ctx); err != nil {
+			logger.Errorf(ctx, "expired tool settlement failed: %v", err)
+		} else if err := s.settleBlockedToolBatches(ctx); err != nil {
+			logger.Errorf(ctx, "blocked tool batch settlement failed: %v", err)
+		} else if err := s.toolDispatch.ReconcileExpiredContinuations(ctx); err != nil {
+			logger.Errorf(ctx, "tool continuation reconciliation failed: %v", err)
+		} else if err := s.settleReconciliationRequiredTurns(ctx); err != nil {
+			logger.Errorf(ctx, "tool continuation settlement failed: %v", err)
+		}
+		for {
+			resumed, err := s.ResumeReadyToolContinuation(ctx, toolContinuationLeaseTTL)
+			if err != nil {
+				logger.Errorf(ctx, "tool continuation worker failed: %v", err)
+				break
+			}
+			if !resumed {
+				break
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *TurnService) settleBlockedToolBatches(ctx context.Context) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	var rows []struct {
+		TurnID         string
+		AgentID        string
+		ConversationID string
+		TaskID         string
+		StepID         string
+	}
+	if err := db.WithContext(ctx).
+		Table("agent_tool_batches AS batch").
+		Select("batch.turn_id, batch.agent_id, batch.conversation_id, batch.task_id, batch.step_id").
+		Joins("JOIN agent_turns AS turn_record ON turn_record.id = batch.turn_id").
+		Where(
+			"batch.status = ? AND turn_record.status = ?",
+			persistence.ToolBatchStatusBlocked,
+			string(domain.TurnStatusWaitingLocalTool),
+		).
+		Scan(&rows).Error; err != nil {
+		return fmt.Errorf("load blocked tool batches: %w", err)
+	}
+	for _, row := range rows {
+		if err := s.interruptTurnForToolBlock(
+			ctx,
+			row.AgentID,
+			row.TurnID,
+			row.ConversationID,
+			row.TaskID,
+			row.StepID,
+			"tool_batch_blocked",
+		); err != nil {
+			return err
+		}
+		if s.chatTaskService != nil && row.StepID != "" {
+			if err := s.chatTaskService.FailChatStep(
+				ctx,
+				row.TaskID,
+				row.StepID,
+				"tool batch blocked",
+			); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *TurnService) settleReconciliationRequiredTurns(ctx context.Context) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	var rows []struct {
+		TurnID         string
+		AgentID        string
+		ConversationID string
+		TaskID         string
+		StepID         string
+	}
+	if err := db.WithContext(ctx).
+		Table("agent_tool_continuations AS continuation").
+		Select("batch.turn_id, batch.agent_id, batch.conversation_id, batch.task_id, batch.step_id").
+		Joins("JOIN agent_tool_batches AS batch ON batch.id = continuation.tool_batch_id").
+		Joins("JOIN agent_turns AS turn_record ON turn_record.id = batch.turn_id").
+		Where(
+			"continuation.status = ? AND turn_record.status = ?",
+			persistence.ToolContinuationStatusReconciliationRequired,
+			string(domain.TurnStatusWaitingLocalTool),
+		).
+		Scan(&rows).Error; err != nil {
+		return fmt.Errorf("load reconciliation-required turns: %w", err)
+	}
+	for _, row := range rows {
+		if err := s.interruptTurnForToolBlock(
+			ctx,
+			row.AgentID,
+			row.TurnID,
+			row.ConversationID,
+			row.TaskID,
+			row.StepID,
+			"tool_continuation_reconciliation_required",
+		); err != nil {
+			return err
+		}
+		if s.chatTaskService != nil && row.StepID != "" {
+			if err := s.chatTaskService.FailChatStep(
+				ctx,
+				row.TaskID,
+				row.StepID,
+				"tool continuation requires reconciliation",
+			); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *TurnService) interruptTurnForToolBlock(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	conversationID string,
+	taskID string,
+	stepID string,
+	reasonCode string,
+) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&persistence.AgentTurn{}).
+			Where("id = ? AND status = ?", turnID, string(domain.TurnStatusWaitingLocalTool)).
+			Updates(map[string]interface{}{
+				"status":         string(domain.TurnStatusInterrupted),
+				"final_response": reasonCode,
+				"ended_at":       now,
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&persistence.TurnAttempt{}).
+			Where("turn_id = ? AND ended_at IS NULL", turnID).
+			Updates(map[string]interface{}{
+				"status":     string(domain.TurnStatusInterrupted),
+				"error_code": reasonCode,
+				"ended_at":   now,
+			}).Error
+	}); err != nil {
+		return fmt.Errorf("interrupt reconciliation-required turn: %w", err)
+	}
+	s.emitTurnEvent(ctx, &TurnConfig{
+		AgentID:        agentID,
+		ConversationID: conversationID,
+		TaskID:         taskID,
+		StepID:         stepID,
+	}, turnID, TurnEvent{
+		Type:  "error",
+		Stage: reasonCode,
+		Error: reasonCode,
+	})
+	return nil
+}
+
+func (s *TurnService) ResumeReadyToolContinuation(
+	ctx context.Context,
+	leaseDuration time.Duration,
+) (bool, error) {
+	if s.toolDispatch == nil {
+		return false, fmt.Errorf("tool dispatch not configured")
+	}
+	if err := s.toolDispatch.ReconcileExpiredContinuations(ctx); err != nil {
+		return false, err
+	}
+	continuation, err := s.toolDispatch.ClaimReadyContinuation(ctx, leaseDuration)
+	if err == gorm.ErrRecordNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return true, err
+	}
+	var batch persistence.ToolBatch
+	if err := db.WithContext(ctx).First(&batch, "id = ?", continuation.ToolBatchID).Error; err != nil {
+		return true, fmt.Errorf("load continuation tool batch: %w", err)
+	}
+	var turnRecord persistence.AgentTurn
+	if err := db.WithContext(ctx).First(&turnRecord, "id = ?", continuation.TurnID).Error; err != nil {
+		return true, fmt.Errorf("load continuation turn: %w", err)
+	}
+	if turnRecord.Status != string(domain.TurnStatusWaitingLocalTool) {
+		return true, fmt.Errorf("turn %s is not waiting for a local tool", turnRecord.ID)
+	}
+
+	config := &TurnConfig{
+		TurnID:                    batch.TurnID,
+		AgentID:                   batch.AgentID,
+		ActorID:                   batch.ActorID,
+		ConversationID:            batch.ConversationID,
+		ContextWindowSize:         int(batch.ContextWindowSize),
+		MaxRetries:                int(batch.MaxRetries),
+		Provider:                  batch.Provider,
+		Model:                     batch.Model,
+		Effort:                    batch.Effort,
+		ClientCapabilitySessionID: batch.CapabilitySessionID,
+		TaskID:                    batch.TaskID,
+		StepID:                    batch.StepID,
+		AttemptID:                 batch.AttemptID,
+	}
+	trace, err := s.loadTurnTraceForResume(ctx, batch.TurnID)
+	if err != nil {
+		return true, err
+	}
+	messages, err := s.loadMessages(ctx, batch.ConversationID)
+	if err != nil {
+		return true, err
+	}
+	if err := s.appendClientToolResultsToTrace(ctx, trace, batch.ID); err != nil {
+		return true, err
+	}
+	if err := s.toolDispatch.MarkContinuationEmitted(
+		ctx,
+		continuation.ID,
+		continuation.LeaseID,
+		continuation.FencingToken,
+		false,
+	); err != nil {
+		return true, err
+	}
+
+	providerCall := s.resumeProviderCall
+	if providerCall == nil {
+		providerCall = s.providerCallWithRetry
+	}
+	nextResponse, providerCalls, _, callErr := providerCall(
+		ctx,
+		config,
+		batch.TurnID,
+		trace,
+		batch.SystemPrompt,
+		messages,
+	)
+	trace.ProviderCalls = append(trace.ProviderCalls, providerCalls...)
+	if callErr != nil {
+		if usageErr := s.persistAttemptUsage(ctx, batch.TurnID, batch.AttemptID, trace); usageErr != nil {
+			return true, fmt.Errorf("persist continuation usage: %w", usageErr)
+		}
+		_ = s.saveTurnTrace(ctx, trace)
+		_ = s.toolDispatch.CompleteContinuation(
+			ctx,
+			continuation.ID,
+			continuation.LeaseID,
+			continuation.FencingToken,
+			nil,
+		)
+		_ = s.failTurn(ctx, batch.AgentID, batch.TurnID, batch.TaskID, batch.StepID, "provider continuation failed")
+		if s.chatTaskService != nil && batch.StepID != "" {
+			_ = s.chatTaskService.FailChatStep(ctx, batch.TaskID, batch.StepID, "provider continuation failed")
+		}
+		return true, fmt.Errorf("continue provider after tool batch: %w", callErr)
+	}
+
+	toolIterations, paused, processErr := s.processToolCalls(
+		ctx,
+		config,
+		batch.TurnID,
+		trace,
+		batch.SystemPrompt,
+		messages,
+		&nextResponse,
+		int(batch.Iteration),
+	)
+	if usageErr := s.persistAttemptUsage(ctx, batch.TurnID, batch.AttemptID, trace); usageErr != nil {
+		return true, fmt.Errorf("persist continuation usage: %w", usageErr)
+	}
+	if processErr != nil {
+		_ = s.saveTurnTrace(ctx, trace)
+		_ = s.toolDispatch.CompleteContinuation(
+			ctx,
+			continuation.ID,
+			continuation.LeaseID,
+			continuation.FencingToken,
+			[]byte(nextResponse),
+		)
+		_ = s.failTurn(ctx, batch.AgentID, batch.TurnID, batch.TaskID, batch.StepID, "tool continuation processing failed")
+		if s.chatTaskService != nil && batch.StepID != "" {
+			_ = s.chatTaskService.FailChatStep(ctx, batch.TaskID, batch.StepID, "tool continuation processing failed")
+		}
+		return true, processErr
+	}
+
+	if paused {
+		if err := s.markTurnWaitingForLocalTool(ctx, batch.TurnID, batch.AttemptID, toolIterations); err != nil {
+			return true, err
+		}
+		if err := s.saveTurnTrace(ctx, trace); err != nil {
+			logger.Errorf(ctx, "failed to save resumed turn trace: turn_id=%s err=%v", batch.TurnID, err)
+		}
+		s.emitTurnEvent(ctx, config, batch.TurnID, TurnEvent{
+			Type:      "progress",
+			Stage:     "waiting_local_tool",
+			Iteration: toolIterations,
+		})
+	} else {
+		nextResponse = stripToolCallMarkup(nextResponse)
+		if _, err := s.finishTurnExecution(
+			ctx,
+			config,
+			&turnRecord,
+			trace,
+			messages,
+			stringValue(turnRecord.UserInput),
+			nextResponse,
+			toolIterations,
+		); err != nil {
+			return true, err
+		}
+		if s.chatTaskService != nil && batch.StepID != "" {
+			if err := s.chatTaskService.FinishChatStep(
+				ctx,
+				batch.TaskID,
+				batch.StepID,
+				batch.TurnID,
+				nextResponse,
+			); err != nil {
+				return true, err
+			}
+		}
+	}
+
+	if err := s.toolDispatch.CompleteContinuation(
+		ctx,
+		continuation.ID,
+		continuation.LeaseID,
+		continuation.FencingToken,
+		[]byte(nextResponse),
+	); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func (s *TurnService) loadTurnTraceForResume(ctx context.Context, turnID string) (*domain.TurnTrace, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var record persistence.TurnTrace
+	err = db.WithContext(ctx).Where("turn_id = ?", turnID).First(&record).Error
+	if err == gorm.ErrRecordNotFound {
+		return &domain.TurnTrace{TraceID: generateID("trace"), TurnID: turnID}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load turn trace for continuation: %w", err)
+	}
+	entry, err := persistenceTurnTraceToDomain(&record)
+	if err != nil {
+		return nil, fmt.Errorf("decode turn trace for continuation: %w", err)
+	}
+	return &entry.Trace, nil
+}
+
+func (s *TurnService) appendClientToolResultsToTrace(
+	ctx context.Context,
+	trace *domain.TurnTrace,
+	toolBatchID string,
+) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	var calls []persistence.ToolCall
+	if err := db.WithContext(ctx).
+		Where("tool_batch_id = ?", toolBatchID).
+		Order("created_at ASC").
+		Find(&calls).Error; err != nil {
+		return fmt.Errorf("load tool calls for continuation trace: %w", err)
+	}
+	for i := range calls {
+		trace.ToolCalls = append(trace.ToolCalls, domain.ToolCallRecord{
+			ToolName:  calls[i].ToolName,
+			Arguments: string(calls[i].BoundedArguments),
+			Result:    calls[i].ResultRef,
+		})
+	}
+	return nil
+}
+
+func (s *TurnService) recordToolOutcome(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	trace *domain.TurnTrace,
+	messages *[]domain.Message,
+	callID string,
+	tc toolCallEntry,
+	toolResult string,
+	toolErr error,
+	duration time.Duration,
+	iteration int,
+	persist bool,
+) error {
+	resultContent := toolResult
+	if toolErr != nil {
+		resultContent = fmt.Sprintf("[tool_error] %s: %v", tc.ToolName, toolErr)
+		logger.Warnf(ctx, "tool call failed: turn_id=%s tool=%s err=%v", turnID, tc.ToolName, toolErr)
+	}
+	event := TurnEvent{
+		Type:       "tool_result",
+		ToolCallID: callID,
+		ToolName:   tc.ToolName,
+		Result:     resultContent,
+		Iteration:  iteration,
+	}
+	if toolErr != nil {
+		event.Error = toolErr.Error()
+	}
+	s.emitTurnEvent(ctx, config, turnID, event)
+
+	if tc.ToolName == "skill_view" && toolErr == nil {
+		var viewArgs struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal([]byte(tc.Arguments), &viewArgs) == nil && viewArgs.Name != "" {
+			seen := false
+			for _, skillName := range trace.SkillsLoaded {
+				if skillName == viewArgs.Name {
+					seen = true
+					break
+				}
+			}
+			if !seen {
+				trace.SkillsLoaded = append(trace.SkillsLoaded, viewArgs.Name)
+			}
+		}
+	}
+
+	trace.ToolCalls = append(trace.ToolCalls, domain.ToolCallRecord{
+		ToolName:  tc.ToolName,
+		Arguments: tc.Arguments,
+		Result:    resultContent,
+		Duration:  duration,
+	})
+	toolMessage := fmt.Sprintf("[%s] %s", tc.ToolName, resultContent)
+	if persist {
+		if err := s.persistMessage(
+			ctx,
+			config.ConversationID,
+			turnID,
+			string(domain.MessageRoleTool),
+			toolMessage,
+			config.Model,
+		); err != nil {
+			return fmt.Errorf("persist tool message %s: %w", tc.ToolName, err)
+		}
+	}
+	now := time.Now()
+	*messages = append(*messages, domain.Message{
+		MessageID:      generateID("msg"),
+		ConversationID: config.ConversationID,
+		TurnID:         turnID,
+		Role:           domain.MessageRoleTool,
+		Content:        toolMessage,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	})
+	return nil
+}
+
+func isClientOwnedTool(toolName string) bool {
+	return capabilityIDForTool(toolName) != ""
+}
+
+func capabilityIDForTool(toolName string) string {
+	switch toolName {
+	case "local_file_read":
+		return "filesystem.read"
+	case "local_workspace_list":
+		return "filesystem.list"
+	case "local_clipboard_read":
+		return "clipboard.read"
+	case "local_clipboard_write":
+		return "clipboard.write"
+	case "local_shell_safe":
+		return "shell.execute"
+	case "local_mcp":
+		return "mcp.invoke"
+	default:
+		return ""
+	}
+}
+
+func stableToolBatchID(turnID string, attemptID string, iteration int) string {
+	value := hashString(fmt.Sprintf("%s\x00%s\x00%d", turnID, attemptID, iteration))
+	return "tool_batch_" + value[:24]
+}
+
+func stableToolCallID(toolBatchID string, index int, call toolCallEntry) string {
+	value := hashString(fmt.Sprintf("%s\x00%d\x00%s\x00%s", toolBatchID, index, call.ToolName, call.Arguments))
+	return "tool_call_" + value[:24]
 }
 
 func (s *TurnService) executeStationHumanDecisionResumeTool(
@@ -1264,112 +2096,6 @@ func (s *TurnService) executeStationHumanDecisionResumeTool(
 	return string(encoded), nil
 }
 
-func (s *TurnService) executeLocalMCPTool(
-	ctx context.Context,
-	config *TurnConfig,
-	turnID string,
-	callID string,
-	tc toolCallEntry,
-) (string, error) {
-	var args struct {
-		ServerName      string          `json:"server_name"`
-		ServerNameCamel string          `json:"serverName"`
-		ToolName        string          `json:"tool_name"`
-		ToolNameCamel   string          `json:"toolName"`
-		Arguments       json.RawMessage `json:"arguments"`
-	}
-	if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
-		return "", fmt.Errorf("invalid local_mcp arguments: %w", err)
-	}
-
-	serverName := strings.TrimSpace(args.ServerName)
-	if serverName == "" {
-		serverName = strings.TrimSpace(args.ServerNameCamel)
-	}
-	toolName := strings.TrimSpace(args.ToolName)
-	if toolName == "" {
-		toolName = strings.TrimSpace(args.ToolNameCamel)
-	}
-	if serverName == "" || toolName == "" {
-		return "", fmt.Errorf("local_mcp requires server_name and tool_name")
-	}
-
-	toolArgs := strings.TrimSpace(string(args.Arguments))
-	if toolArgs == "" {
-		toolArgs = "{}"
-	}
-
-	resultCh, cleanup, err := s.localToolBroker.Register(turnID, callID)
-	if err != nil {
-		return "", err
-	}
-	defer cleanup()
-
-	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
-		Type:       "local_tool_request",
-		Source:     "mcp",
-		ServerName: serverName,
-		ToolCallID: callID,
-		ToolName:   toolName,
-		Arguments:  toolArgs,
-	})
-
-	waitCtx, cancel := context.WithTimeout(ctx, localToolTimeout)
-	defer cancel()
-	select {
-	case result := <-resultCh:
-		if result.IsError {
-			return result.Content, fmt.Errorf("%s", result.Content)
-		}
-		return result.Content, nil
-	case <-waitCtx.Done():
-		return "", fmt.Errorf("local_mcp result wait failed: %w", waitCtx.Err())
-	}
-}
-
-func (s *TurnService) executeDesktopLocalBuiltinTool(
-	ctx context.Context,
-	config *TurnConfig,
-	turnID string,
-	callID string,
-	tc toolCallEntry,
-) (string, error) {
-	toolArgs := strings.TrimSpace(tc.Arguments)
-	if toolArgs == "" {
-		toolArgs = "{}"
-	}
-	if !json.Valid([]byte(toolArgs)) {
-		return "", fmt.Errorf("%s arguments must be valid JSON", tc.ToolName)
-	}
-
-	resultCh, cleanup, err := s.localToolBroker.Register(turnID, callID)
-	if err != nil {
-		return "", err
-	}
-	defer cleanup()
-
-	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
-		Type:          "local_tool_request",
-		Source:        "builtin",
-		ToolCallID:    callID,
-		ToolName:      tc.ToolName,
-		Arguments:     toolArgs,
-		WorkspaceRoot: config.WorkspaceRoot,
-	})
-
-	waitCtx, cancel := context.WithTimeout(ctx, localToolTimeout)
-	defer cancel()
-	select {
-	case result := <-resultCh:
-		if result.IsError {
-			return result.Content, fmt.Errorf("%s", result.Content)
-		}
-		return result.Content, nil
-	case <-waitCtx.Done():
-		return "", fmt.Errorf("%s result wait failed: %w", tc.ToolName, waitCtx.Err())
-	}
-}
-
 // ---------------------------------------------------------------------------
 // executeDelegation — dispatch delegate_task tool calls
 // ---------------------------------------------------------------------------
@@ -1400,7 +2126,6 @@ func (s *TurnService) executeDelegation(
 			ConversationID:    fmt.Sprintf("%s_child_%s", config.ConversationID, t.TaskID),
 			Identity:          config.Identity,
 			AgentConfigPrompt: config.AgentConfigPrompt,
-			Platform:          config.Platform,
 			AvailableTools:    toolset,
 			ContextWindowSize: config.ContextWindowSize,
 			MaxRetries:        config.MaxRetries,
@@ -1408,7 +2133,6 @@ func (s *TurnService) executeDelegation(
 			Model:             config.Model,
 			Effort:            config.Effort,
 			FallbackModel:     config.FallbackModel,
-			WorkspaceRoot:     config.WorkspaceRoot,
 			RotationStrategy:  config.RotationStrategy,
 			Depth:             config.Depth + 1,
 		}
@@ -1663,13 +2387,52 @@ func indexOf(s, substr string) int {
 // Helper: createTurnRecord
 // ---------------------------------------------------------------------------
 
-func (s *TurnService) createTurnRecord(ctx context.Context, config *TurnConfig, userInput string) (*persistence.AgentTurn, error) {
+func (s *TurnService) createOrReopenTurnRecord(ctx context.Context, config *TurnConfig, userInput string) (*persistence.AgentTurn, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	now := time.Now()
+	if precreatedTurnID := strings.TrimSpace(config.PrecreatedTurnID); precreatedTurnID != "" {
+		var record persistence.AgentTurn
+		if err := db.WithContext(ctx).
+			Where("id = ? AND conversation_id = ? AND status = ?", precreatedTurnID, config.ConversationID, string(domain.TurnStatusRunning)).
+			First(&record).Error; err != nil {
+			return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusConflict,
+				"precreated turn admission is unavailable", err)
+		}
+		config.TurnID = record.ID
+		return &record, nil
+	}
+	if existingTurnID := strings.TrimSpace(config.ExistingTurnID); existingTurnID != "" {
+		var record persistence.AgentTurn
+		if err := db.WithContext(ctx).
+			Where("id = ? AND conversation_id = ? AND status IN ?", existingTurnID, config.ConversationID, []string{
+				string(domain.TurnStatusFailed),
+				string(domain.TurnStatusCancelled),
+			}).
+			First(&record).Error; err != nil {
+			return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusConflict,
+				"source turn is not retryable", err)
+		}
+		if err := db.WithContext(ctx).Model(&record).Updates(map[string]interface{}{
+			"status":         string(domain.TurnStatusRunning),
+			"started_at":     now,
+			"ended_at":       nil,
+			"final_response": nil,
+		}).Error; err != nil {
+			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+				"failed to reopen turn record", err)
+		}
+		config.TurnID = record.ID
+		record.Status = string(domain.TurnStatusRunning)
+		record.StartedAt = now
+		record.EndedAt = nil
+		record.FinalResponse = nil
+		return &record, nil
+	}
+
 	record := &persistence.AgentTurn{
 		ID:             strings.TrimSpace(config.TurnID),
 		ConversationID: config.ConversationID,
@@ -1697,25 +2460,25 @@ func (s *TurnService) createTurnRecord(ctx context.Context, config *TurnConfig, 
 // ---------------------------------------------------------------------------
 
 func (s *TurnService) persistMessage(ctx context.Context, conversationID, turnID, role, content, modelName string) error {
+	return s.persistMessageWithLineage(
+		ctx, conversationID, turnID, role, content, modelName, "", "", "",
+	)
+}
+
+func (s *TurnService) persistMessageWithLineage(
+	ctx context.Context,
+	conversationID string,
+	turnID string,
+	role string,
+	content string,
+	modelName string,
+	branchID string,
+	parentMessageID string,
+	replacesMessageID string,
+) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
-	}
-
-	var seq int64
-	if s.convService != nil {
-		seq, err = s.convService.NextSeq(ctx, conversationID)
-		if err != nil {
-			logger.Errorf(ctx, "NextSeq failed, computing fallback: conversation_id=%s err=%v", conversationID, err)
-		}
-	}
-	if seq <= 0 {
-		var maxSeq struct{ MaxSeq int64 }
-		db.WithContext(ctx).Model(&persistence.AgentMessage{}).
-			Where("conversation_id = ?", conversationID).
-			Select("COALESCE(MAX(seq), 0) as max_seq").
-			Scan(&maxSeq)
-		seq = maxSeq.MaxSeq + 1
 	}
 
 	now := time.Now()
@@ -1724,22 +2487,96 @@ func (s *TurnService) persistMessage(ctx context.Context, conversationID, turnID
 		ConversationID: conversationID,
 		TurnID:         &turnID,
 		Role:           role,
+		Status:         "completed",
 		Content:        &content,
-		Seq:            seq,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
 	if modelName != "" {
 		msg.ModelName = &modelName
 	}
+	if branchID != "" {
+		msg.BranchID = &branchID
+	}
+	if replacesMessageID != "" {
+		msg.ReplacesMessageID = &replacesMessageID
+	}
 
-	if err := db.WithContext(ctx).Create(msg).Error; err != nil {
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var conversation persistence.Conversation
+		if err := tx.First(&conversation, "id = ?", conversationID).Error; err != nil {
+			return err
+		}
+		var maxSeq struct{ MaxSeq int64 }
+		if err := tx.Model(&persistence.AgentMessage{}).
+			Where("conversation_id = ?", conversationID).
+			Select("COALESCE(MAX(seq), 0) as max_seq").
+			Scan(&maxSeq).Error; err != nil {
+			return err
+		}
+		msg.Seq = maxSeq.MaxSeq + 1
+		effectiveParentID := strings.TrimSpace(parentMessageID)
+		if effectiveParentID == "" {
+			effectiveParentID = conversation.ActiveBranchMessageID
+		}
+		msg.ParentMessageID = optionalString(effectiveParentID)
+		if err := tx.Create(msg).Error; err != nil {
+			return err
+		}
+		return tx.Model(&conversation).Updates(map[string]interface{}{
+			"active_branch_message_id": msg.ID,
+			"updated_at":               now,
+			"version":                  gorm.Expr("version + 1"),
+		}).Error
+	}); err != nil {
 		logger.Errorf(ctx, "failed to persist message: conversation_id=%s role=%s seq=%d err=%v",
-			conversationID, role, seq, err)
+			conversationID, role, msg.Seq, err)
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to persist message", err)
 	}
 
+	return nil
+}
+
+func (s *TurnService) completeAssistantMessage(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	content string,
+) error {
+	if strings.TrimSpace(config.AssistantMessageID) == "" {
+		return s.persistMessageWithLineage(
+			ctx,
+			config.ConversationID,
+			turnID,
+			string(domain.MessageRoleAssistant),
+			content,
+			config.Model,
+			config.AssistantBranchID,
+			config.AssistantParentID,
+			config.AssistantReplacesID,
+		)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	result := db.WithContext(ctx).Model(&persistence.AgentMessage{}).
+		Where("id = ? AND conversation_id = ? AND turn_id = ?", config.AssistantMessageID, config.ConversationID, turnID).
+		Updates(map[string]interface{}{
+			"content":    content,
+			"model_name": config.Model,
+			"status":     "completed",
+			"updated_at": time.Now(),
+		})
+	if result.Error != nil {
+		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to complete assistant message", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
+			"pending assistant message changed", nil)
+	}
 	return nil
 }
 
@@ -1755,8 +2592,8 @@ func (s *TurnService) loadMessages(ctx context.Context, conversationID string) (
 
 	var rows []persistence.AgentMessage
 	if err := db.WithContext(ctx).
-		Where("conversation_id = ?", conversationID).
-		Order("created_at ASC").
+		Where("conversation_id = ? AND tombstoned_at IS NULL", conversationID).
+		Order("seq ASC").
 		Find(&rows).Error; err != nil {
 		logger.Errorf(ctx, "failed to load messages: conversation_id=%s err=%v", conversationID, err)
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -1773,6 +2610,7 @@ func (s *TurnService) loadMessages(ctx context.Context, conversationID string) (
 			ToolCallsJSON:  row.ToolCallsJSON,
 			MetadataJSON:   row.MetadataJSON,
 			ErrorJSON:      row.ErrorJSON,
+			Seq:            row.Seq,
 			CreatedAt:      row.CreatedAt,
 			UpdatedAt:      row.UpdatedAt,
 		}
@@ -1786,6 +2624,18 @@ func (s *TurnService) loadMessages(ctx context.Context, conversationID string) (
 		if row.Content != nil {
 			m.Content = *row.Content
 		}
+		if row.BranchID != nil {
+			m.BranchID = *row.BranchID
+		}
+		if row.ParentMessageID != nil {
+			m.ParentMessageID = *row.ParentMessageID
+		}
+		if row.ReplacesMessageID != nil {
+			m.ReplacesMessageID = *row.ReplacesMessageID
+		}
+		if row.TombstonedAt != nil {
+			m.TombstonedAt = row.TombstonedAt
+		}
 
 		messages = append(messages, m)
 	}
@@ -1793,14 +2643,137 @@ func (s *TurnService) loadMessages(ctx context.Context, conversationID string) (
 	return messages, nil
 }
 
+func projectMessageBranch(messages []domain.Message, headID string) []domain.Message {
+	byID := make(map[string]domain.Message, len(messages))
+	for _, message := range messages {
+		if message.TombstonedAt == nil {
+			byID[message.MessageID] = message
+		}
+	}
+	selected := make(map[string]struct{}, len(messages))
+	for current := strings.TrimSpace(headID); current != ""; {
+		message, ok := byID[current]
+		if !ok {
+			break
+		}
+		selected[current] = struct{}{}
+		current = message.ParentMessageID
+	}
+	projected := make([]domain.Message, 0, len(selected))
+	for _, message := range messages {
+		if _, ok := selected[message.MessageID]; ok {
+			projected = append(projected, message)
+		}
+	}
+	return projected
+}
+
 // ---------------------------------------------------------------------------
 // Helper: saveTurnTrace
 // ---------------------------------------------------------------------------
+
+func (s *TurnService) persistAttemptUsage(
+	ctx context.Context,
+	turnID string,
+	attemptID string,
+	trace *domain.TurnTrace,
+) error {
+	if strings.TrimSpace(attemptID) == "" || trace == nil {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"attempt usage requires attempt_id and trace",
+			nil,
+		)
+	}
+
+	usage := domain.TurnUsage{
+		TurnID:        turnID,
+		AttemptID:     attemptID,
+		ToolCallCount: uint32(len(trace.ToolCalls)),
+	}
+	for _, call := range trace.ProviderCalls {
+		usage.InputTokens += uint64(max(call.InputTokens, 0))
+		usage.OutputTokens += uint64(max(call.OutputTokens, 0))
+		usage.ProviderLatency += call.Latency
+		usage.ProviderCallCount++
+		if call.Provider != "" {
+			usage.ProviderID = call.Provider
+		}
+		if call.Model != "" {
+			usage.ModelID = call.Model
+		}
+	}
+	for _, call := range trace.ToolCalls {
+		usage.ToolLatency += call.Duration
+	}
+
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	var calls []persistence.ToolCall
+	if err := db.WithContext(ctx).
+		Where("turn_id = ? AND attempt_id = ?", turnID, attemptID).
+		Order("created_at ASC").
+		Find(&calls).Error; err != nil {
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to load attempt tool lineage",
+			err,
+		)
+	}
+	if len(calls) > 0 {
+		if len(calls) > int(usage.ToolCallCount) {
+			usage.ToolCallCount = uint32(len(calls))
+		}
+		usage.ToolCallIDs = make([]string, 0, len(calls))
+		for _, call := range calls {
+			usage.ToolCallIDs = append(usage.ToolCallIDs, call.ToolCallID)
+		}
+	}
+
+	encoded, err := json.Marshal(usage)
+	if err != nil {
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to encode attempt usage",
+			err,
+		)
+	}
+	result := db.WithContext(ctx).
+		Model(&persistence.TurnAttempt{}).
+		Where("id = ? AND turn_id = ? AND ended_at IS NULL", attemptID, turnID).
+		Update("usage_json", encoded)
+	if result.Error != nil {
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to persist attempt usage",
+			result.Error,
+		)
+	}
+	if result.RowsAffected != 1 {
+		return errcode.New(
+			errcode.AgentVersionConflict,
+			http.StatusConflict,
+			"attempt usage cannot modify a missing or terminal attempt",
+			nil,
+		)
+	}
+	return nil
+}
 
 func (s *TurnService) ListTurnTraces(ctx context.Context, options domain.TurnTraceListOptions) ([]domain.TurnTraceEntry, int64, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, 0, err
+	}
+	if strings.TrimSpace(options.Ptid) == "" {
+		return nil, 0, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized,
+			"actor identity is required", nil)
 	}
 	if strings.TrimSpace(options.AgentID) == "" {
 		return nil, 0, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
@@ -1822,7 +2795,8 @@ func (s *TurnService) ListTurnTraces(ctx context.Context, options domain.TurnTra
 	query := db.WithContext(ctx).
 		Model(&persistence.TurnTrace{}).
 		Joins("JOIN agent_turns ON agent_turns.id = agent_turn_traces.turn_id").
-		Where("agent_turns.agent_id = ?", options.AgentID)
+		Joins("JOIN agent_conversations ON agent_conversations.id = agent_turns.conversation_id").
+		Where("agent_turns.agent_id = ? AND agent_conversations.ptid = ?", options.AgentID, options.Ptid)
 	if strings.TrimSpace(options.ConversationID) != "" {
 		query = query.Where("agent_turns.conversation_id = ?", options.ConversationID)
 	}
@@ -1860,24 +2834,33 @@ func (s *TurnService) ListTurnTraces(ctx context.Context, options domain.TurnTra
 	return entries, total, nil
 }
 
-func (s *TurnService) GetTurnTrace(ctx context.Context, traceID, turnID string) (*domain.TurnTraceEntry, error) {
+func (s *TurnService) GetTurnTrace(ctx context.Context, ptid, traceID, turnID string) (*domain.TurnTraceEntry, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
 	}
+	ptid = strings.TrimSpace(ptid)
 	traceID = strings.TrimSpace(traceID)
 	turnID = strings.TrimSpace(turnID)
+	if ptid == "" {
+		return nil, errcode.New(errcode.AgentUnauthorized, http.StatusUnauthorized,
+			"actor identity is required", nil)
+	}
 	if traceID == "" && turnID == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 			"trace_id or turn_id is required", nil)
 	}
 
-	query := db.WithContext(ctx).Preload("Turn")
+	query := db.WithContext(ctx).
+		Preload("Turn").
+		Joins("JOIN agent_turns ON agent_turns.id = agent_turn_traces.turn_id").
+		Joins("JOIN agent_conversations ON agent_conversations.id = agent_turns.conversation_id").
+		Where("agent_conversations.ptid = ?", ptid)
 	if traceID != "" {
-		query = query.Where("id = ?", traceID)
+		query = query.Where("agent_turn_traces.id = ?", traceID)
 	}
 	if turnID != "" {
-		query = query.Where("turn_id = ?", turnID)
+		query = query.Where("agent_turn_traces.turn_id = ?", turnID)
 	}
 
 	var record persistence.TurnTrace
@@ -1940,7 +2923,24 @@ func (s *TurnService) saveTurnTrace(ctx context.Context, trace *domain.TurnTrace
 		record.CompressionAfter = &trace.CompressionAfter
 	}
 
-	if err := db.WithContext(ctx).Create(record).Error; err != nil {
+	if err := db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "turn_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"system_prompt_hash",
+			"memory_snapshot_hash",
+			"skill_index_hash",
+			"skills_loaded",
+			"tool_calls",
+			"provider_calls",
+			"review_triggered",
+			"errors_classified",
+			"compression_triggered",
+			"compression_before",
+			"compression_after",
+			"delegation_results",
+			"knowledge_chunks",
+		}),
+	}).Create(record).Error; err != nil {
 		logger.Errorf(ctx, "failed to save turn trace: turn_id=%s err=%v", trace.TurnID, err)
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to save turn trace", err)
@@ -1977,8 +2977,15 @@ func persistenceTurnTraceToDomain(record *persistence.TurnTrace) (domain.TurnTra
 	if err := json.Unmarshal(record.ToolCalls, &trace.ToolCalls); err != nil && len(record.ToolCalls) > 0 {
 		return domain.TurnTraceEntry{}, err
 	}
+	for index := range trace.ToolCalls {
+		trace.ToolCalls[index].Arguments = redactDiagnosticText(trace.ToolCalls[index].Arguments)
+		trace.ToolCalls[index].Result = redactDiagnosticText(trace.ToolCalls[index].Result)
+	}
 	if err := json.Unmarshal(record.ProviderCalls, &trace.ProviderCalls); err != nil && len(record.ProviderCalls) > 0 {
 		return domain.TurnTraceEntry{}, err
+	}
+	for index := range trace.ProviderCalls {
+		trace.ProviderCalls[index].CredentialID = ""
 	}
 	if err := json.Unmarshal(record.ErrorsClassified, &trace.ErrorClassified); err != nil && len(record.ErrorsClassified) > 0 {
 		return domain.TurnTraceEntry{}, err
@@ -2024,20 +3031,28 @@ func (s *TurnService) completeTurn(ctx context.Context, turnID, finalResponse st
 	}
 
 	now := time.Now()
-	result := db.WithContext(ctx).
-		Model(&persistence.AgentTurn{}).
-		Where("id = ?", turnID).
-		Updates(map[string]interface{}{
-			"status":          string(domain.TurnStatusCompleted),
-			"final_response":  finalResponse,
-			"tool_iterations": toolIterations,
-			"ended_at":        now,
-		})
-
-	if result.Error != nil {
-		logger.Errorf(ctx, "failed to complete turn: turn_id=%s err=%v", turnID, result.Error)
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&persistence.AgentTurn{}).
+			Where("id = ?", turnID).
+			Updates(map[string]interface{}{
+				"status":          string(domain.TurnStatusCompleted),
+				"final_response":  finalResponse,
+				"tool_iterations": toolIterations,
+				"terminal_reason": "completed",
+				"ended_at":        now,
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&persistence.TurnAttempt{}).
+			Where("turn_id = ? AND ended_at IS NULL", turnID).
+			Updates(map[string]interface{}{
+				"status":   string(domain.TurnStatusCompleted),
+				"ended_at": now,
+			}).Error
+	}); err != nil {
+		logger.Errorf(ctx, "failed to complete turn: turn_id=%s err=%v", turnID, err)
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to update turn status", result.Error)
+			"failed to update turn status", err)
 	}
 
 	return nil
@@ -2054,19 +3069,28 @@ func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, ste
 	}
 
 	now := time.Now()
-	result := db.WithContext(ctx).
-		Model(&persistence.AgentTurn{}).
-		Where("id = ?", turnID).
-		Updates(map[string]interface{}{
-			"status":         string(domain.TurnStatusFailed),
-			"final_response": reason,
-			"ended_at":       now,
-		})
-
-	if result.Error != nil {
-		logger.Errorf(ctx, "failed to mark turn as failed: turn_id=%s err=%v", turnID, result.Error)
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&persistence.AgentTurn{}).
+			Where("id = ?", turnID).
+			Updates(map[string]interface{}{
+				"status":          string(domain.TurnStatusFailed),
+				"final_response":  reason,
+				"terminal_reason": reason,
+				"ended_at":        now,
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&persistence.TurnAttempt{}).
+			Where("turn_id = ? AND ended_at IS NULL", turnID).
+			Updates(map[string]interface{}{
+				"status":     string(domain.TurnStatusFailed),
+				"error_code": reason,
+				"ended_at":   now,
+			}).Error
+	}); err != nil {
+		logger.Errorf(ctx, "failed to mark turn as failed: turn_id=%s err=%v", turnID, err)
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to mark turn as failed", result.Error)
+			"failed to mark turn as failed", err)
 	}
 
 	logger.Warnf(ctx, "turn failed: turn_id=%s reason=%s", turnID, reason)
@@ -2090,20 +3114,75 @@ func (s *TurnService) cancelTurn(ctx context.Context, agentID, turnID, taskID, s
 		return err
 	}
 	now := time.Now()
-	result := db.WithContext(ctx).
-		Model(&persistence.AgentTurn{}).
-		Where("id = ? AND status = ?", turnID, string(domain.TurnStatusRunning)).
-		Updates(map[string]interface{}{
-			"status":         string(domain.TurnStatusCancelled),
-			"final_response": "cancelled by user",
-			"ended_at":       now,
-		})
-	if result.Error != nil {
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&persistence.AgentTurn{}).
+			Where("id = ? AND status IN ?", turnID, []string{
+				string(domain.TurnStatusRunning),
+				string(domain.TurnStatusWaitingLocalTool),
+			}).
+			Updates(map[string]interface{}{
+				"status":          string(domain.TurnStatusCancelled),
+				"final_response":  "cancelled by user",
+				"terminal_reason": "cancelled_by_user",
+				"ended_at":        now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&persistence.TurnAttempt{}).
+			Where("turn_id = ? AND ended_at IS NULL", turnID).
+			Updates(map[string]interface{}{
+				"status":   string(domain.TurnStatusCancelled),
+				"ended_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		var batchIDs []string
+		if err := tx.Model(&persistence.ToolBatch{}).
+			Where("turn_id = ? AND status = ?", turnID, persistence.ToolBatchStatusOpen).
+			Pluck("id", &batchIDs).Error; err != nil {
+			return err
+		}
+		if len(batchIDs) == 0 {
+			return nil
+		}
+		if err := tx.Model(&persistence.ToolCall{}).
+			Where("tool_batch_id IN ? AND status IN ?", batchIDs, []string{
+				persistence.ToolCallStatusProposed,
+				persistence.ToolCallStatusWaitingApproval,
+				persistence.ToolCallStatusApproved,
+				persistence.ToolCallStatusDispatchCommitted,
+			}).
+			Updates(map[string]interface{}{
+				"status":     persistence.ToolCallStatusCancelled,
+				"error_code": "turn_cancelled",
+				"ended_at":   now,
+				"updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&persistence.ToolCall{}).
+			Where("tool_batch_id IN ? AND status = ?", batchIDs, persistence.ToolCallStatusPrepared).
+			Updates(map[string]interface{}{
+				"status":     persistence.ToolCallStatusUnknownSideEffect,
+				"error_code": "turn_cancelled_after_prepare",
+				"ended_at":   now,
+				"updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&persistence.ToolBatch{}).
+			Where("id IN ? AND status = ?", batchIDs, persistence.ToolBatchStatusOpen).
+			Updates(map[string]interface{}{
+				"status":     persistence.ToolBatchStatusBlocked,
+				"settled_at": now,
+				"updated_at": now,
+			}).Error
+	}); err != nil {
 		return errcode.New(
 			errcode.AgentInternal,
 			http.StatusInternalServerError,
 			"failed to mark turn as cancelled",
-			result.Error,
+			err,
 		)
 	}
 	s.publishDomainEvent(ctx, agentID, turnID, taskID, stepID, string(domain.EventTypeAgentTurnCancelled), map[string]interface{}{
@@ -2198,125 +3277,6 @@ func (s *TurnService) resolveAgentDefaults(ctx context.Context, config *TurnConf
 	if config.Model == "" {
 		config.Model = strings.TrimSpace(agent.ModelName)
 	}
-}
-
-// ---------------------------------------------------------------------------
-// executeCLITurn — route the turn through the CLI executor instead of LLM
-// ---------------------------------------------------------------------------
-
-// executeCLITurn handles turns where the client specifies a CLI command (e.g.
-// "codex", "trae", "claude"). Instead of the standard LLM call path, the turn
-// delegates execution to a local CLI process via CliExecutor.
-func (s *TurnService) executeCLITurn(ctx context.Context, config *TurnConfig, turnID, userInput string) (*domain.Turn, error) {
-	if s.cliExecutor == nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "CLI executor not configured")
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"CLI executor is not configured on this Station", nil)
-	}
-
-	logger.Infof(ctx, "CLI turn started: turn_id=%s agent_id=%s cli_command=%s",
-		turnID, config.AgentID, config.CliCommand)
-	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
-		Type:  "progress",
-		Stage: "cli_turn_started",
-	})
-	s.publishDomainEvent(ctx, config.AgentID, turnID, config.TaskID, config.StepID, string(domain.EventTypeAgentTurnStarted), map[string]interface{}{
-		"turn_id":         turnID,
-		"conversation_id": config.ConversationID,
-		"cli_command":     config.CliCommand,
-	})
-
-	// Build the CliTurnRequest from TurnConfig.
-	cliReq := &cli.CliTurnRequest{
-		ConversationID:    config.ConversationID,
-		AgentID:           config.AgentID,
-		UserInput:         userInput,
-		CliCommand:        config.CliCommand,
-		Identity:          config.Identity,
-		AgentConfigPrompt: config.AgentConfigPrompt,
-		Provider:          config.Provider,
-		Model:             config.Model,
-		Effort:            config.Effort,
-		RuntimeBackend:    config.RuntimeBackend,
-		AllowedRoots:      config.AllowedRoots,
-	}
-
-	// Collect streamed output through the event sink adapter.
-	var responseBuilder strings.Builder
-	cliSink := func(eventType string, data map[string]any) {
-		turnEvent := TurnEvent{
-			Type:  eventType,
-			Stage: "cli_execution",
-		}
-		if text, ok := data["content"].(string); ok {
-			turnEvent.Text = text
-			if eventType == "text" {
-				responseBuilder.WriteString(text)
-			}
-		}
-		s.emitTurnEvent(ctx, config, turnID, turnEvent)
-	}
-
-	// Derive actorID from context subject for workspace scoping.
-	actorID := config.ActorID
-	if actorID == "" {
-		actorID = config.AgentID
-	}
-
-	cliErr := s.cliExecutor.Execute(ctx, cliReq, actorID, cliSink)
-	if cliErr != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID,
-			fmt.Sprintf("CLI execution failed: %v", cliErr))
-		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
-			Type:  "error",
-			Error: cliErr.Error(),
-		})
-		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
-			fmt.Sprintf("CLI provider execution failed: %v", cliErr), cliErr)
-	}
-
-	finalResponse := responseBuilder.String()
-
-	// Persist assistant response and complete the turn record.
-	if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleAssistant), finalResponse, config.Model); err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist CLI assistant message")
-		return nil, err
-	}
-
-	if err := s.completeTurn(ctx, turnID, finalResponse, 0); err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	turn := &domain.Turn{
-		TurnID:         turnID,
-		ConversationID: config.ConversationID,
-		AgentID:        config.AgentID,
-		UserInput:      userInput,
-		FinalResponse:  finalResponse,
-		ToolIterations: 0,
-		Status:         domain.TurnStatusCompleted,
-		StartedAt:      now,
-		EndedAt:        &now,
-		Model:          config.Model,
-	}
-
-	logger.Infof(ctx, "CLI turn completed: turn_id=%s", turnID)
-	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
-		Type:  "progress",
-		Stage: "turn_completed",
-	})
-	s.publishDomainEvent(ctx, config.AgentID, turnID, config.TaskID, config.StepID, string(domain.EventTypeAgentTurnCompleted), map[string]interface{}{
-		"turn_id":         turnID,
-		"conversation_id": config.ConversationID,
-		"cli_command":     config.CliCommand,
-	})
-
-	if s.growthMetrics != nil {
-		s.growthMetrics.RecordEvent(ctx, config.AgentID, EventTurnCompleted, CategoryTurn, turnID, "cli_turn", "success")
-	}
-
-	return turn, nil
 }
 
 // generateID creates a unique identifier with the given prefix (e.g. "turn", "msg", "trace").

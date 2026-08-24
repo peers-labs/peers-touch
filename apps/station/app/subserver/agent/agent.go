@@ -22,12 +22,12 @@ package agent
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/handler"
 	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
-	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
@@ -36,15 +36,19 @@ import (
 	serverwrapper "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/server/wrapper"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 )
 
 var _ server.Subserver = (*agentSubServer)(nil)
 
 type agentSubServer struct {
-	opts       *Options
-	addrs      []string
-	status     server.Status
-	jwtWrapper server.Wrapper
+	opts           *Options
+	addrs          []string
+	status         server.Status
+	jwtWrapper     server.Wrapper
+	turnService    *service.TurnService
+	stopTurnWorker context.CancelFunc
+	deviceKeys     *touchactor.DeviceStore
 }
 
 func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -61,9 +65,26 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	if err = persistence.MigrateAgentMessages(rds); err != nil {
 		return err
 	}
+	if err = persistence.MigrateTurnEvents(rds); err != nil {
+		return err
+	}
+	if err = persistence.MigrateConversations(rds); err != nil {
+		return err
+	}
+	if err = persistence.MigrateFencedClientExecution(rds); err != nil {
+		return err
+	}
 	if err = rds.AutoMigrate(persistence.AllModels()...); err != nil {
 		return err
 	}
+	if err = persistence.MigrateTurnEvidence(rds); err != nil {
+		return err
+	}
+	identityRDS, err := store.GetRDS(ctx)
+	if err != nil {
+		return err
+	}
+	s.deviceKeys = touchactor.NewDeviceStore(identityRDS)
 
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	s.jwtWrapper = server.HTTPWrapperAdapter(httpadapter.RequireJWT(provider))
@@ -74,11 +95,20 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 }
 
 func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error {
+	if s.turnService != nil {
+		workerCtx, cancel := context.WithCancel(ctx)
+		s.stopTurnWorker = cancel
+		go s.turnService.RunToolContinuationWorker(workerCtx)
+	}
 	s.status = server.StatusRunning
 	return nil
 }
 
 func (s *agentSubServer) Stop(ctx context.Context) error {
+	if s.stopTurnWorker != nil {
+		s.stopTurnWorker()
+		s.stopTurnWorker = nil
+	}
 	s.status = server.StatusStopped
 	return nil
 }
@@ -95,6 +125,7 @@ func (s *agentSubServer) Address() server.SubserverAddress {
 
 func (s *agentSubServer) Handlers() []server.Handler {
 	logIDWrapper := serverwrapper.LogID()
+	deviceIDWrapper := serverwrapper.DeviceID()
 	jwtWrapper := s.jwtWrapper
 	provider := coreauth.NewJWTProvider(coreauth.Get().Secret, coreauth.Get().AccessTTL)
 	hertzJWTWrapper := hertzadapter.RequireJWT(provider)
@@ -122,8 +153,11 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// Phase 3 services.
 	promptCachingSvc := service.NewPromptCachingService()
 	providerSvc := service.NewProviderService(promptCachingSvc)
+	providerConfigSvc := service.NewProviderConfigService()
+	modelConfigSvc := service.NewModelConfigService()
+	credentialConfigSvc := service.NewCredentialConfigService()
+	admissionResolver := service.NewRuntimeAdmissionResolver(providerConfigSvc, modelConfigSvc)
 	credentialPoolSvc := service.NewCredentialPoolService()
-	contextReferenceSvc := service.NewContextReferenceService()
 	delegationSvc := service.NewDelegationService()
 
 	// Phase 4: Tool Registry — central dispatch for memory, skills, delegation.
@@ -155,7 +189,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		compressionSvc,
 		providerSvc,
 		credentialPoolSvc,
-		contextReferenceSvc,
 		delegationSvc,
 		toolRegistrySvc,
 		reviewSvc,
@@ -163,12 +196,6 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		convSvc,
 	)
 	turnSvc.SetEventBus(eventBus)
-
-	// CLI executor: enables routing turns to local CLI processes (e.g. codex, trae, claude).
-	// WorkspaceManager creates per-session git worktrees for isolation.
-	cliWorkspaceMgr := cli.NewWorkspaceManager("")
-	cliExec := cli.NewCliExecutor(cliWorkspaceMgr)
-	turnSvc.SetCliExecutor(cliExec)
 
 	// Dogfood self-verification service.
 	dogfoodSvc := service.NewDogfoodService(memorySvc, skillSvc, growthMetricsSvc)
@@ -183,11 +210,11 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// Chat root task: Station owns the Chat surface as a long-lived task so a
 	// turn outlives the client connection. Reclaim interrupted steps on boot.
 	chatTaskSvc := service.NewChatTaskService(eventBus)
-	chatTaskSvc.RecoverRunningChatTasks(context.Background())
 
 	agentHandlers := handler.NewAgentHandlers(agentSvc, eventBus)
 	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc, chatTaskSvc, convSvc)
 	convHandlers := handler.NewConversationHandlers(convSvc, turnSvc)
+	revisionHandlers := handler.NewRevisionHandlers(service.NewRevisionService(convSvc, turnSvc))
 	threadHandlers := handler.NewThreadHandlers(service.NewThreadService())
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)
 	workspaceHandlers := handler.NewWorkspaceHandlers(workspaceSvc)
@@ -208,10 +235,24 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	agentTaskHandlers := handler.NewAgentTaskHandlers(service.NewAgentTaskService())
 
 	providerHandlers := handler.NewProviderHandlers(
-		service.NewProviderConfigService(service.NewCLIAdapterRegistry()),
-		service.NewModelConfigService(),
-		service.NewCredentialConfigService(),
+		providerConfigSvc,
+		modelConfigSvc,
+		credentialConfigSvc,
+		admissionResolver,
 	)
+	turnSvc.SetAdmissionResolver(admissionResolver)
+
+	// F4: Durable tool dispatch service with policy and fencing.
+	proofSvc := service.NewClientCapabilityProofService(
+		s.deviceKeys,
+		func() time.Time { return time.Now().UTC() },
+	)
+	toolDispatchSvc := service.NewToolDispatchService()
+	toolDispatchSvc.SetCapabilityProofService(proofSvc)
+	turnSvc.SetToolDispatch(toolDispatchSvc)
+	turnSvc.SetChatTaskService(chatTaskSvc)
+	s.turnService = turnSvc
+	chatTaskSvc.RecoverRunningChatTasks(context.Background())
 
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
@@ -224,10 +265,17 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-turn-stream", "/agent/turn/stream", server.POST, turnHandlers.HandleExecuteTurnStream, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-turn-cancel", "/agent/turn/cancel", server.POST, turnHandlers.HandleCancelTurn, logIDWrapper, jwtWrapper),
-		server.NewHTTPHandler("agent-turn-local-tool-result", "/agent/turn/local-tool-result", server.POST, turnHandlers.HandleLocalToolResult, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-tool-decision", "/agent/tool/decision", server.POST, turnHandlers.HandleSubmitToolDecision, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-lease-register", "/agent/capability/lease/register", server.POST, turnHandlers.HandleRegisterClientCapabilityLease, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-lease-renew", "/agent/capability/lease/renew", server.POST, turnHandlers.HandleRenewClientCapabilityLease, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-lease-revoke", "/agent/capability/lease/revoke", server.POST, turnHandlers.HandleRevokeClientCapabilityLease, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-requests-pull", "/agent/capability/requests/pull", server.POST, turnHandlers.HandlePullClientCapabilityRequests, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-receipt", "/agent/capability/receipt", server.POST, turnHandlers.HandleSubmitClientCapabilityReceipt, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-receipt-recover", "/agent/capability/receipt/recover", server.POST, turnHandlers.HandleSubmitClientCapabilityRecoveryReceipt, logIDWrapper),
 		server.NewHTTPHandler("agent-quick-completion", "/agent/quick-completion", server.POST, turnHandlers.HandleQuickCompletion, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-list", "/agent/turn/trace/list", server.POST, turnHandlers.HandleListTurnTraces, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-diagnostics-export", "/agent/turn/diagnostics/export", server.POST, turnHandlers.HandleExportTurnDiagnostics, logIDWrapper, jwtWrapper),
 
 		server.NewHTTPHandler("agent-conversation-list", "/agent/conversation/list", server.POST, convHandlers.HandleListConversations, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-get", "/agent/conversation/get", server.POST, convHandlers.HandleGetConversation, logIDWrapper, jwtWrapper),
@@ -237,13 +285,16 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-conversation-messages", "/agent/conversation/messages", server.POST, convHandlers.HandleListMessages, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-message-translate", "/agent/conversation/message/translate", server.POST, convHandlers.HandleSetMessageTranslation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-events", "/agent/conversation/events", server.POST, convHandlers.HandleStreamConversationEvents, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-retry", "/agent/turn/retry", server.POST, revisionHandlers.HandleRetryTurn, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-regenerate", "/agent/turn/regenerate", server.POST, revisionHandlers.HandleRegenerateTurn, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-message-edit-resend", "/agent/message/edit-resend", server.POST, revisionHandlers.HandleEditAndResend, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-conversation-select-branch", "/agent/conversation/select-branch", server.POST, revisionHandlers.HandleSelectActiveBranch, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-message-tombstone", "/agent/message/tombstone", server.POST, revisionHandlers.HandleTombstoneMessage, logIDWrapper, jwtWrapper),
 
 		server.NewHTTPHandler("agent-thread-create", "/agent/thread/create", server.POST, threadHandlers.HandleCreateThread, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-thread-list", "/agent/thread/list", server.POST, threadHandlers.HandleListThreads, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-thread-messages", "/agent/thread/messages", server.POST, threadHandlers.HandleListThreadMessages, logIDWrapper, jwtWrapper),
 
-		server.NewTypedHandler("agent-provider-verify-cli", "/agent/provider/verify-cli", server.POST, providerHandlers.HandleVerifyCli, logIDWrapper, jwtWrapper),
-		server.NewTypedHandler("agent-provider-fetch-cli-models", "/agent/provider/fetch-cli-models", server.POST, providerHandlers.HandleFetchCliModels, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-list", "/agent/provider/list", server.POST, providerHandlers.HandleProviderList, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-get", "/agent/provider/get", server.POST, providerHandlers.HandleProviderGet, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-create", "/agent/provider/create", server.POST, providerHandlers.HandleProviderCreate, logIDWrapper, jwtWrapper),
@@ -347,6 +398,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-growth-snapshot", "/agent/growth/snapshot", server.POST, growthHandlers.HandleGetGrowthSnapshot, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-audit", "/agent/growth/audit", server.GET, growthHandlers.HandleGetAuditLog, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-feedback", "/agent/growth/feedback", server.POST, growthHandlers.HandleRecordFeedback, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-growth-feedback-turn-list", "/agent/growth/feedback/turn/list", server.POST, growthHandlers.HandleListTurnFeedback, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-memory-rollback", "/agent/growth/memory/rollback", server.POST, growthHandlers.HandleMemoryRollback, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-memory-snapshots", "/agent/growth/memory/snapshots", server.GET, growthHandlers.HandleListMemorySnapshots, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-growth-memory-delete", "/agent/growth/memory/delete", server.POST, growthHandlers.HandleDeleteMemory, logIDWrapper, jwtWrapper),

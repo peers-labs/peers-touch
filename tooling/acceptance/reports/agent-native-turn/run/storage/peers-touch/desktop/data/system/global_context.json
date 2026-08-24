@@ -1,0 +1,55 @@
+{
+  "capability": {
+    "chat": true,
+    "groupChat": true,
+    "oauth": false,
+    "settings": true,
+    "timeline": true
+  },
+  "identity": {
+    "avatarUrl": null,
+    "displayName": null,
+    "email": null,
+    "lastLoginAt": null,
+    "profileUrl": null,
+    "provider": null,
+    "registerTime": null,
+    "userId": null
+  },
+  "meta": {
+    "updatedAt": 1787227189274,
+    "version": 1
+  },
+  "network": {
+    "degraded": false,
+    "lastChangedAt": 0,
+    "mode": "online",
+    "online": true
+  },
+  "notification": {
+    "items": []
+  },
+  "oauth": {
+    "connectedAccounts": [],
+    "connectedCount": 0
+  },
+  "runtime": {
+    "appState": "booting",
+    "networkMode": "online",
+    "online": true
+  },
+  "session": {
+    "activeAccountId": null,
+    "authenticated": false,
+    "lastAuthAt": null,
+    "loginStatus": "unknown"
+  },
+  "task": {
+    "items": {}
+  },
+  "workspace": {
+    "environment": null,
+    "id": null,
+    "name": null
+  }
+}

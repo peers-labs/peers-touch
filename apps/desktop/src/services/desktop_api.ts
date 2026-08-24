@@ -70,8 +70,16 @@ import {
   ListMemberStationsResponseSchema,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
+  ExportTurnDiagnosticsResponse,
   GetTurnTraceResponse,
+  ListTurnFeedbackResponse,
   ListTurnTracesResponse,
+  RecordFeedbackResponse,
+} from '../gen/proto/domain/agent/agent_pb';
+import {
+  ExportTurnDiagnosticsResponseSchema,
+  ListTurnFeedbackResponseSchema,
+  RecordFeedbackResponseSchema,
 } from '../gen/proto/domain/agent/agent_pb';
 import type {
   ClaimDesktopExecutorTaskResponse,
@@ -647,7 +655,7 @@ export interface OssAttachmentUploaded {
 
 export interface SocialEncryptedMediaDescriptorWire {
   encrypted: true;
-  version: number;
+  version?: number;
   suite: string;
   key_b64: string;
   nonce_b64: string;
@@ -678,7 +686,7 @@ export type ChatAttachmentUploaded = OssAttachmentUploaded;
  * pre-validate uploads instead of waiting for a server-side rejection.
  */
 export interface OssCapabilities {
-  version: number;
+  version?: number;
   host: string;
   path_base: string;
   backend: string;
@@ -815,6 +823,8 @@ export interface Session {
   updated_at: string;
   pinned?: boolean;
   favorite?: boolean;
+  version?: number;
+  active_branch_message_id?: string;
 }
 
 export interface MessageAttachment {
@@ -916,10 +926,7 @@ export interface Agent {
   isolationMode: string;
   isolationRetentionDays: number;
   workspaceMode: string;
-  runtimeBackend: string;
-  rootfsPath: string;
   allowedRoots: string;
-  cliCommand: string;
   tags: string;
   pinned: boolean;
   favorite: boolean;
@@ -951,10 +958,7 @@ export interface AgentCreate {
   isolationMode?: string;
   isolationRetentionDays?: number;
   workspaceMode?: string;
-  runtimeBackend?: string;
-  rootfsPath?: string;
   allowedRoots?: string;
-  cliCommand?: string;
   tags?: string;
   pinned?: boolean;
   favorite?: boolean;
@@ -1165,7 +1169,7 @@ export interface ToolInfo {
   displayName?: string;
   description?: string;
   executable?: boolean;
-  executionOwner?: 'desktop-rust' | 'station' | string;
+  executionOwner?: 'client-local' | 'station' | string;
   riskLevel?: 'low' | 'medium' | 'high' | string;
   schema?: Record<string, unknown>;
 }
@@ -1185,8 +1189,7 @@ export interface AvailableModel {
   image_output?: boolean;
   video?: boolean;
   protocol_override?: string;
-  runtime_kind?: 'cli' | 'direct';
-  cli_command?: string;
+  runtime_kind?: string;
 }
 
 export interface ProviderListItem {
@@ -1199,7 +1202,7 @@ export interface ProviderListItem {
   has_api_key: boolean;
   requires_api_key: boolean;
   credential_status: string;
-  runtime_kind: 'cli' | 'direct';
+  runtime_kind: string;
   version: number;
 }
 
@@ -1223,7 +1226,6 @@ export interface ProviderDetail extends ProviderListItem {
   api_key: string;
   base_url: string;
   default_base_url: string;
-  cli_command?: string;
   show_api_key?: boolean;
   show_checker: boolean;
   check_model?: string;
@@ -2203,46 +2205,6 @@ export interface ChatScreenshotShortcutRegisterInput {
   shortcut: string;
 }
 
-export interface ChatListMessagesInput {
-  conversation_id: string;
-  cursor?: string;
-  limit?: number;
-}
-
-export interface ChatSendMessageInput {
-  conversation_id: string;
-  content: string;
-  client_message_id?: string;
-}
-
-export interface ChatMarkReadInput {
-  conversation_id: string;
-  message_id: string;
-}
-
-export interface ChatConversationInput {
-  conversation_id: string;
-}
-
-export interface ChatRenameConversationInput {
-  conversation_id: string;
-  title: string;
-}
-
-export interface ChatSetConversationModelInput {
-  conversation_id: string;
-  model: string;
-}
-
-export interface ChatMessageInput {
-  message_id: string;
-}
-
-export interface ChatUpdateMessageInput {
-  message_id: string;
-  content: string;
-}
-
 export interface TimelineListInput {
   cursor?: string;
   limit?: number;
@@ -2324,7 +2286,6 @@ export interface ProviderUpdateInput {
   key_vaults?: string;
   config_json?: string;
   runtime_kind?: string;
-  cli_command?: string;
   protocol?: string;
   version?: number;
 }
@@ -2342,7 +2303,6 @@ export interface ProviderCreateInput {
   key_vaults: string;
   config_json: string;
   runtime_kind?: string;
-  cli_command?: string;
   protocol?: string;
 }
 
@@ -2376,13 +2336,6 @@ export interface ProviderModelToggleInput {
 export interface ProviderModelToggleAllInput {
   provider_id: string;
   enabled: boolean;
-}
-
-export interface ChatCompletionInput {
-  session_id: string;
-  provider_id?: string;
-  model?: string;
-  message: string;
 }
 
 export interface SkillsListInput {
@@ -2474,37 +2427,25 @@ export interface McpToolExecutionResult {
   };
 }
 
-export interface AgentLocalToolRequestInput {
-  source: 'mcp' | string;
-  server_name?: string;
-  tool_name: string;
-  arguments?: Record<string, unknown>;
-  call_id?: string;
-  turn_id?: string;
-  workspace_root?: string;
-  allowed_roots?: string[];
-}
-
-export interface AgentToolApprovalDecisionInput {
+export interface AgentToolDecisionIntentInput {
   approval_id: string;
+  tool_call_id: string;
+  decision_id: string;
+  expected_revision: number;
   approved: boolean;
-  actor?: string;
+  idempotency_key: string;
 }
 
-export interface AgentLocalToolResultEvent {
-  type: 'tool_result';
-  turnId: string;
-  callId: string;
-  source: string;
-  serverName: string;
-  toolName: string;
-  status: 'success' | 'error';
-  data: unknown;
-  trace: {
-    owner: 'desktop-rust';
-    bridge: string;
-    audit: Record<string, unknown>;
-  };
+export interface AgentToolDecisionIntentResponse {
+  accepted: boolean;
+  decision_revision: number;
+  approval_id: string;
+  tool_call_id: string;
+  decision_id: string;
+  approved: boolean;
+  idempotency_key: string;
+  payload_hash: string;
+  error_code: string;
 }
 
 export interface McpToolSchemaEntry {
@@ -2523,16 +2464,9 @@ export interface AgentExecuteTurnInput {
   attachments?: ChatAttachmentInput[];
   provider?: string;
   model?: string;
-  cli_command?: string;
-  workspace_mode?: string;
-  runtime_backend?: string;
-  rootfs_path?: string;
-  allowed_roots?: string[];
   identity?: string;
   agent_config_prompt?: string;
   effort?: string;
-  platform?: string;
-  workspace_root?: string;
   context_window_size?: number;
   max_retries?: number;
   knowledge_resources?: AgentExecuteTurnKnowledgeResource[];
@@ -2557,7 +2491,7 @@ export interface AgentExecuteTurnKnowledgeResource {
 }
 
 export interface AgentTurnStreamCancelInput {
-  stream_id: string;
+  turn_id: string;
 }
 
 export interface AgentTurnTraceListInput {
@@ -2572,16 +2506,24 @@ export interface AgentTurnTraceGetInput {
   turn_id?: string;
 }
 
+export interface AgentTurnDiagnosticsInput {
+  turn_id: string;
+}
+
 export interface AgentConversation {
   conversation_id: string;
   agent_id: string;
-  user_id?: string;
+  ptid: string;
   title: string;
   description?: string;
   provider_id?: string;
   model_name?: string;
   status: string;
   parent_id?: string;
+  active_branch_message_id: string;
+  queued_turn_count: number;
+  version: number;
+  meta?: Record<string, string>;
   created_at: string;
   updated_at: string;
 }
@@ -2630,9 +2572,75 @@ export interface AgentConversationMessagesInput {
   limit?: number;
 }
 
+export interface AgentConversationUpdateInput {
+  conversation_id: string;
+  expected_version: number;
+  title?: string;
+  description?: string;
+  model_name?: string;
+  meta?: Record<string, string>;
+  active_branch_message_id?: string;
+}
+
 export interface AgentConversationArchiveInput {
   conversation_id: string;
   permanent?: boolean;
+  expected_version: number;
+}
+
+export interface AgentRetryTurnInput {
+  conversation_id: string;
+  source_turn_id: string;
+  client_idempotency_key: string;
+  expected_conversation_version: number;
+  requested_budget?: AgentRuntimeBudgetInput;
+}
+
+export interface AgentRuntimeBudgetInput {
+  max_attempts?: number;
+  max_agent_steps?: number;
+  max_tool_calls?: number;
+  max_identical_tool_calls?: number;
+  max_delegation_depth?: number;
+  wall_time_ms?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
+  max_attachment_bytes?: number;
+  max_cost?: number;
+}
+
+export interface AgentRegenerateTurnInput {
+  conversation_id: string;
+  source_assistant_message_id: string;
+  client_idempotency_key: string;
+  expected_conversation_version: number;
+  requested_budget?: AgentRuntimeBudgetInput;
+}
+
+export interface AgentEditAndResendInput {
+  conversation_id: string;
+  source_user_message_id: string;
+  revised_content: string;
+  attachments?: ChatAttachmentInput[];
+  client_idempotency_key: string;
+  expected_conversation_version: number;
+  requested_budget?: AgentRuntimeBudgetInput;
+}
+
+export interface AgentSelectActiveBranchInput {
+  conversation_id: string;
+  active_branch_message_id: string;
+  client_idempotency_key: string;
+  expected_conversation_version: number;
+}
+
+export interface AgentTombstoneMessageInput {
+  conversation_id: string;
+  message_id: string;
+  client_idempotency_key: string;
+  expected_conversation_version: number;
+  destructive_confirmed: boolean;
+  reason?: string;
 }
 
 export interface AgentThread {
@@ -2812,12 +2820,6 @@ export interface StationAgentTaskRow {
   created_at: string;
   updated_at: string;
   completed_at?: string;
-}
-
-export interface AgentConversationReplayEventsInput {
-  stream_id: string;
-  conversation_id: string;
-  after_seq?: number;
 }
 
 export interface AgentTurnStreamPayload {
@@ -3597,81 +3599,6 @@ export const api = {
   openExternalUrl: (url: string) =>
     invokeRustDataFromStatus<ExternalUrlInput, { ok: boolean }>('open_external_url', { url }),
 
-  listSessions: () =>
-    invokeRustDataFromStatus<void, { conversations?: any[] }>(
-      'chat_list_conversations',
-      undefined,
-    ).then((r): Session[] =>
-      (r.conversations || []).map(mapAIChatSessionToSession),
-    ),
-
-  deleteSession: (key: string) =>
-    invokeRustDataFromStatus<ChatConversationInput, { ok: boolean }>(
-      'chat_delete_conversation',
-      { conversation_id: key },
-    ),
-
-  renameSession: (key: string, title: string) =>
-    invokeRustDataFromStatus<ChatRenameConversationInput, { ok: boolean; title: string }>(
-      'chat_rename_conversation',
-      { conversation_id: key, title },
-    ),
-
-  duplicateSession: (key: string) =>
-    invokeRustDataFromStatus<ChatConversationInput, { ok: boolean; conversationId: string }>(
-      'chat_duplicate_conversation',
-      { conversation_id: key },
-    ),
-
-  smartRenameSession: (key: string) =>
-    invokeRustDataFromStatus<ChatConversationInput, { ok: boolean; title: string }>(
-      'chat_smart_rename_conversation',
-      { conversation_id: key },
-    ),
-
-  pinSession: (key: string, pinned: boolean) =>
-    invokeRustDataFromStatus<{ conversation_id: string; pinned: boolean }, { ok: boolean }>(
-      'chat_pin_conversation',
-      { conversation_id: key, pinned },
-    ),
-
-  favoriteSession: (key: string, favorite: boolean) =>
-    invokeRustDataFromStatus<{ conversation_id: string; favorite: boolean }, { ok: boolean }>(
-      'chat_favorite_conversation',
-      { conversation_id: key, favorite },
-    ),
-
-  setSessionModel: (key: string, model: string) =>
-    invokeRustDataFromStatus<ChatSetConversationModelInput, { ok: boolean; model: string }>(
-      'chat_set_conversation_model',
-      { conversation_id: key, model },
-    ),
-
-  getMessages: (key: string) =>
-    invokeRustDataFromStatus<ChatListMessagesInput, { messages?: any[] }>(
-      'chat_list_messages',
-      { conversation_id: key },
-    ).then((r) =>
-      (r.messages || []).map(mapAIChatMessageToMessage),
-    ),
-
-  deleteMessage: (id: string) =>
-    invokeRustDataFromStatus<ChatMessageInput, { ok: boolean }>(
-      'chat_delete_message',
-      { message_id: id },
-    ),
-
-  stopChat: (sessionKey: string) =>
-    invokeRustDataFromStatus<ChatConversationInput, { ok: boolean; stopped: boolean }>('chat_stop', {
-      conversation_id: sessionKey,
-    }),
-
-  updateMessage: (id: string, content: string) =>
-    invokeRustDataFromStatus<ChatUpdateMessageInput, { ok: boolean }>('chat_update_message', {
-      message_id: id,
-      content,
-    }),
-
   listAgents: () =>
     invokeRustDataFromStatus<void, { agents: Agent[] }>('agents_list').then((r) => r.agents),
 
@@ -3724,14 +3651,6 @@ export const api = {
   searchAgents: (q: string) =>
     invokeRustDataFromStatus<AgentSearchInput, { agents: Agent[] }>('agents_search', { q }).then((r) => r.agents),
 
-  listAgentSessions: (id: string) =>
-    invokeRustDataFromStatus<AgentIdInput, { sessions: (Session & { agent_id?: string })[] }>(
-      'agents_list_sessions',
-      { id },
-    ).then((r) =>
-      r.sessions.map((s) => ({ ...s, agent_name: s.agent_name ?? s.agent_id ?? '' })),
-    ),
-
   getAgentWorkspaceInfo: (agentId: string) =>
     invokeRustDataFromStatus<{ agent_id: string }, AgentWorkspaceInfo>(
       'agent_workspace_info',
@@ -3766,6 +3685,20 @@ export const api = {
         trace_id: input.traceId,
         turn_id: input.turnId,
       },
+    ),
+
+  exportAgentTurnDiagnostics: (turnId: string) =>
+    invokeRustProto(
+      'agent_turn_diagnostics_export',
+      ExportTurnDiagnosticsResponseSchema,
+      { turn_id: turnId },
+    ),
+
+  listAgentTurnFeedback: (turnId: string) =>
+    invokeRustProto(
+      'agent_list_turn_feedback',
+      ListTurnFeedbackResponseSchema,
+      { turn_id: turnId },
     ),
 
   createAgentCollaborationTask: (input: AgentCollaborationCreateInput) =>
@@ -3852,84 +3785,17 @@ export const api = {
     }),
 
   listAvailableModels: async () => {
-    const r = await invokeRustDataFromStatus<void, { providers?: any[]; models?: any[] }>('provider_list_available_models');
-    if (r.models && Array.isArray(r.models)) {
-      const models = r.models.map((m: any) => ({
-        id: String(m.id || ''),
-        display_name: String(m.display_name || m.id || ''),
-        provider_id: String(m.provider_id || ''),
-        provider_name: String(m.provider_name || m.provider_id || ''),
-        type: String(m.type || 'chat'),
-        context_window: Number(m.context_window || 0),
-        enabled: Boolean(m.enabled ?? true),
-        runtime_kind: String(m.runtime_kind || 'direct'),
-      } as AvailableModel));
-      return { models, default: models[0]?.id || '' };
-    }
-    const models: AvailableModel[] = (r.providers || []).flatMap((p) => {
-      const cfg = parseJSONSafe(p.config_json);
-      const runtimeKind = String(cfg.runtime_kind || cfg.runtimeKind || cfg.runtime || '').trim().toLowerCase();
-      const cliCommand = String(cfg.cli_command || cfg.cliCommand || '').trim();
-      const normalizedRuntimeKind = runtimeKind === 'cli' || cliCommand ? 'cli' : 'direct';
-      const providerModels = Array.isArray(p.models) ? p.models : [];
-      if (providerModels.length > 0) {
-        return providerModels
-          .map((model: any, idx: number) => {
-            const rawId = String(model.id || '').trim();
-            const displayName = String(model.display_name || '').trim();
-            let resolvedId = rawId;
-            if (!resolvedId) {
-              if (p.check_model) {
-                resolvedId = String(p.check_model).trim();
-              } else if (displayName) {
-                resolvedId = `${p.id}:${displayName.toLowerCase().replace(/\s+/g, '-')}`;
-              } else {
-                resolvedId = `${p.id}:model-${idx}`;
-              }
-            }
-            return { model, id: resolvedId, displayName };
-          })
-          .filter(({ id }: { id: string }) => id.length > 0)
-          .map(({ model, id: mid, displayName }: {
-            model: any;
-            id: string;
-            displayName: string;
-          }) => {
-            return {
-              id: mid,
-              display_name: displayName || mid,
-              provider_id: p.id,
-              provider_name: p.name || p.id,
-              type: model.type || 'chat',
-              context_window: Number(model.context_window || 0),
-              enabled: Boolean(model.enabled ?? true),
-              function_call: Boolean(model.function_call),
-              vision: Boolean(model.vision),
-              reasoning: Boolean(model.reasoning),
-              search: Boolean(model.search),
-              image_output: Boolean(model.image_output),
-              video: Boolean(model.video),
-              protocol_override: model.protocol_override || p.protocol_override || undefined,
-              runtime_kind: normalizedRuntimeKind,
-              cli_command: cliCommand || undefined,
-            };
-          });
-      }
-      const fallbackCheckModel = String(p.check_model || '').trim();
-      const cfgDefault = String(cfg.default_model || '').trim();
-      const fallbackId = fallbackCheckModel || cfgDefault || `${p.id}:default`;
-      return [{
-        id: fallbackId,
-        display_name: fallbackId === `${p.id}:default` ? 'Default' : fallbackId,
-        provider_id: p.id,
-        provider_name: p.name || p.id,
-        type: 'chat',
-        context_window: 0,
-        enabled: true,
-        runtime_kind: normalizedRuntimeKind,
-        cli_command: cliCommand || undefined,
-      }];
-    });
+    const r = await invokeRustDataFromStatus<void, { models?: any[] }>('provider_list_available_models');
+    const models: AvailableModel[] = (r.models || []).map((m: any) => ({
+      id: String(m.id || ''),
+      display_name: String(m.display_name || m.id || ''),
+      provider_id: String(m.provider_id || ''),
+      provider_name: String(m.provider_name || m.provider_id || ''),
+      type: String(m.type || 'chat'),
+      context_window: Number(m.context_window || 0),
+      enabled: Boolean(m.enabled ?? true),
+      runtime_kind: String(m.runtime_kind || ''),
+    } as AvailableModel));
     return { models, default: models[0]?.id || '' };
   },
 
@@ -4411,13 +4277,7 @@ export const api = {
       call_id: callId,
     }),
 
-  resolveAgentLocalToolRequest: (input: AgentLocalToolRequestInput) =>
-    invokeRustDataFromStatus<AgentLocalToolRequestInput, AgentLocalToolResultEvent>(
-      'agent_resolve_local_tool_request',
-      input,
-    ),
-
-  executeAgentTurnOnce: (input: AgentExecuteTurnInput) =>
+  executeGuardedCanvasTurnOnce: (input: AgentExecuteTurnInput) =>
     invokeRustDataFromStatus<AgentExecuteTurnInput, Record<string, unknown>>(
       'agent_execute_turn',
       input,
@@ -4429,20 +4289,17 @@ export const api = {
       input,
     ),
 
-  cancelAgentTurnStream: (streamId: string) =>
-    invokeRustDataFromStatus<AgentTurnStreamCancelInput, { stream_id: string; stopped: boolean }>(
-      'agent_cancel_turn_stream',
-      { stream_id: streamId },
+  cancelAgentTurn: (turnId: string) =>
+    invokeRustDataFromStatus<AgentTurnStreamCancelInput, { turn_id: string; status: string }>(
+      'agent_cancel_turn',
+      { turn_id: turnId },
     ),
 
-  decideAgentToolApproval: (input: AgentToolApprovalDecisionInput) =>
-    invokeRustDataFromStatus<AgentToolApprovalDecisionInput, {
-      ok: boolean;
-      approvalId: string;
-      approved: boolean;
-      actor: string;
-      decidedAt: string;
-    }>('agent_decide_tool_approval', input),
+  submitAgentToolDecision: (input: AgentToolDecisionIntentInput) =>
+    invokeRustDataFromStatus<AgentToolDecisionIntentInput, AgentToolDecisionIntentResponse>(
+      'agent_submit_tool_decision',
+      input,
+    ),
 
   listAgentConversations: (agentId: string, options?: { status?: string; page?: number; pageSize?: number }) =>
     invokeRustDataFromStatus<AgentConversationListInput, { ok: boolean; conversations: AgentConversation[]; total: number }>(
@@ -4473,11 +4330,36 @@ export const api = {
       { ok: boolean; messages: AgentMessage[]; next_cursor: number; has_more: boolean }
     >('agent_conversation_messages', input),
 
-  archiveAgentConversation: (conversationId: string, permanent?: boolean) =>
-    invokeRustDataFromStatus<AgentConversationArchiveInput, { ok: boolean }>('agent_conversation_archive', {
-      conversation_id: conversationId,
-      permanent,
-    }),
+  updateAgentConversation: (input: AgentConversationUpdateInput) =>
+    invokeRustDataFromStatus<AgentConversationUpdateInput, { ok: boolean; conversation: AgentConversation }>(
+      'agent_conversation_update',
+      input,
+    ).then((r) => r.conversation),
+
+  archiveAgentConversation: (conversationId: string, expectedVersion: number, permanent?: boolean) =>
+    invokeRustDataFromStatus<AgentConversationArchiveInput, { ok: boolean }>(
+      'agent_conversation_archive',
+      {
+        conversation_id: conversationId,
+        expected_version: expectedVersion,
+        permanent,
+      },
+    ),
+
+  retryAgentTurn: (input: AgentRetryTurnInput) =>
+    invokeRustDataFromStatus<AgentRetryTurnInput, Record<string, unknown>>('agent_retry_turn', input),
+
+  regenerateAgentTurn: (input: AgentRegenerateTurnInput) =>
+    invokeRustDataFromStatus<AgentRegenerateTurnInput, Record<string, unknown>>('agent_regenerate_turn', input),
+
+  editAndResendAgentMessage: (input: AgentEditAndResendInput) =>
+    invokeRustDataFromStatus<AgentEditAndResendInput, Record<string, unknown>>('agent_edit_and_resend', input),
+
+  selectAgentActiveBranch: (input: AgentSelectActiveBranchInput) =>
+    invokeRustDataFromStatus<AgentSelectActiveBranchInput, Record<string, unknown>>('agent_select_active_branch', input),
+
+  tombstoneAgentMessage: (input: AgentTombstoneMessageInput) =>
+    invokeRustDataFromStatus<AgentTombstoneMessageInput, Record<string, unknown>>('agent_tombstone_message', input),
 
   createAgentThread: (input: AgentThreadCreateInput) =>
     invokeRustDataFromStatus<AgentThreadCreateInput, { ok: boolean; thread: AgentThread }>(
@@ -4597,12 +4479,6 @@ export const api = {
       message_id: messageId,
       translation,
     }),
-
-  replayAgentConversationEvents: (input: AgentConversationReplayEventsInput) =>
-    invokeRustDataFromStatus<AgentConversationReplayEventsInput, { stream_id: string }>(
-      'agent_replay_conversation_events',
-      input,
-    ),
 
   // ── Cron Jobs API ──
 
@@ -5598,39 +5474,6 @@ export interface ChatImageInput {
   filename?: string;
 }
 
-function millisToISO(millis?: number): string {
-  if (!millis) return new Date().toISOString();
-  return new Date(millis).toISOString();
-}
-
-function mapAIChatSessionToSession(item: any): Session {
-  const updatedMillis = Number(item.updated_at ?? item.lastTimestampMs ?? Date.now());
-  const createdMillis = Number(item.created_at ?? item.lastTimestampMs ?? Date.now());
-  return {
-    id: item.id,
-    key: item.id,
-    agent_name: item.agent_id || 'assistant',
-    title: item.title || 'New Chat',
-    message_count: Number(item.message_count ?? item.messageCount ?? item.unreadCount ?? 0),
-    model_override: item.model_name || item.modelName || undefined,
-    created_at: millisToISO(createdMillis),
-    updated_at: millisToISO(updatedMillis),
-    pinned: item.pinned ?? false,
-    favorite: item.favorite ?? false,
-  };
-}
-
-function mapAIChatMessageToMessage(item: any): Message {
-  return {
-    id: item.id,
-    role: String(item.role || '').replace('CHAT_ROLE_', '').toLowerCase() || 'assistant',
-    content: item.content || '',
-    model: item.model_name || item.modelName || undefined,
-    created_at: millisToISO(Number(item.created_at ?? item.createdAt ?? Date.now())),
-    tool_calls: item.tool_calls_json || undefined,
-  };
-}
-
 function parseJSONSafe(input?: string): Record<string, any> {
   if (!input) return {};
   try { return JSON.parse(input); } catch { return {}; }
@@ -5640,7 +5483,6 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
   const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
   const runtimeKind = String(item.runtime_kind || cfg.runtime_kind || cfg.runtimeKind || '').trim().toLowerCase();
-  const hasCliCommand = Boolean(String(item.cli_command || cfg.cli_command || cfg.cliCommand || '').trim());
   const hasKey = item.credential_status === 'configured' || Boolean(keyVaults.api_key || keyVaults.key || '');
   return {
     id: item.id,
@@ -5652,7 +5494,7 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
     has_api_key: hasKey,
     requires_api_key: item.show_api_key !== false,
     credential_status: String(item.credential_status || (hasKey ? 'configured' : 'not_configured')),
-    runtime_kind: runtimeKind === 'cli' || hasCliCommand ? 'cli' : 'direct',
+    runtime_kind: runtimeKind,
     version: Number(item.version || 0),
   };
 }
@@ -5660,8 +5502,6 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
 function mapAIChatProviderToDetail(item: any): ProviderDetail {
   const cfg = parseJSONSafe(item.config_json);
   const keyVaults = parseJSONSafe(item.key_vaults);
-  const runtimeKind = String(item.runtime_kind || cfg.runtime_kind || cfg.runtimeKind || '').trim().toLowerCase();
-  const hasCliCommand = Boolean(String(item.cli_command || cfg.cli_command || cfg.cliCommand || '').trim());
   const checkModel = item.check_model || cfg.default_model || 'default';
   const providerModels = Array.isArray(item.models)
     ? item.models
@@ -5694,21 +5534,18 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     api_key: item.api_key || keyVaults.api_key || '',
     base_url: item.base_url || cfg.base_url || '',
     default_base_url: item.base_url || cfg.default_base_url || cfg.base_url || '',
-    cli_command: item.cli_command || cfg.cli_command || cfg.cliCommand || '',
     show_api_key: item.show_api_key ?? cfg.show_api_key ?? cfg.showApiKey,
     show_checker: item.show_checker ?? true,
     check_model: checkModel,
     models: models.length > 0
       ? models
-      : runtimeKind === 'cli' || hasCliCommand
-        ? []
-        : [{
-          id: checkModel,
-          display_name: checkModel,
-          type: 'chat',
-          enabled: true,
-          context_window: 0,
-        }],
+      : [{
+        id: checkModel,
+        display_name: checkModel,
+        type: 'chat',
+        enabled: true,
+        context_window: 0,
+      }],
   };
 }
 
@@ -5716,119 +5553,48 @@ function isHttpGatewayMode() {
   return typeof window !== 'undefined' && Boolean((window as any).__PT_GATEWAY_BASE__);
 }
 
-function recordField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
-}
-
-function stringField(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
-
-function extractAgentTurnText(result: Record<string, unknown> | undefined): string {
-  if (!result) return '';
-  const responseMessage = recordField(result.response_message || result.responseMessage);
-  const turn = recordField(result.turn);
-  const trace = recordField(result.trace);
-  return String(
-    stringField(responseMessage.content) ||
-    stringField(result.content) ||
-    stringField(result.text) ||
-    stringField(result.final_response) ||
-    stringField(result.finalResponse) ||
-    stringField(turn.final_response) ||
-    stringField(turn.finalResponse) ||
-    stringField(trace.final_response) ||
-    stringField(trace.finalResponse) ||
-    '',
-  );
-}
-
-export function streamChat(
-  message: string,
-  sessionKey: string,
-  _agentName: string,
-  onEvent: (event: StreamEvent) => void,
-  onDone: () => void,
-  onError: (err: Error) => void,
-  _images?: ChatImageInput[],
-  model?: string,
-  providerId?: string,
-): AbortController {
-  const controller = new AbortController();
-  log.info('api', 'streamChat started', { sessionKey, model });
-  (async () => {
-    try {
-      const { listen } = await import('@tauri-apps/api/event');
-      const result = await invokeRustDataFromStatus<ChatCompletionInput, { stream_id: string }>(
-        'chat_completion_stream',
-        {
-          session_id: sessionKey,
-          provider_id: providerId || '',
-          model: model || '',
-          message,
-        },
-      );
-      const streamId = result?.stream_id;
-      if (!streamId) {
-        throw new Error('Failed to start stream: no stream_id returned');
+async function consumeAgentSSE(
+  response: Response,
+  signal: AbortSignal,
+  onFrame: (event: StreamEvent) => boolean,
+): Promise<boolean> {
+  if (!response.ok || !response.body) {
+    throw new Error(`Agent stream returned HTTP ${response.status}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let terminal = false;
+  while (!signal.aborted) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let boundary = buffer.indexOf('\n\n');
+    while (boundary >= 0) {
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const lines = frame.split('\n');
+      const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim() || 'message';
+      const dataText = lines
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
+      let data: Record<string, unknown> = {};
+      if (dataText) {
+        const parsed = JSON.parse(dataText);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          data = parsed as Record<string, unknown>;
+        }
       }
-
-      const unlisten = await listen<{
-        streamId: string;
-        event: string;
-        content?: string;
-        model?: string;
-        error?: string;
-        toolCallId?: string;
-        toolCallName?: string;
-        toolCallArgs?: string;
-      }>('chat:stream-event', (tauriEvent) => {
-        const payload = tauriEvent.payload;
-        if (payload.streamId !== streamId) return;
-        if (controller.signal.aborted) {
-          unlisten();
-          return;
-        }
-
-        const data: Record<string, string> = {};
-        if (payload.content) data.content = payload.content;
-        if (payload.model) data.model = payload.model;
-        if (payload.error) data.error = payload.error;
-        if (payload.toolCallId) data.id = payload.toolCallId;
-        if (payload.toolCallName) data.name = payload.toolCallName;
-        if (payload.toolCallArgs) data.args = payload.toolCallArgs;
-
-        if (payload.event === 'thinking' && payload.content?.endsWith('\n__done__')) {
-          data.content = payload.content.replace('\n__done__', '');
-          data.done = 'true';
-        }
-
-        onEvent({ event: payload.event, data });
-
-        if (payload.event === 'done') {
-          unlisten();
-          log.info('api', 'streamChat complete');
-          onDone();
-        } else if (payload.event === 'error') {
-          unlisten();
-          onError(new Error(payload.error || 'Unknown stream error'));
-        }
-      });
-
-      controller.signal.addEventListener('abort', () => {
-        unlisten();
-      });
-    } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        log.error('api', 'streamChat error', { error: err.message || String(err) });
-        onError(err instanceof Error ? err : new Error(String(err)));
+      terminal = onFrame({ event: event as StreamEvent['event'], data }) || terminal;
+      if (terminal) {
+        await reader.cancel();
+        return true;
       }
+      boundary = buffer.indexOf('\n\n');
     }
-  })();
-
-  return controller;
+  }
+  return terminal;
 }
 
 export function streamAgentTurn(
@@ -5841,39 +5607,66 @@ export function streamAgentTurn(
   log.info('api', 'streamAgentTurn started', { conversationId: input.conversation_id, agentId: input.agent_id });
   if (isHttpGatewayMode()) {
     (async () => {
-      try {
-        const result = await api.executeAgentTurnOnce(input);
-        if (controller.signal.aborted) return;
-        const content = extractAgentTurnText(result);
-        if (content) {
-          onEvent({ event: 'text', data: { content } });
+      let turnId = '';
+      let conversationId = input.conversation_id || '';
+      let lastSequence = 0;
+      let settled = false;
+      const forward = (event: StreamEvent): boolean => {
+        const seq = Number(event.data?.seq || 0);
+        if (Number.isFinite(seq) && seq > lastSequence) lastSequence = seq;
+        const eventTurnId = String(event.data?.turnId || event.data?.turn_id || '');
+        const eventConversationId = String(event.data?.conversationId || event.data?.conversation_id || '');
+        if (eventTurnId) turnId = eventTurnId;
+        if (eventConversationId) conversationId = eventConversationId;
+        onEvent(event);
+        if (event.event === 'error') {
+          onError(new Error(String(event.data?.error || 'agent.error.streamFailed')));
+          settled = true;
+          return true;
         }
-        const trace = recordField(result?.trace);
-        const turn = recordField(result?.turn);
-        onEvent({
-          event: 'done',
-          data: {
-            model: stringField(trace.model) || stringField(turn.model) || input.model || '',
-          },
+        if (event.event === 'done' || event.event === 'cancelled' || event.event === 'catchup_done') {
+          onDone();
+          settled = true;
+          return true;
+        }
+        return false;
+      };
+      controller.signal.addEventListener('abort', () => {
+        if (turnId) {
+          api.cancelAgentTurn(turnId).catch((error) => {
+            log.warn('api', 'Browser Agent turn cancel failed', { error: String(error) });
+          });
+        }
+      }, { once: true });
+      try {
+        const gatewayBase = String((window as any).__PT_GATEWAY_BASE__ || '');
+        const response = await fetch(`${gatewayBase}/agent/turn/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+          body: JSON.stringify({ ...input, stream: true }),
+          signal: controller.signal,
         });
-        onDone();
-      } catch (err: unknown) {
-        if (!controller.signal.aborted) {
-          const error = err instanceof Error ? err : new Error(String(err));
-          const rustErr = err as RustCommandException;
-          if (rustErr?.details && typeof rustErr.details === 'object') {
-            const details = rustErr.details as Record<string, unknown>;
-            if (details.resolution) {
-              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).resolution = details.resolution;
-            }
-            if (typeof details.detail === 'string') {
-              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).errorDetail = details.detail;
-            }
-            if (typeof details.providerId === 'string') {
-              (error as Error & { resolution?: unknown; errorDetail?: string; providerId?: string }).providerId = details.providerId;
-            }
+        const terminal = await consumeAgentSSE(response, controller.signal, forward);
+        if (!terminal && !controller.signal.aborted) {
+          if (!turnId || !conversationId) {
+            throw new Error('agent.error.streamIdentityMissing');
           }
-          onError(error);
+          onEvent({ event: 'reconciling', data: { turnId, conversationId, seq: lastSequence } });
+          const replay = await fetch(`${gatewayBase}/agent/turn/events`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+            body: JSON.stringify({
+              conversation_id: conversationId,
+              turn_id: turnId,
+              after_seq: lastSequence,
+            }),
+            signal: controller.signal,
+          });
+          await consumeAgentSSE(replay, controller.signal, forward);
+        }
+      } catch (err: unknown) {
+        if (!controller.signal.aborted && !settled) {
+          onError(err instanceof Error ? err : new Error(String(err)));
         }
       }
     })();
@@ -5881,13 +5674,10 @@ export function streamAgentTurn(
   }
   (async () => {
     let unlistenLive: (() => void) | undefined;
-    let unlistenReplay: (() => void) | undefined;
     let settled = false;
     const cleanup = () => {
       unlistenLive?.();
-      unlistenReplay?.();
       unlistenLive = undefined;
-      unlistenReplay = undefined;
     };
     const settle = () => {
       if (settled) return;
@@ -5899,7 +5689,7 @@ export function streamAgentTurn(
       const streamId = input.stream_id || createAgentTurnStreamId();
       let lastEventSeq = 0;
       let capturedConversationId = input.conversation_id || '';
-      let replayStarted = false;
+      let capturedTurnId = '';
 
       const forwardEvent = (payload: AgentTurnStreamPayload) => {
         const data: Record<string, unknown> = {};
@@ -5921,6 +5711,12 @@ export function streamAgentTurn(
         if (seq > 0 && seq > lastEventSeq) {
           lastEventSeq = seq;
         }
+        const eventTurnId = typeof payload.data?.turnId === 'string'
+          ? payload.data.turnId
+          : typeof payload.data?.turn_id === 'string'
+            ? payload.data.turn_id
+            : '';
+        if (eventTurnId) capturedTurnId = eventTurnId;
         if (payload.event === 'conversation_created' && typeof payload.data?.conversation_id === 'string') {
           capturedConversationId = payload.data.conversation_id;
         }
@@ -5936,69 +5732,6 @@ export function streamAgentTurn(
         onEvent({ event: payload.event, data });
       };
 
-      const startReplay = async () => {
-        if (replayStarted || settled) return;
-        replayStarted = true;
-        if (!capturedConversationId) {
-          log.warn('api', 'Replay skipped: no conversationId captured', { streamId });
-          onDone();
-          settle();
-          return;
-        }
-        try {
-          const replayStreamId = `replay-${streamId}-${Date.now()}`;
-          const afterSeq = lastEventSeq > 0 ? lastEventSeq : 0;
-          unlistenReplay = await listen<AgentTurnStreamPayload>('agent:turn-stream-event', (tauriEvent) => {
-            const replayPayload = tauriEvent.payload;
-            if (replayPayload.streamId !== replayStreamId) return;
-            if (controller.signal.aborted) {
-              unlistenReplay?.();
-              return;
-            }
-            forwardEvent(replayPayload);
-            if (replayPayload.event === 'catchup_done') {
-              unlistenReplay?.();
-              unlistenReplay = undefined;
-              onDone();
-              settle();
-            }
-            if (replayPayload.event === 'error') {
-              unlistenReplay?.();
-              unlistenReplay = undefined;
-              const errData = replayPayload.data || {};
-              const err = new Error(typeof errData.error === 'string' ? errData.error : 'agent.error.replayFailed') as Error & {
-                resolution?: unknown;
-                errorDetail?: string;
-                providerId?: string;
-              };
-              onError(err);
-              settle();
-            }
-            if (replayPayload.event === 'done' || replayPayload.event === 'cancelled') {
-              unlistenReplay?.();
-              unlistenReplay = undefined;
-              onDone();
-              settle();
-            }
-          });
-          const replayResult = await api.replayAgentConversationEvents({
-            stream_id: replayStreamId,
-            conversation_id: capturedConversationId,
-            after_seq: afterSeq,
-          });
-          if (replayResult?.stream_id !== replayStreamId) {
-            unlistenReplay?.();
-            throw new Error('agent.error.replayStreamIdMismatch');
-          }
-        } catch (replayErr: unknown) {
-          if (!settled) {
-            log.error('api', 'Replay failed', { error: String(replayErr), conversationId: capturedConversationId });
-            onError(replayErr instanceof Error ? replayErr : new Error(String(replayErr)));
-            settle();
-          }
-        }
-      };
-
       unlistenLive = await listen<AgentTurnStreamPayload>('agent:turn-stream-event', (tauriEvent) => {
         const payload = tauriEvent.payload;
         if (payload.streamId !== streamId) return;
@@ -6007,18 +5740,7 @@ export function streamAgentTurn(
           return;
         }
         forwardEvent(payload);
-        if (payload.event === 'done') {
-          unlistenLive?.();
-          unlistenLive = undefined;
-          onDone();
-          settle();
-        }
-        if (payload.event === 'reconciling') {
-          unlistenLive?.();
-          unlistenLive = undefined;
-          void startReplay();
-        }
-        if (payload.event === 'cancelled') {
+        if (payload.event === 'done' || payload.event === 'cancelled' || payload.event === 'catchup_done') {
           unlistenLive?.();
           unlistenLive = undefined;
           onDone();
@@ -6047,17 +5769,21 @@ export function streamAgentTurn(
         throw new Error('agent.error.streamIdMismatch');
       }
       if (controller.signal.aborted) {
-        api.cancelAgentTurnStream(streamId).catch((error) => {
-          log.warn('api', 'streamAgentTurn cancel failed', { error: String(error) });
-        });
+        if (capturedTurnId) {
+          api.cancelAgentTurn(capturedTurnId).catch((error) => {
+            log.warn('api', 'Agent turn cancel failed', { error: String(error) });
+          });
+        }
         cleanup();
         return;
       }
 
       controller.signal.addEventListener('abort', () => {
-        api.cancelAgentTurnStream(streamId).catch((error) => {
-          log.warn('api', 'streamAgentTurn cancel failed', { error: String(error) });
-        });
+        if (capturedTurnId) {
+          api.cancelAgentTurn(capturedTurnId).catch((error) => {
+            log.warn('api', 'Agent turn cancel failed', { error: String(error) });
+          });
+        }
         cleanup();
       }, { once: true });
     } catch (err: unknown) {
@@ -6127,7 +5853,7 @@ export function streamAgentCollaborationEvents(
   return controller;
 }
 
-export const executeAgentTurn = streamChat;
+export const executeAgentTurn = streamAgentTurn;
 
 // ---------------------------------------------------------------------------
 // Agent Growth APIs
@@ -6211,14 +5937,41 @@ export async function submitAgentFeedback(
   conversationId: string,
   signal: 'positive' | 'negative',
   comment?: string,
-): Promise<void> {
-  await invokeRustDataFromStatus('agent_submit_feedback', {
+  options?: {
+    assistantMessageId?: string;
+    categories?: string[];
+    idempotencyKey?: string;
+    source?: string;
+  },
+): Promise<RecordFeedbackResponse> {
+  return invokeRustProto('agent_submit_feedback', RecordFeedbackResponseSchema, {
     agent_id: agentId,
     turn_id: turnId,
     conversation_id: conversationId,
+    assistant_message_id: options?.assistantMessageId ?? '',
     signal,
+    source: options?.source ?? 'message_action',
+    rating: signal === 'positive' ? 1 : -1,
+    categories: options?.categories ?? [],
     comment: comment ?? null,
+    idempotency_key: options?.idempotencyKey ?? crypto.randomUUID(),
   });
+}
+
+export async function listAgentTurnFeedback(turnId: string): Promise<ListTurnFeedbackResponse> {
+  return invokeRustProto(
+    'agent_list_turn_feedback',
+    ListTurnFeedbackResponseSchema,
+    { turn_id: turnId },
+  );
+}
+
+export async function exportAgentTurnDiagnostics(turnId: string): Promise<ExportTurnDiagnosticsResponse> {
+  return invokeRustProto(
+    'agent_turn_diagnostics_export',
+    ExportTurnDiagnosticsResponseSchema,
+    { turn_id: turnId },
+  );
 }
 
 export async function agentQuickCompletion(agentId: string, prompt: string): Promise<string> {

@@ -1,7 +1,7 @@
 # LobeHub Parity 全量对齐落地执行计划
 
 > **Status**: active
-> **Delivery**: implementation-complete / debugger-cleanup-pending
+> **Delivery**: partial / marketplace-data-future
 > **Created**: 2026-08-16
 > **Owner**: Peers-Touch Agent Team
 > **Plan type**: EXECUTE（多阶段能力对齐落地）
@@ -21,16 +21,16 @@
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
 | Stage | `EXECUTE` |
-| Current workstream | Phase 2 close-out evidence / Native product proof |
-| Current step | C7 已使用 approved GitHub OAuth connection 完成 Native proof；等待用户对 post-login update-loop 的 debugger confirmation gate，随后清理 instrumentation 与 debug 资产 |
-| Progress | 源码追踪 39/45；本计划非候选范围 16/16 已源码闭环；Native product proof 5/5 `PROVEN`（I1/C6/C7/R9/P2） |
-| Last completed | C7 `agent-native-connector-lifecycle-e2e` 已完成 approved GitHub OAuth connection→Native mount→tool sync→Station-backed Agent config readback→unmount；完整 bundle 6/6 passed，Agent domain `--require-proven` 6/6 PROVEN |
-| Current action | 五处产物同步为 Native 5/5 proof；approved GitHub OAuth connection 保留，disposable Agent/provider/binding fixtures 已释放；debug instrumentation 按 TRAE debugger confirmation gate 保留 |
-| Next action | 用户确认 shell crash Fixed/Abort 后清理 debugger instrumentation、server 与三项 debug 文件；随后重跑最终 bundle、`--require-proven` 与五方一致性审计 |
-| Blockers | debug cleanup 等待用户显式确认。另有 1 个 Social 域既有单测失败，属于明确排除范围 |
-| Decisions required | 当前：确认 post-login shell crash 已修复或要求继续诊断。后续范围移交 `20260817-modern-chat-agent-v2.md`；G1/G2 已决定长期不支持，P3 进入 V2，E1/G3b 待 V2 产品评审 |
-| Evidence | PASS: Agent structural validation; PASS: Agent `--require-proven` 6/6; PROVEN: `i1.json`, `c6.json`, `c7.json`, `r9.json`, `p2.json`; aggregate `latest-run.json` = `DONE/PROVEN`, source traceability complete; disposable Agents/providers/bindings cleanup counts all zero |
-| Last updated | 2026-08-17 09:56 CST |
+| Current workstream | Future Work — Marketplace 数据供应与治理 |
+| Current step | 已将 X3 从完整对齐降为部分闭环，并登记未来数据平面与 Acceptance 闭环 |
+| Progress | 源码追踪 38/45 完整闭环 + X3 部分闭环；本计划非候选范围 15/16 完整闭环；Native product proof 5/5 `PROVEN`（I1/C6/C7/R9/P2） |
+| Last completed | Marketplace 当前实现与 LobeHub hosted market 数据来源完成源码审计；本地 JSON index parser/ledger 与未来官方/联邦 catalog 明确分界 |
+| Current action | 保留现有 Marketplace UI 与安装分发，停止宣称数据供应和开箱体验完整对齐 |
+| Next action | Marketplace 重新进入实施时，先完成 catalog truth owner、默认可信 source、发布/撤销/签名治理和 source-to-install Acceptance 的产品与架构评审 |
+| Blockers | Future scope 未进入 PRODUCT/DESIGN；当前无可执行实现任务 |
+| Decisions required | 未来需决定官方集中 catalog、Station 联邦 catalog 或两者组合的产品边界 |
+| Evidence | Source audit: `MarketplacePage.tsx#loadMarketplaceCatalog`, `skills_market/mod.rs#load_market_store/#skills_market_sync`, LobeHub `discover.ts` + `MarketService`; Agent capability 保留 Marketplace data-plane `UNPROVEN` |
+| Last updated | 2026-08-21 |
 
 ---
 
@@ -105,9 +105,9 @@
 | C6 Knowledge | ✅ **已对齐** | 收口为一等 agent↔resource 绑定关系（对齐 Lobe `addFilesToAgent` 语义边界=id 关联落库，**非 RAG 检索**——检索属文件上传管线，见脑图 B8）：描述目录仍存 `config_json`，写入后 `reconcileKnowledgeBindings` 落 Station 既有但先前无客户端调用的 `agent_knowledge_bindings`；Desktop Rust build 纳入既有 `agent_config.proto` 并用 `request_proto` protobuf 调 typed 路由；reconcile partial failure 显式抛给 UI且保留已成功 descriptor projection；不改 proto schema/版本、不新建后端；验收 cargo/tsc/check/go build 全绿（2026-08-16） |
 | C7 Connectors | ✅ **已对齐** | 三腿补齐 mount/OAuth/syncTools，复用既有 OAuth2 子系统 + chatConfig 持久化，无新后端/无 proto：mount 从 localStorage 收口为 per-agent `chatConfig.connectors`（同 Station config_json 通道）；OAuth 复用 `oauth2.startAuth` loopback；syncTools 复用 provider resources 填充 enabledTools，失败显式反馈且可手动 Sync retry；projection load 迁入 `agentCapabilityRuntime` bootstrap/reconcile，面板纯渲染/动作；死 localStorage/mount effect 已删；验收 tsc/check 绿（2026-08-16） |
 | P2 Portal 侧栏 | ✅ **已对齐** | 纯客户端导航状态机闭环：`portalStack` + top `activeView`，统一 `pushPortalView`，补 `goBack`/back button；collapse 保留任务栈、explicit close 清栈；Portal titles/toggle/back/close 全 i18n；不复制 Lobe 额外 view 广度，无后端/proto；验收 tsc/check/diff-check 绿（2026-08-16） |
-| X3 Marketplace | ✅ **已对齐** | 收口为 Peers 多来源 package discover：聚合全部 synced Git sources；按 packageType 提供 Agent/Skill/MCP+merged Plugin tab；页面内 add+sync source、搜索、24 个增量渲染、detail/trust/risk/source/content、install/uninstall；复用 Desktop Rust market store/ledger 与既有 Agent import、Station Skill install、MCP create、Plugin install，不建 Lobe Cloud catalog；Model/Provider discover 归 C1/C2 Station catalog；旧 local-roster/skill-only cards 删除；组件树登记；验收 tsc/check/diff-check + Rust market tests 5/5（2026-08-16） |
+| X3 Marketplace | 🟨 **部分对齐；数据供应列入未来工作** | 当前完成 Desktop 本地 JSON index source 的登记、同步、聚合、分类、详情和安装分发。未完成默认可信 source、真正的 Git branch 解析、官方或联邦 catalog、来源签名/治理、分页和开箱数据；首次使用可能为空。不得以本地 parser/ledger 通过宣称与 LobeHub hosted market 完整对齐。 |
 
-> **Phase 2 完成（10/10）**：R10 · R13 · I2 · I3 · C5 · C6 · C7 · P2 · X3，以及计划内补入的 R9 全部 ✅。本计划 16 个非候选节点已全部闭环；P3 移交 V2，E1/G3b 保持待决策，G1/G2 已明确长期不支持。
+> **Phase 2 实现切片完成**：R10 · R13 · I2 · I3 · C5 · C6 · C7 · P2，以及计划内补入的 R9 已闭环。X3 仅完成本地 source parser/ledger 与安装分发，Marketplace 数据供应和开箱体验转入未来工作，不计为完整产品对齐。
 
 ### Phase 3 — 决策移交（不在本计划继续实施）
 
@@ -116,6 +116,17 @@
 | P3 Home 深度 | 进入 `20260817-modern-chat-agent-v2.md` required scope |
 | E1 Evaluation | V2 产品评审决定；默认不做用户可见 Evaluation 产品 |
 | G3b TTS 服务端合成 | V2 产品评审决定；建议不纳入核心文本 Chat Agent |
+
+### Future Work — Marketplace 数据供应与治理
+
+| 项目 | 当前缺口 | 未来完成条件 |
+|---|---|---|
+| 默认可信 source | 新 profile 的 Desktop market store 默认为空 | 安装 profile 后自动获得至少一个受治理、可撤销的默认 source |
+| Source 协议 | 当前 sync 直接读取 URL JSON，保存的 `branch` 未参与解析 | 定义并实现 Git repository/branch 或稳定 catalog API 契约，禁止把普通仓库 URL 当 JSON index |
+| 官方 / 联邦 catalog | 当前无集中目录，也无 Station/Federation 聚合 | 明确 catalog truth owner、发布审核、撤销、版本与联邦发现边界 |
+| 信任治理 | 当前只消费 source 提供的 trust/risk 元数据 | 来源签名、publisher identity、扫描结果和安装策略均可验证 |
+| 开箱体验 | 无 source 时 Marketplace 空白 | One profile 首次进入可浏览 Agent、Skill、MCP 的真实目录 |
+| Acceptance | 仅 parser/ledger 测试，缺真实数据旅程 | 稳定 Gate 覆盖默认 source→同步→列表可见→详情→安装→目标权威 readback→卸载/清理 |
 | G1 Image 生成 | 长期不支持 |
 | G2 Video 生成 | 长期不支持 |
 
@@ -138,8 +149,8 @@
 ## 5. 进度条
 
 ```
-已对齐 ✅ 39/45   |   本计划范围（16 个 ⬜）已对齐 16/16 · Phase 1/2 完成 · 新范围移交 V2
-[██████████████████████████░░░░] 87%（全量）
+已对齐 ✅ 38/45 + 部分闭环 🟨 1/45   |   本计划范围完整闭环 15/16 · X3 数据供应移交 Future Work
+[█████████████████████████░░░░░] 84%（完整闭环口径）
 ```
 
 > 每完成一个节点更新此处 + 脑图 icon。当前候选 3 项、⛔ 3 项不计入「本计划范围」分母。
@@ -160,7 +171,7 @@
 > - 2026-08-16 C7 Connectors → ✅（三腿 mount/OAuth/syncTools：mount 收口 chatConfig.connectors 持久化、OAuth 复用 oauth2.startAuth、syncTools 复用 provider resources；projection 迁 agentCapabilityRuntime；失败可见可重试；死 localStorage/mount effect 删）
 > - 2026-08-16 I2 Follow-up → ✅（计划原判过时：服务端 GenerateFollowUpSuggestions 已在 done 事件生成；落地=行为对齐 fill-not-send：composerFill/fillComposer + ChatInput 消费；无新后端/proto）
 > - 2026-08-16 P2 Portal 侧栏 → ✅（单 activeView 收口为 portalStack 状态机；补 push/replace-top/goBack/close/toggle + back UI；Portal 文案全 i18n；无后端/proto）
-> - 2026-08-16 X3 Marketplace → ✅（多 Git source 聚合 + Agent/Skill/MCP+Plugin package taxonomy + source add/sync + detail/trust/risk + install/uninstall；复用既有 Rust market ledger/安装分发；Rust tests 5/5）→ **Phase 2 完成**
+> - 2026-08-16 X3 Marketplace → 🟨（本地 JSON index source 聚合、package taxonomy 与安装分发完成；默认可信 source、Git branch 解析、官方/联邦 catalog、治理和开箱数据转 Future Work）
 > - 2026-08-17 Native close-out → I1/C6/C7/R9/P2 5/5 `PROVEN`。五项独立 Feature/Capability/Gate 接线完成，aggregate 假阳性删除；C6 Gate 修复 string-ID delete 静默零行，P2 Gate 修复 collapse 误清栈，R9 Gate 修复 provider protojson/version cleanup 与 Agent name readback 契约；C7 使用 approved GitHub OAuth 完成 mount/sync/readback/unmount。
 
 ### Phase 2 Close-out Evidence
@@ -197,6 +208,6 @@
 
 ## 6. 完成标准
 
-- 16 个 ⬜ 全部 → ✅（六项证据齐全）
+- 15 个节点完整闭环；X3 保持部分闭环，直到 Marketplace 数据供应与治理 Future Work 的 Acceptance 通过
 - 脑图 §2 / SVG / 本计划 §3 / §5 四处一致
 - 原候选项已完成决策移交：P3 进入 V2，E1/G3b 待 V2 产品评审，G1/G2 长期不支持

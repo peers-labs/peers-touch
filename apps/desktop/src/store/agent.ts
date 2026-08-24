@@ -17,19 +17,6 @@ import { beginMutation, endMutation, toStoreError, type RevalidationState } from
 type AgentSurface = 'chat' | 'profile';
 export type AgentSaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'failed' | 'conflict';
 
-export function resolveAgentModelRef(
-  agent: Pick<Agent, 'provider' | 'model'> | undefined,
-  availableModels: AvailableModel[],
-): { provider: string; model: string } | null {
-  const provider = agent?.provider?.trim() || '';
-  const model = agent?.model?.trim() || '';
-  if (!provider || !model) return null;
-  const executable = availableModels.some(
-    (item) => item.enabled && item.provider_id === provider && item.id === model,
-  );
-  return executable ? { provider, model } : null;
-}
-
 // C6: Reconcile Station `agent_knowledge_bindings` (the first-class join relation) with the
 // agent's knowledge-resource descriptor catalog. Each descriptor whose policy is not
 // `disabled` gets a binding row keyed by resource id (LobeHub `addFilesToAgent` boundary);
@@ -245,11 +232,19 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         }),
       ]);
       const raw = result.agents || [];
-      const agents = raw.map((a) => ({
+      let agents = raw.map((a) => ({
         ...a,
         title: resolveI18nValue(a.title),
         description: resolveI18nValue(a.description),
       }));
+      if (agents.length === 0) {
+        try {
+          const created = await api.createAgent({ name: 'assistant', description: '' });
+          agents = [{ ...created, title: resolveI18nValue(created.title), description: resolveI18nValue(created.description) }];
+        } catch (createError) {
+          log.warn('agent', 'Auto-create default agent failed', { error: toStoreError(createError) });
+        }
+      }
       log.info('agent', 'Agents loaded', { count: agents.length });
       const currentSelected = persistedSelected || get().selectedAgent;
       const fallbackAgent = result.defaultAgent || agents.find((agent) => agent.isDefault)?.name || agents[0]?.name || 'assistant';

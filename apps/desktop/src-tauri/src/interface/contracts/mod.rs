@@ -32,62 +32,6 @@ pub struct SettingsSetInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatListMessagesInput {
-    pub conversation_id: String,
-    pub cursor: Option<String>,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatSendMessageInput {
-    pub conversation_id: String,
-    pub content: String,
-    pub client_message_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatCompletionInput {
-    pub session_id: String,
-    pub provider_id: Option<String>,
-    pub model: Option<String>,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMarkReadInput {
-    pub conversation_id: String,
-    pub message_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatConversationInput {
-    pub conversation_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatRenameConversationInput {
-    pub conversation_id: String,
-    pub title: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatSetConversationModelInput {
-    pub conversation_id: String,
-    pub model: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatUpdateMessageInput {
-    pub message_id: String,
-    pub content: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessageInput {
-    pub message_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimelineListInput {
     pub cursor: Option<String>,
     pub limit: Option<u32>,
@@ -151,7 +95,6 @@ pub struct ProviderUpdateInput {
     pub key_vaults: Option<String>,
     pub config_json: Option<String>,
     pub runtime_kind: Option<String>,
-    pub cli_command: Option<String>,
     pub protocol: Option<String>,
     #[serde(default)]
     pub version: i64,
@@ -172,7 +115,6 @@ pub struct ProviderCreateInput {
     pub key_vaults: String,
     pub config_json: String,
     pub runtime_kind: Option<String>,
-    pub cli_command: Option<String>,
     pub protocol: Option<String>,
 }
 

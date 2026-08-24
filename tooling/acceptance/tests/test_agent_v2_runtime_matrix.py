@@ -47,6 +47,74 @@ class AgentV2RuntimeMatrixTest(unittest.TestCase):
         )
         self.assertEqual(tuples, sorted(tuples))
 
+    def test_foundation_rows_define_disjoint_role_policies(self) -> None:
+        policies = self.module.role_policy_by_row(
+            self.reviewed,
+            "agent-v2-kernel-foundation-e2e",
+        )
+        self.assertEqual(len(policies), 8)
+        self.assertIn(
+            "receiver-dom",
+            policies["foundation-desktop-direct"]["required"],
+        )
+        self.assertIn(
+            "contract-evidence",
+            policies["foundation-mobile-contract"]["required"],
+        )
+        self.assertIn(
+            "guard-report",
+            policies["foundation-d11"]["required"],
+        )
+        self.assertIn(
+            "receiver-dom",
+            policies["foundation-mobile-contract"]["not_applicable"],
+        )
+        profiles = self.module.runtime_attestation_profile_by_row(
+            self.reviewed,
+            "agent-v2-kernel-foundation-e2e",
+        )
+        self.assertEqual(profiles["foundation-desktop-direct"], "direct_runtime")
+        self.assertEqual(profiles["foundation-mobile-contract"], "contract_only")
+        self.assertEqual(
+            profiles["foundation-d11"],
+            "orchestration_guard",
+        )
+
+    def test_rejects_overlapping_role_policy(self) -> None:
+        matrix = copy.deepcopy(self.reviewed)
+        matrix["rows"][0]["role_policy"]["not_applicable"].append(
+            "cell-results"
+        )
+        with self.assertRaisesRegex(self.module.MatrixError, "overlaps"):
+            self.module.expand_matrix(matrix)
+
+    def test_rejects_role_policy_without_always_roles(self) -> None:
+        matrix = copy.deepcopy(self.reviewed)
+        matrix["rows"][0]["role_policy"]["always"] = ["cell-results"]
+        with self.assertRaisesRegex(
+            self.module.MatrixError,
+            "must include",
+        ):
+            self.module.expand_matrix(matrix)
+
+    def test_rejects_role_policy_without_attestation_profile(self) -> None:
+        matrix = copy.deepcopy(self.reviewed)
+        matrix["rows"][0].pop("runtime_attestation_profile")
+        with self.assertRaisesRegex(
+            self.module.MatrixError,
+            "requires runtime_attestation_profile",
+        ):
+            self.module.expand_matrix(matrix)
+
+    def test_rejects_unknown_attestation_profile(self) -> None:
+        matrix = copy.deepcopy(self.reviewed)
+        matrix["rows"][0]["runtime_attestation_profile"] = "synthetic"
+        with self.assertRaisesRegex(
+            self.module.MatrixError,
+            "unknown runtime attestation profile",
+        ):
+            self.module.expand_matrix(matrix)
+
     def test_rejects_unknown_sample_set(self) -> None:
         matrix = copy.deepcopy(self.reviewed)
         matrix["rows"][0]["sample_set"] = "missing"

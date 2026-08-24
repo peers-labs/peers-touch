@@ -2,8 +2,8 @@
 // @generated from file domain/agent/agent_config.proto (package peers_touch.model.agent.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/agent/agent_config.proto.
  */
 export const file_domain_agent_agent_config: GenFile = /*@__PURE__*/
-  fileDesc("Ch9kb21haW4vYWdlbnQvYWdlbnRfY29uZmlnLnByb3RvEhpwZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MSLLAQoVQWdlbnRLbm93bGVkZ2VCaW5kaW5nEgoKAmlkGAEgASgJEhAKCGFnZW50X2lkGAIgASgJEhMKC3Jlc291cmNlX2lkGAMgASgJEg4KBnBvbGljeRgEIAEoCRIPCgdlbmFibGVkGAUgASgIEi4KCmNyZWF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrQBChFBZ2VudFNraWxsQmluZGluZxIKCgJpZBgBIAEoCRIQCghhZ2VudF9pZBgCIAEoCRIQCghza2lsbF9pZBgDIAEoCRIPCgdlbmFibGVkGAQgASgIEi4KCmNyZWF0ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrUBCg9BZ2VudE1jcEJpbmRpbmcSCgoCaWQYASABKAkSEAoIYWdlbnRfaWQYAiABKAkSEwoLc2VydmVyX25hbWUYAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI1CiFMaXN0QWdlbnRLbm93bGVkZ2VCaW5kaW5nc1JlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkiaQoiTGlzdEFnZW50S25vd2xlZGdlQmluZGluZ3NSZXNwb25zZRJDCghiaW5kaW5ncxgBIAMoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50S25vd2xlZGdlQmluZGluZyJoCiJDcmVhdGVBZ2VudEtub3dsZWRnZUJpbmRpbmdSZXF1ZXN0EkIKB2JpbmRpbmcYASABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudEtub3dsZWRnZUJpbmRpbmciaQojQ3JlYXRlQWdlbnRLbm93bGVkZ2VCaW5kaW5nUmVzcG9uc2USQgoHYmluZGluZxgBIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50S25vd2xlZGdlQmluZGluZyJoCiJVcGRhdGVBZ2VudEtub3dsZWRnZUJpbmRpbmdSZXF1ZXN0EkIKB2JpbmRpbmcYASABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudEtub3dsZWRnZUJpbmRpbmciaQojVXBkYXRlQWdlbnRLbm93bGVkZ2VCaW5kaW5nUmVzcG9uc2USQgoHYmluZGluZxgBIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50S25vd2xlZGdlQmluZGluZyIwCiJEZWxldGVBZ2VudEtub3dsZWRnZUJpbmRpbmdSZXF1ZXN0EgoKAmlkGAEgASgJIjYKI0RlbGV0ZUFnZW50S25vd2xlZGdlQmluZGluZ1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiMQodTGlzdEFnZW50U2tpbGxCaW5kaW5nc1JlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkiYQoeTGlzdEFnZW50U2tpbGxCaW5kaW5nc1Jlc3BvbnNlEj8KCGJpbmRpbmdzGAEgAygLMi0ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRTa2lsbEJpbmRpbmciYAoeQ3JlYXRlQWdlbnRTa2lsbEJpbmRpbmdSZXF1ZXN0Ej4KB2JpbmRpbmcYASABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudFNraWxsQmluZGluZyJhCh9DcmVhdGVBZ2VudFNraWxsQmluZGluZ1Jlc3BvbnNlEj4KB2JpbmRpbmcYASABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudFNraWxsQmluZGluZyJgCh5VcGRhdGVBZ2VudFNraWxsQmluZGluZ1JlcXVlc3QSPgoHYmluZGluZxgBIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50U2tpbGxCaW5kaW5nImEKH1VwZGF0ZUFnZW50U2tpbGxCaW5kaW5nUmVzcG9uc2USPgoHYmluZGluZxgBIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50U2tpbGxCaW5kaW5nIiwKHkRlbGV0ZUFnZW50U2tpbGxCaW5kaW5nUmVxdWVzdBIKCgJpZBgBIAEoCSIyCh9EZWxldGVBZ2VudFNraWxsQmluZGluZ1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiLwobTGlzdEFnZW50TWNwQmluZGluZ3NSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJIl0KHExpc3RBZ2VudE1jcEJpbmRpbmdzUmVzcG9uc2USPQoIYmluZGluZ3MYASADKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1jcEJpbmRpbmciXAocQ3JlYXRlQWdlbnRNY3BCaW5kaW5nUmVxdWVzdBI8CgdiaW5kaW5nGAEgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRNY3BCaW5kaW5nIl0KHUNyZWF0ZUFnZW50TWNwQmluZGluZ1Jlc3BvbnNlEjwKB2JpbmRpbmcYASABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1jcEJpbmRpbmciXAocVXBkYXRlQWdlbnRNY3BCaW5kaW5nUmVxdWVzdBI8CgdiaW5kaW5nGAEgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRNY3BCaW5kaW5nIl0KHVVwZGF0ZUFnZW50TWNwQmluZGluZ1Jlc3BvbnNlEjwKB2JpbmRpbmcYASABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1jcEJpbmRpbmciKgocRGVsZXRlQWdlbnRNY3BCaW5kaW5nUmVxdWVzdBIKCgJpZBgBIAEoCSIwCh1EZWxldGVBZ2VudE1jcEJpbmRpbmdSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIjkKEEhpZGVNb2RlbFJlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkSEAoIbW9kZWxfaWQYAiABKAkiHwoRSGlkZU1vZGVsUmVzcG9uc2USCgoCb2sYASABKAgiLQoWR2V0SGlkZGVuTW9kZWxzUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCSIwChdHZXRIaWRkZW5Nb2RlbHNSZXNwb25zZRIVCg1oaWRkZW5fbW9kZWxzGAEgAygJQktaSWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvYWdlbnQvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("Ch9kb21haW4vYWdlbnQvYWdlbnRfY29uZmlnLnByb3RvEhpwZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MSLLAQoVQWdlbnRLbm93bGVkZ2VCaW5kaW5nEgoKAmlkGAEgASgJEhAKCGFnZW50X2lkGAIgASgJEhMKC3Jlc291cmNlX2lkGAMgASgJEg4KBnBvbGljeRgEIAEoCRIPCgdlbmFibGVkGAUgASgIEi4KCmNyZWF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrQBChFBZ2VudFNraWxsQmluZGluZxIKCgJpZBgBIAEoCRIQCghhZ2VudF9pZBgCIAEoCRIQCghza2lsbF9pZBgDIAEoCRIPCgdlbmFibGVkGAQgASgIEi4KCmNyZWF0ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrUBCg9BZ2VudE1jcEJpbmRpbmcSCgoCaWQYASABKAkSEAoIYWdlbnRfaWQYAiABKAkSEwoLc2VydmVyX25hbWUYAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI1CiFMaXN0QWdlbnRLbm93bGVkZ2VCaW5kaW5nc1JlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkiaQoiTGlzdEFnZW50S25vd2xlZGdlQmluZGluZ3NSZXNwb25zZRJDCghiaW5kaW5ncxgBIAMoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50S25vd2xlZGdlQmluZGluZyJoCiJDcmVhdGVBZ2VudEtub3dsZWRnZUJpbmRpbmdSZXF1ZXN0EkIKB2JpbmRpbmcYASABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudEtub3dsZWRnZUJpbmRpbmciaQojQ3JlYXRlQWdlbnRLbm93bGVkZ2VCaW5kaW5nUmVzcG9uc2USQgoHYmluZGluZxgBIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50S25vd2xlZGdlQmluZGluZyJoCiJVcGRhdGVBZ2VudEtub3dsZWRnZUJpbmRpbmdSZXF1ZXN0EkIKB2JpbmRpbmcYASABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudEtub3dsZWRnZUJpbmRpbmciaQojVXBkYXRlQWdlbnRLbm93bGVkZ2VCaW5kaW5nUmVzcG9uc2USQgoHYmluZGluZxgBIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50S25vd2xlZGdlQmluZGluZyIwCiJEZWxldGVBZ2VudEtub3dsZWRnZUJpbmRpbmdSZXF1ZXN0EgoKAmlkGAEgASgJIjYKI0RlbGV0ZUFnZW50S25vd2xlZGdlQmluZGluZ1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiMQodTGlzdEFnZW50U2tpbGxCaW5kaW5nc1JlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkiYQoeTGlzdEFnZW50U2tpbGxCaW5kaW5nc1Jlc3BvbnNlEj8KCGJpbmRpbmdzGAEgAygLMi0ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRTa2lsbEJpbmRpbmciYAoeQ3JlYXRlQWdlbnRTa2lsbEJpbmRpbmdSZXF1ZXN0Ej4KB2JpbmRpbmcYASABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudFNraWxsQmluZGluZyJhCh9DcmVhdGVBZ2VudFNraWxsQmluZGluZ1Jlc3BvbnNlEj4KB2JpbmRpbmcYASABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudFNraWxsQmluZGluZyJgCh5VcGRhdGVBZ2VudFNraWxsQmluZGluZ1JlcXVlc3QSPgoHYmluZGluZxgBIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50U2tpbGxCaW5kaW5nImEKH1VwZGF0ZUFnZW50U2tpbGxCaW5kaW5nUmVzcG9uc2USPgoHYmluZGluZxgBIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50U2tpbGxCaW5kaW5nIiwKHkRlbGV0ZUFnZW50U2tpbGxCaW5kaW5nUmVxdWVzdBIKCgJpZBgBIAEoCSIyCh9EZWxldGVBZ2VudFNraWxsQmluZGluZ1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiLwobTGlzdEFnZW50TWNwQmluZGluZ3NSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJIl0KHExpc3RBZ2VudE1jcEJpbmRpbmdzUmVzcG9uc2USPQoIYmluZGluZ3MYASADKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1jcEJpbmRpbmciXAocQ3JlYXRlQWdlbnRNY3BCaW5kaW5nUmVxdWVzdBI8CgdiaW5kaW5nGAEgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRNY3BCaW5kaW5nIl0KHUNyZWF0ZUFnZW50TWNwQmluZGluZ1Jlc3BvbnNlEjwKB2JpbmRpbmcYASABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1jcEJpbmRpbmciXAocVXBkYXRlQWdlbnRNY3BCaW5kaW5nUmVxdWVzdBI8CgdiaW5kaW5nGAEgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRNY3BCaW5kaW5nIl0KHVVwZGF0ZUFnZW50TWNwQmluZGluZ1Jlc3BvbnNlEjwKB2JpbmRpbmcYASABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1jcEJpbmRpbmciKgocRGVsZXRlQWdlbnRNY3BCaW5kaW5nUmVxdWVzdBIKCgJpZBgBIAEoCSIwCh1EZWxldGVBZ2VudE1jcEJpbmRpbmdSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIjkKEEhpZGVNb2RlbFJlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkSEAoIbW9kZWxfaWQYAiABKAkiHwoRSGlkZU1vZGVsUmVzcG9uc2USCgoCb2sYASABKAgiLQoWR2V0SGlkZGVuTW9kZWxzUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCSIwChdHZXRIaWRkZW5Nb2RlbHNSZXNwb25zZRIVCg1oaWRkZW5fbW9kZWxzGAEgAygJIr8BCiFTdWJtaXRUb29sQXBwcm92YWxEZWNpc2lvblJlcXVlc3QSEwoLYXBwcm92YWxfaWQYASABKAkSFAoMdG9vbF9jYWxsX2lkGAIgASgJEhMKC2RlY2lzaW9uX2lkGAMgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAQgASgEEhAKCGFwcHJvdmVkGAUgASgIEhcKD2lkZW1wb3RlbmN5X2tleRgGIAEoCRIUCgxwYXlsb2FkX2hhc2gYByABKAkioQIKIlN1Ym1pdFRvb2xBcHByb3ZhbERlY2lzaW9uUmVzcG9uc2USEAoIYWNjZXB0ZWQYASABKAgSGQoRZGVjaXNpb25fcmV2aXNpb24YAiABKAQSEwoLYXBwcm92YWxfaWQYAyABKAkSFAoMdG9vbF9jYWxsX2lkGAQgASgJEhMKC2RlY2lzaW9uX2lkGAUgASgJEhAKCGFwcHJvdmVkGAYgASgIEhcKD2lkZW1wb3RlbmN5X2tleRgHIAEoCRIUCgxwYXlsb2FkX2hhc2gYCCABKAkSTQoKZXJyb3JfY29kZRgJIAEoDjI5LnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRvb2xBcHByb3ZhbERlY2lzaW9uRXJyb3JDb2RlKqQCCh1Ub29sQXBwcm92YWxEZWNpc2lvbkVycm9yQ29kZRIxCi1UT09MX0FQUFJPVkFMX0RFQ0lTSU9OX0VSUk9SX0NPREVfVU5TUEVDSUZJRUQQABI0CjBUT09MX0FQUFJPVkFMX0RFQ0lTSU9OX0VSUk9SX0NPREVfU1RBTEVfUkVWSVNJT04QARI6CjZUT09MX0FQUFJPVkFMX0RFQ0lTSU9OX0VSUk9SX0NPREVfSURFTVBPVEVOQ1lfQ09ORkxJQ1QQAhItCilUT09MX0FQUFJPVkFMX0RFQ0lTSU9OX0VSUk9SX0NPREVfRVhQSVJFRBADEi8KK1RPT0xfQVBQUk9WQUxfREVDSVNJT05fRVJST1JfQ09ERV9OT1RfRk9VTkQQBEJLWklnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2FnZW50L21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.AgentKnowledgeBinding
@@ -627,4 +627,147 @@ export type GetHiddenModelsResponse = Message<"peers_touch.model.agent.v1.GetHid
  */
 export const GetHiddenModelsResponseSchema: GenMessage<GetHiddenModelsResponse> = /*@__PURE__*/
   messageDesc(file_domain_agent_agent_config, 30);
+
+/**
+ * Station-authoritative approval command. Actor identity is derived from the
+ * authenticated request context and is intentionally absent from this message.
+ *
+ * @generated from message peers_touch.model.agent.v1.SubmitToolApprovalDecisionRequest
+ */
+export type SubmitToolApprovalDecisionRequest = Message<"peers_touch.model.agent.v1.SubmitToolApprovalDecisionRequest"> & {
+  /**
+   * @generated from field: string approval_id = 1;
+   */
+  approvalId: string;
+
+  /**
+   * @generated from field: string tool_call_id = 2;
+   */
+  toolCallId: string;
+
+  /**
+   * @generated from field: string decision_id = 3;
+   */
+  decisionId: string;
+
+  /**
+   * @generated from field: uint64 expected_revision = 4;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: bool approved = 5;
+   */
+  approved: boolean;
+
+  /**
+   * @generated from field: string idempotency_key = 6;
+   */
+  idempotencyKey: string;
+
+  /**
+   * @generated from field: string payload_hash = 7;
+   */
+  payloadHash: string;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SubmitToolApprovalDecisionRequest.
+ * Use `create(SubmitToolApprovalDecisionRequestSchema)` to create a new message.
+ */
+export const SubmitToolApprovalDecisionRequestSchema: GenMessage<SubmitToolApprovalDecisionRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent_config, 31);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse
+ */
+export type SubmitToolApprovalDecisionResponse = Message<"peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse"> & {
+  /**
+   * @generated from field: bool accepted = 1;
+   */
+  accepted: boolean;
+
+  /**
+   * @generated from field: uint64 decision_revision = 2;
+   */
+  decisionRevision: bigint;
+
+  /**
+   * @generated from field: string approval_id = 3;
+   */
+  approvalId: string;
+
+  /**
+   * @generated from field: string tool_call_id = 4;
+   */
+  toolCallId: string;
+
+  /**
+   * @generated from field: string decision_id = 5;
+   */
+  decisionId: string;
+
+  /**
+   * @generated from field: bool approved = 6;
+   */
+  approved: boolean;
+
+  /**
+   * @generated from field: string idempotency_key = 7;
+   */
+  idempotencyKey: string;
+
+  /**
+   * @generated from field: string payload_hash = 8;
+   */
+  payloadHash: string;
+
+  /**
+   * @generated from field: peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode error_code = 9;
+   */
+  errorCode: ToolApprovalDecisionErrorCode;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse.
+ * Use `create(SubmitToolApprovalDecisionResponseSchema)` to create a new message.
+ */
+export const SubmitToolApprovalDecisionResponseSchema: GenMessage<SubmitToolApprovalDecisionResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_agent_config, 32);
+
+/**
+ * @generated from enum peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode
+ */
+export enum ToolApprovalDecisionErrorCode {
+  /**
+   * @generated from enum value: TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION = 1;
+   */
+  STALE_REVISION = 1,
+
+  /**
+   * @generated from enum value: TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT = 2;
+   */
+  IDEMPOTENCY_CONFLICT = 2,
+
+  /**
+   * @generated from enum value: TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED = 3;
+   */
+  EXPIRED = 3,
+
+  /**
+   * @generated from enum value: TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND = 4;
+   */
+  NOT_FOUND = 4,
+}
+
+/**
+ * Describes the enum peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode.
+ */
+export const ToolApprovalDecisionErrorCodeSchema: GenEnum<ToolApprovalDecisionErrorCode> = /*@__PURE__*/
+  enumDesc(file_domain_agent_agent_config, 0);
 

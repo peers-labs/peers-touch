@@ -29,7 +29,7 @@ describe('Agent draft identity', () => {
 
   it('runs Agent readiness admission before optimistic message creation', () => {
     const sendStart = chatSource.indexOf('sendMessage: (content');
-    const executionCheck = chatSource.indexOf('resolveAgentExecutionRef(agentName)', sendStart);
+    const executionCheck = chatSource.indexOf('resolveAgentExecutionID(agentName)', sendStart);
     const optimisticMessage = chatSource.indexOf('const userMsg: ChatMessage', sendStart);
     expect(executionCheck).toBeGreaterThan(sendStart);
     expect(executionCheck).toBeLessThan(optimisticMessage);

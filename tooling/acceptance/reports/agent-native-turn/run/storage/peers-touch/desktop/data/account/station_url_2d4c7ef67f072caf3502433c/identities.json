@@ -1,0 +1,18 @@
+{
+  "active_account_id": "station:station_url_2d4c7ef67f072caf3502433c:password:347760575104679938",
+  "accounts": [
+    {
+      "id": "station:station_url_2d4c7ef67f072caf3502433c:password:347760575104679938",
+      "provider": "password",
+      "provider_user_id": "347760575104679938",
+      "name": "Alice node-c",
+      "email": "alice@p.t",
+      "avatar_url": "http://10.37.246.80:18080/sub-oss/file?key=2026/08/12/PkakrLz85JMOmHjh9SwgFQ.png",
+      "avatar_local_path": "/Users/bytedance/Documents/Projects/peers-touch/peers-ai-agent/tooling/acceptance/reports/agent-native-turn/run/storage/peers-touch/desktop/data/files/avatars/3f04a2fe3e155984.png",
+      "profile_url": "http://10.37.246.80:18080/users/alice",
+      "created_at": "2026-08-20T08:34:31Z",
+      "last_login_at": "2026-08-20T11:59:33Z",
+      "has_session": true
+    }
+  ]
+}

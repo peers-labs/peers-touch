@@ -2,78 +2,203 @@
   "version": 1,
   "capabilities": [
     {
+      "id": "agent-core-lifecycle",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-core-lifecycle"
+      ],
+      "required_gates": [
+        "agent-core-lifecycle-native-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/store/agent.ts",
+        "apps/desktop/src/components/agent/workbench/TopicRail.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station agent CRUD API",
+          "Desktop agent store"
+        ],
+        "surfaces": [
+          "Native Tauri Agent page"
+        ],
+        "proven_by": [
+          "agent-core-lifecycle-native-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Auto-create default agent"
+        ],
+        "unproven_scope": [
+          "Auto-create default agent",
+          "Create via + button",
+          "Select \u2192 chat",
+          "Send \u2192 receive",
+          "Session CRUD",
+          "Update profile"
+        ]
+      }
+    },
+    {
       "id": "agent-mention-composer",
       "domain": "agent",
       "direction": "acceptance_validates_product",
-      "features": ["agent-mention-composer"],
-      "required_gates": ["agent-native-mention-e2e"],
-      "synthetic_paths": ["apps/desktop/src/components/ChatInput.tsx"],
+      "features": [
+        "agent-mention-composer"
+      ],
+      "required_gates": [
+        "agent-native-mention-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/components/ChatInput.tsx"
+      ],
       "evidence": {
-        "truth_sources": ["Desktop mention draft state", "Agent roster projection"],
-        "surfaces": ["Native Tauri Agent composer"],
-        "proven_by": ["agent-native-mention-e2e"],
-        "proven_scope": ["Mention popup, selection, tag removal, and successful-send cleanup in the Native Agent composer"],
-        "unproven_scope": ["Multi-Agent orchestration semantics after mention submission"]
+        "truth_sources": [
+          "Desktop mention draft state",
+          "Agent roster projection"
+        ],
+        "surfaces": [
+          "Native Tauri Agent composer"
+        ],
+        "proven_by": [
+          "agent-native-mention-e2e"
+        ],
+        "proven_scope": [
+          "Mention popup, selection, tag removal, and successful-send cleanup in the Native Agent composer"
+        ],
+        "unproven_scope": [
+          "Multi-Agent orchestration semantics after mention submission"
+        ]
       }
     },
     {
       "id": "agent-knowledge-binding",
       "domain": "agent",
       "direction": "acceptance_validates_product",
-      "features": ["agent-knowledge-binding"],
-      "required_gates": ["agent-native-knowledge-binding-e2e"],
-      "synthetic_paths": ["apps/desktop/src/store/agent.ts"],
+      "features": [
+        "agent-knowledge-binding"
+      ],
+      "required_gates": [
+        "agent-native-knowledge-binding-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/store/agent.ts"
+      ],
       "evidence": {
-        "truth_sources": ["Station agent_knowledge_bindings", "Station Agent config"],
-        "surfaces": ["Native Tauri Agent Profile knowledge section", "Station binding readback"],
-        "proven_by": ["agent-native-knowledge-binding-e2e"],
-        "proven_scope": ["Add, disable/re-enable, and remove behavior with Native UI and Station binding readback"],
-        "unproven_scope": ["Document ingestion, chunking, embedding, indexing, and RAG retrieval"]
+        "truth_sources": [
+          "Station agent_knowledge_bindings",
+          "Station Agent config"
+        ],
+        "surfaces": [
+          "Native Tauri Agent Profile knowledge section",
+          "Station binding readback"
+        ],
+        "proven_by": [
+          "agent-native-knowledge-binding-e2e"
+        ],
+        "proven_scope": [
+          "Add, disable/re-enable, and remove behavior with Native UI and Station binding readback"
+        ],
+        "unproven_scope": [
+          "Document ingestion, chunking, embedding, indexing, and RAG retrieval"
+        ]
       }
     },
     {
       "id": "agent-connector-lifecycle",
       "domain": "agent",
       "direction": "acceptance_validates_product",
-      "features": ["agent-connector-lifecycle"],
-      "required_gates": ["agent-native-connector-lifecycle-e2e"],
-      "synthetic_paths": ["apps/desktop/src/store/agentConnectors.ts"],
+      "features": [
+        "agent-connector-lifecycle"
+      ],
+      "required_gates": [
+        "agent-native-connector-lifecycle-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/store/agentConnectors.ts"
+      ],
       "evidence": {
-        "truth_sources": ["Station OAuth provider state", "Station-backed Agent chatConfig.connectors"],
-        "surfaces": ["Native Tauri Agent Profile connectors section", "Station Agent config readback"],
-        "proven_by": ["agent-native-connector-lifecycle-e2e"],
-        "proven_scope": ["Connector OAuth entry, mount, tool sync, authoritative readback, and unmount for an approved test provider"],
-        "unproven_scope": ["Production third-party OAuth providers not represented by the approved disposable fixture"]
+        "truth_sources": [
+          "Station OAuth provider state",
+          "Station-backed Agent chatConfig.connectors"
+        ],
+        "surfaces": [
+          "Native Tauri Agent Profile connectors section",
+          "Station Agent config readback"
+        ],
+        "proven_by": [
+          "agent-native-connector-lifecycle-e2e"
+        ],
+        "proven_scope": [
+          "Connector OAuth entry, mount, tool sync, authoritative readback, and unmount for an approved test provider"
+        ],
+        "unproven_scope": [
+          "Production third-party OAuth providers not represented by the approved disposable fixture"
+        ]
       }
     },
     {
       "id": "agent-message-forward",
       "domain": "agent",
       "direction": "acceptance_validates_product",
-      "features": ["agent-message-forward"],
-      "required_gates": ["agent-native-message-forward-e2e"],
-      "synthetic_paths": ["apps/desktop/src/components/messages/ForwardMessageModal.tsx"],
+      "features": [
+        "agent-message-forward"
+      ],
+      "required_gates": [
+        "agent-native-message-forward-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/components/messages/ForwardMessageModal.tsx"
+      ],
       "evidence": {
-        "truth_sources": ["Station Agent conversations", "Station Agent messages"],
-        "surfaces": ["Native Tauri Agent message action", "target Agent conversation"],
-        "proven_by": ["agent-native-message-forward-e2e"],
-        "proven_scope": ["Forward modal selection and persisted transcript visibility in a distinct target Agent conversation"],
-        "unproven_scope": ["Cross-Station forwarding and forwarding non-message artifacts"]
+        "truth_sources": [
+          "Station Agent conversations",
+          "Station Agent messages"
+        ],
+        "surfaces": [
+          "Native Tauri Agent message action",
+          "target Agent conversation"
+        ],
+        "proven_by": [
+          "agent-native-message-forward-e2e"
+        ],
+        "proven_scope": [
+          "Forward modal selection and persisted transcript visibility in a distinct target Agent conversation"
+        ],
+        "unproven_scope": [
+          "Cross-Station forwarding and forwarding non-message artifacts"
+        ]
       }
     },
     {
       "id": "agent-portal-navigation",
       "domain": "agent",
       "direction": "acceptance_validates_product",
-      "features": ["agent-portal-navigation"],
-      "required_gates": ["agent-native-portal-navigation-e2e"],
-      "synthetic_paths": ["apps/desktop/src/store/portal.ts"],
+      "features": [
+        "agent-portal-navigation"
+      ],
+      "required_gates": [
+        "agent-native-portal-navigation-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/store/portal.ts"
+      ],
       "evidence": {
-        "truth_sources": ["Desktop Portal navigation state machine"],
-        "surfaces": ["Native Tauri Agent conversation Portal"],
-        "proven_by": ["agent-native-portal-navigation-e2e"],
-        "proven_scope": ["Native visible push, Back, collapse/reopen preservation, and explicit close stack clearing"],
-        "unproven_scope": ["Portal view types not exercised by the selected fixture"]
+        "truth_sources": [
+          "Desktop Portal navigation state machine"
+        ],
+        "surfaces": [
+          "Native Tauri Agent conversation Portal"
+        ],
+        "proven_by": [
+          "agent-native-portal-navigation-e2e"
+        ],
+        "proven_scope": [
+          "Native visible push, Back, collapse/reopen preservation, and explicit close stack clearing"
+        ],
+        "unproven_scope": [
+          "Portal view types not exercised by the selected fixture"
+        ]
       }
     },
     {
@@ -82,15 +207,35 @@
       "direction": "acceptance_validates_product",
       "domain_proof_required": false,
       "initial_proof_status": "UNPROVEN",
-      "features": ["agent-v2-kernel-foundation"],
-      "required_gates": ["agent-v2-kernel-foundation-e2e"],
-      "synthetic_paths": ["model/domain/agent/agent.proto"],
+      "features": [
+        "agent-v2-kernel-foundation"
+      ],
+      "required_gates": [
+        "agent-v2-kernel-foundation-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/agent/agent.proto"
+      ],
       "evidence": {
-        "truth_sources": ["Station C01-C10 Agent authorities", "Versioned runtime and capability snapshots"],
-        "surfaces": ["Desktop App", "Browser", "Mobile semantic contracts", "Station D11 guards"],
-        "proven_by": ["agent-v2-kernel-foundation-e2e"],
-        "proven_scope": ["C01-C10 foundation behavior across the exact reviewed 419-cell Gate matrix"],
-        "unproven_scope": ["Initial state: UNPROVEN until a real scenario emits all mandatory roles and separate validation publishes proof"]
+        "truth_sources": [
+          "Station C01-C10 Agent authorities",
+          "Versioned runtime and capability snapshots"
+        ],
+        "surfaces": [
+          "Desktop App",
+          "Browser",
+          "Mobile semantic contracts",
+          "Station D11 guards"
+        ],
+        "proven_by": [
+          "agent-v2-kernel-foundation-e2e"
+        ],
+        "proven_scope": [
+          "C01-C10 foundation behavior across the exact reviewed 419-cell Gate matrix"
+        ],
+        "unproven_scope": [
+          "Initial state: UNPROVEN until a real scenario emits all mandatory roles and separate validation publishes proof"
+        ]
       }
     },
     {
@@ -99,15 +244,33 @@
       "direction": "acceptance_validates_product",
       "domain_proof_required": false,
       "initial_proof_status": "UNPROVEN",
-      "features": ["agent-v2-home-command-center"],
-      "required_gates": ["agent-v2-home-command-center-e2e"],
-      "synthetic_paths": ["model/domain/agent/home.proto"],
+      "features": [
+        "agent-v2-home-command-center"
+      ],
+      "required_gates": [
+        "agent-v2-home-command-center-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/agent/home.proto"
+      ],
       "evidence": {
-        "truth_sources": ["Station Home projection", "Station Agent topics and tasks"],
-        "surfaces": ["Native Home Command Center", "Station readback"],
-        "proven_by": ["agent-v2-home-command-center-e2e"],
-        "proven_scope": ["MCA-V2-H01/T03 Home submission, projection, restart, stale, and recovery assertions"],
-        "unproven_scope": ["Initial state: UNPROVEN; prototype and registration evidence do not prove production Home behavior"]
+        "truth_sources": [
+          "Station Home projection",
+          "Station Agent topics and tasks"
+        ],
+        "surfaces": [
+          "Native Home Command Center",
+          "Station readback"
+        ],
+        "proven_by": [
+          "agent-v2-home-command-center-e2e"
+        ],
+        "proven_scope": [
+          "MCA-V2-H01/T03 Home submission, projection, restart, stale, and recovery assertions"
+        ],
+        "unproven_scope": [
+          "Initial state: UNPROVEN; prototype and registration evidence do not prove production Home behavior"
+        ]
       }
     },
     {
@@ -116,15 +279,32 @@
       "direction": "acceptance_validates_product",
       "domain_proof_required": false,
       "initial_proof_status": "UNPROVEN",
-      "features": ["agent-v2-capability-binding"],
-      "required_gates": ["agent-v2-capability-binding-e2e"],
-      "synthetic_paths": ["model/domain/agent/capability.proto"],
+      "features": [
+        "agent-v2-capability-binding"
+      ],
+      "required_gates": [
+        "agent-v2-capability-binding-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/agent/capability.proto"
+      ],
       "evidence": {
-        "truth_sources": ["Station capability manifest, binding, readiness, and compatibility revisions"],
-        "surfaces": ["Native capability inventory and binding", "Station readback"],
-        "proven_by": ["agent-v2-capability-binding-e2e"],
-        "proven_scope": ["MCA-V2-T01/T02/T03 inventory, binding, compatibility, deletion, and zero-execution rejection"],
-        "unproven_scope": ["Initial state: UNPROVEN until all 69 reviewed matrix tuples and mandatory roles are validated"]
+        "truth_sources": [
+          "Station capability manifest, binding, readiness, and compatibility revisions"
+        ],
+        "surfaces": [
+          "Native capability inventory and binding",
+          "Station readback"
+        ],
+        "proven_by": [
+          "agent-v2-capability-binding-e2e"
+        ],
+        "proven_scope": [
+          "MCA-V2-T01/T02/T03 inventory, binding, compatibility, deletion, and zero-execution rejection"
+        ],
+        "unproven_scope": [
+          "Initial state: UNPROVEN until all 69 reviewed matrix tuples and mandatory roles are validated"
+        ]
       }
     },
     {
@@ -133,15 +313,32 @@
       "direction": "acceptance_validates_product",
       "domain_proof_required": false,
       "initial_proof_status": "UNPROVEN",
-      "features": ["agent-v2-governed-tool-loop"],
-      "required_gates": ["agent-v2-governed-tool-loop-e2e"],
-      "synthetic_paths": ["model/domain/agent/turn_stream.proto"],
+      "features": [
+        "agent-v2-governed-tool-loop"
+      ],
+      "required_gates": [
+        "agent-v2-governed-tool-loop-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/agent/turn_stream.proto"
+      ],
       "evidence": {
-        "truth_sources": ["Station ToolCall decision, claim, receipt, result, and fence revisions"],
-        "surfaces": ["Native Tool approval and result cards", "Station ToolCall lineage"],
-        "proven_by": ["agent-v2-governed-tool-loop-e2e"],
-        "proven_scope": ["MCA-V2-T04/O01 exactly-once approval, execution, terminal, replay, and recovery behavior"],
-        "unproven_scope": ["Initial state: UNPROVEN until executor receipts, side-effect counts, replay, and cleanup are proven"]
+        "truth_sources": [
+          "Station ToolCall decision, claim, receipt, result, and fence revisions"
+        ],
+        "surfaces": [
+          "Native Tool approval and result cards",
+          "Station ToolCall lineage"
+        ],
+        "proven_by": [
+          "agent-v2-governed-tool-loop-e2e"
+        ],
+        "proven_scope": [
+          "MCA-V2-T04/O01 exactly-once approval, execution, terminal, replay, and recovery behavior"
+        ],
+        "unproven_scope": [
+          "Initial state: UNPROVEN until executor receipts, side-effect counts, replay, and cleanup are proven"
+        ]
       }
     },
     {
@@ -150,15 +347,33 @@
       "direction": "acceptance_validates_product",
       "domain_proof_required": false,
       "initial_proof_status": "UNPROVEN",
-      "features": ["agent-v2-mcp-lifecycle"],
-      "required_gates": ["agent-v2-mcp-lifecycle-e2e"],
-      "synthetic_paths": ["apps/desktop/src/store/mcp.ts"],
+      "features": [
+        "agent-v2-mcp-lifecycle"
+      ],
+      "required_gates": [
+        "agent-v2-mcp-lifecycle-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/store/mcp.ts"
+      ],
       "evidence": {
-        "truth_sources": ["Station capability operation lifecycle", "Fenced client executor receipts"],
-        "surfaces": ["Native MCP lifecycle", "Station operation readback"],
-        "proven_by": ["agent-v2-mcp-lifecycle-e2e"],
-        "proven_scope": ["MCA-V2-M01/O01 install, test, invoke, cancel, reconnect, race, and cleanup behavior"],
-        "unproven_scope": ["Initial state: UNPROVEN until the process-port-secret canary and all mandatory roles pass"]
+        "truth_sources": [
+          "Station capability operation lifecycle",
+          "Fenced client executor receipts"
+        ],
+        "surfaces": [
+          "Native MCP lifecycle",
+          "Station operation readback"
+        ],
+        "proven_by": [
+          "agent-v2-mcp-lifecycle-e2e"
+        ],
+        "proven_scope": [
+          "MCA-V2-M01/O01 install, test, invoke, cancel, reconnect, race, and cleanup behavior"
+        ],
+        "unproven_scope": [
+          "Initial state: UNPROVEN until the process-port-secret canary and all mandatory roles pass"
+        ]
       }
     },
     {
@@ -167,15 +382,33 @@
       "direction": "acceptance_validates_product",
       "domain_proof_required": false,
       "initial_proof_status": "UNPROVEN",
-      "features": ["agent-v2-connector-invocation"],
-      "required_gates": ["agent-v2-connector-invocation-e2e"],
-      "synthetic_paths": ["apps/station/app/subserver/agent/service/connector_resource_manifest.go"],
+      "features": [
+        "agent-v2-connector-invocation"
+      ],
+      "required_gates": [
+        "agent-v2-connector-invocation-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/connector_resource_manifest.go"
+      ],
       "evidence": {
-        "truth_sources": ["OAuth resource revision", "Station Connector resource manifest, binding, ToolCall, and TurnTrace"],
-        "surfaces": ["Native Connector invocation and recovery", "Station readback"],
-        "proven_by": ["agent-v2-connector-invocation-e2e"],
-        "proven_scope": ["MCA-V2-C01/O01 OAuth resource-to-manifest-to-governed-invocation lifecycle"],
-        "unproven_scope": ["Initial state: UNPROVEN until approved OAuth fixture, provider revoke, invocation, replay, and cleanup evidence pass"]
+        "truth_sources": [
+          "OAuth resource revision",
+          "Station Connector resource manifest, binding, ToolCall, and TurnTrace"
+        ],
+        "surfaces": [
+          "Native Connector invocation and recovery",
+          "Station readback"
+        ],
+        "proven_by": [
+          "agent-v2-connector-invocation-e2e"
+        ],
+        "proven_scope": [
+          "MCA-V2-C01/O01 OAuth resource-to-manifest-to-governed-invocation lifecycle"
+        ],
+        "unproven_scope": [
+          "Initial state: UNPROVEN until approved OAuth fixture, provider revoke, invocation, replay, and cleanup evidence pass"
+        ]
       }
     },
     {
@@ -184,15 +417,851 @@
       "direction": "acceptance_validates_product",
       "domain_proof_required": false,
       "initial_proof_status": "UNPROVEN",
-      "features": ["agent-v2-evaluation-lab"],
-      "required_gates": ["agent-v2-evaluation-lab-e2e"],
-      "synthetic_paths": ["model/domain/agent/evaluation.proto"],
+      "features": [
+        "agent-v2-evaluation-lab"
+      ],
+      "required_gates": [
+        "agent-v2-evaluation-lab-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/agent/evaluation.proto"
+      ],
       "evidence": {
-        "truth_sources": ["Station Evaluation benchmark, dataset, run, attempt, result, cancellation, and metrics records"],
-        "surfaces": ["Native Evaluation Lab", "Station Evaluation readback"],
-        "proven_by": ["agent-v2-evaluation-lab-e2e"],
-        "proven_scope": ["MCA-V2-E01 durable run, cancellation, retry, restart, metrics lineage, retention, and isolation"],
-        "unproven_scope": ["Initial state: UNPROVEN until all 57 reviewed matrix tuples and mandatory roles are validated"]
+        "truth_sources": [
+          "Station Evaluation benchmark, dataset, run, attempt, result, cancellation, and metrics records"
+        ],
+        "surfaces": [
+          "Native Evaluation Lab",
+          "Station Evaluation readback"
+        ],
+        "proven_by": [
+          "agent-v2-evaluation-lab-e2e"
+        ],
+        "proven_scope": [
+          "MCA-V2-E01 durable run, cancellation, retry, restart, metrics lineage, retention, and isolation"
+        ],
+        "unproven_scope": [
+          "Initial state: UNPROVEN until all 57 reviewed matrix tuples and mandatory roles are validated"
+        ]
+      }
+    },
+    {
+      "id": "agent-conversation-management",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-conversation-management"
+      ],
+      "required_gates": [
+        "agent-conversation-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/conversation_service.go",
+        "apps/desktop/src/store/agent.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent conversation CRUD",
+          "Desktop agent conversation store"
+        ],
+        "surfaces": [
+          "Native Tauri Agent conversation list",
+          "Station readback"
+        ],
+        "proven_by": [
+          "agent-conversation-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Conversation create, list, archive, delete, and context-window management"
+        ],
+        "unproven_scope": [
+          "Conversation create, list, archive, delete, and context-window management"
+        ]
+      }
+    },
+    {
+      "id": "agent-provider-credential",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-provider-credential"
+      ],
+      "required_gates": [
+        "agent-provider-credential-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/provider_service.go",
+        "apps/desktop/src/store/provider.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Provider credential store",
+          "Desktop provider configuration"
+        ],
+        "surfaces": [
+          "Native Tauri Provider settings",
+          "Station credential readback"
+        ],
+        "proven_by": [
+          "agent-provider-credential-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Provider add, validate, rotate, and revoke credential lifecycle"
+        ],
+        "unproven_scope": [
+          "Provider add, validate, rotate, and revoke credential lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-memory-system",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-memory-system"
+      ],
+      "required_gates": [
+        "agent-memory-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/memory_service.go",
+        "apps/desktop/src/store/agentMemory.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent memory persistence",
+          "Desktop memory projection"
+        ],
+        "surfaces": [
+          "Native Tauri Agent memory panel",
+          "Station memory readback"
+        ],
+        "proven_by": [
+          "agent-memory-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Memory write, retrieval, summarization, and eviction lifecycle"
+        ],
+        "unproven_scope": [
+          "Memory write, retrieval, summarization, and eviction lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-skill-management",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-skill-management"
+      ],
+      "required_gates": [
+        "agent-skill-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/skill_service.go",
+        "apps/desktop/src/store/agentSkills.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent skill registry",
+          "Desktop skill binding state"
+        ],
+        "surfaces": [
+          "Native Tauri Agent skill panel",
+          "Station skill readback"
+        ],
+        "proven_by": [
+          "agent-skill-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Skill register, bind, unbind, invoke, and version lifecycle"
+        ],
+        "unproven_scope": [
+          "Skill register, bind, unbind, invoke, and version lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-growth-diagnostics",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-growth-diagnostics"
+      ],
+      "required_gates": [
+        "agent-growth-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/growth_service.go",
+        "apps/desktop/src/store/agentGrowth.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent growth metrics",
+          "Desktop growth diagnostics projection"
+        ],
+        "surfaces": [
+          "Native Tauri Agent growth dashboard",
+          "Station growth readback"
+        ],
+        "proven_by": [
+          "agent-growth-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Growth metric collection, diagnostic report, and recommendation lifecycle"
+        ],
+        "unproven_scope": [
+          "Growth metric collection, diagnostic report, and recommendation lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-orchestration-collaboration",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-orchestration-collaboration"
+      ],
+      "required_gates": [
+        "agent-orchestration-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/orchestration_service.go",
+        "apps/desktop/src/store/agentOrchestration.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent orchestration engine",
+          "Desktop orchestration state"
+        ],
+        "surfaces": [
+          "Native Tauri Agent orchestration panel",
+          "Station orchestration readback"
+        ],
+        "proven_by": [
+          "agent-orchestration-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Multi-agent orchestration, delegation, handoff, and collaboration lifecycle"
+        ],
+        "unproven_scope": [
+          "Multi-agent orchestration, delegation, handoff, and collaboration lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-thread-branching",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-thread-branching"
+      ],
+      "required_gates": [
+        "agent-thread-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/thread_service.go",
+        "apps/desktop/src/store/agentThread.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent thread branching",
+          "Desktop thread state"
+        ],
+        "surfaces": [
+          "Native Tauri Agent thread view",
+          "Station thread readback"
+        ],
+        "proven_by": [
+          "agent-thread-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Thread create, branch, merge, fork, and navigation lifecycle"
+        ],
+        "unproven_scope": [
+          "Thread create, branch, merge, fork, and navigation lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-ecosystem",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-ecosystem"
+      ],
+      "required_gates": [
+        "agent-ecosystem-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/ecosystem_service.go",
+        "apps/desktop/src/store/agentEcosystem.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent ecosystem registry",
+          "Desktop ecosystem projection"
+        ],
+        "surfaces": [
+          "Native Tauri Agent marketplace",
+          "Station ecosystem readback"
+        ],
+        "proven_by": [
+          "agent-ecosystem-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Agent publish, discover, install, rate, and federation sharing lifecycle"
+        ],
+        "unproven_scope": [
+          "Agent publish, discover, install, rate, and federation sharing lifecycle",
+          "Governed default Marketplace source, official or federated catalog ownership, source signatures, first-use catalog data, and source-to-install readback"
+        ]
+      }
+    },
+    {
+      "id": "agent-task-management",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-task-management"
+      ],
+      "required_gates": [
+        "agent-task-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/task_service.go",
+        "apps/desktop/src/store/agentTask.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent task engine",
+          "Desktop task projection"
+        ],
+        "surfaces": [
+          "Native Tauri Agent task panel",
+          "Station task readback"
+        ],
+        "proven_by": [
+          "agent-task-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Task create, assign, progress, complete, cancel, and retry lifecycle"
+        ],
+        "unproven_scope": [
+          "Task create, assign, progress, complete, cancel, and retry lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-scheduler",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-scheduler"
+      ],
+      "required_gates": [
+        "agent-scheduler-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/scheduler_service.go",
+        "apps/desktop/src/store/agentScheduler.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent scheduler",
+          "Desktop scheduler projection"
+        ],
+        "surfaces": [
+          "Native Tauri Agent scheduler panel",
+          "Station scheduler readback"
+        ],
+        "proven_by": [
+          "agent-scheduler-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Schedule create, trigger, pause, resume, delete, and cron lifecycle"
+        ],
+        "unproven_scope": [
+          "Schedule create, trigger, pause, resume, delete, and cron lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-turn-trace",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-turn-trace"
+      ],
+      "required_gates": [
+        "agent-v2-kernel-foundation-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/turn_evidence_service.go",
+        "apps/desktop/src/services/desktop_api.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent turn, attempt usage, feedback, and ToolCall persistence",
+          "Station-generated redacted TurnDiagnosticReplay"
+        ],
+        "surfaces": [
+          "Native Tauri exact-turn evidence inspector",
+          "Station exact-turn usage, feedback, and diagnostics readback"
+        ],
+        "proven_by": [
+          "agent-v2-kernel-foundation-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Native exact-turn usage, feedback, diagnostic replay, and actor-isolation journey"
+        ],
+        "unproven_scope": [
+          "Native exact-turn usage, feedback, diagnostic replay, restart equality, and actor-isolation journey"
+        ]
+      }
+    },
+    {
+      "id": "agent-quick-completion",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-quick-completion"
+      ],
+      "required_gates": [
+        "agent-quick-completion-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/quick_completion_service.go",
+        "apps/desktop/src/store/agentQuickCompletion.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent quick completion engine",
+          "Desktop quick completion state"
+        ],
+        "surfaces": [
+          "Native Tauri Agent quick completion",
+          "Station quick completion readback"
+        ],
+        "proven_by": [
+          "agent-quick-completion-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Quick completion trigger, streaming response, and inline acceptance lifecycle"
+        ],
+        "unproven_scope": [
+          "Quick completion trigger, streaming response, and inline acceptance lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-event-stream",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-event-stream"
+      ],
+      "required_gates": [
+        "agent-event-stream-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/event_stream_service.go",
+        "apps/desktop/src/services/eventStream.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent event stream",
+          "Desktop event stream consumer"
+        ],
+        "surfaces": [
+          "Native Tauri Agent streaming",
+          "Station event stream readback"
+        ],
+        "proven_by": [
+          "agent-event-stream-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Event stream connect, subscribe, consume, reconnect, and backpressure lifecycle"
+        ],
+        "unproven_scope": [
+          "Event stream connect, subscribe, consume, reconnect, and backpressure lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-atelier-workspace",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-atelier-workspace"
+      ],
+      "required_gates": [
+        "agent-atelier-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/atelier_service.go",
+        "apps/desktop/src/store/agentAtelier.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent atelier workspace",
+          "Desktop atelier projection"
+        ],
+        "surfaces": [
+          "Native Tauri Agent atelier workspace",
+          "Station atelier readback"
+        ],
+        "proven_by": [
+          "agent-atelier-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Atelier create, artifact management, collaboration, and workspace lifecycle"
+        ],
+        "unproven_scope": [
+          "Atelier create, artifact management, collaboration, and workspace lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-offline-queue-recovery",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-offline-queue-recovery"
+      ],
+      "required_gates": [
+        "agent-offline-queue-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/handler/offline_queue_handler.go",
+        "apps/station/app/subserver/agent/service/offline_queue_service.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station offline_queue_operations table",
+          "Desktop local queue persistence"
+        ],
+        "surfaces": [
+          "Native Tauri offline indicator",
+          "Station sync readback"
+        ],
+        "proven_by": [
+          "agent-offline-queue-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Enqueue, list pending, ack, sync, and conflict resolution lifecycle"
+        ],
+        "unproven_scope": [
+          "Enqueue, list pending, ack, sync, and conflict resolution lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-revision-retry",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-revision-retry"
+      ],
+      "required_gates": [
+        "agent-message-actions-static",
+        "agent-revision-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/handler/revision_handler.go",
+        "apps/station/app/subserver/agent/service/revision_service.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station turn_attempts table",
+          "Station conversation revision history"
+        ],
+        "surfaces": [
+          "Native Tauri retry/regenerate/edit UI",
+          "Station revision readback"
+        ],
+        "proven_by": [
+          "agent-message-actions-static",
+          "agent-revision-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Retry, regenerate, edit-resend, branch selection, and tombstone lifecycle"
+        ],
+        "unproven_scope": [
+          "Retry, regenerate, edit-resend, branch selection, and tombstone lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-workspace",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-workspace"
+      ],
+      "required_gates": [
+        "agent-workspace-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/handler/workspace_handler.go",
+        "apps/station/app/subserver/agent/handler/workspace_oss_handler.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station workspace persistence",
+          "OSS object storage backend"
+        ],
+        "surfaces": [
+          "Native Tauri workspace file panel",
+          "Station workspace readback"
+        ],
+        "proven_by": [
+          "agent-workspace-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Workspace CRUD, file management, diff, commit, and OSS upload/download lifecycle"
+        ],
+        "unproven_scope": [
+          "Workspace CRUD, file management, diff, commit, and OSS upload/download lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-stream-resilience",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-stream-resilience"
+      ],
+      "required_gates": [
+        "agent-stream-resilience-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/handler/turn_handler.go",
+        "apps/station/app/subserver/agent/service/live_resume_broker.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station turn state machine",
+          "Station live_resume_broker session registry"
+        ],
+        "surfaces": [
+          "Native Tauri stop button and reconnect indicator",
+          "Station turn terminal states"
+        ],
+        "proven_by": [
+          "agent-stream-resilience-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Cancel mid-stream, reconnect resume, provider error handling, and partial content preservation"
+        ],
+        "unproven_scope": [
+          "Cancel mid-stream, reconnect resume, provider error handling, and partial content preservation"
+        ]
+      }
+    },
+    {
+      "id": "agent-attachment-reference",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-attachment-reference"
+      ],
+      "required_gates": [
+        "agent-attachment-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/handler/turn_handler.go",
+        "apps/station/app/subserver/agent/handler/workspace_oss_handler.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station TurnConfig.AttachmentRefs",
+          "OSS uploaded file URIs"
+        ],
+        "surfaces": [
+          "Native Tauri composer attach button",
+          "Station attachment readback"
+        ],
+        "proven_by": [
+          "agent-attachment-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: File upload, attach to message, pre-admission type check, download from history, and capability gating"
+        ],
+        "unproven_scope": [
+          "File upload, attach to message, pre-admission type check, download from history, and capability gating"
+        ]
+      }
+    },
+    {
+      "id": "agent-capability-transparency",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-capability-transparency"
+      ],
+      "required_gates": [
+        "agent-capability-transparency-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/handler/agent_config_handler.go",
+        "apps/station/app/subserver/agent/service/runtime_admission_service.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station agent capability snapshot",
+          "Station pre-admission gate results"
+        ],
+        "surfaces": [
+          "Native Tauri agent capability badges",
+          "Composer capability indicators"
+        ],
+        "proven_by": [
+          "agent-capability-transparency-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Capability query, real-time update on provider change, and UI reflection lifecycle"
+        ],
+        "unproven_scope": [
+          "Capability query, real-time update on provider change, and UI reflection lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-dogfood-selftest",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-dogfood-selftest"
+      ],
+      "required_gates": [
+        "agent-dogfood-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/handler/dogfood_handler.go",
+        "apps/station/app/subserver/agent/service/dogfood_service.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station dogfood scenario runner",
+          "DogfoodReport tier results"
+        ],
+        "surfaces": [
+          "Native Tauri diagnostics panel",
+          "Station dogfood readback"
+        ],
+        "proven_by": [
+          "agent-dogfood-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Dogfood run, tier selection, report generation, and non-mutation guarantee"
+        ],
+        "unproven_scope": [
+          "Dogfood run, tier selection, report generation, and non-mutation guarantee"
+        ]
+      }
+    },
+    {
+      "id": "agent-message-translation",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-message-translation"
+      ],
+      "required_gates": [
+        "agent-translation-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/conversation_service.go",
+        "apps/desktop/src/store/chat.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station message metadata_json.translation",
+          "Desktop translateMessage action"
+        ],
+        "surfaces": [
+          "Native Tauri message action bar",
+          "Station metadata readback"
+        ],
+        "proven_by": [
+          "agent-translation-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Translate, clear, persist, and reload lifecycle"
+        ],
+        "unproven_scope": [
+          "Translate, clear, persist, and reload lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-follow-up-suggestions",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-follow-up-suggestions"
+      ],
+      "required_gates": [
+        "agent-follow-up-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/turn_service.go",
+        "apps/desktop/src/store/streaming/handler.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station GenerateFollowUpSuggestions",
+          "SSE done event follow_up_suggestions"
+        ],
+        "surfaces": [
+          "Native Tauri follow-up chips",
+          "Station stream readback"
+        ],
+        "proven_by": [
+          "agent-follow-up-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Generation, delivery, fill-not-send, and disappear-on-type lifecycle"
+        ],
+        "unproven_scope": [
+          "Generation, delivery, fill-not-send, and disappear-on-type lifecycle"
+        ]
+      }
+    },
+    {
+      "id": "agent-topic-comments",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-topic-comments"
+      ],
+      "required_gates": [
+        "agent-topic-comments-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/handler/ecosystem_handler.go",
+        "apps/desktop/src/store/topicComments.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station ecosystem_topic_comments table",
+          "Desktop topicComments store"
+        ],
+        "surfaces": [
+          "Native Tauri topic comments view",
+          "Station comment readback"
+        ],
+        "proven_by": [
+          "agent-topic-comments-e2e"
+        ],
+        "proven_scope": [
+          "PENDING: Create, list, delete, immutability, and cascade lifecycle"
+        ],
+        "unproven_scope": [
+          "Create, list, delete, immutability, and cascade lifecycle"
+        ]
       }
     }
   ]

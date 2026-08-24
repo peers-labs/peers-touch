@@ -278,8 +278,8 @@ ensure_desktop_rust_ready() {
   # See docs/architecture/runtime/desktop-runtime-architecture.md §6.4.
   local tauri_feature_args=()
   if [[ "${PT_DESKTOP_E2E:-false}" == "true" ]]; then
-    tauri_feature_args=(--features acceptance-webdriver)
-    echo "[INFO] Native Playwright observer enabled (acceptance-webdriver feature)"
+    tauri_feature_args=(--features e2e-testing)
+    echo "[INFO] Native Playwright observer enabled (e2e-testing feature)"
   fi
   (
     cd "$desktop_dir"

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 
 import {
+  createAgentChatCache,
   projectIMConversations,
   projectIMMessages,
 } from '../dist/index.js';
@@ -38,6 +39,62 @@ assert.deepEqual(
     { key: 'friend:session-1', visibleUnread: 0, syncStatus: 'live' },
   ],
 );
+
+function memoryRepository() {
+  const values = new Map();
+  return {
+    readValue: async (key) => values.get(key) ?? null,
+    write: async (key, value) => {
+      values.set(key, value);
+      return {};
+    },
+    remove: async (key) => {
+      values.delete(key);
+    },
+  };
+}
+
+const conversationRepo = memoryRepository();
+await conversationRepo.write('agent-1', {
+  stale: {
+    conversationId: 'stale',
+    agentId: 'agent-1',
+    ptid: 'ptid:person:owner',
+    title: 'Stale',
+    status: 'active',
+    activeBranchMessageId: '',
+    queuedTurnCount: 0,
+    version: 1,
+    createdAt: '2026-08-18T00:00:00Z',
+    updatedAt: '2026-08-18T00:00:00Z',
+  },
+});
+const cache = createAgentChatCache({
+  conversationRepo,
+  messageRepo: memoryRepository(),
+  turnEventRepo: memoryRepository(),
+  cursorRepo: memoryRepository(),
+  fetcher: {
+    listConversations: async () => ({
+      conversations: [{
+        conversationId: 'current',
+        agentId: 'agent-1',
+        ptid: 'ptid:person:owner',
+        title: 'Current',
+        status: 'active',
+        activeBranchMessageId: '',
+        queuedTurnCount: 0,
+        version: 2,
+        createdAt: '2026-08-18T00:00:00Z',
+        updatedAt: '2026-08-18T01:00:00Z',
+      }],
+    }),
+    listMessages: async () => ({ messages: [] }),
+  },
+});
+const reconciled = await cache.listConversations('agent-1');
+assert.deepEqual(reconciled.map((conversation) => conversation.conversationId), ['current']);
+assert.deepEqual(Object.keys(await conversationRepo.readValue('agent-1')), ['current']);
 
 const messages = projectIMMessages([
   {

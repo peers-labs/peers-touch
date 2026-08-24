@@ -130,7 +130,6 @@ export function ProviderDetail() {
   // Whether the displayed detail matches the currently selected provider.
   // When switching, detail still holds old provider data until the new one loads.
   const isStale = detail != null && selectedId != null && detail.id !== selectedId;
-  const isCli = detail?.runtime_kind === 'cli';
 
   useEffect(() => {
     if (detail && !isStale) {
@@ -288,7 +287,6 @@ export function ProviderDetail() {
     }
   };
 
-  const isCliProvider = detail.runtime_kind === 'cli';
   const readiness = readinessById[detail.id]?.status ?? 'loading';
   const isUnconfigured = readiness === 'unconfigured' && apiKey.trim().length === 0;
   const readinessColor = readiness === 'ready'
@@ -462,59 +460,44 @@ export function ProviderDetail() {
 
         {/* Form Body */}
         <div style={{ padding: '0 20px' }}>
-          {isCliProvider ? (
+          {detail.show_api_key !== false && (
             <FormRow
-              label={t('provider.detail.cliCommand')}
-              desc={t('provider.detail.cliCommandDesc')}
+              label={t('provider.detail.apiKey')}
+              desc={
+                detail.api_key_url ? (
+                  <>
+                    {t('provider.detail.apiKeyDescWithLink', { name: detail.name })}{' '}
+                    <Link href={detail.api_key_url} target="_blank" style={{ fontSize: 12 }}>
+                      {t('provider.detail.getApiKey')} <ExternalLink size={10} style={{ marginLeft: 2 }} />
+                    </Link>
+                  </>
+                ) : (
+                  t('provider.detail.apiKeyDesc', { name: detail.name })
+                )
+              }
             >
-              <Input
-                value={detail.cli_command || ''}
-                readOnly
+              <InputPassword
+                value={apiKey}
+                onChange={(e) => handleApiKeyChange(e.target.value)}
+                placeholder={detail.has_api_key && !apiKey ? '••••••••••••••••' : t('provider.detail.apiKeyPlaceholder')}
+                autoComplete="new-password"
                 style={{ width: '100%' }}
               />
             </FormRow>
-          ) : (
-            <>
-              {detail.show_api_key !== false && (
-                <FormRow
-                  label={t('provider.detail.apiKey')}
-                  desc={
-                    detail.api_key_url ? (
-                      <>
-                        {t('provider.detail.apiKeyDescWithLink', { name: detail.name })}{' '}
-                        <Link href={detail.api_key_url} target="_blank" style={{ fontSize: 12 }}>
-                          {t('provider.detail.getApiKey')} <ExternalLink size={10} style={{ marginLeft: 2 }} />
-                        </Link>
-                      </>
-                    ) : (
-                      t('provider.detail.apiKeyDesc', { name: detail.name })
-                    )
-                  }
-                >
-                  <InputPassword
-                    value={apiKey}
-                    onChange={(e) => handleApiKeyChange(e.target.value)}
-                    placeholder={detail.has_api_key && !apiKey ? '••••••••••••••••' : t('provider.detail.apiKeyPlaceholder')}
-                    autoComplete="new-password"
-                    style={{ width: '100%' }}
-                  />
-                </FormRow>
-              )}
-
-              <FormRow
-                label={t('provider.detail.apiProxyUrl')}
-                desc={t('provider.detail.apiProxyUrlDesc')}
-              >
-                <Input
-                  value={baseUrl}
-                  onChange={(e) => handleBaseUrlChange(e.target.value)}
-                  placeholder={detail.default_base_url || t('provider.detail.apiProxyUrlPlaceholder')}
-                  allowClear
-                  style={{ width: '100%' }}
-                />
-              </FormRow>
-            </>
           )}
+
+          <FormRow
+            label={t('provider.detail.apiProxyUrl')}
+            desc={t('provider.detail.apiProxyUrlDesc')}
+          >
+            <Input
+              value={baseUrl}
+              onChange={(e) => handleBaseUrlChange(e.target.value)}
+              placeholder={detail.default_base_url || t('provider.detail.apiProxyUrlPlaceholder')}
+              allowClear
+              style={{ width: '100%' }}
+            />
+          </FormRow>
 
           {detail.show_checker && (
             <FormRow
@@ -617,11 +600,9 @@ export function ProviderDetail() {
                 </Button>
               </>
             )}
-            {!isCli && (
-              <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-                {t('provider.model.addModel')}
-              </Button>
-            )}
+            <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
+              {t('provider.model.addModel')}
+            </Button>
             <Button
               size="small"
               type="primary"
@@ -768,11 +749,9 @@ export function ProviderDetail() {
                 </Text>
               </Flexbox>
               <Flexbox horizontal gap={12}>
-                {!isCli && (
-                  <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-                    {t('provider.model.addModel')}
-                  </Button>
-                )}
+                <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
+                  {t('provider.model.addModel')}
+                </Button>
                 <Button
                   type="primary"
                   icon={<RefreshCw size={14} />}

@@ -8,6 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+source "$SCRIPT_DIR/redact-env.sh"
 LOCAL_DEV_DIR="$PROJECT_ROOT/.local/dev"
 PROFILES_DIR="$LOCAL_DEV_DIR/profiles"
 ACTIVE_DIR="$LOCAL_DEV_DIR/active"
@@ -195,7 +196,7 @@ case "$cmd" in
     ln -sfn "../profiles/$name.env" "$ACTIVE_FILE"
     echo "[OK] Active profile: $name (worktree: $WORKTREE_ID)"
     echo ""
-    grep -E '^PT_' "$src" | sed 's/^/  /'
+    print_redacted_env_file "$src" | grep -E '^PT_' | sed 's/^/  /'
     ;;
 
   init)

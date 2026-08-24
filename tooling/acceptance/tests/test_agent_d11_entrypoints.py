@@ -39,21 +39,13 @@ class AgentD11EntrypointsTest(unittest.TestCase):
         self.assertEqual(report["knownDefectCount"], 0)
         self.assertEqual(report["knownDefects"], [])
 
-    def test_default_mode_fails_on_missing_pre_effect_guards(self) -> None:
+    def test_default_mode_passes_with_all_pre_effect_guards(self) -> None:
         report = self.module.Checker(REPO_ROOT, FIXTURE, False).run()
 
-        self.assertEqual(report["status"], "fail")
+        self.assertEqual(report["status"], "pass")
         codes = [issue["code"] for issue in report["issues"]]
         self.assertNotIn("KNOWN_ROUTE_DEFECT", codes)
-        self.assertIn("GUARD_ENFORCEMENT", codes)
-        guard_items = {
-            issue["item"]
-            for issue in report["issues"]
-            if issue["code"] == "GUARD_ENFORCEMENT"
-        }
-        self.assertIn("canvas-web-run", guard_items)
-        self.assertIn("rust-worker-claim-and-execute", guard_items)
-        self.assertIn("supervisor-tick-transaction", guard_items)
+        self.assertNotIn("GUARD_ENFORCEMENT", codes)
 
     def test_fixture_has_exact_aliases_and_amended_dispositions(self) -> None:
         data = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
@@ -143,6 +135,60 @@ class AgentD11EntrypointsTest(unittest.TestCase):
                     guard, "enforce_canvas_single_agent_readiness", "run"
                 ),
                 "absent",
+            )
+
+    def test_guard_order_follows_private_core_to_original_first_effect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "scope.go"
+            checker = self.module.Checker(root, Path("unused.yaml"), False)
+            guard = {
+                "scope_source": "scope.go",
+                "scope_symbol": "Run",
+                "core_symbol": "runAfterReadiness",
+                "first_effect": "firstEffect()",
+                "current_state": "before-effect",
+            }
+
+            source.write_text(
+                "func Run() { enforce_canvas_single_agent_readiness(); runAfterReadiness() }\n"
+                "func runAfterReadiness() { firstEffect() }\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                checker.guard_state(
+                    guard, "enforce_canvas_single_agent_readiness", "run"
+                ),
+                "before-effect",
+            )
+
+            checker._cache.clear()
+            source.write_text(
+                "func Run() { runAfterReadiness(); enforce_canvas_single_agent_readiness() }\n"
+                "func runAfterReadiness() { firstEffect() }\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                checker.guard_state(
+                    guard, "enforce_canvas_single_agent_readiness", "run"
+                ),
+                "after-effect",
+            )
+
+            checker._cache.clear()
+            source.write_text(
+                "func Run() { enforce_canvas_single_agent_readiness(); runAfterReadiness() }\n"
+                "func runAfterReadiness() {}\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                checker.guard_state(
+                    guard, "enforce_canvas_single_agent_readiness", "run"
+                ),
+                "absent",
+            )
+            self.assertTrue(
+                any(issue.code == "FIRST_EFFECT_MISSING" for issue in checker.issues)
             )
 
 

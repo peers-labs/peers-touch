@@ -1,0 +1,93 @@
+{
+  "domain": "chat",
+  "capabilities": [
+    {
+      "id": "acceptance-framework-self-consistency",
+      "domain": "delivery-quality",
+      "direction": "acceptance_core_self_validation",
+      "status": "structurally_valid",
+      "features": [
+        "acceptance-framework"
+      ],
+      "required_gates": [
+        "acceptance-plan-self"
+      ],
+      "planned_gates": [
+        "acceptance-plan-self"
+      ],
+      "missing_run_gates": [
+        "acceptance-plan-self"
+      ],
+      "proven_scope": [
+        "changed paths select gates through registry rules",
+        "feature contracts and gate definitions are machine-readable",
+        "capability graph links product capabilities to features gates evidence and unproven scope"
+      ],
+      "unproven_scope": [
+        "project-wide product domain coverage beyond registered domain profiles"
+      ]
+    },
+    {
+      "id": "chat-conversation-contract",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "status": "structurally_valid",
+      "features": [
+        "chat-conversation-contract"
+      ],
+      "required_gates": [
+        "desktop-check",
+        "proto-build",
+        "station-conversation-unit"
+      ],
+      "planned_gates": [
+        "chat-native-two-client-e2e",
+        "desktop-check",
+        "proto-build",
+        "station-conversation-unit"
+      ],
+      "missing_run_gates": [
+        "desktop-check",
+        "proto-build",
+        "station-conversation-unit"
+      ],
+      "proven_scope": [
+        "current Conversation and Envelope contracts regenerate and compile",
+        "Station authority, membership, receipt, fanout, resume, and replay packages pass",
+        "Desktop Conversation and envelope projections type-check"
+      ],
+      "unproven_scope": [
+        "user-visible native two-client behavior"
+      ]
+    },
+    {
+      "id": "chat-native-two-client-journey",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "status": "structurally_valid",
+      "features": [
+        "chat-native-two-client-journey"
+      ],
+      "required_gates": [
+        "chat-native-two-client-e2e"
+      ],
+      "planned_gates": [
+        "chat-native-two-client-e2e",
+        "desktop-check"
+      ],
+      "missing_run_gates": [
+        "chat-native-two-client-e2e"
+      ],
+      "proven_scope": [
+        "symmetric contacts and actor identity",
+        "bidirectional exact plaintext send and decrypt",
+        "visible delivered and read receipts",
+        "avatar and presence/transport projection",
+        "restart persistence and reconnect reconciliation",
+        "visible actionable send failure",
+        "absence of numeric actor identity and decryption placeholders"
+      ],
+      "unproven_scope": []
+    }
+  ]
+}

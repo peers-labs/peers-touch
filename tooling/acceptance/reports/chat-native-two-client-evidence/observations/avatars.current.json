@@ -1,0 +1,23 @@
+{
+  "artifactKind": "chat-native-two-client-observation",
+  "assertionId": "avatars.current",
+  "status": "pass",
+  "testedCommit": "44e73c5fb3fae852dfcb56e13a77fd96cbce69a7",
+  "testedWorkspaceDigest": "7f963a0ea21ab88c8542b1e75e97eaab46dd03ac2e47e14fbc9010b8f3853327",
+  "capturedAt": "2026-08-08T03:17:55.992462+00:00",
+  "runtime": "native-desktop",
+  "details": {
+    "alice": {
+      "avatarPtid": "ptid:v1:actor:peers:p:bob:122000214d28fc7f27d7b5831a6f75af9c7fa35b0c02c417778ae6788133e4fb9bd2",
+      "avatarSrc": "http://127.0.0.1:18980/sub-oss/file?key=2026/08/04/m61XZUacPKj0DvO87hscMQ.jpeg",
+      "ptid": "ptid:v1:actor:peers:p:bob:122000214d28fc7f27d7b5831a6f75af9c7fa35b0c02c417778ae6788133e4fb9bd2",
+      "text": "BBob node-c"
+    },
+    "bob": {
+      "avatarPtid": "ptid:v1:actor:peers:p:alice:1220f69308271444bc8a17b1d0e7328ce3e025ee48e8df1cd5ee363604c153a5cecb",
+      "avatarSrc": "",
+      "ptid": "ptid:v1:actor:peers:p:alice:1220f69308271444bc8a17b1d0e7328ce3e025ee48e8df1cd5ee363604c153a5cecb",
+      "text": "AAlice node-c"
+    }
+  }
+}

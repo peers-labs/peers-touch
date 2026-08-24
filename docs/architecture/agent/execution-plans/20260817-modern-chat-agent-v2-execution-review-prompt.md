@@ -1,10 +1,10 @@
 # Modern Chat Agent V2 — Execution Plan Review Prompt
 
-> **Status**: active
+> **Status**: owner-approved
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-08-17
+> **Created**: 2026-08-17 | **Updated**: 2026-08-21
 > **Owner**: Peers-Touch Agent Team
-> **Review gate**: completed — nineteenth review `PLAN_READY_FOR_EXECUTION`
+> **Review gate**: Owner approved execution on 2026-08-21; no independent twentieth-review verdict was claimed
 
 ---
 
@@ -16,7 +16,7 @@ Mandatory review inputs:
 - `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml`
 - accepted Product sources under
   `docs/architecture/agent/modern-chat-agent/`
-- accepted DESIGN sources and D01-D18/C01-C15/A01-A20.
+- accepted DESIGN sources and D01-D19/C01-C15/A01-A20.
 - current implementation under `model/domain/agent/`,
   `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`, and
   `tooling/acceptance/`.
@@ -34,14 +34,22 @@ Prior-finding regression checklist:
 - runner and validator are independent proof producers, and domain proof pins
   one immutable seven-Gate proof set rather than mutable pointers;
 - queue and all budget tests prove deterministic limit/limit+1 boundaries.
-- `toolRuntime` is the sole approval projection/side-effect owner.
+- `toolRuntime` is the sole Web approval projection and decision-intent owner;
+  it has no policy, claim, execution, result-submission, or continuation
+  authority.
 - all 28 BASE, 26 ERR, and D11 keys plus recovery actions have English/Chinese
   parity and translated receiver evidence.
 - runtime attestations are per Gate/cell/sample while source identity is global;
 - runtime matrix scope/sample counts come only from the versioned plan-owned
   matrix, never Gate self-declaration;
-- `toolRuntime` owns approval submission, projection, and lifecycle with no
-  Rust waiter;
+- Station alone creates the targeted executable envelope after committing
+  decision revision, claim, fence, dispatch sequence, payload hash, and
+  deadline;
+- Desktop Rust persists PREPARED before side effects and duplicate delivery
+  cannot execute twice;
+- result acceptance and the unique turn continuation commit atomically;
+- the Rust waiter, Web-to-native execution, Station LocalToolBroker, and
+  unfenced continuation all have one atomic deletion closure;
 - frozen V2 scope proves P12/stateless CLI non-advertisement and introduces no
   candidate certification, promotion authority, or hidden runtime ingress.
 - D11 is reviewed route-by-route, including guarded, read-only, non-execution
@@ -64,7 +72,7 @@ accepted architecture.
 ## Review Dimensions
 
 1. **Traceability**: F1-F4 implement and delete the remaining C01-C10 paths;
-   every V2 workstream maps product capability/journey, C11-C15, D14-D18,
+   every V2 workstream maps product capability/journey, C11-C15, D14-D19,
    A15-A20, and a required final Gate.
 2. **Dependency order**: contracts before owners, substrate before consumers,
    canonical ToolCall before Evaluation, cutover before deletion.
@@ -93,6 +101,12 @@ accepted architecture.
     semantics, three-platform AS-F10, MCP unavailable degradation, rejected
     Custom Plugin retirement, and D11 downstream gating are independently
     executable.
+13. **MCA-D19 closure**: G1-A through G1-F are dependency-complete; G1-X is
+    Acceptance-only; no step lets Web authorize native execution; decision,
+    outbox, receipt, result, and continuation identities remain source-matching.
+14. **G1 atomicity**: activation and deletion cannot leave a live Web/Rust/
+    Station compatibility authority; pre-cutover calls drain or cancel without
+    changing owner.
 
 ## Required Output
 

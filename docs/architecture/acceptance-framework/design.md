@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-17
+> **Created**: 2026-06-03 | **Updated**: 2026-08-23
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -596,6 +596,40 @@ Agent 对 Acceptance Infra 的优化和审计必须使用
 [`pt-acceptance-infra-engineering`](../../../tooling/skills/pt-acceptance-infra-engineering/SKILL.md)。
 业务接入与产品证明继续使用
 [`pt-acceptance-engineering`](../../../tooling/skills/pt-acceptance-engineering/SKILL.md)。
+
+### 4.12 Runtime Matrix Evidence Role Applicability
+
+Gate-level `required_artifact_roles` 定义 Gate 可能产生的 role 并集。具体 row
+需要哪些 role，由 runtime matrix 的 `role_policy` 决定：
+
+```text
+Gate role union
+  ├── row: desktop-native
+  │     └── cell-results + runtime-attestation + receiver-dom
+  │         + station-readback + runtime-events + measurement + cleanup
+  ├── row: browser
+  │     └── cell-results + runtime-attestation + receiver-dom
+  │         + station-readback + runtime-events + measurement + cleanup
+  ├── row: mobile-contract
+  │     └── cell-results + runtime-attestation + contract-evidence + cleanup
+  └── row: orchestration-guard
+        └── cell-results + runtime-attestation + guard-report + cleanup
+```
+
+不变量：
+
+- `cell-results` 和 `runtime-attestation-set` 覆盖全部 tuple。
+- `runtime-attestation-set` 按 row 的 `runtime_attestation_profile` 校验：
+  direct runtime 使用完整 conversation/Turn/ToolCall/client-session 绑定；
+  contract、guard、non-advertised rows 使用对应事实源的最小 typed attestation。
+- 其它 role 只覆盖 matrix row 显式声明的 tuple 子集。
+- 每个 role artifact 的 refs、scenario IDs 和 sample count 必须精确匹配该子集。
+- `not_applicable` 只能来自 matrix，不允许 producer 或 validator 临场推断。
+- contract-only row 禁止生成虚构 DOM；guard row 禁止生成虚构 Turn/readback。
+- 缺少 applicable role、出现额外 role 或 observation 绑定到错误 tuple 均 fail closed。
+
+ 该关系由 accepted decision D-13 约束；matrix、evidence schema、validator 与
+producer 必须原子迁移，不得用 producer 局部约定替代。
 
 ---
 

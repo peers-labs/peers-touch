@@ -74,14 +74,15 @@ var apiVersionSuffix = regexp.MustCompile(`(^|/)v\d+$`)
 
 // ProviderCallRequest carries all inputs needed to invoke a single LLM completion.
 type ProviderCallRequest struct {
-	ProviderID   string
-	Model        string
-	SystemPrompt string
-	Messages     []domain.Message
-	UserID       string
-	ProviderType string // "ollama", "openai", "anthropic", or empty for auto-detect
-	Effort       string // reasoning effort: "low" | "medium" | "high"
-	DeltaSink    ProviderDeltaSink
+	ProviderID      string
+	Model           string
+	SystemPrompt    string
+	Messages        []domain.Message
+	UserID          string
+	ProviderType    string // "ollama", "openai", "anthropic", or empty for auto-detect
+	Effort          string // reasoning effort: "low" | "medium" | "high"
+	MaxOutputTokens int
+	DeltaSink       ProviderDeltaSink
 }
 
 type ProviderDeltaSink func(ctx context.Context, delta ProviderDelta)
@@ -201,16 +202,22 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		baseURL = strings.TrimSpace(provider.BaseURL)
 	}
 
-	// Step 3 — Resolve provider type.
-	providerType := req.ProviderType
-	if providerType == "" || providerType == "auto" {
-		providerType = s.detectProviderType(provider.Name, provider.SourceType, baseURL)
+	// Step 3 — Resolve the explicit persisted protocol. Provider names and URLs
+	// are display/configuration facts and must not infer execution capability.
+	providerType, protocolErr := explicitProviderType(provider.Protocol)
+	if protocolErr != nil {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"provider protocol is not supported by the active Agent profile", protocolErr)
 	}
 
 	// Step 4 — Resolve model name: prefer request, then fall back to provider default.
 	model := req.Model
 	if model == "" {
 		model = provider.CheckModel
+	}
+	maxOutputTokens := req.MaxOutputTokens
+	if maxOutputTokens <= 0 {
+		maxOutputTokens = defaultMaxTokens
 	}
 
 	logger.Infof(ctx, "provider call: provider_id=%s type=%s model=%s messages=%d",
@@ -224,7 +231,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		if baseURL == "" {
 			baseURL = "http://127.0.0.1:11434"
 		}
-		resp, err = s.callOllama(ctx, baseURL, model, req.SystemPrompt, req.Messages, req.DeltaSink)
+		resp, err = s.callOllama(ctx, baseURL, model, req.SystemPrompt, req.Messages, maxOutputTokens, req.DeltaSink)
 
 	case providerTypeAnthropic:
 		if baseURL == "" {
@@ -237,7 +244,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 			cachingResult = s.cachingService.Apply(ctx, req.SystemPrompt, req.Messages, providerType)
 		}
 
-		resp, err = s.callAnthropic(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, cachingResult, req.DeltaSink)
+		resp, err = s.callAnthropic(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, cachingResult, maxOutputTokens, req.DeltaSink)
 
 	default:
 		// OpenAI-compatible is the default fallback.
@@ -245,7 +252,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 			return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 				"provider base_url is empty for openai-compatible provider", nil)
 		}
-		resp, err = s.callOpenAI(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, req.Effort, req.DeltaSink)
+		resp, err = s.callOpenAI(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, req.Effort, maxOutputTokens, req.DeltaSink)
 	}
 
 	if err != nil {
@@ -265,6 +272,19 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		req.ProviderID, resp.Model, resp.InputTokens, resp.OutputTokens, resp.CacheHit)
 
 	return resp, nil
+}
+
+func explicitProviderType(protocol string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "openai-compatible", "openai":
+		return providerTypeOpenAI, nil
+	case providerTypeAnthropic:
+		return providerTypeAnthropic, nil
+	case providerTypeOllama:
+		return providerTypeOllama, nil
+	default:
+		return "", fmt.Errorf("unsupported provider protocol %q", protocol)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -305,29 +325,6 @@ func (s *ProviderService) extractConfig(configJSON json.RawMessage, keyVaults st
 }
 
 // ---------------------------------------------------------------------------
-// Provider type detection
-// ---------------------------------------------------------------------------
-
-// detectProviderType infers the provider type from the provider's name,
-// source_type, and base_url when the caller did not specify it explicitly.
-func (s *ProviderService) detectProviderType(name, sourceType, baseURL string) string {
-	lower := strings.ToLower(name)
-
-	// Ollama: name contains "ollama" or source_type is "local".
-	if strings.Contains(lower, "ollama") || strings.EqualFold(sourceType, "local") {
-		return providerTypeOllama
-	}
-
-	// Anthropic: name or base_url contains "anthropic".
-	if strings.Contains(lower, "anthropic") || strings.Contains(strings.ToLower(baseURL), "anthropic") {
-		return providerTypeAnthropic
-	}
-
-	// Default to OpenAI-compatible.
-	return providerTypeOpenAI
-}
-
-// ---------------------------------------------------------------------------
 // Ollama endpoint
 // ---------------------------------------------------------------------------
 
@@ -338,6 +335,7 @@ func (s *ProviderService) callOllama(
 	baseURL, model string,
 	systemPrompt string,
 	messages []domain.Message,
+	maxOutputTokens int,
 	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 
@@ -357,6 +355,7 @@ func (s *ProviderService) callOllama(
 		"model":    model,
 		"messages": apiMessages,
 		"stream":   false,
+		"options":  map[string]any{"num_predict": maxOutputTokens},
 	}
 	if deltaSink != nil {
 		payload["stream"] = true
@@ -538,6 +537,7 @@ func (s *ProviderService) callOpenAI(
 	systemPrompt string,
 	messages []domain.Message,
 	effort string,
+	maxOutputTokens int,
 	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 
@@ -566,8 +566,9 @@ func (s *ProviderService) callOpenAI(
 	apiMessages = append(apiMessages, s.toAPIMessages(messages)...)
 
 	payload := map[string]any{
-		"model":    model,
-		"messages": apiMessages,
+		"model":      model,
+		"messages":   apiMessages,
+		"max_tokens": maxOutputTokens,
 	}
 	if effort != "" && effort != "medium" {
 		payload["reasoning_effort"] = effort
@@ -761,6 +762,7 @@ func (s *ProviderService) callAnthropic(
 	systemPrompt string,
 	messages []domain.Message,
 	cachingResult *PromptCachingResult,
+	maxOutputTokens int,
 	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 
@@ -770,7 +772,7 @@ func (s *ProviderService) callAnthropic(
 	// pre-formatted system content and messages; otherwise build plain format.
 	body := map[string]any{
 		"model":      model,
-		"max_tokens": defaultMaxTokens,
+		"max_tokens": maxOutputTokens,
 	}
 
 	if cachingResult != nil {

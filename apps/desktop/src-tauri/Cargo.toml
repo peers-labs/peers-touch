@@ -72,3 +72,4 @@ opt-level = 1
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 acceptance-webdriver = ["dep:tauri-plugin-wdio-webdriver"]
+e2e-testing = ["acceptance-webdriver"]

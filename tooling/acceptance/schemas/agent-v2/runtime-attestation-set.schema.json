@@ -19,11 +19,18 @@
         "type": "object",
         "required": [
           "gate", "row", "platform", "runtime", "cell", "locale", "ordering", "sample_id",
-          "actorIdentityHash", "conversationRuntimeBinding", "runtimeSnapshot",
-          "turnAttempt", "toolCallBinding", "clientSession", "stationProfile",
-          "desktopMode", "networkPath", "machine", "coldWarmState", "observedAt"
+          "attestationProfile", "stationProfile", "networkPath", "machine",
+          "coldWarmState", "observedAt"
         ],
         "properties": {
+          "attestationProfile": {
+            "enum": [
+              "direct_runtime",
+              "contract_only",
+              "orchestration_guard",
+              "non_advertised"
+            ]
+          },
           "actorIdentityHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "conversationRuntimeBinding": {
             "type": "object",
@@ -98,13 +105,85 @@
               }
             }
           },
+          "contractAttestation": {
+            "type": "object",
+            "required": [
+              "contractId", "contractHash", "platform",
+              "toolchain", "roundTripStatus"
+            ]
+          },
+          "guardAttestation": {
+            "type": "object",
+            "required": [
+              "guardId", "sourceInventoryHash", "violationCount"
+            ]
+          },
+          "capabilityInventoryAttestation": {
+            "type": "object",
+            "required": [
+              "inventoryHash", "surfaceId", "zeroExecutionCount"
+            ]
+          },
           "stationProfile": {"type": "string", "minLength": 1},
           "desktopMode": {"type": "string", "minLength": 1},
           "networkPath": {"type": "string", "minLength": 1},
           "machine": {"type": "string", "minLength": 1},
           "coldWarmState": {"enum": ["cold", "warm", "neutral", "contract"]},
           "observedAt": {"type": "string", "minLength": 1}
-        }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "attestationProfile": {"const": "direct_runtime"}
+            },
+            "required": [
+              "actorIdentityHash", "conversationRuntimeBinding",
+              "runtimeSnapshot", "turnAttempt", "toolCallBinding",
+              "clientSession", "desktopMode"
+            ]
+          },
+          {
+            "properties": {
+              "attestationProfile": {"const": "contract_only"}
+            },
+            "required": ["contractAttestation"],
+            "not": {
+              "anyOf": [
+                {"required": ["conversationRuntimeBinding"]},
+                {"required": ["turnAttempt"]},
+                {"required": ["toolCallBinding"]},
+                {"required": ["clientSession"]}
+              ]
+            }
+          },
+          {
+            "properties": {
+              "attestationProfile": {"const": "orchestration_guard"}
+            },
+            "required": ["guardAttestation"],
+            "not": {
+              "anyOf": [
+                {"required": ["conversationRuntimeBinding"]},
+                {"required": ["turnAttempt"]},
+                {"required": ["toolCallBinding"]},
+                {"required": ["clientSession"]}
+              ]
+            }
+          },
+          {
+            "properties": {
+              "attestationProfile": {"const": "non_advertised"}
+            },
+            "required": ["capabilityInventoryAttestation"],
+            "not": {
+              "anyOf": [
+                {"required": ["conversationRuntimeBinding"]},
+                {"required": ["turnAttempt"]},
+                {"required": ["toolCallBinding"]}
+              ]
+            }
+          }
+        ]
       }
     },
     "oracle": {

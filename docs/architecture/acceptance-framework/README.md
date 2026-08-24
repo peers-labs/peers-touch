@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-17
+> **Created**: 2026-06-03 | **Updated**: 2026-08-23
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -85,6 +85,10 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 - immutable run manifests与atomic `latest.json` pointer；
 - writer/readers/validators/cleanup共享唯一resolver；
 - source tree只保留code、schemas、templates和intentional fixtures。
+
+当前 Agent V2 runtime matrix 的跨-runtime role applicability 由 accepted `D-13`
+定义；Foundation candidate producer 必须按 row-scoped role policy 运行，不得为
+contract-only 或 guard rows 伪造 DOM/Turn evidence。
 
 ---
 

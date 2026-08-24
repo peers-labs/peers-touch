@@ -25,6 +25,18 @@ KEY_FIELDS = (
     "sample_id",
 )
 DIMENSION_FIELDS = ("locales", "orderings", "sample_set")
+ROLE_POLICY_FIELDS = ("always", "required", "not_applicable")
+ALWAYS_REQUIRED_ROLES = {
+    "cell-results",
+    "runtime-attestation-set",
+    "cleanup",
+}
+RUNTIME_ATTESTATION_PROFILES = {
+    "direct_runtime",
+    "contract_only",
+    "orchestration_guard",
+    "non_advertised",
+}
 
 
 class MatrixError(ValueError):
@@ -130,6 +142,91 @@ def _row_cells(
     if not cells:
         raise MatrixError(f"row {row_id} has no cells")
     return cells
+
+
+def _validated_role_policy(
+    row: Mapping[str, Any],
+    row_id: str,
+) -> dict[str, tuple[str, ...]] | None:
+    if "role_policy" not in row:
+        return None
+    policy = _mapping(row["role_policy"], f"row {row_id} role_policy")
+    unexpected = sorted(set(policy) - set(ROLE_POLICY_FIELDS))
+    if unexpected:
+        raise MatrixError(
+            f"row {row_id} role_policy has unknown fields: {unexpected}"
+        )
+    result = {
+        field: tuple(
+            _string_list(
+                policy.get(field, []),
+                f"row {row_id} role_policy.{field}",
+                allow_empty=field == "not_applicable",
+            )
+        )
+        for field in ROLE_POLICY_FIELDS
+    }
+    role_sets = {field: set(values) for field, values in result.items()}
+    for field, values in role_sets.items():
+        if len(values) != len(result[field]):
+            raise MatrixError(
+                f"row {row_id} role_policy.{field} contains duplicate roles"
+            )
+    if not ALWAYS_REQUIRED_ROLES.issubset(role_sets["always"]):
+        raise MatrixError(
+            f"row {row_id} role_policy.always must include "
+            f"{sorted(ALWAYS_REQUIRED_ROLES)}"
+        )
+    for left_index, left in enumerate(ROLE_POLICY_FIELDS):
+        for right in ROLE_POLICY_FIELDS[left_index + 1 :]:
+            overlap = sorted(role_sets[left] & role_sets[right])
+            if overlap:
+                raise MatrixError(
+                    f"row {row_id} role_policy overlaps {left}/{right}: "
+                    f"{overlap}"
+                )
+    return result
+
+
+def role_policy_by_row(
+    matrix: Mapping[str, Any],
+    gate_id: str,
+) -> dict[str, dict[str, tuple[str, ...]]]:
+    policies: dict[str, dict[str, tuple[str, ...]]] = {}
+    for index, value in enumerate(_sequence(matrix.get("rows"), "rows")):
+        row = _mapping(value, f"rows[{index}]")
+        row_id = _string(row.get("id"), f"rows[{index}].id")
+        gate = _string(row.get("gate"), f"row {row_id} gate")
+        policy = _validated_role_policy(row, row_id)
+        if gate == gate_id and policy is not None:
+            policies[row_id] = policy
+    return policies
+
+
+def runtime_attestation_profile_by_row(
+    matrix: Mapping[str, Any],
+    gate_id: str,
+) -> dict[str, str]:
+    profiles: dict[str, str] = {}
+    for index, value in enumerate(_sequence(matrix.get("rows"), "rows")):
+        row = _mapping(value, f"rows[{index}]")
+        row_id = _string(row.get("id"), f"rows[{index}].id")
+        gate = _string(row.get("gate"), f"row {row_id} gate")
+        raw_profile = row.get("runtime_attestation_profile")
+        if raw_profile is None:
+            continue
+        profile = _string(
+            raw_profile,
+            f"row {row_id} runtime_attestation_profile",
+        )
+        if profile not in RUNTIME_ATTESTATION_PROFILES:
+            raise MatrixError(
+                f"row {row_id} has unknown runtime attestation profile "
+                f"{profile!r}"
+            )
+        if gate == gate_id:
+            profiles[row_id] = profile
+    return profiles
 
 
 def _validated_rules(expansion: Mapping[str, Any]) -> list[tuple[set[str], Mapping[str, Any]]]:
@@ -264,6 +361,13 @@ def expand_matrix(matrix: Mapping[str, Any]) -> tuple[list[tuple[str, ...]], dic
         gate = _string(row.get("gate"), f"row {row_id} gate")
         platform = _string(row.get("platform"), f"row {row_id} platform")
         runtime = _string(row.get("runtime"), f"row {row_id} runtime")
+        _validated_role_policy(row, row_id)
+        if "role_policy" in row and "runtime_attestation_profile" not in row:
+            raise MatrixError(
+                f"row {row_id} with role_policy requires "
+                "runtime_attestation_profile"
+            )
+        runtime_attestation_profile_by_row(matrix, gate)
         for cell in _row_cells(row, row_id, cell_sets):
             locales, orderings, sample_ids = _dimension_values(
                 row,

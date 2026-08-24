@@ -10,9 +10,10 @@ let debugWorkbenchSequence = 0;
 
 interface AgentWorkbenchProps {
   onOpenOrchestration?: () => void;
+  onNavigateMarketplace?: () => void;
 }
 
-export function AgentWorkbench({ onOpenOrchestration }: AgentWorkbenchProps) {
+export function AgentWorkbench({ onOpenOrchestration, onNavigateMarketplace }: AgentWorkbenchProps) {
   const { token } = theme.useToken();
   const rootRef = useRef<HTMLDivElement>(null);
   const previousNarrowRef = useRef<boolean | null>(null);
@@ -135,6 +136,7 @@ export function AgentWorkbench({ onOpenOrchestration }: AgentWorkbenchProps) {
           onToggle={() => setTopicRailOpen((open) => !open)}
           onOpenProfile={(agentName) => openSurface(agentName, 'profile')}
           onOpenChat={(agentName) => openSurface(agentName, 'chat')}
+          onNavigateMarketplace={onNavigateMarketplace}
         />
       ) : null}
       <ConversationRail

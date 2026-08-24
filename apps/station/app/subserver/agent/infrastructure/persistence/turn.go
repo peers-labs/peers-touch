@@ -11,6 +11,7 @@ type AgentTurn struct {
 	FinalResponse  *string    `gorm:"type:text"`
 	ToolIterations int        `gorm:"not null;default:0"`
 	Status         string     `gorm:"not null;type:varchar(20);default:'running'"`
+	TerminalReason string     `gorm:"not null;type:varchar(100);default:''"`
 	StartedAt      time.Time  `gorm:"not null;autoCreateTime"`
 	EndedAt        *time.Time `gorm:"type:timestamp"`
 

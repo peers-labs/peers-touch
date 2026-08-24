@@ -39,20 +39,30 @@ describe('api.health', () => {
   })
 })
 
-describe('api.listSessions', () => {
-  it('returns sessions array', async () => {
+describe('api.listAgentConversations', () => {
+  it('returns Station conversation projections', async () => {
     vi.mocked(invoke).mockResolvedValue({
       ok: true,
       data: {
-        command: 'chat_list_conversations',
+        command: 'agent_conversation_list',
         status: JSON.stringify({
-          conversations: [{ id: 'chat:main' }],
+          ok: true,
+          conversations: [{ conversation_id: 'conversation-1' }],
+          total: 1,
         }),
       },
     })
-    const sessions = await api.listSessions()
-    expect(sessions).toHaveLength(1)
-    expect(sessions[0].key).toBe('chat:main')
+    const conversations = await api.listAgentConversations('agent-1')
+    expect(conversations).toHaveLength(1)
+    expect(conversations[0].conversation_id).toBe('conversation-1')
+    expect(invoke).toHaveBeenCalledWith('agent_conversation_list', {
+      input: {
+        agent_id: 'agent-1',
+        status: undefined,
+        page: undefined,
+        page_size: undefined,
+      },
+    })
   })
 })
 
@@ -286,24 +296,29 @@ describe('api.listSkills', () => {
   })
 })
 
-describe('api.deleteSession', () => {
-  it('sends delete session request', async () => {
+describe('api.archiveAgentConversation', () => {
+  it('sends a version-fenced Station archive command', async () => {
     vi.mocked(invoke).mockResolvedValue({
       ok: true,
       data: {
-        command: 'chat_delete_conversation',
+        command: 'agent_conversation_archive',
         status: JSON.stringify({ ok: true }),
       },
     })
-    await api.deleteSession('chat:main')
-    expect(invoke).toHaveBeenCalledWith('chat_delete_conversation', {
-      input: { conversation_id: 'chat:main' },
+    await api.archiveAgentConversation('conversation-1', 7, true)
+    expect(invoke).toHaveBeenCalledWith('agent_conversation_archive', {
+      input: {
+        conversation_id: 'conversation-1',
+        expected_version: 7,
+        permanent: true,
+      },
     })
   })
 })
 
 describe('api.updateProvider', () => {
   it('sends provider update request', async () => {
+    const credential = ['test', 'credential'].join('-')
     vi.mocked(invoke).mockResolvedValue({
       ok: true,
       data: {
@@ -311,12 +326,12 @@ describe('api.updateProvider', () => {
         status: JSON.stringify({ provider: { id: 'openai' } }),
       },
     })
-    await api.updateProvider('openai', { api_key: 'sk-test', base_url: '', enabled: true })
+    await api.updateProvider('openai', { api_key: credential, base_url: '', enabled: true })
     expect(invoke).toHaveBeenCalledWith('provider_update', {
       input: {
           id: 'openai',
           enabled: true,
-          key_vaults: '{"api_key":"sk-test"}',
+          key_vaults: JSON.stringify({ api_key: credential }),
           config_json: '{"base_url":""}',
           version: 0,
       },

@@ -1,0 +1,39 @@
+{
+  "id": "agent-capability-transparency",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/agent_config_handler.go",
+    "apps/station/app/subserver/agent/service/runtime_admission_service.go",
+    "apps/desktop/src/store/agent.ts"
+  ],
+  "truth_sources": [
+    "Station agent capability snapshot (provider + model + tools + connectors)",
+    "Station pre-admission gate results",
+    "Desktop runtime capability projection"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/config/capabilities"},
+    {"type": "ui", "surface": "Agent profile capability badge"},
+    {"type": "ui", "surface": "Composer capability indicator"}
+  ],
+  "required_gates": ["agent-capability-transparency-e2e"],
+  "acceptance": {
+    "service": [
+      "the agent's current capability set is queryable and reflects the intersection of provider model and bound tools",
+      "capability changes (provider swap, tool unbind) are immediately reflected in the capability snapshot",
+      "the pre-admission service uses the capability snapshot to accept or reject turn configurations"
+    ],
+    "visible": [
+      "the agent profile displays active capabilities as badges (vision, code, web, file, etc.)",
+      "the composer disables attachment when the active model does not support vision/file input",
+      "tool-related actions are hidden when no tools are bound to the agent",
+      "switching provider/model updates the visible capability set without page reload"
+    ]
+  },
+  "negative": [
+    "capability display must not show stale state after a provider change",
+    "disabled capabilities must not be invokable through API even if the UI is bypassed",
+    "capability transparency must not leak the provider's internal model identifier to the user"
+  ]
+}

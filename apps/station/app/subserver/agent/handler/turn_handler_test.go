@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 )
@@ -67,6 +68,12 @@ func TestWriteTurnStreamEvent(t *testing.T) {
 	}
 	if !resp.flushed {
 		t.Fatal("expected SSE frame to flush")
+	}
+}
+
+func TestDomainTurnStatusToProtoProjectsLocalToolWaitAsRunning(t *testing.T) {
+	if got := domainTurnStatusToProto(domain.TurnStatusWaitingLocalTool); got != model.TurnStatus_TURN_STATUS_RUNNING {
+		t.Fatalf("waiting local tool must remain a non-terminal running projection, got %s", got)
 	}
 }
 

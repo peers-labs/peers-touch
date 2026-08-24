@@ -2,10 +2,10 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-08-18
+> **Created**: 2026-08-17 | **Updated**: 2026-08-24
 > **Owner**: Peers-Touch Agent Team
-> **Plan gate**: `PLAN_READY_FOR_EXECUTION`
-> **Entry gate**: Owner EXECUTE approval received 2026-08-18
+> **Plan gate**: `OWNER_APPROVED_EXECUTION`
+> **Entry gate**: Owner accepted MCA-D19A/D19B/D19C into the main Goal G1 task on 2026-08-22
 
 ---
 
@@ -13,22 +13,22 @@
 
 | Field | Current value |
 |---|---|
-| Main task | Implement the accepted Modern Chat Agent V2 product and architecture without split ownership |
+| Main task | Modern Chat Agent V2 — close remaining F3/F4 to reach LobeHub chat agent parity |
 | Plan source | `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md` |
 | Tracking source | `docs/architecture/agent/lobehub-parity-mindmap.source.md` |
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
-| Stage | `EXECUTE` |
-| Current workstream | F1 Agent And Conversation Authority |
-| Current step | Implement the atomic D11 fail-closed guard across 35 execution-producing Web, Station, scheduler, recovery, and Desktop worker entrypoints |
-| Progress | PRODUCT accepted; DESIGN accepted; PLAN `PLAN_READY_FOR_EXECUTION`; implementation 1/14 workstreams evidence-complete |
-| Last completed | F1 corrected Browser `agent_collaboration_resume_task` to parse resume input and call the resume target; D11 inventory now reports zero known route defects |
-| Current action | Keep F1 in progress while preparing one shared typed guard contract before touching the 35 guarded entrypoints |
-| Next action | Add the shared `AGENT_CANVAS_SINGLE_AGENT_NOT_READY` guard/error contract, place it before every recorded first effect, and replace obsolete orchestration-success tests with zero-mutation rejection evidence |
-| Blockers | none |
-| Decisions required | none |
-| Evidence | W0: canonical proto generation PASS; Rust/Go/focused TS/Mobile contract PASS; 69/69 fail-closed tests PASS; candidate handoff PASS with shallow evidence rejected; old-path inventory unresolved=0; locale and Agent domain structural gates PASS. F1: Browser resume routing fixed; D11 tests 6/6 PASS; inventory 68 entrypoints/31 aliases PASS with knownDefectCount=0; enforcement intentionally FAILS on 35 missing guards. All seven product Gates remain `UNPROVEN` |
-| Last updated | 2026-08-18 |
+| Stage | `DESIGN` |
+| Current workstream | Goal G1: MCA-D19 fenced ToolCall execution and C09 observability closure |
+| Current step | G1-XR / XR-4 — `DESIGN_AMENDMENT_REQUIRED` for non-advertisement proof authority |
+| Progress | D-12 accepted; XR-1 through XR-3 complete; XR-4 has real Mobile contract adapters for 15 tuples and a real D11 guard adapter for 2 tuples; 8 non-advertisement tuples cannot yet emit trustworthy evidence; 394 direct-runtime tuples remain; all V2 product Gates remain UNPROVEN |
+| Last completed | Mobile contract adapter executes 15 explicit protobuf assertions; D11 adapter executes the source-backed zero-violation checker and binds the fixture/source inventory hash |
+| Current action | Stop the non-advertisement adapter before evidence emission because the production system has no authoritative P12 profile/readiness readback and no complete zero process/runtime-home/session execution counter |
+| Next action | Review and accept an architecture amendment defining Station runtime-advertisement readback plus Station/Desktop runtime-activity counters; then return to XR-4 implementation |
+| Blockers | `DESIGN_AMENDMENT_REQUIRED`: provider/model lists cannot independently prove P12 profile absence, TurnTrace count cannot prove zero process/runtime-home/session execution, and the Foundation provisioner allocates no Browser client. `ACCEPTANCE_RUNTIME_COMMIT_MISMATCH`: Station `7ca90707` differs from worktree `80dc4a6b` plus dirty changes |
+| Decisions required | Choose the production observability contract for runtime advertisement and zero-execution proof; acceptance-only instrumentation and weaker evidence are forbidden |
+| Evidence | G1-A: canonical Go/Desktop TS/Mobile TS generation PASS; proto coverage PASS; Desktop and Mobile Web TS generation PASS; Mobile Agent contract 5/5 PASS; Rust prost compile PASS. G1-B/C: Station Agent packages/race/vet/style PASS; Desktop Rust executor 15/15 PASS; cargo check/fmt PASS. G1-D/E: Desktop check PASS; Desktop unit 311/311 PASS; Desktop build PASS; Station approval projection tests PASS. G1-F/X: Station Agent packages/race/vet/style PASS; exact-turn usage/feedback/diagnostic/redaction and migration tests PASS; Desktop check, 310/310 unit tests, and build PASS; cargo check/fmt PASS; C07/C09 zero-residual `unresolvedCount=0`; C09 plan selects `agent-v2-kernel-foundation-e2e`; V2 Gate contract tests 7/7 PASS; Agent V2 Acceptance tests 17/17 PASS. G1-XR: credential-redaction tests PASS 2/2; producer/provisioner/redaction suite PASS 69/69; D-12 matrix/gate/producer suite PASS 28/28; validator subset/profile tests PASS 4/4 and validator owner full suite PASS 15/15; Mobile contract Vitest PASS 15/15; Mobile/D11 adapter tests PASS 11/11; exact matrix PASS at 419 Foundation / 742 total; Agent domain STRUCTURALLY_VALID. Non-advertisement audit: provider/model APIs prove only filtered projection; no production P12 profile/readiness endpoint, TurnTrace is not a process/runtime-home/session counter, Browser is not provisioned. A candidate adapter prototype was rejected and removed before evidence emission. G-F preflight: One profile active; remote Station health PASS; remote commit `7ca90707` versus local HEAD `80dc4a6b` mismatch; all runtime ports free; no Desktop process launched; 402 real tuples remain, so validator stays `UNPROVEN`. iOS generation is NOT RUN because `protoc-gen-swift` is unavailable; Mobile full typecheck remains blocked by unrelated Group Chat `actorDid` errors. D19C product reachability and all Product Gates remain UNPROVEN |
+| Last updated | 2026-08-24 10:45 CST |
 
 ## 1. Accepted Inputs
 
@@ -47,7 +47,7 @@ the independent PRODUCT review passed on 2026-08-17.
 Architecture:
 
 - `docs/architecture/agent/modern-chat-agent/design.md`
-- `docs/architecture/agent/modern-chat-agent/decisions.md` D01-D18
+- `docs/architecture/agent/modern-chat-agent/decisions.md` D01-D19A
 - `docs/architecture/agent/modern-chat-agent/data-model.md`
 - `docs/architecture/agent/modern-chat-agent/module-layout.md`
 - `docs/architecture/agent/modern-chat-agent/integration.md` C01-C15 / A01-A20
@@ -60,8 +60,8 @@ Reviewed runtime matrix:
 
 - `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml`
 - ID `modern-chat-agent-v2-runtime-matrix`
-- version `2026-08-17.3`
-- SHA-256 `8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6`
+- version `2026-08-23.1`
+- SHA-256 `dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0`
 
 ## 2. Scope And Non-Scope
 
@@ -135,7 +135,7 @@ cutovers; W8 owns the C11-C15 activation/deletion cutover.
 | Usage/feedback/diagnostics | Station TurnTrace/user-feedback/diagnostic persistence and services; `apps/desktop/src/diagnostics/agentTurnDiagnostics.ts`; Agent details/feedback surfaces | F4 makes exact-turn usage/feedback/redacted replay durable; screenshot-only evidence is retired |
 | Agent config/bindings | `apps/station/app/subserver/agent/domain/agent_config_service.go`; `apps/desktop/src/services/desktop_api.ts`; `apps/desktop/src/pages/AgentProfilePage.tsx`; `apps/desktop/src/store/agent.ts#updateAgentConfig/getCurrentAgentChatConfig`; `apps/desktop/src/store/agentConnectors.ts`; `AgentSidebar.tsx` and diagnostics readers of embedded `chatConfig` | Backfill manifests/bindings while disabled; W8 switches all reads/writes and retires embedded `chatConfig` Skill/Knowledge/MCP/Tool/Connector binding arrays and parallel readers |
 | Home | `apps/desktop/src/pages/HomePage.tsx`; `apps/desktop/src/pages/HomePageContainer.tsx`; `apps/desktop/src/pages/HomePage.descriptor.tsx` | W8 replaces page-derived work state with `homeRuntime` projection |
-| Tool approval/execution | `ToolCallCard.tsx` -> `store/chat.ts#decideToolApproval` -> Desktop API/Tauri command -> Rust `tool_approval_registry`; `ToolDetailView.tsx` is a read-only inspector, not a decision submitter; event flow uses handwritten `streaming/types.ts`/`index.ts`, mixed reducer `streaming/handler.ts` with intervention side effects, `chat.ts`, AgentProfile activity projection, and Rust approval input; `turn_stream.proto` lacks typed proposal/decision payloads; live inventory uses read-only `store/tool.ts`, while unimported `store/tool/index.ts#pendingCalls` is dead code | W0 adds typed proposal/request/ack contracts; F2 makes generic stream reduction side-effect-free; F4 makes `toolRuntime` sole approval submission/projection lifecycle owner and deletes Rust registry/waiter plus dead duplicate store; Rust executor accepts only Station-authoritative executable decisions; W8 deletes residual unfenced dispatch after W6 |
+| Tool approval/execution | `ToolCallCard.tsx` -> `store/chat.ts#decideToolApproval` -> Desktop API/Tauri command -> Rust `tool_approval_registry`; `ToolDetailView.tsx` is a read-only inspector, not a decision submitter; event flow uses handwritten `streaming/types.ts`/`index.ts`, mixed reducer `streaming/handler.ts` with intervention side effects, `chat.ts`, AgentProfile activity projection, and Rust approval input; `turn_stream.proto` lacks typed proposal/decision payloads; live inventory uses read-only `store/tool.ts`, while unimported `store/tool/index.ts#pendingCalls` is dead code | G1-A adds the MCA-D19 typed decision/envelope/receipt contract; G1-B/C establish Station authority and fenced Rust execution; G1-D makes `toolRuntime` the sole Web projection and decision-intent owner; G1-E deletes every legacy Web/Rust/Station execution authority and unfenced continuation before G-F |
 | MCP | `apps/desktop/src/store/mcp.ts`; `apps/desktop/src/services/mcp-service.ts`; `apps/desktop/src/modules/mcp.ts`; `apps/desktop/src-tauri/src/application/mcp/`; `apps/desktop/src-tauri/src/interface/tauri_commands/mcp.rs` | Retain local process/config/secret executor only; replace client terminal lifecycle truth |
 | Connector | `apps/desktop/src/store/agentConnectors.ts`; `apps/desktop/src/components/agent/AgentConnectorsPanel.tsx`; OAuth services under Station | Retain OAuth owner; replace `enabledTools`/labels as portable readiness or binding identity |
 | Evaluation | `apps/desktop/src/store/evaluation.ts`; `apps/desktop/src/pages/EvaluationPage.tsx`; `apps/desktop/src/services/desktop_api.ts`; Station ecosystem dataset persistence/service | Backfill dataset truth; W8 removes localStorage run/result and `quickCompletion` execution |
@@ -168,7 +168,7 @@ the remaining paths before V2 workstreams may depend on them.
 | Agent/conversation authority | MCA-P01/P02/P07/P08 / J01-J03/J07-J08 | C01/C02 / A01-A04/A09-A10/A13 | D01/D06/D08/D12 | `agent-v2-kernel-foundation-e2e` cells C01/C02 |
 | Runtime/stream/capability/portability | MCA-P03/P09/P11 / J01/J03/J07 | C03/C05/C06/C10 / A02/A09/A11/A13-A14 | D02/D03/D05-D07/D09/D13 | foundation cells C03/C05/C06/C10 |
 | Context/resources | MCA-P04/P06 / J04/J06 | C04/C08 / A03/A05-A06/A08/A13-A14 | D04/D05/D13 | foundation cells C04/C08 |
-| Tool policy/observability baseline | MCA-P05/P10 / J05/J09 | C07/C09 / A07/A09/A12-A14 | D09/D10/D13 | foundation cells C07/C09 |
+| Tool policy/observability baseline | MCA-P05/P10 / J05/J09 | C07/C09 / A07/A09/A12-A14 | D09/D10/D13/D19 | foundation cells C07/C09 |
 | Downstream orchestration boundary | MCA-P15 deferred | C01-C15 single-Agent readiness | D11 | F1 guards current Canvas Web/Station run paths; guards remain after W9 until a separate accepted canonical-kernel migration |
 | Home | MCA-V2-H01 / V2-J01 | C11 / A15 | D14 | `agent-v2-home-command-center-e2e` |
 | Capability authority | MCA-V2-T01-T03 / V2-J02 | C12 / A16 | D15 | `agent-v2-capability-binding-e2e` |
@@ -208,6 +208,11 @@ Parallel policy:
 
 - F3 and F4 may proceed in parallel after F2; both consume the F1 Station
   conversation/turn identity.
+- Inside F4/G1, production authority changes are serial:
+  `G1-A contract -> G1-B Station -> G1-C Rust -> G1-D Web -> G1-E cutover
+  deletion -> G1-F observability`. Acceptance contract/fixture work may proceed
+  in parallel after G1-A, but it cannot modify production owners or publish
+  `PROVEN`.
 - W2 and W3 may proceed in parallel after W1 contracts are stable.
 - W4a lifecycle implementation, W5a resource-manifest implementation, and W6
   ToolCall fencing may proceed in parallel after W3 and W1 pass.
@@ -241,10 +246,10 @@ Parallel policy:
 | Workstream | Status | Entry condition |
 |---|---|---|
 | W0 Contract/Evidence/Gates | complete | Owner EXECUTE approval received; W0 verification and completion audit PASS |
-| F1 Agent/Conversation Authority | in progress | W0 complete |
-| F2 Runtime/Stream/Capability/Portability | pending | F1 |
-| F3 Context/Resource Intelligence | pending | F2 |
-| F4 Tool Policy/Observability | pending | F2 |
+| F1 Agent/Conversation Authority | complete | W0 complete |
+| F2 Runtime/Stream/Capability/Portability | complete | F1 |
+| F3 Context/Resource Intelligence | core complete / C08 unproven | F2 |
+| F4 Tool Policy/Observability | G1-A through G1-F complete; G1-XR producer/provisioning closure active; Native proof unproven | F2 + accepted D19A/D19B/D19C |
 | W1 Capability Authority | pending | G-F foundation Gate `PROVEN` |
 | W2 Home Projection | pending | W1 |
 | W3 Capability Operation Substrate | pending | W1 |
@@ -530,7 +535,7 @@ python3 tooling/scripts/expand-agent-v2-runtime-matrix.py \
   --check \
   docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml
 printf '%s  %s\n' \
-  '8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6' \
+  'dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0' \
   'docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml' \
   | shasum -a 256 -c -
 test -x apps/mobile/node_modules/.bin/protoc-gen-es
@@ -591,6 +596,10 @@ Deliverables:
 - Versioned Station Agent/model config and readiness readback.
 - Station conversation CRUD, ordered messages, bounded queue, immutable
   retry/regenerate/edit lineage, active branches, and idempotent first turn.
+- Accepted `MCA-D08A` commands `RetryTurn`, `RegenerateTurn`,
+  `EditAndResend`, `SelectActiveBranch`, and `TombstoneMessage` are actor-scoped,
+  idempotent, conversation-version fenced, transactionally persisted, and
+  replace every destructive Desktop message mutation before old-path deletion.
 - Desktop App/Browser projections consume Station IDs and revisions.
 - Web disables Canvas Run with a typed single-Agent-readiness blocker; Station
   rejects Canvas task create/run fail-closed even if Web is bypassed.
@@ -811,67 +820,537 @@ and zero local-path leakage.
 ### F4 — Tool Policy And Observability Baseline
 
 **Depends on**: F2.
-**Owns**: C07/C09, D09/D10/D13, A07/A09/A12-A14.
+**Owns**: C07/C09, D09/D10/D13/D19, A07/A09/A12-A14.
 
-**Target roots**: Station ToolRegistry/TurnService/TurnTrace/feedback/usage;
-`turn_stream.proto`; `ToolCallCard.tsx`; `store/chat.ts#decideToolApproval`;
-new `runtimes/toolRuntime.ts`; handwritten `store/streaming/types.ts`,
-`index.ts`, and pure `handler.ts`; AgentProfile activity projection; live
-`store/tool.ts`; dead `store/tool/index.ts`; Desktop API/Tauri approval request
-types/command and Rust registry/waiter; Desktop client capability executor and
-diagnostic projections.
+**Execution status**: Owner-approved. Execute G1 in dependency order. Existing
+decision/result/claim endpoints and the untracked `toolRuntime.ts` remain
+incomplete until their named workstreams pass; they are not an authorized
+runtime path by themselves.
 
-Deliverables:
+**Authority invariant**:
 
-- Station policy check with auto/manual/deny, one durable decision, portable
-  executor lease, loop budgets, typed denial/expiry/timeout/cancel, and result
-  continuation.
-- Delete `store/chat.ts#decideToolApproval`. ToolCallCard invokes
-  `toolRuntime.decideApproval`; `toolRuntime` alone submits decision ID,
-  expected revision, approved value, and idempotency key to Station.
-- Transitional relay contract: Station commits the decision and emits its
-  revision. `chatRuntime` only demultiplexes proposal/decision events to
-  `toolRuntime`; it does not project approval state or submit decisions.
-  Generic `streaming/handler.ts` has no approval cases/subscriptions.
-  `toolRuntime` invokes its own pure approval-state reducer, deduplicates by
-  decision ID/revision, and exclusively writes ToolCallCard/AgentProfile
-  approval projection. Station separately dispatches a typed client-capability
-  execution request carrying the committed decision ID/revision and execution
-  fence; Rust validates that authoritative request and executes without an
-  approval registry or blocking waiter. Duplicate/stale acknowledgements or
-  executable decisions are idempotent/rejected and never create a second
-  execution.
-- Contract tests prove stale expected revision rejects, duplicate same-key/
-  same-payload returns the original decision/ack, and same key with different
-  approved value conflicts without dispatching an executable decision.
-- Immutable usage, feedback, exact-turn redacted diagnostic replay, and
-  source-bound runtime facts.
+- Station alone converts an approved ToolCall into an executable request.
+- Desktop Rust executes only a Station-issued, targeted, fenced envelope and
+  persists `PREPARED` before a side effect.
+- Desktop Web submits decision intent and renders projections only. It cannot
+  claim, execute, submit execution results, or continue a turn.
 
-Cutover/deletion:
+#### G1-A — Proto Contract Closure
 
-- Delete `store/chat.ts#decideToolApproval`; delete the
-  unimported duplicate `store/tool/index.ts#pendingCalls` module and preserve
-  live read-only `store/tool.ts`.
-- Delete the Rust approval registry/waiter and direct Web-to-waiter command in
-  F4. Retain only a Station decision-command proxy and the fenced
-  client-capability execution ingress.
-- Delete unfenced local result continuation and screenshot/client-only
-  diagnostic claims.
+**Depends on**: accepted MCA-D19, MCA-D19A, and MCA-D19B.
 
-Checks:
+**Owner**: Model contract owner. No other production owner writes until
+generation and contract tests pass.
+
+**Deliverables**:
+
+- Extend the shared decision command/ack with approval ID, ToolCall ID,
+  decision ID, expected/committed revision, approved value, idempotency key,
+  payload hash, actor-independent auth context, and typed conflicts.
+- Extend `ClientCapabilityRequest` with attempt/target device, decision,
+  claim/lease revision/fence, dispatch sequence, payload hash,
+  execution/reconciliation deadlines, Station-issued ToolBatch identity,
+  Station-pinned replay policy/external idempotency key, and recovery
+  credential descriptor.
+- Define the cross-language two-stage deterministic hash: execution payload
+  excludes hash/credential fields; recovery scope binds the resulting hash.
+- Add typed `ClientCapabilityReceipt` states
+  `PREPARED|APPLIED|FAILED|RECONCILED_UNKNOWN`, immutable result identity, and
+  ToolBatch identity plus signed recovery proof.
+- Add typed capability lease renew/revoke contracts with expected-revision CAS.
+- Replace client-shaped lease registration with a capability advertisement;
+  Station derives actor/device and issues lease/session identity, revision, and
+  policy-capped expiry.
+- Add canonical actor-device command proof to register, renew, revoke, pull,
+  and active receipt requests; reserve retired registration field 1 so old
+  payloads fail closed.
+- Split active receipt and terminal recovery into distinct typed endpoints that
+  share one result CAS but cannot downgrade proof modes.
+- Add typed execution-envelope/receipt events or RPCs for the client capability
+  kernel. Executable envelopes are not Web `TurnEvent` commands.
+- Generate Go, Desktop TS/Rust, and Mobile TS only through canonical scripts.
+
+**Failure behavior**:
+
+- Unknown fields/schema versions fail before dispatch.
+- Actor JWT plus forged `X-Device-ID` fails before capability authority access.
+- Command nonce reuse with another command/body conflicts; identical write
+  replay returns the same durable outcome.
+- Portable contracts reject arbitrary local paths and unbounded payloads.
+- No handwritten JSON request becomes an independent contract.
+
+**Checks**:
 
 ```bash
-(cd apps/station && go test ./app/subserver/agent/... -run 'Tool|Policy|Budget|Trace|Feedback|Usage')
+./model/build.sh
+./tooling/scripts/proto-gen-mobile.sh web
+(cd apps/station && go test ./app/subserver/agent/... -run 'Tool|Decision|Capability')
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml agent_turn
-(cd apps/desktop && pnpm run check && pnpm run test)
-tooling/scripts/review/agent-v2-old-paths.sh --closure C07,C09
+(cd apps/desktop && pnpm exec tsc --noEmit --skipLibCheck \
+  --moduleResolution bundler --module ESNext --target ES2022 \
+  src/gen/proto/domain/agent/{agent,agent_config,turn_stream}_pb.ts)
+(cd apps/mobile && pnpm exec tsc --noEmit --skipLibCheck \
+  --moduleResolution bundler --module ESNext --target ES2022 \
+  src/gen/proto/domain/agent/{agent,agent_config,turn_stream}_pb.ts \
+  src/contracts/agentV2Contract.test.ts)
 ```
 
-Evidence before product Gate: auto/manual/deny/expiry outcomes, one execution
-lineage, Station decision -> toolRuntime projection -> authoritative Rust
-execution-ingress trace,
-duplicate/stale acknowledgement tests, budget exhaustion, feedback/usage
-readback, redacted replay equality, and zero unresolved legacy matches.
+**Status**: complete on 2026-08-22. Accepted D19A/D19B contracts are generated
+for Go, Desktop TS, Mobile TS, and Rust prost. Descriptor coverage, generated
+model compilation, Desktop/Mobile TypeScript contract checks, Mobile fenced
+request/receipt round-trip, and Rust compile pass. Station service call sites
+intentionally move to G1-B because the atomic contract cutover removes the old
+client-shaped registration and single-deadline fields.
+
+#### G1-B — Station Decision, Outbox, Result, And Continuation Authority
+
+**Depends on**: G1-A.
+
+**Owner**: Station Agent ToolDispatch/Turn services and persistence.
+
+**Deliverables**:
+
+- Route every client-owned ToolCall in the active `TurnService` loop through
+  `ToolDispatchService.Propose`; direct device-local execution is forbidden.
+- Persist one decision revision with CAS and payload-bound idempotency.
+- In one transaction, commit the approved decision, execution claim, target
+  capability session/device, lease revision, fence, dispatch sequence, payload
+  hash, execution/reconciliation deadlines, replay policy, one recovery
+  credential/nonce, and one targeted outbox envelope.
+- Accept receipts/results only for the committed
+  actor/device/session/lease revision/claim/fence/revision/payload tuple and the
+  applicable execution or recovery authority.
+- Verify device-signed terminal recovery, consume the nonce with the result CAS,
+  return the original acknowledgement for identical replay, and reject
+  conflicting digests or revoked device keys.
+- Renew/revoke leases through actor/device/session-bound revision CAS; renewal
+  cannot mutate capability-set hash, connection identity, or signing key.
+- Verify canonical actor-device command proof and nonce/digest replay before
+  register, renew, revoke, pull, or active receipt authority access.
+- Expose terminal recovery through the credential-scoped signed endpoint so
+  actor JWT/session revoke cannot destroy already-PREPARED settlement authority.
+- Commit each unique terminal result by `(tool_call_id, result_id)`. When the
+  final member of a provider-response ToolBatch is `APPLIED` and every other
+  member is also `APPLIED`, atomically create the unique continuation key
+  `(turn_id, attempt_id, tool_batch_id)` before scheduling the next model step.
+- Run continuation through a Station-owned durable lease. Restart may reclaim
+  only pre-emission or provider-idempotent work; ambiguous non-idempotent
+  post-emission work becomes `reconciliation_required`.
+- Persist loop budgets, denial/expiry/timeout/cancel outcomes, and audit-safe
+  arguments/results.
+
+**Failure behavior**:
+
+- Same idempotency key and payload returns the original acknowledgement.
+- Same key with another payload conflicts; stale expected revision rejects.
+- Duplicate envelope/result cannot create a second side effect, ToolResult
+  event, or model continuation.
+- Old-fence, expired, revoked, or untargeted receipts are audit-only rejects.
+- A batch with denied, expired, cancelled, failed, or unknown-side-effect
+  members creates no automatic continuation.
+
+**Checks**:
+
+```bash
+(cd apps/station && go test ./app/subserver/agent/... -run \
+  'Tool|Policy|Decision|Outbox|Fence|Receipt|Continuation|Budget')
+```
+
+**Status**: complete on 2026-08-22. Station owns authenticated capability
+leases, lease revision CAS, canonical actor-device command proof, decision CAS,
+targeted outbox dispatch, split execution/reconciliation deadlines,
+Station-pinned replay policy, receipt tuple validation, signed terminal
+recovery, atomic nonce/result/ack settlement, and one continuation per eligible
+provider ToolBatch. The active Turn path durably pauses instead of waiting on
+the request context; a lifecycle-owned worker resumes ready continuations,
+reclaims only permitted expired leases, and interrupts reconciliation-required
+work without replay. Valid post-PREPARED terminal recovery after the execution
+deadline records the result fact, while cancelled or blocked batches cannot
+reopen lifecycle authority or continuation. Pre-D19B leases and credential-less
+PREPARED rows fail closed during migration. Full/focused Agent tests,
+proof/recovery/concurrency race tests, vet, Go style, generated-contract checks,
+and diff-check passed. G1-C through G1-F implementation/static gates are
+complete; G-F and all Product Gates remain `UNPROVEN`.
+
+#### G1-C — Desktop Rust Fenced Executor
+
+**Depends on**: G1-A and G1-B contract/behavior complete.
+
+**Owner**: Desktop Rust client capability kernel.
+
+**Deliverables**:
+
+- Consume only authenticated Station-targeted execution envelopes.
+- Validate capability session, target device, decision revision, claim, lease,
+  revision, fence, dispatch sequence, payload hash, schema, replay policy,
+  execution/reconciliation deadlines, recovery descriptor, and opaque refs.
+- Persist a durable receipt attempt before execution; record `PREPARED` before
+  any side effect and `APPLIED|FAILED|RECONCILED_UNKNOWN` afterward.
+- Return the existing receipt/result for identical duplicate delivery.
+- Resolve opaque local resource refs through an encrypted actor/device-scoped
+  registry inside the kernel permission boundary.
+- Submit typed receipt/result to Station; never mutate approval state.
+- Sign recovery receipts with the existing actor-device Ed25519 identity;
+  recovery can report terminal state only.
+
+**Failure behavior**:
+
+- Mismatch/stale/expired/revoked input rejects before side effects.
+- Crash after `PREPARED` replays only under Station-pinned
+  `REPLAY_WITH_EXTERNAL_IDEMPOTENCY` with the exact issued key; otherwise
+  report `RECONCILED_UNKNOWN`.
+- Restart reconstructs receipt state from durable storage.
+- Lease revoke/expiry or execution deadline never blocks valid signed terminal
+  settlement before reconciliation deadline, and never restores execution.
+
+**Checks**:
+
+```bash
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml \
+  'agent_turn|client_capability|tool_receipt'
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+```
+
+**Completion audit — 2026-08-22**:
+
+- The production supervisor is wired into Tauri setup/shutdown, pins each
+  worker and durable receipt to its issuing Station, and passes 15 focused
+  tests covering PREPARED ordering, duplicate delivery, stale/revoked/expired
+  authority, no-replay recovery, Station-required same-fence replay rejection,
+  higher-fence exact external idempotency-key forwarding, opaque-resource
+  scope, path redaction, and signed terminal recovery.
+- Current production capability contracts and Station dispatches are
+  fail-closed at `NO_REPLAY_AFTER_PREPARED`; opaque resource issuance belongs
+  to F3 while G1-C owns encrypted resolution. `integrity_hash` remains pinned
+  metadata because no content-hash algorithm is defined by the accepted
+  contract.
+- G1-C implementation and static gates are complete. D19C now requires a new
+  Station-issued fence before any external-idempotency restart execution,
+  validates the immutable original envelope and current lease after locks,
+  preserves the original deadline/key, rejects and audits old-fence recovery,
+  and fails closed for identity, capability/schema, deadline, hash, and
+  resource mismatches. No current production capability advertises external
+  idempotency, so real external-idempotent product reachability remains
+  `UNPROVEN`.
+
+**MCA-D19C accepted execution closure — 2026-08-22**:
+
+1. Station takeover transaction: for an unresolved externally idempotent
+   PREPARED ToolCall before its original execution deadline, CAS the current
+   fence/status, keep ToolCall/decision/claim/arguments/idempotency identity,
+   bind a matching current lease, increment the fence, issue a new
+   request/outbox/recovery credential, and invalidate prior recovery authority.
+2. Desktop consumption: accept only the newly Station-issued envelope through
+   the normal signed pull path; persist a distinct receipt attempt under the
+   higher fence and pass the exact external idempotency key to the adapter.
+3. Failure closure: no takeover for non-idempotent, expired, capability/schema
+   mismatch, actor/device/signing-key mismatch, or resource-bearing work.
+   Existing reconciliation remains the only terminal path.
+4. Deterministic evidence: prove takeover success, old-fence rejection,
+   duplicate takeover idempotency, unchanged external key/deadline, and every
+   no-takeover condition before G1-C completion.
+
+#### G1-D — Desktop Web Projection And Decision Intent
+
+**Depends on**: G1-B and G1-C.
+
+**Owner**: registered Desktop `RuntimeDescriptor` for `toolRuntime`.
+
+**Deliverables**:
+
+- Replace the untracked draft with a registered runtime and pure
+  proposal/decision/result reducer.
+- `chatRuntime` only demultiplexes typed Station projection events.
+- `ToolCallCard` submits
+  `(approval_id, tool_call_id, decision_id, expected_revision, approved,
+  idempotency_key)` through the Desktop Rust Station-command proxy.
+- `toolRuntime` deduplicates projections by decision ID/revision and is the
+  sole writer for ToolCallCard/AgentProfile tool state.
+- Generic streaming reducer has no approval mutation or side effect.
+
+**Forbidden**:
+
+- Web policy classification or auto-approval.
+- Web execution claim, native tool invocation, receipt/result submission, or
+  turn continuation.
+- Direct `fetch('/agent/tool/*')` from the Web runtime.
+
+**Checks**:
+
+```bash
+(cd apps/desktop && pnpm run check)
+(cd apps/desktop && pnpm run test -- toolRuntime messageActions)
+```
+
+#### G1-E — Atomic Authority Cutover And Legacy Deletion
+
+**Depends on**: G1-B, G1-C, and G1-D deterministic checks pass.
+
+**Owner**: G1 production owner; no concurrent production writer.
+
+**Cutover**:
+
+1. Stop new legacy approval admission.
+2. Drain or explicitly cancel pre-cutover waiters; a ToolCall never changes
+   owner in flight.
+3. Activate the Station outbox -> Rust receipt -> Station continuation path.
+4. Activate Web projection/decision intent.
+5. In the same closure, delete all replaced authority.
+
+**Delete**:
+
+- `store/chat.ts#decideToolApproval` and all consumers.
+- Dead `store/tool/index.ts#pendingCalls`; retain read-only `store/tool.ts`.
+- Approval cases/subscriptions in generic streaming handler/types.
+- Rust `tool_approval_registry`, `ApprovalWaiter`, `Condvar`, and direct
+  Web-to-waiter command.
+- Generic unfenced Web-to-Rust local tool resolver.
+- Station `LocalToolBroker`, `/turn/local-tool-result`, and any direct
+  device-local execution/continuation path.
+
+**Zero-residual gate**:
+
+```bash
+tooling/scripts/review/agent-v2-old-paths.sh --closure C07
+```
+
+The result must be zero unresolved live matches. Documentation, generated
+artifacts, and tests require explicit disposition; they cannot hide a live
+authority match.
+
+#### G1-F — Exact-Turn Usage, Feedback, And Redacted Replay
+
+**Depends on**: G1-E and the canonical Turn/ToolCall continuation from G1-B.
+
+**Owner**: Station TurnTrace/usage/feedback/diagnostic services; Desktop is a
+read-only projection.
+
+**Status**: implementation/static gates complete on 2026-08-23; Native product
+proof remains `UNPROVEN`.
+
+**Deliverables**:
+
+- Immutable per-attempt usage bound to exact Turn/attempt/ToolCall lineage.
+- Durable typed feedback with create/readback and actor isolation.
+- Station-generated exact-turn diagnostic replay containing source/runtime/
+  context/tool/usage/terminal facts with secrets, credentials, local paths,
+  and disallowed PII redacted.
+- Delete client-derived diagnostic authority and screenshot-only claims after
+  source-matching readback passes.
+
+**Checks**:
+
+```bash
+(cd apps/station && go test ./app/subserver/agent/... -run \
+  'Trace|Feedback|Usage|Diagnostic|Redact')
+(cd apps/desktop && pnpm run check && pnpm run test)
+```
+
+#### G1-X — Acceptance Contract And Deterministic Evidence
+
+**May run in parallel**: after G1-A contract freeze. It exclusively owns
+`tooling/acceptance/**` and must not edit production files.
+
+**Status**: implementation/static gates complete on 2026-08-23; runtime proof
+remains `UNPROVEN`.
+
+**Deliverables**:
+
+- Map active `turn_service.go`, ToolDispatch persistence/handlers,
+  Desktop Rust ingress/receipt, `toolRuntime`, feedback/usage, and
+  `agentTurnDiagnostics.ts` to C07/C09.
+- Replace generic V2 Gate runner wiring with canonical fail-closed
+  `agent_v2_gate.py` candidate validation.
+- Add deterministic fixtures/tests for decision revision, duplicate/conflicting
+  idempotency, stale acknowledgement, one execution, one continuation,
+  PREPARED crash, restart replay, usage/feedback readback, and redaction.
+- Keep Foundation and governed ToolCall product Gates `UNPROVEN` until their
+  declared environments execute and source-bound evidence validates.
+
+**Checks**:
+
+```bash
+make acceptance-validate DOMAIN=agent
+python3 -m unittest discover -s tooling/acceptance/tests -p 'test_agent_v2*.py'
+python3 tooling/scripts/acceptance-plan.py \
+  --changed-file apps/desktop/src/diagnostics/agentTurnDiagnostics.ts \
+  --output /tmp/agent-v2-c09-plan.json
+```
+
+The diagnostics path must select C09 and its required Gate; exit zero with an
+empty plan is failure.
+
+#### G1-XR — Foundation Candidate Producer And Safe Provisioning
+
+**Depends on**: G1-X contract/validator closure.
+
+**Status**: D-12 contract migration and producer/provisioner scaffolding complete;
+real adapter implementation blocked by a required observability design amendment.
+
+**Owner**: Acceptance runtime producer/provisioner; product truth remains in
+Station and receiver DOM.
+
+**Progress**: credential redaction, candidate producer core, provisioner, and
+D-12 matrix/schema/validator migration complete; Mobile/D11 adapters cover 17
+tuples. The 8 non-advertisement tuples cannot be implemented truthfully until
+production contracts expose the frozen runtime profile/readiness projection and
+complete zero-execution counters. The remaining 394 direct-runtime adapters and
+exact-source deployment also remain open.
+
+**XR-4 execution finding (2026-08-24)**:
+
+- Provider/model list filtering proves that CLI-shaped records are not returned,
+  but does not expose the effective profile identity or independently prove that
+  P12 `EXTERNAL_AGENT` is absent from readiness.
+- TurnTrace count is not a provider-process, runtime-home, external-session, or
+  workspace-creation counter and therefore cannot satisfy AS-F11/AS-F13 zero
+  hidden-dispatch evidence.
+- The current Foundation provisioner allocates only a Native Tauri client, so a
+  Browser observation cannot be source-bound to an isolated Browser runtime.
+- An adapter based on those weaker signals was rejected before evidence
+  emission. Resume XR-4 only after an accepted production observability
+  amendment defines these readbacks and the Browser client lifecycle.
+
+**Dependency order**:
+
+```text
+XR-1 matrix role policy + new identity
+  -> XR-2 evidence contract/schema v2
+  -> XR-3 validator/producer subset semantics
+  -> XR-4 Desktop/Browser/Mobile/D11/non-advertisement adapters
+  -> XR-5 clean commit + exact Station deployment + G-F
+```
+
+`XR-1` through `XR-3` form one atomic contract cutover. No candidate produced
+with the old role × tuple Cartesian semantics remains valid.
+
+**Deliverables**:
+
+1. Redact secret-bearing values from `make profile` and `make config` output.
+2. Add a dedicated Foundation candidate producer that consumes the exact
+   expanded matrix and executes all 419 tuples across Desktop Native, Browser,
+   Mobile contract, D11 guard, CLI absence, and External Agent absence rows.
+3. Extend the `agent` Acceptance Harness and deterministic fixtures only for
+   production actions required by the reviewed matrix; no store-only proof or
+   fabricated observation is allowed.
+4. Emit the nine scenario-owned roles to the external Evidence Store and hand
+   the immutable candidate manifest to `agent_v2_gate.py`; runner-owned roles
+   remain generated by the canonical runner.
+5. Add `agent-v2-kernel-foundation-e2e` provisioning support for the approved
+   One profile, including source identity, actor isolation, credential
+   references, cleanup, and port ownership.
+6. Create one clean candidate commit, deploy that exact commit to `station-1`
+   through the approved Make/Git deployment path, and prove matching local,
+   remote, client, and proto identities before Native execution.
+
+**Checks**:
+
+```bash
+python3 tooling/scripts/expand-agent-v2-runtime-matrix.py \
+  --check tooling/acceptance/matrices/agent-v2-runtime-matrix.yaml
+python3 -m unittest tooling.acceptance.gates.agent.agent_v2_gate_test
+python3 tooling/acceptance/gates/agent/agent_native_static_test.py
+make acceptance-validate DOMAIN=agent
+```
+
+**Runtime gate**:
+
+- G-F remains blocked until the producer emits all required roles from the
+  exact deployed source.
+- Deployment and commit require explicit owner authorization.
+- Any credential value printed to stdout/stderr or evidence fails preflight.
+
+#### G1 Join Barrier
+
+G1 closes only when:
+
+- G1-A through G1-F pass in dependency order.
+- G1-X contracts and deterministic tests pass.
+- G1-XR candidate producer, provisioning, secret-redaction, and exact-source
+  deployment checks pass.
+- `tooling/scripts/review/agent-v2-old-paths.sh --closure C07,C09` reports
+  zero unresolved live matches.
+- Station, Desktop TS, and Desktop Rust checks pass on one stable source
+  snapshot.
+- Usage, feedback, and replay read back from Station for the exact Turn.
+- No local Station was started; environment-backed evidence uses the approved
+  One profile and external Evidence Store.
+
+Only then may G-F preflight begin.
+
+#### F4 Acceptance Scenarios
+
+##### AS-F4-01 Manual approval executes once
+- **Precondition**: One manual-policy ToolCall and one compatible Desktop capability session.
+- **Action**: User approves once; duplicate decision and envelope delivery are injected.
+- **Expected**: UI shows the committed revision; Rust records one PREPARED/APPLIED receipt; Station stores one result and one batch continuation; side-effect count is one.
+- **Failure variant**: Same key with another approved value conflicts and dispatch count remains unchanged.
+- **Evidence**: receiver DOM, Station decision/ToolCall/continuation readback, executor receipt, side-effect counter.
+- **Status**: pending
+
+##### AS-F4-02 Denial, expiry, and stale revision
+- **Precondition**: Manual ToolCalls at current and stale revisions.
+- **Action**: User denies one, lets one expire, and submits one stale decision.
+- **Expected**: Durable denied/expired/conflict states are visible; execution and continuation counts are zero.
+- **Failure variant**: Network retry returns the original acknowledgement without another decision.
+- **Evidence**: receiver DOM, Station readback, zero-execution artifact.
+- **Status**: pending
+
+##### AS-F4-03 Fenced execution rejection
+- **Precondition**: One committed envelope and variants with wrong device, session, lease revision, claim, fence, payload, replay policy, execution deadline, and resource ref.
+- **Action**: Deliver every variant to Desktop Rust.
+- **Expected**: Only the exact envelope reaches PREPARED; every variant rejects before side effects.
+- **Failure variant**: Old-fence result after takeover is audit-only.
+- **Evidence**: Rust receipt ledger, rejection codes, Station audit, side-effect counter.
+- **Status**: pending
+
+##### AS-F4-04 Crash and restart reconciliation
+- **Precondition**: Barriers before PREPARED, after PREPARED, and after APPLIED.
+- **Action**: Terminate and restart the executor at each barrier.
+- **Expected**: Before PREPARED may redispatch with a new fence; after PREPARED replays only Station-declared idempotent work with the exact key; non-idempotent ambiguity becomes UNKNOWN_SIDE_EFFECT; APPLIED never repeats.
+- **Failure variant**: After lease expiry, a valid signed recovery before reconciliation deadline returns the original result acknowledgement and continuation ID on replay; a conflicting digest or revoked device key rejects.
+- **Evidence**: durable receipts, Station ToolCall/result/continuation, side-effect counter, restart log.
+- **Status**: pending
+
+##### AS-F4-04A Multi-ToolCall batch barrier
+- **Precondition**: One provider response emits two client-owned ToolCalls in the same ToolBatch.
+- **Action**: Submit both terminal results in either order and replay the final result.
+- **Expected**: No continuation exists after the first result; the second successful result creates exactly one `(turn_id, attempt_id, tool_batch_id)` continuation; replay returns the original acknowledgement.
+- **Failure variant**: One member fails, is denied, expires, is cancelled, or becomes unknown; automatic continuation count remains zero.
+- **Evidence**: ToolBatch membership, per-call results, continuation row, provider invocation count.
+- **Status**: pending
+
+##### AS-F4-05 Cancel, revoke, and timeout
+- **Precondition**: ToolCalls paused before dispatch and after PREPARED.
+- **Action**: Cancel the Turn, revoke the capability session, and advance the deadline in both orderings.
+- **Expected**: Pre-dispatch produces zero side effects; post-dispatch settles as APPLIED, cancelled, failed, or UNKNOWN_SIDE_EFFECT according to the committed fence; no indefinite waiter remains.
+- **Failure variant**: Late old-fence business result cannot change terminal state.
+- **Evidence**: Station state, receipt ledger, cleanup result, side-effect counter.
+- **Status**: pending
+
+##### AS-F4-05A Lease and recovery authority
+- **Precondition**: One active lease, one PREPARED ToolCall, and deterministic barriers around renew/revoke, execution deadline, recovery signature verification, and nonce/result CAS.
+- **Action**: Execute renew-first/revoke-first, submit terminal receipts before and after both deadlines, replay an identical signed digest, submit a conflicting digest, and revoke the device signing key.
+- **Expected**: Renewal changes only revision/expiry; revoke blocks new execution; valid recovery settles only matching PREPARED before reconciliation deadline; identical replay returns the original acknowledgement; conflicting/revoked/expired recovery creates no second result or continuation.
+- **Failure variant**: Attempt PREPARED, pull, lease renewal, or new dispatch with the recovery credential; every attempt rejects. A late APPLIED fact against a cancelled/expired Turn cannot reopen its ToolBatch or continuation.
+- **Evidence**: lease revisions, recovery credential/nonce row, verified-key state, ToolCall/result/continuation readback, side-effect counter.
+- **Status**: pending
+
+##### AS-F4-06 Usage, feedback, and diagnostic replay
+- **Precondition**: A completed Turn with provider usage, one ToolCall, context sources, and user feedback.
+- **Action**: Restart Desktop and request exact-turn usage, feedback, and diagnostic replay.
+- **Expected**: Readback preserves exact Turn/attempt/tool lineage and terminal reason; replay equals Station facts and contains no secret, credential, local path, or disallowed PII.
+- **Failure variant**: Cross-actor read returns authorization failure without metadata leakage.
+- **Evidence**: receiver DOM, Station readback, redaction scan, replay equality report.
+- **Status**: pending
+
+##### AS-F4-07 Opaque resource reference
+- **Precondition**: An authorized device-local file capability and opaque resource ref.
+- **Action**: Execute through the fenced envelope and inspect every portable artifact.
+- **Expected**: Rust resolves the local handle; Station and evidence retain only opaque refs/hashes.
+- **Failure variant**: Expired or foreign-device ref rejects before execution.
+- **Evidence**: Station readback, Rust authorization record, repository/evidence local-path scan.
+- **Status**: pending
 
 ### G-F — Foundation Native Gate
 
@@ -1934,17 +2413,28 @@ miss keeps the relevant Gate `UNPROVEN`.
 
 ## 11. Plan Review Gate
 
-Current verdict: `PLAN_READY_FOR_EXECUTION` from the nineteenth independent
-read-only review. This verdict authorizes only the Owner decision; it does not
-authorize EXECUTE or prove any production Gate.
+The nineteenth review covered D01-D18. The Owner approved the D19-core amended
+plan on 2026-08-21. The G1-C entry audit found additional architecture
+requirements, and the Owner accepted `MCA-D19A` on 2026-08-22. G1-A then
+verified a missing device-possession boundary and produced `MCA-D19B`, accepted
+into the main Goal G1 task on 2026-08-22. The active gate is
+`OWNER_APPROVED_EXECUTION`; G1-A through G1-F are complete, G1-XR
+candidate-producer and safe-provisioning closure is active, G-F remains
+blocked, and all Product Gates remain `UNPROVEN`.
 
-Return `PLAN_READY_FOR_EXECUTION` only when an independent reviewer confirms:
+Any later independent review must confirm:
 
-- every C01-C15 closure and D01-D18 decision maps to predecessor/workstream/Gate;
+- every C01-C15 closure and D01-D19 decision maps to predecessor/workstream/Gate;
 - dependency/parallel order is sound;
 - atomic deletions prevent split truth;
 - every lifecycle state/race has a binary scenario;
 - evidence is receiver/Station/runtime/cleanup complete;
 - no plan item redesigns accepted architecture.
 
-Until Owner approves EXECUTE, all workstream statuses remain `pending`.
+The review must specifically confirm D19A signed recovery scope, nonce replay,
+device-key revocation, split deadlines, lease CAS, Station-pinned replay policy,
+opaque resource ownership; D19B command proof, body hashing, actor/device
+binding, replay behavior; G1-A through G1-F dependency order, G1-X's
+Acceptance-only firewall, Station-only execution authority, Rust
+PREPARED-before-side-effect durability, atomic result/continuation, and
+zero-residual deletion.

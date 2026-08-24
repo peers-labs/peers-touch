@@ -30,7 +30,8 @@ ENTRY_KEYS = {
     "guard",
     "known_defect",
 }
-GUARD_KEYS = {"scope_source", "scope_symbol", "first_effect", "current_state"}
+GUARD_REQUIRED_KEYS = {"scope_source", "scope_symbol", "first_effect", "current_state"}
+GUARD_OPTIONAL_KEYS = {"core_symbol"}
 KNOWN_DEFECT_KEYS = {"id", "observed_fragments"}
 TOP_LEVEL_KEYS = {
     "version",
@@ -165,16 +166,23 @@ def validate_schema(raw: Any) -> tuple[dict[str, Any], list[Issue]]:
             )
         if guard is not None:
             guard_mapping = _mapping(guard, f"{label}.guard", issues)
-            if set(guard_mapping) != GUARD_KEYS:
+            guard_keys = set(guard_mapping)
+            if not GUARD_REQUIRED_KEYS.issubset(guard_keys) or not guard_keys.issubset(
+                GUARD_REQUIRED_KEYS | GUARD_OPTIONAL_KEYS
+            ):
                 issues.append(
                     Issue(
                         "SCHEMA_GUARD",
                         entry_id or label,
-                        f"guard must contain exactly {sorted(GUARD_KEYS)}",
+                        "guard must contain required keys "
+                        f"{sorted(GUARD_REQUIRED_KEYS)} and optional keys "
+                        f"{sorted(GUARD_OPTIONAL_KEYS)}",
                     )
                 )
             for key in ("scope_source", "scope_symbol", "first_effect"):
                 _required_string(guard_mapping, key, f"{label}.guard", issues)
+            if "core_symbol" in guard_mapping:
+                _required_string(guard_mapping, "core_symbol", f"{label}.guard", issues)
             if guard_mapping.get("current_state") not in {"absent", "before-effect", "after-effect"}:
                 issues.append(
                     Issue(
@@ -508,7 +516,35 @@ class Checker:
                 )
             )
             return "absent"
-        effect_index = scope.find(guard["first_effect"])
+        effect_scope = scope
+        core_symbol = guard.get("core_symbol")
+        if core_symbol:
+            core_index = scope.find(core_symbol)
+            guard_index = scope.find(guard_symbol)
+            if core_index < 0:
+                self.issues.append(
+                    Issue(
+                        "GUARD_CORE_CALL_MISSING",
+                        item,
+                        f"cannot locate core call {core_symbol!r} in {guard['scope_symbol']}",
+                    )
+                )
+                return "absent"
+            if guard_index < 0:
+                return "absent"
+            if guard_index > core_index:
+                return "after-effect"
+            effect_scope = find_symbol_scope(text, core_symbol) or ""
+            if not effect_scope:
+                self.issues.append(
+                    Issue(
+                        "GUARD_CORE_SCOPE_MISSING",
+                        item,
+                        f"cannot locate core scope {core_symbol!r}",
+                    )
+                )
+                return "absent"
+        effect_index = effect_scope.find(guard["first_effect"])
         if effect_index < 0:
             self.issues.append(
                 Issue(
@@ -521,6 +557,8 @@ class Checker:
         guard_index = scope.find(guard_symbol)
         if guard_index < 0:
             return "absent"
+        if core_symbol:
+            return "before-effect"
         return "before-effect" if guard_index < effect_index else "after-effect"
 
     def validate_discovered_routes(self) -> None:

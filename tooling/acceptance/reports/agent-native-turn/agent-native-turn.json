@@ -1,0 +1,80 @@
+{
+  "gate": "agent-native-turn-e2e",
+  "startedAt": "2026-08-20T11:58:31.143208+00:00",
+  "stationUrl": "http://10.37.246.80:18080",
+  "email": "alice@p.t",
+  "steps": [
+    {
+      "step": "launch_desktop",
+      "status": "passed",
+      "startedAt": "2026-08-20T11:58:31.146792+00:00",
+      "durationMs": 3
+    },
+    {
+      "step": "await_webdriver",
+      "status": "passed",
+      "startedAt": "2026-08-20T11:58:31.150427+00:00",
+      "durationMs": 41290
+    },
+    {
+      "step": "connect_webdriver",
+      "status": "passed",
+      "startedAt": "2026-08-20T11:59:12.440754+00:00",
+      "durationMs": 230
+    },
+    {
+      "step": "wait_renderer",
+      "status": "passed",
+      "startedAt": "2026-08-20T11:59:12.671011+00:00",
+      "durationMs": 20146
+    },
+    {
+      "step": "wait_harness",
+      "status": "passed",
+      "startedAt": "2026-08-20T11:59:32.817136+00:00",
+      "durationMs": 2
+    },
+    {
+      "step": "login",
+      "status": "passed",
+      "startedAt": "2026-08-20T11:59:32.819326+00:00",
+      "durationMs": 3660
+    },
+    {
+      "step": "navigate_to_agent",
+      "status": "passed",
+      "startedAt": "2026-08-20T11:59:36.480254+00:00",
+      "durationMs": 52
+    },
+    {
+      "step": "ensure_provider",
+      "status": "passed",
+      "startedAt": "2026-08-20T11:59:36.532550+00:00",
+      "durationMs": 11838
+    },
+    {
+      "step": "send_message",
+      "status": "passed",
+      "startedAt": "2026-08-20T11:59:48.370883+00:00",
+      "durationMs": 52
+    },
+    {
+      "step": "wait_for_response",
+      "status": "passed",
+      "startedAt": "2026-08-20T11:59:48.423399+00:00",
+      "durationMs": 6908
+    }
+  ],
+  "debug_navigate": {
+    "found": true,
+    "tag": "SPAN"
+  },
+  "response": {
+    "content": "OK",
+    "messageId": "temp-1787227188385-1",
+    "toolCalls": 0
+  },
+  "loginActorId": "347760575104679938",
+  "status": "passed",
+  "completedAt": "2026-08-20T11:59:55.331592+00:00"
+}

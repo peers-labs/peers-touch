@@ -34,20 +34,20 @@
       "notes": "Managed domain with a local Desktop lifecycle contract and Gate. Python Core wrapper, native visible A-to-B-to-close-to-wakeup proof, and cross-platform Mobile remain incomplete or unproven; active means structurally onboarded, not product-ready."
     },
     {
-      "id": "agent",
-      "status": "active",
-      "profile": "tooling/acceptance/domains/agent.yaml",
-      "capabilities": "tooling/acceptance/capabilities/agent.yaml",
-      "coverage": "managed_domain",
-      "notes": "Managed domain for Native Agent product journeys. Current contracts cover mention composition, Station-backed knowledge binding, connector lifecycle, message forwarding, and Portal navigation; each remains unproven until its dedicated Native Gate passes."
-    },
-    {
       "id": "station-dashboard",
       "status": "active",
       "profile": "tooling/acceptance/domains/station-dashboard.yaml",
       "capabilities": "tooling/acceptance/capabilities/station-dashboard.yaml",
       "coverage": "managed_domain",
       "notes": "Second product domain. It validates project-level acceptance onboarding without becoming an acceptance validation domain."
+    },
+    {
+      "id": "agent",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/agent.yaml",
+      "capabilities": "tooling/acceptance/capabilities/agent.yaml",
+      "coverage": "managed_domain",
+      "notes": "Modern Chat Agent domain. Station is the sole runtime/stream authority. Covers ContextLedger, ToolCall state machine, attachments, diagnostics, budgets, and Desktop surface."
     }
   ]
 }

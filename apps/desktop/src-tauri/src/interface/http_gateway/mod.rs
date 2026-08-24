@@ -8,6 +8,7 @@
 //
 // 2026-04-09: Initial creation. Full 1:1 mapping of all 237 tauri commands.
 
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -29,6 +30,7 @@ use crate::state::AppState;
 // -------------------------------------------------------------------------
 use crate::application::account as app_account;
 use crate::application::admin as app_admin;
+use crate::application::agent_growth as app_agent_growth;
 use crate::application::agent_orchestration as app_agent_orchestration;
 use crate::application::agent_turn as app_agent_turn;
 use crate::application::agents as app_agents;
@@ -36,7 +38,6 @@ use crate::application::applet_store as app_applet_store;
 use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
 use crate::application::channels as app_channels;
-use crate::application::chat as app_chat;
 use crate::application::chat_storage;
 use crate::application::cron as app_cron;
 use crate::application::federation as app_federation;
@@ -227,6 +228,15 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &G
         return;
     }
 
+    if request.url() == "/agent/turn/stream" {
+        handle_agent_stream_proxy(request, state, "/sub-agent/agent/turn/stream");
+        return;
+    }
+    if request.url() == "/agent/turn/events" {
+        handle_agent_stream_proxy(request, state, "/sub-agent/agent/conversation/events");
+        return;
+    }
+
     // Read body
     let mut body = String::new();
     if let Err(e) = request.as_reader().read_to_string(&mut body) {
@@ -272,6 +282,80 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &G
         .with_status_code(200)
         .with_header(content_type_json())
         .with_header(cors_origin());
+    let _ = request.respond(response);
+}
+
+fn handle_agent_stream_proxy(
+    mut request: tiny_http::Request,
+    state: &AppState,
+    station_path: &'static str,
+) {
+    let Some(token) = http_gateway_bearer_token(state) else {
+        let response = tiny_http::Response::from_string(
+            json!({"ok": false, "error": "authentication required"}).to_string(),
+        )
+        .with_status_code(401)
+        .with_header(content_type_json())
+        .with_header(cors_origin());
+        let _ = request.respond(response);
+        return;
+    };
+    let mut body = String::new();
+    if request.as_reader().read_to_string(&mut body).is_err() {
+        let response = tiny_http::Response::from_string("invalid stream request")
+            .with_status_code(400)
+            .with_header(cors_origin());
+        let _ = request.respond(response);
+        return;
+    }
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            let response = tiny_http::Response::from_string(error.to_string())
+                .with_status_code(500)
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+    let upstream = client
+        .post(format!(
+            "{}{}",
+            station_client::station_base_url(),
+            station_path
+        ))
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::ACCEPT, "text/event-stream")
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(body)
+        .send();
+    let upstream = match upstream {
+        Ok(response) => response,
+        Err(error) => {
+            let response = tiny_http::Response::from_string(error.to_string())
+                .with_status_code(502)
+                .with_header(cors_origin());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+    let status = upstream.status().as_u16();
+    let response = tiny_http::Response::new(
+        tiny_http::StatusCode(status),
+        vec![
+            "Content-Type: text/event-stream; charset=utf-8"
+                .parse()
+                .unwrap(),
+            "Cache-Control: no-cache".parse().unwrap(),
+            cors_origin(),
+        ],
+        upstream,
+        None,
+        None,
+    );
     let _ = request.respond(response);
 }
 
@@ -2141,96 +2225,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "settings_reset" => to_json(app_settings::settings_reset(state)),
 
-        // =================================================================
-        // Chat (no state)
-        // =================================================================
-        "chat_list_conversations" => to_json(app_chat::chat_list_conversations("")),
-        "chat_list_messages" => {
-            let input = match parse_args::<ChatListMessagesInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_list_messages("", input))
-        }
-        "chat_send_message" => {
-            let input = match parse_args::<ChatSendMessageInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_send_message("", input))
-        }
-        "chat_mark_read" => {
-            let input = match parse_args::<ChatMarkReadInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_mark_read("", input))
-        }
-        "chat_delete_conversation" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_delete_conversation("", input))
-        }
-        "chat_rename_conversation" => {
-            let input = match parse_args::<ChatRenameConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_rename_conversation("", input))
-        }
-        "chat_duplicate_conversation" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_duplicate_conversation("", input))
-        }
-        "chat_smart_rename_conversation" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_smart_rename_conversation("", input))
-        }
-        "chat_set_conversation_model" => {
-            let input = match parse_args::<ChatSetConversationModelInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_set_conversation_model("", input))
-        }
-        "chat_delete_message" => {
-            let input = match parse_args::<ChatMessageInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_delete_message("", input))
-        }
-        "chat_update_message" => {
-            let input = match parse_args::<ChatUpdateMessageInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_update_message("", input))
-        }
-        "chat_stop" => {
-            let input = match parse_args::<ChatConversationInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_stop("", input))
-        }
-        // chat_completion_once: blocking call (originally async in tauri, runs sync here)
-        "chat_completion_once" => {
-            let input = match parse_args::<ChatCompletionInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_chat::chat_completion_once("", "", input))
-        }
-
         // Note: legacy `timeline_*` dev-HTTP routes were removed in P2. The
         // new `social_*` Tauri commands target proto-typed responses and
         // are not exposed via the dev HTTP gateway (which only speaks
@@ -2386,23 +2380,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             }
         }
         "sync_user_profile" => {
-            let session = state
-                .session
-                .lock()
-                .ok()
-                .and_then(|guard| {
-                    let token = guard.token.clone().filter(|value| !value.trim().is_empty())?;
-                    let actor_id = guard
-                        .actor_id
-                        .clone()
-                        .filter(|value| !value.trim().is_empty())?;
-                    let account_id = guard.account_id.clone().or_else(|| {
-                        crate::infrastructure::auth_identity::find_account_id_by_actor_id(
-                            &actor_id,
-                        )
-                    })?;
-                    Some((token, account_id))
-                });
+            let session = state.session.lock().ok().and_then(|guard| {
+                let token = guard
+                    .token
+                    .clone()
+                    .filter(|value| !value.trim().is_empty())?;
+                let actor_id = guard
+                    .actor_id
+                    .clone()
+                    .filter(|value| !value.trim().is_empty())?;
+                let account_id = guard.account_id.clone().or_else(|| {
+                    crate::infrastructure::auth_identity::find_account_id_by_actor_id(&actor_id)
+                })?;
+                Some((token, account_id))
+            });
             match session {
                 Some((token, account_id)) => {
                     let actor_ptid = app_auth::canonical_ptid_for_token(&token);
@@ -2851,13 +2842,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agents::agents_search("", input))
         }
-        "agents_list_sessions" => {
-            let input = match parse_args::<AgentIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_agents::agents_list_sessions("", input))
-        }
         "agent_conversation_list" => {
             let input = match parse_args::<AgentConversationListInput>(args) {
                 Ok(v) => v,
@@ -2902,6 +2886,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agent_turn::agent_conversation_messages(input, &token))
         }
+        "agent_conversation_update" => {
+            let input = match parse_args::<AgentConversationUpdateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_conversation_update(input, &token))
+        }
         "agent_conversation_archive" => {
             let input = match parse_args::<AgentConversationArchiveInput>(args) {
                 Ok(v) => v,
@@ -2912,6 +2907,61 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_turn::agent_conversation_archive(input, &token))
+        }
+        "agent_retry_turn" => {
+            let input = match parse_args::<AgentRetryTurnInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_retry_turn(input, &token))
+        }
+        "agent_regenerate_turn" => {
+            let input = match parse_args::<AgentRegenerateTurnInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_regenerate_turn(input, &token))
+        }
+        "agent_edit_and_resend" => {
+            let input = match parse_args::<AgentEditAndResendInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_edit_and_resend(input, &token))
+        }
+        "agent_select_active_branch" => {
+            let input = match parse_args::<AgentSelectActiveBranchInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_select_active_branch(input, &token))
+        }
+        "agent_tombstone_message" => {
+            let input = match parse_args::<AgentTombstoneMessageInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_tombstone_message(input, &token))
         }
         "agent_thread_create" => {
             let input = match parse_args::<AgentThreadCreateInput>(args) {
@@ -3123,7 +3173,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 .filter(|value| !value.is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("agent-turn-{}", Ulid::new()));
-            let cancel_flag = app_agent_turn::register_agent_turn_stream(&stream_id);
+            let cancel_flag = Arc::new(AtomicBool::new(false));
             let stream_id_for_task = stream_id.clone();
             let app_for_task = match runtime.app_handle("agent_execute_turn_stream") {
                 Ok(app_handle) => app_handle,
@@ -3138,14 +3188,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     "".to_string(),
                     cancel_flag,
                 );
-                app_agent_turn::unregister_agent_turn_stream(&stream_id_for_task);
             });
             to_json(AppResult::success(StubPayload {
                 command: "agent_execute_turn_stream".to_string(),
                 status: json!({ "stream_id": stream_id }).to_string(),
             }))
         }
-        "agent_cancel_turn_stream" => {
+        "agent_cancel_turn" => {
             let input = match parse_args::<AgentTurnStreamCancelInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
@@ -3154,46 +3203,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(token) => token,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_agent_turn::cancel_agent_turn_stream(
-                &input.stream_id,
-                &token,
-            ))
-        }
-        "agent_replay_conversation_events" => {
-            let input = match parse_args::<AgentConversationReplayEventsInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match http_gateway_bearer_token(state) {
-                Some(token) => token,
-                None => return to_json(unauthorized_error()),
-            };
-            let stream_id = input.stream_id.trim().to_string();
-            let stream_id_for_task = stream_id.clone();
-            let app_for_task = match runtime.app_handle("agent_replay_conversation_events") {
-                Ok(app_handle) => app_handle,
-                Err(error) => return error,
-            };
-            tauri::async_runtime::spawn_blocking(move || {
-                if let Err(error) =
-                    app_agent_turn::replay_conversation_events_stream(&app_for_task, input, &token)
-                {
-                    tracing::error!(command = "agent_replay_conversation_events", error = %error, "Conversation events replay failed");
-                    app_agent_turn::emit_turn_stream_event(
-                        &app_for_task,
-                        &stream_id_for_task,
-                        "error",
-                        json!({
-                            "type": "error",
-                            "error": error,
-                        }),
-                    );
-                }
-            });
-            to_json(AppResult::success(StubPayload {
-                command: "agent_replay_conversation_events".to_string(),
-                status: json!({ "stream_id": stream_id }).to_string(),
-            }))
+            to_json(app_agent_turn::cancel_agent_turn(&input.turn_id, &token))
         }
         "agent_turn_trace_list" => {
             let input = match parse_args::<AgentTurnTraceListInput>(args) {
@@ -3217,12 +3227,38 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agent_turn::agent_turn_trace_get(input, &token))
         }
-        "agent_resolve_local_tool_request" => {
-            let input = match parse_args::<AgentLocalToolRequestInput>(args) {
+        "agent_turn_diagnostics_export" => {
+            let input = match parse_args::<AgentTurnDiagnosticsInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            to_json(app_agent_turn::agent_resolve_local_tool_request(input))
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_diagnostics_export(input, &token))
+        }
+        "agent_submit_feedback" => {
+            let input = match parse_args::<app_agent_growth::AgentFeedbackInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_submit_feedback(input, &token))
+        }
+        "agent_list_turn_feedback" => {
+            let input = match parse_args::<app_agent_growth::AgentTurnFeedbackListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_list_turn_feedback(input, &token))
         }
         "agent_collaboration_create" => {
             let input = match parse_args::<AgentCollaborationCreateInput>(args) {
@@ -7058,20 +7094,47 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "messaging_send_message" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
-            let token = guard.as_ref().and_then(|g| g.token.clone()).unwrap_or_default();
-            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            let actor_id = guard
+                .as_ref()
+                .and_then(|g| g.actor_id.clone())
+                .unwrap_or_default();
+            let token = guard
+                .as_ref()
+                .and_then(|g| g.token.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
             drop(guard);
             if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
             }
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
-                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
             };
-            let conversation_id = args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let conversation_kind_str = args.get("conversation_kind").and_then(|v| v.as_str()).unwrap_or("direct");
+            let conversation_id = args
+                .get("conversation_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let conversation_kind_str = args
+                .get("conversation_kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("direct");
             let conversation_kind = match conversation_kind_str {
                 "group" => crate::model::chat::ConversationKind::Group,
                 _ => crate::model::chat::ConversationKind::Direct,
@@ -7080,7 +7143,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let reply_to_message_id = args.get("reply_to_message_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let thread_root_message_id = args.get("thread_root_message_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
             if conversation_id.is_empty() || plaintext.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "conversation_id and plaintext required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::InvalidArgument,
+                    "conversation_id and plaintext required",
+                    None,
+                ));
             }
             match engine.submit_message(
                 &token,
@@ -7105,31 +7172,56 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "messaging_list_messages" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
-            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            let actor_id = guard
+                .as_ref()
+                .and_then(|g| g.actor_id.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
             drop(guard);
             if actor_id.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
             }
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
-                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
             };
-            let conversation_id = args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("");
+            let conversation_id = args
+                .get("conversation_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             match engine.conversation_messages(conversation_id) {
                 Ok(messages) => {
-                    let items: Vec<Value> = messages.iter().map(|m| json!({
-                        "event_id": m.event_id,
-                        "event_sequence": m.event_sequence,
-                        "message_id": m.message_id,
-                        "sender_ptid": m.sender_ptid,
-                        "sender_device_id": m.sender_device_id,
-                        "plaintext": m.plaintext,
-                        "attachments": Vec::<Value>::new(),
-                        "state": m.state,
-                        "timestamp_unix_ms": m.timestamp_unix_ms,
-                    })).collect();
+                    let items: Vec<Value> = messages
+                        .iter()
+                        .map(|m| {
+                            json!({
+                                "event_id": m.event_id,
+                                "event_sequence": m.event_sequence,
+                                "message_id": m.message_id,
+                                "sender_ptid": m.sender_ptid,
+                                "sender_device_id": m.sender_device_id,
+                                "plaintext": m.plaintext,
+                                "attachments": Vec::<Value>::new(),
+                                "state": m.state,
+                                "timestamp_unix_ms": m.timestamp_unix_ms,
+                            })
+                        })
+                        .collect();
                     to_json(AppResult::success(json!({ "messages": items })))
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
@@ -7137,19 +7229,42 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "messaging_drain" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
-            let token = guard.as_ref().and_then(|g| g.token.clone()).unwrap_or_default();
-            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            let actor_id = guard
+                .as_ref()
+                .and_then(|g| g.actor_id.clone())
+                .unwrap_or_default();
+            let token = guard
+                .as_ref()
+                .and_then(|g| g.token.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
             drop(guard);
             if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
             }
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
-                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
             };
-            let batch_limit = args.get("batch_limit").and_then(|v| v.as_u64()).unwrap_or(100) as u32;
+            let batch_limit = args
+                .get("batch_limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(100) as u32;
             match engine.drain_once(&token, batch_limit) {
                 Ok(progress) => to_json(AppResult::success(json!({
                     "processed": progress.processed,
@@ -7161,17 +7276,37 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "messaging_dispatch" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
-            let token = guard.as_ref().and_then(|g| g.token.clone()).unwrap_or_default();
-            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            let actor_id = guard
+                .as_ref()
+                .and_then(|g| g.actor_id.clone())
+                .unwrap_or_default();
+            let token = guard
+                .as_ref()
+                .and_then(|g| g.token.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
             drop(guard);
             if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
             }
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
-                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
             };
             let now_unix_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -7246,27 +7381,60 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "messaging_debug" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
-            let token = guard.as_ref().and_then(|g| g.token.clone()).unwrap_or_default();
-            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            let actor_id = guard
+                .as_ref()
+                .and_then(|g| g.actor_id.clone())
+                .unwrap_or_default();
+            let token = guard
+                .as_ref()
+                .and_then(|g| g.token.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
             drop(guard);
             if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
             }
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
-                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
             };
-            let conversation_id = args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let conversation_id = args
+                .get("conversation_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let mut results = serde_json::Map::new();
             results.insert("endpoint_ptid".into(), json!(engine.endpoint().ptid));
-            results.insert("endpoint_device_id".into(), json!(engine.endpoint().device_id));
+            results.insert(
+                "endpoint_device_id".into(),
+                json!(engine.endpoint().device_id),
+            );
             results.insert("profile_id".into(), json!(engine.profile_id()));
             let enroll_result = engine.enroll_pending_device(&token, "Desktop".to_string());
-            results.insert("enroll_pending_device".into(), json!(format!("{:?}", enroll_result)));
+            results.insert(
+                "enroll_pending_device".into(),
+                json!(format!("{:?}", enroll_result)),
+            );
             let prekey_result = engine.publish_prekeys(&token);
-            results.insert("publish_prekeys".into(), json!(format!("{:?}", prekey_result)));
+            results.insert(
+                "publish_prekeys".into(),
+                json!(format!("{:?}", prekey_result)),
+            );
             let mls_key_package_result = engine.publish_mls_key_packages(&token);
             results.insert(
                 "publish_mls_key_packages".into(),
@@ -7274,31 +7442,64 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             );
             if !conversation_id.is_empty() {
                 let plan_result = engine.prepare_send_plan(&token, &conversation_id);
-                results.insert("prepare_send_plan".into(), json!(format!("{:?}", plan_result)));
+                results.insert(
+                    "prepare_send_plan".into(),
+                    json!(format!("{:?}", plan_result)),
+                );
             }
             to_json(AppResult::success(json!(results)))
         }
         "messaging_create_direct" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
-            let token = guard.as_ref().and_then(|g| g.token.clone()).unwrap_or_default();
-            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            let actor_id = guard
+                .as_ref()
+                .and_then(|g| g.actor_id.clone())
+                .unwrap_or_default();
+            let token = guard
+                .as_ref()
+                .and_then(|g| g.token.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
             drop(guard);
             if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
             }
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
-                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
             };
-            let peer_ptid = args.get("peer_ptid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let peer_ptid = args
+                .get("peer_ptid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if peer_ptid.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "peer_ptid required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::InvalidArgument,
+                    "peer_ptid required",
+                    None,
+                ));
             }
             let conversation_id = match engine.create_direct_conversation(&token, &peer_ptid) {
                 Ok(id) => id,
-                Err(e) => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
+                Err(e) => {
+                    return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None))
+                }
             };
             if let Err(e) = engine.drain_once(&token, 100) {
                 return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None));
@@ -7313,25 +7514,58 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "messaging_create_group" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
-            let token = guard.as_ref().and_then(|g| g.token.clone()).unwrap_or_default();
-            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            let actor_id = guard
+                .as_ref()
+                .and_then(|g| g.actor_id.clone())
+                .unwrap_or_default();
+            let token = guard
+                .as_ref()
+                .and_then(|g| g.token.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
             drop(guard);
             if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
             }
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
-                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
             };
-            let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let member_ptids: Vec<String> = args.get("member_ptids")
+            let name = args
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let member_ptids: Vec<String> = args
+                .get("member_ptids")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
             if member_ptids.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "member_ptids required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::InvalidArgument,
+                    "member_ptids required",
+                    None,
+                ));
             }
             let conversation_id = format!("g-{}", ulid::Ulid::new().to_string().to_lowercase());
             match engine.create_group_conversation(&token, &conversation_id, &name, &member_ptids) {
@@ -7417,31 +7651,53 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "messaging_list_conversations" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
-            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            let actor_id = guard
+                .as_ref()
+                .and_then(|g| g.actor_id.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
             drop(guard);
             if actor_id.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
             }
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
-                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
             };
             match engine.conversations() {
                 Ok(conversations) => {
-                    let items: Vec<Value> = conversations.iter().map(|c| json!({
-                        "conversation_id": c.conversation_id,
-                        "authority_station_id": c.authority_station_id,
-                        "kind": c.kind,
-                        "name": c.name,
-                        "owner_ptid": c.owner_ptid,
-                        "member_ptids": c.member_ptids,
-                        "membership_epoch": c.membership_epoch,
-                        "mls_epoch": c.mls_epoch,
-                        "active": c.active,
-                        "updated_at_unix_ms": c.updated_at_unix_ms,
-                    })).collect();
+                    let items: Vec<Value> = conversations
+                        .iter()
+                        .map(|c| {
+                            json!({
+                                "conversation_id": c.conversation_id,
+                                "authority_station_id": c.authority_station_id,
+                                "kind": c.kind,
+                                "name": c.name,
+                                "owner_ptid": c.owner_ptid,
+                                "member_ptids": c.member_ptids,
+                                "membership_epoch": c.membership_epoch,
+                                "mls_epoch": c.mls_epoch,
+                                "active": c.active,
+                                "updated_at_unix_ms": c.updated_at_unix_ms,
+                            })
+                        })
+                        .collect();
                     to_json(AppResult::success(json!({ "conversations": items })))
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
@@ -7449,17 +7705,37 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "messaging_hydrate" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
-            let token = guard.as_ref().and_then(|g| g.token.clone()).unwrap_or_default();
-            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            let actor_id = guard
+                .as_ref()
+                .and_then(|g| g.actor_id.clone())
+                .unwrap_or_default();
+            let token = guard
+                .as_ref()
+                .and_then(|g| g.token.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
             drop(guard);
             if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
             }
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
-                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
             };
             let station_resp = match crate::infrastructure::station_client::request_json_auth(
                 reqwest::Method::GET,
@@ -7469,7 +7745,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None::<&serde_json::Value>,
             ) {
                 Ok(v) => v,
-                Err(e) => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &format!("station fetch: {}", e.message), None)),
+                Err(e) => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        &format!("station fetch: {}", e.message),
+                        None,
+                    ))
+                }
             };
             let conversations_raw = station_resp
                 .get("conversations")
@@ -7478,10 +7760,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 .unwrap_or_default();
             let mut projections: Vec<crate::messaging::ConversationProjection> = Vec::new();
             for conv in &conversations_raw {
-                let conv_id = conv.get("conversation_id").and_then(|v| v.as_str()).unwrap_or_default();
+                let conv_id = conv
+                    .get("conversation_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
                 let kind_str = conv.get("kind").and_then(|v| v.as_str()).unwrap_or("");
                 let kind_i32: i32 = if kind_str.contains("GROUP") { 2 } else { 1 };
-                let authority = conv.get("authority_station_peer_id").and_then(|v| v.as_str()).unwrap_or_default();
+                let authority = conv
+                    .get("authority_station_peer_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
                 if conv_id.is_empty() || authority.is_empty() {
                     continue;
                 }
@@ -7489,11 +7777,27 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     conversation_id: conv_id.to_string(),
                     authority_station_id: authority.to_string(),
                     kind: kind_i32,
-                    name: conv.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    owner_ptid: conv.get("owner_ptid").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    name: conv
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    owner_ptid: conv
+                        .get("owner_ptid")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     member_ptids: Vec::new(),
-                    membership_epoch: conv.get("membership_epoch").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()).unwrap_or(0),
-                    mls_epoch: conv.get("mls_epoch").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()).unwrap_or(0),
+                    membership_epoch: conv
+                        .get("membership_epoch")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0),
+                    mls_epoch: conv
+                        .get("mls_epoch")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0),
                     active: true,
                     updated_at_unix_ms: 0,
                 });

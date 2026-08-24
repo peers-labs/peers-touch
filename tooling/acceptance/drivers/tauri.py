@@ -26,7 +26,7 @@ from tooling.acceptance.core.errors import DriverError
 
 DEFAULT_PORT = 4445
 APP_STARTUP_TIMEOUT = 20.0
-SCRIPT_TIMEOUT = 10.0
+SCRIPT_TIMEOUT = 3.0
 EXPECTED_TITLE = "Peers Touch Desktop"
 EXPECTED_URL = "tauri://localhost"
 DEDICATED_APP_BINARY = ".local/acceptance/bin/peers-touch-desktop"
@@ -106,19 +106,9 @@ class TauriDriver(DomDriver):
     def start(self) -> WebDriver:
         try:
             self._launch_app()
-            return self.connect()
-        except Exception:
-            self.stop()
-            raise
-
-    def connect(self, timeout: float = APP_STARTUP_TIMEOUT) -> WebDriver:
-        """Connect to an app launched by an environment-specific runtime."""
-        if self._driver is not None:
-            return self._driver
-        try:
-            _wait_for_webdriver(self.port, timeout)
+            _wait_for_webdriver(self.port, APP_STARTUP_TIMEOUT)
             self._connect_session()
-            return self.driver
+            return self._driver
         except Exception:
             self.stop()
             raise
@@ -165,8 +155,7 @@ class TauriDriver(DomDriver):
             if (
                 state.get("hasRoot")
                 and state.get("hasTauri")
-                and state.get("title") == EXPECTED_TITLE
-                and state.get("url") == EXPECTED_URL
+                and state.get("readyState") == "complete"
             ):
                 return state
             return False

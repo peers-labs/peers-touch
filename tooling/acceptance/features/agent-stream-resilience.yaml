@@ -1,0 +1,42 @@
+{
+  "id": "agent-stream-resilience",
+  "status": "active",
+  "product_area": "agent",
+  "owners": [
+    "apps/station/app/subserver/agent/handler/turn_handler.go",
+    "apps/station/app/subserver/agent/service/turn_delivery_service.go",
+    "apps/station/app/subserver/agent/service/live_resume_broker.go",
+    "apps/desktop/src/services/eventStream.ts"
+  ],
+  "truth_sources": [
+    "Station turn state machine (streaming → cancelled | completed | failed)",
+    "Station live_resume_broker session registry",
+    "Desktop event stream consumer state"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/agent/chat/cancel"},
+    {"type": "sse", "route": "/agent/chat/stream"},
+    {"type": "api", "route": "/agent/chat/resume"}
+  ],
+  "required_gates": ["agent-stream-resilience-e2e"],
+  "acceptance": {
+    "service": [
+      "cancelling a streaming turn stops token generation and marks the turn as cancelled with partial content preserved",
+      "a cancelled turn's partial content is persisted and visible in conversation history",
+      "reconnecting to a live turn resumes from the last acknowledged chunk without duplication",
+      "if the provider stream errors mid-delivery, the turn is marked failed and partial content is preserved",
+      "a failed turn can be retried without re-sending the full context window from scratch"
+    ],
+    "visible": [
+      "a stop button appears during streaming and immediately halts output on click",
+      "cancelled messages show a 'stopped' indicator with the partial content visible",
+      "network disconnection shows a reconnecting indicator and resumes output when restored",
+      "failed turns show an error badge with a retry action"
+    ]
+  },
+  "negative": [
+    "cancellation must not leave the turn in an indeterminate state — it must reach a terminal status",
+    "resume must not replay already-acknowledged chunks to the client",
+    "provider timeout must not hang the client — it must surface as a failed turn within the configured deadline"
+  ]
+}

@@ -34,6 +34,7 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 | `momentsRuntime` | Moments HOME / Explore / Circles projection bootstrap, periodic reconciliation, and actor-scoped reset |
 | `agent-capability` | Provider, model, Agent, applet, MCP, Skill, and Tool projection bootstrap |
 | `agent-topic` | Selected Agent topic/message bootstrap, Agent-switch refresh, and periodic reconciliation |
+| `agent-tool` | Station-authored ToolCall proposal, approval-decision, and result projections; user decision-intent submission through Desktop Rust |
 | `notification` store | Notification list, unread counts, notification presentation state |
 | `navigationBadges` | Cross-surface unread and badge projection |
 | Page components | Rendering, selection, local interaction state only |
@@ -187,7 +188,7 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 | `applets` | `pages/AppletsPage.descriptor.tsx` | `applets` | migrated |
 | `applet:*` | `pages/AppletRuntimePage.descriptor.tsx` | `applets` | migrated dynamic route; `appletsRuntime` owns `acquirePage/releasePage` session lease |
 | `moments` | `pages/moments/MomentsApp.descriptor.tsx` | `moments` | migrated |
-| `agent` | `pages/AgentChatPage.descriptor.tsx` | `agent-capability`, `agent-topic`, `social` | migrated (`preload: idle`, `keepAlive: forever`); page is a pure `AgentWorkbench` renderer |
+| `agent` | `pages/AgentChatPage.descriptor.tsx` | `agent-capability`, `agent-topic`, `agent-tool`, `social` | migrated (`preload: idle`, `keepAlive: forever`); page is a pure `AgentWorkbench` renderer |
 | `notes`, `agent-profile`, `agent-orchestration` | — | — | legacy `PageRouter` fallback |
 
 New pages that fit the contract should ship as descriptors from day one. Adding a page to the legacy `PageRouter` requires an explicit reason in the PR description.

@@ -201,7 +201,7 @@
 - Applet / 小程序运行时架构：`architecture/applet-runtime/README.md`
 - A2A 协议集成：`architecture/agent/a2a/`（文档集，入口 `README.md`）
 - Agent Canvas 编排架构：`architecture/agent/agent-canvas-orchestration.md`
-- Modern Chat Agent 产品与单 Agent 运行时：`architecture/agent/modern-chat-agent/README.md`（PRODUCT / DESIGN accepted，正式 execution plan 已获 `PLAN_READY_FOR_EXECUTION`，等待 Owner EXECUTE approval；包含 LobeHub/AgentBox benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
+- Modern Chat Agent 产品与单 Agent 运行时：`architecture/agent/modern-chat-agent/README.md`（PRODUCT accepted；MCA-D19A/D19B/D19C 与 Acceptance D-12 accepted；G1-A 至 G1-F complete；G1-XR matrix/schema/validator cutover complete，real adapters active；G-F blocked；包含 LobeHub/AgentBox benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
 - Actor 隔离环境平面：`architecture/runtime/actor-isolated-environment.md`
 - Federation 虚拟网络与治理账本：`architecture/federation/README.md`
 - 质量保证闭环：`architecture/quality-framework/README.md`

@@ -14,19 +14,22 @@ const (
 )
 
 type Conversation struct {
-	ConversationID string
-	AgentID        string
-	UserID         string
-	Title          string
-	Description    string
-	ProviderID     string
-	ModelName      string
-	Status         ConversationStatus
-	ParentID       string
-	ConfigJSON     json.RawMessage
-	Meta           map[string]string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ConversationID        string
+	AgentID               string
+	Ptid                  string
+	Title                 string
+	Description           string
+	ProviderID            string
+	ModelName             string
+	Status                ConversationStatus
+	ParentID              string
+	ConfigJSON            json.RawMessage
+	Meta                  map[string]string
+	ActiveBranchMessageID string
+	QueuedTurnCount       uint32
+	Version               uint64
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 // Thread is a durable sub-conversation forked from a source message.
@@ -55,15 +58,21 @@ type Message struct {
 	TurnID            string
 	ModelName         string
 	Role              MessageRole
+	Status            string
 	Content           string
 	ReasoningJSON     json.RawMessage
 	ToolCallsJSON     json.RawMessage
 	MetadataJSON      json.RawMessage
 	ErrorJSON         json.RawMessage
+	AttachmentsJSON   json.RawMessage
 	Seq               int64
 	BranchID          string
 	ReplacesMessageID string
+	ParentMessageID   string
 	ThreadID          string
+	TombstonedAt      *time.Time
+	TombstonedByPtid  string
+	TombstoneReason   string
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }

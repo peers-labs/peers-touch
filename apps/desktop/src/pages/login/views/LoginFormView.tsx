@@ -402,7 +402,6 @@ export const LoginFormView = memo(function LoginFormView({
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 style={{ borderRadius: 12, height: 44 }}
-                data-login-email
                 required
               />
               <Flexbox horizontal gap={8} align="center">
@@ -423,7 +422,6 @@ export const LoginFormView = memo(function LoginFormView({
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   style={{ borderRadius: 12, height: 44, flex: 1 }}
-                  data-login-password
                   required
                 />
                 <Button
@@ -443,7 +441,6 @@ export const LoginFormView = memo(function LoginFormView({
                   icon={loading
                     ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
                     : <Check size={18} />}
-                  data-login-submit
                 />
               </Flexbox>
             </Flexbox>

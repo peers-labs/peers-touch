@@ -13,6 +13,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"sync/atomic"
 
@@ -29,13 +30,6 @@ type TurnHandlers struct {
 	toolRegistry    *service.ToolRegistryService
 	chatTaskService *service.ChatTaskService
 	convService     *service.ConversationService
-}
-
-type localToolResultRequest struct {
-	TurnID  string `json:"turn_id"`
-	CallID  string `json:"call_id"`
-	Content string `json:"content"`
-	IsError bool   `json:"is_error"`
 }
 
 type cancelTurnRequest struct {
@@ -68,15 +62,33 @@ func (h *TurnHandlers) beginChatTaskStep(ctx context.Context, req *model.Execute
 	return taskID, stepID
 }
 
+func (h *TurnHandlers) settleChatTaskForTurn(
+	ctx context.Context,
+	taskID string,
+	stepID string,
+	turn *domain.Turn,
+) error {
+	if h.chatTaskService == nil || stepID == "" || turn == nil {
+		return nil
+	}
+	if turn.Status == domain.TurnStatusCompleted {
+		return h.chatTaskService.FinishChatStep(ctx, taskID, stepID, turn.TurnID, turn.FinalResponse)
+	}
+	return nil
+}
+
 func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.ExecuteTurnRequest) (*model.ExecuteTurnResponse, error) {
 	if req.GetAgentId() == "" || req.GetUserInput() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400,
 			"agent_id and user_input are required", nil))
 	}
+	if err := validateFrozenDirectModelRequest(req); err != nil {
+		return nil, toHandlerError(err)
+	}
 
 	if strings.TrimSpace(req.GetConversationId()) == "" && h.convService != nil {
-		userID := subjectActorID(ctx)
-		conv, err := h.convService.CreateConversation(ctx, req.GetAgentId(), userID, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
+		ptid := subjectActorID(ctx)
+		conv, err := h.convService.CreateConversation(ctx, req.GetAgentId(), ptid, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
 		if err != nil {
 			return nil, toHandlerError(err)
 		}
@@ -101,12 +113,8 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 		return nil, toHandlerError(err)
 	}
 
-	if h.chatTaskService != nil && stepID != "" {
-		turnID := ""
-		if turn != nil {
-			turnID = turn.TurnID
-		}
-		_ = h.chatTaskService.FinishChatStep(ctx, taskID, stepID, turnID, "")
+	if err := h.settleChatTaskForTurn(ctx, taskID, stepID, turn); err != nil {
+		return nil, toHandlerError(err)
 	}
 
 	return &model.ExecuteTurnResponse{
@@ -117,6 +125,7 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 
 func (h *TurnHandlers) HandleListTurnTraces(ctx context.Context, req *model.ListTurnTracesRequest) (*model.ListTurnTracesResponse, error) {
 	entries, total, err := h.turnService.ListTurnTraces(ctx, domain.TurnTraceListOptions{
+		Ptid:           subjectActorID(ctx),
 		AgentID:        req.GetAgentId(),
 		ConversationID: req.GetConversationId(),
 		Page:           int(req.GetPage()),
@@ -137,11 +146,22 @@ func (h *TurnHandlers) HandleListTurnTraces(ctx context.Context, req *model.List
 }
 
 func (h *TurnHandlers) HandleGetTurnTrace(ctx context.Context, req *model.GetTurnTraceRequest) (*model.GetTurnTraceResponse, error) {
-	entry, err := h.turnService.GetTurnTrace(ctx, req.GetTraceId(), req.GetTurnId())
+	entry, err := h.turnService.GetTurnTrace(ctx, subjectActorID(ctx), req.GetTraceId(), req.GetTurnId())
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
 	return &model.GetTurnTraceResponse{Entry: domainTurnTraceEntryToProto(entry)}, nil
+}
+
+func (h *TurnHandlers) HandleExportTurnDiagnostics(
+	ctx context.Context,
+	req *model.ExportTurnDiagnosticsRequest,
+) (*model.ExportTurnDiagnosticsResponse, error) {
+	replay, err := h.turnService.ExportTurnDiagnostics(ctx, subjectActorID(ctx), req.GetTurnId())
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.ExportTurnDiagnosticsResponse{Replay: replay}, nil
 }
 
 func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.Request, resp server.Response) error {
@@ -166,13 +186,20 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		})
 		return nil
 	}
+	if err := validateFrozenDirectModelRequest(&input); err != nil {
+		_ = writeTurnStreamEvent(resp, "error", map[string]any{
+			"type":  "error",
+			"error": err.Error(),
+		})
+		return nil
+	}
 	turnID := service.NewTurnID()
 	turnCtx, releaseTurn := h.turnService.RegisterTurn(ctx, turnID)
 	defer releaseTurn()
 
 	if strings.TrimSpace(input.GetConversationId()) == "" && h.convService != nil {
-		userID := subjectActorID(ctx)
-		conv, err := h.convService.CreateConversation(ctx, input.GetAgentId(), userID, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
+		ptid := subjectActorID(ctx)
+		conv, err := h.convService.CreateConversation(ctx, input.GetAgentId(), ptid, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
 		if err != nil {
 			_ = writeTurnStreamEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
 			return nil
@@ -183,10 +210,10 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 			"conversation_id": conv.ConversationID,
 		})
 	} else if h.convService != nil {
-		userID := subjectActorID(ctx)
-		existing, getErr := h.convService.GetConversation(ctx, input.GetConversationId())
+		ptid := subjectActorID(ctx)
+		existing, getErr := h.convService.GetConversation(ctx, ptid, input.GetConversationId())
 		if getErr != nil || existing == nil {
-			conv, err := h.convService.CreateConversationWithID(ctx, input.GetConversationId(), input.GetAgentId(), userID, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
+			conv, err := h.convService.CreateConversationWithID(ctx, input.GetConversationId(), input.GetAgentId(), ptid, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
 			if err != nil {
 				_ = writeTurnStreamEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
 				return nil
@@ -229,12 +256,8 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		if h.chatTaskService != nil && stepID != "" {
 			if err != nil {
 				_ = h.chatTaskService.FailChatStep(ctx, taskID, stepID, err.Error())
-			} else {
-				turnID := ""
-				if turn != nil {
-					turnID = turn.TurnID
-				}
-				_ = h.chatTaskService.FinishChatStep(ctx, taskID, stepID, turnID, "")
+			} else if settleErr := h.settleChatTaskForTurn(ctx, taskID, stepID, turn); settleErr != nil {
+				err = settleErr
 			}
 		}
 		var suggestions []string
@@ -265,6 +288,9 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 						"error": result.err.Error(),
 					})
 				}
+				return nil
+			}
+			if result.turn != nil && result.turn.GetStatus() == model.TurnStatus_TURN_STATUS_RUNNING {
 				return nil
 			}
 			donePayload := map[string]any{
@@ -308,36 +334,7 @@ func (h *TurnHandlers) writePersistedTurnStreamEvent(
 	return writeTurnStreamEvent(resp, event, payload)
 }
 
-func (h *TurnHandlers) HandleLocalToolResult(ctx context.Context, req server.Request, resp server.Response) error {
-	resp.SetHeader("Content-Type", "application/json")
-
-	var input localToolResultRequest
-	if err := json.Unmarshal(req.Body(), &input); err != nil {
-		resp.WriteHeader(400)
-		_, _ = resp.Write([]byte(`{"ok":false,"error":"invalid local tool result request"}`))
-		return nil
-	}
-	if input.TurnID == "" || input.CallID == "" {
-		resp.WriteHeader(400)
-		_, _ = resp.Write([]byte(`{"ok":false,"error":"turn_id and call_id are required"}`))
-		return nil
-	}
-	if err := h.turnService.SubmitLocalToolResult(service.LocalToolResult{
-		TurnID:  input.TurnID,
-		CallID:  input.CallID,
-		Content: input.Content,
-		IsError: input.IsError,
-	}); err != nil {
-		resp.WriteHeader(404)
-		_, _ = resp.Write([]byte(`{"ok":false,"error":"local tool waiter not found"}`))
-		return nil
-	}
-
-	_, _ = resp.Write([]byte(`{"ok":true}`))
-	return nil
-}
-
-func (h *TurnHandlers) HandleCancelTurn(_ context.Context, req server.Request, resp server.Response) error {
+func (h *TurnHandlers) HandleCancelTurn(ctx context.Context, req server.Request, resp server.Response) error {
 	resp.SetHeader("Content-Type", "application/json")
 	var input cancelTurnRequest
 	if err := json.Unmarshal(req.Body(), &input); err != nil || strings.TrimSpace(input.TurnID) == "" {
@@ -345,12 +342,14 @@ func (h *TurnHandlers) HandleCancelTurn(_ context.Context, req server.Request, r
 		_, _ = resp.Write([]byte(`{"ok":false,"error":"turn_id is required"}`))
 		return nil
 	}
-	if !h.turnService.CancelTurn(input.TurnID) {
+	status, err := h.turnService.RequestCancelTurn(ctx, subjectActorID(ctx), input.TurnID)
+	if err != nil {
 		resp.WriteHeader(404)
-		_, _ = resp.Write([]byte(`{"ok":false,"error":"active turn not found"}`))
+		_, _ = resp.Write([]byte(`{"ok":false,"error":"turn not found"}`))
 		return nil
 	}
-	_, _ = resp.Write([]byte(`{"ok":true,"status":"cancelling"}`))
+	out, _ := json.Marshal(map[string]any{"ok": true, "turn_id": input.TurnID, "status": status})
+	_, _ = resp.Write(out)
 	return nil
 }
 
@@ -414,27 +413,37 @@ func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.Exe
 	actorID := subjectActorID(ctx)
 
 	return &service.TurnConfig{
-		AgentID:            req.GetAgentId(),
-		ActorID:            actorID,
-		ConversationID:     req.GetConversationId(),
-		Identity:           req.GetIdentity(),
-		AgentConfigPrompt:  req.GetAgentConfigPrompt(),
-		Platform:           req.GetPlatform(),
-		AvailableTools:     h.toolRegistry.ToolNames(),
-		ContextWindowSize:  contextWindowSize,
-		MaxRetries:         maxRetries,
-		Provider:           req.GetProvider(),
-		Model:              req.GetModel(),
-		Effort:             req.GetEffort(),
-		WorkspaceRoot:      req.GetWorkspaceRoot(),
-		KnowledgeResources: knowledgeResourcesFromRequest(req),
-		EventSink:          sink,
-		// CLI execution fields — pass through from proto request.
-		CliCommand:     req.GetCliCommand(),
-		RuntimeBackend: req.GetRuntimeBackend(),
-		AllowedRoots:   req.GetAllowedRoots(),
-		MemoryDisabled: req.GetMemoryDisabled(),
+		AgentID:                   req.GetAgentId(),
+		ActorID:                   actorID,
+		ConversationID:            req.GetConversationId(),
+		Identity:                  req.GetIdentity(),
+		AgentConfigPrompt:         req.GetAgentConfigPrompt(),
+		AvailableTools:            h.toolRegistry.ToolNames(),
+		ContextWindowSize:         contextWindowSize,
+		MaxRetries:                maxRetries,
+		Provider:                  req.GetProvider(),
+		Model:                     req.GetModel(),
+		Effort:                    req.GetEffort(),
+		ClientCapabilitySessionID: req.GetClientCapabilitySessionId(),
+		KnowledgeResources:        knowledgeResourcesFromRequest(req),
+		EventSink:                 sink,
+		MemoryDisabled:            req.GetMemoryDisabled(),
 	}
+}
+
+func validateFrozenDirectModelRequest(req *model.ExecuteTurnRequest) error {
+	if req == nil {
+		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"turn request is required", nil)
+	}
+	provider := strings.ToLower(strings.TrimSpace(req.GetProvider()))
+	switch provider {
+	case "trae-cli", "codex-cli", "claude-cli", "cursor-cli",
+		"trae", "codex", "claude", "cursor":
+		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"CLI runtimes are not supported by the active Agent profile", nil)
+	}
+	return nil
 }
 
 func knowledgeResourcesFromRequest(req *model.ExecuteTurnRequest) []domain.KnowledgeResource {
@@ -528,7 +537,7 @@ func domainTurnToProto(t *domain.Turn) *model.Turn {
 
 func domainTurnStatusToProto(s domain.TurnStatus) model.TurnStatus {
 	switch s {
-	case domain.TurnStatusRunning:
+	case domain.TurnStatusRunning, domain.TurnStatusWaitingLocalTool:
 		return model.TurnStatus_TURN_STATUS_RUNNING
 	case domain.TurnStatusCompleted:
 		return model.TurnStatus_TURN_STATUS_COMPLETED

@@ -499,14 +499,8 @@ fn normalize_agent_value(mut data: Value) -> Value {
         .or_insert_with(|| json!(7));
     obj.entry("workspaceMode".to_string())
         .or_insert_with(|| json!("agent"));
-    obj.entry("runtimeBackend".to_string())
-        .or_insert_with(|| json!("host"));
-    obj.entry("rootfsPath".to_string())
-        .or_insert_with(|| json!(""));
     obj.entry("allowedRoots".to_string())
         .or_insert_with(|| json!("[]"));
-    obj.entry("cliCommand".to_string())
-        .or_insert_with(|| json!(""));
     obj.entry("tags".to_string()).or_insert_with(|| json!(""));
     obj.entry("pinned".to_string())
         .or_insert_with(|| json!(false));
@@ -1066,36 +1060,6 @@ pub fn agents_search(actor_id: &str, input: AgentSearchInput) -> AppResult<StubP
             .collect::<Vec<_>>();
         success_payload("agents_search", json!({ "agents": agents }))
     })
-}
-
-pub fn agents_list_sessions(actor_id: &str, input: AgentIdInput) -> AppResult<StubPayload> {
-    tracing::info!(command = "agents_list_sessions", agent_id = %input.id, "Listing agent sessions");
-    if input.id.trim().is_empty() {
-        return invalid_argument("id is required");
-    }
-    let agent_name = {
-        let mut stores = match agent_stores().lock() {
-            Ok(g) => g,
-            Err(e) => return store_lock_error(e),
-        };
-        let key = actor_bucket_id(actor_id);
-        let store = stores
-            .buckets
-            .entry(key)
-            .or_insert_with(|| AgentStore::load(actor_id));
-        match store.agents.iter().find(|item| item.id == input.id) {
-            Some(agent) => agent
-                .data
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or("assistant")
-                .to_string(),
-            None => return AppResult::fail(ErrorCode::NotFound, "Agent not found", None),
-        }
-    };
-    let sessions = crate::application::chat::list_conversations_by_agent(actor_id, &agent_name);
-    tracing::debug!(command = "agents_list_sessions", agent_id = %input.id, count = sessions.len(), "Agent sessions retrieved");
-    success_payload("agents_list_sessions", json!({ "sessions": sessions }))
 }
 
 #[cfg(test)]

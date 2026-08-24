@@ -2315,7 +2315,7 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 	if !feedback.RerunIntent.RequiresConfirmation || feedback.RerunIntent.ConfirmationMode != "station_rerun_review" {
 		t.Fatalf("expected confirmable rerun intent, got %+v", feedback.RerunIntent)
 	}
-	confirmed, err := svc.ConfirmRerun(context.Background(), "actor-1", &ConfirmAtelierRerunRequest{
+	confirmed, err := svc.confirmRerunAfterCanvasReadiness(context.Background(), "actor-1", &ConfirmAtelierRerunRequest{
 		TaskID:     task.ID,
 		FeedbackID: feedback.FeedbackID,
 	})
@@ -2365,7 +2365,7 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 	if auditCount != 1 {
 		t.Fatalf("expected one rerun confirmation audit event, got %d", auditCount)
 	}
-	again, err := svc.ConfirmRerun(context.Background(), "actor-1", &ConfirmAtelierRerunRequest{
+	again, err := svc.confirmRerunAfterCanvasReadiness(context.Background(), "actor-1", &ConfirmAtelierRerunRequest{
 		TaskID:     task.ID,
 		FeedbackID: feedback.FeedbackID,
 	})
@@ -2410,7 +2410,7 @@ func TestConfirmAtelierRerunRejectsNonRerunFeedback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit copy feedback: %v", err)
 	}
-	if _, err := svc.ConfirmRerun(context.Background(), "actor-1", &ConfirmAtelierRerunRequest{
+	if _, err := svc.confirmRerunAfterCanvasReadiness(context.Background(), "actor-1", &ConfirmAtelierRerunRequest{
 		TaskID:     task.ID,
 		FeedbackID: feedback.FeedbackID,
 	}); err == nil {

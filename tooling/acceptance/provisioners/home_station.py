@@ -33,6 +33,13 @@ GATE_ROLES = {
     "chat-native-group-mls-e2e": ("alice", "bob", "charlie"),
 }
 
+AGENT_V2_FOUNDATION_GATE = "agent-v2-kernel-foundation-e2e"
+AGENT_V2_PROFILE = "one"
+AGENT_V2_CREDENTIAL_REFS = (
+    "profile:PT_AGENT_PROVIDER_API_KEY",
+    "profile:PT_AGENT_DEFAULT_MODEL_ID",
+)
+
 CLIENT_ROLES = {
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
@@ -119,6 +126,115 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         )
         return clients
 
+    def _agent_v2_foundation_client(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> ClientRuntime:
+        worktree = Path(
+            os.environ.get("PT_AGENT_V2_NATIVE_WORKTREE", str(REPO_ROOT))
+        ).expanduser().resolve()
+        gateway_port = int(
+            os.environ.get(
+                "PT_AGENT_V2_NATIVE_GATEWAY_PORT",
+                profile_env.get(
+                    "PT_DESKTOP_APP_GATEWAY_PORT",
+                    str(3030 + slot * 100),
+                ),
+            )
+        )
+        renderer_port = int(
+            os.environ.get(
+                "PT_AGENT_V2_NATIVE_RENDERER_PORT",
+                profile_env.get(
+                    "PT_DESKTOP_APP_WEB_PORT",
+                    str(3210 + slot * 100),
+                ),
+            )
+        )
+        webdriver_port = int(
+            os.environ.get("PT_AGENT_V2_NATIVE_WEBDRIVER_PORT", "4445")
+        )
+        run_root = Path(f"/tmp/pt-agent-v2-{run_id}")
+        client = ClientRuntime(
+            actor="agent-primary",
+            runtime="native-tauri",
+            worktree=str(worktree),
+            gateway_port=gateway_port,
+            renderer_port=renderer_port,
+            webdriver_port=webdriver_port,
+            profile=f"agent-v2-native-{run_id}",
+            storage_root=str(run_root / "native" / "storage"),
+        )
+        for label, port in (
+            ("gateway", client.gateway_port),
+            ("renderer", client.renderer_port),
+            ("webdriver", client.webdriver_port),
+        ):
+            with socket.socket() as probe:
+                if probe.connect_ex(("127.0.0.1", port)) == 0:
+                    raise BlockedError(
+                        reason=(
+                            f"{client.actor} {label} port {port} is already in use"
+                        ),
+                        resource=f"client-isolation:{label}-port:{port}",
+                    )
+        self.register_cleanup(
+            f"client-storage:{run_root}",
+            lambda: shutil.rmtree(run_root, ignore_errors=True),
+        )
+        return client
+
+    def _agent_v2_foundation_manifest(
+        self,
+        manifest: RuntimeManifest,
+        *,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> RuntimeManifest:
+        client = self._agent_v2_foundation_client(
+            manifest.run_id,
+            slot,
+            profile_env,
+        )
+        return dataclasses.replace(
+            manifest,
+            credential_refs=AGENT_V2_CREDENTIAL_REFS,
+            clients=(client,),
+            cleanup_resources=self.contract.cleanup.resources,
+        )
+
+    def _validate_agent_v2_foundation_profile(
+        self,
+        profile_name: str,
+        profile_env: dict[str, str],
+    ) -> None:
+        if profile_name != AGENT_V2_PROFILE:
+            raise BlockedError(
+                reason=(
+                    f"{AGENT_V2_FOUNDATION_GATE} requires the approved "
+                    f"{AGENT_V2_PROFILE} profile; active profile is {profile_name}"
+                ),
+                resource=f"profile:required:{AGENT_V2_PROFILE}",
+            )
+        if profile_env.get("PT_STATION_MODE", "local") != "remote":
+            raise BlockedError(
+                reason=(
+                    f"{AGENT_V2_FOUNDATION_GATE} requires a source-attested "
+                    "remote Station"
+                ),
+                resource="profile:PT_STATION_MODE",
+            )
+        if not profile_env.get("PT_STATION_DEPLOY_ENV", "").strip():
+            raise BlockedError(
+                reason=(
+                    f"{AGENT_V2_FOUNDATION_GATE} requires the remote Station "
+                    "deployment identity"
+                ),
+                resource="profile:PT_STATION_DEPLOY_ENV",
+            )
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
@@ -128,6 +244,11 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 profile_name=profile_name,
                 slot=slot,
             )
+            if gate_id == AGENT_V2_FOUNDATION_GATE:
+                self._validate_agent_v2_foundation_profile(
+                    profile_name,
+                    profile_env,
+                )
             station_url = profile_env.get("PT_STATION_URL", "").rstrip("/")
             health_url = profile_env.get("PT_STATION_HEALTH_URL", "")
             deployment_environment = (
@@ -218,6 +339,23 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     ),
                     resource="source-identity:commit",
                 )
+            if gate_id == AGENT_V2_FOUNDATION_GATE:
+                if manifest.workspace_digest != "clean":
+                    raise BlockedError(
+                        reason=(
+                            "Agent V2 Foundation requires a clean candidate "
+                            "worktree before remote proof"
+                        ),
+                        resource="source-identity:workspace",
+                    )
+                if not attestation.is_clean_workspace:
+                    raise BlockedError(
+                        reason=(
+                            "Agent V2 Foundation requires a clean remote Station "
+                            "deployment"
+                        ),
+                        resource="source-identity:station-workspace",
+                    )
             if attestation.proto_digest != local_proto_digest:
                 raise BlockedError(
                     reason=(
@@ -234,6 +372,14 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             )
             self._manifest = manifest
             if gate_id == "chat-federated-browser-prereq":
+                return self._ready(manifest)
+            if gate_id == AGENT_V2_FOUNDATION_GATE:
+                manifest = self._agent_v2_foundation_manifest(
+                    manifest,
+                    slot=slot,
+                    profile_env=profile_env,
+                )
+                self._manifest = manifest
                 return self._ready(manifest)
 
             credential_refs, _ = self._resolve_credentials()
@@ -291,9 +437,16 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 cleanup_resources=self.contract.cleanup.resources,
             )
             return self._ready(manifest)
-        except BlockedError as error:
+        except (BlockedError, ValueError) as error:
+            if isinstance(error, BlockedError):
+                blocked = error
+            else:
+                blocked = BlockedError(
+                    reason=f"Native client profile has an invalid port: {error}",
+                    resource="profile:native-port",
+                )
             return self._blocked(
                 self._manifest,
-                reason=error.reason,
-                resource=error.resource,
+                reason=blocked.reason,
+                resource=blocked.resource,
             )

@@ -10,7 +10,6 @@ pub mod applet_store;
 pub mod applets;
 pub mod auth;
 pub mod channels;
-pub mod chat;
 pub mod chat_storage;
 pub mod cron;
 pub mod desktop_executor_worker;

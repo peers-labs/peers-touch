@@ -55,7 +55,6 @@ export type TurnStreamEventType =
   | 'thinking'
   | 'tool_call'
   | 'tool_result'
-  | 'local_tool_request'
   | 'tool_approval_required'
   | 'tool_approval_decision'
   | 'intervention_request'
@@ -65,6 +64,7 @@ export type TurnStreamEventType =
   | 'error'
   | 'cancelled'
   | 'reconciling'
+  | 'snapshot'
   | 'catchup_done'
   | 'done';
 

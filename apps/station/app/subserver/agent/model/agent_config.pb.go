@@ -22,6 +22,61 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ToolApprovalDecisionErrorCode int32
+
+const (
+	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED          ToolApprovalDecisionErrorCode = 0
+	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION       ToolApprovalDecisionErrorCode = 1
+	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT ToolApprovalDecisionErrorCode = 2
+	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED              ToolApprovalDecisionErrorCode = 3
+	ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND            ToolApprovalDecisionErrorCode = 4
+)
+
+// Enum value maps for ToolApprovalDecisionErrorCode.
+var (
+	ToolApprovalDecisionErrorCode_name = map[int32]string{
+		0: "TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED",
+		1: "TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION",
+		2: "TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT",
+		3: "TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED",
+		4: "TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND",
+	}
+	ToolApprovalDecisionErrorCode_value = map[string]int32{
+		"TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED":          0,
+		"TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION":       1,
+		"TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT": 2,
+		"TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED":              3,
+		"TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND":            4,
+	}
+)
+
+func (x ToolApprovalDecisionErrorCode) Enum() *ToolApprovalDecisionErrorCode {
+	p := new(ToolApprovalDecisionErrorCode)
+	*p = x
+	return p
+}
+
+func (x ToolApprovalDecisionErrorCode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ToolApprovalDecisionErrorCode) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_agent_agent_config_proto_enumTypes[0].Descriptor()
+}
+
+func (ToolApprovalDecisionErrorCode) Type() protoreflect.EnumType {
+	return &file_domain_agent_agent_config_proto_enumTypes[0]
+}
+
+func (x ToolApprovalDecisionErrorCode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ToolApprovalDecisionErrorCode.Descriptor instead.
+func (ToolApprovalDecisionErrorCode) EnumDescriptor() ([]byte, []int) {
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{0}
+}
+
 type AgentKnowledgeBinding struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1523,6 +1578,208 @@ func (x *GetHiddenModelsResponse) GetHiddenModels() []string {
 	return nil
 }
 
+// Station-authoritative approval command. Actor identity is derived from the
+// authenticated request context and is intentionally absent from this message.
+type SubmitToolApprovalDecisionRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ApprovalId       string                 `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
+	ToolCallId       string                 `protobuf:"bytes,2,opt,name=tool_call_id,json=toolCallId,proto3" json:"tool_call_id,omitempty"`
+	DecisionId       string                 `protobuf:"bytes,3,opt,name=decision_id,json=decisionId,proto3" json:"decision_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,4,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Approved         bool                   `protobuf:"varint,5,opt,name=approved,proto3" json:"approved,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	PayloadHash      string                 `protobuf:"bytes,7,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *SubmitToolApprovalDecisionRequest) Reset() {
+	*x = SubmitToolApprovalDecisionRequest{}
+	mi := &file_domain_agent_agent_config_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitToolApprovalDecisionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitToolApprovalDecisionRequest) ProtoMessage() {}
+
+func (x *SubmitToolApprovalDecisionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_agent_config_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitToolApprovalDecisionRequest.ProtoReflect.Descriptor instead.
+func (*SubmitToolApprovalDecisionRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *SubmitToolApprovalDecisionRequest) GetApprovalId() string {
+	if x != nil {
+		return x.ApprovalId
+	}
+	return ""
+}
+
+func (x *SubmitToolApprovalDecisionRequest) GetToolCallId() string {
+	if x != nil {
+		return x.ToolCallId
+	}
+	return ""
+}
+
+func (x *SubmitToolApprovalDecisionRequest) GetDecisionId() string {
+	if x != nil {
+		return x.DecisionId
+	}
+	return ""
+}
+
+func (x *SubmitToolApprovalDecisionRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *SubmitToolApprovalDecisionRequest) GetApproved() bool {
+	if x != nil {
+		return x.Approved
+	}
+	return false
+}
+
+func (x *SubmitToolApprovalDecisionRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *SubmitToolApprovalDecisionRequest) GetPayloadHash() string {
+	if x != nil {
+		return x.PayloadHash
+	}
+	return ""
+}
+
+type SubmitToolApprovalDecisionResponse struct {
+	state            protoimpl.MessageState        `protogen:"open.v1"`
+	Accepted         bool                          `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	DecisionRevision uint64                        `protobuf:"varint,2,opt,name=decision_revision,json=decisionRevision,proto3" json:"decision_revision,omitempty"`
+	ApprovalId       string                        `protobuf:"bytes,3,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
+	ToolCallId       string                        `protobuf:"bytes,4,opt,name=tool_call_id,json=toolCallId,proto3" json:"tool_call_id,omitempty"`
+	DecisionId       string                        `protobuf:"bytes,5,opt,name=decision_id,json=decisionId,proto3" json:"decision_id,omitempty"`
+	Approved         bool                          `protobuf:"varint,6,opt,name=approved,proto3" json:"approved,omitempty"`
+	IdempotencyKey   string                        `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	PayloadHash      string                        `protobuf:"bytes,8,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
+	ErrorCode        ToolApprovalDecisionErrorCode `protobuf:"varint,9,opt,name=error_code,json=errorCode,proto3,enum=peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode" json:"error_code,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *SubmitToolApprovalDecisionResponse) Reset() {
+	*x = SubmitToolApprovalDecisionResponse{}
+	mi := &file_domain_agent_agent_config_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitToolApprovalDecisionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitToolApprovalDecisionResponse) ProtoMessage() {}
+
+func (x *SubmitToolApprovalDecisionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_agent_config_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitToolApprovalDecisionResponse.ProtoReflect.Descriptor instead.
+func (*SubmitToolApprovalDecisionResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *SubmitToolApprovalDecisionResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *SubmitToolApprovalDecisionResponse) GetDecisionRevision() uint64 {
+	if x != nil {
+		return x.DecisionRevision
+	}
+	return 0
+}
+
+func (x *SubmitToolApprovalDecisionResponse) GetApprovalId() string {
+	if x != nil {
+		return x.ApprovalId
+	}
+	return ""
+}
+
+func (x *SubmitToolApprovalDecisionResponse) GetToolCallId() string {
+	if x != nil {
+		return x.ToolCallId
+	}
+	return ""
+}
+
+func (x *SubmitToolApprovalDecisionResponse) GetDecisionId() string {
+	if x != nil {
+		return x.DecisionId
+	}
+	return ""
+}
+
+func (x *SubmitToolApprovalDecisionResponse) GetApproved() bool {
+	if x != nil {
+		return x.Approved
+	}
+	return false
+}
+
+func (x *SubmitToolApprovalDecisionResponse) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *SubmitToolApprovalDecisionResponse) GetPayloadHash() string {
+	if x != nil {
+		return x.PayloadHash
+	}
+	return ""
+}
+
+func (x *SubmitToolApprovalDecisionResponse) GetErrorCode() ToolApprovalDecisionErrorCode {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ToolApprovalDecisionErrorCode_TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED
+}
+
 var File_domain_agent_agent_config_proto protoreflect.FileDescriptor
 
 const file_domain_agent_agent_config_proto_rawDesc = "" +
@@ -1616,7 +1873,38 @@ const file_domain_agent_agent_config_proto_rawDesc = "" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\">\n" +
 	"\x17GetHiddenModelsResponse\x12#\n" +
-	"\rhidden_models\x18\x01 \x03(\tR\fhiddenModelsBKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
+	"\rhidden_models\x18\x01 \x03(\tR\fhiddenModels\"\x9c\x02\n" +
+	"!SubmitToolApprovalDecisionRequest\x12\x1f\n" +
+	"\vapproval_id\x18\x01 \x01(\tR\n" +
+	"approvalId\x12 \n" +
+	"\ftool_call_id\x18\x02 \x01(\tR\n" +
+	"toolCallId\x12\x1f\n" +
+	"\vdecision_id\x18\x03 \x01(\tR\n" +
+	"decisionId\x12+\n" +
+	"\x11expected_revision\x18\x04 \x01(\x04R\x10expectedRevision\x12\x1a\n" +
+	"\bapproved\x18\x05 \x01(\bR\bapproved\x12'\n" +
+	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12!\n" +
+	"\fpayload_hash\x18\a \x01(\tR\vpayloadHash\"\x93\x03\n" +
+	"\"SubmitToolApprovalDecisionResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\x12+\n" +
+	"\x11decision_revision\x18\x02 \x01(\x04R\x10decisionRevision\x12\x1f\n" +
+	"\vapproval_id\x18\x03 \x01(\tR\n" +
+	"approvalId\x12 \n" +
+	"\ftool_call_id\x18\x04 \x01(\tR\n" +
+	"toolCallId\x12\x1f\n" +
+	"\vdecision_id\x18\x05 \x01(\tR\n" +
+	"decisionId\x12\x1a\n" +
+	"\bapproved\x18\x06 \x01(\bR\bapproved\x12'\n" +
+	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\x12!\n" +
+	"\fpayload_hash\x18\b \x01(\tR\vpayloadHash\x12X\n" +
+	"\n" +
+	"error_code\x18\t \x01(\x0e29.peers_touch.model.agent.v1.ToolApprovalDecisionErrorCodeR\terrorCode*\xa4\x02\n" +
+	"\x1dToolApprovalDecisionErrorCode\x121\n" +
+	"-TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED\x10\x00\x124\n" +
+	"0TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION\x10\x01\x12:\n" +
+	"6TOOL_APPROVAL_DECISION_ERROR_CODE_IDEMPOTENCY_CONFLICT\x10\x02\x12-\n" +
+	")TOOL_APPROVAL_DECISION_ERROR_CODE_EXPIRED\x10\x03\x12/\n" +
+	"+TOOL_APPROVAL_DECISION_ERROR_CODE_NOT_FOUND\x10\x04BKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
 
 var (
 	file_domain_agent_agent_config_proto_rawDescOnce sync.Once
@@ -1630,68 +1918,73 @@ func file_domain_agent_agent_config_proto_rawDescGZIP() []byte {
 	return file_domain_agent_agent_config_proto_rawDescData
 }
 
-var file_domain_agent_agent_config_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_domain_agent_agent_config_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_domain_agent_agent_config_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_domain_agent_agent_config_proto_goTypes = []any{
-	(*AgentKnowledgeBinding)(nil),               // 0: peers_touch.model.agent.v1.AgentKnowledgeBinding
-	(*AgentSkillBinding)(nil),                   // 1: peers_touch.model.agent.v1.AgentSkillBinding
-	(*AgentMcpBinding)(nil),                     // 2: peers_touch.model.agent.v1.AgentMcpBinding
-	(*ListAgentKnowledgeBindingsRequest)(nil),   // 3: peers_touch.model.agent.v1.ListAgentKnowledgeBindingsRequest
-	(*ListAgentKnowledgeBindingsResponse)(nil),  // 4: peers_touch.model.agent.v1.ListAgentKnowledgeBindingsResponse
-	(*CreateAgentKnowledgeBindingRequest)(nil),  // 5: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingRequest
-	(*CreateAgentKnowledgeBindingResponse)(nil), // 6: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingResponse
-	(*UpdateAgentKnowledgeBindingRequest)(nil),  // 7: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingRequest
-	(*UpdateAgentKnowledgeBindingResponse)(nil), // 8: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingResponse
-	(*DeleteAgentKnowledgeBindingRequest)(nil),  // 9: peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingRequest
-	(*DeleteAgentKnowledgeBindingResponse)(nil), // 10: peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingResponse
-	(*ListAgentSkillBindingsRequest)(nil),       // 11: peers_touch.model.agent.v1.ListAgentSkillBindingsRequest
-	(*ListAgentSkillBindingsResponse)(nil),      // 12: peers_touch.model.agent.v1.ListAgentSkillBindingsResponse
-	(*CreateAgentSkillBindingRequest)(nil),      // 13: peers_touch.model.agent.v1.CreateAgentSkillBindingRequest
-	(*CreateAgentSkillBindingResponse)(nil),     // 14: peers_touch.model.agent.v1.CreateAgentSkillBindingResponse
-	(*UpdateAgentSkillBindingRequest)(nil),      // 15: peers_touch.model.agent.v1.UpdateAgentSkillBindingRequest
-	(*UpdateAgentSkillBindingResponse)(nil),     // 16: peers_touch.model.agent.v1.UpdateAgentSkillBindingResponse
-	(*DeleteAgentSkillBindingRequest)(nil),      // 17: peers_touch.model.agent.v1.DeleteAgentSkillBindingRequest
-	(*DeleteAgentSkillBindingResponse)(nil),     // 18: peers_touch.model.agent.v1.DeleteAgentSkillBindingResponse
-	(*ListAgentMcpBindingsRequest)(nil),         // 19: peers_touch.model.agent.v1.ListAgentMcpBindingsRequest
-	(*ListAgentMcpBindingsResponse)(nil),        // 20: peers_touch.model.agent.v1.ListAgentMcpBindingsResponse
-	(*CreateAgentMcpBindingRequest)(nil),        // 21: peers_touch.model.agent.v1.CreateAgentMcpBindingRequest
-	(*CreateAgentMcpBindingResponse)(nil),       // 22: peers_touch.model.agent.v1.CreateAgentMcpBindingResponse
-	(*UpdateAgentMcpBindingRequest)(nil),        // 23: peers_touch.model.agent.v1.UpdateAgentMcpBindingRequest
-	(*UpdateAgentMcpBindingResponse)(nil),       // 24: peers_touch.model.agent.v1.UpdateAgentMcpBindingResponse
-	(*DeleteAgentMcpBindingRequest)(nil),        // 25: peers_touch.model.agent.v1.DeleteAgentMcpBindingRequest
-	(*DeleteAgentMcpBindingResponse)(nil),       // 26: peers_touch.model.agent.v1.DeleteAgentMcpBindingResponse
-	(*HideModelRequest)(nil),                    // 27: peers_touch.model.agent.v1.HideModelRequest
-	(*HideModelResponse)(nil),                   // 28: peers_touch.model.agent.v1.HideModelResponse
-	(*GetHiddenModelsRequest)(nil),              // 29: peers_touch.model.agent.v1.GetHiddenModelsRequest
-	(*GetHiddenModelsResponse)(nil),             // 30: peers_touch.model.agent.v1.GetHiddenModelsResponse
-	(*timestamppb.Timestamp)(nil),               // 31: google.protobuf.Timestamp
+	(ToolApprovalDecisionErrorCode)(0),          // 0: peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode
+	(*AgentKnowledgeBinding)(nil),               // 1: peers_touch.model.agent.v1.AgentKnowledgeBinding
+	(*AgentSkillBinding)(nil),                   // 2: peers_touch.model.agent.v1.AgentSkillBinding
+	(*AgentMcpBinding)(nil),                     // 3: peers_touch.model.agent.v1.AgentMcpBinding
+	(*ListAgentKnowledgeBindingsRequest)(nil),   // 4: peers_touch.model.agent.v1.ListAgentKnowledgeBindingsRequest
+	(*ListAgentKnowledgeBindingsResponse)(nil),  // 5: peers_touch.model.agent.v1.ListAgentKnowledgeBindingsResponse
+	(*CreateAgentKnowledgeBindingRequest)(nil),  // 6: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingRequest
+	(*CreateAgentKnowledgeBindingResponse)(nil), // 7: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingResponse
+	(*UpdateAgentKnowledgeBindingRequest)(nil),  // 8: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingRequest
+	(*UpdateAgentKnowledgeBindingResponse)(nil), // 9: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingResponse
+	(*DeleteAgentKnowledgeBindingRequest)(nil),  // 10: peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingRequest
+	(*DeleteAgentKnowledgeBindingResponse)(nil), // 11: peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingResponse
+	(*ListAgentSkillBindingsRequest)(nil),       // 12: peers_touch.model.agent.v1.ListAgentSkillBindingsRequest
+	(*ListAgentSkillBindingsResponse)(nil),      // 13: peers_touch.model.agent.v1.ListAgentSkillBindingsResponse
+	(*CreateAgentSkillBindingRequest)(nil),      // 14: peers_touch.model.agent.v1.CreateAgentSkillBindingRequest
+	(*CreateAgentSkillBindingResponse)(nil),     // 15: peers_touch.model.agent.v1.CreateAgentSkillBindingResponse
+	(*UpdateAgentSkillBindingRequest)(nil),      // 16: peers_touch.model.agent.v1.UpdateAgentSkillBindingRequest
+	(*UpdateAgentSkillBindingResponse)(nil),     // 17: peers_touch.model.agent.v1.UpdateAgentSkillBindingResponse
+	(*DeleteAgentSkillBindingRequest)(nil),      // 18: peers_touch.model.agent.v1.DeleteAgentSkillBindingRequest
+	(*DeleteAgentSkillBindingResponse)(nil),     // 19: peers_touch.model.agent.v1.DeleteAgentSkillBindingResponse
+	(*ListAgentMcpBindingsRequest)(nil),         // 20: peers_touch.model.agent.v1.ListAgentMcpBindingsRequest
+	(*ListAgentMcpBindingsResponse)(nil),        // 21: peers_touch.model.agent.v1.ListAgentMcpBindingsResponse
+	(*CreateAgentMcpBindingRequest)(nil),        // 22: peers_touch.model.agent.v1.CreateAgentMcpBindingRequest
+	(*CreateAgentMcpBindingResponse)(nil),       // 23: peers_touch.model.agent.v1.CreateAgentMcpBindingResponse
+	(*UpdateAgentMcpBindingRequest)(nil),        // 24: peers_touch.model.agent.v1.UpdateAgentMcpBindingRequest
+	(*UpdateAgentMcpBindingResponse)(nil),       // 25: peers_touch.model.agent.v1.UpdateAgentMcpBindingResponse
+	(*DeleteAgentMcpBindingRequest)(nil),        // 26: peers_touch.model.agent.v1.DeleteAgentMcpBindingRequest
+	(*DeleteAgentMcpBindingResponse)(nil),       // 27: peers_touch.model.agent.v1.DeleteAgentMcpBindingResponse
+	(*HideModelRequest)(nil),                    // 28: peers_touch.model.agent.v1.HideModelRequest
+	(*HideModelResponse)(nil),                   // 29: peers_touch.model.agent.v1.HideModelResponse
+	(*GetHiddenModelsRequest)(nil),              // 30: peers_touch.model.agent.v1.GetHiddenModelsRequest
+	(*GetHiddenModelsResponse)(nil),             // 31: peers_touch.model.agent.v1.GetHiddenModelsResponse
+	(*SubmitToolApprovalDecisionRequest)(nil),   // 32: peers_touch.model.agent.v1.SubmitToolApprovalDecisionRequest
+	(*SubmitToolApprovalDecisionResponse)(nil),  // 33: peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse
+	(*timestamppb.Timestamp)(nil),               // 34: google.protobuf.Timestamp
 }
 var file_domain_agent_agent_config_proto_depIdxs = []int32{
-	31, // 0: peers_touch.model.agent.v1.AgentKnowledgeBinding.created_at:type_name -> google.protobuf.Timestamp
-	31, // 1: peers_touch.model.agent.v1.AgentKnowledgeBinding.updated_at:type_name -> google.protobuf.Timestamp
-	31, // 2: peers_touch.model.agent.v1.AgentSkillBinding.created_at:type_name -> google.protobuf.Timestamp
-	31, // 3: peers_touch.model.agent.v1.AgentSkillBinding.updated_at:type_name -> google.protobuf.Timestamp
-	31, // 4: peers_touch.model.agent.v1.AgentMcpBinding.created_at:type_name -> google.protobuf.Timestamp
-	31, // 5: peers_touch.model.agent.v1.AgentMcpBinding.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 6: peers_touch.model.agent.v1.ListAgentKnowledgeBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
-	0,  // 7: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
-	0,  // 8: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
-	0,  // 9: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
-	0,  // 10: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
-	1,  // 11: peers_touch.model.agent.v1.ListAgentSkillBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
-	1,  // 12: peers_touch.model.agent.v1.CreateAgentSkillBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
-	1,  // 13: peers_touch.model.agent.v1.CreateAgentSkillBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
-	1,  // 14: peers_touch.model.agent.v1.UpdateAgentSkillBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
-	1,  // 15: peers_touch.model.agent.v1.UpdateAgentSkillBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
-	2,  // 16: peers_touch.model.agent.v1.ListAgentMcpBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
-	2,  // 17: peers_touch.model.agent.v1.CreateAgentMcpBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
-	2,  // 18: peers_touch.model.agent.v1.CreateAgentMcpBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
-	2,  // 19: peers_touch.model.agent.v1.UpdateAgentMcpBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
-	2,  // 20: peers_touch.model.agent.v1.UpdateAgentMcpBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	34, // 0: peers_touch.model.agent.v1.AgentKnowledgeBinding.created_at:type_name -> google.protobuf.Timestamp
+	34, // 1: peers_touch.model.agent.v1.AgentKnowledgeBinding.updated_at:type_name -> google.protobuf.Timestamp
+	34, // 2: peers_touch.model.agent.v1.AgentSkillBinding.created_at:type_name -> google.protobuf.Timestamp
+	34, // 3: peers_touch.model.agent.v1.AgentSkillBinding.updated_at:type_name -> google.protobuf.Timestamp
+	34, // 4: peers_touch.model.agent.v1.AgentMcpBinding.created_at:type_name -> google.protobuf.Timestamp
+	34, // 5: peers_touch.model.agent.v1.AgentMcpBinding.updated_at:type_name -> google.protobuf.Timestamp
+	1,  // 6: peers_touch.model.agent.v1.ListAgentKnowledgeBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
+	1,  // 7: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
+	1,  // 8: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
+	1,  // 9: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
+	1,  // 10: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
+	2,  // 11: peers_touch.model.agent.v1.ListAgentSkillBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
+	2,  // 12: peers_touch.model.agent.v1.CreateAgentSkillBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
+	2,  // 13: peers_touch.model.agent.v1.CreateAgentSkillBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
+	2,  // 14: peers_touch.model.agent.v1.UpdateAgentSkillBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
+	2,  // 15: peers_touch.model.agent.v1.UpdateAgentSkillBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
+	3,  // 16: peers_touch.model.agent.v1.ListAgentMcpBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
+	3,  // 17: peers_touch.model.agent.v1.CreateAgentMcpBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
+	3,  // 18: peers_touch.model.agent.v1.CreateAgentMcpBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
+	3,  // 19: peers_touch.model.agent.v1.UpdateAgentMcpBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
+	3,  // 20: peers_touch.model.agent.v1.UpdateAgentMcpBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
+	0,  // 21: peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse.error_code:type_name -> peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode
+	22, // [22:22] is the sub-list for method output_type
+	22, // [22:22] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_agent_config_proto_init() }
@@ -1704,13 +1997,14 @@ func file_domain_agent_agent_config_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_agent_config_proto_rawDesc), len(file_domain_agent_agent_config_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   31,
+			NumEnums:      1,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_domain_agent_agent_config_proto_goTypes,
 		DependencyIndexes: file_domain_agent_agent_config_proto_depIdxs,
+		EnumInfos:         file_domain_agent_agent_config_proto_enumTypes,
 		MessageInfos:      file_domain_agent_agent_config_proto_msgTypes,
 	}.Build()
 	File_domain_agent_agent_config_proto = out.File

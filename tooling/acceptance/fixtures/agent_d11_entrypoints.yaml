@@ -34,7 +34,7 @@ entrypoints:
       scope_source: apps/desktop/src/pages/AgentCanvasPage.tsx
       scope_symbol: runCanvas
       first_effect: "setRunState('running')"
-      current_state: absent
+      current_state: before-effect
 
   - id: collaboration-create
     surface: station-generic
@@ -49,7 +49,7 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: CreateCollaborationTask
       first_effect: "db.WithContext(ctx).Transaction"
-      current_state: absent
+      current_state: before-effect
   - id: collaboration-get
     surface: station-generic
     source: apps/station/app/subserver/agent/agent.go
@@ -99,7 +99,7 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: ResumeCollaborationTask
       first_effect: "db.WithContext(ctx).Transaction"
-      current_state: absent
+      current_state: before-effect
   - id: collaboration-submit-node-result
     surface: station-generic
     source: apps/station/app/subserver/agent/agent.go
@@ -112,8 +112,9 @@ entrypoints:
     guard: &guard_submit
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: SubmitCollaborationNodeResult
+      core_symbol: submitCollaborationNodeResultAfterCanvasReadiness
       first_effect: "db.WithContext(ctx).Transaction"
-      current_state: absent
+      current_state: before-effect
   - id: collaboration-executor-claim
     surface: station-generic
     source: apps/station/app/subserver/agent/agent.go
@@ -127,7 +128,7 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: ClaimDesktopExecutorTask
       first_effect: "db.WithContext(ctx).Transaction"
-      current_state: absent
+      current_state: before-effect
   - id: collaboration-executor-heartbeat
     surface: station-generic
     source: apps/station/app/subserver/agent/agent.go
@@ -141,7 +142,7 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: HeartbeatExecutorLease
       first_effect: "db.WithContext(ctx).Transaction"
-      current_state: absent
+      current_state: before-effect
   - id: collaboration-executor-release
     surface: station-generic
     source: apps/station/app/subserver/agent/agent.go
@@ -174,7 +175,7 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/atelier_projection.go
       scope_symbol: CreateProjectFromGoal
       first_effect: "CreateCollaborationTask"
-      current_state: absent
+      current_state: before-effect
   - id: atelier-message-send
     surface: station-generic
     source: apps/station/app/subserver/agent/agent.go
@@ -197,7 +198,7 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/atelier_projection.go
       scope_symbol: ResolveDecision
       first_effect: "ResolveCollaborationInterrupt"
-      current_state: absent
+      current_state: before-effect
   - id: atelier-task-set-status
     surface: station-generic
     source: apps/station/app/subserver/agent/agent.go
@@ -255,8 +256,9 @@ entrypoints:
     guard: &guard_atelier_rerun
       scope_source: apps/station/app/subserver/agent/service/atelier_projection.go
       scope_symbol: ConfirmRerun
+      core_symbol: confirmRerunAfterCanvasReadiness
       first_effect: "createConfirmedFeedbackRerun"
-      current_state: absent
+      current_state: before-effect
   - id: atelier-artifact-fetch
     surface: station-generic
     source: apps/station/app/subserver/agent/agent.go
@@ -459,7 +461,7 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: HeartbeatExecutorLease
       first_effect: "db.WithContext(ctx).Transaction"
-      current_state: absent
+      current_state: before-effect
   - id: browser-collaboration-release
     surface: browser-gateway
     source: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs
@@ -577,7 +579,7 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: HeartbeatExecutorLease
       first_effect: "db.WithContext(ctx).Transaction"
-      current_state: absent
+      current_state: before-effect
   - id: tauri-collaboration-release
     surface: tauri-commands
     source: apps/desktop/src-tauri/src/interface/tauri_commands/agent_orchestration.rs
@@ -599,7 +601,7 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: StartTaskRecovery
       first_effect: "go s.recoverRunningTasks"
-      current_state: absent
+      current_state: before-effect
   - id: boot-recover-running-tasks
     surface: station-recovery
     source: apps/station/app/subserver/agent/service/orchestration_service.go
@@ -611,7 +613,7 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: recoverRunningTasks
       first_effect: "Find(&tasks)"
-      current_state: absent
+      current_state: before-effect
   - id: collaboration-interrupt-resolve
     surface: station-service
     source: apps/station/app/subserver/agent/service/orchestration_service.go
@@ -623,19 +625,20 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: ResolveCollaborationInterrupt
       first_effect: "db.WithContext(ctx).Transaction"
-      current_state: absent
+      current_state: before-effect
   - id: scheduler-dispatch
     surface: station-scheduler
     source: apps/station/app/subserver/agent/service/scheduler_service.go
     symbol: executeCollaborationSupervisorSweep
-    target: RunCollaborationSupervisorSweep
+    target: executeCollaborationSupervisorSweepAfterCanvasReadiness
     disposition: guarded
-    expected_fragments: ["func (s *SchedulerService) executeCollaborationSupervisorSweep", "RunCollaborationSupervisorSweep"]
+    expected_fragments: ["func (s *SchedulerService) executeCollaborationSupervisorSweep", "executeCollaborationSupervisorSweepAfterCanvasReadiness"]
     guard:
       scope_source: apps/station/app/subserver/agent/service/scheduler_service.go
       scope_symbol: executeCollaborationSupervisorSweep
-      first_effect: "RunCollaborationSupervisorSweep"
-      current_state: absent
+      core_symbol: executeCollaborationSupervisorSweepAfterCanvasReadiness
+      first_effect: "runCollaborationSupervisorSweepAfterCanvasReadiness"
+      current_state: before-effect
   - id: supervisor-tick
     surface: station-scheduler
     source: apps/station/app/subserver/agent/service/orchestration_service.go
@@ -647,31 +650,33 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: RunCollaborationSupervisorTick
       first_effect: "db.WithContext(ctx).Transaction"
-      current_state: absent
+      current_state: before-effect
   - id: supervisor-sweep
     surface: station-scheduler
     source: apps/station/app/subserver/agent/service/orchestration_service.go
     symbol: RunCollaborationSupervisorSweep
-    target: runCollaborationSupervisorTickTx
+    target: runCollaborationSupervisorSweepAfterCanvasReadiness
     disposition: guarded
-    expected_fragments: ["func (s *OrchestrationService) RunCollaborationSupervisorSweep", "runCollaborationSupervisorTickTx"]
+    expected_fragments: ["func (s *OrchestrationService) RunCollaborationSupervisorSweep", "runCollaborationSupervisorSweepAfterCanvasReadiness"]
     guard:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: RunCollaborationSupervisorSweep
+      core_symbol: runCollaborationSupervisorSweepAfterCanvasReadiness
       first_effect: "Find(&tasks)"
-      current_state: absent
+      current_state: before-effect
   - id: supervisor-tick-transaction
     surface: station-scheduler
     source: apps/station/app/subserver/agent/service/orchestration_service.go
     symbol: runCollaborationSupervisorTickTx
-    target: collaborationSupervisorDecisionTx
+    target: runCollaborationSupervisorTickTxAfterCanvasReadiness
     disposition: guarded
-    expected_fragments: ["func runCollaborationSupervisorTickTx", "collaborationSupervisorDecisionTx"]
+    expected_fragments: ["func runCollaborationSupervisorTickTx", "runCollaborationSupervisorTickTxAfterCanvasReadiness"]
     guard:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: runCollaborationSupervisorTickTx
+      core_symbol: runCollaborationSupervisorTickTxAfterCanvasReadiness
       first_effect: "First(&task)"
-      current_state: absent
+      current_state: before-effect
   - id: shared-start-task-execution
     surface: station-execution
     source: apps/station/app/subserver/agent/service/orchestration_service.go
@@ -683,7 +688,7 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: startTaskExecution
       first_effect: "go func()"
-      current_state: absent
+      current_state: before-effect
   - id: shared-start-direct-run
     surface: station-execution
     source: apps/station/app/subserver/agent/service/orchestration_service.go
@@ -695,55 +700,32 @@ entrypoints:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: startDirectRunExecution
       first_effect: "go func()"
-      current_state: absent
+      current_state: before-effect
   - id: shared-execute-pending-direct-run
     surface: station-execution
     source: apps/station/app/subserver/agent/service/orchestration_service.go
     symbol: executePendingDirectRun
-    target: directRunProvider
+    target: executePendingDirectRunAfterCanvasReadiness
     disposition: guarded
-    expected_fragments: ["func (s *OrchestrationService) executePendingDirectRun", "claimPendingDirectRun"]
+    expected_fragments: ["func (s *OrchestrationService) executePendingDirectRun", "executePendingDirectRunAfterCanvasReadiness"]
     guard:
       scope_source: apps/station/app/subserver/agent/service/orchestration_service.go
       scope_symbol: executePendingDirectRun
+      core_symbol: executePendingDirectRunAfterCanvasReadiness
       first_effect: "claimPendingDirectRun"
-      current_state: absent
+      current_state: before-effect
   - id: rust-worker-start
     surface: desktop-rust-worker
     source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
     symbol: start
-    target: run_loop
+    target: tracing::info!
     disposition: guarded
-    expected_fragments: ["pub fn start", ".spawn(move || run_loop(state))"]
+    expected_fragments: ["pub fn start", "tracing::info!("]
     guard:
       scope_source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
       scope_symbol: start
-      first_effect: ".spawn(move || run_loop(state))"
-      current_state: absent
-  - id: rust-worker-loop
-    surface: desktop-rust-worker
-    source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
-    symbol: run_loop
-    target: claim_and_execute
-    disposition: guarded
-    expected_fragments: ["fn run_loop", "claim_and_execute(&session)"]
-    guard:
-      scope_source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
-      scope_symbol: run_loop
-      first_effect: "claim_and_execute(&session)"
-      current_state: absent
-  - id: rust-worker-claim-and-execute
-    surface: desktop-rust-worker
-    source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
-    symbol: claim_and_execute
-    target: agent_collaboration_claim_executor_task
-    disposition: guarded
-    expected_fragments: ["fn claim_and_execute", "agent_collaboration_claim_executor_task"]
-    guard:
-      scope_source: apps/desktop/src-tauri/src/application/desktop_executor_worker/mod.rs
-      scope_symbol: claim_and_execute
-      first_effect: "agent_collaboration_claim_executor_task"
-      current_state: absent
+      first_effect: "tracing::info!("
+      current_state: before-effect
 
 atelier_aliases:
   source: apps/desktop/src-tauri/src/application/applets/mod.rs

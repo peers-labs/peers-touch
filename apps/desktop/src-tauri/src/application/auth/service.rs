@@ -95,13 +95,9 @@ pub(crate) fn canonical_ptid_for_token(token: &str) -> Option<String> {
             return Some(profile.id);
         }
     }
-    if let Ok(resp) = station_client::request_json(
-        reqwest::Method::GET,
-        "/actor/profile",
-        token,
-        None,
-        None,
-    ) {
+    if let Ok(resp) =
+        station_client::request_json(reqwest::Method::GET, "/actor/profile", token, None, None)
+    {
         if let Some(network_id) = resp
             .get("data")
             .and_then(|d| d.get("peers_touch"))
@@ -112,7 +108,11 @@ pub(crate) fn canonical_ptid_for_token(token: &str) -> Option<String> {
                 return Some(network_id.to_string());
             }
         }
-        if let Some(id) = resp.get("data").and_then(|d| d.get("id")).and_then(|v| v.as_str()) {
+        if let Some(id) = resp
+            .get("data")
+            .and_then(|d| d.get("id"))
+            .and_then(|v| v.as_str())
+        {
             if id.starts_with("ptid:") {
                 return Some(id.to_string());
             }
@@ -176,9 +176,17 @@ fn access_post<T: serde::Serialize>(
                     409 => ErrorCode::Conflict,
                     _ => ErrorCode::InternalError,
                 };
-                AppResult::fail(code, format!("{}: {}", context, error.message), error.details)
+                AppResult::fail(
+                    code,
+                    format!("{}: {}", context, error.message),
+                    error.details,
+                )
             }
-            _ => AppResult::fail(err_code, format!("{}: {}", context, error.message), error.details),
+            _ => AppResult::fail(
+                err_code,
+                format!("{}: {}", context, error.message),
+                error.details,
+            ),
         }
     })?;
     resp.get("data").cloned().ok_or_else(|| {
@@ -366,7 +374,10 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
     let attempt = match start_access_attempt::<AuthSessionPayload>() {
         Ok(decision) => decision,
         Err(error) => {
-            let should_fallback = error.error.as_ref().is_some_and(|e| e.code == ErrorCode::NotFound);
+            let should_fallback = error
+                .error
+                .as_ref()
+                .is_some_and(|e| e.code == ErrorCode::NotFound);
             if should_fallback {
                 tracing::info!(
                     "access-gate endpoint not found (404), falling back to direct /actor/login"

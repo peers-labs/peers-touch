@@ -1,8 +1,8 @@
 # Modern Chat Agent
 
-> **Status**: product-accepted / design-accepted / planning
+> **Status**: product-accepted / design-accepted / execution-active
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-17
+> **Created**: 2026-07-30 | **Updated**: 2026-08-22
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
 
@@ -84,6 +84,18 @@ A Modern Chat Agent is:
 | [Prior V1 plan](../execution-plans/20260730-modern-chat-agent-v1.md) | Historical first-loop plan; does not own current V2 status |
 | [Old blocked plan](../execution-plans/20260730-modern-chat-agent.md) | Superseded — drafted before PRODUCT/DESIGN completion, retained for historical reference only |
 
+The Owner accepted the MCA-D19 result-identity, ToolBatch barrier, and durable
+continuation core on 2026-08-21. The G1-C entry audit then exposed missing
+receipt-recovery, replay-policy, lease-lifecycle, deadline, and opaque-resource
+contracts. The Owner accepted `MCA-D19A` on 2026-08-22. G1-A then verified that
+actor JWT does not authenticate `X-Device-ID`; proposed `MCA-D19B` adds
+device-possession proof for all capability commands. The Owner accepted D19B
+into the main Goal G1 task on 2026-08-22. G1-A and G1-B are complete. The G1-C
+completion audit then exposed an undefined post-restart execution-authority
+handoff for externally idempotent PREPARED work; the Owner accepted
+`MCA-D19C` on 2026-08-22. The tracked execution source is
+`../execution-plans/20260817-modern-chat-agent-v2-execution.md`.
+
 ## 5. Review Status
 
 V2 owner scope decisions are closed: Home and Evaluation are required; image
@@ -94,6 +106,13 @@ required.
 
 PRODUCT is accepted. Independent DESIGN review passed on 2026-08-17 after
 D14-D18, C11-C15, A15-A20, concurrency fencing, deletion/retention, and Gate
-oracles were reconciled. The nineteenth independent PLAN review returned
-`PLAN_READY_FOR_EXECUTION`; current stage is the Owner EXECUTE approval gate.
-Production implementation remains 0/14 and all V2 Gates remain `UNPROVEN`.
+oracles were reconciled. Execution of F4 exposed an undefined Station-to-client
+execution-ingress protocol. The Owner accepted `MCA-D19` on 2026-08-21.
+The subsequent G1-C audit reopened G1-A/B formal closure and produced
+`MCA-D19A`, accepted on 2026-08-22. The G1-A auth audit then produced
+`MCA-D19B`, accepted into the main task on 2026-08-22. MCA-D19C was then
+accepted to require Station-authorized higher-fence restart takeover. G1-A,
+G1-B, G1-C, G1-D, G1-E, and G1-F are complete; Acceptance D-12 and the
+G1-XR matrix/schema/validator cutover are complete, while real adapters are active.
+No production capability currently advertises external idempotency, and all V2
+product Gates remain `UNPROVEN`.

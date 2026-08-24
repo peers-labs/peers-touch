@@ -174,6 +174,45 @@ func (s *ChatTaskService) BeginChatStep(ctx context.Context, taskID, agentID, de
 	return step.StepID, nil
 }
 
+// BindChatStepToTurn records the durable Turn identity while a Chat step is
+// waiting for a client capability result. The step remains RUNNING until the
+// continuation worker reaches a terminal Turn state.
+func (s *ChatTaskService) BindChatStepToTurn(ctx context.Context, taskID, stepID, turnID string) error {
+	taskID = strings.TrimSpace(taskID)
+	stepID = strings.TrimSpace(stepID)
+	turnID = strings.TrimSpace(turnID)
+	if taskID == "" || stepID == "" || turnID == "" {
+		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "task_id, step_id, and turn_id are required", nil)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&persistence.ExecutionStep{}).
+			Where(
+				"task_id = ? AND step_id = ? AND status = ?",
+				taskID,
+				stepID,
+				int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+			).
+			Update("turn_id", turnID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "chat step is no longer running", nil)
+		}
+		return tx.Model(&persistence.ExecutorLease{}).
+			Where("step_id = ? AND status = ?", stepID, chatLeaseStatusActive).
+			Updates(map[string]interface{}{
+				"heartbeat_at": now,
+				"expires_at":   now.Add(chatLeaseTTL),
+			}).Error
+	})
+}
+
 // FinishChatStep marks the step COMPLETED, binds its TurnID, writes a recovery
 // checkpoint, releases the lease, and emits STEP_COMPLETED + CHECKPOINT_CREATED.
 func (s *ChatTaskService) FinishChatStep(ctx context.Context, taskID, stepID, turnID, resultSummary string) error {
@@ -277,8 +316,9 @@ func (s *ChatTaskService) FailChatStep(ctx context.Context, taskID, stepID, reas
 }
 
 // RecoverRunningChatTasks reclaims chat steps left RUNNING by a previous process.
-// Each is surfaced as FAILED at its step boundary — interrupted turns are never
-// replayed (LLM calls are non-idempotent and re-running would double-bill/reply).
+// A step with an open ToolBatch or durable ToolContinuation remains RUNNING for
+// the continuation worker. Other interrupted provider work still fails closed
+// and is never replayed.
 func (s *ChatTaskService) RecoverRunningChatTasks(ctx context.Context) {
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -299,6 +339,26 @@ func (s *ChatTaskService) RecoverRunningChatTasks(ctx context.Context) {
 
 	logger.Warnf(ctx, "chat task recovery: reclaiming %d interrupted steps", len(steps))
 	for i := range steps {
+		var recoverableCount int64
+		if err := db.WithContext(ctx).
+			Table("agent_tool_batches AS batch").
+			Joins("LEFT JOIN agent_tool_continuations AS continuation ON continuation.tool_batch_id = batch.id").
+			Where(
+				"batch.step_id = ? AND (batch.status = ? OR continuation.status IN ?)",
+				steps[i].StepID,
+				persistence.ToolBatchStatusOpen,
+				[]string{
+					persistence.ToolContinuationStatusReady,
+					persistence.ToolContinuationStatusClaimed,
+				},
+			).
+			Count(&recoverableCount).Error; err != nil {
+			logger.Errorf(ctx, "chat task recovery continuation query failed for step_id=%s: %v", steps[i].StepID, err)
+			continue
+		}
+		if recoverableCount > 0 {
+			continue
+		}
 		if err := s.FailChatStep(ctx, steps[i].TaskID, steps[i].StepID, "interrupted by station restart"); err != nil {
 			logger.Errorf(ctx, "chat task recovery failed for step_id=%s: %v", steps[i].StepID, err)
 		}

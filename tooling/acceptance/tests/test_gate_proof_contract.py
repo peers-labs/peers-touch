@@ -31,6 +31,13 @@ ROLE_OBSERVATIONS = {
         "resourceIdHash": HASH,
         "status": "clean",
     },
+    "contract-evidence": {
+        "contractId": "mobile-agent-v2",
+        "contractHash": HASH,
+        "platform": "mobile_contract",
+        "status": "passed",
+        "roundTripEqual": True,
+    },
     "command-ids": {
         "commandId": "command-1",
         "idempotencyKeyHash": HASH,
@@ -42,6 +49,12 @@ ROLE_OBSERVATIONS = {
         "fencingToken": 1,
         "status": "APPLIED",
         "payloadHash": HASH,
+    },
+    "guard-report": {
+        "guardId": "agent-d11-entrypoints",
+        "sourceInventoryHash": HASH,
+        "violationCount": 0,
+        "passed": True,
     },
     "measurement-report": {
         "metric": "latency",
@@ -149,7 +162,11 @@ class GateProofContractTest(unittest.TestCase):
         self.validator = load_script("acceptance-validate.py")
         self.contract = self.validator.load_agent_v2_contract()
         self.matrix = self.validator.matrix_identity(self.contract)
-        self.tuples = self.validator.expanded_matrix_tuples(self.contract)
+        (
+            self.tuples,
+            self.role_tuples,
+            self.attestation_profiles,
+        ) = self.validator.expanded_matrix_contract(self.contract)
         self.source = source_identity(REPO_ROOT)
 
     def tearDown(self) -> None:
@@ -162,6 +179,63 @@ class GateProofContractTest(unittest.TestCase):
         tuples = []
         for value in sorted(self.tuples[gate_id]):
             item = dict(zip(self.validator.TUPLE_FIELDS, json.loads(value)))
+            attestation_profile = self.attestation_profiles[gate_id][value]
+            if attestation_profile == "contract_only":
+                item.update(
+                    {
+                        "attestationProfile": attestation_profile,
+                        "contractAttestation": {
+                            "contractId": "mobile-agent-v2",
+                            "contractHash": HASH,
+                            "platform": item["platform"],
+                            "toolchain": "typescript",
+                            "roundTripStatus": "passed",
+                        },
+                        "stationProfile": "fixture",
+                        "networkPath": "local",
+                        "machine": "fixture-machine",
+                        "coldWarmState": "contract",
+                        "observedAt": "2026-08-18T00:00:00+00:00",
+                    }
+                )
+                tuples.append(item)
+                continue
+            if attestation_profile == "orchestration_guard":
+                item.update(
+                    {
+                        "attestationProfile": attestation_profile,
+                        "guardAttestation": {
+                            "guardId": "agent-d11-entrypoints",
+                            "sourceInventoryHash": HASH,
+                            "violationCount": 0,
+                        },
+                        "stationProfile": "fixture",
+                        "networkPath": "local",
+                        "machine": "fixture-machine",
+                        "coldWarmState": "neutral",
+                        "observedAt": "2026-08-18T00:00:00+00:00",
+                    }
+                )
+                tuples.append(item)
+                continue
+            if attestation_profile == "non_advertised":
+                item.update(
+                    {
+                        "attestationProfile": attestation_profile,
+                        "capabilityInventoryAttestation": {
+                            "inventoryHash": HASH,
+                            "surfaceId": item["runtime"],
+                            "zeroExecutionCount": 0,
+                        },
+                        "stationProfile": "fixture",
+                        "networkPath": "local",
+                        "machine": "fixture-machine",
+                        "coldWarmState": "neutral",
+                        "observedAt": "2026-08-18T00:00:00+00:00",
+                    }
+                )
+                tuples.append(item)
+                continue
             runtime_snapshot = {
                 "runtimeKind": item["runtime"],
                 "providerId": "provider-1",
@@ -276,6 +350,8 @@ class GateProofContractTest(unittest.TestCase):
                     "observedAt": "2026-08-18T00:00:00+00:00",
                 }
             )
+            if attestation_profile == "direct_runtime":
+                item["attestationProfile"] = attestation_profile
             tuples.append(item)
         return tuples
 
@@ -291,6 +367,9 @@ class GateProofContractTest(unittest.TestCase):
         runtime_value_override: tuple[str, Any] | None = None,
         role_binding_mutation: str = "",
         role_value_override: tuple[str, str, Any] | None = None,
+        unexpected_role_tuple: str = "",
+        profile_value_override: tuple[str, str, Any] | None = None,
+        profile_extra_field: tuple[str, str, Any] | None = None,
     ) -> ArtifactRef:
         run = self.store.begin_run(gate_id, source=self.source)
         required_roles = self.contract["gates"][gate_id]["roles"]
@@ -356,6 +435,30 @@ class GateProofContractTest(unittest.TestCase):
                             )
                         target = nested
                     target[components[-1]] = replacement
+                if profile_value_override is not None:
+                    profile, path, replacement = profile_value_override
+                    target = next(
+                        item
+                        for item in tuples
+                        if item.get("attestationProfile") == profile
+                    )
+                    components = path.split(".")
+                    for component in components[:-1]:
+                        nested = target.get(component)
+                        if not isinstance(nested, dict):
+                            raise AssertionError(
+                                f"invalid profile override path: {path}"
+                            )
+                        target = nested
+                    target[components[-1]] = replacement
+                if profile_extra_field is not None:
+                    profile, field, replacement = profile_extra_field
+                    target = next(
+                        item
+                        for item in tuples
+                        if item.get("attestationProfile") == profile
+                    )
+                    target[field] = replacement
                 artifact = {
                     "artifactKind": "agent-v2-runtime-attestation-set",
                     "schema": self.schema("runtime-attestation-set"),
@@ -377,7 +480,35 @@ class GateProofContractTest(unittest.TestCase):
                 observations = []
                 runtime_refs = []
                 scenario_ids = set()
-                for tuple_item in runtime_tuples:
+                applicable_keys = self.role_tuples[gate_id][role]
+                applicable_tuples = [
+                    tuple_item
+                    for tuple_item in runtime_tuples
+                    if json.dumps(
+                        [
+                            tuple_item[field]
+                            for field in self.validator.TUPLE_FIELDS
+                        ],
+                        separators=(",", ":"),
+                    )
+                    in applicable_keys
+                ]
+                if unexpected_role_tuple == role:
+                    applicable_tuples.append(
+                        next(
+                            tuple_item
+                            for tuple_item in runtime_tuples
+                            if json.dumps(
+                                [
+                                    tuple_item[field]
+                                    for field in self.validator.TUPLE_FIELDS
+                                ],
+                                separators=(",", ":"),
+                            )
+                            not in applicable_keys
+                        )
+                    )
+                for tuple_item in applicable_tuples:
                     runtime_key = json.dumps(
                         [
                             tuple_item[field]
@@ -391,9 +522,10 @@ class GateProofContractTest(unittest.TestCase):
                             "runtimeTupleKey": runtime_key,
                             "scenarioId": tuple_item["cell"],
                             "sampleId": tuple_item["sample_id"],
-                            "actorIdentityHash": tuple_item[
-                                "actorIdentityHash"
-                            ],
+                            "actorIdentityHash": tuple_item.get(
+                                "actorIdentityHash",
+                                HASH,
+                            ),
                             "oracleAssertionId": oracle_id,
                         }
                     )
@@ -611,6 +743,135 @@ class GateProofContractTest(unittest.TestCase):
                         candidate,
                         candidate.sha256,
                     )
+
+    def test_foundation_roles_cover_only_matrix_applicable_rows(self) -> None:
+        gate_id = "agent-v2-kernel-foundation-e2e"
+        all_tuples = self.tuples[gate_id]
+        self.assertEqual(self.role_tuples[gate_id]["cell-results"], all_tuples)
+        self.assertEqual(
+            self.role_tuples[gate_id]["runtime-attestation-set"],
+            all_tuples,
+        )
+        self.assertEqual(
+            {
+                json.loads(key)[1]
+                for key in self.role_tuples[gate_id]["contract-evidence"]
+            },
+            {"foundation-mobile-contract"},
+        )
+        self.assertEqual(
+            {
+                json.loads(key)[1]
+                for key in self.role_tuples[gate_id]["guard-report"]
+            },
+            {"foundation-d11"},
+        )
+        self.assertNotEqual(
+            self.role_tuples[gate_id]["receiver-dom"],
+            all_tuples,
+        )
+        candidate = self.create_candidate(gate_id)
+        self.validator.validate_candidate(
+            self.store,
+            candidate,
+            candidate.sha256,
+        )
+
+    def test_candidate_rejects_observation_for_not_applicable_row(self) -> None:
+        gate_id = "agent-v2-kernel-foundation-e2e"
+        candidate = self.create_candidate(
+            gate_id,
+            unexpected_role_tuple="contract-evidence",
+        )
+        with self.assertRaisesRegex(RuntimeError, "applicable tuples"):
+            self.validator.validate_candidate(
+                self.store,
+                candidate,
+                candidate.sha256,
+            )
+
+    def test_candidate_rejects_contract_and_guard_failure_semantics(self) -> None:
+        gate_id = "agent-v2-kernel-foundation-e2e"
+        mutations = (
+            ("contract-evidence", "status", "failed"),
+            ("contract-evidence", "roundTripEqual", False),
+            ("guard-report", "violationCount", 1),
+            ("guard-report", "passed", False),
+        )
+        for role, field, replacement in mutations:
+            with self.subTest(role=role, field=field):
+                candidate = self.create_candidate(
+                    gate_id,
+                    role_value_override=(role, field, replacement),
+                )
+                with self.assertRaises(RuntimeError):
+                    self.validator.validate_candidate(
+                        self.store,
+                        candidate,
+                        candidate.sha256,
+                    )
+
+    def test_candidate_rejects_wrong_or_fabricated_attestation_profile(self) -> None:
+        gate_id = "agent-v2-kernel-foundation-e2e"
+        wrong_profile = self.create_candidate(
+            gate_id,
+            profile_value_override=(
+                "contract_only",
+                "attestationProfile",
+                "direct_runtime",
+            ),
+        )
+        with self.assertRaisesRegex(RuntimeError, "profile mismatch"):
+            self.validator.validate_candidate(
+                self.store,
+                wrong_profile,
+                wrong_profile.sha256,
+            )
+
+        fabricated_runtime = self.create_candidate(
+            gate_id,
+            profile_extra_field=(
+                "contract_only",
+                "conversationRuntimeBinding",
+                {},
+            ),
+        )
+        with self.assertRaisesRegex(RuntimeError, "payload fields mismatch"):
+            self.validator.validate_candidate(
+                self.store,
+                fabricated_runtime,
+                fabricated_runtime.sha256,
+            )
+
+        failed_guard = self.create_candidate(
+            gate_id,
+            profile_value_override=(
+                "orchestration_guard",
+                "guardAttestation.violationCount",
+                1,
+            ),
+        )
+        with self.assertRaisesRegex(RuntimeError, "did not pass cleanly"):
+            self.validator.validate_candidate(
+                self.store,
+                failed_guard,
+                failed_guard.sha256,
+            )
+
+        advertised = self.create_candidate(
+            gate_id,
+            profile_value_override=(
+                "non_advertised",
+                "capabilityInventoryAttestation.zeroExecutionCount",
+                1,
+            ),
+        )
+        with self.assertRaisesRegex(RuntimeError, "zero execution"):
+            self.validator.validate_candidate(
+                self.store,
+                advertised,
+                advertised.sha256,
+            )
 
     def test_candidate_rejects_role_specific_identity_detachment(self) -> None:
         mutations = (

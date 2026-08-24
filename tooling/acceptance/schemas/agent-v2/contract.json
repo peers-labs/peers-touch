@@ -1,11 +1,11 @@
 {
   "artifactKind": "agent-v2-proof-contract",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "matrix": {
     "id": "modern-chat-agent-v2-runtime-matrix",
-    "version": "2026-08-17.3",
+    "version": "2026-08-23.1",
     "source": "docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml",
-    "sha256": "8a3cf6284194b896002dcf4ecc10d7225da4815b7bc821a5dd0e15b63f48e4a6",
+    "sha256": "dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0",
     "expandedTupleCount": 742
   },
   "generatedRoles": [
@@ -16,12 +16,12 @@
   "schemas": {
     "evidence-role": {
       "id": "peers-touch.agent-v2.evidence-role",
-      "version": 1,
+      "version": 2,
       "file": "evidence-role.schema.json"
     },
     "runtime-attestation-set": {
       "id": "peers-touch.agent-v2.runtime-attestation-set",
-      "version": 1,
+      "version": 2,
       "file": "runtime-attestation-set.schema.json"
     },
     "source-identity": {
@@ -58,7 +58,8 @@
   "gates": {
     "agent-v2-kernel-foundation-e2e": {
       "expectedTuples": 419,
-      "roles": ["cell-results", "receiver-dom", "station-readback", "runtime-events", "runtime-attestation-set", "measurement-report", "side-effect-count", "replay", "cleanup", "source-identity", "role-schema-report", "runner-attestation"]
+      "roleApplicability": "runtime-matrix-row",
+      "roles": ["cell-results", "receiver-dom", "station-readback", "runtime-events", "runtime-attestation-set", "measurement-report", "side-effect-count", "replay", "cleanup", "contract-evidence", "guard-report", "source-identity", "role-schema-report", "runner-attestation"]
     },
     "agent-v2-home-command-center-e2e": {
       "expectedTuples": 33,

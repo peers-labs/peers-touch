@@ -441,3 +441,51 @@ Cleanup尝试non-blocking lock：
 
 Typed errors保留safe path role、errno class和remediation，不包含secret value。任何error
 都不得触发source-tree fallback。
+
+## 15. Runtime Matrix Role Policy
+
+> Status: accepted by D-12 on 2026-08-23; schema/version migration is authorized.
+
+每个 matrix row 声明 applicable evidence roles：
+
+```yaml
+id: foundation-mobile-contract
+gate: agent-v2-kernel-foundation-e2e
+platform: mobile_contract
+runtime: contract_only
+runtime_attestation_profile: contract_only
+role_policy:
+  always:
+    - cell-results
+    - runtime-attestation-set
+    - cleanup
+  required:
+    - contract-evidence
+  not_applicable:
+    - receiver-dom
+    - station-readback
+    - runtime-events
+```
+
+数据约束：
+
+- `always`、`required`、`not_applicable` 两两不相交。
+- Gate-level role union 必须等于所有 row 的 `always + required` 并集，加上
+  runner-owned roles。
+- 每个 tuple 对 `always + required` 中的 role 恰有一条 observation。
+- `not_applicable` 中的 role 对该 tuple 必须没有 observation。
+- 每个 role artifact 的 `runtimeAttestationRefs` 必须等于它覆盖的 tuple key 集合。
+- `sampleCount == observations.length == applicable tuple count`。
+- `scenarioIds` 必须等于 applicable tuples 的 cell 集合。
+- `contract-evidence` 绑定 contract test ID、contract hash、平台与结果；
+  `guard-report` 绑定 guard ID、source inventory hash 与 zero-violation 结果。
+- producer 不能自行计算 applicability；只能消费经过 hash/version 校验的 matrix。
+
+`runtime_attestation_profile` payload：
+
+| Profile | Required facts | Forbidden fabrication |
+|---|---|---|
+| `direct_runtime` | conversation binding, runtime snapshot, TurnAttempt, ToolCall binding, client session | none of these may be inferred from UI |
+| `contract_only` | contract ID/hash, platform/toolchain identity, round-trip result | conversation, Turn, ToolCall, DOM |
+| `orchestration_guard` | guard ID, source inventory hash, zero-violation result | actor session, Turn, ToolCall, DOM |
+| `non_advertised` | capability inventory hash, surface identity, zero-execution result | executable runtime/ToolCall binding |

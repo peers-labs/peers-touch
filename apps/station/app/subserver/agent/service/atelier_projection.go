@@ -611,6 +611,9 @@ func (s *AtelierProjectionService) CreateProjectFromGoal(
 	actorID string,
 	req *CreateAtelierProjectFromGoalRequest,
 ) (*AtelierProjectionSnapshot, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return nil, err
+	}
 	if s.orchestrationService == nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "orchestration service is not configured", nil)
 	}
@@ -848,6 +851,9 @@ func (s *AtelierProjectionService) ResolveDecision(
 	actorID string,
 	req *ResolveAtelierDecisionRequest,
 ) (*AtelierProjectionSnapshot, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return nil, err
+	}
 	if s.orchestrationService == nil || s.orchestrationService.eventWriter == nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "orchestration event writer is not configured", nil)
 	}
@@ -1408,6 +1414,17 @@ func (s *AtelierProjectionService) ConfirmMemoryCandidate(
 }
 
 func (s *AtelierProjectionService) ConfirmRerun(
+	ctx context.Context,
+	actorID string,
+	req *ConfirmAtelierRerunRequest,
+) (*ConfirmAtelierRerunResponse, error) {
+	if err := enforce_canvas_single_agent_readiness(); err != nil {
+		return nil, err
+	}
+	return s.confirmRerunAfterCanvasReadiness(ctx, actorID, req)
+}
+
+func (s *AtelierProjectionService) confirmRerunAfterCanvasReadiness(
 	ctx context.Context,
 	actorID string,
 	req *ConfirmAtelierRerunRequest,

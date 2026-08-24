@@ -37,16 +37,19 @@ type conversationCreateRequest struct {
 }
 
 type conversationUpdateRequest struct {
-	ConversationID string            `json:"conversation_id"`
-	Title          string            `json:"title"`
-	Description    string            `json:"description"`
-	ModelName      string            `json:"model_name"`
-	Meta           map[string]string `json:"meta"`
+	ConversationID        string            `json:"conversation_id"`
+	Title                 string            `json:"title"`
+	Description           string            `json:"description"`
+	ModelName             string            `json:"model_name"`
+	Meta                  map[string]string `json:"meta"`
+	ExpectedVersion       uint64            `json:"expected_version"`
+	ActiveBranchMessageID *string           `json:"active_branch_message_id"`
 }
 
 type conversationArchiveRequest struct {
-	ConversationID string `json:"conversation_id"`
-	Permanent      bool   `json:"permanent"`
+	ConversationID  string `json:"conversation_id"`
+	Permanent       bool   `json:"permanent"`
+	ExpectedVersion uint64 `json:"expected_version"`
 }
 
 type messageListRequest struct {
@@ -63,6 +66,7 @@ type messageTranslateRequest struct {
 
 type streamEventsRequest struct {
 	ConversationID string `json:"conversation_id"`
+	TurnID         string `json:"turn_id"`
 	AfterSeq       int64  `json:"after_seq"`
 }
 
@@ -86,8 +90,8 @@ func (h *ConversationHandlers) HandleListConversations(ctx context.Context, req 
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
 		return nil
 	}
-	actorID := subjectActorID(ctx)
-	conversations, total, err := h.convService.ListConversations(ctx, input.AgentID, actorID, input.Status, input.Page, input.PageSize)
+	ptid := subjectActorID(ctx)
+	conversations, total, err := h.convService.ListConversations(ctx, input.AgentID, ptid, input.Status, input.Page, input.PageSize)
 	if err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
@@ -112,7 +116,7 @@ func (h *ConversationHandlers) HandleGetConversation(ctx context.Context, req se
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "conversation_id is required"})
 		return nil
 	}
-	conv, err := h.convService.GetConversation(ctx, input.ConversationID)
+	conv, err := h.convService.GetConversation(ctx, subjectActorID(ctx), input.ConversationID)
 	if err != nil {
 		writeJSON(resp, http.StatusNotFound, map[string]any{"ok": false, "error": err.Error()})
 		return nil
@@ -134,8 +138,8 @@ func (h *ConversationHandlers) HandleCreateConversation(ctx context.Context, req
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "agent_id is required"})
 		return nil
 	}
-	actorID := subjectActorID(ctx)
-	conv, err := h.convService.CreateConversation(ctx, input.AgentID, actorID, input.Title, input.Description, input.ModelName, input.ProviderID)
+	ptid := subjectActorID(ctx)
+	conv, err := h.convService.CreateConversation(ctx, input.AgentID, ptid, input.Title, input.Description, input.ModelName, input.ProviderID)
 	if err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
@@ -157,7 +161,17 @@ func (h *ConversationHandlers) HandleUpdateConversation(ctx context.Context, req
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "conversation_id is required"})
 		return nil
 	}
-	conv, err := h.convService.UpdateConversation(ctx, input.ConversationID, input.Title, input.Description, input.ModelName, input.Meta)
+	conv, err := h.convService.UpdateConversation(
+		ctx,
+		subjectActorID(ctx),
+		input.ConversationID,
+		input.ExpectedVersion,
+		input.Title,
+		input.Description,
+		input.ModelName,
+		input.Meta,
+		input.ActiveBranchMessageID,
+	)
 	if err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
@@ -179,7 +193,13 @@ func (h *ConversationHandlers) HandleArchiveConversation(ctx context.Context, re
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "conversation_id is required"})
 		return nil
 	}
-	if err := h.convService.ArchiveConversation(ctx, input.ConversationID, input.Permanent); err != nil {
+	if err := h.convService.ArchiveConversation(
+		ctx,
+		subjectActorID(ctx),
+		input.ConversationID,
+		input.Permanent,
+		input.ExpectedVersion,
+	); err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
 	}
@@ -197,7 +217,14 @@ func (h *ConversationHandlers) HandleListMessages(ctx context.Context, req serve
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "conversation_id is required"})
 		return nil
 	}
-	messages, nextCursor, hasMore, err := h.convService.ListMessages(ctx, input.ConversationID, input.AfterSeq, input.BeforeSeq, input.Limit)
+	messages, nextCursor, hasMore, err := h.convService.ListMessages(
+		ctx,
+		subjectActorID(ctx),
+		input.ConversationID,
+		input.AfterSeq,
+		input.BeforeSeq,
+		input.Limit,
+	)
 	if err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
@@ -221,7 +248,7 @@ func (h *ConversationHandlers) HandleSetMessageTranslation(ctx context.Context, 
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "message_id is required"})
 		return nil
 	}
-	if err := h.convService.SetMessageTranslation(ctx, input.MessageID, input.Translation); err != nil {
+	if err := h.convService.SetMessageTranslation(ctx, subjectActorID(ctx), input.MessageID, input.Translation); err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
 	}
@@ -240,27 +267,48 @@ func (h *ConversationHandlers) HandleStreamConversationEvents(ctx context.Contex
 		writeSSEEvent(resp, "error", map[string]any{"type": "error", "error": "invalid request"})
 		return nil
 	}
-	if input.ConversationID == "" {
-		writeSSEEvent(resp, "error", map[string]any{"type": "error", "error": "conversation_id is required"})
+	if input.ConversationID == "" || input.TurnID == "" {
+		writeSSEEvent(resp, "error", map[string]any{"type": "error", "error": "conversation_id and turn_id are required"})
 		return nil
 	}
 
-	events, err := h.convService.ReplayTurnEvents(ctx, input.ConversationID, input.AfterSeq)
+	events, err := h.convService.ReplayTurnEvents(ctx, subjectActorID(ctx), input.ConversationID, input.TurnID, input.AfterSeq)
 	if err != nil {
 		logger.Warnf(ctx, "failed to replay turn events: conv_id=%s err=%v", input.ConversationID, err)
 		writeSSEEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
 		return nil
 	}
 
+	lastSequence := input.AfterSeq
 	for _, ev := range events {
 		var payload map[string]any
 		if err := json.Unmarshal([]byte(ev.Payload), &payload); err == nil {
 			payload["seq"] = ev.EventSeq
 			writeSSEEvent(resp, ev.EventType, payload)
+			lastSequence = ev.EventSeq
 		}
 	}
 
-	writeSSEEvent(resp, "catchup_done", map[string]any{"type": "catchup_done", "seq": input.AfterSeq})
+	snapshot, err := h.convService.GetTurnEventSnapshot(ctx, subjectActorID(ctx), input.ConversationID, input.TurnID)
+	if err != nil {
+		writeSSEEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
+		return nil
+	}
+	writeSSEEvent(resp, "snapshot", map[string]any{
+		"type":            "snapshot",
+		"turnId":          snapshot.TurnID,
+		"conversationId":  snapshot.ConversationID,
+		"agentId":         snapshot.AgentID,
+		"status":          snapshot.Status,
+		"text":            snapshot.Text,
+		"seq":             snapshot.LastSequence,
+		"terminal_reason": snapshot.TerminalReason,
+		"updated_at":      snapshot.UpdatedAt,
+	})
+	if snapshot.LastSequence > lastSequence {
+		lastSequence = snapshot.LastSequence
+	}
+	writeSSEEvent(resp, "catchup_done", map[string]any{"type": "catchup_done", "seq": lastSequence})
 	return nil
 }
 
@@ -269,17 +317,20 @@ func conversationToJSON(c *domain.Conversation) map[string]any {
 		return nil
 	}
 	return map[string]any{
-		"conversation_id": c.ConversationID,
-		"agent_id":        c.AgentID,
-		"user_id":         c.UserID,
-		"title":           c.Title,
-		"description":     c.Description,
-		"provider_id":     c.ProviderID,
-		"model_name":      c.ModelName,
-		"status":          string(c.Status),
-		"parent_id":       c.ParentID,
-		"created_at":      c.CreatedAt,
-		"updated_at":      c.UpdatedAt,
+		"conversation_id":          c.ConversationID,
+		"agent_id":                 c.AgentID,
+		"ptid":                     c.Ptid,
+		"title":                    c.Title,
+		"description":              c.Description,
+		"provider_id":              c.ProviderID,
+		"model_name":               c.ModelName,
+		"status":                   string(c.Status),
+		"parent_id":                c.ParentID,
+		"active_branch_message_id": c.ActiveBranchMessageID,
+		"queued_turn_count":        c.QueuedTurnCount,
+		"version":                  c.Version,
+		"created_at":               c.CreatedAt,
+		"updated_at":               c.UpdatedAt,
 	}
 }
 

@@ -1,0 +1,318 @@
+{
+  "artifactKind": "acceptance-run",
+  "plan": "tooling/acceptance/plans/agent-phase2-native.json",
+  "sourceArtifact": "tooling/acceptance/plans/agent-phase2-native.json",
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "dryRun": 0,
+    "partial": 0,
+    "unproven": 0,
+    "incomplete": 0,
+    "passedButUnproven": 0,
+    "missingResultTraceability": 0,
+    "sampleEmissionAllowed": true
+  },
+  "completionStatus": "DONE",
+  "proofStatus": "PROVEN",
+  "sampleEmissionAllowed": true,
+  "resultTraceabilityState": {
+    "artifactKind": "acceptance-run-result-traceability-state",
+    "status": "pass",
+    "completionStatus": "DONE",
+    "proofStatus": "PROVEN",
+    "sampleEmissionAllowed": false,
+    "missingTraceabilityCount": 0,
+    "missingTraceability": []
+  },
+  "results": [
+    {
+      "id": "acceptance-plan-self",
+      "command": "python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check",
+      "environment": "local",
+      "tier": "ci-structure",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.105,
+      "log": "tooling/acceptance/reports/logs/acceptance-plan-self.log",
+      "evidenceArtifacts": [
+        {
+          "path": "tooling/acceptance/reports/latest-plan.json"
+        }
+      ],
+      "sourceArtifact": "tooling/acceptance/reports/latest-plan.json",
+      "artifactKind": "acceptance-gate-result",
+      "artifactPath": "tooling/acceptance/reports/logs/acceptance-plan-self.log",
+      "sampleEmissionAllowed": false,
+      "traceability": {
+        "status": "not-required",
+        "missingFields": [
+          "sourceArtifactKind",
+          "sourcePhase",
+          "sourceBom",
+          "sourceSpec",
+          "sourceGate"
+        ],
+        "reason": "passed static/local gate does not emit a source evidence artifact",
+        "sourceArtifact": "tooling/acceptance/reports/latest-plan.json"
+      }
+    },
+    {
+      "id": "agent-native-mention-e2e",
+      "command": "python3 tooling/acceptance/gates/agent/agent_native_gate.py --capability I1",
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.776,
+      "log": "tooling/acceptance/reports/logs/agent-native-mention-e2e.log",
+      "evidenceArtifacts": [
+        {
+          "path": "tooling/acceptance/reports/agent-native/i1.json",
+          "artifactKind": "agent-native-capability-gate",
+          "status": "passed",
+          "proofStatus": "PROVEN",
+          "phase": "agent-phase2-native",
+          "bom": "agent-phase2-native-current-worktree",
+          "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+          "gate": "agent-native-mention-e2e"
+        }
+      ],
+      "sourceArtifact": "tooling/acceptance/reports/agent-native/i1.json",
+      "sourceArtifactKind": "agent-native-capability-gate",
+      "evidenceStatus": "passed",
+      "proofStatus": "PROVEN",
+      "phase": "agent-phase2-native",
+      "bom": "agent-phase2-native-current-worktree",
+      "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+      "gate": "agent-native-mention-e2e",
+      "sourcePhase": "agent-phase2-native",
+      "sourceBom": "agent-phase2-native-current-worktree",
+      "sourceSpec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+      "sourceGate": "agent-native-mention-e2e",
+      "artifactKind": "acceptance-gate-result",
+      "artifactPath": "tooling/acceptance/reports/logs/agent-native-mention-e2e.log",
+      "sampleEmissionAllowed": false,
+      "traceability": {
+        "status": "complete",
+        "missingFields": [],
+        "reason": "result preserves source artifact Phase/BOM/Spec/Gate traceability",
+        "sourceArtifact": "tooling/acceptance/reports/agent-native/i1.json",
+        "sourceArtifactKind": "agent-native-capability-gate",
+        "sourcePhase": "agent-phase2-native",
+        "sourceBom": "agent-phase2-native-current-worktree",
+        "sourceSpec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+        "sourceGate": "agent-native-mention-e2e"
+      }
+    },
+    {
+      "id": "agent-native-knowledge-binding-e2e",
+      "command": "python3 tooling/acceptance/gates/agent/agent_native_gate.py --capability C6",
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 1.644,
+      "log": "tooling/acceptance/reports/logs/agent-native-knowledge-binding-e2e.log",
+      "evidenceArtifacts": [
+        {
+          "path": "tooling/acceptance/reports/agent-native/c6.json",
+          "artifactKind": "agent-native-capability-gate",
+          "status": "passed",
+          "proofStatus": "PROVEN",
+          "phase": "agent-phase2-native",
+          "bom": "agent-phase2-native-current-worktree",
+          "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+          "gate": "agent-native-knowledge-binding-e2e"
+        }
+      ],
+      "sourceArtifact": "tooling/acceptance/reports/agent-native/c6.json",
+      "sourceArtifactKind": "agent-native-capability-gate",
+      "evidenceStatus": "passed",
+      "proofStatus": "PROVEN",
+      "phase": "agent-phase2-native",
+      "bom": "agent-phase2-native-current-worktree",
+      "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+      "gate": "agent-native-knowledge-binding-e2e",
+      "sourcePhase": "agent-phase2-native",
+      "sourceBom": "agent-phase2-native-current-worktree",
+      "sourceSpec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+      "sourceGate": "agent-native-knowledge-binding-e2e",
+      "artifactKind": "acceptance-gate-result",
+      "artifactPath": "tooling/acceptance/reports/logs/agent-native-knowledge-binding-e2e.log",
+      "sampleEmissionAllowed": false,
+      "traceability": {
+        "status": "complete",
+        "missingFields": [],
+        "reason": "result preserves source artifact Phase/BOM/Spec/Gate traceability",
+        "sourceArtifact": "tooling/acceptance/reports/agent-native/c6.json",
+        "sourceArtifactKind": "agent-native-capability-gate",
+        "sourcePhase": "agent-phase2-native",
+        "sourceBom": "agent-phase2-native-current-worktree",
+        "sourceSpec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+        "sourceGate": "agent-native-knowledge-binding-e2e"
+      }
+    },
+    {
+      "id": "agent-native-connector-lifecycle-e2e",
+      "command": "python3 tooling/acceptance/gates/agent/agent_native_gate.py --capability C7",
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.818,
+      "log": "tooling/acceptance/reports/logs/agent-native-connector-lifecycle-e2e.log",
+      "evidenceArtifacts": [
+        {
+          "path": "tooling/acceptance/reports/agent-native/c7.json",
+          "artifactKind": "agent-native-capability-gate",
+          "status": "passed",
+          "proofStatus": "PROVEN",
+          "phase": "agent-phase2-native",
+          "bom": "agent-phase2-native-current-worktree",
+          "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+          "gate": "agent-native-connector-lifecycle-e2e"
+        }
+      ],
+      "sourceArtifact": "tooling/acceptance/reports/agent-native/c7.json",
+      "sourceArtifactKind": "agent-native-capability-gate",
+      "evidenceStatus": "passed",
+      "proofStatus": "PROVEN",
+      "phase": "agent-phase2-native",
+      "bom": "agent-phase2-native-current-worktree",
+      "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+      "gate": "agent-native-connector-lifecycle-e2e",
+      "sourcePhase": "agent-phase2-native",
+      "sourceBom": "agent-phase2-native-current-worktree",
+      "sourceSpec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+      "sourceGate": "agent-native-connector-lifecycle-e2e",
+      "artifactKind": "acceptance-gate-result",
+      "artifactPath": "tooling/acceptance/reports/logs/agent-native-connector-lifecycle-e2e.log",
+      "sampleEmissionAllowed": false,
+      "traceability": {
+        "status": "complete",
+        "missingFields": [],
+        "reason": "result preserves source artifact Phase/BOM/Spec/Gate traceability",
+        "sourceArtifact": "tooling/acceptance/reports/agent-native/c7.json",
+        "sourceArtifactKind": "agent-native-capability-gate",
+        "sourcePhase": "agent-phase2-native",
+        "sourceBom": "agent-phase2-native-current-worktree",
+        "sourceSpec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+        "sourceGate": "agent-native-connector-lifecycle-e2e"
+      }
+    },
+    {
+      "id": "agent-native-message-forward-e2e",
+      "command": "python3 tooling/acceptance/gates/agent/agent_native_gate.py --capability R9",
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 10.885,
+      "log": "tooling/acceptance/reports/logs/agent-native-message-forward-e2e.log",
+      "evidenceArtifacts": [
+        {
+          "path": "tooling/acceptance/reports/agent-native/r9.json",
+          "artifactKind": "agent-native-capability-gate",
+          "status": "passed",
+          "proofStatus": "PROVEN",
+          "phase": "agent-phase2-native",
+          "bom": "agent-phase2-native-current-worktree",
+          "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+          "gate": "agent-native-message-forward-e2e"
+        }
+      ],
+      "sourceArtifact": "tooling/acceptance/reports/agent-native/r9.json",
+      "sourceArtifactKind": "agent-native-capability-gate",
+      "evidenceStatus": "passed",
+      "proofStatus": "PROVEN",
+      "phase": "agent-phase2-native",
+      "bom": "agent-phase2-native-current-worktree",
+      "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+      "gate": "agent-native-message-forward-e2e",
+      "sourcePhase": "agent-phase2-native",
+      "sourceBom": "agent-phase2-native-current-worktree",
+      "sourceSpec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+      "sourceGate": "agent-native-message-forward-e2e",
+      "artifactKind": "acceptance-gate-result",
+      "artifactPath": "tooling/acceptance/reports/logs/agent-native-message-forward-e2e.log",
+      "sampleEmissionAllowed": false,
+      "traceability": {
+        "status": "complete",
+        "missingFields": [],
+        "reason": "result preserves source artifact Phase/BOM/Spec/Gate traceability",
+        "sourceArtifact": "tooling/acceptance/reports/agent-native/r9.json",
+        "sourceArtifactKind": "agent-native-capability-gate",
+        "sourcePhase": "agent-phase2-native",
+        "sourceBom": "agent-phase2-native-current-worktree",
+        "sourceSpec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+        "sourceGate": "agent-native-message-forward-e2e"
+      }
+    },
+    {
+      "id": "agent-native-portal-navigation-e2e",
+      "command": "python3 tooling/acceptance/gates/agent/agent_native_gate.py --capability P2",
+      "environment": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 0.698,
+      "log": "tooling/acceptance/reports/logs/agent-native-portal-navigation-e2e.log",
+      "evidenceArtifacts": [
+        {
+          "path": "tooling/acceptance/reports/agent-native/p2.json",
+          "artifactKind": "agent-native-capability-gate",
+          "status": "passed",
+          "proofStatus": "PROVEN",
+          "phase": "agent-phase2-native",
+          "bom": "agent-phase2-native-current-worktree",
+          "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+          "gate": "agent-native-portal-navigation-e2e"
+        }
+      ],
+      "sourceArtifact": "tooling/acceptance/reports/agent-native/p2.json",
+      "sourceArtifactKind": "agent-native-capability-gate",
+      "evidenceStatus": "passed",
+      "proofStatus": "PROVEN",
+      "phase": "agent-phase2-native",
+      "bom": "agent-phase2-native-current-worktree",
+      "spec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+      "gate": "agent-native-portal-navigation-e2e",
+      "sourcePhase": "agent-phase2-native",
+      "sourceBom": "agent-phase2-native-current-worktree",
+      "sourceSpec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+      "sourceGate": "agent-native-portal-navigation-e2e",
+      "artifactKind": "acceptance-gate-result",
+      "artifactPath": "tooling/acceptance/reports/logs/agent-native-portal-navigation-e2e.log",
+      "sampleEmissionAllowed": false,
+      "traceability": {
+        "status": "complete",
+        "missingFields": [],
+        "reason": "result preserves source artifact Phase/BOM/Spec/Gate traceability",
+        "sourceArtifact": "tooling/acceptance/reports/agent-native/p2.json",
+        "sourceArtifactKind": "agent-native-capability-gate",
+        "sourcePhase": "agent-phase2-native",
+        "sourceBom": "agent-phase2-native-current-worktree",
+        "sourceSpec": "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md",
+        "sourceGate": "agent-native-portal-navigation-e2e"
+      }
+    }
+  ],
+  "sourcePhases": [
+    "agent-phase2-native"
+  ],
+  "sourceBom": [
+    "agent-phase2-native-current-worktree"
+  ],
+  "sourceSpec": [
+    "docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md"
+  ],
+  "sourceGates": [
+    "agent-native-mention-e2e",
+    "agent-native-knowledge-binding-e2e",
+    "agent-native-connector-lifecycle-e2e",
+    "agent-native-message-forward-e2e",
+    "agent-native-portal-navigation-e2e"
+  ]
+}

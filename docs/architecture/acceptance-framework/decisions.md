@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-18
+> **Created**: 2026-06-03 | **Updated**: 2026-08-23
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -24,6 +24,7 @@
 | D-10 | Gap Detector 作为跨阶段只读守卫 | proposed |
 | D-11 | Runtime Evidence Store 位于 source tree 之外 | accepted |
 | D-12 | Acceptance Infra 与业务注入使用独立责任平面 | accepted |
+| D-13 | Evidence role applicability 由 runtime matrix row 显式定义 | accepted |
 
 ---
 
@@ -561,3 +562,90 @@ Infra readiness 只消费 `acceptance_core_self_validation`。方向为
 
 若某项能力无法明确归入 Infra contract 或业务注入，必须先形成 ownership decision；
 不得以“代码位于 `tooling/acceptance/`”为由默认归属 Infra。
+
+---
+
+## D-13: Evidence Role Applicability 由 Runtime Matrix Row 显式定义
+
+**Status**: accepted
+**Date**: 2026-08-23 | **Accepted**: 2026-08-23
+
+### Context
+
+Modern Chat Agent Foundation Gate 的 419 个 tuple 同时覆盖 Desktop Native、
+Browser、Mobile contract、Station D11 guard 与能力不广告场景。当前 Gate-level
+`required_artifact_roles` 被 validator 解释为“每个 role 必须对每个 tuple 产生一条
+observation”。
+
+该语义与 matrix 的 runtime cell 冲突：
+
+- `mobile_contract / contract_only` 没有 DOM，却被要求产生带
+  `selector + visible` 的 `receiver-dom` observation；
+- `station_web_rust / orchestration_guard` 没有 receiver DOM，也没有普通 Agent
+  Turn 的 Station readback/runtime event；
+- 为满足 schema 而伪造 DOM selector、Turn 或 runtime event 会把结构完整性冒充
+  产品证据。
+
+### Decision
+
+Runtime matrix 的每个 row 必须显式声明 evidence role applicability：
+
+```yaml
+runtime_attestation_profile: direct_runtime
+role_policy:
+  always: [cell-results, runtime-attestation-set, cleanup]
+  required: [receiver-dom, station-readback, runtime-events]
+  not_applicable: [contract-evidence, guard-report]
+```
+
+约束：
+
+1. Gate-level roles 是所有 row applicable roles 的并集，不再表示 role × tuple
+   全笛卡尔积。
+2. `cell-results` 与 `runtime-attestation-set` 始终覆盖 Gate 的全部 tuple。
+3. 其它 role artifact 只覆盖声明其 `required` 的 tuple，并且
+   `runtimeAttestationRefs`、`scenarioIds`、`sampleCount` 必须等于该子集。
+4. `mobile_contract` 使用 `contract-evidence`，不得生成 `receiver-dom`。
+5. `orchestration_guard` 使用 `guard-report`，不得生成虚构 Turn/DOM。
+6. Desktop/Browser 的用户可见 cell 继续要求 `receiver-dom`；Station-owned
+   runtime cell 继续要求 `station-readback` 与真实 runtime event。
+7. 未声明的 role/cell 组合 fail closed；`not_applicable` 不是 skip，也必须由
+   matrix contract 明确记录。
+8. `runtime-attestation-set` 覆盖全部 tuple，但 row 必须声明 payload profile：
+   `direct_runtime`、`contract_only`、`orchestration_guard` 或
+   `non_advertised`。只有 `direct_runtime` 可要求 conversation/Turn/ToolCall/
+   client-session 全绑定；其它 profile 使用各自真实 contract、guard 或
+   capability-inventory identity，禁止补造业务对象。
+
+### Rationale
+
+Role applicability 属于被评审 matrix 的证明拓扑。把它显式化后，validator 仍能要求
+每个 tuple 有完整适用证据，同时不会强迫无该 surface 的 runtime 伪造证据。
+
+### Alternatives Considered
+
+- 所有 role 覆盖所有 tuple：拒绝，会要求 contract-only 和 guard cell 伪造 DOM、
+  Turn 与 runtime event。
+- 把 Foundation 拆成五个独立 Gates：可行但增加 Gate/proof-set/发布原子性，并使
+  C01-C10 的单一 advancement decision 更复杂。
+- 将 `receiver-dom` 解释为任意可见/静态证据：拒绝，会破坏角色名称、schema 与
+  receiver-proof 语义。
+
+### Consequences
+
+正面：
+
+- Mobile contract、D11 与不广告场景可以使用与事实源匹配的 evidence role；
+- validator 可精确检查 tuple 子集覆盖，避免 silent skip；
+- Desktop/Browser Native DOM 要求不被弱化。
+
+负面：
+
+- runtime matrix、contract schema、candidate producer、validator 和测试必须原子更新；
+- 新增 role 需要显式 schema；在 Owner 批准具体 schema 版本前不得修改版本号；
+- historical candidate manifest 不再满足新 role-policy contract。
+
+### Review / Reversal Trigger
+
+若所有 runtime cell 最终都具备同一种真实 receiver surface，可重新评估统一 role；
+不得通过 role 名称泛化或伪造 observation 规避 row-scoped applicability。

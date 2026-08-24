@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 LOCAL_DEV_DIR="$PROJECT_ROOT/.local/dev"
+source "$SCRIPT_DIR/redact-env.sh"
 
 WORKTREE_ID="$(basename "$PROJECT_ROOT")"
 ACTIVE_DIR="$LOCAL_DEV_DIR/active"
@@ -29,5 +30,5 @@ else
 fi
 echo ""
 echo "Configuration:"
-grep -v '^#' "$PROFILE_FILE" | grep -v '^$' | sed 's/^/  /'
+print_redacted_env_file "$PROFILE_FILE" | sed 's/^/  /'
 echo ""

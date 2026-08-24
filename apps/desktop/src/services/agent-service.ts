@@ -79,7 +79,7 @@ export class AgentService {
     comment?: string,
   ): Promise<void> {
     const { submitAgentFeedback } = await import('./desktop_api');
-    return submitAgentFeedback(agentId, turnId, conversationId, signal, comment);
+    await submitAgentFeedback(agentId, turnId, conversationId, signal, comment);
   }
 
   async startScheduler(agentId: string): Promise<void> {

@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from tooling.acceptance.core import (
     BlockedError,
+    CredentialRef,
     EnvironmentContract,
     EnvironmentProvisioner,
     ProvisioningError,
@@ -97,6 +98,43 @@ class ProfileResolutionTests(unittest.TestCase):
 
 
 class ProvisionerBlockingTests(unittest.TestCase):
+    @staticmethod
+    def _station_attestation(commit: str = "abc1234") -> StationAttestation:
+        return StationAttestation(
+            environment_id="home-station",
+            url="http://station.example:18080",
+            live_commit=commit,
+            workspace_digest="clean",
+            proto_digest="proto-digest",
+            artifact_ref={
+                "artifactKind": "acceptance-artifact-ref",
+                "workspaceId": "0" * 16,
+                "gateId": "agent-v2-kernel-foundation-e2e",
+                "runId": "20260817T000000000000Z-" + "0" * 32,
+                "path": "runtime/attestation.json",
+                "sha256": "0" * 64,
+                "mediaType": "application/json",
+            },
+            produced_at="2026-08-16T00:00:00+00:00",
+        )
+
+    @staticmethod
+    def _one_profile() -> tuple[str, Path, int, dict[str, str]]:
+        return (
+            "one",
+            Path("/tmp/one.env"),
+            1,
+            {
+                "PT_DEV_PROFILE": "one",
+                "PT_DEV_SLOT": "1",
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_URL": "http://station.example:18080",
+                "PT_STATION_DEPLOY_ENV": "station-1",
+                "PT_DESKTOP_APP_GATEWAY_PORT": "23030",
+                "PT_DESKTOP_APP_WEB_PORT": "23210",
+            },
+        )
+
     def test_native_clients_receive_distinct_webdriver_ports(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
@@ -262,6 +300,268 @@ class ProvisionerBlockingTests(unittest.TestCase):
 
         self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
         self.assertIn("reset", manifest.blocked_reason.lower())
+
+    def test_agent_v2_foundation_provisions_reference_only_native_manifest(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        attestation = self._station_attestation()
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=self._one_profile(),
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="clean",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+            return_value=True,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.produce_station_attestation",
+            return_value=attestation,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.source_proto_digest",
+            return_value="proto-digest",
+        ), patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ) as profile_lease, patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ) as source_lease, patch.object(
+            CredentialRef,
+            "resolve",
+            side_effect=AssertionError("credential values must not be resolved"),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.subprocess.run",
+            side_effect=AssertionError("runtime startup is not provisioning"),
+        ), patch.dict(
+            "os.environ",
+            {
+                "PT_AGENT_V2_NATIVE_WEBDRIVER_PORT": "24445",
+            },
+            clear=True,
+        ):
+            manifest = provisioner.provision(
+                "agent-v2-kernel-foundation-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        self.assertEqual(manifest.profile_resolved, "one")
+        self.assertEqual(manifest.station, attestation)
+        self.assertEqual(
+            manifest.credential_refs,
+            (
+                "profile:PT_AGENT_PROVIDER_API_KEY",
+                "profile:PT_AGENT_DEFAULT_MODEL_ID",
+            ),
+        )
+        self.assertEqual(len(manifest.clients), 1)
+        client = manifest.clients[0]
+        self.assertEqual(client.actor, "agent-primary")
+        self.assertEqual(client.runtime, "native-tauri")
+        self.assertEqual(client.gateway_port, 23030)
+        self.assertEqual(client.renderer_port, 23210)
+        self.assertEqual(client.webdriver_port, 24445)
+        self.assertIn(manifest.run_id, client.profile)
+        self.assertIn(manifest.run_id, client.storage_root)
+        self.assertTrue(manifest.cleanup_registered)
+        self.assertEqual(
+            manifest.cleanup_resources,
+            ("processes", "ports", "storage", "sessions"),
+        )
+        serialized = str(manifest.to_dict())
+        self.assertNotIn("credential values must not be resolved", serialized)
+        profile_lease.assert_called_once_with(
+            "station-1",
+            f"acceptance:agent-v2-kernel-foundation-e2e:{manifest.run_id}",
+        )
+        source_lease.assert_called_once_with(
+            "station-1",
+            f"acceptance:agent-v2-kernel-foundation-e2e:{manifest.run_id}",
+        )
+        self.assertEqual(
+            provisioner.cleanup(),
+            (f"client-storage:/tmp/pt-agent-v2-{manifest.run_id}",),
+        )
+
+    def test_agent_v2_foundation_requires_one_remote_profile(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        profile = self._one_profile()
+        wrong_profile = ("Other", profile[1], profile[2], profile[3])
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=wrong_profile,
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="clean",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+        ) as station_ready, patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ) as profile_lease:
+            manifest = provisioner.provision(
+                "agent-v2-kernel-foundation-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
+        self.assertEqual(manifest.blocked_resource, "profile:required:one")
+        station_ready.assert_not_called()
+        profile_lease.assert_not_called()
+
+    def test_agent_v2_foundation_rejects_local_station_mode(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        profile_name, profile_path, slot, profile_env = self._one_profile()
+        local_profile = (
+            profile_name,
+            profile_path,
+            slot,
+            {**profile_env, "PT_STATION_MODE": "local"},
+        )
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=local_profile,
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="clean",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+        ) as station_ready, patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ) as profile_lease:
+            manifest = provisioner.provision(
+                "agent-v2-kernel-foundation-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
+        self.assertEqual(
+            manifest.blocked_resource,
+            "profile:PT_STATION_MODE",
+        )
+        station_ready.assert_not_called()
+        profile_lease.assert_not_called()
+
+    def test_agent_v2_foundation_source_mismatch_blocks_before_clients(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=self._one_profile(),
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="clean",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+            return_value=True,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.produce_station_attestation",
+            return_value=self._station_attestation("different-commit"),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.source_proto_digest",
+            return_value="proto-digest",
+        ), patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ), patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ), patch.object(
+            provisioner,
+            "_agent_v2_foundation_client",
+        ) as allocate_client:
+            manifest = provisioner.provision(
+                "agent-v2-kernel-foundation-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
+        self.assertEqual(manifest.blocked_resource, "source-identity:commit")
+        allocate_client.assert_not_called()
+
+    def test_agent_v2_foundation_dirty_source_blocks_before_clients(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=self._one_profile(),
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="sha256:dirty-source",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+            return_value=True,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.produce_station_attestation",
+            return_value=self._station_attestation(),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.source_proto_digest",
+            return_value="proto-digest",
+        ), patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ), patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ), patch.object(
+            provisioner,
+            "_agent_v2_foundation_client",
+        ) as allocate_client:
+            manifest = provisioner.provision(
+                "agent-v2-kernel-foundation-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
+        self.assertEqual(
+            manifest.blocked_resource,
+            "source-identity:workspace",
+        )
+        allocate_client.assert_not_called()
 
 
 if __name__ == "__main__":

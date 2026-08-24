@@ -374,7 +374,7 @@ func (s *SkillService) DeleteSkillByID(ctx context.Context, agentID, skillID str
 // BuildSkillIndex generates a system prompt skills index block with
 // conditional activation filtering based on platform and tool availability.
 // Returns the formatted index string, the count of activated skills, and any error.
-func (s *SkillService) BuildSkillIndex(ctx context.Context, agentID, platform string, availableTools []string) (string, int, error) {
+func (s *SkillService) BuildSkillIndex(ctx context.Context, agentID string, availableTools []string) (string, int, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		logger.Errorf(ctx, "skill index build failed (db): agent_id=%s, err=%v", agentID, err)
@@ -410,7 +410,7 @@ func (s *SkillService) BuildSkillIndex(ctx context.Context, agentID, platform st
 	for _, row := range rows {
 		manifest := s.toManifest(&row)
 
-		if !s.matchesPlatform(manifest.Platforms, platform) {
+		if len(manifest.Platforms) > 0 {
 			continue
 		}
 
@@ -626,22 +626,6 @@ func (s *SkillService) fuzzyFind(content, target string) int {
 	}
 
 	return -1
-}
-
-// matchesPlatform returns true if the skill should be active on the given platform.
-// An empty platforms list means the skill is available on all platforms.
-func (s *SkillService) matchesPlatform(platforms []string, current string) bool {
-	if len(platforms) == 0 {
-		return true
-	}
-
-	for _, p := range platforms {
-		if strings.EqualFold(p, current) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // isFallbackSatisfied returns true if all fallback tools are already available,

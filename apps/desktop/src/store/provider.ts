@@ -47,11 +47,11 @@ interface ProviderState {
   refreshAfterMutation: (providerId?: string) => Promise<void>;
 }
 
-export function deriveProviderReadiness(provider: ProviderListItem): ProviderReadiness {
-  if (!provider.enabled || provider.credential_status === 'cli_not_installed') {
+export function mapProviderUIStatus(provider: ProviderListItem): ProviderReadiness {
+  if (!provider.enabled) {
     return { status: 'unavailable' };
   }
-  if (provider.runtime_kind === 'direct' && provider.requires_api_key && !provider.has_api_key) {
+  if (provider.requires_api_key && !provider.has_api_key) {
     return { status: 'unconfigured' };
   }
   return { status: 'ready' };
@@ -73,7 +73,7 @@ export const useProviderStore = createDesktopStore<ProviderState>('provider', (s
       set({
         providers,
         loading: false,
-        readinessById: Object.fromEntries(providers.map((provider) => [provider.id, deriveProviderReadiness(provider)])),
+        readinessById: Object.fromEntries(providers.map((provider) => [provider.id, mapProviderUIStatus(provider)])),
       });
       if (!get().selectedId && providers.length > 0) {
         void get().selectProvider(providers[0].id);

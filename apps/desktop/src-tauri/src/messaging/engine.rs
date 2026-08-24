@@ -238,6 +238,10 @@ impl MessagingEngine {
         &self.endpoint
     }
 
+    pub fn actor_device_identity(&self) -> Arc<ActorDeviceIdentity> {
+        self.mls_manager.actor_identity()
+    }
+
     pub fn store(&self) -> &MessagingStore {
         self.store.as_ref()
     }

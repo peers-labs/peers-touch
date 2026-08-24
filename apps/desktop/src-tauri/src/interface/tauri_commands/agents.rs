@@ -154,16 +154,6 @@ pub fn agents_search(
 }
 
 #[tauri::command]
-pub fn agents_list_sessions(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-    input: AgentIdInput,
-) -> AppResult<StubPayload> {
-    let actor_id = actor_id_for_cmd(&state, &window);
-    application_agents::agents_list_sessions(&actor_id, input)
-}
-
-#[tauri::command]
 pub fn agent_workspace_info(input: AgentWorkspaceInfoInput) -> AppResult<StubPayload> {
     let agent_id = input.agent_id.trim();
     if agent_id.is_empty() {

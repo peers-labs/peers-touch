@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 )
 
 func TestEmitTurnEventAppliesTurnContext(t *testing.T) {
@@ -36,12 +39,138 @@ func TestEmitTurnEventAppliesTurnContext(t *testing.T) {
 	}
 }
 
+func TestEmitTurnEventPersistsWithoutLiveSink(t *testing.T) {
+	db := openConversationAuthorityDB(t, "turn_event_without_sink")
+	now := time.Now()
+	if err := db.Create(&persistence.Conversation{
+		ID:        "conv_persisted",
+		AgentID:   "agent_1",
+		Ptid:      "actor_1",
+		Title:     "Persisted events",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             "turn_persisted",
+		ConversationID: "conv_persisted",
+		AgentID:        "agent_1",
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed turn: %v", err)
+	}
+
+	svc := TurnService{convService: NewConversationService()}
+	svc.emitTurnEvent(context.Background(), &TurnConfig{
+		AgentID:        "agent_1",
+		ConversationID: "conv_persisted",
+	}, "turn_persisted", TurnEvent{
+		Type:  "progress",
+		Stage: "waiting_local_tool",
+	})
+
+	var event persistence.TurnEvent
+	if err := db.First(&event, "turn_id = ?", "turn_persisted").Error; err != nil {
+		t.Fatalf("load persisted turn event: %v", err)
+	}
+	if event.EventType != "progress" {
+		t.Fatalf("expected progress event, got %q", event.EventType)
+	}
+}
+
+func TestTurnServiceSaveTurnTraceUpsertsByTurn(t *testing.T) {
+	db := openConversationAuthorityDB(t, "turn_trace_upsert")
+	if err := db.AutoMigrate(&persistence.TurnTrace{}); err != nil {
+		t.Fatalf("migrate turn trace: %v", err)
+	}
+	now := time.Now()
+	if err := db.Create(&persistence.Conversation{
+		ID:        "conv_trace",
+		AgentID:   "agent_1",
+		Ptid:      "actor_1",
+		Title:     "Trace",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             "turn_trace",
+		ConversationID: "conv_trace",
+		AgentID:        "agent_1",
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed turn: %v", err)
+	}
+
+	svc := TurnService{}
+	trace := &domain.TurnTrace{
+		TraceID: "trace_1",
+		TurnID:  "turn_trace",
+		ProviderCalls: []domain.ProviderCallRecord{{
+			Provider: "provider_1",
+			Model:    "model_1",
+		}},
+	}
+	if err := svc.saveTurnTrace(context.Background(), trace); err != nil {
+		t.Fatalf("save paused trace: %v", err)
+	}
+	trace.ProviderCalls = append(trace.ProviderCalls, domain.ProviderCallRecord{
+		Provider: "provider_1",
+		Model:    "model_2",
+	})
+	if err := svc.saveTurnTrace(context.Background(), trace); err != nil {
+		t.Fatalf("update resumed trace: %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&persistence.TurnTrace{}).Where("turn_id = ?", trace.TurnID).Count(&count).Error; err != nil {
+		t.Fatalf("count turn traces: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one trace row after resume, got %d", count)
+	}
+	loaded, err := svc.loadTurnTraceForResume(context.Background(), trace.TurnID)
+	if err != nil {
+		t.Fatalf("load resumed trace: %v", err)
+	}
+	if len(loaded.ProviderCalls) != 2 || loaded.ProviderCalls[1].Model != "model_2" {
+		t.Fatalf("expected resumed trace update, got %+v", loaded.ProviderCalls)
+	}
+}
+
+func TestToolDecisionTurnEventCarriesManualApprovalProjection(t *testing.T) {
+	event := toolDecisionTurnEvent(ProposalDecision{
+		ToolCallID:       "tool-call-1",
+		ToolName:         "local_shell_safe",
+		Arguments:        `{"command_ref":"command-1"}`,
+		ApprovalID:       "approval-1",
+		DecisionRevision: 0,
+		Status:           persistence.ToolCallStatusWaitingApproval,
+	}, 2)
+
+	if event.Type != "tool_approval_required" ||
+		event.ToolCallID != "tool-call-1" ||
+		event.ToolName != "local_shell_safe" ||
+		event.Arguments != `{"command_ref":"command-1"}` ||
+		event.ApprovalID != "approval-1" ||
+		event.DecisionRevision != 0 ||
+		event.Iteration != 2 {
+		t.Fatalf("unexpected approval projection: %+v", event)
+	}
+}
+
 func TestCancelTurnCancelsRegisteredExecution(t *testing.T) {
 	svc := TurnService{}
 	ctx, release := svc.RegisterTurn(context.Background(), "turn_1")
 	defer release()
 
-	if !svc.CancelTurn("turn_1") {
+	if !svc.cancelActiveTurn("turn_1") {
 		t.Fatal("expected active turn cancellation to be accepted")
 	}
 	select {
@@ -49,100 +178,7 @@ func TestCancelTurnCancelsRegisteredExecution(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("registered turn context was not cancelled")
 	}
-	if svc.CancelTurn("missing") {
+	if svc.cancelActiveTurn("missing") {
 		t.Fatal("missing turn must not report cancellation success")
-	}
-}
-
-func TestDesktopLocalBuiltinToolUsesLocalBridge(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	events := make(chan TurnEvent, 1)
-	svc := TurnService{localToolBroker: NewLocalToolBroker()}
-	config := &TurnConfig{
-		AgentID:        "agent_1",
-		ConversationID: "conv_1",
-		WorkspaceRoot:  "/workspace/project",
-		EventSink: func(ctx context.Context, event TurnEvent) {
-			if event.Type == "local_tool_request" {
-				events <- event
-			}
-		},
-	}
-
-	resultCh := make(chan struct {
-		content string
-		err     error
-	}, 1)
-	go func() {
-		content, err := svc.executeDesktopLocalBuiltinTool(ctx, config, "turn_1", "call_1", toolCallEntry{
-			ToolName:  "local_file_read",
-			Arguments: `{"path":"README.md"}`,
-		})
-		resultCh <- struct {
-			content string
-			err     error
-		}{content: content, err: err}
-	}()
-
-	var event TurnEvent
-	select {
-	case event = <-events:
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for local tool request")
-	}
-
-	if event.Source != "builtin" {
-		t.Fatalf("expected builtin source, got %q", event.Source)
-	}
-	if event.ToolName != "local_file_read" {
-		t.Fatalf("expected local_file_read request, got %q", event.ToolName)
-	}
-	if event.WorkspaceRoot != "/workspace/project" {
-		t.Fatalf("expected workspace root to be forwarded, got %q", event.WorkspaceRoot)
-	}
-
-	if err := svc.SubmitLocalToolResult(LocalToolResult{
-		TurnID:  "turn_1",
-		CallID:  "call_1",
-		Content: `{"ok":true}`,
-	}); err != nil {
-		t.Fatalf("submit local tool result failed: %v", err)
-	}
-
-	select {
-	case result := <-resultCh:
-		if result.err != nil {
-			t.Fatalf("expected local builtin result, got err %v", result.err)
-		}
-		if result.content != `{"ok":true}` {
-			t.Fatalf("unexpected local builtin result: %s", result.content)
-		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for local builtin result")
-	}
-}
-
-func TestDesktopLocalBuiltinToolRejectsInvalidArguments(t *testing.T) {
-	svc := TurnService{localToolBroker: NewLocalToolBroker()}
-	_, err := svc.executeDesktopLocalBuiltinTool(context.Background(), &TurnConfig{}, "turn_1", "call_1", toolCallEntry{
-		ToolName:  "local_file_read",
-		Arguments: `{`,
-	})
-	if err == nil {
-		t.Fatal("expected invalid JSON arguments error")
-	}
-}
-
-func TestIsDesktopLocalBuiltinTool(t *testing.T) {
-	if !isDesktopLocalBuiltinTool("local_clipboard_read") {
-		t.Fatal("expected clipboard read to be a Desktop local builtin tool")
-	}
-	if !isDesktopLocalBuiltinTool("oauth_connector_call") {
-		t.Fatal("expected OAuth connector call to be a Desktop local builtin tool")
-	}
-	if isDesktopLocalBuiltinTool("memory") {
-		t.Fatal("memory must stay Station-owned")
 	}
 }

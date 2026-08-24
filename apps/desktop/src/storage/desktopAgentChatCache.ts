@@ -34,26 +34,32 @@ export function getDesktopAgentChatCache(): AgentChatCache {
 function toCachedConversation(conversation: {
   conversation_id: string;
   agent_id: string;
-  user_id?: string;
+  ptid: string;
   title: string;
   description?: string;
   provider_id?: string;
   model_name?: string;
   status: string;
   parent_id?: string;
+  active_branch_message_id: string;
+  queued_turn_count: number;
+  version: number;
   created_at: string;
   updated_at: string;
 }): CachedAgentConversation {
   return {
     conversationId: conversation.conversation_id,
     agentId: conversation.agent_id,
-    userId: conversation.user_id,
+    ptid: conversation.ptid,
     title: conversation.title,
     description: conversation.description,
     providerId: conversation.provider_id,
     modelName: conversation.model_name,
     status: conversation.status,
     parentId: conversation.parent_id,
+    activeBranchMessageId: conversation.active_branch_message_id,
+    queuedTurnCount: conversation.queued_turn_count,
+    version: conversation.version,
     createdAt: conversation.created_at,
     updatedAt: conversation.updated_at,
   };
