@@ -597,6 +597,72 @@ class RemoteLinuxCellControlTests(unittest.TestCase):
         }
         return argparse.Namespace(**values)
 
+    def test_adapter_uses_the_cell_dbus_session(self) -> None:
+        args = self._args("adapter", ".cache/runtime")
+        args.operation = "focused_control"
+        args.payload = "e30="
+        commands: list[tuple[str, ...]] = []
+
+        def container_command(_container: str, *command: str, **_kwargs):
+            commands.append(command)
+            if command[:3] == ("sed", "-n", "1p"):
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout="unix:path=/workspace/run/dbus.sock\n",
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout="{}\n",
+                stderr="",
+            )
+
+        with patch.object(
+            remote_control,
+            "_owned_lease",
+            return_value=(Path("/tmp/lease.json"), {}),
+        ), patch.object(
+            remote_control,
+            "_container_command",
+            side_effect=container_command,
+        ), patch("sys.stdout"):
+            self.assertEqual(remote_control.adapter(args), 0)
+
+        adapter_command = commands[1]
+        self.assertIn(
+            "DBUS_SESSION_BUS_ADDRESS=unix:path=/workspace/run/dbus.sock",
+            adapter_command,
+        )
+        self.assertIn("NO_AT_BRIDGE=0", adapter_command)
+        self.assertIn("PYTHONPATH=/workspace/source", adapter_command)
+
+    def test_adapter_fails_when_cell_dbus_session_is_missing(self) -> None:
+        args = self._args("adapter", ".cache/runtime")
+        args.operation = "focused_control"
+        args.payload = "e30="
+
+        with patch.object(
+            remote_control,
+            "_owned_lease",
+            return_value=(Path("/tmp/lease.json"), {}),
+        ), patch.object(
+            remote_control,
+            "_container_command",
+            return_value=subprocess.CompletedProcess(
+                args=(),
+                returncode=0,
+                stdout="",
+                stderr="",
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "D-Bus session address is unavailable",
+            ):
+                remote_control.adapter(args)
+
     def test_actor_start_allocates_isolated_process_storage_and_ports(
         self,
     ) -> None:

@@ -495,7 +495,7 @@ committed to this plan.
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Chat runner receives `NativeDesktopRuntimeBinding`, `TauriSession` and `NativeDesktopAdapter`; local launcher/platform factory dependencies are deleted; required assertions, journey order and 3600-second timeout remain locked; Acceptance Core 230/230, Chat static 38/38 and runner 20/20 PASS |
-| NDR-W7 Linux MP-W13 proof | in progress | First Linux product run `20260824T153618898326Z-2a723885a7b6504fbae9d9aaded20735` reached Alice Native launch and failed before product assertions because the orchestrator-local reaction Fixture endpoint was not exposed to the remote cell; cleanup passed. Runtime-owned explicit endpoint lease and SSH reverse-forward remediation is implemented and locally/remote-probe verified; exact-source rerun pending |
+| NDR-W7 Linux MP-W13 proof | in progress | Run `20260824T153618898326Z-2a723885a7b6504fbae9d9aaded20735` exposed missing orchestrator endpoint routing. Commit `8d92de4ae` added an explicit runtime-owned reverse-forward lease; run `20260824T161349349172Z-c593b2e55dc650a9787b3f5e89143534` then completed Alice/Bob login and reached the first UI action, where the formal adapter process lacked the cell D-Bus address required by AT-SPI. Both runs cleaned actors, endpoints, ports and storage; D-Bus environment remediation and exact-source rerun are pending |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
@@ -546,6 +546,13 @@ Evidence before the exact-source rerun:
 - Chat Native product static suite: 38/38 PASS.
 - Acceptance runner tests: 20/20 PASS.
 - Real SSH reverse-forward read and release probe: PASS.
+
+The next unchanged Gate run reached both Alice and Bob Native clients, proving
+the endpoint route, then stopped at `group.create.ui` before its product
+assertion. The formal adapter command did not inherit the run-owned
+`DBUS_SESSION_BUS_ADDRESS`, even though the successful cell preflight probe
+explicitly loaded the same address. The remediation reuses `dbus.state` for
+every adapter operation and fails closed when that state is absent.
 
 ## 13. Final Readiness Gate
 
