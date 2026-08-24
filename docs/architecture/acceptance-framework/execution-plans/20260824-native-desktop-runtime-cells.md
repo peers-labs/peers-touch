@@ -300,6 +300,8 @@ Deliver:
 - Repair product defects exposed by the unchanged Gate at their owning layer.
   In particular, active reaction mutation and recovery controls must suppress
   the generic message action overlay so retry remains directly actionable.
+- Keep native file-chooser navigation platform-owned: macOS uses the Finder
+  location shortcut, while Linux uses the GTK/Zenity location shortcut.
 - Preserve screenshots, DOM, native diagnostics, attachment byte/count ledger,
   restart evidence and cleanup audit.
 
@@ -309,6 +311,11 @@ Targets:
 - `apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx`
 - `apps/desktop/src/components/chat/message/messageReactionState.ts`
 - `apps/desktop/src/components/chat/message/messageReactionState.test.ts`
+- `tooling/acceptance/drivers/native/base.py`
+- `tooling/acceptance/drivers/native/macos.py`
+- `tooling/acceptance/drivers/native/linux_x11.py`
+- `tooling/acceptance/drivers/native/runtime.py`
+- `tooling/acceptance/gates/chat/native_product_closure_runner.py`
 
 Evidence:
 
@@ -505,7 +512,7 @@ committed to this plan.
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Chat runner receives `NativeDesktopRuntimeBinding`, `TauriSession` and `NativeDesktopAdapter`; local launcher/platform factory dependencies are deleted; required assertions, journey order and 3600-second timeout remain locked; Acceptance Core 230/230, Chat static 38/38 and runner 20/20 PASS |
-| NDR-W7 Linux MP-W13 proof | in progress | Exact-source run `20260824T203806612982Z-b8d5dab4b1eea8bcf6f3d8a7c88c7b28` proved source/runtime identity and reached reaction failure recovery, where the generic hover action overlay could occlude the retry control. The Desktop owner fix suppresses that overlay during active reaction mutation; exact-source Linux rerun remains required. All runs cleaned actors, endpoint leases, ports and storage |
+| NDR-W7 Linux MP-W13 proof | in progress | Exact-source run `20260824T210747163196Z-405dfb06c0469c5edd11879266059514` first reached `transcript_thread` after the reaction owner fix; diagnostic run `20260824T211742109650Z-6e9c3a6eb67c5eff955ed9ce6d22c8cc` then proved thread, toolbar, reaction recovery, avatars and Station attribution before exposing the macOS-only chooser location shortcut on GTK/Zenity. The platform mechanic now belongs to `NativeDesktopAdapter`; exact-source Linux rerun remains required. All runs cleaned actors, endpoint leases, ports and storage |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
@@ -573,6 +580,20 @@ The Chat runner remains platform-neutral. The following exact-source cell
 preflight also exposed a transient actor-directory cleanup race after process
 termination; cleanup now retries bounded `EBUSY`/`ENOTEMPTY` failures and still
 fails closed when the directory remains.
+
+Exact-source run
+`20260824T210747163196Z-405dfb06c0469c5edd11879266059514`
+proved that the reaction recovery overlay repair advanced the Gate to
+`transcript_thread`, where a transient native click was not acknowledged.
+Diagnostic rerun
+`20260824T211742109650Z-6e9c3a6eb67c5eff955ed9ce6d22c8cc`
+proved the Reply path and all product assertions through Station attribution,
+then reached the native Settings image chooser. The chooser was detected, but
+the Gate timed out waiting for a location text field after sending the
+macOS-only `Primary+Shift+G` shortcut. The adapter contract now owns the semantic
+`reveal_file_chooser_location` operation: macOS preserves
+`Primary+Shift+G`, while Linux and Remote Linux use GTK/Zenity `Primary+G`.
+The Chat Gate remains platform-neutral and its chooser assertions are unchanged.
 
 ## 13. Final Readiness Gate
 

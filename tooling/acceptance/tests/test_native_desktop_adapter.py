@@ -62,6 +62,9 @@ class SyntheticNativeDesktopAdapter(NativeDesktopAdapter):
     ) -> None:
         return None
 
+    def reveal_file_chooser_location(self) -> None:
+        return None
+
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         return NativeControlSnapshot()
 
@@ -304,6 +307,7 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
             text="value",
             private_source=True,
         )
+        adapter.reveal_file_chooser_location()
         control = adapter.focused_control(42)
         stack = adapter.window_stack_at_point((10.5, 20.5))
         with tempfile.TemporaryDirectory() as tmp:
@@ -322,6 +326,7 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
             [
                 "activate_process",
                 "post_mouse",
+                "post_key",
                 "post_key",
                 "focused_control",
                 "window_stack_at_point",
@@ -493,6 +498,15 @@ class MacOSNativeDesktopAdapterTests(unittest.TestCase):
         self.assertEqual(
             macos._MODIFIER_CODES[NativeModifier.SHIFT],
             (56, 0x00020000),
+        )
+
+    def test_file_chooser_location_uses_macos_go_to_folder_shortcut(self) -> None:
+        with patch.object(self.adapter, "post_key") as post_key:
+            self.adapter.reveal_file_chooser_location()
+
+        post_key.assert_called_once_with(
+            NativeKey.G,
+            modifiers=(NativeModifier.PRIMARY, NativeModifier.SHIFT),
         )
 
     def test_process_operations_reject_invalid_pid(self) -> None:
