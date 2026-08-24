@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
 RUNNER = ROOT / "tooling/acceptance/gates/chat/native_product_closure_runner.py"
+MACOS_ADAPTER = ROOT / "tooling/acceptance/drivers/native/macos.py"
 DESKTOP_MAIN = ROOT / "apps/desktop/src-tauri/src/main.rs"
 DESKTOP_CARGO = ROOT / "apps/desktop/src-tauri/Cargo.toml"
 MESSAGE_ACTION_OVERLAY = (
@@ -35,6 +36,7 @@ HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
 class NativeProductClosureStaticTests(unittest.TestCase):
     def setUp(self) -> None:
         self.source = RUNNER.read_text(encoding="utf-8")
+        self.macos_adapter = MACOS_ADAPTER.read_text(encoding="utf-8")
         self.desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
         self.desktop_cargo = DESKTOP_CARGO.read_text(encoding="utf-8")
         self.message_action_overlay = MESSAGE_ACTION_OVERLAY.read_text(
@@ -66,6 +68,36 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn("load_runtime_manifest", self.source)
         self.assertIn("PT_ACCEPTANCE_RUNTIME_MANIFEST", self.source)
+
+    def test_chat_gates_contain_no_platform_native_implementation(self) -> None:
+        forbidden = (
+            "AppKit",
+            "Quartz",
+            "CoreGraphics",
+            "ApplicationServices",
+            "CGEvent",
+            "CGWindow",
+            "AXUIElement",
+            "NSRunningApplication",
+            "osascript",
+            "System Events",
+            "pbcopy",
+            "pbpaste",
+        )
+        gate_root = RUNNER.parent
+        offenders = {
+            str(path.relative_to(ROOT)): [
+                marker
+                for marker in forbidden
+                if marker in path.read_text(encoding="utf-8")
+            ]
+            for path in gate_root.glob("*.py")
+            if not path.name.endswith("_test.py")
+        }
+        self.assertEqual(
+            {path: markers for path, markers in offenders.items() if markers},
+            {},
+        )
 
     def test_harness_is_bootstrap_only(self) -> None:
         methods: list[str] = []
@@ -104,9 +136,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "UselessFileDetector",
         ):
             self.assertNotIn(forbidden, self.source)
-        self.assertIn("CGEventCreateMouseEvent", self.source)
-        self.assertIn("CGEventPost", self.source)
-        self.assertNotIn("CGEventPostToPid", self.source)
+        for platform_api in (
+            "AppKit",
+            "Quartz",
+            "CoreGraphics",
+            "ApplicationServices",
+            "CGEvent",
+            "CGWindow",
+            "AXUIElement",
+            "NSRunningApplication",
+            "osascript",
+            "System Events",
+            "pbcopy",
+            "pbpaste",
+        ):
+            self.assertNotIn(platform_api, self.source)
+        self.assertIn("CGEventCreateMouseEvent", self.macos_adapter)
+        self.assertIn("CGEventPost", self.macos_adapter)
+        self.assertNotIn("CGEventPostToPid", self.macos_adapter)
         self.assertIn("document.hasFocus()", self.source)
         self.assertIn("PT_ACCEPTANCE_WINDOW_SLOT", self.source)
         self.assertIn("PT_ACCEPTANCE_WINDOW_COUNT", self.source)
@@ -120,14 +167,20 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"mousedown"', self.source)
         self.assertIn('"mouseup"', self.source)
         self.assertIn('"click"', self.source)
-        self.assertIn("CGEventSourceButtonState", self.source)
-        self.assertIn("native_window_stack_at_point", self.source)
+        self.assertIn("CGEventSourceButtonState", self.macos_adapter)
+        self.assertIn("window_stack_at_point", self.source)
         self.assertIn(
             "int(frontmost_app.processIdentifier()) if frontmost_app else -1",
-            self.source,
+            self.macos_adapter,
         )
-        self.assertIn('copied_boolean(front_window, "AXMain")', self.source)
-        self.assertIn('copied_boolean(front_window, "AXFocused")', self.source)
+        self.assertIn(
+            'copied_boolean(front_window, "AXMain")',
+            self.macos_adapter,
+        )
+        self.assertIn(
+            'copied_boolean(front_window, "AXFocused")',
+            self.macos_adapter,
+        )
         click_start = self.source.index(
             "    def click_element(self, actor: str, element: Any) -> Any:"
         )
@@ -142,7 +195,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"click"', click_source)
         self.assertNotIn("report_native_input_delivery", click_source)
         self.assertIn(
-            "if mouse_down_posted and self.native_mouse_button_down():",
+            "if mouse_down_posted:",
+            click_source,
+        )
+        self.assertIn(
+            "self.native_adapter.release_stuck_mouse_button(point)",
             click_source,
         )
         self.assertIn(
@@ -151,7 +208,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertLess(
             click_source.index("current_target = client.driver.execute_script("),
-            click_source.index("self.post_mouse(\n                (1,),"),
+            click_source.index(
+                "self.native_adapter.post_mouse(\n"
+                "                (MouseAction.LEFT_DOWN,),"
+            ),
         )
         self.assertNotIn(
             'report_native_input_delivery("before-click")',
@@ -176,14 +236,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertNotIn("self.click_element(actor, element)", selector_click_source)
         self.assertNotIn("staging_point", self.source)
-        post_mouse_start = self.source.index("    def post_mouse(")
-        post_mouse_end = self.source.index(
-            "    def post_key(",
-            post_mouse_start,
+        self.assertIn(
+            "CGEventCreateMouseEvent(\n                None,",
+            self.macos_adapter,
         )
-        post_mouse_source = self.source[post_mouse_start:post_mouse_end]
-        self.assertIn("CGEventCreateMouseEvent(\n                None,", post_mouse_source)
-        self.assertNotIn("CGEventSourceCreate", post_mouse_source)
         self.assertIn(".send_keys(", self.source)
 
     def test_transient_native_actions_resolve_after_idempotent_focus(self) -> None:
@@ -192,10 +248,16 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "def capture_native_activation_diagnostic(",
             self.source,
         )
-        self.assertIn('set value of attribute "AXMain"', self.source)
-        self.assertNotIn('set value of attribute "AXFocused"', self.source)
+        self.assertIn(
+            'set value of attribute "AXMain"',
+            self.macos_adapter,
+        )
+        self.assertNotIn(
+            'set value of attribute "AXFocused"',
+            self.macos_adapter,
+        )
         focus_start = self.source.index(
-            "    def focus_actor_window(self, actor: str) -> TauriDriver:"
+            "    def focus_actor_window(self, actor: str) -> TauriSession:"
         )
         focus_end = self.source.index(
             "    def click_element(self, actor: str, element: Any) -> Any:",
@@ -203,24 +265,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         focus_source = self.source[focus_start:focus_end]
         recovery_index = focus_source.index(
-            "if self.native_mouse_button_down():"
+            "if self.native_adapter.mouse_button_down():"
         )
         cooperative_index = focus_source.index(
             "cooperative_activation = self.request_cooperative_activation(client)"
         )
         activation_index = focus_source.index(
-            "self.activate_native_process(client.process_id)"
+            "self.native_adapter.activate_process(client.process_id)"
         )
         focus_wait_index = focus_source.index(
             "lambda _: actor_window_owns_point()",
             activation_index,
         )
         focus_down_index = focus_source.index(
-            "self.post_mouse((1,), point)",
+            "(MouseAction.LEFT_DOWN,)",
             focus_wait_index,
         )
         focus_up_index = focus_source.index(
-            "self.post_mouse((2,), point)",
+            "(MouseAction.LEFT_UP,)",
             focus_down_index,
         )
         document_focus_index = focus_source.index(
@@ -229,15 +291,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn(
             "NSRunningApplication.runningApplicationWithProcessIdentifier_",
-            self.source,
+            self.macos_adapter,
         )
-        self.assertIn("NSApplicationActivateAllWindows", self.source)
-        self.assertIn("NSApplicationActivateIgnoringOtherApps", self.source)
+        self.assertIn("NSApplicationActivateAllWindows", self.macos_adapter)
+        self.assertIn(
+            "NSApplicationActivateIgnoringOtherApps",
+            self.macos_adapter,
+        )
         yield_start = self.source.index(
             "    def invoke_native_activation_command("
         )
         yield_end = self.source.index(
-            "    def activate_native_process(",
+            "    def choose_native_file(",
             yield_start,
         )
         yield_source = self.source[yield_start:yield_end]
@@ -246,10 +311,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"acceptance_request_activation"', yield_source)
         self.assertNotIn("call_async_harness", yield_source)
         self.assertLess(
-            self.source.index("application.activateWithOptions_(options)"),
-            self.source.index('tell application "System Events"'),
+            self.macos_adapter.index("application.activateWithOptions_(options)"),
+            self.macos_adapter.index('tell application "System Events"'),
         )
-        self.assertIn('perform action "AXRaise"', self.source)
+        self.assertIn('perform action "AXRaise"', self.macos_adapter)
         self.assertIn(
             '"before-activation"',
             focus_source,
@@ -289,9 +354,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertLess(focus_wait_index, focus_down_index)
         self.assertLess(focus_down_index, focus_up_index)
         self.assertLess(focus_up_index, document_focus_index)
-        self.assertIn("self.native_window_stack_at_point(point)", focus_source)
         self.assertIn(
-            'window.get("ownerPid") == client.process_id',
+            "self.native_adapter.window_stack_at_point(",
+            focus_source,
+        )
+        self.assertIn(
+            ".point_owned_by(client.process_id or 0)",
             focus_source,
         )
         self.assertNotIn(
@@ -299,10 +367,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             focus_source,
         )
         self.assertIn(
-            "if focus_mouse_down and self.native_mouse_button_down():",
+            "if focus_mouse_down:",
             focus_source,
         )
-        self.assertNotIn("self.post_mouse((5,), point)", focus_source)
+        self.assertNotIn("MouseAction.MOVE", focus_source)
 
     def test_native_activation_failure_emits_durable_predicate_evidence(
         self,
@@ -320,15 +388,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn(
-            '"pointOwned": point_owned',
+            '"pointOwned": window_stack.point_owned_by(',
             self.source,
         )
         self.assertIn(
-            '"windowStack": window_stack',
+            '"windowStack": window_stack.to_dict()',
             self.source,
         )
         self.assertIn(
-            '"focusedControl": self.native_focused_control(',
+            '"focusedControl": self.native_adapter.focused_control(',
             self.source,
         )
         self.assertIn(
@@ -360,8 +428,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             composer_start,
         )
         composer_source = self.source[composer_start:composer_end]
-        self.assertIn("self.post_key_chord(0, ((55, command),))", composer_source)
-        self.assertIn("self.post_key(51, private_source=True)", composer_source)
+        self.assertIn(
+            "self.native_adapter.post_key(\n"
+            "            NativeKey.A,\n"
+            "            modifiers=(NativeModifier.PRIMARY,),",
+            composer_source,
+        )
+        self.assertIn(
+            "self.native_adapter.post_key("
+            "NativeKey.DELETE, private_source=True)",
+            composer_source,
+        )
         self.assertIn(
             'lambda _: (composer.get_attribute("value") or "") == ""',
             composer_source,
@@ -550,111 +627,79 @@ class NativeProductClosureStaticTests(unittest.TestCase):
 
     def test_product_files_use_real_native_chooser(self) -> None:
         self.assertIn("def choose_native_file(", self.source)
-        self.assertIn("def post_key(", self.source)
-        self.assertIn("def post_key_chord(", self.source)
-        self.assertIn("AXUIElementCreateApplication", self.source)
+        self.assertIn("NativeDesktopAdapter", self.source)
+        self.assertIn("create_native_desktop_adapter", self.source)
+        self.assertIn("AXUIElementCreateApplication", self.macos_adapter)
         self.assertIn(
             "AXUIElementSetMessagingTimeout(application, 0.5)",
-            self.source,
+            self.macos_adapter,
         )
-        focused_control_start = self.source.index(
-            "    def native_focused_control("
-        )
-        focused_control_end = self.source.index(
-            "    def native_window_stack_at_point(",
-            focused_control_start,
-        )
-        focused_control_source = self.source[
-            focused_control_start:focused_control_end
-        ]
-        self.assertIn("NATIVE_ACCESSIBILITY_PROBE", focused_control_source)
-        self.assertIn("str(process_id)", focused_control_source)
-        self.assertIn("timeout=2", focused_control_source)
-        self.assertNotIn(
-            'tell application "System Events"',
-            focused_control_source,
-        )
-        self.assertIn("CGEventCreateKeyboardEvent", self.source)
-        self.assertIn("CGEventKeyboardSetUnicodeString", self.source)
-        self.assertIn('"AXFocusedUIElement"', self.source)
-        self.assertIn('"AXTextField"', self.source)
-        self.assertIn('"windowCount"', self.source)
-        self.assertIn('"sheetCount"', self.source)
+        self.assertIn("CGEventCreateKeyboardEvent", self.macos_adapter)
+        self.assertIn("CGEventKeyboardSetUnicodeString", self.macos_adapter)
+        self.assertIn('"AXFocusedUIElement"', self.macos_adapter)
+        self.assertIn('"AXTextField"', self.macos_adapter)
+        self.assertIn('"windowCount"', self.macos_adapter)
+        self.assertIn('"sheetCount"', self.macos_adapter)
+        self.assertIn("timeout=2", self.macos_adapter)
         self.assertIn("def panel_open(", self.source)
         self.assertIn(
-            'NATIVE_FILE_PANEL_FOCUSED_ROLES = frozenset({"AXList", "AXTextField"})',
+            'control.kind in {"list", "text-field"}',
             self.source,
         )
         self.assertIn(
-            'control.get("role") in NATIVE_FILE_PANEL_FOCUSED_ROLES',
-            self.source,
-        )
-        self.assertIn(
-            'control.get("role") != baseline_control.get("role")',
+            "control.kind != baseline_control.kind",
             self.source,
         )
         self.assertIn("def native_app_baseline_ready(", self.source)
-        self.assertIn('int(control.get("windowCount", 0)) >= 1', self.source)
-        self.assertIn('bool(control.get("mainWindow"))', self.source)
-        self.assertIn('bool(control.get("frontmost"))', self.source)
-        self.assertIn(
-            'control.get("subrole") != "AXApplicationDialog"',
-            self.source,
-        )
+        self.assertIn("control.window_count >= 1", self.source)
+        self.assertIn("control.main_window", self.source)
+        self.assertIn("control.frontmost", self.source)
+        self.assertIn('control.kind != "application-dialog"', self.source)
         self.assertIn('return {"selected": True, "control": control}', self.source)
         self.assertIn(
-            "self.post_key_chord(0, ((55, command),))\n"
-            "        self.post_key(51, private_source=True)",
+            "NativeKey.A,\n"
+            "            modifiers=(NativeModifier.PRIMARY,),",
             self.source,
         )
-        self.assertIn(
-            'control.get("value") == ""',
-            self.source,
-        )
+        self.assertIn("NativeKey.DELETE, private_source=True", self.source)
+        self.assertIn('control.value == ""', self.source)
         self.assertIn(
             "poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS",
             self.source,
         )
+        self.assertIn("self.native_adapter.read_clipboard()", self.source)
         self.assertIn(
-            '("/usr/bin/pbcopy",)',
+            "self.native_adapter.write_clipboard(original_clipboard)",
+            self.source,
+        )
+        self.assertIn('control.value == str(selected_path)', self.source)
+        self.assertIn(
+            "NativeKey.G,\n"
+            "            modifiers=(NativeModifier.PRIMARY, NativeModifier.SHIFT),",
             self.source,
         )
         self.assertIn(
-            "Native file chooser could not restore the clipboard",
+            "NativeKey.V,\n"
+            "                modifiers=(NativeModifier.PRIMARY,),",
             self.source,
         )
-        self.assertIn('control.get("value") == str(selected_path)', self.source)
-        self.assertIn(
-            "self.post_key_chord(5, ((55, command), (56, shift)))",
-            self.source,
-        )
-        self.assertIn(
-            "self.post_key_chord(9, ((55, command),))",
-            self.source,
-        )
-        self.assertIn("self.post_key(36, private_source=True)", self.source)
+        self.assertIn("NativeKey.ENTER", self.source)
         self.assertIn(
             '"Native Accessibility probe timed out"',
-            self.source,
+            self.macos_adapter,
         )
         self.assertIn("def selection_or_browser_ready(", self.source)
         self.assertIn("baseline_window_count", self.source)
-        self.assertIn(
-            'control.get("subrole") == "AXApplicationDialog"',
-            self.source,
-        )
+        self.assertIn('control.kind == "application-dialog"', self.source)
         self.assertIn(
             "core_graphics.CGEventSourceCreate(-1)",
-            self.source,
+            self.macos_adapter,
         )
-        self.assertIn(
-            'control.get("subrole") != "AXApplicationDialog"',
-            self.source,
-        )
+        self.assertIn('control.kind != "application-dialog"', self.source)
         self.assertIn("NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS", self.source)
         self.assertIn("def native_app_baseline_ready(", self.source)
         self.assertIn('def native_window_restored(', self.source)
-        self.assertIn('and bool(control.get("role"))', self.source)
+        self.assertIn('control.kind != "unknown"', self.source)
         self.assertNotIn("report_native_file_snapshot", self.source)
         self.assertIn("self.focus_actor_window(actor)", self.source)
         self.assertIn('trigger_selector="[data-chat-background-upload]"', self.source)
@@ -976,7 +1021,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             keyboard_path_start,
         )
         keyboard_path = self.source[keyboard_path_start:keyboard_path_end]
-        tab_post = keyboard_path.index("self.post_key(48, private_source=True)")
+        tab_post = keyboard_path.index(
+            "self.native_adapter.post_key("
+            "NativeKey.TAB, private_source=True)"
+        )
         focus_wait = keyboard_path.index(
             "WebDriverWait(client.driver, 5).until(",
             tab_post,

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
     deploy_environment,
     duplicate_profile_three_queue_delivery,
@@ -89,7 +89,7 @@ REQUIRED_ASSERTIONS = {
 
 
 def gateway_command(
-    client: TauriDriver,
+    client: TauriSession,
     command: str,
     args: dict[str, Any],
 ) -> dict[str, Any]:
@@ -109,7 +109,7 @@ def gateway_command(
     return data
 
 
-def message_dom_snapshot(client: TauriDriver, message_id: str) -> dict[str, Any] | None:
+def message_dom_snapshot(client: TauriSession, message_id: str) -> dict[str, Any] | None:
     value = client.execute_script(
         """
         const id = arguments[0];
@@ -141,7 +141,7 @@ def message_dom_snapshot(client: TauriDriver, message_id: str) -> dict[str, Any]
     return value if isinstance(value, dict) else None
 
 
-def thread_dom_snapshot(client: TauriDriver) -> dict[str, Any] | None:
+def thread_dom_snapshot(client: TauriSession) -> dict[str, Any] | None:
     value = client.execute_script(
         """
         const panel = document.querySelector('[data-chat-thread-panel="open"]');
@@ -297,7 +297,7 @@ class NativeInteractionsGate(AcceptanceGate):
         self.tested_commit = current_commit()
         self.workspace_digest = current_workspace_digest()
         self.steps: list[dict[str, Any]] = []
-        self.clients: dict[str, TauriDriver] = {}
+        self.clients: dict[str, TauriSession] = {}
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
         self.conversations: dict[str, str] = {}

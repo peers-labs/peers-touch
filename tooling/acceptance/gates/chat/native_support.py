@@ -14,7 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import GateError, REPO_ROOT, call_async_harness
 from tooling.acceptance.drivers.station import StationDriver
-from tooling.acceptance.drivers.tauri import TauriDriver
+from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import deploy_environment
 
 
@@ -68,13 +68,13 @@ def async_harness(
     )
 
 
-def configure_station(client: TauriDriver, station_url: str) -> None:
+def configure_station(client: TauriSession, station_url: str) -> None:
     with StationDriver(f"http://127.0.0.1:{client.gateway_port}") as station:
         station.station_add(station_url)
         station.station_set_active(station_url)
 
 
-def enter_chat_page(client: TauriDriver) -> None:
+def enter_chat_page(client: TauriSession) -> None:
     if client.get_current_url().endswith("#/chat"):
         return
     WebDriverWait(client.driver, 20).until(
@@ -94,7 +94,7 @@ def start_authenticated_client(
     port: int,
     station_url: str,
     instance: str = "",
-) -> tuple[TauriDriver, str]:
+) -> tuple[TauriSession, str]:
     label = instance or account
     storage = (
         REPO_ROOT
@@ -105,11 +105,13 @@ def start_authenticated_client(
         / "storage"
     )
     storage.mkdir(parents=True, exist_ok=True)
-    client = TauriDriver(
-        port=port,
-        profile=f"acceptance-{label}",
-        storage_root=str(storage),
-        environment={"PEERS_STATION_URL": station_url},
+    client = TauriSession(
+        LocalTauriLauncher(
+            port=port,
+            profile=f"acceptance-{label}",
+            storage_root=str(storage),
+            environment={"PEERS_STATION_URL": station_url},
+        )
     )
     client.start()
     try:
@@ -144,7 +146,7 @@ def start_authenticated_client(
         raise
 
 
-def stop_client(client: TauriDriver) -> None:
+def stop_client(client: TauriSession) -> None:
     try:
         with StationDriver(
             f"http://127.0.0.1:{client.gateway_port}"
@@ -229,7 +231,7 @@ def wait_until(
     raise GateError(f"timed out waiting for {description}{suffix}")
 
 
-def send_text(client: TauriDriver, text: str) -> dict[str, Any]:
+def send_text(client: TauriSession, text: str) -> dict[str, Any]:
     composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
     client.execute_script(
         """
@@ -258,7 +260,7 @@ def send_text(client: TauriDriver, text: str) -> dict[str, Any]:
     )
 
 
-def message_snapshot(client: TauriDriver, text: str) -> dict[str, Any] | None:
+def message_snapshot(client: TauriSession, text: str) -> dict[str, Any] | None:
     value = client.execute_script(
         """
         const text = arguments[0];
@@ -278,7 +280,7 @@ def message_snapshot(client: TauriDriver, text: str) -> dict[str, Any] | None:
 
 
 def gateway_command(
-    client: TauriDriver,
+    client: TauriSession,
     command: str,
     args: dict[str, Any],
 ) -> dict[str, Any]:
