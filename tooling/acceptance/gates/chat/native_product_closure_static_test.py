@@ -397,7 +397,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "if self.native_adapter.mouse_button_down():"
         )
         cooperative_index = focus_source.index(
-            "cooperative_activation = self.request_cooperative_activation(client)"
+            "self.runtime_binding.request_cooperative_activation("
         )
         activation_index = focus_source.index(
             "self.native_adapter.activate_process(client.process_id)"
@@ -427,18 +427,26 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "NSApplicationActivateIgnoringOtherApps",
             self.macos_adapter,
         )
-        yield_start = self.source.index(
-            "    def invoke_native_activation_command("
+        local_binding_start = self.runtime_binding.index(
+            "class LocalMacOSRuntimeBinding("
         )
-        yield_end = self.source.index(
-            "    def choose_native_file(",
+        yield_start = self.runtime_binding.index(
+            "    def request_cooperative_activation(",
+            local_binding_start,
+        )
+        yield_end = self.runtime_binding.index(
+            "    def binary_identity(",
             yield_start,
         )
-        yield_source = self.source[yield_start:yield_end]
-        self.assertIn("window.__TAURI_INTERNALS__.invoke(", yield_source)
+        yield_source = self.runtime_binding[yield_start:yield_end]
         self.assertIn('"acceptance_yield_activation"', yield_source)
         self.assertIn('"acceptance_request_activation"', yield_source)
         self.assertNotIn("call_async_harness", yield_source)
+        self.assertIn(
+            "window.__TAURI_INTERNALS__.invoke(",
+            self.runtime_binding,
+        )
+        self.assertNotIn("acceptance_yield_activation", self.source)
         self.assertLess(
             self.macos_adapter.index("application.activateWithOptions_(options)"),
             self.macos_adapter.index('tell application "System Events"'),
