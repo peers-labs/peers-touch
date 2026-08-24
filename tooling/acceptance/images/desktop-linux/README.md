@@ -7,6 +7,8 @@ This image provides the supported userland for `desktop-linux-native`:
 - Node, pnpm, Rust, Cargo, Python, and protobuf build tools.
 - A persistent Xorg dummy output at `1920x1080`.
 - Openbox, DBus, GNOME Keyring, XTest/EWMH tools, screenshots, and x11vnc.
+- Zenity as the native file chooser fallback when no desktop portal service is
+  available in the isolated Xorg session.
 
 `entrypoint.sh` is the in-container process supervisor. It starts Xorg, DBus,
 keyring, Openbox, and the loopback-only observer, then terminates them in
