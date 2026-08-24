@@ -188,6 +188,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
 
     def test_transient_native_actions_resolve_after_idempotent_focus(self) -> None:
         self.assertIn("def actor_window_owns_point() -> bool:", self.source)
+        self.assertIn(
+            "def capture_native_activation_diagnostic(",
+            self.source,
+        )
         self.assertIn('set value of attribute "AXMain"', self.source)
         self.assertNotIn('set value of attribute "AXFocused"', self.source)
         focus_start = self.source.index(
@@ -246,7 +250,26 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source.index('tell application "System Events"'),
         )
         self.assertIn('perform action "AXRaise"', self.source)
-        self.assertNotIn("report_focus_snapshot", focus_source)
+        self.assertIn(
+            '"before-activation"',
+            focus_source,
+        )
+        self.assertIn(
+            '"after-cooperative-request"',
+            focus_source,
+        )
+        self.assertIn(
+            '"cooperative-timeout"',
+            focus_source,
+        )
+        self.assertIn(
+            "except TimeoutException:",
+            focus_source,
+        )
+        self.assertIn(
+            '"Native cooperative activation timed out: "',
+            focus_source,
+        )
         self.assertLess(recovery_index, cooperative_index)
         self.assertLess(cooperative_index, activation_index)
         self.assertLess(recovery_index, activation_index)
@@ -268,6 +291,39 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             focus_source,
         )
         self.assertNotIn("self.post_mouse((5,), point)", focus_source)
+
+    def test_native_activation_failure_emits_durable_predicate_evidence(
+        self,
+    ) -> None:
+        self.assertIn(
+            '"native-activation-diagnostics",',
+            self.source,
+        )
+        self.assertIn(
+            '"documentFocused": document_focused',
+            self.source,
+        )
+        self.assertIn(
+            '"expectedProcessId": client.process_id',
+            self.source,
+        )
+        self.assertIn(
+            '"pointOwned": point_owned',
+            self.source,
+        )
+        self.assertIn(
+            '"windowStack": window_stack',
+            self.source,
+        )
+        self.assertIn(
+            '"focusedControl": self.native_focused_control(',
+            self.source,
+        )
+        self.assertIn(
+            'self.write_json_evidence(\n'
+            '            "native-activation-diagnostics",',
+            self.source,
+        )
         click_start = self.source.index(
             "    def click(self, actor: str, selector: str, timeout: float = 30)"
         )
