@@ -17,7 +17,7 @@ type TurnAttempt struct {
 	// ContextLedger is the JSON-serialized typed ContextLedger for this attempt.
 	// It contains ordered segments with source refs, content hashes, token
 	// estimates, and inclusion/truncation decisions (MCA-D04).
-	ContextLedger string          `gorm:"not null;type:mediumtext;default:''"`
+	ContextLedger string          `gorm:"not null;type:text;default:''"`
 	UsageJSON     json.RawMessage `gorm:"type:jsonb;column:usage_json"`
 	StartedAt     time.Time       `gorm:"not null"`
 	EndedAt       *time.Time      `gorm:"type:timestamp"`
