@@ -200,6 +200,7 @@ class SshTransport:
                 f"127.0.0.1:{remote_port}"
             ),
             local_probe_port=selected_local_port,
+            remote_probe_port=None,
             timeout=timeout,
         )
 
@@ -219,8 +220,29 @@ class SshTransport:
                 f"127.0.0.1:{remote_port}:127.0.0.1:{local_port}"
             ),
             local_probe_port=None,
+            remote_probe_port=remote_port,
             timeout=timeout,
         )
+
+    def remote_loopback_port_listening(self, port: int) -> bool:
+        if port < 1 or port > 65535:
+            raise ProvisioningError("remote loopback probe port is invalid")
+        probe = self.run_argv(
+            (
+                "python3",
+                "-c",
+                (
+                    "import socket,sys;"
+                    "connection=socket.create_connection("
+                    "('127.0.0.1',int(sys.argv[1])),0.5);"
+                    "connection.close()"
+                ),
+                str(port),
+            ),
+            timeout=2,
+            check=False,
+        )
+        return probe.returncode == 0
 
     def _start_forward(
         self,
@@ -228,6 +250,7 @@ class SshTransport:
         direction: str,
         specification: str,
         local_probe_port: int | None,
+        remote_probe_port: int | None,
         timeout: float,
     ) -> SshTunnel:
         process = subprocess.Popen(
@@ -258,11 +281,11 @@ class SshTransport:
                     "SSH forward exited before readiness: "
                     f"{detail[-4000:]}"
                 )
-            if local_probe_port is None:
-                time.sleep(0.1)
-                if process.poll() is None:
+            if remote_probe_port is not None:
+                if self.remote_loopback_port_listening(remote_probe_port):
                     return SshTunnel(process, 0)
-            else:
+                time.sleep(0.05)
+            elif local_probe_port is not None:
                 try:
                     with socket.create_connection(
                         ("127.0.0.1", local_probe_port),

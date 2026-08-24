@@ -164,11 +164,16 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
             REPO_ROOT / "tooling" / "make" / "acceptance.mk"
         ).read_text(encoding="utf-8")
         for action in ("ready", "status", "logs", "stop"):
-            self.assertIn(f"acceptance-cell-{action}:", source)
+            target = f"acceptance-cell-{action}:"
+            start = source.index(target)
+            end = source.find("\n\n", start)
+            recipe = source[start:] if end < 0 else source[start:end]
+            self.assertIn(target, recipe)
             self.assertIn(
-                f"acceptance-cell.py {action} --cell",
-                source,
+                f"acceptance-cell.py {action}",
+                recipe,
             )
+            self.assertIn('--cell "$(CELL)"', recipe)
 
     def test_wait_for_ready_parses_complete_multiline_document(self) -> None:
         provisioner = object.__new__(NativeDesktopLinuxProvisioner)
@@ -443,6 +448,52 @@ class LinuxCellProfileTests(unittest.TestCase):
         provisioner._stop_remote_actor.assert_called_once()
         provisioner.stop.assert_not_called()
         self.assertNotIn("alice", provisioner._actors)
+
+    def test_explicit_orchestrator_endpoint_owns_reverse_tunnel(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner._endpoints = {}
+        provisioner.transport = Mock()
+        tunnel = SyntheticTunnel(0)
+        tunnel.process_id = 73
+        provisioner.transport.start_reverse_forward.return_value = tunnel
+        provisioner.transport.remote_loopback_port_listening.return_value = False
+
+        endpoint = provisioner.expose_orchestrator_endpoint(
+            "reaction-proxy",
+            "http://localhost:51219/fault?mode=drop",
+        )
+        released = provisioner.release_endpoint("reaction-proxy")
+
+        provisioner.transport.start_reverse_forward.assert_called_once_with(
+            local_port=51219,
+            remote_port=51219,
+        )
+        self.assertEqual(
+            endpoint["url"],
+            "http://127.0.0.1:51219/fault?mode=drop",
+        )
+        self.assertEqual(endpoint["tunnelPid"], 73)
+        self.assertTrue(released["released"])
+        self.assertTrue(tunnel.stopped)
+        self.assertTrue(
+            provisioner.endpoint_cleanup_audit()["endpointsReleased"]
+        )
+
+    def test_orchestrator_endpoint_rejects_non_loopback_url(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner._endpoints = {}
+        provisioner.transport = Mock()
+
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "HTTP\\(S\\) loopback URL",
+        ):
+            provisioner.expose_orchestrator_endpoint(
+                "reaction-proxy",
+                "http://10.37.94.156:18080",
+            )
+
+        provisioner.transport.start_reverse_forward.assert_not_called()
 
     def test_runtime_binding_requires_exact_gate_and_source_identity(self) -> None:
         provisioner = object.__new__(NativeDesktopLinuxProvisioner)

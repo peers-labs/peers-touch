@@ -982,7 +982,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
 
     def test_reaction_fault_transport_is_ready_before_alice_login(self) -> None:
         self.assertIn("self.reaction_proxy.start()", self.source)
+        self.assertIn(
+            "self.runtime_binding.expose_orchestrator_endpoint(",
+            self.source,
+        )
         self.assertIn("actor_station_url = (", self.source)
+        self.assertIn("self.reaction_endpoint_url", self.source)
         self.assertIn("PEERS_STATION_URL", self.source)
         self.assertNotIn(
             'self.configure_station(self.clients["alice"], proxy.url)',
@@ -994,6 +999,25 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn("controlled_loss", self.source)
         self.assertIn("reaction_proxy_port", self.source)
+        self.assertLess(
+            self.source.index("self.reaction_proxy.start()"),
+            self.source.index(
+                "self.runtime_binding.expose_orchestrator_endpoint("
+            ),
+        )
+
+    def test_runtime_endpoint_releases_before_local_proxy(self) -> None:
+        cleanup_start = self.source.index("    def cleanup_clients(")
+        cleanup_end = self.source.index(
+            "    def run(",
+            cleanup_start,
+        )
+        cleanup_source = self.source[cleanup_start:cleanup_end]
+
+        self.assertLess(
+            cleanup_source.index("self.runtime_binding.finalize_cleanup("),
+            cleanup_source.index("self.reaction_proxy.stop()"),
+        )
 
     def test_station_attribution_evidence_serializes_sets_as_lists(self) -> None:
         self.assertIn("station_sets_detail = [", self.source)

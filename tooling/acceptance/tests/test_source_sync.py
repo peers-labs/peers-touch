@@ -14,6 +14,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core.errors import ProvisioningError
 from tooling.acceptance.core.source_sync import (
@@ -336,6 +337,52 @@ class SourceSyncContractTests(unittest.TestCase):
             command = transport.command_prefix()
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)
+
+    def test_reverse_forward_requires_remote_end_to_end_readiness(self) -> None:
+        transport = SshTransport(
+            SshTarget(host="station.example", user="acceptance")
+        )
+        tunnel = Mock(spec=SshTunnel)
+        with patch.object(
+            transport,
+            "_start_forward",
+            return_value=tunnel,
+        ) as start_forward:
+            result = transport.start_reverse_forward(
+                local_port=51219,
+                remote_port=51219,
+            )
+
+        self.assertIs(result, tunnel)
+        start_forward.assert_called_once_with(
+            direction="-R",
+            specification="127.0.0.1:51219:127.0.0.1:51219",
+            local_probe_port=None,
+            remote_probe_port=51219,
+            timeout=10,
+        )
+
+    def test_remote_loopback_probe_reports_connection_result(self) -> None:
+        transport = SshTransport(
+            SshTarget(host="station.example", user="acceptance")
+        )
+        with patch.object(
+            transport,
+            "run_argv",
+            return_value=subprocess.CompletedProcess(
+                args=(),
+                returncode=0,
+                stdout="",
+                stderr="",
+            ),
+        ) as run_argv:
+            self.assertTrue(
+                transport.remote_loopback_port_listening(51219)
+            )
+
+        command = run_argv.call_args.args[0]
+        self.assertEqual(command[-1], "51219")
+        self.assertIn("socket.create_connection", command[-2])
 
     def test_request_loads_profile_backed_target(self) -> None:
         root = Path(tempfile.mkdtemp())

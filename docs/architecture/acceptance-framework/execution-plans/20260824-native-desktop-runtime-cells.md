@@ -489,13 +489,13 @@ committed to this plan.
 
 | Workstream | Status | Evidence |
 |---|---|---|
-| NDR-W1 Runtime Cell Core | partial | Contract, manifest, matrix aggregation and 25/25 runtime-cell tests PASS, but execution reconciliation found that `gates.yaml` and `acceptance-run.py` do not yet consume `requiredRuntimeCells`; Gate × cell execution remains open |
+| NDR-W1 Runtime Cell Core | done | Contract, manifest, matrix aggregation and Gate × cell execution are wired through `gates.yaml` and `acceptance-run.py`; runtime-cell selection fails closed and records explicit cell identity |
 | NDR-W2 SSH + source sync | done | source-sync 16/16 PASS; source-sync/lease/runtime-cell suite 60/60 PASS; Acceptance Core tests 159/159 PASS; strict host-key negative PASS; isolated direct sync transferred one new object on the second commit; isolated central/local sync PASS with cleanup; `make station` held the remote source lease through build/restart/health and passed at exact HEAD `33063a7e15be`; remote checkout/residue clean and leases released |
 | NDR-W3 Tauri driver separation | done | pure loopback-only `TauriDriver`; `LocalTauriLauncher` and `ProvisionedTauriLauncher`; composed `TauriSession`; all business callers migrated; Core tests 167/167 PASS; MP-W13 static 34/34 PASS; local Native driver smoke PASS; process/ports/storage/log cleanup PASS; infra validation, plan self-check, coverage report, and skill-check PASS |
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
-| NDR-W5 Linux cell | partial | Single-client cell lifecycle is source-bound and proven by clean commit `8caff646e20d44606140144889bb72cf10d45c1e` and run `20260824T131119393952Z-9749ce9fc426dcac`, but execution reconciliation found that MP-W13 requires Alice, Bob and Alice2 while the cell currently owns one app/WebDriver endpoint; actor-scoped launch, endpoint tunnels and cleanup remain open |
-| NDR-W6 Chat migration | pending | blocked on the reconciled NDR-W1 Gate × cell execution wiring and NDR-W5 actor-scoped runtime binding; Chat runner still selects the local launcher and adapter factory |
-| NDR-W7 Linux MP-W13 proof | pending | `UNPROVEN` |
+| NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
+| NDR-W6 Chat migration | done | Chat runner receives `NativeDesktopRuntimeBinding`, `TauriSession` and `NativeDesktopAdapter`; local launcher/platform factory dependencies are deleted; required assertions, journey order and 3600-second timeout remain locked; Acceptance Core 230/230, Chat static 38/38 and runner 20/20 PASS |
+| NDR-W7 Linux MP-W13 proof | in progress | First Linux product run `20260824T153618898326Z-2a723885a7b6504fbae9d9aaded20735` reached Alice Native launch and failed before product assertions because the orchestrator-local reaction Fixture endpoint was not exposed to the remote cell; cleanup passed. Runtime-owned explicit endpoint lease and SSH reverse-forward remediation is implemented and locally/remote-probe verified; exact-source rerun pending |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
@@ -520,6 +520,32 @@ them in dependency order before the Chat runner cutover:
 2. Extend the Linux cell with actor-scoped client launch and reverse cleanup.
 3. Inject the resulting Tauri session factory and Native adapter into the Chat
    runner, deleting its local launcher and platform factory dependencies.
+
+### 2026-08-24 NDR-W7 First-Boundary Result
+
+The first source-matched Linux product run passed runtime provisioning and
+launched Alice, but stopped before any product assertion. The Chat-owned
+reaction failure Fixture listened on the orchestrator loopback while the Linux
+actor received that URL as cell loopback. The runtime therefore could not reach
+the Fixture.
+
+The remediation keeps ownership explicit:
+
+- Chat requests exposure of the exact orchestrator endpoint; it does not choose
+  SSH or rewrite transport addresses.
+- The Linux runtime binding owns a run-scoped SSH reverse-forward lease and
+  returns the cell-reachable endpoint.
+- The Linux provisioner verifies remote end-to-end TCP readiness, records
+  tunnel identity, and releases endpoint leases after actor sessions and before
+  the local Fixture stops.
+- No implicit `PEERS_STATION_URL` inspection or fallback is allowed.
+
+Evidence before the exact-source rerun:
+
+- Acceptance Core: 230/230 PASS.
+- Chat Native product static suite: 38/38 PASS.
+- Acceptance runner tests: 20/20 PASS.
+- Real SSH reverse-forward read and release probe: PASS.
 
 ## 13. Final Readiness Gate
 

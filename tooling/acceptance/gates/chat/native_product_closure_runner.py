@@ -233,6 +233,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.structured_evidence: dict[str, Any] = {}
         self.native_activation_diagnostics: list[dict[str, Any]] = []
         self.reaction_proxy: ProfileThreeSubmitFaultProxy | None = None
+        self.reaction_endpoint_url: str | None = None
         self.fixture_root = Path(tempfile.mkdtemp(prefix="pt-chat-product-closure-"))
         self.report.station_url = self.station_url
         self.report.manifest = self.manifest
@@ -297,8 +298,8 @@ class NativeProductClosureGate(AcceptanceGate):
         actor_role = CLIENT_ACTOR_ROLES[actor]
         window_actors = tuple(CLIENT_ACTOR_ROLES)
         actor_station_url = (
-            self.reaction_proxy.url
-            if actor == "alice" and self.reaction_proxy is not None
+            self.reaction_endpoint_url
+            if actor == "alice" and self.reaction_endpoint_url is not None
             else self.station_url
         )
         client = self.runtime_binding.create_session(
@@ -3677,15 +3678,6 @@ class NativeProductClosureGate(AcceptanceGate):
                     "resource": f"client:{client.profile}",
                     "error": str(error),
                 })
-        if self.reaction_proxy is not None:
-            try:
-                self.reaction_proxy.disarm()
-                self.reaction_proxy.stop()
-            except Exception as error:
-                cleanup_errors.append({
-                    "resource": "reaction-proxy",
-                    "error": str(error),
-                })
         runtime_log_audit = self.audit_runtime_logs()
         self.write_json_evidence("runtime-log-audit", runtime_log_audit)
         self.write_json_evidence(
@@ -3714,6 +3706,15 @@ class NativeProductClosureGate(AcceptanceGate):
             self.runtime_instances,
             self.client_specs,
         )
+        if self.reaction_proxy is not None:
+            try:
+                self.reaction_proxy.disarm()
+                self.reaction_proxy.stop()
+            except Exception as error:
+                cleanup_errors.append({
+                    "resource": "reaction-proxy",
+                    "error": str(error),
+                })
         if reaction_proxy_port is not None:
             try:
                 proxy_released = bool(wait_until(
@@ -3814,6 +3815,11 @@ class NativeProductClosureGate(AcceptanceGate):
         try:
             self.reaction_proxy = ProfileThreeSubmitFaultProxy(self.station_url)
             self.reaction_proxy.start()
+            self.reaction_endpoint_url = (
+                self.runtime_binding.expose_orchestrator_endpoint(
+                    self.reaction_proxy.url
+                ).url
+            )
             for actor in ("alice", "bob"):
                 self.step(f"{actor}.launch", lambda actor=actor: self.launch_actor(actor))
             group_id = self.step("group.create.ui", self.open_group_through_ui)

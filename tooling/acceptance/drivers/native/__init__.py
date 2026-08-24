@@ -17,6 +17,7 @@ from tooling.acceptance.drivers.native.base import (
 if TYPE_CHECKING:
     from tooling.acceptance.drivers.native.runtime import (
         NativeDesktopRuntimeBinding,
+        RuntimeEndpoint,
     )
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "NativeControlSnapshot",
     "NativeDesktopAdapter",
     "NativeDesktopRuntimeBinding",
+    "RuntimeEndpoint",
     "NativeKey",
     "NativeModifier",
     "NativeWindowBounds",
@@ -58,6 +60,7 @@ def create_native_desktop_adapter(
 def __getattr__(name: str) -> Any:
     if name in {
         "NativeDesktopRuntimeBinding",
+        "RuntimeEndpoint",
         "resolve_native_desktop_runtime",
     }:
         from tooling.acceptance.drivers.native import runtime
