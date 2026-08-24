@@ -392,16 +392,27 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             return ""
         return ".".join(str(item) for item in value)
 
-    @staticmethod
-    def _window_bounds(display: Any, window: Any) -> NativeWindowBounds:
+    def _window_bounds(self, display: Any, window: Any) -> NativeWindowBounds:
         geometry = window.get_geometry()
         root = display.screen().root
         translated = root.translate_coords(window, 0, 0)
+        frame = self._property(
+            display,
+            window,
+            "_NET_FRAME_EXTENTS",
+            "CARDINAL",
+        )
+        extents = (
+            tuple(float(value) for value in frame.value[:4])
+            if frame is not None and len(frame.value) >= 4
+            else (0.0, 0.0, 0.0, 0.0)
+        )
+        left, right, top, bottom = extents
         return NativeWindowBounds(
-            left=float(translated.x),
-            top=float(translated.y),
-            width=float(geometry.width),
-            height=float(geometry.height),
+            left=float(translated.x) - left,
+            top=float(translated.y) - top,
+            width=float(geometry.width) + left + right,
+            height=float(geometry.height) + top + bottom,
         )
 
     @staticmethod

@@ -104,12 +104,40 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
             height=800,
         )
         root.translate_coords.return_value = types.SimpleNamespace(x=641, y=52)
+        frame = types.SimpleNamespace(value=(1, 1, 20, 5))
 
-        bounds = adapter._window_bounds(display, window)
+        with patch.object(adapter, "_property", return_value=frame) as get_property:
+            bounds = adapter._window_bounds(display, window)
 
         root.translate_coords.assert_called_once_with(window, 0, 0)
         window.translate_coords.assert_not_called()
-        self.assertEqual(bounds.left, 641)
+        get_property.assert_called_once_with(
+            display,
+            window,
+            "_NET_FRAME_EXTENTS",
+            "CARDINAL",
+        )
+        self.assertEqual(bounds.left, 640)
+        self.assertEqual(bounds.top, 32)
+        self.assertEqual(bounds.width, 862)
+        self.assertEqual(bounds.height, 825)
+
+    def test_window_bounds_fall_back_when_frame_extents_are_absent(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        root = Mock()
+        window = Mock()
+        display.screen.return_value.root = root
+        window.get_geometry.return_value = types.SimpleNamespace(
+            width=860,
+            height=800,
+        )
+        root.translate_coords.return_value = types.SimpleNamespace(x=1, y=52)
+
+        with patch.object(adapter, "_property", return_value=None):
+            bounds = adapter._window_bounds(display, window)
+
+        self.assertEqual(bounds.left, 1)
         self.assertEqual(bounds.top, 52)
         self.assertEqual(bounds.width, 860)
         self.assertEqual(bounds.height, 800)
