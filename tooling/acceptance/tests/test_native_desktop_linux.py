@@ -18,6 +18,7 @@ from tooling.acceptance.core import REPO_ROOT, RuntimeCellContract
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.provisioners.native_desktop_linux import (
     _BASE_IMAGE_DIGEST,
+    _NATIVE_ADAPTER_PROBE_SCRIPT,
     LinuxCellProfile,
     NativeDesktopLinuxProvisioner,
     _digest,
@@ -130,6 +131,18 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
             source.index("git config --global --add safe.directory"),
         )
         self.assertIn('"COREPACK_HOME=/opt/corepack"', source)
+
+    def test_native_probe_translates_client_origin_into_root_coordinates(
+        self,
+    ) -> None:
+        self.assertIn(
+            "origin = root.translate_coords(active_window, 0, 0)",
+            _NATIVE_ADAPTER_PROBE_SCRIPT,
+        )
+        self.assertNotIn(
+            "origin = active_window.translate_coords(root, 0, 0)",
+            _NATIVE_ADAPTER_PROBE_SCRIPT,
+        )
 
     def test_ready_holds_source_lease_through_manifest_validation(self) -> None:
         source = (
