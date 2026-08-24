@@ -1843,8 +1843,12 @@ except Exception as error:
         client = self.clients[actor]
         composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
         self.click_element(actor, composer)
-        composer.send_keys(Keys.COMMAND, "a")
-        composer.send_keys(Keys.BACKSPACE)
+        command = 0x00100000
+        self.post_key_chord(0, ((55, command),))
+        self.post_key(51, private_source=True)
+        WebDriverWait(client.driver, 5).until(
+            lambda _: (composer.get_attribute("value") or "") == ""
+        )
         if text:
             composer.send_keys(text)
         self.click(actor, "[data-chat-send]")

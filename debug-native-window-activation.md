@@ -63,3 +63,13 @@ captured the complete fallback boundary:
   screen-saver level.
 - Preserve the real CoreGraphics input path and all focus/point-ownership
   assertions.
+
+## Post-Fix Evidence
+Exact-HEAD run `20260824T020842025058Z-dff949138ed1919b0a9b946d8b7cd55c`
+ran with full-screen WeChat still frontmost at preflight and crossed every
+recorded Alice/Bob activation handoff. Its 14 activation snapshots contain no
+timeout phase; every post-request snapshot records
+`documentFocused=true`, `pointOwned=true`, AX `windowCount=1`, and the expected
+actor at WindowServer layer 1000. The Gate continued through transcript,
+thread, toolbar, reaction, identity, settings/background, failed-attachment,
+and attachment-only assertions before failing at the later text input boundary.

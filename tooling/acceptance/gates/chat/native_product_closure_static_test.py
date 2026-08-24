@@ -349,6 +349,26 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source.index("client.find_element(selector, timeout)"),
         )
 
+    def test_composer_clear_uses_native_keys_without_webdriver_key_literals(
+        self,
+    ) -> None:
+        composer_start = self.source.index(
+            "    def composer_send(self, actor: str, text: str = \"\") -> None:"
+        )
+        composer_end = self.source.index(
+            "    def wait_message_text(",
+            composer_start,
+        )
+        composer_source = self.source[composer_start:composer_end]
+        self.assertIn("self.post_key_chord(0, ((55, command),))", composer_source)
+        self.assertIn("self.post_key(51, private_source=True)", composer_source)
+        self.assertIn(
+            'lambda _: (composer.get_attribute("value") or "") == ""',
+            composer_source,
+        )
+        self.assertNotIn("Keys.COMMAND", composer_source)
+        self.assertNotIn("Keys.BACKSPACE", composer_source)
+
     def test_transient_action_surface_owns_the_complete_pointer_press(self) -> None:
         pointer_down = self.message_action_overlay.index(
             "      onPointerDownCapture={() => {"
