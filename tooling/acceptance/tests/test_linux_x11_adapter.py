@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 from tooling.acceptance.core.errors import DriverError
 from tooling.acceptance.drivers.native import create_native_desktop_adapter
 from tooling.acceptance.drivers.native.base import (
+    MouseAction,
     NativeKey,
     NativeModifier,
 )
@@ -45,6 +48,48 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         self.assertEqual(_KEY_SYMBOLS[NativeKey.ENTER], "Return")
         self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.PRIMARY], "Control_L")
         self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.SHIFT], "Shift_L")
+
+    def test_mouse_buttons_move_pointer_to_the_contract_point_first(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        xtest = types.ModuleType("Xlib.ext.xtest")
+        xtest.fake_input = Mock()  # type: ignore[attr-defined]
+        xlib = types.ModuleType("Xlib")
+        xlib.X = types.SimpleNamespace(
+            MotionNotify=6,
+            ButtonPress=4,
+            ButtonRelease=5,
+        )
+        extension = types.ModuleType("Xlib.ext")
+        extension.xtest = xtest
+
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.dict(
+                sys.modules,
+                {
+                    "Xlib": xlib,
+                    "Xlib.ext": extension,
+                    "Xlib.ext.xtest": xtest,
+                },
+            ),
+        ):
+            adapter.post_mouse(
+                (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
+                (29.4, 190.6),
+            )
+
+        self.assertEqual(
+            xtest.fake_input.call_args_list,  # type: ignore[attr-defined]
+            [
+                call(display, 6, x=29, y=191),
+                call(display, 4, 1, x=29, y=191),
+                call(display, 6, x=29, y=191),
+                call(display, 5, 1, x=29, y=191),
+            ],
+        )
+        display.sync.assert_called_once_with()
+        display.close.assert_called_once_with()
 
     def test_clipboard_commands_are_bound_to_the_declared_display(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")

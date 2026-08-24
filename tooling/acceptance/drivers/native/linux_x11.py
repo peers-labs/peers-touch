@@ -105,13 +105,12 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
 
             x, y = (int(round(point[0])), int(round(point[1])))
             for action in actions:
-                if action == MouseAction.MOVE:
-                    xtest.fake_input(display, X.MotionNotify, x=x, y=y)
-                elif action == MouseAction.LEFT_DOWN:
+                xtest.fake_input(display, X.MotionNotify, x=x, y=y)
+                if action == MouseAction.LEFT_DOWN:
                     xtest.fake_input(display, X.ButtonPress, 1, x=x, y=y)
                 elif action == MouseAction.LEFT_UP:
                     xtest.fake_input(display, X.ButtonRelease, 1, x=x, y=y)
-                else:
+                elif action != MouseAction.MOVE:
                     raise DriverError(
                         f"unsupported Linux mouse action: {action.value}"
                     )
