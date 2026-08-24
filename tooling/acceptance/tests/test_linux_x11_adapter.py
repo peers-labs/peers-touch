@@ -49,6 +49,16 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.PRIMARY], "Control_L")
         self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.SHIFT], "Shift_L")
 
+    def test_file_chooser_location_uses_gtk_location_shortcut(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        with patch.object(adapter, "post_key") as post_key:
+            adapter.reveal_file_chooser_location()
+
+        post_key.assert_called_once_with(
+            NativeKey.G,
+            modifiers=(NativeModifier.PRIMARY,),
+        )
+
     def test_mouse_buttons_move_pointer_to_the_contract_point_first(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
         display = Mock()

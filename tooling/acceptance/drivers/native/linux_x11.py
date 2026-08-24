@@ -161,6 +161,12 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
         finally:
             display.close()
 
+    def reveal_file_chooser_location(self) -> None:
+        self.post_key(
+            NativeKey.G,
+            modifiers=(NativeModifier.PRIMARY,),
+        )
+
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         process_id = self._validated_process_id(process_id)
         display = self._open_display()

@@ -561,10 +561,7 @@ class NativeProductClosureGate(AcceptanceGate):
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(native_panel_ready)
 
-        self.native_adapter.post_key(
-            NativeKey.G,
-            modifiers=(NativeModifier.PRIMARY, NativeModifier.SHIFT),
-        )
+        self.native_adapter.reveal_file_chooser_location()
 
         def go_to_field_ready(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
