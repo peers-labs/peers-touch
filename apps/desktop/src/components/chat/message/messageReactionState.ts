@@ -13,6 +13,12 @@ export interface MessageReactionMutation {
   requestId: number;
 }
 
+export function blocksMessageActionOverlay(
+  phase: MessageReactionMutationPhase | undefined,
+): boolean {
+  return phase !== undefined;
+}
+
 export function beginMessageReactionMutation(
   reactions: readonly MessageReaction[],
   actorId: string,
