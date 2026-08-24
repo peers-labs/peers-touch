@@ -9,8 +9,10 @@ This image provides the supported userland for `desktop-linux-native`:
 - Openbox, DBus, GNOME Keyring, XTest/EWMH tools, screenshots, and x11vnc.
 
 `entrypoint.sh` is the in-container process supervisor. It starts Xorg, DBus,
-keyring, Openbox, the loopback-only observer, and the Desktop binary, then
-terminates them in reverse order.
+keyring, Openbox, and the loopback-only observer, then terminates them in
+reverse order. `remote_control.py` launches actor-scoped Desktop processes and
+injects the same run-owned D-Bus session address into Native adapter commands so
+AT-SPI observes the actor windows in that Xorg session.
 
 `remote_control.py` is copied from the exact Git checkout into the run directory
 before it starts the detached TTL reaper. The run-bound copy owns the lease,
