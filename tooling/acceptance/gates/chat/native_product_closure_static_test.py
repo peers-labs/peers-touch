@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import ast
+import json
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[4]
 RUNNER = ROOT / "tooling/acceptance/gates/chat/native_product_closure_runner.py"
+ENTRY = ROOT / "tooling/acceptance/gates/chat/native_product_closure_entry.py"
+RUNTIME_BINDING = ROOT / "tooling/acceptance/drivers/native/runtime.py"
+GATE_CATALOG = ROOT / "tooling/acceptance/gates.yaml"
 MACOS_ADAPTER = ROOT / "tooling/acceptance/drivers/native/macos.py"
 DESKTOP_MAIN = ROOT / "apps/desktop/src-tauri/src/main.rs"
 DESKTOP_CARGO = ROOT / "apps/desktop/src-tauri/Cargo.toml"
@@ -36,6 +40,9 @@ HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
 class NativeProductClosureStaticTests(unittest.TestCase):
     def setUp(self) -> None:
         self.source = RUNNER.read_text(encoding="utf-8")
+        self.entry = ENTRY.read_text(encoding="utf-8")
+        self.runtime_binding = RUNTIME_BINDING.read_text(encoding="utf-8")
+        self.gate_catalog = GATE_CATALOG.read_text(encoding="utf-8")
         self.macos_adapter = MACOS_ADAPTER.read_text(encoding="utf-8")
         self.desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
         self.desktop_cargo = DESKTOP_CARGO.read_text(encoding="utf-8")
@@ -68,6 +75,128 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn("load_runtime_manifest", self.source)
         self.assertIn("PT_ACCEPTANCE_RUNTIME_MANIFEST", self.source)
+        self.assertIn("resolve_native_desktop_runtime", self.entry)
+        self.assertIn("PT_ACCEPTANCE_RUNTIME_CELL", self.entry)
+        self.assertIn("runtime_binding=runtime_binding", self.entry)
+
+    def test_runner_consumes_injected_runtime_without_local_fallback(self) -> None:
+        self.assertIn(
+            "runtime_binding: NativeDesktopRuntimeBinding",
+            self.source,
+        )
+        self.assertIn(
+            "self.runtime_binding.create_session(",
+            self.source,
+        )
+        self.assertIn(
+            "self.native_adapter: NativeDesktopAdapter =",
+            self.source,
+        )
+        for forbidden in (
+            "LocalTauriLauncher",
+            "find_app_binary",
+            "create_native_desktop_adapter",
+            "sys.platform",
+        ):
+            self.assertNotIn(forbidden, self.source)
+        self.assertIn("LocalTauriLauncher", self.runtime_binding)
+        self.assertIn("MacOSNativeDesktopAdapter", self.runtime_binding)
+        self.assertIn(
+            "LinuxNativeDesktopRuntimeBinding(",
+            self.runtime_binding,
+        )
+
+    def test_runtime_cutover_preserves_product_contract(self) -> None:
+        expected_assertions = {
+            "native_dom_only",
+            "source_build_runtime_identity",
+            "transcript_exact",
+            "thread_exact",
+            "toolbar_geometry",
+            "toolbar_keyboard_reachable",
+            "reaction_picker_success",
+            "reaction_authority_readback",
+            "reaction_failure_recovery",
+            "avatar_exact_loaded",
+            "group_avatar_slots_exact",
+            "station_attribution_exact",
+            "settings_station_readback",
+            "settings_restart_recovery",
+            "background_upload_recovery",
+            "background_rendered",
+            "background_second_device_recovery",
+            "clear_cursor_station_readback",
+            "offline_recovery_exact",
+            "restart_exact",
+            "attachment_failure_draft_retained",
+            "attachment_images_loaded",
+            "attachment_count_conservation",
+            "attachment_byte_exact",
+            "runtime_logs_clean",
+            "cleanup_ports_released",
+            "cleanup_processes_released",
+            "cleanup_storage_released",
+        }
+        assignment = next(
+            node
+            for node in self.tree.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "REQUIRED_ASSERTIONS"
+                for target in node.targets
+            )
+        )
+        self.assertEqual(ast.literal_eval(assignment.value), expected_assertions)
+
+        run_method = next(
+            node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "run"
+        )
+        fixed_steps = sorted(
+            (
+                node.lineno,
+                str(node.args[0].value),
+            )
+            for node in ast.walk(run_method)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "step"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+        )
+        self.assertEqual(
+            [name for _, name in fixed_steps],
+            [
+                "group.create.ui",
+                "transcript.thread.ui",
+                "toolbar.geometry.ui",
+                "reaction.ui",
+                "identity.station.dom",
+                "settings.background.ui",
+                "attachment.failure.ui",
+                "attachments.ui",
+                "bob.offline.recovery.ui",
+                "client.restart.ui",
+                "clear.cursor.restart.ui",
+                "alice.second-device.recovery.ui",
+            ],
+        )
+        self.assertIn('for actor in ("alice", "bob"):', self.source)
+
+        gate = json.loads(self.gate_catalog)["gates"][
+            "chat-native-product-closure-e2e"
+        ]
+        self.assertEqual(gate["timeout_seconds"], 3600)
+        self.assertEqual(
+            gate["requiredRuntimeCells"],
+            [
+                "desktop-macos-native",
+                "desktop-linux-native",
+                "desktop-windows-native",
+            ],
+        )
 
     def test_chat_gates_contain_no_platform_native_implementation(self) -> None:
         forbidden = (
@@ -628,7 +757,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
     def test_product_files_use_real_native_chooser(self) -> None:
         self.assertIn("def choose_native_file(", self.source)
         self.assertIn("NativeDesktopAdapter", self.source)
-        self.assertIn("create_native_desktop_adapter", self.source)
+        self.assertNotIn("create_native_desktop_adapter", self.source)
         self.assertIn("AXUIElementCreateApplication", self.macos_adapter)
         self.assertIn(
             "AXUIElementSetMessagingTimeout(application, 0.5)",
@@ -864,7 +993,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn("controlled_loss", self.source)
-        self.assertIn("{self.reaction_proxy.port}", self.source)
+        self.assertIn("reaction_proxy_port", self.source)
 
     def test_station_attribution_evidence_serializes_sets_as_lists(self) -> None:
         self.assertIn("station_sets_detail = [", self.source)
@@ -928,8 +1057,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn(r"unhandled(?: promise)? rejection", self.source)
-        self.assertIn('int(spec["renderer_port"])', self.source)
-        self.assertIn('"storageReleased": storage_released', self.source)
+        self.assertIn(
+            "self.runtime_binding.finalize_cleanup(",
+            self.source,
+        )
+        self.assertIn('bool(result["storageReleased"])', self.source)
         self.assertIn('self.write_json_evidence("cleanup", result)', self.source)
         self.assertIn('source.get("workspaceDigest") == "clean"', self.source)
         launch_start = self.source.index("    def launch_actor(")

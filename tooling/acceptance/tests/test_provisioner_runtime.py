@@ -7,7 +7,7 @@ import socket
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     BlockedError,
@@ -21,6 +21,9 @@ from tooling.acceptance.core._paths import ENVIRONMENTS_DIR
 from tooling.acceptance.provisioners import (
     HomeStationProvisioner,
     get_provisioner,
+)
+from tooling.acceptance.provisioners.native_tauri_embedded_webdriver import (
+    NativeTauriEmbeddedWebDriverProvisioner,
 )
 
 
@@ -97,6 +100,31 @@ class ProfileResolutionTests(unittest.TestCase):
 
 
 class ProvisionerBlockingTests(unittest.TestCase):
+    def test_remote_runtime_cell_skips_local_binary_preflight(self):
+        provisioner = NativeTauriEmbeddedWebDriverProvisioner(
+            EnvironmentContract(id="native-tauri-embedded-webdriver")
+        )
+        manifest = Mock()
+        manifest.is_ready.return_value = True
+        with patch.object(
+            HomeStationProvisioner,
+            "provision",
+            return_value=manifest,
+        ), patch.object(
+            provisioner,
+            "_run_preflight_command",
+        ) as preflight, patch.dict(
+            "os.environ",
+            {"PT_ACCEPTANCE_RUNTIME_CELL": "desktop-linux-native"},
+            clear=True,
+        ):
+            result = provisioner.provision(
+                "chat-native-product-closure-e2e"
+            )
+
+        self.assertIs(result, manifest)
+        preflight.assert_not_called()
+
     def test_native_clients_receive_distinct_webdriver_ports(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")

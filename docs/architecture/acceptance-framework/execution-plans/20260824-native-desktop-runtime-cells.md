@@ -489,15 +489,37 @@ committed to this plan.
 
 | Workstream | Status | Evidence |
 |---|---|---|
-| NDR-W1 Runtime Cell Core | done | `tooling/acceptance/core/runtime_cell.py`; `tooling/acceptance/tests/test_runtime_cell.py` 25/25 PASS; provisioning suite 57/57 PASS; infra-validate PASS with artifact-root override |
+| NDR-W1 Runtime Cell Core | partial | Contract, manifest, matrix aggregation and 25/25 runtime-cell tests PASS, but execution reconciliation found that `gates.yaml` and `acceptance-run.py` do not yet consume `requiredRuntimeCells`; Gate × cell execution remains open |
 | NDR-W2 SSH + source sync | done | source-sync 16/16 PASS; source-sync/lease/runtime-cell suite 60/60 PASS; Acceptance Core tests 159/159 PASS; strict host-key negative PASS; isolated direct sync transferred one new object on the second commit; isolated central/local sync PASS with cleanup; `make station` held the remote source lease through build/restart/health and passed at exact HEAD `33063a7e15be`; remote checkout/residue clean and leases released |
 | NDR-W3 Tauri driver separation | done | pure loopback-only `TauriDriver`; `LocalTauriLauncher` and `ProvisionedTauriLauncher`; composed `TauriSession`; all business callers migrated; Core tests 167/167 PASS; MP-W13 static 34/34 PASS; local Native driver smoke PASS; process/ports/storage/log cleanup PASS; infra validation, plan self-check, coverage report, and skill-check PASS |
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
-| NDR-W5 Linux cell | done | Clean source commit `8caff646e20d44606140144889bb72cf10d45c1e`; runtime run `20260824T131119393952Z-9749ce9fc426dcac`; Ubuntu 20.04.6 host and digest-pinned Ubuntu 24.04.4 image `137a653f37e016642d9801b8125c22c5aa4e5a8286fe395aa5eb5f27c072b430`; WebKitGTK 2.52.3; Xorg `1920x1080`; binary SHA-256 `9ad05b715349ae74faad68435eb9b4705cb7ee64e4d64787f206f839352f099e`; input/focus/point-ownership/screenshot probes PASS; `acceptance-cell-ready/status/logs/stop` PASS; explicit stop and detached 20-second TTL reaper audits left no process, port, run storage, runtime lease, dirty source, or non-user-owned cache; Acceptance tests 214/214 PASS; Infra validation `STRUCTURALLY_VALID`; plan self-check PASS |
-| NDR-W6 Chat migration | pending | adapter boundary ready; Chat runner still selects the local launcher instead of consuming runtime-cell launcher/adapter injection |
+| NDR-W5 Linux cell | partial | Single-client cell lifecycle is source-bound and proven by clean commit `8caff646e20d44606140144889bb72cf10d45c1e` and run `20260824T131119393952Z-9749ce9fc426dcac`, but execution reconciliation found that MP-W13 requires Alice, Bob and Alice2 while the cell currently owns one app/WebDriver endpoint; actor-scoped launch, endpoint tunnels and cleanup remain open |
+| NDR-W6 Chat migration | pending | blocked on the reconciled NDR-W1 Gate × cell execution wiring and NDR-W5 actor-scoped runtime binding; Chat runner still selects the local launcher and adapter factory |
 | NDR-W7 Linux MP-W13 proof | pending | `UNPROVEN` |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
+
+### 2026-08-24 Execution Reconciliation
+
+Static and source audits before NDR-W6 found two implementation gaps that the
+earlier status table did not represent:
+
+- NDR-W1 implemented the runtime-cell contracts and matrix aggregation, but the
+  Gate Catalog and `acceptance-run.py` do not yet expand or select
+  `requiredRuntimeCells`.
+- NDR-W5 proved one source-bound Linux Desktop process, while MP-W13 requires
+  three isolated clients in the same leased Xorg cell. The cell must provide
+  actor-scoped process, endpoint, profile, storage and cleanup ownership before
+  NDR-W7 can execute.
+
+These are implementation inventory corrections under accepted D-13 through
+D-16. They do not change product assertions or architecture ownership. Execute
+them in dependency order before the Chat runner cutover:
+
+1. Complete Gate × cell selection and fail-closed result identity.
+2. Extend the Linux cell with actor-scoped client launch and reverse cleanup.
+3. Inject the resulting Tauri session factory and Native adapter into the Chat
+   runner, deleting its local launcher and platform factory dependencies.
 
 ## 13. Final Readiness Gate
 

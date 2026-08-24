@@ -35,16 +35,12 @@ from tooling.acceptance.drivers.native import (
     MouseAction,
     NativeControlSnapshot,
     NativeDesktopAdapter,
+    NativeDesktopRuntimeBinding,
     NativeKey,
     NativeModifier,
-    create_native_desktop_adapter,
 )
 from tooling.acceptance.drivers.station import StationDriver
-from tooling.acceptance.drivers.tauri import (
-    LocalTauriLauncher,
-    TauriSession,
-    find_app_binary,
-)
+from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
     ProfileThreeSubmitFaultProxy,
 )
@@ -126,14 +122,6 @@ REQUIRED_EVIDENCE = {
 }
 
 
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def public_fixture_password() -> str:
     path = REPO_ROOT / "apps" / "station" / "app" / "conf" / "actor.yml"
     current_email = ""
@@ -196,30 +184,23 @@ def port_is_free(port: int) -> bool:
         return probe.connect_ex(("127.0.0.1", port)) != 0
 
 
-def pid_is_stopped(pid: int) -> bool:
-    if pid <= 0:
-        return True
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return True
-    except PermissionError:
-        return False
-    return False
-
-
 class NativeProductClosureGate(AcceptanceGate):
     gate_id = GATE_ID
 
     def __init__(
         self,
-        native_adapter: NativeDesktopAdapter | None = None,
+        *,
+        manifest: dict[str, Any],
+        actor_manifest: dict[str, Any],
+        runtime_binding: NativeDesktopRuntimeBinding,
     ) -> None:
         super().__init__()
-        self.native_adapter = (
-            native_adapter or create_native_desktop_adapter()
+        self.manifest = manifest
+        self.actor_manifest = actor_manifest
+        self.runtime_binding = runtime_binding
+        self.native_adapter: NativeDesktopAdapter = (
+            runtime_binding.native_adapter
         )
-        self.manifest, self.actor_manifest = runtime_manifest()
         station = self.manifest.get("station")
         self.station_url = str(
             station.get("url") if isinstance(station, dict) else ""
@@ -253,7 +234,6 @@ class NativeProductClosureGate(AcceptanceGate):
         self.native_activation_diagnostics: list[dict[str, Any]] = []
         self.reaction_proxy: ProfileThreeSubmitFaultProxy | None = None
         self.fixture_root = Path(tempfile.mkdtemp(prefix="pt-chat-product-closure-"))
-        self.binary = Path(find_app_binary()).resolve()
         self.report.station_url = self.station_url
         self.report.manifest = self.manifest
 
@@ -321,19 +301,14 @@ class NativeProductClosureGate(AcceptanceGate):
             if actor == "alice" and self.reaction_proxy is not None
             else self.station_url
         )
-        client = TauriSession(
-            LocalTauriLauncher(
-                app_binary=str(self.binary),
-                port=int(spec["webdriver_port"]),
-                gateway_port=int(spec["gateway_port"]),
-                profile=str(spec["profile"]),
-                storage_root=str(spec["storage_root"]),
-                environment={
-                    "PEERS_STATION_URL": actor_station_url,
-                    "PT_ACCEPTANCE_WINDOW_SLOT": str(window_actors.index(actor)),
-                    "PT_ACCEPTANCE_WINDOW_COUNT": str(len(window_actors)),
-                },
-            )
+        client = self.runtime_binding.create_session(
+            actor,
+            spec,
+            {
+                "PEERS_STATION_URL": actor_station_url,
+                "PT_ACCEPTANCE_WINDOW_SLOT": str(window_actors.index(actor)),
+                "PT_ACCEPTANCE_WINDOW_COUNT": str(len(window_actors)),
+            },
         )
         attempt = {
             "sequence": len(self.runtime_launches) + 1,
@@ -403,7 +378,7 @@ class NativeProductClosureGate(AcceptanceGate):
             self.report.add_actor(
                 ActorRuntime(
                     name=actor,
-                    runtime="native-tauri-embedded-webdriver",
+                    runtime=self.runtime_binding.cell_id,
                     port=client.port,
                     gateway_port=client.gateway_port,
                     profile=client.profile,
@@ -3679,30 +3654,11 @@ class NativeProductClosureGate(AcceptanceGate):
             self.save_app_log(self.clients[actor], f"{actor}-final")
 
     def cleanup_clients(self) -> dict[str, Any]:
-        pids = sorted(self.runtime_pids)
-        ports = sorted(
-            {
-                int(spec["webdriver_port"])
-                for spec in self.client_specs.values()
-            }
-            | {
-                int(spec["gateway_port"])
-                for spec in self.client_specs.values()
-            }
-            | {
-                int(spec["renderer_port"])
-                for spec in self.client_specs.values()
-            }
-            | (
-                {self.reaction_proxy.port}
-                if self.reaction_proxy is not None
-                else set()
-            )
+        reaction_proxy_port = (
+            self.reaction_proxy.port
+            if self.reaction_proxy is not None
+            else None
         )
-        storage_roots = sorted({
-            Path(str(spec["storage_root"]))
-            for spec in self.client_specs.values()
-        })
         log_paths = [
             client.log_path
             for client in self.runtime_instances
@@ -3754,59 +3710,40 @@ class NativeProductClosureGate(AcceptanceGate):
                     "error": str(error),
                 })
 
-        try:
-            ports_released = bool(wait_until(
-                lambda: all(port_is_free(port) for port in ports),
-                "Native client port release",
-                timeout=30,
-            ))
-        except GateError:
-            ports_released = False
-        try:
-            processes_released = bool(wait_until(
-                lambda: all(pid_is_stopped(pid) for pid in pids),
-                "Native client process release",
-                timeout=30,
-            ))
-        except GateError:
-            processes_released = False
-
-        storage_errors: list[dict[str, str]] = []
-        for storage_root in storage_roots:
-            try:
-                shutil.rmtree(storage_root)
-            except FileNotFoundError:
-                pass
-            except OSError as error:
-                storage_errors.append({
-                    "path": str(storage_root),
-                    "error": str(error),
-                })
-        storage_released = (
-            not storage_errors
-            and all(not storage_root.exists() for storage_root in storage_roots)
+        result = self.runtime_binding.finalize_cleanup(
+            self.runtime_instances,
+            self.client_specs,
         )
-        for log_path in log_paths:
+        if reaction_proxy_port is not None:
             try:
-                log_path.unlink(missing_ok=True)
-            except OSError as error:
-                cleanup_errors.append({
-                    "resource": f"log:{log_path}",
-                    "error": str(error),
-                })
-        logs_released = all(not path.exists() for path in log_paths)
-        result = {
-            "ports": ports,
-            "pids": pids,
-            "storageRoots": [str(path) for path in storage_roots],
-            "storageErrors": storage_errors,
-            "cleanupErrors": cleanup_errors,
-            "logs": [str(path) for path in log_paths],
-            "portsReleased": bool(ports_released),
-            "processesReleased": bool(processes_released),
-            "storageReleased": storage_released,
-            "logsReleased": logs_released,
-        }
+                proxy_released = bool(wait_until(
+                    lambda: port_is_free(reaction_proxy_port),
+                    "reaction proxy port release",
+                    timeout=30,
+                ))
+            except GateError:
+                proxy_released = False
+            result["ports"] = sorted(
+                {
+                    *(
+                        int(port)
+                        for port in result.get("ports", ())
+                    ),
+                    reaction_proxy_port,
+                }
+            )
+            result["portsReleased"] = (
+                bool(result.get("portsReleased"))
+                and proxy_released
+            )
+        runtime_cleanup_errors = result.get("cleanupErrors")
+        if isinstance(runtime_cleanup_errors, list):
+            cleanup_errors.extend(
+                error
+                for error in runtime_cleanup_errors
+                if isinstance(error, dict)
+            )
+        result["cleanupErrors"] = cleanup_errors
         detail = json.dumps(result, sort_keys=True)
         assertions = {
             "runtime_logs_clean": bool(runtime_log_audit["clean"]),
@@ -3831,11 +3768,12 @@ class NativeProductClosureGate(AcceptanceGate):
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
         source = self.manifest.get("source")
         station = self.manifest.get("station")
+        binary_identity = self.runtime_binding.binary_identity()
         source_identity = {
             "source": source,
             "station": station,
-            "binary": str(self.binary),
-            "binarySha256": file_sha256(self.binary),
+            "binary": binary_identity["path"],
+            "binarySha256": binary_identity["sha256"],
         }
         source_commit = str(
             source.get("commit") if isinstance(source, dict) else ""
@@ -3852,6 +3790,7 @@ class NativeProductClosureGate(AcceptanceGate):
             and bool(station_commit)
             and commits_match(source_commit, station_commit)
             and bool(station.get("protoDigest"))
+            and binary_identity.get("sourceCommit") == source_commit
             and len(source_identity["binarySha256"]) == 64,
             json.dumps(source_identity),
         )
@@ -3987,14 +3926,10 @@ class NativeProductClosureGate(AcceptanceGate):
         if missing_evidence:
             raise GateError(f"required evidence is missing: {sorted(missing_evidence)}")
         return {
-            "runtimeCell": "native-tauri-embedded-webdriver",
+            "runtimeCell": self.runtime_binding.cell_id,
             "journey": "mp-w13-chat-product-closure",
             "conversationId": group_id,
             "steps": self.steps,
             "sourceIdentity": source_identity,
             "cleanup": cleanup,
         }
-
-
-if __name__ == "__main__":
-    raise SystemExit(NativeProductClosureGate().execute())
