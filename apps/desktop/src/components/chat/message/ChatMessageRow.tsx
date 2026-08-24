@@ -32,6 +32,7 @@ import {
   type ChatMessage,
   type ChatSurfaceKind,
 } from './chatMessageModel';
+import { blocksMessageActionOverlay } from './messageReactionState';
 
 const { Text } = Typography;
 
@@ -384,6 +385,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const avatarSize = layout.avatarSize;
   const avatarGap = layout.avatarGap;
   const messageActionAnchorRef = useRef<HTMLDivElement>(null);
+  const messageActionsAvailable = showHoverActions
+    && !blocksMessageActionOverlay(reactionMutationPhase);
 
   const bubbleBg = mediaOnlyMessage
     ? 'transparent'
@@ -416,7 +419,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
       className={`msg-row ${highlighted ? 'highlighted' : ''}`}
       tabIndex={0}
       onMouseEnter={() => {
-        if (showHoverActions && messageActionAnchorRef.current) {
+        if (messageActionsAvailable && messageActionAnchorRef.current) {
           onActionTargetChange(message, messageActionAnchorRef.current, false);
         }
       }}
@@ -424,7 +427,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         onActionTargetLeave();
       }}
       onFocusCapture={() => {
-        if (showHoverActions && messageActionAnchorRef.current) {
+        if (messageActionsAvailable && messageActionAnchorRef.current) {
           onActionTargetChange(message, messageActionAnchorRef.current, false);
         }
       }}
@@ -436,7 +439,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         if (
           event.target !== event.currentTarget
           || (event.key !== 'Enter' && event.key !== ' ')
-          || !showHoverActions
+          || !messageActionsAvailable
           || !messageActionAnchorRef.current
         ) {
           return;

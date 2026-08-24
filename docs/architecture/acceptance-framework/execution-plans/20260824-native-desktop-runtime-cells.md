@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-24 | **Updated**: 2026-08-24
+> **Created**: 2026-08-24 | **Updated**: 2026-08-25
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
 > **Branch**: `refactor/chat-acceptance-cutover`
 > **Parent Design**: [../design.md](../design.md)
@@ -297,8 +297,18 @@ Deliver:
 - Align Profile Three Station, remote source, binary and runtime identities.
 - Execute `chat-native-product-closure-e2e` in the Linux cell.
 - Stop at and report only the first failed product boundary.
+- Repair product defects exposed by the unchanged Gate at their owning layer.
+  In particular, active reaction mutation and recovery controls must suppress
+  the generic message action overlay so retry remains directly actionable.
 - Preserve screenshots, DOM, native diagnostics, attachment byte/count ledger,
   restart evidence and cleanup audit.
+
+Targets:
+
+- `apps/desktop/src/components/chat/message/ChatMessageRow.tsx`
+- `apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx`
+- `apps/desktop/src/components/chat/message/messageReactionState.ts`
+- `apps/desktop/src/components/chat/message/messageReactionState.test.ts`
 
 Evidence:
 
@@ -495,7 +505,7 @@ committed to this plan.
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Chat runner receives `NativeDesktopRuntimeBinding`, `TauriSession` and `NativeDesktopAdapter`; local launcher/platform factory dependencies are deleted; required assertions, journey order and 3600-second timeout remain locked; Acceptance Core 230/230, Chat static 38/38 and runner 20/20 PASS |
-| NDR-W7 Linux MP-W13 proof | in progress | Run `20260824T153618898326Z-2a723885a7b6504fbae9d9aaded20735` exposed missing orchestrator endpoint routing. Commit `8d92de4ae` added an explicit runtime-owned reverse-forward lease; run `20260824T161349349172Z-c593b2e55dc650a9787b3f5e89143534` then exposed the missing AT-SPI D-Bus environment. Commit `491b4b55b` fixed that environment; run `20260824T162959499726Z-2441dbf816837af226836acd5508642e` reached `group.create.ui` and exposed an unconditional macOS-only cooperative activation command. All runs cleaned actors, endpoint leases, ports and storage; runtime-owned cooperative activation dispatch and exact-source rerun are pending |
+| NDR-W7 Linux MP-W13 proof | in progress | Exact-source run `20260824T203806612982Z-b8d5dab4b1eea8bcf6f3d8a7c88c7b28` proved source/runtime identity and reached reaction failure recovery, where the generic hover action overlay could occlude the retry control. The Desktop owner fix suppresses that overlay during active reaction mutation; exact-source Linux rerun remains required. All runs cleaned actors, endpoint leases, ports and storage |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 

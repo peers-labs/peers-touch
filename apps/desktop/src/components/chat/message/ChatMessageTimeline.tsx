@@ -16,6 +16,7 @@ import {
   type MessageActionTarget,
 } from './ChatMessageActionOverlay';
 import { ChatMessageRow, ChatMessageRowInteractionStyle } from './ChatMessageRow';
+import { blocksMessageActionOverlay } from './messageReactionState';
 
 const { Text } = Typography;
 
@@ -144,6 +145,16 @@ export function ChatMessageTimeline({
     cancelActionClose();
     setActionTarget(null);
   }, [cancelActionClose]);
+
+  const activeReactionMutationPhase = actionTarget
+    ? reactionMutationFor(actionTarget.message)?.phase
+    : undefined;
+
+  useEffect(() => {
+    if (blocksMessageActionOverlay(activeReactionMutationPhase)) {
+      dismissActions();
+    }
+  }, [activeReactionMutationPhase, dismissActions]);
 
   const scheduleActionClose = useCallback(() => {
     cancelActionClose();
