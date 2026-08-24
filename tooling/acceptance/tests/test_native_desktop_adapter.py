@@ -213,6 +213,9 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
             cell.validations,
             [("chat-native-product-closure-e2e", "abc123")],
         )
+        self.assertFalse(
+            binding.request_cooperative_activation(session, (session,))
+        )
 
     def test_linux_runtime_binding_owns_explicit_endpoint_leases(self) -> None:
         cell = SyntheticLinuxRuntimeCell()
