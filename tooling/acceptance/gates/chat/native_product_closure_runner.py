@@ -187,7 +187,11 @@ def port_is_free(port: int) -> bool:
 
 # #region debug-point A,B,C,D,E:native-mousedown-reporting
 def native_mousedown_debug_enabled() -> bool:
-    return bool(os.environ.get("DEBUG_SERVER_URL", "").strip())
+    return (
+        bool(os.environ.get("DEBUG_SERVER_URL", "").strip())
+        and os.environ.get("DEBUG_SESSION_ID", "").strip()
+        == "native-mousedown-ack"
+    )
 
 
 def report_native_mousedown_debug(
