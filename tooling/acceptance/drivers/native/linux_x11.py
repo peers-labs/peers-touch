@@ -395,7 +395,8 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
     @staticmethod
     def _window_bounds(display: Any, window: Any) -> NativeWindowBounds:
         geometry = window.get_geometry()
-        translated = window.translate_coords(display.screen().root, 0, 0)
+        root = display.screen().root
+        translated = root.translate_coords(window, 0, 0)
         return NativeWindowBounds(
             left=float(translated.x),
             top=float(translated.y),
