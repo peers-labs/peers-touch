@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import io
 import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -61,6 +63,8 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
         self.assertIn("ARG NODE_VERSION=24.10.0", source)
         self.assertIn("ARG PNPM_VERSION=9.12.0", source)
         self.assertIn("ARG RUST_TOOLCHAIN=1.94.0", source)
+        self.assertIn("ENV COREPACK_HOME=/opt/corepack", source)
+        self.assertIn('chmod -R a+rX "${COREPACK_HOME}"', source)
         self.assertIn("libprotobuf-dev", source)
         self.assertIn("libwebkit2gtk-4.1-dev", source)
         self.assertIn("xserver-xorg-video-dummy", source)
@@ -112,6 +116,7 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
             source.index("mkdir -p /workspace/cache/home"),
             source.index("git config --global --add safe.directory"),
         )
+        self.assertIn('"COREPACK_HOME=/opt/corepack"', source)
 
     def test_ready_holds_source_lease_through_manifest_validation(self) -> None:
         source = (
@@ -504,6 +509,43 @@ class RemoteLinuxCellControlTests(unittest.TestCase):
 
             self.assertTrue(active.is_dir())
             self.assertFalse(stale.exists())
+
+    def test_prune_removes_only_wholly_stale_cache_units(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cache_root = home / ".cache" / "build"
+            active_cache = cache_root / "active-cache"
+            stale_cache = cache_root / "stale-cache"
+            active_cache.mkdir(parents=True)
+            stale_cache.mkdir()
+            old_file = active_cache / "old-package"
+            recent_file = active_cache / "recent-package"
+            stale_file = stale_cache / "package"
+            for path in (old_file, recent_file, stale_file):
+                path.write_text("cache\n", encoding="utf-8")
+            old = time.time() - (2 * 86400)
+            os.utime(old_file, (old, old))
+            os.utime(stale_file, (old, old))
+            os.utime(stale_cache, (old, old))
+            args = argparse.Namespace(
+                runtime_root=".cache/runtime",
+                cache_root=".cache/build",
+                retention_days=1,
+            )
+            output = io.StringIO()
+
+            with patch.dict(os.environ, {"HOME": str(home)}), patch(
+                "sys.stdout",
+                output,
+            ):
+                self.assertEqual(remote_control.prune(args), 0)
+
+            payload = json.loads(output.getvalue())
+            self.assertTrue(old_file.is_file())
+            self.assertTrue(recent_file.is_file())
+            self.assertFalse(stale_cache.exists())
+            self.assertEqual(payload["removedCacheEntries"], ["stale-cache"])
+            self.assertEqual(payload["removedCacheFiles"], 1)
 
 
 if __name__ == "__main__":
