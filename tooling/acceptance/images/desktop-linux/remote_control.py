@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
 import json
 import os
 import re
@@ -363,9 +364,19 @@ def _assert_ports_released(ports: tuple[int, ...]) -> None:
 
 
 def _remove_tree(path: Path) -> None:
-    if not path.exists():
-        return
-    shutil.rmtree(path)
+    deadline = time.monotonic() + 3
+    while path.exists():
+        try:
+            shutil.rmtree(path)
+        except OSError as error:
+            if (
+                error.errno not in {errno.EBUSY, errno.ENOTEMPTY}
+                or time.monotonic() >= deadline
+            ):
+                raise RuntimeError(
+                    f"runtime-cell storage cleanup failed for {path}: {error}"
+                ) from error
+            time.sleep(0.05)
     if path.exists():
         raise RuntimeError(
             f"runtime-cell storage remains after cleanup: {path}"
