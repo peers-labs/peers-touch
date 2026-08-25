@@ -288,24 +288,32 @@ class SshTransport:
             timeout=timeout,
         )
 
-    def remote_loopback_port_listening(self, port: int) -> bool:
+    def remote_loopback_port_listening(
+        self,
+        port: int,
+        *,
+        timeout: float = 2,
+    ) -> bool:
         if port < 1 or port > 65535:
             raise ProvisioningError("remote loopback probe port is invalid")
-        probe = self.run_argv(
-            (
-                "python3",
-                "-c",
+        try:
+            probe = self.run_argv(
                 (
-                    "import socket,sys;"
-                    "connection=socket.create_connection("
-                    "('127.0.0.1',int(sys.argv[1])),0.5);"
-                    "connection.close()"
+                    "python3",
+                    "-c",
+                    (
+                        "import socket,sys;"
+                        "connection=socket.create_connection("
+                        "('127.0.0.1',int(sys.argv[1])),0.5);"
+                        "connection.close()"
+                    ),
+                    str(port),
                 ),
-                str(port),
-            ),
-            timeout=2,
-            check=False,
-        )
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return False
         return probe.returncode == 0
 
     def _start_forward(
@@ -346,7 +354,13 @@ class SshTransport:
                     f"{detail[-4000:]}"
                 )
             if remote_probe_port is not None:
-                if self.remote_loopback_port_listening(remote_probe_port):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                if self.remote_loopback_port_listening(
+                    remote_probe_port,
+                    timeout=remaining,
+                ):
                     return SshTunnel(process, 0)
                 time.sleep(0.05)
             elif local_probe_port is not None:
