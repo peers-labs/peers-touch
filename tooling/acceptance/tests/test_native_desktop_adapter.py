@@ -330,7 +330,7 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
                 "activate_process",
                 "post_mouse",
                 "post_key",
-                "post_key",
+                "reveal_file_chooser_location",
                 "focused_control",
                 "window_stack_at_point",
                 "content_origin",

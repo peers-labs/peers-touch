@@ -109,6 +109,11 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
         self.assertIn('setsid \\"$PT_CELL_APP_BINARY\\"', source)
         self.assertIn('f"kill -TERM -- -{process_id}"', source)
         self.assertIn('f"kill -KILL -- -{process_id}"', source)
+        self.assertIn('"reveal_file_chooser_location"', source)
+        self.assertIn(
+            "adapter.reveal_file_chooser_location()",
+            source,
+        )
 
     def test_local_tunnel_supervisor_owns_bounded_forwards(self) -> None:
         source = (
