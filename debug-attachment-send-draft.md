@@ -23,6 +23,9 @@
 | G | The lifecycle deletes a completed upload source before the pending message is committed, leaving the eager sender preview without either a valid local source or canonical projection. | High | Low | Cleanup reports the attachment before `open_attachment_once`; pending lookup is missing/incomplete and canonical projection is absent. | Pending |
 | H | The sender commit omits canonical attachment projections even after the pending row is removed. | Medium | Low | `open_attachment_once` reports no pending source and no canonical projection after command commit. | Pending |
 | I | The attachment row and projection exist, but image decoding or asset URL conversion fails. | Low | Low | Engine returns a verified path while the DOM image remains unloaded or errors. | Pending |
+| J | The selected Composer image URL is complete with zero intrinsic width because WebKitGTK rejects the scoped `asset://` resource. | Medium | Low | The preview snapshot reports `complete=true`, `naturalWidth=0`, and a populated asset URL. | Pending |
+| K | The Gate samples the Composer image before WebKitGTK finishes decoding it. | High | Low | The preview snapshot reports `complete=false` immediately after the ready draft appears. | Pending |
+| L | The picked attachment loses its preview URL or image classification before render. | Low | Low | The draft is ready but `src`, `currentSrc`, or `data-chat-attachment-preview` is empty or malformed. | Pending |
 
 ## Log Evidence
 - Pre-instrumentation Native run `20260823T170346937849Z-df8e52a09b8fcec409c868892409bcb6`:
@@ -126,3 +129,12 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
   `01M0WXCBR1PKE0AW0933CNQPWC`. All actor processes, tunnels, endpoint leases,
   ports, and storage were released. The next diagnostic run must distinguish
   G/H/I at the Engine lifecycle boundary.
+- Exact-source Linux run
+  `20260825T172938588985Z-00c0feba0c5d63d148c4b01e13d349fd`
+  at `0839fe50b1df2f36d899a0851c926f97e95839b7` passed the same product
+  boundaries through failed-attachment draft retention, then failed earlier
+  in the normal attachment journey with `Composer image preview did not load`.
+  The two drafts had already reached `ready`, but the Gate performed one
+  immediate image-state read and did not preserve whether `complete` was false
+  or `naturalWidth` was zero. G/H/I were not reached. The next diagnostic run
+  records J/K/L from the unchanged preview assertion. Runtime cleanup passed.

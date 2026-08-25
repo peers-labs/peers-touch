@@ -3113,11 +3113,51 @@ class NativeProductClosureGate(AcceptanceGate):
             '[data-chat-attachment-draft][data-chat-attachment-status="ready"] img',
             20,
         )
-        if not self.clients["alice"].execute_script(
-            "return arguments[0].complete && arguments[0].naturalWidth > 0;",
+        preview_snapshot = self.clients["alice"].execute_script(
+            """
+            const image = arguments[0];
+            const draft = image.closest('[data-chat-attachment-draft]');
+            return {
+              complete: image.complete,
+              naturalWidth: image.naturalWidth,
+              naturalHeight: image.naturalHeight,
+              src: image.getAttribute('src') || '',
+              currentSrc: image.currentSrc || '',
+              draftId: draft?.getAttribute('data-chat-attachment-draft') || '',
+              draftStatus: draft?.getAttribute('data-chat-attachment-status') || '',
+              draftPreview: draft?.getAttribute('data-chat-attachment-preview') || '',
+            };
+            """,
             preview,
+        )
+        # #region debug-point J,K,L:composer-image-preview
+        self.clients["alice"].execute_script(
+            """
+            fetch('http://127.0.0.1:7780/event', {
+              method: 'POST',
+              body: JSON.stringify({
+                sessionId: 'attachment-send-draft',
+                runId: 'pre-fix-linux',
+                hypothesisId: 'J,K,L',
+                location: 'native_product_closure_runner:prove_attachments',
+                msg: '[DEBUG] Native Gate observed Composer image preview',
+                data: arguments[0],
+                ts: Date.now(),
+              }),
+            }).catch(() => {});
+            """,
+            preview_snapshot,
+        )
+        # #endregion
+        if not (
+            isinstance(preview_snapshot, dict)
+            and preview_snapshot.get("complete") is True
+            and int(preview_snapshot.get("naturalWidth") or 0) > 0
         ):
-            raise GateError("Composer image preview did not load")
+            raise GateError(
+                "Composer image preview did not load: "
+                f"{json.dumps(preview_snapshot, sort_keys=True)}"
+            )
         composer = self.clients["alice"].find_element(
             f'[data-chat-composer="{group_id}"]',
             5,
