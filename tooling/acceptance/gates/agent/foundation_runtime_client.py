@@ -217,7 +217,7 @@ class FoundationRuntimeClient:
             user_data_dir=str(self.spec.storage_root / "chrome"),
         )
         self.driver = self.chrome.start()
-        self.chrome.navigate(f"http://127.0.0.1:{self.spec.renderer_port}")
+        self.chrome.navigate(f"http://localhost:{self.spec.renderer_port}")
         self.chrome.wait_for_ready(30)
 
     def _process_alive(self) -> bool:
