@@ -38,6 +38,9 @@ class SyntheticTunnel:
     def failure_detail(self) -> dict[str, object] | None:
         return None
 
+    def report_owner(self, owner: str) -> None:
+        self.owner = owner
+
     def stop(self) -> None:
         self.stopped = True
 
