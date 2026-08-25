@@ -1054,6 +1054,8 @@ def prune(args: argparse.Namespace) -> int:
     removed_cache_entries: list[str] = []
     removed_cache_files = 0
     for path in cache_root.iterdir() if cache_root.is_dir() else ():
+        if path.lstat().st_mtime >= cutoff:
+            continue
         latest_mtime, file_count = _cache_entry_stats(path)
         if latest_mtime >= cutoff:
             continue

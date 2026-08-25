@@ -1032,6 +1032,29 @@ class RemoteLinuxCellControlTests(unittest.TestCase):
             self.assertEqual(payload["removedCacheEntries"], ["stale-cache"])
             self.assertEqual(payload["removedCacheFiles"], 1)
 
+    def test_prune_does_not_scan_fresh_cache_units(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            fresh_cache = home / ".cache" / "build" / "fresh-cache"
+            fresh_cache.mkdir(parents=True)
+            (fresh_cache / "package").write_text("cache\n", encoding="utf-8")
+            args = argparse.Namespace(
+                runtime_root=".cache/runtime",
+                cache_root=".cache/build",
+                retention_days=1,
+            )
+
+            with patch.dict(os.environ, {"HOME": str(home)}), patch(
+                "sys.stdout",
+            ), patch.object(
+                remote_control,
+                "_cache_entry_stats",
+                side_effect=AssertionError("fresh cache must not be scanned"),
+            ):
+                self.assertEqual(remote_control.prune(args), 0)
+
+            self.assertTrue(fresh_cache.is_dir())
+
 
 if __name__ == "__main__":
     unittest.main()
