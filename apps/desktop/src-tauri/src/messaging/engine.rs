@@ -362,7 +362,32 @@ impl MessagingEngine {
 
     pub fn cleanup_completed_attachment_sources(&self) -> Result<usize, String> {
         let mut cleaned = 0;
-        for (attachment_id, source_local_ref) in self.store.completed_attachment_source_paths()? {
+        let completed_sources = self.store.completed_attachment_source_paths()?;
+        // #region debug-point G:completed-source-cleanup
+        if let Ok(client) = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(250))
+            .build()
+        {
+            let _ = client
+                .post("http://127.0.0.1:7780/event")
+                .json(&serde_json::json!({
+                    "sessionId": "attachment-send-draft",
+                    "runId": "pre-fix-linux",
+                    "hypothesisId": "G",
+                    "location": "messaging::engine:cleanup_completed_attachment_sources",
+                    "msg": "[DEBUG] Engine found completed attachment sources to clean",
+                    "data": {
+                        "attachmentIds": completed_sources
+                            .iter()
+                            .map(|(attachment_id, _)| attachment_id)
+                            .collect::<Vec<_>>(),
+                    },
+                    "ts": now_unix_ms(),
+                }))
+                .send();
+        }
+        // #endregion
+        for (attachment_id, source_local_ref) in completed_sources {
             let path = Path::new(&source_local_ref);
             if !managed_attachment_source(&self.profile_id, path)? {
                 continue;
@@ -399,24 +424,69 @@ impl MessagingEngine {
         if token.trim().is_empty() || attachment_id.trim().is_empty() {
             return Err("messaging attachment open intent is incomplete".to_string());
         }
-        if let Some(source) = self
-            .store
-            .pending_sender_attachment_source(attachment_id)?
+        let pending_source = self.store.pending_sender_attachment_source(attachment_id);
+        // #region debug-point G,H,I:attachment-open-resolution
+        if let Ok(client) = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(250))
+            .build()
         {
-            let expected_plaintext_sha256: [u8; 32] = source
-                .plaintext_sha256
-                .as_slice()
-                .try_into()
-                .map_err(|_| "messaging attachment plaintext commitment is invalid".to_string())?;
+            let _ = client
+                .post("http://127.0.0.1:7780/event")
+                .json(&serde_json::json!({
+                    "sessionId": "attachment-send-draft",
+                    "runId": "pre-fix-linux",
+                    "hypothesisId": "G,H,I",
+                    "location": "messaging::engine:open_attachment_once",
+                    "msg": "[DEBUG] Engine resolved pending sender attachment source",
+                    "data": {
+                        "attachmentId": attachment_id,
+                        "state": match &pending_source {
+                            Ok(Some(_)) => "ready",
+                            Ok(None) => "missing",
+                            Err(_) => "invalid",
+                        },
+                        "error": pending_source.as_ref().err(),
+                    },
+                    "ts": now_unix_ms(),
+                }))
+                .send();
+        }
+        // #endregion
+        if let Some(source) = pending_source? {
+            let expected_plaintext_sha256: [u8; 32] =
+                source.plaintext_sha256.as_slice().try_into().map_err(|_| {
+                    "messaging attachment plaintext commitment is invalid".to_string()
+                })?;
             let path = Path::new(&source.source_local_ref);
             if !path.is_file() || sha256_path(path)? != expected_plaintext_sha256 {
                 return Err("messaging pending sender attachment source is invalid".to_string());
             }
             return Ok(AttachmentOpenProgress::Ready(source.source_local_ref));
         }
-        let projection = self
-            .store
-            .attachment_download_projection(attachment_id)?
+        let projection = self.store.attachment_download_projection(attachment_id)?;
+        // #region debug-point H,I:attachment-open-projection
+        if let Ok(client) = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(250))
+            .build()
+        {
+            let _ = client
+                .post("http://127.0.0.1:7780/event")
+                .json(&serde_json::json!({
+                    "sessionId": "attachment-send-draft",
+                    "runId": "pre-fix-linux",
+                    "hypothesisId": "H,I",
+                    "location": "messaging::engine:open_attachment_once",
+                    "msg": "[DEBUG] Engine resolved canonical attachment projection",
+                    "data": {
+                        "attachmentId": attachment_id,
+                        "available": projection.is_some(),
+                    },
+                    "ts": now_unix_ms(),
+                }))
+                .send();
+        }
+        // #endregion
+        let projection = projection
             .ok_or_else(|| "messaging attachment projection is unavailable".to_string())?;
         let expected_plaintext_sha256: [u8; 32] = projection
             .metadata
