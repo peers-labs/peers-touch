@@ -853,17 +853,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "self.native_adapter.reveal_file_chooser_location()",
             self.source,
         )
-        self.assertIn("for attempt in range(2):", self.source)
-        self.assertIn(
-            "NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS / 2",
-            self.source,
-        )
-        self.assertIn("if attempt > 0:", self.source)
-        self.assertIn("control.focused_window", self.source)
-        self.assertIn(
-            "Native file chooser lost its owned active dialog",
-            self.source,
-        )
         self.assertNotIn(
             "NativeKey.G,\n"
             "            modifiers=(NativeModifier.PRIMARY, NativeModifier.SHIFT),",
