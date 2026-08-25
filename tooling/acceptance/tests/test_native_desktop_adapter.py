@@ -225,11 +225,17 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
             source = Path(tmp) / "fixture.png"
             source.write_bytes(b"fixture")
             staged = binding.stage_native_file("alice", source)
+            source.write_bytes(b"updated fixture")
+            refreshed = binding.stage_native_file("alice", source)
         self.assertEqual(
             staged,
             Path("/workspace/run/actors/alice/fixtures/fixture.png"),
         )
-        self.assertEqual(cell.staged_files, [("alice", source)])
+        self.assertEqual(refreshed, staged)
+        self.assertEqual(
+            cell.staged_files,
+            [("alice", source), ("alice", source)],
+        )
         self.assertFalse(
             binding.request_cooperative_activation(session, (session,))
         )
@@ -381,6 +387,8 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
             fixture = Path(tmp) / "fixture.png"
             fixture.write_bytes(b"fixture")
             staged = binding.stage_native_file("alice", fixture)
+            fixture.write_bytes(b"updated fixture")
+            refreshed = binding.stage_native_file("alice", fixture)
             binary_identity = binding.binary_identity()
 
         self.assertEqual(binding.cell_id, "desktop-macos-native")
@@ -389,6 +397,7 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
         self.assertEqual(endpoint.url, "http://127.0.0.1:51219")
         self.assertEqual(endpoint.lease_id, "local-direct")
         self.assertEqual(staged, fixture.resolve())
+        self.assertEqual(refreshed, staged)
         self.assertEqual(
             binary_identity["sha256"],
             "a37cdd0591588a0016117ba6b84e7182977a007c332bccbc55ba656e74e6f45a",
