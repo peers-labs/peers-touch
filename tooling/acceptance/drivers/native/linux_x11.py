@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -148,7 +149,11 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             )
             for modifier_code in modifier_codes:
                 xtest.fake_input(display, X.KeyPress, modifier_code)
+            display.sync()
+            time.sleep(0.01)
             xtest.fake_input(display, X.KeyPress, key_code)
+            display.sync()
+            time.sleep(0.01)
             xtest.fake_input(display, X.KeyRelease, key_code)
             for modifier_code in reversed(modifier_codes):
                 xtest.fake_input(display, X.KeyRelease, modifier_code)

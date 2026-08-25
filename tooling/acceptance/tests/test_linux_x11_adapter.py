@@ -60,6 +60,50 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
             modifiers=(NativeModifier.PRIMARY,),
         )
 
+    def test_key_chord_settles_modifier_and_key_press_states(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        xtest = types.ModuleType("Xlib.ext.xtest")
+        xtest.fake_input = Mock()  # type: ignore[attr-defined]
+        xlib = types.ModuleType("Xlib")
+        xlib.X = types.SimpleNamespace(KeyPress=2, KeyRelease=3)
+        xlib.XK = types.SimpleNamespace(string_to_keysym=lambda value: value)
+        extension = types.ModuleType("Xlib.ext")
+        extension.xtest = xtest
+
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_keycode", side_effect=(37, 38)),
+            patch(
+                "tooling.acceptance.drivers.native.linux_x11.time.sleep"
+            ) as sleep,
+            patch.dict(
+                sys.modules,
+                {
+                    "Xlib": xlib,
+                    "Xlib.ext": extension,
+                    "Xlib.ext.xtest": xtest,
+                },
+            ),
+        ):
+            adapter.post_key(
+                NativeKey.L,
+                modifiers=(NativeModifier.PRIMARY,),
+            )
+
+        self.assertEqual(
+            xtest.fake_input.call_args_list,  # type: ignore[attr-defined]
+            [
+                call(display, 2, 37),
+                call(display, 2, 38),
+                call(display, 3, 38),
+                call(display, 3, 37),
+            ],
+        )
+        self.assertEqual(display.sync.call_count, 3)
+        self.assertEqual(sleep.call_args_list, [call(0.01), call(0.01)])
+        display.close.assert_called_once_with()
+
     def test_mouse_buttons_move_pointer_to_the_contract_point_first(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
         display = Mock()
