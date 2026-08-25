@@ -24,8 +24,9 @@ import (
 //     security gain (the PIN protects the encrypted token at rest, and the
 //     server still revokes on logout / `CreateWithKick`).
 //   - `CreateWithKick` is the authoritative takeover boundary: within one
-//     Station, a successful login for an actor revokes every older session for
-//     that actor, regardless of device label.
+//     Station, a successful login for an actor revokes older sessions for that
+//     actor on the *same device type*. Different device types (Desktop native,
+//     Browser, Mobile) may hold concurrent sessions per MCA-D19.
 //
 // Operators that want a shorter window can override this via a session config
 // once we wire one up; today this constant is the single source of truth.
