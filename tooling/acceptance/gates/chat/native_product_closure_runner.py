@@ -2060,17 +2060,34 @@ class NativeProductClosureGate(AcceptanceGate):
             if self.reaction_visible("alice", message_id, failure_emoji):
                 raise GateError("failed reaction remained as terminal optimistic state")
             proxy.disarm()
-            self.click(
-                "alice",
-                f'[data-message-ulid="{message_id}"] '
-                f'[data-message-reaction-retry="{message_id}"]',
-            )
             wait_until(
                 lambda: self.reaction_visible("alice", message_id, failure_emoji)
                 and self.reaction_visible("bob", message_id, failure_emoji),
-                "reaction retry convergence",
+                "reaction automatic retry convergence",
                 timeout=120,
             )
+            wait_until(
+                lambda: (
+                    not self.clients["alice"].find_elements(
+                        f'[data-message-ulid="{message_id}"] '
+                        "[data-message-reaction-state]"
+                    )
+                ),
+                "reaction recovery state cleared",
+                timeout=30,
+            )
+            proxy_evidence = proxy.evidence()
+            command_hashes = proxy_evidence.get("commandSha256") or []
+            forwarded_paths = proxy_evidence.get("forwardedPaths") or {}
+            if (
+                len(command_hashes) < 2
+                or len(set(command_hashes)) != 1
+                or int(forwarded_paths.get("/messaging/command/submit") or 0) < 1
+            ):
+                raise GateError(
+                    "reaction exact retry was not proven through the fault proxy: "
+                    f"{json.dumps(proxy_evidence, sort_keys=True)}"
+                )
             engine: dict[str, list[dict[str, str]]] = {}
             for actor in ("alice", "bob"):
                 def reaction_readback(actor: str = actor) -> list[dict[str, str]] | None:
@@ -2124,7 +2141,7 @@ class NativeProductClosureGate(AcceptanceGate):
             self.assert_condition("reaction_failure_recovery", True)
             return {
                 "failureEmoji": failure_emoji,
-                "proxy": proxy.evidence(),
+                "proxy": proxy_evidence,
                 "engine": engine,
                 "recovered": True,
             }
