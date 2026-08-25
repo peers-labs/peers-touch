@@ -152,6 +152,25 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         self.assertEqual(bounds.width, 860)
         self.assertEqual(bounds.height, 800)
 
+    def test_content_origin_uses_client_origin_without_frame_extents(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        root = Mock()
+        window = Mock()
+        display.screen.return_value.root = root
+        root.translate_coords.return_value = types.SimpleNamespace(x=641, y=52)
+
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_client_windows", return_value=(window,)),
+            patch.object(adapter, "_window_pid", return_value=42),
+        ):
+            origin = adapter.content_origin(42)
+
+        root.translate_coords.assert_called_once_with(window, 0, 0)
+        self.assertEqual(origin, (641.0, 52.0))
+        display.close.assert_called_once_with()
+
     def test_focused_control_owns_active_descendant_dialog(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
         display = Mock()

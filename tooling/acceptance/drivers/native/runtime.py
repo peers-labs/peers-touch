@@ -240,6 +240,16 @@ class RemoteLinuxNativeDesktopAdapter(NativeDesktopAdapter):
             error=str(payload.get("error") or ""),
         )
 
+    def content_origin(
+        self,
+        process_id: int,
+    ) -> tuple[float, float]:
+        payload = self._execute(
+            "content_origin",
+            {"processId": process_id},
+        )
+        return float(payload["x"]), float(payload["y"])
+
     def mouse_button_down(self) -> bool:
         return bool(self._execute("mouse_button_down", {}).get("down"))
 
