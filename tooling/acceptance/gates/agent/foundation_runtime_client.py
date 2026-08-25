@@ -135,7 +135,7 @@ class FoundationRuntimeClient:
         self.spec.storage_root.mkdir(parents=True, exist_ok=True)
         values = {
             **self.profile_env,
-            "PT_DEV_PROFILE": "one",
+            "PT_DEV_PROFILE": os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one"),
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": self.station_url,
             "PEERS_STATION_URL": self.station_url,
@@ -154,7 +154,7 @@ class FoundationRuntimeClient:
     def launch_environment(self) -> dict[str, str]:
         return {
             "WORKTREE_ID": self.spec.worktree.name,
-            "PT_DEV_PROFILE": "one",
+            "PT_DEV_PROFILE": os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one"),
             "PT_DEV_PROFILE_FILE": str(self.runtime_profile),
             "PT_PROFILE": self.spec.profile,
             "GATEWAY_PORT": str(self.spec.gateway_port),

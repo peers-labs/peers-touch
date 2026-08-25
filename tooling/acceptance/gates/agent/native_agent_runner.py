@@ -47,7 +47,7 @@ GATE_BY_JOURNEY = {
     "turn": "agent-native-turn-e2e",
     "stream-resilience": "agent-stream-resilience-e2e",
 }
-APPROVED_PROFILE = "one"
+APPROVED_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 WAIT_TICK = threading.Event()
 DEFAULT_TIMEOUT = float(os.environ.get("PT_AGENT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 STARTUP_TIMEOUT = float(os.environ.get("PT_AGENT_NATIVE_STARTUP_TIMEOUT_SECONDS", "900"))

@@ -36,7 +36,7 @@ GATE_ROLES = {
 AGENT_V2_FOUNDATION_GATE = "agent-v2-kernel-foundation-e2e"
 AGENT_NATIVE_TURN_GATE = "agent-native-turn-e2e"
 AGENT_STREAM_RESILIENCE_GATE = "agent-stream-resilience-e2e"
-AGENT_V2_PROFILE = "one"
+AGENT_V2_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 AGENT_V2_CREDENTIAL_REFS = (
     "profile:CHAT_NATIVE_DEMO_PASSWORD",
     "profile:PT_AGENT_PROVIDER_API_KEY",
