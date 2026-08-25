@@ -226,7 +226,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             station_url=station_url,
             deployment_environment=deployment_environment,
             roles=("alice",),
-            password=password,
             credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
             reset_authorized=reset_authorized,
         )
@@ -399,7 +398,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             station_url=station_url,
             deployment_environment=deployment_environment,
             roles=("alice",),
-            password=profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
             credential_ref="env:CHAT_NATIVE_DEMO_PASSWORD",
             reset_authorized=reset_authorized,
         )
