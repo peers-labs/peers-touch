@@ -107,9 +107,9 @@ class ProfileThreeTargetTest(unittest.TestCase):
     def test_station_reset_rejects_other_deploy_environments(self) -> None:
         with self.assertRaisesRegex(
             RuntimeError,
-            "restricted to station-three",
+            "restricted to approved environments",
         ):
-            reset_station_messaging_state("station-1")
+            reset_station_messaging_state("station-unknown")
 
 
 if __name__ == "__main__":

@@ -18,6 +18,8 @@ import urllib.request
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PROFILE_THREE_ENVIRONMENT = "station-three"
+# Environments approved for destructive fixture reset (disposable stations only).
+APPROVED_RESET_ENVIRONMENTS = ("station-three", "station-1")
 PROFILE_THREE_STATION_CONTAINER = "pt-station-a-station-1"
 CHAT_TABLES = (
     "actor_devices",
@@ -367,9 +369,10 @@ def reset_local_client_storage(
 
 
 def reset_station_messaging_state(environment_name: str) -> None:
-    if environment_name != PROFILE_THREE_ENVIRONMENT:
+    if environment_name not in APPROVED_RESET_ENVIRONMENTS:
         raise RuntimeError(
-            "native Chat fixture reset is restricted to station-three"
+            f"native Chat fixture reset is restricted to approved environments "
+            f"{APPROVED_RESET_ENVIRONMENTS}; got {environment_name!r}"
         )
     environment = deploy_environment(environment_name)
     host = environment.get("PT_DEPLOY_HOST", "").strip()
