@@ -154,6 +154,13 @@ class NativeDesktopAdapter(ABC):
     ) -> NativeWindowStack:
         ...
 
+    def content_origin(
+        self,
+        process_id: int,
+    ) -> tuple[float, float] | None:
+        del process_id
+        return None
+
     @abstractmethod
     def mouse_button_down(self) -> bool:
         ...

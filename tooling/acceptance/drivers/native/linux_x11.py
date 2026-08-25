@@ -272,6 +272,38 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
         finally:
             display.close()
 
+    def content_origin(
+        self,
+        process_id: int,
+    ) -> tuple[float, float]:
+        process_id = self._validated_process_id(process_id)
+        display = self._open_display()
+        try:
+            window = next(
+                (
+                    candidate
+                    for candidate in reversed(self._client_windows(display))
+                    if self._window_pid(display, candidate) == process_id
+                ),
+                None,
+            )
+            if window is None:
+                raise DriverError(
+                    f"Linux Native actor process {process_id} has no EWMH window"
+                )
+            root = display.screen().root
+            origin = root.translate_coords(window, 0, 0)
+            return float(origin.x), float(origin.y)
+        except DriverError:
+            raise
+        except Exception as error:
+            raise DriverError(
+                f"Linux Native content origin failed for process "
+                f"{process_id}: {error}"
+            ) from error
+        finally:
+            display.close()
+
     def mouse_button_down(self) -> bool:
         display = self._open_display()
         try:
