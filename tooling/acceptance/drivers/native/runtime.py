@@ -171,10 +171,7 @@ class RemoteLinuxNativeDesktopAdapter(NativeDesktopAdapter):
         )
 
     def reveal_file_chooser_location(self) -> None:
-        self.post_key(
-            NativeKey.L,
-            modifiers=(NativeModifier.PRIMARY,),
-        )
+        self._execute("reveal_file_chooser_location", {})
 
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         payload = self._execute(
