@@ -407,6 +407,39 @@ class SourceSyncContractTests(unittest.TestCase):
             timeout=10,
         )
 
+    def test_forward_enables_bounded_ssh_keepalives(self) -> None:
+        transport = SshTransport(
+            SshTarget(host="station.example", user="acceptance")
+        )
+        process = Mock()
+        process.poll.return_value = None
+        process.pid = 19418
+        process.stderr = Mock()
+        connection = Mock()
+        connection.__enter__ = Mock(return_value=connection)
+        connection.__exit__ = Mock(return_value=None)
+
+        with (
+            patch(
+                "tooling.acceptance.transports.ssh.subprocess.Popen",
+                return_value=process,
+            ) as popen,
+            patch(
+                "tooling.acceptance.transports.ssh.socket.create_connection",
+                return_value=connection,
+            ),
+        ):
+            tunnel = transport.start_local_forward(
+                remote_port=4545,
+                local_port=19418,
+            )
+
+        command = popen.call_args.args[0]
+        self.assertTrue(tunnel.is_alive())
+        self.assertIn("ServerAliveInterval=10", command)
+        self.assertIn("ServerAliveCountMax=3", command)
+        self.assertIn("TCPKeepAlive=yes", command)
+
     def test_remote_loopback_probe_reports_connection_result(self) -> None:
         transport = SshTransport(
             SshTarget(host="station.example", user="acceptance")
