@@ -255,7 +255,35 @@ export function installAcceptanceHarness(): void {
         ({ lifecycle }) => lifecycle.state === 'ready' && lifecycle.authenticated,
         'authenticated identity lifecycle',
       );
+      // #region debug-point B,C,D:harness-deferred-runtime-start
+      fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'login-runtime-bootstrap',
+          runId: 'pre-fix',
+          hypothesisId: 'B,C,D',
+          location: 'chatHarness:login:before-deferred',
+          msg: '[DEBUG] Harness entered deferred runtime installation',
+          data: { account },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       await installDeferredAppRuntimeProjections();
+      // #region debug-point A,C,D:harness-deferred-runtime-end
+      fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'login-runtime-bootstrap',
+          runId: 'pre-fix',
+          hypothesisId: 'A,C,D',
+          location: 'chatHarness:login:after-deferred',
+          msg: '[DEBUG] Harness completed deferred runtime installation',
+          data: { account },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       await hydrateSocialForActiveActor();
       const actorPtid = activeActorPtid();
       return {
