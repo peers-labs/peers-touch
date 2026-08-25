@@ -728,7 +728,9 @@ class NativeProductClosureGate(AcceptanceGate):
                 control
                 if control.window_count >= baseline_window_count
                 and not panel_open(control)
-                and control.kind != "unknown"
+                and control.main_window
+                and control.frontmost
+                and control.focused_window
                 and control.kind != "application-dialog"
                 else None
             )
