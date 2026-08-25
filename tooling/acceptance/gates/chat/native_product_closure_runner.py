@@ -488,9 +488,13 @@ class NativeProductClosureGate(AcceptanceGate):
         client = self.focus_actor_window(actor)
         if client.process_id is None:
             raise GateError(f"{actor} Native file chooser has no owning process")
-        selected_path = file_path.resolve()
-        if not selected_path.is_file():
-            raise GateError(f"Native file selection source is missing: {selected_path}")
+        source_path = file_path.resolve()
+        if not source_path.is_file():
+            raise GateError(f"Native file selection source is missing: {source_path}")
+        selected_path = self.runtime_binding.stage_native_file(
+            actor,
+            source_path,
+        )
 
         def native_app_baseline_ready(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
@@ -736,8 +740,8 @@ class NativeProductClosureGate(AcceptanceGate):
         ).until(native_window_restored)
         self.focus_actor_window(actor)
         return {
-            "name": selected_path.name,
-            "size": selected_path.stat().st_size,
+            "name": source_path.name,
+            "size": source_path.stat().st_size,
         }
 
 

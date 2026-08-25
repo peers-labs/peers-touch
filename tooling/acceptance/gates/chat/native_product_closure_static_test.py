@@ -805,6 +805,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("def choose_native_file(", self.source)
         self.assertIn("NativeDesktopAdapter", self.source)
         self.assertNotIn("create_native_desktop_adapter", self.source)
+        self.assertIn(
+            "self.runtime_binding.stage_native_file(",
+            self.source,
+        )
         self.assertIn("AXUIElementCreateApplication", self.macos_adapter)
         self.assertIn(
             "AXUIElementSetMessagingTimeout(application, 0.5)",
