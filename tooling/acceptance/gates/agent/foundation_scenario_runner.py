@@ -262,18 +262,46 @@ def _authenticate_clients(
                     f"{provider_result}"
                 )
 
-        # Step 4: Wait for capability session to be established
-        cap_result = client.harness(
-            "getFoundationCapabilitySessions",
-            {},
-            timeout=90,
-        )
+    # Step 4: Wait for capability sessions on both clients (Station async)
+    # Capability session registration is asynchronous on Station; give it up
+    # to 60s total after both clients have completed login + navigation.
+    import time as _time
+
+    deadline = _time.monotonic() + 60
+    for client in (runtime_pair.native, runtime_pair.browser):
+        remaining = max(5.0, deadline - _time.monotonic())
+        try:
+            cap_result = client.harness(
+                "getFoundationCapabilitySessions",
+                {},
+                timeout=remaining + 10,
+            )
+        except Exception:
+            # If capability session is not available yet, it's not fatal;
+            # individual probes will retry with their own timeouts.
+            cap_result = None
+        if isinstance(cap_result, Mapping) and cap_result.get(
+            "selectedStationSession"
+        ):
+            continue
+        # Wait and retry once
+        _time.sleep(min(10.0, max(0, deadline - _time.monotonic())))
+        try:
+            cap_result = client.harness(
+                "getFoundationCapabilitySessions",
+                {},
+                timeout=max(5.0, deadline - _time.monotonic()) + 10,
+            )
+        except Exception as error:
+            raise ScenarioRunnerError(
+                f"{client.spec.runtime} capability session not established "
+                f"after extended wait: {error}"
+            ) from error
         if not isinstance(cap_result, Mapping) or not cap_result.get(
             "selectedStationSession"
         ):
             raise ScenarioRunnerError(
-                f"{client.spec.runtime} capability session not established: "
-                f"{cap_result}"
+                f"{client.spec.runtime} capability session not established"
             )
 
 

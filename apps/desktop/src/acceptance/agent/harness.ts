@@ -92,7 +92,7 @@ async function capabilitySessionEvidence() {
   };
 }
 
-async function waitForCapabilitySessionEvidence(timeoutMs = 30_000) {
+async function waitForCapabilitySessionEvidence(timeoutMs = 60_000) {
   const start = Date.now();
   let latest = await capabilitySessionEvidence();
   while (
