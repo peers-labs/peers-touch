@@ -655,9 +655,26 @@ class NativeProductClosureGate(AcceptanceGate):
         self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
 
         baseline_window_count = baseline_control.window_count
+        observed_selection_states: set[str] = set()
 
         def selection_or_browser_ready(_: Any) -> dict[str, object] | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
+            # #region debug-point M,N,O:file-chooser-selection-transition
+            state = json.dumps(control.to_dict(), sort_keys=True)
+            if state not in observed_selection_states:
+                observed_selection_states.add(state)
+                report_native_mousedown_debug(
+                    "M,N,O",
+                    "native_product_closure_runner.py:"
+                    "choose_native_file:selection-transition",
+                    "Native file chooser selection transition",
+                    {
+                        "actor": actor,
+                        "processId": client.process_id,
+                        "control": control.to_dict(),
+                    },
+                )
+            # #endregion
             if (
                 control.window_count < baseline_window_count
                 or control.kind == "unknown"
@@ -683,8 +700,26 @@ class NativeProductClosureGate(AcceptanceGate):
                 private_source=True,
             )
 
+        observed_restored_states: set[str] = set()
+
         def native_window_restored(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
+            # #region debug-point M,N,O:file-chooser-window-restored
+            state = json.dumps(control.to_dict(), sort_keys=True)
+            if state not in observed_restored_states:
+                observed_restored_states.add(state)
+                report_native_mousedown_debug(
+                    "M,N,O",
+                    "native_product_closure_runner.py:"
+                    "choose_native_file:window-restored",
+                    "Native file chooser restored window state",
+                    {
+                        "actor": actor,
+                        "processId": client.process_id,
+                        "control": control.to_dict(),
+                    },
+                )
+            # #endregion
             return (
                 control
                 if control.window_count >= baseline_window_count
