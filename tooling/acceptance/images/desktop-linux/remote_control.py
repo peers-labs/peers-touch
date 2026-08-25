@@ -23,6 +23,7 @@ _ADAPTER_OPERATIONS = frozenset(
     {
         "activate_process",
         "capture_screenshot",
+        "content_origin",
         "focused_control",
         "mouse_button_down",
         "post_key",
@@ -67,6 +68,9 @@ elif operation == "window_stack_at_point":
     result = adapter.window_stack_at_point(
         tuple(float(value) for value in payload["point"])
     ).to_dict()
+elif operation == "content_origin":
+    x, y = adapter.content_origin(int(payload["processId"]))
+    result = {"x": x, "y": y}
 elif operation == "mouse_button_down":
     result = {"down": adapter.mouse_button_down()}
 elif operation == "capture_screenshot":

@@ -290,6 +290,7 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
                     }
                 ]
             },
+            "content_origin": {"x": 1, "y": 22},
             "mouse_button_down": {"down": True},
             "capture_screenshot": {
                 "content": base64.b64encode(b"png").decode("ascii")
@@ -310,6 +311,7 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
         adapter.reveal_file_chooser_location()
         control = adapter.focused_control(42)
         stack = adapter.window_stack_at_point((10.5, 20.5))
+        content_origin = adapter.content_origin(42)
         with tempfile.TemporaryDirectory() as tmp:
             screenshot = Path(tmp) / "shot.png"
             adapter.capture_screenshot(screenshot)
@@ -321,6 +323,7 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
         self.assertTrue(control.frontmost)
         self.assertEqual(control.actual_frontmost_pid, 42)
         self.assertTrue(stack.point_owned_by(42))
+        self.assertEqual(content_origin, (1.0, 22.0))
         self.assertEqual(
             [operation for operation, _ in cell.calls],
             [
@@ -330,6 +333,7 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
                 "post_key",
                 "focused_control",
                 "window_stack_at_point",
+                "content_origin",
                 "capture_screenshot",
                 "mouse_button_down",
                 "read_clipboard",
