@@ -185,6 +185,24 @@ def port_is_free(port: int) -> bool:
         return probe.connect_ex(("127.0.0.1", port)) != 0
 
 
+def native_input_event_cursor(
+    events: object,
+    event_type: str,
+    after_index: int,
+) -> int | None:
+    if not isinstance(events, list):
+        return None
+    for index in range(after_index, len(events)):
+        event = events[index]
+        if (
+            isinstance(event, dict)
+            and event.get("type") == event_type
+            and event.get("owned") is True
+        ):
+            return index + 1
+    return None
+
+
 # #region debug-point A,B,C,D,E:native-mousedown-reporting
 def native_mousedown_debug_enabled() -> bool:
     return (
@@ -944,17 +962,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 """,
                 probe_id,
             )
-            if not isinstance(events, list):
-                return None
-            for index in range(after_index, len(events)):
-                event = events[index]
-                if (
-                    isinstance(event, dict)
-                    and event.get("type") == event_type
-                    and event.get("owned") is True
-                ):
-                    return index + 1
-            return None
+            return native_input_event_cursor(events, event_type, after_index)
 
         try:
             return int(
@@ -997,6 +1005,13 @@ class NativeProductClosureGate(AcceptanceGate):
                     "type": type(error).__name__,
                     "message": str(error),
                 }
+                final_cursor = native_input_event_cursor(
+                    snapshot.get("events"),
+                    event_type,
+                    after_index,
+                )
+                if final_cursor is not None:
+                    return final_cursor
             report_native_mousedown_debug(
                 "C,D",
                 "native_product_closure_runner:wait_native_input_event",

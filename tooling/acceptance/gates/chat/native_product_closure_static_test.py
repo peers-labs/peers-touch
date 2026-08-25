@@ -5,6 +5,10 @@ import json
 import unittest
 from pathlib import Path
 
+from tooling.acceptance.gates.chat.native_product_closure_runner import (
+    native_input_event_cursor,
+)
+
 
 ROOT = Path(__file__).resolve().parents[4]
 RUNNER = ROOT / "tooling/acceptance/gates/chat/native_product_closure_runner.py"
@@ -78,6 +82,25 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("resolve_native_desktop_runtime", self.entry)
         self.assertIn("PT_ACCEPTANCE_RUNTIME_CELL", self.entry)
         self.assertIn("runtime_binding=runtime_binding", self.entry)
+
+    def test_native_input_event_cursor_preserves_owned_event_order(self) -> None:
+        events = [
+            {"type": "mousemove", "owned": True},
+            {"type": "mousedown", "owned": False},
+            {"type": "mousedown", "owned": True},
+            {"type": "mouseup", "owned": True},
+            {"type": "click", "owned": True},
+        ]
+
+        down_cursor = native_input_event_cursor(events, "mousedown", 0)
+        self.assertEqual(down_cursor, 3)
+        up_cursor = native_input_event_cursor(events, "mouseup", down_cursor or 0)
+        self.assertEqual(up_cursor, 4)
+        self.assertEqual(
+            native_input_event_cursor(events, "click", up_cursor or 0),
+            5,
+        )
+        self.assertIsNone(native_input_event_cursor(events, "mousedown", 3))
 
     def test_runner_consumes_injected_runtime_without_local_fallback(self) -> None:
         self.assertIn(
