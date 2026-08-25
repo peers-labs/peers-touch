@@ -29,6 +29,7 @@ _ADAPTER_OPERATIONS = frozenset(
         "post_key",
         "post_mouse",
         "read_clipboard",
+        "reveal_file_chooser_location",
         "window_stack_at_point",
         "write_clipboard",
     }
@@ -61,6 +62,9 @@ elif operation == "post_key":
         text=str(payload.get("text") or ""),
         private_source=bool(payload.get("privateSource")),
     )
+    result = {}
+elif operation == "reveal_file_chooser_location":
+    adapter.reveal_file_chooser_location()
     result = {}
 elif operation == "focused_control":
     result = adapter.focused_control(int(payload["processId"])).to_dict()
