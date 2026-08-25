@@ -2169,6 +2169,8 @@ export interface AuthLoginInput {
   account: string;
   password: string;
   base_url?: string;
+  /** Device type for Station session scoping (MCA-D19 multi-device). */
+  device_type?: string;
 }
 
 /// Raw Station `AccessDecision`, passed through verbatim by the Rust layer.
