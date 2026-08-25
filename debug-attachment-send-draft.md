@@ -20,12 +20,12 @@
 | D | One attachment upload or metadata operation fails after IDs are allocated, preventing outbox enqueue. | High | Low | Attachment result contains a failed/non-ready item or upload error before submit returns. | Rejected in the reproduction |
 | E | The preceding failure injection remains active and contaminates the normal send. | Medium | Low | Fault state remains enabled at normal submit entry or the normal path reports the injected failure. | Rejected |
 | F | The pending sender row renders before the committed attachment projection exists, so eager image open fails once and never resolves the preview. | High | Low | Gate accepts a two-ID pending send and clears drafts, then `openAttachment` reports `messaging attachment projection is unavailable` while Alice never reaches an image-loaded row. | Confirmed |
-| G | The lifecycle deletes a completed upload source before the pending message is committed, leaving the eager sender preview without either a valid local source or canonical projection. | High | Low | Cleanup reports the attachment before `open_attachment_once`; pending lookup is missing/incomplete and canonical projection is absent. | Pending |
-| H | The sender commit omits canonical attachment projections even after the pending row is removed. | Medium | Low | `open_attachment_once` reports no pending source and no canonical projection after command commit. | Pending |
-| I | The attachment row and projection exist, but image decoding or asset URL conversion fails. | Low | Low | Engine returns a verified path while the DOM image remains unloaded or errors. | Pending |
-| J | The selected Composer image URL is complete with zero intrinsic width because WebKitGTK rejects the scoped `asset://` resource. | Medium | Low | The preview snapshot reports `complete=true`, `naturalWidth=0`, and a populated asset URL. | Pending |
-| K | The Gate samples the Composer image before WebKitGTK finishes decoding it. | High | Low | The preview snapshot reports `complete=false` immediately after the ready draft appears. | Pending |
-| L | The picked attachment loses its preview URL or image classification before render. | Low | Low | The draft is ready but `src`, `currentSrc`, or `data-chat-attachment-preview` is empty or malformed. | Pending |
+| G | The lifecycle deletes a completed upload source before the pending message is committed, leaving the eager sender preview without either a valid local source or canonical projection. | High | Low | Cleanup reports the attachment before `open_attachment_once`; pending lookup is missing/incomplete and canonical projection is absent. | Rejected in the latest run; cleanup first listed the IDs after canonical projection became available |
+| H | The sender commit omits canonical attachment projections even after the pending row is removed. | Medium | Low | `open_attachment_once` reports no pending source and no canonical projection after command commit. | Rejected in the latest run; canonical projection was available |
+| I | The attachment row and projection exist, but image decoding or asset URL conversion fails. | Low | Low | Engine returns a verified path while the DOM image remains unloaded or errors. | Rejected in the latest run; the sender and receiver image rows passed |
+| J | The selected Composer image URL is complete with zero intrinsic width because WebKitGTK rejects the scoped `asset://` resource. | Medium | Low | The preview snapshot reports `complete=true`, `naturalWidth=0`, and a populated asset URL. | Rejected; `complete=true`, `naturalWidth=1` |
+| K | The Gate samples the Composer image before WebKitGTK finishes decoding it. | High | Low | The preview snapshot reports `complete=false` immediately after the ready draft appears. | Rejected in the latest run; `complete=true` |
+| L | The picked attachment loses its preview URL or image classification before render. | Low | Low | The draft is ready but `src`, `currentSrc`, or `data-chat-attachment-preview` is empty or malformed. | Rejected; all URL fields contained the same scoped asset URL |
 
 ## Log Evidence
 - Pre-instrumentation Native run `20260823T170346937849Z-df8e52a09b8fcec409c868892409bcb6`:
@@ -138,3 +138,16 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
   immediate image-state read and did not preserve whether `complete` was false
   or `naturalWidth` was zero. G/H/I were not reached. The next diagnostic run
   records J/K/L from the unchanged preview assertion. Runtime cleanup passed.
+- Exact-source Linux run
+  `20260825T180039443893Z-90ee5cf00edf38b51c8d8ed9d8c8143b`
+  at `763989a5054eadb6d6c1b1e11935ce5871e86462` proved the Composer image
+  preview loaded from the scoped `asset://` URL with `complete=true` and
+  `naturalWidth=1`. Both uploads completed, the two-attachment send returned
+  `pending`, sender/receiver rows rendered, and the subsequent text-plus-file
+  message rendered on both actors. The run then failed in the byte-exact
+  evidence ledger with `NameError: file_sha256 is not defined`.
+- Source history identifies commit `cab9de096` as the regression: runtime-cell
+  migration removed `file_sha256()` together with local binary hashing while
+  retaining four attachment-ledger call sites. The repair restores the
+  streaming helper and locks it with a known SHA-256 test vector. Runtime
+  cleanup passed.
