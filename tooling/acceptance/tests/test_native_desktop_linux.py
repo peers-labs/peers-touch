@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import errno
+import hashlib
 import importlib.util
 import io
 import json
@@ -473,6 +474,57 @@ class LinuxCellProfileTests(unittest.TestCase):
         provisioner._stop_remote_actor.assert_called_once()
         provisioner.stop.assert_not_called()
         self.assertNotIn("alice", provisioner._actors)
+
+    def test_actor_file_staging_is_digest_verified_and_actor_scoped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "fixture.png"
+            source.write_bytes(b"fixture")
+            digest = hashlib.sha256(b"fixture").hexdigest()
+            provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+            provisioner._actors = {
+                "alice": SimpleNamespace(released=False),
+            }
+            provisioner.transport = Mock()
+            provisioner._require_state = Mock(
+                return_value={
+                    "containerName": "runtime-cell",
+                    "remoteControl": "/remote/run/remote_control.py",
+                }
+            )
+            provisioner.transport.run_argv.side_effect = (
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess(
+                    (),
+                    0,
+                    f"{digest}  /workspace/run/actors/alice/fixtures/file\n",
+                    "",
+                ),
+                subprocess.CompletedProcess((), 0, "", ""),
+            )
+
+            staged = provisioner.stage_actor_file("alice", source)
+
+        expected = (
+            f"/workspace/run/actors/alice/fixtures/{digest}/fixture.png"
+        )
+        self.assertEqual(staged, expected)
+        provisioner.transport.copy_file.assert_called_once_with(
+            source.resolve(),
+            Path(f"/remote/run/staging/alice/{digest}/fixture.png"),
+            timeout=60,
+        )
+        copy_command = provisioner.transport.run_argv.call_args_list[2].args[0]
+        self.assertEqual(
+            copy_command,
+            (
+                "docker",
+                "cp",
+                f"/remote/run/staging/alice/{digest}/fixture.png",
+                f"runtime-cell:{expected}",
+            ),
+        )
 
     def test_explicit_orchestrator_endpoint_owns_reverse_tunnel(self) -> None:
         provisioner = object.__new__(NativeDesktopLinuxProvisioner)
