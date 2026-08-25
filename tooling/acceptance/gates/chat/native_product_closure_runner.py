@@ -705,6 +705,7 @@ class NativeProductClosureGate(AcceptanceGate):
             ];
             const events = [];
             const documentEvents = [];
+            let deliveredPoint = null;
             const describe = (candidate) => {
               if (!(candidate instanceof Element)) return null;
               return {
@@ -730,11 +731,23 @@ class NativeProductClosureGate(AcceptanceGate):
                 && eventTarget instanceof Element
                 && eventTarget.closest(selector)
               );
+              const targetOwned = exactOwned || semanticOwned;
+              if (
+                !deliveredPoint
+                && targetOwned
+                && ['pointermove', 'mousemove'].includes(event.type)
+              ) {
+                deliveredPoint = {
+                  x: event.clientX,
+                  y: event.clientY,
+                };
+              }
+              const anchoredPoint = deliveredPoint || expectedPoint;
               const pointOwned = (
-                !expectedPoint
+                !anchoredPoint
                 || (
-                  Math.abs(event.clientX - expectedPoint.x) <= 2
-                  && Math.abs(event.clientY - expectedPoint.y) <= 2
+                  Math.abs(event.clientX - anchoredPoint.x) <= 2
+                  && Math.abs(event.clientY - anchoredPoint.y) <= 2
                 )
               );
               events.push({
@@ -743,7 +756,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 buttons: event.buttons,
                 clientX: event.clientX,
                 clientY: event.clientY,
-                owned: pointOwned && (exactOwned || semanticOwned),
+                owned: pointOwned && targetOwned,
                 target: describe(eventTarget),
               });
             };
