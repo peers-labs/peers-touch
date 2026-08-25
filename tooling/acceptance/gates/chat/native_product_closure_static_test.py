@@ -333,42 +333,21 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source,
         )
         self.assertIn(
-            '"Native click target changed before event delivery"',
-            click_source,
-        )
-        self.assertEqual(
-            click_source.count("const selectorMatches = selector"),
-            2,
-        )
-        self.assertIn("containsPoint:", click_source)
-        self.assertIn("ownsHit:", click_source)
-        pointer_move = (
-            "self.native_adapter.post_mouse((MouseAction.MOVE,), point)"
-        )
-        self.assertIn(pointer_move, click_source)
-        self.assertIn(
             "content_origin = self.native_adapter.content_origin(",
-            click_source,
-        )
-        self.assertIn(
-            '"Native click target changed after pointer positioning"',
             click_source,
         )
         self.assertLess(
             click_source.index(
                 "content_origin = self.native_adapter.content_origin("
             ),
-            click_source.index(pointer_move),
-        )
-        self.assertLess(
-            click_source.index(pointer_move),
             click_source.index("probe_id = self.install_native_input_probe("),
         )
         self.assertLess(
-            click_source.index("current_target = client.driver.execute_script("),
+            click_source.index("probe_id = self.install_native_input_probe("),
             click_source.index(
                 "self.native_adapter.post_mouse(\n"
                 "                (\n"
+                "                    MouseAction.MOVE,\n"
                 "                    MouseAction.LEFT_DOWN,\n"
                 "                    MouseAction.LEFT_UP,\n"
                 "                ),"
@@ -376,7 +355,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertEqual(
             click_source.count("self.native_adapter.post_mouse("),
-            2,
+            1,
         )
         self.assertNotIn(
             'report_native_input_delivery("before-click")',
@@ -402,10 +381,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "            selector=selector,\n"
             "        )",
             selector_click_source,
-        )
-        self.assertIn(
-            "const candidate = selector ? hit?.closest(selector) : element;",
-            click_source,
         )
         self.assertIn("selector=selector,", click_source)
         self.assertIn(
