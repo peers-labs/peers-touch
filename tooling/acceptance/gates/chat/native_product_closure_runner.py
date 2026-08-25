@@ -1215,6 +1215,21 @@ class NativeProductClosureGate(AcceptanceGate):
             const hit = document.elementFromPoint(x, y);
             const candidate = selector ? hit?.closest(selector) : element;
             const rect = candidate?.getBoundingClientRect();
+            const selectorMatches = selector
+              ? Array.from(document.querySelectorAll(selector)).map((match) => {
+                  const matchRect = match.getBoundingClientRect();
+                  return {
+                    connected: match.isConnected,
+                    disabled: Boolean(match.disabled),
+                    rect: {
+                      left: matchRect.left,
+                      top: matchRect.top,
+                      width: matchRect.width,
+                      height: matchRect.height,
+                    },
+                  };
+                })
+              : [];
             return {
               connected: Boolean(candidate?.isConnected),
               disabled: Boolean(candidate?.disabled),
@@ -1233,6 +1248,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 width: rect?.width || 0,
                 height: rect?.height || 0,
               },
+              selectorMatches,
             };
             """,
             element,
