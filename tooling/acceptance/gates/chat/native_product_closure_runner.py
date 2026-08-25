@@ -123,6 +123,14 @@ REQUIRED_EVIDENCE = {
 }
 
 
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def public_fixture_password() -> str:
     path = REPO_ROOT / "apps" / "station" / "app" / "conf" / "actor.yml"
     current_email = ""
