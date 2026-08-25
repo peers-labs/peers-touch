@@ -683,7 +683,8 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
                     kind = _CONTROL_KINDS.get(role.lower(), "unknown")
                     value = ""
                     try:
-                        value = node.queryText().getText(0, -1)
+                        text = node.queryText()
+                        value = text.getText(0, text.characterCount)
                     except Exception:
                         pass
                     return {
