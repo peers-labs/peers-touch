@@ -262,7 +262,27 @@ def _authenticate_clients(
                     f"{provider_result}"
                 )
 
-    # Step 4: Wait for capability sessions on both clients (Station async)
+    # Step 4: Pre-probe health check — verify harness responds before
+    # heavy capability probes. Surface diagnostics early if the agent
+    # runtime failed to initialise.
+    for client in (runtime_pair.native, runtime_pair.browser):
+        try:
+            health = client.harness("getAcceptanceHarnessStatus", {}, timeout=30)
+        except Exception as error:
+            log_path = getattr(client, 'log_path', None)
+            raise ScenarioRunnerError(
+                f"{client.spec.runtime} harness health check failed before "
+                f"capability probes: {error}"
+                f"{f' — client log: {log_path}' if log_path else ''}"
+            ) from error
+        if not isinstance(health, Mapping) or not health.get("ready"):
+            log_path = getattr(client, 'log_path', None)
+            raise ScenarioRunnerError(
+                f"{client.spec.runtime} harness is not ready: {health}"
+                f"{f' — client log: {log_path}' if log_path else ''}"
+            )
+
+    # Step 5: Wait for capability sessions on both clients (Station async)
     # Capability session registration is asynchronous on Station; the
     # messaging engine + signing identity must be ready before the worker
     # can register a lease. Give each client an independent 90s window.

@@ -304,3 +304,20 @@ func (s *DBStore) CheckSessionValid(ctx context.Context, sessionID string) (bool
 
 	return true, ""
 }
+
+// ResolveSessionDeviceType returns the device_type recorded on the session.
+// Used by auth middleware to include device_type in 401 responses so that
+// multi-device clients can filter session revocations.
+func (s *DBStore) ResolveSessionDeviceType(ctx context.Context, sessionID string) string {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return ""
+	}
+
+	var record SessionRecord
+	if err := db.Select("device_type").Where("session_id = ?", sessionID).First(&record).Error; err != nil {
+		return ""
+	}
+
+	return string(record.DeviceType)
+}

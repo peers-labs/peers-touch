@@ -64,12 +64,25 @@ func RequireJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(conte
 
 func writeSessionRevoked(c context.Context, ctx *app.RequestContext, subject *coreauth.Subject, reason string) {
 	logger.Warnf(c, "[RequireJWT] Session %s rejected: %s (user=%s)", subject.SessionID, reason, subject.ID)
-	ctx.SetStatusCode(401)
-	ctx.JSON(401, map[string]interface{}{
+
+	// Resolve the device_type from the session record so multi-device clients
+	// can filter revocations that target a different device class.
+	deviceType := ""
+	if resolver, ok := coreauth.GetGlobalSessionValidator().(coreauth.SessionDeviceTypeResolver); ok {
+		deviceType = resolver.ResolveSessionDeviceType(c, subject.SessionID)
+	}
+
+	body := map[string]interface{}{
 		"error":  "Session has been revoked",
 		"code":   "session_revoked",
 		"reason": reason,
-	})
+	}
+	if deviceType != "" {
+		body["device_type"] = deviceType
+	}
+
+	ctx.SetStatusCode(401)
+	ctx.JSON(401, body)
 	ctx.Abort()
 }
 

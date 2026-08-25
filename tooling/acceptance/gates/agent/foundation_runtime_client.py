@@ -233,7 +233,7 @@ class FoundationRuntimeClient:
         self,
         method: str,
         payload: dict[str, Any] | None = None,
-        timeout: float = 120,
+        timeout: float = 180,
     ) -> Any:
         if self.driver is None:
             raise FoundationClientError(

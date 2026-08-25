@@ -316,6 +316,7 @@ function extractSessionRevoked(error?: RustCommandError): SessionRevokedPayload 
     return {
       reason: (reasonFromDetails as any) || 'unknown',
       raw: typeof details?.raw === 'string' ? details.raw : undefined,
+      device_type: typeof details?.device_type === 'string' ? details.device_type : undefined,
     };
   }
   return {
