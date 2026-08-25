@@ -101,37 +101,9 @@ export function installDeferredAppRuntimeProjections(): Promise<void> {
     // #endregion
     const installedRuntimes: string[] = [];
     for (const runtimeId of DEFERRED_APP_RUNTIME_IDS) {
-      // #region debug-point A,B:deferred-runtime-start
-      fetch('http://127.0.0.1:7781/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'login-runtime-bootstrap',
-          runId: 'post-fix',
-          hypothesisId: 'A,B',
-          location: 'appRuntime:deferred:runtime-start',
-          msg: '[DEBUG] Deferred runtime bootstrap started',
-          data: { runtimeId, completedRuntimeIds: installedRuntimes },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       installRuntime(runtimeId);
       await bootstrapRuntime(runtimeId, null);
       installedRuntimes.push(runtimeId);
-      // #region debug-point A,B:deferred-runtime-end
-      fetch('http://127.0.0.1:7781/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'login-runtime-bootstrap',
-          runId: 'post-fix',
-          hypothesisId: 'A,B',
-          location: 'appRuntime:deferred:runtime-end',
-          msg: '[DEBUG] Deferred runtime bootstrap completed',
-          data: { runtimeId, completedRuntimeIds: installedRuntimes },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       await yieldToRenderer();
     }
     deferredInstalled = true;
