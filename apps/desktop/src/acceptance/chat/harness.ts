@@ -260,7 +260,7 @@ export function installAcceptanceHarness(): void {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'login-runtime-bootstrap',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'B,C,D',
           location: 'chatHarness:login:before-deferred',
           msg: '[DEBUG] Harness entered deferred runtime installation',
@@ -275,7 +275,7 @@ export function installAcceptanceHarness(): void {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'login-runtime-bootstrap',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'A,C,D',
           location: 'chatHarness:login:after-deferred-schedule',
           msg: '[DEBUG] Harness scheduled deferred runtime installation',
