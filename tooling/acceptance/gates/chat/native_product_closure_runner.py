@@ -400,8 +400,17 @@ class NativeProductClosureGate(AcceptanceGate):
                     namespace="chat",
                     script_timeout=30,
                 )
-                ptid = str((login or {}).get("actorId") or "")
-                if not (login or {}).get("authenticated") or ptid != expected_ptid:
+                if not (login or {}).get("authenticated"):
+                    raise GateError(f"{actor} login did not authenticate")
+                hydration = call_async_harness(
+                    client,
+                    "hydrateActiveActor",
+                    {},
+                    namespace="chat",
+                    script_timeout=30,
+                )
+                ptid = str((hydration or {}).get("actorId") or "")
+                if ptid != expected_ptid:
                     raise GateError(
                         f"{actor} login identity mismatch: "
                         f"expected={expected_ptid} actual={ptid}"

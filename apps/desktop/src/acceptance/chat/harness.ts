@@ -344,11 +344,16 @@ export function installAcceptanceHarness(): void {
         }),
       }).catch(() => {});
       // #endregion
-      await hydrateSocialForActiveActor();
-      const actorPtid = activeActorPtid();
       return {
         authenticated: true,
-        actorId: actorPtid,
+        actorId: activeActorId(),
+      };
+    },
+
+    async hydrateActiveActor() {
+      await hydrateSocialForActiveActor();
+      return {
+        actorId: activeActorPtid(),
       };
     },
 

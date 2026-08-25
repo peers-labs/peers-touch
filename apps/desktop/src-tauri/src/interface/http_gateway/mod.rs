@@ -2409,6 +2409,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     match actor_ptid {
                         Some(ptid) => to_json(app_profile::sync_user_profile(
                             &token,
+                            &account_id,
                             &ptid,
                         )),
                         None => to_json(AppResult::<StubPayload>::fail(
