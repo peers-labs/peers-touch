@@ -19,7 +19,7 @@ import urllib.request
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PROFILE_THREE_ENVIRONMENT = "station-three"
 # Environments approved for destructive fixture reset (disposable stations only).
-APPROVED_RESET_ENVIRONMENTS = ("station-three", "station-1")
+APPROVED_RESET_ENVIRONMENTS = ("station-three", "station-1", "station-two")
 PROFILE_THREE_STATION_CONTAINER = "pt-station-a-station-1"
 CHAT_TABLES = (
     "actor_devices",
