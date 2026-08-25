@@ -305,6 +305,8 @@ Deliver:
 - Stabilize hover-sensitive native clicks by positioning the native pointer,
   revalidating the target, and only then installing the DOM acknowledgement
   probe and sending one atomic down/up sequence.
+- Keep runtime-cell retention bounded by skipping recursive cache inspection
+  when the cache unit itself is within the retention window.
 - Preserve screenshots, DOM, native diagnostics, attachment byte/count ledger,
   restart evidence and cleanup audit.
 
@@ -319,6 +321,8 @@ Targets:
 - `tooling/acceptance/drivers/native/linux_x11.py`
 - `tooling/acceptance/drivers/native/runtime.py`
 - `tooling/acceptance/gates/chat/native_product_closure_runner.py`
+- `tooling/acceptance/images/desktop-linux/remote_control.py`
+- `tooling/acceptance/tests/test_native_desktop_linux.py`
 
 Evidence:
 
