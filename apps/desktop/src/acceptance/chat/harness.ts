@@ -236,8 +236,68 @@ async function hydrateSocialForActiveActor(): Promise<void> {
   const actorId = activeActorId();
   if (actorId) {
     const social = useSocialChatStore.getState();
-    await social.hydrate(actorId);
+    // #region debug-point B,D,E:chat-hydration-start
+    fetch('http://127.0.0.1:7781/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'login-runtime-bootstrap',
+        runId: 'post-fix',
+        hypothesisId: 'B,D,E',
+        location: 'chatHarness:hydrate:profile-start',
+        msg: '[DEBUG] Chat profile hydration started',
+        data: { actorId, authenticated: useSessionStore.getState().authenticated },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    await social.loadCurrentUserProfile();
+    // #region debug-point B,C,D:chat-profile-end
+    fetch('http://127.0.0.1:7781/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'login-runtime-bootstrap',
+        runId: 'post-fix',
+        hypothesisId: 'B,C,D',
+        location: 'chatHarness:hydrate:profile-end',
+        msg: '[DEBUG] Chat profile hydration completed',
+        data: { actorId, currentUserDid: useSocialChatStore.getState().currentUserDid },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    await useSocialChatStore.getState().loadSessions();
+    // #region debug-point C,D:chat-conversations-end
+    fetch('http://127.0.0.1:7781/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'login-runtime-bootstrap',
+        runId: 'post-fix',
+        hypothesisId: 'C,D',
+        location: 'chatHarness:hydrate:conversations-end',
+        msg: '[DEBUG] Chat conversation hydration completed',
+        data: {
+          actorId,
+          conversationCount: useSocialChatStore.getState().conversations.length,
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     await useSocialChatStore.getState().initEncryption();
+    // #region debug-point C,D:chat-encryption-end
+    fetch('http://127.0.0.1:7781/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'login-runtime-bootstrap',
+        runId: 'post-fix',
+        hypothesisId: 'C,D',
+        location: 'chatHarness:hydrate:encryption-end',
+        msg: '[DEBUG] Chat encryption hydration completed',
+        data: { actorId },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
   }
 }
 
