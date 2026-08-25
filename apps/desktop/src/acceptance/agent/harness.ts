@@ -460,7 +460,8 @@ export function installAcceptanceHarness(): void {
       if (!existing) {
         await providerStore.createProvider({ id: providerId, name: providerId, base_url: effectiveBaseUrl, api_key: apiKey });
       } else {
-        await providerStore.updateProvider(providerId, apiKey, effectiveBaseUrl, true);
+        const version = existingDetail?.version ?? 0;
+        await api.updateProvider(providerId, { api_key: apiKey, base_url: effectiveBaseUrl, enabled: true, version });
       }
       const agentStore = useAgentStore.getState();
       const selected = agentStore.selectedAgent;
