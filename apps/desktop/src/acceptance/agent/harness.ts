@@ -1,4 +1,5 @@
 import { identityRuntime } from '../../kernel/identityRuntime';
+import { bootstrapRuntime, installRuntime } from '../../kernel/runtime';
 import { EVENT, eventBus } from '../../kernel/events';
 import i18n, { changeLanguage } from '../../i18n';
 import { installDeferredAppRuntimeProjections } from '../../services/appRuntime';
@@ -391,6 +392,14 @@ export function installAcceptanceHarness(): void {
     },
 
     async navigateToAgent() {
+      // Ensure agent-capability and agent-topic runtimes are bootstrapped
+      // (normally triggered by PageHost when navigating to AgentChatPage)
+      const actorId = useSessionStore.getState().currentUser?.actorId ?? null;
+      for (const runtimeId of ['agent-capability', 'agent-topic', 'agent-tool']) {
+        installRuntime(runtimeId);
+        await bootstrapRuntime(runtimeId, actorId);
+      }
+
       await waitFor(
         () => useAgentStore.getState().agents.length > 0,
         'agent list to load',
