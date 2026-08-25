@@ -623,15 +623,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         pointer_down = self.message_action_overlay.index(
             "      onPointerDownCapture={() => {"
         )
-        pointer_enter = self.message_action_overlay.index(
-            "      onPointerEnter={() => {",
+        mouse_enter = self.message_action_overlay.index(
+            "      onMouseEnter={() => {",
             pointer_down,
         )
         pointer_down_source = self.message_action_overlay[
-            pointer_down:pointer_enter
+            pointer_down:mouse_enter
         ]
         self.assertIn("pointerInsideRef.current = true;", pointer_down_source)
-        self.assertIn("onPointerEnter();", pointer_down_source)
+        self.assertIn("onHoverEnter();", pointer_down_source)
+        self.assertIn("onMouseLeave={() => {", self.message_action_overlay)
+        self.assertNotIn("onPointerEnter={() => {", self.message_action_overlay)
+        self.assertNotIn("onPointerLeave={() => {", self.message_action_overlay)
 
     def test_acceptance_window_owns_the_native_overlay_level(self) -> None:
         self.assertIn('feature = "acceptance-webdriver"', self.desktop_main)
