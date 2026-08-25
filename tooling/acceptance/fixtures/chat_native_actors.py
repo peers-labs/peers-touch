@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -72,8 +73,16 @@ def verify_reset_target(
         )
 
 
-def reset_fixture(deployment_environment: str, actors: Iterable[str]) -> None:
+def reset_fixture(
+    deployment_environment: str,
+    actors: Iterable[str],
+    *,
+    station_url: str = "",
+) -> None:
     accounts = sorted(set(actors))
+    env = None
+    if station_url:
+        env = {**os.environ, "PT_STATION_URL": station_url}
     completed = subprocess.run(
         [
             sys.executable,
@@ -94,6 +103,7 @@ def reset_fixture(deployment_environment: str, actors: Iterable[str]) -> None:
         text=True,
         timeout=120,
         check=False,
+        env=env,
     )
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or "no output"
@@ -237,7 +247,7 @@ def produce_actor_manifest(
         )
 
     verify_reset_target(station_url, deployment_environment)
-    reset_fixture(deployment_environment, unique_roles)
+    reset_fixture(deployment_environment, unique_roles, station_url=station_url)
     actors = tuple(
         resolve_actor_identity(station_url, role, ACTOR_PASSWORD)
         for role in unique_roles
