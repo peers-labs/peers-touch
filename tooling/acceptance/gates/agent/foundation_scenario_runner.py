@@ -262,6 +262,20 @@ def _authenticate_clients(
                     f"{provider_result}"
                 )
 
+        # Step 4: Wait for capability session to be established
+        cap_result = client.harness(
+            "getFoundationCapabilitySessions",
+            {},
+            timeout=90,
+        )
+        if not isinstance(cap_result, Mapping) or not cap_result.get(
+            "selectedStationSession"
+        ):
+            raise ScenarioRunnerError(
+                f"{client.spec.runtime} capability session not established: "
+                f"{cap_result}"
+            )
+
 
 def run_scenario(*, dry_run: bool = False) -> Path:
     """Execute Phase 1: produce the Foundation candidate manifest.
