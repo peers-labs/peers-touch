@@ -99,6 +99,7 @@ func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error
 		workerCtx, cancel := context.WithCancel(ctx)
 		s.stopTurnWorker = cancel
 		go s.turnService.RunToolContinuationWorker(workerCtx)
+		go s.turnService.RunTurnQueueWorker(workerCtx)
 	}
 	s.status = server.StatusRunning
 	return nil
@@ -157,6 +158,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	modelConfigSvc := service.NewModelConfigService()
 	credentialConfigSvc := service.NewCredentialConfigService()
 	admissionResolver := service.NewRuntimeAdmissionResolver(providerConfigSvc, modelConfigSvc)
+	runtimeEvidenceSvc := service.NewRuntimeEvidenceService()
+	runtimeReadinessSvc := service.NewRuntimeReadinessService(agentSvc, admissionResolver)
 	credentialPoolSvc := service.NewCredentialPoolService()
 	delegationSvc := service.NewDelegationService()
 
@@ -213,6 +216,10 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 	agentHandlers := handler.NewAgentHandlers(agentSvc, eventBus)
 	turnHandlers := handler.NewTurnHandlers(turnSvc, toolRegistrySvc, chatTaskSvc, convSvc)
+	turnAdmissionSvc := service.NewTurnAdmissionService()
+	turnHandlers.SetAdmissionService(turnAdmissionSvc)
+	turnSvc.SetTurnAdmissionService(turnAdmissionSvc)
+	turnQueueHandlers := handler.NewTurnQueueHandlers(turnAdmissionSvc)
 	convHandlers := handler.NewConversationHandlers(convSvc, turnSvc)
 	revisionHandlers := handler.NewRevisionHandlers(service.NewRevisionService(convSvc, turnSvc))
 	threadHandlers := handler.NewThreadHandlers(service.NewThreadService())
@@ -240,6 +247,10 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		credentialConfigSvc,
 		admissionResolver,
 	)
+	runtimeEvidenceHandlers := handler.NewRuntimeEvidenceHandlers(
+		runtimeEvidenceSvc,
+		runtimeReadinessSvc,
+	)
 	turnSvc.SetAdmissionResolver(admissionResolver)
 
 	// F4: Durable tool dispatch service with policy and fencing.
@@ -249,6 +260,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	)
 	toolDispatchSvc := service.NewToolDispatchService()
 	toolDispatchSvc.SetCapabilityProofService(proofSvc)
+	runtimeReadinessSvc.SetCapabilitySessionResolver(toolDispatchSvc)
 	turnSvc.SetToolDispatch(toolDispatchSvc)
 	turnSvc.SetChatTaskService(chatTaskSvc)
 	s.turnService = turnSvc
@@ -265,8 +277,11 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-turn-execute", "/agent/turn/execute", server.POST, turnHandlers.HandleExecuteTurn, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-turn-stream", "/agent/turn/stream", server.POST, turnHandlers.HandleExecuteTurnStream, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-turn-cancel", "/agent/turn/cancel", server.POST, turnHandlers.HandleCancelTurn, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-queue-list", "/agent/turn/queue/list", server.POST, turnQueueHandlers.HandleListQueuedTurns, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-queue-cancel", "/agent/turn/queue/cancel", server.POST, turnQueueHandlers.HandleCancelQueuedTurn, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-tool-decision", "/agent/tool/decision", server.POST, turnHandlers.HandleSubmitToolDecision, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-lease-register", "/agent/capability/lease/register", server.POST, turnHandlers.HandleRegisterClientCapabilityLease, logIDWrapper, deviceIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-session-list", "/agent/capability/session/list", server.POST, turnHandlers.HandleListClientCapabilitySessions, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-lease-renew", "/agent/capability/lease/renew", server.POST, turnHandlers.HandleRenewClientCapabilityLease, logIDWrapper, deviceIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-lease-revoke", "/agent/capability/lease/revoke", server.POST, turnHandlers.HandleRevokeClientCapabilityLease, logIDWrapper, deviceIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-requests-pull", "/agent/capability/requests/pull", server.POST, turnHandlers.HandlePullClientCapabilityRequests, logIDWrapper, deviceIDWrapper, jwtWrapper),
@@ -310,6 +325,9 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-credential-resolve", "/agent/credential/resolve", server.POST, providerHandlers.HandleCredentialResolve, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-hide", "/agent/provider/model/hide", server.POST, providerHandlers.HandleModelHide, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-hidden-list", "/agent/provider/model/hidden", server.POST, providerHandlers.HandleModelHiddenList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-runtime-profile-effective", "/agent/runtime/profile/effective", server.POST, runtimeEvidenceHandlers.HandleEffectiveRuntimeProfile, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-runtime-activity", "/agent/runtime/activity", server.POST, runtimeEvidenceHandlers.HandleRuntimeActivity, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-capability-readiness", "/agent/capability/readiness", server.POST, runtimeEvidenceHandlers.HandleCapabilityReadiness, logIDWrapper, jwtWrapper),
 
 		server.NewTypedHandler("agent-collaboration-create", "/agent/collaboration/create", server.POST, orchestrationHandlers.HandleCreateCollaborationTask, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-collaboration-get", "/agent/collaboration/get", server.POST, orchestrationHandlers.HandleGetCollaborationTask, logIDWrapper, jwtWrapper),

@@ -145,7 +145,8 @@ func (s *ToolDispatchService) RegisterCapabilityLease(
 		return nil, err
 	}
 	input := request.GetAdvertisement()
-	if len(input.GetCapabilities()) == 0 {
+	if len(input.GetCapabilities()) == 0 &&
+		input.GetPlatform() != model.ClientPlatform_CLIENT_PLATFORM_BROWSER {
 		return nil, invalidToolRequest("at least one client capability is required")
 	}
 
@@ -234,6 +235,91 @@ func (s *ToolDispatchService) RegisterCapabilityLease(
 		)
 	})
 	return response, err
+}
+
+func (s *ToolDispatchService) ListCapabilitySessions(
+	ctx context.Context,
+	actorID string,
+) (*model.ListClientCapabilitySessionsResponse, error) {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil, invalidToolRequest("authenticated actor is required")
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []persistence.ClientCapabilityLease
+	if err := db.WithContext(ctx).
+		Where(
+			"actor_id = ? AND revoked_at IS NULL AND expires_at > ?",
+			actorID,
+			s.now(),
+		).
+		Order("created_at ASC").
+		Find(&rows).Error; err != nil {
+		return nil, internalToolError("list active capability sessions", err)
+	}
+	sessions := make([]*model.ClientCapabilitySession, 0, len(rows))
+	for _, row := range rows {
+		var lease model.ClientCapabilityLease
+		if err := proto.Unmarshal(row.LeasePayload, &lease); err != nil {
+			return nil, internalToolError("decode capability session", err)
+		}
+		sessions = append(sessions, capabilitySessionFromLeaseRow(&row, &lease))
+	}
+	return &model.ListClientCapabilitySessionsResponse{Sessions: sessions}, nil
+}
+
+func (s *ToolDispatchService) GetActiveCapabilitySession(
+	ctx context.Context,
+	actorID string,
+	sessionID string,
+) (*model.ClientCapabilitySession, error) {
+	actorID = strings.TrimSpace(actorID)
+	sessionID = strings.TrimSpace(sessionID)
+	if actorID == "" || sessionID == "" {
+		return nil, invalidToolRequest("authenticated actor and capability session are required")
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var row persistence.ClientCapabilityLease
+	queryErr := db.WithContext(ctx).
+		Where(
+			"actor_id = ? AND session_id = ? AND revoked_at IS NULL AND expires_at > ?",
+			actorID,
+			sessionID,
+			s.now(),
+		).
+		First(&row).Error
+	if errors.Is(queryErr, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if queryErr != nil {
+		return nil, internalToolError("get active capability session", queryErr)
+	}
+	var lease model.ClientCapabilityLease
+	if err := proto.Unmarshal(row.LeasePayload, &lease); err != nil {
+		return nil, internalToolError("decode capability session", err)
+	}
+	return capabilitySessionFromLeaseRow(&row, &lease), nil
+}
+
+func capabilitySessionFromLeaseRow(
+	row *persistence.ClientCapabilityLease,
+	lease *model.ClientCapabilityLease,
+) *model.ClientCapabilitySession {
+	return &model.ClientCapabilitySession{
+		SessionId:         row.SessionID,
+		Ptid:              row.ActorID,
+		DeviceId:          row.DeviceID,
+		PlatformKind:      model.ClientPlatform(row.PlatformKind),
+		TypedCapabilities: lease.GetCapabilities(),
+		ExpiresAt:         timestamppb.New(row.ExpiresAt),
+		ConnectionId:      row.ConnectionID,
+	}
 }
 
 func (s *ToolDispatchService) RenewCapabilityLease(

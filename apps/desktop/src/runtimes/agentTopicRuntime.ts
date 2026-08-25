@@ -28,10 +28,12 @@ async function reconcileTopics(reason: string): Promise<void> {
     .sessions.find((session) => session.key === useChatStore.getState().currentSessionKey);
   if (currentSession?.agent_name === agent.name) {
     await useChatStore.getState().bootstrapSession();
+    await useChatStore.getState().syncTurnQueue(currentSession.key);
     return;
   }
   if (topics[0]) {
     await useChatStore.getState().selectSession(topics[0].key, topics[0]);
+    await useChatStore.getState().syncTurnQueue(topics[0].key);
     return;
   }
 

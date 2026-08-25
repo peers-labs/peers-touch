@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { create, toBinary } from '@bufbuild/protobuf'
-import { api } from './desktop_api'
+import { api, classifyAgentTurnTerminalEvent } from './desktop_api'
 import {
   DissolveGroupResponseSchema,
   TransferGroupOwnershipResponseSchema,
@@ -36,6 +36,29 @@ describe('api.health', () => {
   it('throws on HTTP error', async () => {
     vi.mocked(invoke).mockRejectedValue(new Error('db down'))
     await expect(api.health()).rejects.toThrow('db down')
+  })
+})
+
+describe('Agent turn stream completion', () => {
+  it('does not treat replay catch-up as terminal completion', () => {
+    expect(classifyAgentTurnTerminalEvent({ event: 'catchup_done', data: {} })).toBeNull()
+    expect(classifyAgentTurnTerminalEvent({ event: 'done', data: {} })).toBe('complete')
+    expect(classifyAgentTurnTerminalEvent({ event: 'cancelled', data: {} })).toBe('complete')
+  })
+
+  it('uses replay snapshot status as the terminal authority', () => {
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'snapshot',
+      data: { status: 'running' },
+    })).toBeNull()
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'snapshot',
+      data: { status: 'completed' },
+    })).toBe('complete')
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'snapshot',
+      data: { status: 'failed', terminal_reason: 'provider_failed' },
+    })).toBe('error')
   })
 })
 

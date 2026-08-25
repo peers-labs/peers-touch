@@ -375,6 +375,7 @@ message ExecuteTurnRequest {
   optional string thread_id = 19;
   // Station validates and pins this lease before admitting device-local work.
   optional string client_capability_session_id = 20;
+  string client_idempotency_key = 21;
 }
 
 message ExecuteTurnResponse {
@@ -384,6 +385,7 @@ message ExecuteTurnResponse {
   // task_id is the Station-owned Chat root task that hosts this turn so the
   // client can subscribe to the durable event outbox by cursor.
   string task_id = 4;
+  TurnAdmission admission = 5;
 }
 
 message TurnTraceEntry {
@@ -428,6 +430,12 @@ message ClientCapabilitySession {
   repeated ClientCapability typed_capabilities = 8;
   google.protobuf.Timestamp expires_at = 9;
   string connection_id = 10;
+}
+
+message ListClientCapabilitySessionsRequest {}
+
+message ListClientCapabilitySessionsResponse {
+  repeated ClientCapabilitySession sessions = 1;
 }
 
 // ============================================================================
@@ -546,6 +554,20 @@ enum AgentTurnStatus {
   AGENT_TURN_STATUS_CANCELLED = 13;
   AGENT_TURN_STATUS_INTERRUPTED = 14;
   AGENT_TURN_STATUS_REJECTED = 15;
+}
+
+enum TurnAdmissionStatus {
+  TURN_ADMISSION_STATUS_UNSPECIFIED = 0;
+  TURN_ADMISSION_STATUS_STARTED = 1;
+  TURN_ADMISSION_STATUS_QUEUED = 2;
+  TURN_ADMISSION_STATUS_REPLAYED = 3;
+}
+
+enum TurnQueueStatus {
+  TURN_QUEUE_STATUS_UNSPECIFIED = 0;
+  TURN_QUEUE_STATUS_PENDING = 1;
+  TURN_QUEUE_STATUS_ADMITTED = 2;
+  TURN_QUEUE_STATUS_CANCELLED = 3;
 }
 
 enum AgentMessageStatus {
@@ -776,6 +798,28 @@ message AgentTurn {
   google.protobuf.Timestamp submitted_at = 13;
   google.protobuf.Timestamp started_at = 14;
   google.protobuf.Timestamp ended_at = 15;
+}
+
+message TurnQueueEntry {
+  string queue_entry_id = 1;
+  string conversation_id = 2;
+  string agent_id = 3;
+  string client_idempotency_key = 4;
+  TurnQueueStatus status = 5;
+  uint64 queue_sequence = 6;
+  uint32 queue_position = 7;
+  string admitted_turn_id = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  string user_input = 11;
+}
+
+message TurnAdmission {
+  TurnAdmissionStatus status = 1;
+  string turn_id = 2;
+  TurnQueueEntry queue_entry = 3;
+  uint32 queue_capacity = 4;
+  uint64 conversation_version = 5;
 }
 
 message TurnAttempt {
@@ -1265,6 +1309,30 @@ message SubmitTurnRequest {
 
 message SubmitTurnResponse {
   AgentTurn turn = 1;
+  TurnAdmission admission = 2;
+}
+
+message ListQueuedTurnsRequest {
+  string conversation_id = 1;
+}
+
+message ListQueuedTurnsResponse {
+  repeated TurnQueueEntry entries = 1;
+  uint32 queue_capacity = 2;
+  uint64 conversation_version = 3;
+}
+
+message CancelQueuedTurnRequest {
+  string conversation_id = 1;
+  string queue_entry_id = 2;
+  string idempotency_key = 3;
+  uint64 expected_conversation_version = 4;
+}
+
+message CancelQueuedTurnResponse {
+  TurnQueueEntry entry = 1;
+  uint64 conversation_version = 2;
+  bool replayed = 3;
 }
 
 message CancelTurnRequest {

@@ -88,6 +88,31 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
         lastEventAt: Date.now(),
       };
 
+    case 'queued': {
+      const admission = d.admission && typeof d.admission === 'object'
+        ? d.admission as Record<string, unknown>
+        : {};
+      const rawQueueEntry = admission.queueEntry || admission.queue_entry;
+      const queueEntry = rawQueueEntry && typeof rawQueueEntry === 'object'
+        ? rawQueueEntry as Record<string, unknown>
+        : {};
+      return {
+        ...msg,
+        queued: true,
+        queueEntryId: s(queueEntry.queueEntryId || queueEntry.queue_entry_id),
+        queuePosition: Number(queueEntry.queuePosition || queueEntry.queue_position || 0),
+        loading: false,
+        lastEventAt: Date.now(),
+      };
+    }
+
+    case 'admission_replayed':
+      return {
+        ...msg,
+        loading: false,
+        lastEventAt: Date.now(),
+      };
+
     case 'snapshot':
       return {
         ...msg,
@@ -101,7 +126,6 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
     case 'catchup_done':
       return {
         ...msg,
-        loading: false,
         lastEventAt: Date.now(),
       };
 
@@ -121,7 +145,11 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
 }
 
 export function isTerminalEvent(event: TurnStreamEvent): boolean {
-  return event.event === 'done' || event.event === 'error' || event.event === 'cancelled';
+  return event.event === 'done'
+    || event.event === 'error'
+    || event.event === 'cancelled'
+    || event.event === 'queued'
+    || event.event === 'admission_replayed';
 }
 
 export function isApprovalEvent(event: TurnStreamEvent): boolean {

@@ -6,6 +6,7 @@ import {
   type Session,
   type StreamEvent,
   type ChatAttachmentInput,
+  type AgentTurnQueueListOutput,
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
@@ -137,6 +138,9 @@ export interface ChatMessage {
   replacementOf?: string;
   replacedBy?: string;
   turnId?: string;
+  queued?: boolean;
+  queueEntryId?: string;
+  queuePosition?: number;
 }
 
 const agentChatCache = getDesktopAgentChatCache();
@@ -434,6 +438,7 @@ interface ChatState {
   isStreaming: boolean;
   streamingStartedAt: number | null;
   operations: Record<string, ChatOperation>;
+  turnQueues: Record<string, AgentTurnQueueListOutput>;
   sessionBuffers: Record<string, ChatMessage[]>;
   abortController: AbortController | null;
   memoryDisabledSessions: Record<string, boolean>;
@@ -466,8 +471,11 @@ interface ChatState {
   deleteMessage: (id: string) => Promise<void>;
   editMessage: (id: string, content: string) => Promise<void>;
   translateMessage: (id: string) => Promise<void>;
+  reset: () => void;
 
   syncMessages: () => Promise<void>;
+  syncTurnQueue: (conversationId?: string) => Promise<void>;
+  cancelQueuedTurn: (conversationId: string, queueEntryId: string) => Promise<void>;
   setWideScreen: (wide: boolean) => void;
   fillComposer: (text: string) => void;
   consumeComposerFill: () => void;
@@ -532,6 +540,7 @@ function buildAgentTurnInput(
   const agentState = useAgentStore.getState();
   const agent = agentState.agents.find((a) => a.id === agentId);
   return {
+    client_idempotency_key: tempId(),
     conversation_id: conversationId,
     agent_id: agentId,
     user_input: userInput,
@@ -660,6 +669,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   isStreaming: false,
   streamingStartedAt: null,
   operations: {},
+  turnQueues: {},
   sessionBuffers: {},
   abortController: null,
   memoryDisabledSessions: {},
@@ -669,6 +679,29 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   wideScreen: false,
   composerFill: null,
+
+  reset: () => {
+    for (const operation of Object.values(get().operations)) {
+      if (!operation.abortController.signal.aborted) {
+        operation.abortController.abort();
+      }
+    }
+    set({
+      sessions: [],
+      currentSessionKey: 'main',
+      messages: [],
+      isStreaming: false,
+      streamingStartedAt: null,
+      operations: {},
+      turnQueues: {},
+      sessionBuffers: {},
+      abortController: null,
+      memoryDisabledSessions: {},
+      draftPromotions: {},
+      readinessErrorKey: null,
+      composerFill: null,
+    });
+  },
 
   loadSessions: async () => {
     log.info('chat', 'Loading sessions');
@@ -823,6 +856,39 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
   },
 
+  syncTurnQueue: async (conversationId) => {
+    const key = conversationId || get().currentSessionKey;
+    if (isAgentDraftKey(key)) return;
+    try {
+      const queue = await api.listAgentTurnQueue(key);
+      set((state) => ({
+        turnQueues: {
+          ...state.turnQueues,
+          [key]: queue,
+        },
+      }));
+    } catch (error) {
+      log.warn('chat', 'Failed to reconcile Agent turn queue', {
+        conversationId: key,
+        error: String(error),
+      });
+    }
+  },
+
+  cancelQueuedTurn: async (conversationId, queueEntryId) => {
+    const queue = get().turnQueues[conversationId];
+    const version = queue?.conversation_version
+      ?? await stationConversationVersion(conversationId);
+    await api.cancelQueuedAgentTurn({
+      conversation_id: conversationId,
+      queue_entry_id: queueEntryId,
+      idempotency_key: tempId(),
+      expected_conversation_version: version,
+    });
+    await get().syncTurnQueue(conversationId);
+    await get().loadSessions();
+  },
+
   sendMessage: (content: string, attachments: ChatComposerAttachment[] = []) => {
     log.info('chat', 'Sending message', { sessionKey: get().currentSessionKey, contentLength: content.length });
     const { currentSessionKey } = get();
@@ -963,6 +1029,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             messages: applyTo(state.messages),
           };
         });
+        if (
+          event.event === 'queued'
+          && !isAgentDraftKey(resolvedSessionKey)
+        ) {
+          void get().syncTurnQueue(resolvedSessionKey);
+        }
       },
       () => {
         log.info('chat', 'Stream complete');

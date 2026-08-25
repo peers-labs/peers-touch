@@ -50,6 +50,7 @@ func AllModels() []interface{} {
 		&Credential{},
 		&AgentProvider{},
 		&AgentTurn{},
+		&TurnQueueEntry{},
 		&TurnTrace{},
 		&GrowthEvent{},
 		&UserFeedback{},

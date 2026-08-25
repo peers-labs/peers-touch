@@ -10,9 +10,10 @@ use crate::contracts::{
     AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput, AgentTaskStatusInput,
     AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput, AgentThreadCreateInput,
     AgentThreadListInput, AgentThreadMessagesInput, AgentTombstoneMessageInput,
-    AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput, AgentTurnStreamCancelInput,
-    AgentTurnTraceGetInput, AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput,
-    TopicCommentDeleteInput, TopicCommentListInput,
+    AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput, AgentTurnQueueCancelInput,
+    AgentTurnQueueListInput, AgentTurnStreamCancelInput, AgentTurnTraceGetInput,
+    AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput, TopicCommentDeleteInput,
+    TopicCommentListInput,
 };
 use crate::error::AppResult;
 use crate::error::ErrorCode;
@@ -83,6 +84,26 @@ pub fn agent_cancel_turn(
 ) -> AppResult<StubPayload> {
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
     application_agent_turn::cancel_agent_turn(&input.turn_id, &token)
+}
+
+#[tauri::command]
+pub fn agent_turn_queue_list(
+    input: AgentTurnQueueListInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    application_agent_turn::agent_turn_queue_list(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_turn_queue_cancel(
+    input: AgentTurnQueueCancelInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    application_agent_turn::agent_turn_queue_cancel(input, &token)
 }
 
 #[tauri::command]

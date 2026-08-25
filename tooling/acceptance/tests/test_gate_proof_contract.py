@@ -352,6 +352,13 @@ class GateProofContractTest(unittest.TestCase):
             )
             if attestation_profile == "direct_runtime":
                 item["attestationProfile"] = attestation_profile
+            elif (
+                attestation_profile
+                == "direct_runtime_no_local_capability"
+            ):
+                item["attestationProfile"] = attestation_profile
+                del item["toolCallBinding"]
+                item["clientSession"]["capabilities"] = []
             tuples.append(item)
         return tuples
 

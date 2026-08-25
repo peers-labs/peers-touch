@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-22
+> **Created**: 2026-07-30 | **Updated**: 2026-08-25
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
 
@@ -25,6 +25,8 @@
 | One canonical device-signed command proof can bind every capability control-plane request without a second trust root | `accepted_decision` | MCA-D19B in this document and `decisions.md` | high | G1-A/B implementation evidence |
 | Production restart cannot replay externally idempotent PREPARED work because the restored context has terminal-only authority | `verified_fact` | G1-C audit of `desktop_executor_worker/supervisor.rs` and `fenced_executor.rs` | high | None |
 | A new Station-fenced takeover can restore execution authority without broadening the recovery credential | `accepted_decision` | MCA-D19C in `decisions.md` | high | Deterministic takeover race evidence |
+| Provider/model filtering and TurnTrace cannot prove P12/CLI non-advertisement or zero local runtime side effects | `verified_fact` | XR-4 source audit and rejected weak adapter | high | Production snapshot implementation |
+| Production-owned advertisement and monotonic activity snapshots make conditional-runtime absence falsifiable without enabling the runtime | `accepted_decision` | MCA-D19D in `decisions.md` | high | XR-4 Native/Browser evidence |
 | A working turn alone is insufficient for a dependable Agent | `inference` | Benchmark runtime contracts plus current architecture goals | high | Owner acceptance of target quality |
 | Stateful Codex/Claude-like runtimes require conversation-scoped runtime identity separate from model-provider identity | `verified_fact` for benchmark behavior; `proposal` for Peers-Touch | AgentBox thread-owned runtime and external session contract | medium-high | Peers runtime product decision |
 | Multi-Agent orchestration should consume, not define, the single-Agent runtime | `proposal` | Separation between Agent Canvas and turn kernel | high | Architecture review |
@@ -671,6 +673,51 @@ Forbidden relationships:
 - Station/Web -> resolution or persistence of a raw local path/native handle.
 
 The typed fields and state transitions are defined in `data-model.md §8.9`.
+
+### 22.3 Conditional Runtime Proof Boundary
+
+MCA-D19D separates product advertisement from implementation registration:
+
+```text
+provider/runtime catalog registration
+  -> Station effective profile evaluation
+  -> explicit runtime advertisement state
+  -> readiness projection
+  -> client selector projection
+```
+
+Only the Station effective snapshot may claim that a runtime is advertised or
+ready. Catalog records, provider protocol metadata, Desktop binaries, and local
+configuration are inputs, not product advertisement.
+
+Production proof uses two read-only authorities:
+
+- Station owns the actor-scoped effective runtime advertisement/readiness
+  snapshot and monotonic counters for runtime bindings, external sessions, and
+  workspaces.
+- Desktop Rust owns boot-scoped monotonic counters for local process starts,
+  runtime-home creation, external-session opening, and workspace creation.
+
+Snapshots carry owner identity, profile/readiness revision, observation time,
+and monotonic counter epoch. They expose no local paths, commands, PIDs,
+credentials, or reset operation. Acceptance compares before/after snapshots
+only when all identities and revisions are unchanged; restart, counter
+regression, missing owner, or unknown state fails closed.
+
+For Desktop non-advertisement, receiver DOM, Station snapshot, and Desktop
+activity snapshot must agree. For Browser, an isolated Browser lifecycle
+provides receiver DOM and the same Station snapshot; Browser cannot claim a
+Desktop-local counter as its own. Any correlated Desktop dispatch or Station
+counter increase fails the Browser cell.
+
+Forbidden:
+
+- deriving readiness from provider/model list presence or absence;
+- treating a missing row as `NOT_ADVERTISED`;
+- resetting counters for an Acceptance run;
+- exposing an Acceptance-only endpoint or instrumentation branch;
+- using TurnTrace alone as process/runtime-home/session/workspace evidence;
+- promoting P12/CLI because the proof contract exists.
 
 ## 23. Evaluation Authority
 

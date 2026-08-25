@@ -2,7 +2,7 @@
 
 > **Status**: approved
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-22
+> **Created**: 2026-07-30 | **Updated**: 2026-08-25
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -34,6 +34,8 @@
 | MCA-D19A | Separate execution authority from signed terminal receipt recovery | approved |
 | MCA-D19B | Require actor-device proof for every capability control-plane command | approved |
 | MCA-D19C | Re-authorize external-idempotency replay through Station fenced takeover | approved |
+| MCA-D19D | Prove conditional runtimes through production advertisement and activity snapshots | approved |
+| MCA-D19E | Attest Browser direct execution without fabricated local capabilities | approved |
 
 ---
 
@@ -1187,3 +1189,138 @@ Accept only if the design, data model, integration flow, Station CAS, old-fence
 receipt behavior, deadline handling, credential invalidation, and resource-ref
 failure behavior are mutually consistent and preserve Station-only execution
 authority.
+
+## MCA-D19D: Production Runtime Advertisement And Activity Snapshots
+
+**Status**: approved
+**Date**: 2026-08-25
+
+### Context
+
+The XR-4 evidence audit found that provider/model list filtering cannot prove
+that conditional P12 `EXTERNAL_AGENT` or stateless CLI runtimes are absent from
+the effective product profile. Existing TurnTrace records also cannot prove
+that no runtime home, external session, workspace, or local process was created.
+Acceptance-only counters would make the Gate self-proving instead of observing
+production behavior.
+
+### Decision
+
+Station exposes an actor-authorized, read-only effective runtime advertisement
+snapshot. The snapshot binds the active product profile and readiness revision,
+evaluates every known conditional runtime candidate, and reports one of:
+`READY`, `DEGRADED`, `NOT_ADVERTISED`, or `BLOCKED`. Registry presence is not
+advertisement. A runtime is selectable only when the effective snapshot says
+`READY`.
+
+Station also exposes monotonic actor-scoped runtime activity counters for
+runtime binding, external session, and workspace creation. Desktop Rust owns a
+monotonic boot-scoped local activity snapshot for process starts, runtime-home
+creation, external-session opening, and workspace creation. Neither interface
+accepts reset or mutation commands.
+
+Non-advertisement proof takes before/after snapshots under the same actor,
+profile revision, Station runtime identity, and Desktop boot identity. The Gate
+passes only when:
+
+- P12/CLI are explicitly `NOT_ADVERTISED`;
+- no corresponding selector is visible in an isolated Desktop or Browser
+  client;
+- all relevant Station and Desktop counter deltas are zero;
+- no Turn attempt or runtime binding is created for the candidate.
+
+Browser receives an isolated client lifecycle and consumes the same Station
+snapshot. It cannot use Desktop-local process counters as its own evidence;
+Browser proof combines its receiver DOM with Station counters and the absence
+of any Desktop dispatch correlated to the scenario.
+
+### Rationale
+
+The contract makes absence falsifiable without enabling the optional runtimes.
+Production owners emit the evidence, while Acceptance only samples and compares
+it. Explicit `NOT_ADVERTISED` avoids inferring product support from catalog
+registration or provider filtering.
+
+### Alternatives Considered
+
+- Infer absence from provider/model lists: rejected because filtering does not
+  identify the effective profile or readiness authority.
+- Count TurnTrace rows only: rejected because local process and runtime-home
+  side effects can occur without a complete trace.
+- Add Acceptance-only probes or resettable counters: rejected because the Gate
+  would own the fact it claims to verify.
+- Enable P12/CLI to test them positively: rejected because both remain outside
+  the frozen product profile.
+
+### Consequences
+
+- Shared snapshot contracts are proto-first.
+- Station maintains process-epoch monotonic activity counters in the Agent
+  authority boundary; a Station restart rotates the epoch and invalidates an
+  in-flight comparison.
+- Desktop Rust keeps local counters for the lifetime of one process boot and
+  exposes them through the controlled BFF.
+- Snapshot payloads contain no command, local path, credential, PID, or secret.
+- Counter wrap, profile revision changes, Station restart, Desktop restart, or
+  missing Browser isolation invalidate a comparison instead of producing zero.
+- XR-4 may implement its eight non-advertisement tuples against these production
+  readbacks; all other Foundation tuples remain independently unproven.
+
+### Review Condition
+
+Revisit only if P12 or CLI enters an accepted product profile. Promotion then
+requires positive runtime lifecycle evidence and cannot reinterpret historical
+`NOT_ADVERTISED` snapshots as readiness proof.
+
+## MCA-D19E: Browser Direct Runtime Without Local Capability Fabrication
+
+**Status**: approved
+**Date**: 2026-08-25
+
+### Context
+
+The reviewed `direct_runtime` attestation requires a non-empty client
+capability lease and a ToolCall binding to one leased capability. Browser
+direct-model turns correctly use a Browser-owned capability session with zero
+device-local execution capabilities and create no ToolCall. Reusing
+`direct_runtime` would require fabricated capability and ToolCall facts.
+
+### Decision
+
+Define `direct_runtime_no_local_capability` as the runtime attestation profile
+for the `foundation-browser-direct` row. It retains actor identity,
+conversation runtime binding, runtime snapshot, TurnAttempt, Browser capability
+session identity, readiness linkage, Station profile, network path, machine,
+and cold/warm state.
+
+The profile requires:
+
+- `clientSession.platform == browser`;
+- `clientSession.capabilities == []`;
+- no `toolCallBinding`;
+- production evidence that no local capability execution occurred.
+
+The existing `direct_runtime` profile remains unchanged for Desktop rows that
+bind a real local capability and ToolCall.
+
+### Rationale
+
+Evidence must describe the production path rather than synthesize fields only
+to satisfy a schema. Row-level assignment matches the reviewed runtime matrix:
+every Browser Foundation tuple shares the same Browser session authority, while
+cell assertions independently determine whether a ToolCall was expected.
+
+### Consequences
+
+- The runtime matrix identity advances to `2026-08-25.1`.
+- The Agent V2 proof contract and runtime-attestation schema advance to version
+  `3`.
+- Foundation tuple count and product assertions remain unchanged.
+- Existing evidence under the prior matrix/schema identity is stale and cannot
+  be promoted.
+
+### Review Condition
+
+Revisit only if Browser gains a production local-capability execution path.
+That path must advertise a real capability lease and emit its own fenced
+ToolCall evidence before using `direct_runtime`.

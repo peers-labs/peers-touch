@@ -74,6 +74,10 @@ class AgentV2RuntimeMatrixTest(unittest.TestCase):
             "agent-v2-kernel-foundation-e2e",
         )
         self.assertEqual(profiles["foundation-desktop-direct"], "direct_runtime")
+        self.assertEqual(
+            profiles["foundation-browser-direct"],
+            "direct_runtime_no_local_capability",
+        )
         self.assertEqual(profiles["foundation-mobile-contract"], "contract_only")
         self.assertEqual(
             profiles["foundation-d11"],

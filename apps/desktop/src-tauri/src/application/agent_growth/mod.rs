@@ -190,8 +190,13 @@ pub fn agent_skill_list(input: AgentSkillListInput, token: &str) -> AppResult<St
     match station_client::request_proto::<
         model::agent::ListSkillsRequest,
         model::agent::ListSkillsResponse,
-    >(Method::POST, "/agent/skill/list", token, None, Some(&req))
-    {
+    >(
+        Method::POST,
+        "/sub-agent/agent/skill/list",
+        token,
+        None,
+        Some(&req),
+    ) {
         Ok(resp) => {
             let skills: Vec<Value> = resp.skills.iter().map(skill_manifest_to_json).collect();
             let n = skills.len() as i32;

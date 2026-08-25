@@ -472,7 +472,18 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           )}
 
           {/* Content area */}
-          {message.loading && !message.content && !(message.toolCalls && message.toolCalls.length > 0) ? (
+          {message.queued ? (
+            <Flexbox
+              data-pt-agent-message-queued
+              horizontal
+              align="center"
+              gap={8}
+              style={{ color: token.colorTextSecondary, fontSize: 13 }}
+            >
+              <Tag>{t('chat.queue.position', { position: message.queuePosition })}</Tag>
+              <span>{t('chat.queue.waiting')}</span>
+            </Flexbox>
+          ) : message.loading && !message.content && !(message.toolCalls && message.toolCalls.length > 0) ? (
             <ThinkingIndicator token={token} />
           ) : collapsed ? (
             <div

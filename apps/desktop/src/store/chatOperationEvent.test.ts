@@ -3,6 +3,7 @@ import {
   applyOperationEventIdentity,
   type ChatMessage,
   type ChatOperation,
+  useChatStore,
 } from './chat';
 import { isTerminalEvent, reduceStreamEvent } from './streaming';
 
@@ -87,6 +88,55 @@ describe('Agent turn event identity projection', () => {
     expect(isTerminalEvent(event)).toBe(false);
   });
 
+  it('keeps a replay catch-up marker non-terminal until Station reports a terminal snapshot', () => {
+    const message: ChatMessage = {
+      id: 'message-1',
+      role: 'assistant',
+      content: 'partial',
+      loading: true,
+      timestamp: 1,
+    };
+    const event = {
+      event: 'catchup_done' as const,
+      data: { seq: 4 },
+    };
+
+    expect(reduceStreamEvent(message, event)).toMatchObject({
+      content: 'partial',
+      loading: true,
+    });
+    expect(isTerminalEvent(event)).toBe(false);
+  });
+
+  it('projects queued admission with position and settles the live stream', () => {
+    const message: ChatMessage = {
+      id: 'message-1',
+      role: 'assistant',
+      content: '',
+      loading: true,
+      timestamp: 1,
+    };
+    const event = {
+      event: 'queued' as const,
+      data: {
+        admission: {
+          queue_entry: {
+            queue_entry_id: 'queue-1',
+            queue_position: 2,
+          },
+        },
+      },
+    };
+
+    expect(reduceStreamEvent(message, event)).toMatchObject({
+      queued: true,
+      queueEntryId: 'queue-1',
+      queuePosition: 2,
+      loading: false,
+    });
+    expect(isTerminalEvent(event)).toBe(true);
+  });
+
   it('keeps approval projection out of the generic streaming reducer', () => {
     const message: ChatMessage = {
       id: 'message-1',
@@ -108,5 +158,39 @@ describe('Agent turn event identity projection', () => {
     });
 
     expect(reduced.toolCalls).toBeUndefined();
+  });
+
+  it('aborts active operations and clears actor-scoped chat state on reset', () => {
+    const active = operation();
+    useChatStore.setState({
+      currentSessionKey: active.sessionKey,
+      isStreaming: true,
+      streamingStartedAt: active.startedAt,
+      abortController: active.abortController,
+      operations: { [active.sessionKey]: active },
+      sessionBuffers: {
+        [active.sessionKey]: [{
+          id: 'message-1',
+          role: 'assistant',
+          content: 'partial',
+          loading: true,
+          timestamp: 1,
+        }],
+      },
+    });
+
+    useChatStore.getState().reset();
+
+    expect(active.abortController.signal.aborted).toBe(true);
+    expect(useChatStore.getState()).toMatchObject({
+      currentSessionKey: 'main',
+      isStreaming: false,
+      streamingStartedAt: null,
+      abortController: null,
+      operations: {},
+      turnQueues: {},
+      sessionBuffers: {},
+      messages: [],
+    });
   });
 });

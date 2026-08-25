@@ -37,6 +37,21 @@ func (h *TurnHandlers) HandleRegisterClientCapabilityLease(
 	return response, nil
 }
 
+func (h *TurnHandlers) HandleListClientCapabilitySessions(
+	ctx context.Context,
+	_ *model.ListClientCapabilitySessionsRequest,
+) (*model.ListClientCapabilitySessionsResponse, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	response, err := h.turnService.ListClientCapabilitySessions(ctx, subject.ID)
+	if err != nil {
+		return nil, toolHandlerError(err)
+	}
+	return response, nil
+}
+
 func (h *TurnHandlers) HandleRenewClientCapabilityLease(
 	ctx context.Context,
 	request *model.RenewClientCapabilityLeaseRequest,

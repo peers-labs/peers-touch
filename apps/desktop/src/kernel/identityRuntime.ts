@@ -400,7 +400,12 @@ class IdentityRuntime {
 
   revokeSession = async (): Promise<void> => {
     this.dispatch({ type: 'SESSION_REVOKED', reason: 'revoked' });
-    await this.loadAuthGate('revoked', true);
+    await runIdentityPipeline({
+      reason: 'revoked',
+      actorId: null,
+      loginMethod: null,
+    });
+    await this.loadAuthGate('revoked', false);
   };
 
   revalidateIfNeeded = (): void => {

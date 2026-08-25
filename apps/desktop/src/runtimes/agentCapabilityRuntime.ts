@@ -1,4 +1,6 @@
 import type { RuntimeDescriptor } from '../kernel/runtime';
+import { isBrowserGatewayRuntime } from '../kernel/gateway';
+import { api } from '../services/desktop_api';
 import { useAgentStore } from '../store/agent';
 import { useAgentConnectorStore } from '../store/agentConnectors';
 import { useMCPStore } from '../store/mcp';
@@ -8,6 +10,16 @@ import { useToolStore } from '../store/tool';
 import { log } from '../utils/logger';
 
 let installed = false;
+
+async function openBrowserCapabilitySession(): Promise<void> {
+  if (!isBrowserGatewayRuntime()) return;
+  await api.openBrowserCapabilitySession();
+}
+
+export async function closeBrowserCapabilitySession(): Promise<void> {
+  if (!isBrowserGatewayRuntime()) return;
+  await api.closeBrowserCapabilitySession();
+}
 
 async function loadAgentCapabilities(reason: string): Promise<void> {
   log.info('agentCapabilityRuntime', 'loading agent capability projections', { reason });
@@ -31,10 +43,16 @@ export const agentCapabilityRuntime: RuntimeDescriptor = {
     installed = true;
   },
   teardown() {
+    void closeBrowserCapabilitySession().catch((error) => {
+      log.warn('agentCapabilityRuntime', 'browser capability session close failed', {
+        error: String(error),
+      });
+    });
     installed = false;
   },
   async bootstrap(actorId) {
     if (!actorId) return;
+    await openBrowserCapabilitySession();
     await loadAgentCapabilities('bootstrap');
   },
   async reconcile(reason: string) {

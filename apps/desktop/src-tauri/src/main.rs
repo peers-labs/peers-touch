@@ -39,7 +39,8 @@ use interface::tauri_commands::{
     frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice,
     key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery, mls,
     model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
-    search, settings, skills, skills_market, social, station, system, tools, tts,
+    runtime_evidence, search, settings, skills, skills_market, social, station, system, tools,
+    tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -129,13 +130,15 @@ fn main() {
             #[cfg(debug_assertions)]
             interface::http_gateway::start(Arc::clone(state.inner()), app.handle().clone());
             application::desktop_executor_worker::start(Arc::clone(state.inner()));
-            app.state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>()
-                .start()
-                .map_err(|error| {
+            let capability_supervisor = app
+                .state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
+            if capability_supervisor.starts_automatically() {
+                capability_supervisor.start().map_err(|error| {
                     std::io::Error::other(format!(
                         "start client capability supervisor: {error}"
                     ))
                 })?;
+            }
             if let Err(e) = state.i18n.deploy_builtin_packs(&resource_dir) {
                 tracing::error!(error = %e, "Failed to deploy built-in i18n packs");
             }
@@ -277,10 +280,20 @@ fn main() {
             agent_turn::agent_execute_turn,
             agent_turn::agent_execute_turn_stream,
             agent_turn::agent_cancel_turn,
+            agent_turn::agent_turn_queue_list,
+            agent_turn::agent_turn_queue_cancel,
             agent_turn::agent_turn_trace_list,
             agent_turn::agent_turn_trace_get,
             agent_turn::agent_turn_diagnostics_export,
             agent_turn::agent_submit_tool_decision,
+            runtime_evidence::agent_runtime_profile_effective,
+            runtime_evidence::agent_capability_readiness,
+            runtime_evidence::agent_capability_sessions,
+            runtime_evidence::agent_browser_capability_session_open,
+            runtime_evidence::agent_browser_capability_session_close,
+            runtime_evidence::agent_runtime_activity_station,
+            runtime_evidence::agent_runtime_activity_local,
+            runtime_evidence::agent_capability_session_snapshot,
             agent_turn::agent_conversation_list,
             agent_turn::agent_conversation_get,
             agent_turn::agent_conversation_create,

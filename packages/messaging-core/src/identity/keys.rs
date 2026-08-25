@@ -1,4 +1,4 @@
-use ed25519_dalek::{Signature, Signer, Verifier, VerifyingKey, SigningKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use sha2::{Digest, Sha256, Sha512};
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
@@ -22,13 +22,19 @@ impl IdentityKeyPair {
     pub fn generate() -> Self {
         let signing_key = SigningKey::generate(&mut OsRng);
         let verifying_key = signing_key.verifying_key();
-        Self { signing_key, verifying_key }
+        Self {
+            signing_key,
+            verifying_key,
+        }
     }
 
     pub fn from_seed(seed: &[u8; 32]) -> Self {
         let signing_key = SigningKey::from_bytes(seed);
         let verifying_key = signing_key.verifying_key();
-        Self { signing_key, verifying_key }
+        Self {
+            signing_key,
+            verifying_key,
+        }
     }
 
     pub fn signing_key(&self) -> &SigningKey {
@@ -102,7 +108,12 @@ impl DeviceSigningKey {
     pub fn from_parts(seed: &[u8; 32], cross_signature: Signature, device_id: String) -> Self {
         let signing_key = SigningKey::from_bytes(seed);
         let verifying_key = signing_key.verifying_key();
-        Self { signing_key, verifying_key, cross_signature, device_id }
+        Self {
+            signing_key,
+            verifying_key,
+            cross_signature,
+            device_id,
+        }
     }
 
     pub fn verifying_key(&self) -> &VerifyingKey {

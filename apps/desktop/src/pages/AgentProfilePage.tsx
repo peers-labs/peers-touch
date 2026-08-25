@@ -1506,6 +1506,7 @@ export function AgentProfilePage({
       await new Promise<void>((resolve, reject) => {
         executeAgentTurn(
           {
+            client_idempotency_key: crypto.randomUUID(),
             conversation_id: '',
             agent_id: builderAgent.id,
             user_input: prompt,

@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import threading
@@ -377,13 +378,66 @@ def reset_station_messaging_state(environment_name: str) -> None:
         raise RuntimeError(
             f"{environment_name} must define PT_DEPLOY_HOST and PT_DEPLOY_USER"
         )
-    container = os.environ.get(
-        "PT_STATION_POSTGRES_CONTAINER", "pt-station-a-postgres-1"
-    )
-    if container != "pt-station-a-postgres-1":
-        raise RuntimeError(
-            "Profile Three PostgreSQL container must be pt-station-a-postgres-1"
+    explicit_container = os.environ.get(
+        "CHAT_ACCEPTANCE_POSTGRES_CONTAINER",
+        "",
+    ).strip()
+    if explicit_container:
+        container = explicit_container
+    else:
+        station_url = os.environ.get("PT_STATION_URL", "").strip()
+        station_port = urllib.parse.urlparse(station_url).port
+        if station_port is None:
+            raise RuntimeError(
+                "PT_STATION_URL must include the published Station port"
+            )
+        discover = (
+            "set -e; "
+            f"station=$(docker ps --filter publish={station_port} "
+            "--format '{{.Names}}'); "
+            "test \"$(printf '%s\\n' \"$station\" | sed '/^$/d' | wc -l)\" -eq 1; "
+            "project=$(docker inspect --format "
+            "'{{ index .Config.Labels \"com.docker.compose.project\" }}' "
+            "\"$station\"); "
+            "test -n \"$project\"; "
+            "docker ps "
+            "--filter \"label=com.docker.compose.project=$project\" "
+            "--filter \"label=com.docker.compose.service=postgres\" "
+            "--format '{{.Names}}'"
         )
+        completed = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=10",
+                "-o",
+                "StrictHostKeyChecking=no",
+                f"{user}@{host}",
+                discover,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        containers = [
+            line.strip()
+            for line in completed.stdout.splitlines()
+            if line.strip()
+        ]
+        if completed.returncode != 0 or len(containers) != 1:
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "no matching container"
+            )
+            raise RuntimeError(
+                "could not resolve the Station PostgreSQL container "
+                f"for published port {station_port}: {detail}"
+            )
+        container = containers[0]
     sql = f"""
 BEGIN;
 TRUNCATE TABLE {', '.join(CHAT_TABLES)} CASCADE;
@@ -408,7 +462,7 @@ $acceptance$;
 COMMIT;
 """
     remote = (
-        f"docker exec -i {container} sh -lc "
+        f"docker exec -i {shlex.quote(container)} sh -lc "
         "'psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'"
     )
     subprocess.run(

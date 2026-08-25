@@ -33,6 +33,7 @@ ALWAYS_REQUIRED_ROLES = {
 }
 RUNTIME_ATTESTATION_PROFILES = {
     "direct_runtime",
+    "direct_runtime_no_local_capability",
     "contract_only",
     "orchestration_guard",
     "non_advertised",

@@ -39,6 +39,8 @@ export VITE_PORT=3000
 | 脚本 | 当前状态 | 主要用途 | 备注 |
 |---|---|---|---|
 | `preview-desktop.sh` | 推荐 | 本地启动 Desktop(Tauri) | 当前最稳定入口 |
+| `dev-desktop-app.sh` | 可用 | 启动 Native Desktop 开发运行时 | 显式设置 `PT_CLIENT_SURFACE=desktop`，允许 Desktop capability supervisor 随进程启动 |
+| `dev-desktop-web.sh` | 可用 | 启动 Browser + Desktop Rust Gateway 开发运行时 | 显式设置 `PT_CLIENT_SURFACE=browser`；Browser capability session 仅由 Web session runtime 在认证边打开 |
 | `_ensure-station.sh` | 内部依赖 | 检查/启动 station 并做健康探测 | 由 preview 脚本调用 |
 | `dev-clean.sh` | 推荐 | 清理开发进程 | 建议重启开发环境前执行 |
 | `dev-testnet-desktops.sh` | 可用 | 启动 testnet Desktop 多实例 | 支持 macOS 默认 Bash；通常通过 `make testnet-desktop NODES="a b"` 调用 |

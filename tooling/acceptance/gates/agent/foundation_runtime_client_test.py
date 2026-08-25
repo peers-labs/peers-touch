@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from tooling.acceptance.gates.agent.foundation_runtime_client import (
+    FoundationClientError,
+    FoundationClientSpec,
+    FoundationRuntimeClient,
+    FoundationRuntimePair,
+)
+
+
+class FoundationClientSpecTest(unittest.TestCase):
+    def spec(self, root: Path, runtime: str) -> FoundationClientSpec:
+        return FoundationClientSpec.from_mapping(
+            {
+                "runtime": runtime,
+                "worktree": str(root),
+                "gateway_port": 23030,
+                "renderer_port": 23210,
+                "webdriver_port": 24445,
+                "storage_root": str(root / "runtime" / "storage"),
+                "profile": f"foundation-{runtime}",
+            }
+        )
+
+    def test_selects_canonical_make_target_and_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            native = self.spec(root, "native-tauri")
+            browser = self.spec(root, "browser")
+
+        self.assertEqual((native.make_target, native.surface), ("desktop", "desktop"))
+        self.assertEqual(
+            (browser.make_target, browser.surface),
+            ("desktop-web", "browser"),
+        )
+
+    def test_rejects_unknown_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(
+                FoundationClientError,
+                "unsupported Foundation client runtime",
+            ):
+                self.spec(Path(directory), "desktop-gateway")
+
+    def test_launch_environment_is_manifest_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = FoundationRuntimeClient(
+                self.spec(root, "browser"),
+                station_url="https://station.example/",
+                profile_env={"PT_STATION_DEPLOY_ENV": "station-1"},
+            )
+            environment = client.launch_environment()
+
+        self.assertEqual(environment["PT_DEV_PROFILE"], "one")
+        self.assertEqual(environment["PT_PROFILE"], "foundation-browser")
+        self.assertEqual(environment["GATEWAY_PORT"], "23030")
+        self.assertEqual(environment["WEB_PORT"], "23210")
+        self.assertEqual(environment["PEERS_STATION_URL"], "https://station.example")
+        self.assertEqual(environment["PT_DESKTOP_E2E"], "true")
+        self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", environment)
+
+    def test_runtime_pair_requires_exact_native_and_browser_clients(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            native = {
+                "runtime": "native-tauri",
+                "worktree": str(root),
+                "gateway_port": 23030,
+                "renderer_port": 23210,
+                "webdriver_port": 24445,
+                "storage_root": str(root / "native" / "storage"),
+                "profile": "foundation-native",
+            }
+            browser = {
+                **native,
+                "runtime": "browser",
+                "gateway_port": 23031,
+                "renderer_port": 23211,
+                "webdriver_port": 24446,
+                "storage_root": str(root / "browser" / "storage"),
+                "profile": "foundation-browser",
+            }
+            pair = FoundationRuntimePair.from_manifest(
+                {
+                    "station": {"url": "https://station.example"},
+                    "clients": [native, browser],
+                },
+                profile_env={},
+            )
+
+        self.assertEqual(pair.native.spec.runtime, "native-tauri")
+        self.assertEqual(pair.browser.spec.runtime, "browser")
+
+    def test_runtime_pair_rejects_missing_browser_client(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            native = {
+                "runtime": "native-tauri",
+                "worktree": str(root),
+                "gateway_port": 23030,
+                "renderer_port": 23210,
+                "webdriver_port": 24445,
+                "storage_root": str(root / "native" / "storage"),
+                "profile": "foundation-native",
+            }
+            with self.assertRaisesRegex(
+                FoundationClientError,
+                "requires Native and Browser clients",
+            ):
+                FoundationRuntimePair.from_manifest(
+                    {
+                        "station": {"url": "https://station.example"},
+                        "clients": [native],
+                    },
+                    profile_env={},
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()

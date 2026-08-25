@@ -233,7 +233,7 @@ fn install_skill_at_station(
         model::agent::InstallSkillResponse,
     >(
         Method::POST,
-        "/agent/skill/install",
+        "/sub-agent/agent/skill/install",
         token,
         None,
         Some(&req),
@@ -1342,8 +1342,13 @@ pub fn skills_market_uninstall(
     if let Err(err) = station_client::request_proto::<
         model::agent::DeleteSkillRequest,
         model::agent::DeleteSkillResponse,
-    >(Method::POST, "/agent/skill/delete", token, None, Some(&req))
-    {
+    >(
+        Method::POST,
+        "/sub-agent/agent/skill/delete",
+        token,
+        None,
+        Some(&req),
+    ) {
         return station_error("skills_market_uninstall", err);
     }
     if let Err(result) = remove_market_install_record(&record) {

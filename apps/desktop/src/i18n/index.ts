@@ -44,15 +44,25 @@ function detectLanguage(availableCodes: string[]): string {
 }
 
 export async function initI18n() {
-  const result = await Promise.race([
-    invoke<RustCommandResult<I18nResources>>('i18n_load_resources'),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('i18n_load_resources timed out after 10s')), 10_000)
-    ),
-  ]);
+  let result: RustCommandResult<I18nResources> | null = null;
+  let loadError: unknown = null;
+  try {
+    result = await Promise.race([
+      invoke<RustCommandResult<I18nResources>>('i18n_load_resources'),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('i18n_load_resources timed out after 10s')), 10_000)
+      ),
+    ]);
+  } catch (error) {
+    loadError = error;
+  }
 
-  if (!result.ok || !result.data) {
-    log.error('i18n', 'Failed to load resources from Tauri', result.error);
+  if (!result?.ok || !result.data) {
+    log.error(
+      'i18n',
+      'Failed to load resources from Tauri — using fallback',
+      loadError ?? result?.error,
+    );
     await i18n.use(initReactI18next).init({
       resources: {},
       lng: 'en',

@@ -8,6 +8,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 RUNNER = ROOT / "tooling" / "acceptance" / "gates" / "agent" / "native_agent_runner.py"
 HARNESS = ROOT / "apps" / "desktop" / "src" / "acceptance" / "agent" / "harness.ts"
+CAPABILITY_SUPERVISOR = (
+    ROOT
+    / "apps"
+    / "desktop"
+    / "src-tauri"
+    / "src"
+    / "application"
+    / "desktop_executor_worker"
+    / "supervisor.rs"
+)
+DESKTOP_WEB_SCRIPT = ROOT / "tooling" / "scripts" / "dev-desktop-web.sh"
+DESKTOP_APP_SCRIPT = ROOT / "tooling" / "scripts" / "dev-desktop-app.sh"
+AGENT_CAPABILITY_RUNTIME = (
+    ROOT / "apps" / "desktop" / "src" / "runtimes" / "agentCapabilityRuntime.ts"
+)
+DESKTOP_MAIN = ROOT / "apps" / "desktop" / "src-tauri" / "src" / "main.rs"
+FOUNDATION_RUNTIME_CLIENT = (
+    ROOT
+    / "tooling"
+    / "acceptance"
+    / "gates"
+    / "agent"
+    / "foundation_runtime_client.py"
+)
 
 
 class AgentNativeRunnerStaticTest(unittest.TestCase):
@@ -30,31 +54,49 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
             with self.subTest(var=var):
                 self.assertNotIn(var, self.source)
 
-    def test_runner_uses_peers_touch_acceptance_prefix(self) -> None:
-        self.assertIn("PEERS_TOUCH_ACCEPTANCE_STATION_URL", self.source)
-        self.assertIn("PEERS_TOUCH_ACCEPTANCE_PASSWORD", self.source)
-        self.assertIn("PEERS_TOUCH_ACCEPTANCE_ACTOR_EMAIL", self.source)
-
-    def test_runner_accepts_legacy_fallback(self) -> None:
-        self.assertIn("CHAT_NATIVE_STATION_URL", self.source)
-        self.assertIn("CHAT_NATIVE_DEMO_PASSWORD", self.source)
-
-    def test_runner_default_station_matches_topology(self) -> None:
-        self.assertIn("10.37.94.156:18080", self.source)
+    def test_runner_has_no_default_identity_or_station(self) -> None:
+        self.assertNotIn("alice@p.t", self.source)
+        self.assertNotIn('DEFAULT_PASSWORD = "1"', self.source)
+        self.assertNotIn("10.37.", self.source)
 
     def test_runner_enables_e2e_feature(self) -> None:
         self.assertIn("PT_DESKTOP_E2E", self.source)
-        self.assertIn("e2e-testing", self.source)
 
     def test_runner_cleans_up_process_and_driver(self) -> None:
         self.assertIn("driver.quit()", self.source)
-        self.assertIn("process.terminate()", self.source)
+        self.assertIn("os.killpg", self.source)
+        self.assertIn("portsReleased", self.source)
+        self.assertIn("storageReleased", self.source)
 
     def test_runner_emits_evidence_report(self) -> None:
-        self.assertIn("agent-native-turn.json", self.source)
-        self.assertIn("stationUrl", self.source)
+        self.assertIn("ArtifactSession", self.source)
+        self.assertNotIn("REPORTS_DIR", self.source)
+        self.assertIn("agent-native-journey.json", self.source)
         self.assertIn("startedAt", self.source)
         self.assertIn("completedAt", self.source)
+
+    def test_runner_consumes_provisioned_runtime(self) -> None:
+        self.assertIn("PT_ACCEPTANCE_RUNTIME_MANIFEST", self.source)
+        self.assertIn("load_runtime_manifest", self.source)
+        self.assertIn('APPROVED_PROFILE = "one"', self.source)
+
+    def test_runner_dispatches_stream_resilience(self) -> None:
+        self.assertIn('"stream-resilience": "agent-stream-resilience-e2e"', self.source)
+        self.assertIn("parser.add_argument(", self.source)
+        self.assertIn("runner.run_stream_resilience()", self.source)
+
+    def test_runner_injects_transport_fault(self) -> None:
+        self.assertIn("class TcpFaultProxy", self.source)
+        self.assertIn("except socket.timeout:", self.source)
+        self.assertIn("cut_station_transport", self.source)
+        self.assertIn("restore_station_transport", self.source)
+        self.assertIn("reconciling_visible", self.source)
+
+    def test_runner_proves_identity_boundary_and_station_readback(self) -> None:
+        self.assertIn("logout_during_active_turn", self.source)
+        self.assertIn("auth_gate_isolated", self.source)
+        self.assertIn("station_identity_boundary_readback", self.source)
+        self.assertIn("station_replay_readback", self.source)
 
     def test_runner_uses_acceptance_harness(self) -> None:
         self.assertIn("__PT_ACCEPTANCE__", self.source)
@@ -62,8 +104,8 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
 
     def test_runner_waits_for_harness(self) -> None:
         self.assertIn("__PT_ACCEPTANCE__", self.source)
-        self.assertIn("wait_harness", self.source)
-        self.assertIn("agent harness", self.source.lower())
+        self.assertIn("Agent acceptance harness", self.source)
+        self.assertIn("wait_until(", self.source)
 
     def test_runner_has_step_telemetry(self) -> None:
         self.assertIn("def step(", self.source)
@@ -90,7 +132,9 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_harness_exposes_navigate_to_agent(self) -> None:
         self.assertIn("navigateToAgent", self.source)
-        self.assertIn("#/agent", self.source)
+        self.assertIn("EVENT.NAVIGATION_REQUESTED", self.source)
+        self.assertIn("resource: 'sessions'", self.source)
+        self.assertIn("getClientRects()", self.source)
 
     def test_harness_exposes_send_message(self) -> None:
         self.assertIn("sendMessage", self.source)
@@ -102,6 +146,37 @@ class AgentHarnessStaticTest(unittest.TestCase):
     def test_harness_exposes_wait_for_response(self) -> None:
         self.assertIn("waitForAssistantResponse", self.source)
 
+    def test_harness_exposes_r6_production_actions_and_readback(self) -> None:
+        for method in (
+            "logout",
+            "getRuntimeSnapshot",
+            "getConversationReadback",
+        ):
+            with self.subTest(method=method):
+                self.assertIn(method, self.source)
+
+    def test_harness_exposes_foundation_group_one_actions(self) -> None:
+        for method in (
+            "getFoundationAgentState",
+            "getFoundationCapabilitySessions",
+            "captureFoundationRuntimeState",
+            "setFoundationLocale",
+            "createFoundationConversation",
+            "selectFoundationConversation",
+            "submitFoundationTurns",
+            "updateFoundationConversation",
+            "archiveFoundationConversation",
+            "retryFoundationTurn",
+            "regenerateFoundationTurn",
+            "editAndResendFoundationMessage",
+            "selectFoundationBranch",
+            "getFoundationTurnEvidence",
+            "submitFoundationFeedback",
+            "stopFoundationTurn",
+        ):
+            with self.subTest(method=method):
+                self.assertIn(method, self.source)
+
     def test_harness_reuses_identity_runtime(self) -> None:
         self.assertIn("identityRuntime", self.source)
         self.assertIn("loginWithPassword", self.source)
@@ -110,29 +185,77 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertNotIn("password =", self.source.replace("password }", ""))
 
 
+class AgentCapabilitySessionStaticTest(unittest.TestCase):
+    def test_browser_and_desktop_launchers_select_distinct_surfaces(self) -> None:
+        browser_source = DESKTOP_WEB_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "PT_CLIENT_SURFACE=browser",
+            browser_source,
+        )
+        self.assertIn("VITE_ACCEPTANCE_HARNESS=1", browser_source)
+        self.assertIn("VITE_RUNTIME_EVIDENCE_HARNESS=1", browser_source)
+        self.assertIn(
+            "PT_CLIENT_SURFACE=desktop",
+            DESKTOP_APP_SCRIPT.read_text(encoding="utf-8"),
+        )
+
+    def test_browser_supervisor_has_no_desktop_execution_capabilities(self) -> None:
+        source = CAPABILITY_SUPERVISOR.read_text(encoding="utf-8")
+        self.assertIn("ClientSurface::Browser", source)
+        self.assertIn("return Vec::new()", source)
+        self.assertIn("if self.surface == ClientSurface::Browser", source)
+        self.assertIn("(None, None, None)", source)
+
+    def test_browser_session_is_opened_by_web_runtime_not_process_boot(self) -> None:
+        runtime = AGENT_CAPABILITY_RUNTIME.read_text(encoding="utf-8")
+        desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
+        self.assertIn("openBrowserCapabilitySession", runtime)
+        self.assertIn("closeBrowserCapabilitySession", runtime)
+        self.assertIn("starts_automatically()", desktop_main)
+
+    def test_harness_compares_local_and_station_session_authorities(self) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        self.assertIn("getAgentCapabilitySessionSnapshot", source)
+        self.assertIn("listAgentCapabilitySessions", source)
+        self.assertIn("capability_session_id_hash", source)
+        self.assertIn("selectedStationSession", source)
+        self.assertIn("waitForCapabilitySessionEvidence", source)
+
+    def test_queue_probe_requires_explicit_expected_capacity(self) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        self.assertIn("expectedQueueSize", source)
+        self.assertIn("queueCapacitySnapshotMismatch", source)
+        self.assertIn("receiverDomAtCapacity", source)
+
+    def test_group_one_controller_uses_manifest_bound_client_modes(self) -> None:
+        source = FOUNDATION_RUNTIME_CLIENT.read_text(encoding="utf-8")
+        self.assertIn('"native-tauri", "browser"', source)
+        self.assertIn('"desktop" if self.runtime == "native-tauri" else "desktop-web"', source)
+        self.assertIn("call_async_harness", source)
+        self.assertIn("harness_ready", source)
+        self.assertIn("os.killpg", source)
+        self.assertIn("portsReleased", source)
+
+
 class AgentSelectorsBoundInProductSource(unittest.TestCase):
     def test_composer_selector_bound(self) -> None:
         source = (ROOT / "apps/desktop/src/components/ChatInput.tsx").read_text(encoding="utf-8")
-        self.assertIn("data-agent-composer", source)
-        self.assertIn("data-agent-send", source)
-        self.assertIn("data-agent-capability-warning", source)
+        self.assertIn("data-pt-agent-composer", source)
+        self.assertIn("data-pt-agent-composer-send", source)
+        self.assertIn("data-pt-agent-stop", source)
 
     def test_message_selectors_bound(self) -> None:
         assistant = (ROOT / "apps/desktop/src/components/messages/AssistantMessage.tsx").read_text(encoding="utf-8")
-        self.assertIn("data-agent-message", assistant)
-        self.assertIn("data-role=\"assistant\"", assistant)
-        self.assertIn("data-budget-notice", assistant)
-        self.assertIn("data-source-badges", assistant)
+        self.assertIn("data-pt-agent-message=\"assistant\"", assistant)
 
         user = (ROOT / "apps/desktop/src/components/messages/UserMessage.tsx").read_text(encoding="utf-8")
-        self.assertIn("data-agent-message", user)
-        self.assertIn("data-role=\"user\"", user)
+        self.assertIn("data-pt-agent-message=\"user\"", user)
 
     def test_tool_approval_selectors_bound(self) -> None:
         source = (ROOT / "apps/desktop/src/components/messages/ToolCallCard.tsx").read_text(encoding="utf-8")
-        self.assertIn("data-tool-approve", source)
-        self.assertIn("data-tool-deny", source)
-        self.assertIn("data-tool-call", source)
+        self.assertIn("submitAgentToolDecision", source)
+        self.assertIn("approval_required", source)
+        self.assertIn("chat.message.toolCall.approve", source)
 
 if __name__ == "__main__":
     unittest.main()

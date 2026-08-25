@@ -26,16 +26,71 @@ const MAX_RESULT_BYTES: u64 = 256 * 1024;
 
 pub struct CapabilityWorkerSupervisor {
     state: Arc<AppState>,
+    surface: ClientSurface,
     stopping: Arc<AtomicBool>,
     thread: Mutex<Option<JoinHandle<()>>>,
+    snapshot: Arc<Mutex<Vec<CapabilityWorkerSnapshot>>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ClientSurface {
+    Desktop,
+    Browser,
+}
+
+impl ClientSurface {
+    fn from_environment() -> Self {
+        match std::env::var("PT_CLIENT_SURFACE")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "browser" => Self::Browser,
+            _ => Self::Desktop,
+        }
+    }
+
+    fn platform(self) -> ClientPlatform {
+        match self {
+            Self::Desktop => ClientPlatform::Desktop,
+            Self::Browser => ClientPlatform::Browser,
+        }
+    }
+
+    fn connection_prefix(self) -> &'static str {
+        match self {
+            Self::Desktop => "desktop",
+            Self::Browser => "browser",
+        }
+    }
+
+    fn starts_automatically(self) -> bool {
+        self == Self::Desktop
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CapabilityWorkerSnapshot {
+    pub actor_ptid: String,
+    pub device_id: String,
+    pub capability_session_id: String,
+    pub lease_id: String,
+    pub lease_revision: u64,
+    pub capability_set_hash: String,
+    pub platform: i32,
+    pub capability_ids: Vec<String>,
+    pub expires_at_ms: i64,
 }
 
 impl CapabilityWorkerSupervisor {
     pub fn new(state: Arc<AppState>) -> Self {
         Self {
             state,
+            surface: ClientSurface::from_environment(),
             stopping: Arc::new(AtomicBool::new(false)),
             thread: Mutex::new(None),
+            snapshot: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -50,13 +105,23 @@ impl CapabilityWorkerSupervisor {
         self.stopping.store(false, Ordering::SeqCst);
         let state = self.state.clone();
         let stopping = self.stopping.clone();
+        let snapshot = self.snapshot.clone();
+        let surface = self.surface;
         *handle = Some(
             thread::Builder::new()
                 .name("client-capability-supervisor".to_string())
-                .spawn(move || run_supervisor(state, stopping))
+                .spawn(move || run_supervisor(state, surface, stopping, snapshot))
                 .map_err(|error| format!("start client capability supervisor: {error}"))?,
         );
         Ok(())
+    }
+
+    pub fn starts_automatically(&self) -> bool {
+        self.surface.starts_automatically()
+    }
+
+    pub fn is_browser_surface(&self) -> bool {
+        self.surface == ClientSurface::Browser
     }
 
     pub fn shutdown(&self) -> Result<(), String> {
@@ -73,6 +138,13 @@ impl CapabilityWorkerSupervisor {
         }
         Ok(())
     }
+
+    pub fn snapshot(&self) -> Result<Vec<CapabilityWorkerSnapshot>, String> {
+        self.snapshot
+            .lock()
+            .map(|snapshot| snapshot.clone())
+            .map_err(|_| "client capability supervisor snapshot lock poisoned".to_string())
+    }
 }
 
 struct WorkerContext {
@@ -88,19 +160,25 @@ struct WorkerContext {
 struct ActiveWorker {
     context: WorkerContext,
     lease: ClientCapabilityLease,
-    ledger: ReceiptLedger,
-    resources: ResourceRegistry,
-    executor: LocalCapabilityExecutor,
+    ledger: Option<ReceiptLedger>,
+    resources: Option<ResourceRegistry>,
+    executor: Option<LocalCapabilityExecutor>,
     pull_cursor: u64,
+    surface: ClientSurface,
 }
 
 impl ActiveWorker {
-    fn register(context: WorkerContext) -> Result<Self, String> {
-        let contracts = local_contracts();
-        let executor = LocalCapabilityExecutor::new(contracts.clone())?;
-        let ledger = ReceiptLedger::open(&context.actor_ptid, &context.device_id)?;
-        let resources = ResourceRegistry::open(&context.actor_ptid, &context.device_id)?;
-        recover_persisted_receipts(&context, &ledger, &resources, &executor)?;
+    fn register(context: WorkerContext, surface: ClientSurface) -> Result<Self, String> {
+        let contracts = local_contracts(surface);
+        let (executor, ledger, resources) = if surface == ClientSurface::Desktop {
+            let executor = LocalCapabilityExecutor::new(contracts.clone())?;
+            let ledger = ReceiptLedger::open(&context.actor_ptid, &context.device_id)?;
+            let resources = ResourceRegistry::open(&context.actor_ptid, &context.device_id)?;
+            recover_persisted_receipts(&context, &ledger, &resources, &executor)?;
+            (Some(executor), Some(ledger), Some(resources))
+        } else {
+            (None, None, None)
+        };
         let transport = CapabilityStationTransport::new(
             &context.station_url,
             &context.actor_ptid,
@@ -108,7 +186,7 @@ impl ActiveWorker {
             &context.token,
             context.identity.as_ref(),
         )?;
-        let lease = transport.register(advertisement(&context, &contracts))?;
+        let lease = transport.register(advertisement(&context, &contracts, surface))?;
         ensure_lease_identity(&context, &lease)?;
         Ok(Self {
             ledger,
@@ -117,6 +195,7 @@ impl ActiveWorker {
             lease,
             executor,
             pull_cursor: 0,
+            surface,
         })
     }
 
@@ -137,8 +216,23 @@ impl ActiveWorker {
         if lease_expiry_ms(&self.lease)? - now_ms <= RENEW_BEFORE_EXPIRY_MS {
             self.renew()?;
         }
+        if self.surface == ClientSurface::Browser {
+            return Ok(());
+        }
 
         let transport = self.transport()?;
+        let ledger = self
+            .ledger
+            .as_ref()
+            .ok_or_else(|| "CLIENT_CAPABILITY_LEDGER_UNAVAILABLE".to_string())?;
+        let resources = self
+            .resources
+            .as_ref()
+            .ok_or_else(|| "CLIENT_CAPABILITY_RESOURCE_REGISTRY_UNAVAILABLE".to_string())?;
+        let executor = self
+            .executor
+            .as_ref()
+            .ok_or_else(|| "CLIENT_CAPABILITY_EXECUTOR_UNAVAILABLE".to_string())?;
         let response = transport.pull(
             &self.lease.capability_session_id,
             self.pull_cursor,
@@ -155,10 +249,10 @@ impl ActiveWorker {
             let execution_lease = execution_lease(&self.context, &self.lease)?;
             let fenced = FencedExecutor::new(
                 &execution_lease,
-                &self.ledger,
-                &self.resources,
+                ledger,
+                resources,
                 self.context.identity.as_ref(),
-                &self.executor,
+                executor,
                 &transport,
             );
             fenced.consume(envelope)?;
@@ -198,10 +292,15 @@ impl ActiveWorker {
     }
 }
 
-fn run_supervisor(state: Arc<AppState>, stopping: Arc<AtomicBool>) {
+fn run_supervisor(
+    state: Arc<AppState>,
+    surface: ClientSurface,
+    stopping: Arc<AtomicBool>,
+    snapshot: Arc<Mutex<Vec<CapabilityWorkerSnapshot>>>,
+) {
     let mut workers = HashMap::<String, ActiveWorker>::new();
     while !stopping.load(Ordering::SeqCst) {
-        reconcile_workers(&state, &mut workers);
+        reconcile_workers(&state, surface, &mut workers);
         let mut replace_accounts = Vec::new();
         for worker in workers.values_mut() {
             if let Err(error) = worker.tick() {
@@ -219,15 +318,58 @@ fn run_supervisor(state: Arc<AppState>, stopping: Arc<AtomicBool>) {
         for account in replace_accounts {
             workers.remove(&account);
         }
+        publish_worker_snapshot(&snapshot, &workers);
         thread::sleep(POLL_INTERVAL);
     }
     stop_all(
         &mut workers,
         ClientCapabilityLeaseRevokeReason::WorkerShutdown,
     );
+    publish_worker_snapshot(&snapshot, &workers);
 }
 
-fn reconcile_workers(state: &AppState, workers: &mut HashMap<String, ActiveWorker>) {
+fn publish_worker_snapshot(
+    target: &Mutex<Vec<CapabilityWorkerSnapshot>>,
+    workers: &HashMap<String, ActiveWorker>,
+) {
+    let mut next = workers
+        .values()
+        .map(|worker| CapabilityWorkerSnapshot {
+            actor_ptid: worker.context.actor_ptid.clone(),
+            device_id: worker.context.device_id.clone(),
+            capability_session_id: worker.lease.capability_session_id.clone(),
+            lease_id: worker.lease.lease_id.clone(),
+            lease_revision: worker.lease.lease_revision,
+            capability_set_hash: worker.lease.capability_set_hash.clone(),
+            platform: worker.lease.platform,
+            capability_ids: worker
+                .lease
+                .capabilities
+                .iter()
+                .map(|capability| capability.capability_id.clone())
+                .collect(),
+            expires_at_ms: worker
+                .lease
+                .expires_at
+                .as_ref()
+                .map(|timestamp| {
+                    timestamp.seconds.saturating_mul(1_000)
+                        + i64::from(timestamp.nanos).div_euclid(1_000_000)
+                })
+                .unwrap_or_default(),
+        })
+        .collect::<Vec<_>>();
+    next.sort_by(|left, right| left.capability_session_id.cmp(&right.capability_session_id));
+    if let Ok(mut current) = target.lock() {
+        *current = next;
+    }
+}
+
+fn reconcile_workers(
+    state: &AppState,
+    surface: ClientSurface,
+    workers: &mut HashMap<String, ActiveWorker>,
+) {
     let mut desired = HashMap::new();
     for session in state.sessions.snapshot_all() {
         match worker_context(state, session) {
@@ -269,7 +411,7 @@ fn reconcile_workers(state: &AppState, workers: &mut HashMap<String, ActiveWorke
         if workers.contains_key(&account_id) {
             continue;
         }
-        match ActiveWorker::register(context) {
+        match ActiveWorker::register(context, surface) {
             Ok(worker) => {
                 workers.insert(account_id, worker);
             }
@@ -349,10 +491,11 @@ fn worker_context(state: &AppState, session: ActiveSession) -> Result<WorkerCont
 fn advertisement(
     context: &WorkerContext,
     contracts: &[CapabilityContract],
+    surface: ClientSurface,
 ) -> ClientCapabilityAdvertisement {
     ClientCapabilityAdvertisement {
         advertisement_id: format!("capability_advertisement_{}", ulid::Ulid::new()),
-        platform: ClientPlatform::Desktop as i32,
+        platform: surface.platform() as i32,
         capabilities: contracts
             .iter()
             .map(|contract| ClientCapability {
@@ -366,13 +509,21 @@ fn advertisement(
                 }),
             })
             .collect(),
-        connection_id: format!("desktop:{}:{}", std::process::id(), context.device_id),
+        connection_id: format!(
+            "{}:{}:{}",
+            surface.connection_prefix(),
+            std::process::id(),
+            context.device_id
+        ),
         device_signing_key_id: context.signing_key_id.clone(),
         device_id: context.device_id.clone(),
     }
 }
 
-fn local_contracts() -> Vec<CapabilityContract> {
+fn local_contracts(surface: ClientSurface) -> Vec<CapabilityContract> {
+    if surface == ClientSurface::Browser {
+        return Vec::new();
+    }
     [
         "filesystem.read",
         "filesystem.list",
@@ -564,10 +715,24 @@ mod tests {
 
     #[test]
     fn local_capability_advertisement_has_no_unimplemented_replay_claim() {
-        let contracts = local_contracts();
+        let contracts = local_contracts(ClientSurface::Desktop);
         assert!(contracts
             .iter()
             .all(|contract| !contract.supports_external_idempotency));
         assert_eq!(contracts.len(), 6);
+    }
+
+    #[test]
+    fn browser_surface_advertises_no_desktop_execution_capabilities() {
+        let contracts = local_contracts(ClientSurface::Browser);
+        assert!(contracts.is_empty());
+        assert_eq!(ClientSurface::Browser.platform(), ClientPlatform::Browser);
+        assert_eq!(ClientSurface::Browser.connection_prefix(), "browser");
+    }
+
+    #[test]
+    fn browser_surface_requires_explicit_lifecycle_start() {
+        assert!(!ClientSurface::Browser.starts_automatically());
+        assert!(ClientSurface::Desktop.starts_automatically());
     }
 }

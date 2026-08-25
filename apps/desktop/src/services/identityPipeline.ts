@@ -1,10 +1,16 @@
 import { log } from '../utils/logger';
 
-export type IdentityChangeReason = 'login' | 'logout' | 'switch' | 'unlock' | 'oauth_bridge';
+export type IdentityChangeReason =
+  | 'login'
+  | 'logout'
+  | 'revoked'
+  | 'switch'
+  | 'unlock'
+  | 'oauth_bridge';
 
 export interface IdentityChangePayload {
   reason: IdentityChangeReason;
-  /** `null` only for logout. */
+  /** `null` when logout or revocation removes the active actor. */
   actorId: string | null;
   loginMethod: string | null;
 }

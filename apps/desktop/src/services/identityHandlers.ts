@@ -3,12 +3,23 @@ import { AuthCommandException } from './desktop_api';
 import { useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
 import { useAccountIdentityStore } from '../store/accountIdentity';
+import { useChatStore } from '../store/chat';
 import { useSidebarStore } from '../store/sidebar';
 import { useGlobalContextStore } from '../kernel/global-context/store';
+import { closeBrowserCapabilitySession } from '../runtimes/agentCapabilityRuntime';
+import { toolRuntime } from '../runtimes/toolRuntime';
 import { createDesktopClientStorageRuntime } from '../storage/desktopClientStorage';
 
+registerIdentityHandler('close-browser-capability-session', async (payload) => {
+  if (payload.reason === 'logout' || payload.reason === 'revoked') {
+    await closeBrowserCapabilitySession();
+  }
+});
+
 registerIdentityHandler('clear-zustand-stores', async (payload) => {
-  if (payload.reason === 'logout') {
+  if (payload.reason === 'logout' || payload.reason === 'revoked') {
+    useChatStore.getState().reset();
+    toolRuntime.reset();
     useSessionStore.getState().reset();
     useSocialChatStore.getState().reset();
     useAccountIdentityStore.getState().reset();
@@ -30,7 +41,7 @@ registerIdentityHandler('clear-client-storage-caches', async (payload) => {
 });
 
 registerIdentityHandler('refresh-current-session', async (payload) => {
-  if (payload.reason === 'logout') {
+  if (payload.reason === 'logout' || payload.reason === 'revoked') {
     return;
   }
   try {

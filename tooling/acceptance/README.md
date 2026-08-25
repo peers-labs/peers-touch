@@ -100,6 +100,33 @@ protos plus Desktop TypeScript and Station Go generated bindings.
 `CHAT_NATIVE_CLIENT_WORKTREES` accepts one worktree path per client, separated
 by commas; one path may be reused for local process-isolation checks.
 
+### Agent R6 Stream Resilience
+
+`agent-stream-resilience-e2e` is the stable native Gate for R6. It requires the
+active `one` profile and runs only through `acceptance-run.py`, so the
+Home Station Provisioner supplies source attestation, the actor Fixture,
+credential references, isolated ports, and storage before the Gate starts.
+
+The Gate inserts a run-local TCP proxy between Desktop and Station, cuts the
+active stream, verifies the visible `reconciling` state, restores the transport,
+and compares the replayed Desktop projection with Station readback. It then
+starts a second turn, logs out through the production identity pipeline, proves
+that the auth gate has no Agent operation tray, re-authenticates, and verifies
+the prior actor projection remains cleared. Reports, DOM observations, Station
+readback, logs, and cleanup evidence are written only to the external Evidence
+Store.
+
+### Agent V2 Foundation Runtime
+
+`agent-v2-kernel-foundation-e2e` consumes a provisioned `one` profile manifest
+with exactly one Native Tauri client and one isolated Browser client.
+`foundation_runtime_client.py` owns their launch, Harness connection, reverse
+shutdown, port checks, and storage cleanup. `foundation_group_one_probe.py`
+expands the reviewed matrix and dispatches the 28 Group 1 tuples by platform,
+locale, and scenario before `foundation_direct_adapter.py` applies its
+fail-closed oracle. Runtime controllers and Harnesses only capture production
+facts; they cannot synthesize assertion outcomes or promote proof status.
+
 ## Desktop Performance Acceptance Logic
 
 Desktop performance acceptance is organized as a source-bound evidence funnel,

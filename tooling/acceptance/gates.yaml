@@ -600,8 +600,9 @@
       "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py",
       "timeout_seconds": 1800,
       "environment": "home-station",
+      "provisioner": "home-station",
       "tier": "env-evidence",
-      "description": "Run visible native Agent turn delivery: login, navigate to agent, send message, verify streamed response in DOM. Requires AGENT_E2E_STATION_URL, AGENT_E2E_EMAIL, AGENT_E2E_PASSWORD."
+      "description": "Run visible native Agent turn delivery from the provisioned One-profile runtime manifest: login, navigate, send, and verify streamed response."
     },
     "agent-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain agent --require-proven",
@@ -731,10 +732,11 @@
     },
     "agent-stream-resilience-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey stream-resilience",
-      "timeout_seconds": 300,
+      "timeout_seconds": 1800,
       "environment": "home-station",
+      "provisioner": "home-station",
       "tier": "env-evidence",
-      "description": "Stream resilience: cancel, reconnect, resume, provider error, partial content."
+      "description": "Run the isolated One-profile native R6 journey: active turn, transport fault, visible reconciling, cursor replay without duplicate projection, logout teardown, auth-gate isolation, re-login Station readback, and cleanup."
     },
     "agent-attachment-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey attachment",
@@ -822,8 +824,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-23.1",
-        "sha256": "dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0",
+        "version": "2026-08-25.1",
+        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
         "expected_tuple_count": 419
       },
       "required_artifact_roles": [
@@ -852,8 +854,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-23.1",
-        "sha256": "dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0",
+        "version": "2026-08-25.1",
+        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
         "expected_tuple_count": 33
       },
       "required_artifact_roles": [
@@ -880,8 +882,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-23.1",
-        "sha256": "dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0",
+        "version": "2026-08-25.1",
+        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
         "expected_tuple_count": 69
       },
       "required_artifact_roles": [
@@ -908,8 +910,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-23.1",
-        "sha256": "dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0",
+        "version": "2026-08-25.1",
+        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
         "expected_tuple_count": 86
       },
       "required_artifact_roles": [
@@ -935,8 +937,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-23.1",
-        "sha256": "dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0",
+        "version": "2026-08-25.1",
+        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
         "expected_tuple_count": 41
       },
       "required_artifact_roles": [
@@ -963,8 +965,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-23.1",
-        "sha256": "dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0",
+        "version": "2026-08-25.1",
+        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
         "expected_tuple_count": 37
       },
       "required_artifact_roles": [
@@ -991,8 +993,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-23.1",
-        "sha256": "dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0",
+        "version": "2026-08-25.1",
+        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
         "expected_tuple_count": 57
       },
       "required_artifact_roles": [

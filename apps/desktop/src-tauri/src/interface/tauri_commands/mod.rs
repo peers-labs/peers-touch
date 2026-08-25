@@ -36,6 +36,7 @@ pub mod presence;
 pub mod profile;
 pub mod provider;
 pub mod realtime;
+pub mod runtime_evidence;
 pub mod search;
 pub mod settings;
 pub mod skills;

@@ -971,6 +971,7 @@ pub struct AgentSelectInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentExecuteTurnInput {
     pub stream_id: Option<String>,
+    pub client_idempotency_key: String,
     pub conversation_id: String,
     pub agent_id: String,
     pub user_input: String,
@@ -996,6 +997,19 @@ pub struct AgentTurnStreamCancelInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnQueueListInput {
+    pub conversation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnQueueCancelInput {
+    pub conversation_id: String,
+    pub queue_entry_id: String,
+    pub idempotency_key: String,
+    pub expected_conversation_version: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTurnTraceListInput {
     pub agent_id: String,
     pub conversation_id: Option<String>,
@@ -1012,6 +1026,24 @@ pub struct AgentTurnTraceGetInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTurnDiagnosticsInput {
     pub turn_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRuntimeProfileInput {
+    pub agent_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentCapabilityReadinessInput {
+    pub agent_id: String,
+    pub runtime_snapshot_id: Option<String>,
+    pub client_capability_session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRuntimeActivityInput {
+    pub runtime_kind: i32,
+    pub runtime_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

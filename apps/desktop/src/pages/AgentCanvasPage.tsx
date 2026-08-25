@@ -607,6 +607,7 @@ export function AgentCanvasPage({ onBack, onCreateAgent }: AgentCanvasPageProps)
                 }).catch(() => undefined);
               }, 15000);
               const result = await api.executeGuardedCanvasTurnOnce({
+                client_idempotency_key: crypto.randomUUID(),
                 conversation_id: `${createdTaskId}:${nodeId}`,
                 agent_id: agent.id,
                 user_input: desktopExecutorPrompt(persisted, detail, prompt, t),

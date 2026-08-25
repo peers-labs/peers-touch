@@ -13,6 +13,7 @@ import { OpStatusTray } from '../components/OpStatusTray';
 import { InterventionBar } from '../components/chat/InterventionBar';
 import { ChatTerminalPanel } from '../components/chat/ChatTerminalPanel';
 import { TerminalToggleButton } from '../components/chat/TerminalToggleButton';
+import { TurnQueueTray } from '../components/chat/TurnQueueTray';
 
 export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void; narrow?: boolean }) {
   const { t } = useTranslation('agent');
@@ -182,6 +183,7 @@ export function ChatPage({ onOpenProfile, narrow }: { onOpenProfile?: () => void
           </div>
 
           <div style={{ width: contentWidth, margin: '0 auto 18px', flexShrink: 0 }}>
+            <TurnQueueTray />
             <div style={{ marginBottom: 8 }}>
               <OpStatusTray />
             </div>

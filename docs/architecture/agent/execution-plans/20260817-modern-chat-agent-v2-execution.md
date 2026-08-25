@@ -2,33 +2,12 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-08-24
+> **Created**: 2026-08-17 | **Updated**: 2026-08-25
 > **Owner**: Peers-Touch Agent Team
 > **Plan gate**: `OWNER_APPROVED_EXECUTION`
 > **Entry gate**: Owner accepted MCA-D19A/D19B/D19C into the main Goal G1 task on 2026-08-22
 
 ---
-
-## Context Anchor
-
-| Field | Current value |
-|---|---|
-| Main task | Modern Chat Agent V2 — close remaining F3/F4 to reach LobeHub chat agent parity |
-| Plan source | `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md` |
-| Tracking source | `docs/architecture/agent/lobehub-parity-mindmap.source.md` |
-| Worktree | `<repo-root>` |
-| Branch | `feat/p0-streaming-runtime-message-actions` |
-| Stage | `DESIGN` |
-| Current workstream | Goal G1: MCA-D19 fenced ToolCall execution and C09 observability closure |
-| Current step | G1-XR / XR-4 — `DESIGN_AMENDMENT_REQUIRED` for non-advertisement proof authority |
-| Progress | D-12 accepted; XR-1 through XR-3 complete; XR-4 has real Mobile contract adapters for 15 tuples and a real D11 guard adapter for 2 tuples; 8 non-advertisement tuples cannot yet emit trustworthy evidence; 394 direct-runtime tuples remain; all V2 product Gates remain UNPROVEN |
-| Last completed | Mobile contract adapter executes 15 explicit protobuf assertions; D11 adapter executes the source-backed zero-violation checker and binds the fixture/source inventory hash |
-| Current action | Stop the non-advertisement adapter before evidence emission because the production system has no authoritative P12 profile/readiness readback and no complete zero process/runtime-home/session execution counter |
-| Next action | Review and accept an architecture amendment defining Station runtime-advertisement readback plus Station/Desktop runtime-activity counters; then return to XR-4 implementation |
-| Blockers | `DESIGN_AMENDMENT_REQUIRED`: provider/model lists cannot independently prove P12 profile absence, TurnTrace count cannot prove zero process/runtime-home/session execution, and the Foundation provisioner allocates no Browser client. `ACCEPTANCE_RUNTIME_COMMIT_MISMATCH`: Station `7ca90707` differs from worktree `80dc4a6b` plus dirty changes |
-| Decisions required | Choose the production observability contract for runtime advertisement and zero-execution proof; acceptance-only instrumentation and weaker evidence are forbidden |
-| Evidence | G1-A: canonical Go/Desktop TS/Mobile TS generation PASS; proto coverage PASS; Desktop and Mobile Web TS generation PASS; Mobile Agent contract 5/5 PASS; Rust prost compile PASS. G1-B/C: Station Agent packages/race/vet/style PASS; Desktop Rust executor 15/15 PASS; cargo check/fmt PASS. G1-D/E: Desktop check PASS; Desktop unit 311/311 PASS; Desktop build PASS; Station approval projection tests PASS. G1-F/X: Station Agent packages/race/vet/style PASS; exact-turn usage/feedback/diagnostic/redaction and migration tests PASS; Desktop check, 310/310 unit tests, and build PASS; cargo check/fmt PASS; C07/C09 zero-residual `unresolvedCount=0`; C09 plan selects `agent-v2-kernel-foundation-e2e`; V2 Gate contract tests 7/7 PASS; Agent V2 Acceptance tests 17/17 PASS. G1-XR: credential-redaction tests PASS 2/2; producer/provisioner/redaction suite PASS 69/69; D-12 matrix/gate/producer suite PASS 28/28; validator subset/profile tests PASS 4/4 and validator owner full suite PASS 15/15; Mobile contract Vitest PASS 15/15; Mobile/D11 adapter tests PASS 11/11; exact matrix PASS at 419 Foundation / 742 total; Agent domain STRUCTURALLY_VALID. Non-advertisement audit: provider/model APIs prove only filtered projection; no production P12 profile/readiness endpoint, TurnTrace is not a process/runtime-home/session counter, Browser is not provisioned. A candidate adapter prototype was rejected and removed before evidence emission. G-F preflight: One profile active; remote Station health PASS; remote commit `7ca90707` versus local HEAD `80dc4a6b` mismatch; all runtime ports free; no Desktop process launched; 402 real tuples remain, so validator stays `UNPROVEN`. iOS generation is NOT RUN because `protoc-gen-swift` is unavailable; Mobile full typecheck remains blocked by unrelated Group Chat `actorDid` errors. D19C product reachability and all Product Gates remain UNPROVEN |
-| Last updated | 2026-08-24 10:45 CST |
 
 ## 1. Accepted Inputs
 
@@ -47,7 +26,7 @@ the independent PRODUCT review passed on 2026-08-17.
 Architecture:
 
 - `docs/architecture/agent/modern-chat-agent/design.md`
-- `docs/architecture/agent/modern-chat-agent/decisions.md` D01-D19A
+- `docs/architecture/agent/modern-chat-agent/decisions.md` D01-D19D
 - `docs/architecture/agent/modern-chat-agent/data-model.md`
 - `docs/architecture/agent/modern-chat-agent/module-layout.md`
 - `docs/architecture/agent/modern-chat-agent/integration.md` C01-C15 / A01-A20
@@ -60,8 +39,8 @@ Reviewed runtime matrix:
 
 - `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml`
 - ID `modern-chat-agent-v2-runtime-matrix`
-- version `2026-08-23.1`
-- SHA-256 `dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0`
+- version `2026-08-25.1`
+- SHA-256 `ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89`
 
 ## 2. Scope And Non-Scope
 
@@ -535,7 +514,7 @@ python3 tooling/scripts/expand-agent-v2-runtime-matrix.py \
   --check \
   docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml
 printf '%s  %s\n' \
-  'dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0' \
+  'ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89' \
   'docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml' \
   | shasum -a 256 -c -
 test -x apps/mobile/node_modules/.bin/protoc-gen-es
@@ -1184,18 +1163,28 @@ empty plan is failure.
 
 **Depends on**: G1-X contract/validator closure.
 
-**Status**: D-12 contract migration and producer/provisioner scaffolding complete;
-real adapter implementation blocked by a required observability design amendment.
+**Status**: D-12 contract migration, producer/provisioner scaffolding, and
+XR-4-P1/P2/P3 implementation/static checks complete; Group 1 production probe
+wiring active.
 
 **Owner**: Acceptance runtime producer/provisioner; product truth remains in
 Station and receiver DOM.
 
 **Progress**: credential redaction, candidate producer core, provisioner, and
 D-12 matrix/schema/validator migration complete; Mobile/D11 adapters cover 17
-tuples. The 8 non-advertisement tuples cannot be implemented truthfully until
-production contracts expose the frozen runtime profile/readiness projection and
-complete zero-execution counters. The remaining 394 direct-runtime adapters and
-exact-source deployment also remain open.
+tuples. MCA-D19D now defines the production frozen-profile/readiness projection,
+Station/Desktop monotonic activity counters, and isolated Browser lifecycle
+needed by the 8 non-advertisement tuples. P3 now provides a
+Browser-lifecycle-owned zero-capability session, actor-scoped Station session
+readback, and readiness validation against an active non-revoked lease. The
+Group 1 now has a manifest-bound Native/Browser lifecycle controller, bounded
+session convergence, unified raw runtime capture, and an exact matrix-driven
+28-tuple dispatcher. AS-F02 additionally has explicit-idempotency concurrent
+Turn submission, pre-drain queue capture, visible queue projection, typed stream
+outcomes, and queued cancellation controls. Scenario-specific oracles and
+remaining production controls remain open, as do the remaining direct-runtime
+adapters and exact-source deployment; all affected product cells remain
+`UNPROVEN`.
 
 **XR-4 execution finding (2026-08-24)**:
 
@@ -1208,8 +1197,80 @@ exact-source deployment also remain open.
 - The current Foundation provisioner allocates only a Native Tauri client, so a
   Browser observation cannot be source-bound to an isolated Browser runtime.
 - An adapter based on those weaker signals was rejected before evidence
-  emission. Resume XR-4 only after an accepted production observability
-  amendment defines these readbacks and the Browser client lifecycle.
+  emission. Owner accepted MCA-D19D on 2026-08-25; XR-4 must now implement
+  those production readbacks and Browser lifecycle before evidence emission.
+
+**XR-4 direct-runtime Harness audit (2026-08-25)**:
+
+- The remaining 394 Desktop/Browser tuples reduce to 53 unique direct-runtime
+  scenarios: 11 Foundation scenarios, 28 typed error scenarios, and 14
+  quantitative scenarios.
+- The current production Agent Harness exposes login/logout, Agent navigation,
+  provider configuration, send/wait/message readback, operation snapshot,
+  source/budget/capability indicators, Station conversation readback, and the
+  MCA-D19D non-advertisement snapshot.
+- No direct-runtime cell is fully runnable yet because the Harness and Fixture
+  layer still lack source-backed controls/readbacks for queue pressure,
+  boundary-specific cancellation, Tool policy/approval/expiry, attachments,
+  deterministic provider failures, branch mutation, ContextLedger,
+  usage/feedback/diagnostics, capability-session ownership, two-topic restart,
+  and quantitative raw-sample capture.
+- A generic send-message loop is forbidden as evidence for these cells. The
+  direct adapter must dispatch by scenario ID to a production action/readback
+  contract and fail closed for every unimplemented scenario.
+
+**Direct-runtime implementation groups**:
+
+1. Foundation state/readback: AS-F01/F02/F07/F08/F09/F10/F12.
+2. Streaming and recovery: AS-F03/F06, cancellation, replay, latency.
+3. Tool and resource behavior: AS-F04/F05, tool cancellation, approval, and
+   resource-budget boundaries.
+4. Typed failure fixtures: all 28 `BASE-*` cells with exact error and zero
+   forbidden side effects.
+5. Quantitative loops: continuity, queue, loop, safety, quality, and bounded
+   sample emission.
+
+**XR-4 production prerequisite amendment (2026-08-25)**:
+
+The first Group 1 probe wiring pass proved that three plan assumptions were
+inventory claims rather than implemented production paths. The accepted D05,
+D06, and D13 architecture remains unchanged, so this is a mechanical execution
+amendment:
+
+1. `XR-4-P1`: implement `GetCapabilityReadiness` as an actor-scoped Station
+   projection over the selected Agent config and `RuntimeAdmissionResolver`;
+   Desktop/Browser read it through the controlled BFF.
+2. `XR-4-P2`: implement one-active-turn bounded FIFO admission, queue position,
+   cancellation, capacity overflow, and conversation projection updates before
+   AS-F02 or `QUEUE_Q_QPLUS1` probes.
+3. `XR-4-P3`: implement a Browser-owned capability session with an explicitly
+   reduced capability set. A headless Desktop supervisor behind the Browser
+   gateway cannot count as Browser authority or evidence.
+4. Only after P1-P3 pass focused production tests may the Group 1 scenario
+   probe emit captures for the direct adapter.
+
+No Harness, Fixture, or Gate may write readiness/queue/session facts to close
+these gaps.
+
+**XR-4-P4 design amendment accepted (2026-08-25)**:
+
+AS-F10 Browser execution exposed a contradiction in the accepted evidence
+contract. The Browser capability session correctly advertises zero local
+execution capabilities and must create zero ToolCalls, while the current
+`direct_runtime` attestation profile requires both a non-empty
+`clientSession.capabilities` array and a `toolCallBinding` whose capability is
+present in that lease. A placeholder capability or ToolCall would fabricate the
+fact being proved.
+
+Owner-approved amendment: add a dedicated
+`direct_runtime_no_local_capability` attestation profile for Browser direct
+cells. It retains actor, conversation, runtime snapshot, Turn
+attempt, session identity, readiness, and zero-execution evidence while
+forbidding ToolCall binding and allowing an empty capability list. Matrix
+row-level ownership applies the profile to every `foundation-browser-direct`
+tuple because the Browser session has no device-local executor in this product
+stage. The reviewed matrix advances to `2026-08-25.1`; the proof contract and
+runtime-attestation schema advance to version `3`.
 
 **Dependency order**:
 

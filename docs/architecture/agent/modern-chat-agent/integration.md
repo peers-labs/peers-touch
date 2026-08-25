@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-22
+> **Created**: 2026-07-30 | **Updated**: 2026-08-25
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -372,6 +372,44 @@ The cutover is fail-closed:
 - historical PREPARED work without a persisted recovery credential settles as
   `UNKNOWN_SIDE_EFFECT` without redispatch or continuation;
 - no recovery credential or signing proof is synthesized during migration.
+
+### 9.2 Conditional Runtime Non-Advertisement Proof
+
+MCA-D19D integrates through production read-only paths:
+
+```text
+Desktop/Browser receiver
+  -> Station effective runtime profile snapshot
+  -> Station runtime activity snapshot
+  -> Desktop Rust local activity snapshot (Desktop cell only)
+  -> before/after identity and monotonic-delta validation
+```
+
+Station handlers derive the actor from authentication and return the effective
+profile/readiness snapshot plus actor-scoped activity counters. Desktop Rust
+returns only its current actor/device/boot-scoped local counters through the
+controlled BFF. Web may display or forward these projections but cannot mutate
+counters or synthesize advertisement state.
+
+The Browser Gate provisions a distinct browser profile, storage root, port set,
+and session. It reads the same Station snapshots and proves selector absence
+from its own DOM. It does not borrow Native DOM or Desktop-local process
+counters.
+
+Cutover requirements:
+
+1. Proto contracts land before Station, Rust, Web Harness, or Acceptance
+   adapters.
+2. Station explicitly evaluates P12 and registered CLI candidates as
+   `NOT_ADVERTISED` under the frozen profile.
+3. Station and Desktop counter owners increment at the actual side-effect
+   boundaries, never inside Acceptance code.
+4. The XR-4 adapter captures immutable before/after snapshots and rejects
+   identity, revision, epoch, or counter regression.
+5. Old provider-list and TurnTrace-only proof code is deleted rather than kept
+   as a fallback.
+6. P12/CLI remain unavailable; this cutover proves non-advertisement and does
+   not activate either runtime.
 
 ## 10. Resolved Integration Policies
 

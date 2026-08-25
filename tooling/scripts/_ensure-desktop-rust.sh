@@ -241,7 +241,7 @@ ensure_desktop_rust_ready() {
   fi
 
   local desired_fp
-  desired_fp="$(tauri_compute_fingerprint "$desktop_dir" "$profile")"
+  desired_fp="$(tauri_compute_fingerprint "$desktop_dir" "$profile"):${PT_CLIENT_SURFACE:-desktop}"
 
   # Determine if a restart is needed: explicit RESTART=1 or source code changed
   local needs_restart=false
@@ -300,6 +300,7 @@ TAURI_GATEWAY_PORT='${gw_port}'
 TAURI_VITE_PORT='${vite_port}'
 TAURI_STATION_URL='${PEERS_STATION_URL:-}'
 TAURI_E2E_TESTING='${PT_DESKTOP_E2E:-false}'
+TAURI_CLIENT_SURFACE='${PT_CLIENT_SURFACE:-desktop}'
 TAURI_PID='${TAURI_PID}'
 EOF
   echo "[INFO] Rust BFF started (pid: $TAURI_PID), waiting for gateway..."

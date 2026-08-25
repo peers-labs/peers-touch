@@ -24,6 +24,9 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     _login_session,
     produce_actor_manifest,
 )
+from tooling.acceptance.fixtures.chat_native_reset import (
+    reset_station_messaging_state,
+)
 
 
 class StationAttestationOwnerTests(unittest.TestCase):
@@ -198,6 +201,42 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
 
 class ActorFixtureOwnerTests(unittest.TestCase):
+    def test_reset_discovers_postgres_from_live_station_compose_project(self) -> None:
+        discovery = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="pt-station-c-postgres-1\n",
+            stderr="",
+        )
+        reset = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+        with patch.dict(
+            os.environ,
+            {"PT_STATION_URL": "http://station.example:18080"},
+            clear=True,
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
+            return_value={
+                "PT_DEPLOY_HOST": "station.example",
+                "PT_DEPLOY_USER": "acceptance",
+            },
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset.subprocess.run",
+            side_effect=(discovery, reset),
+        ) as run:
+            reset_station_messaging_state("station-1")
+
+        self.assertEqual(run.call_count, 2)
+        self.assertIn("publish=18080", run.call_args_list[0].args[0][-1])
+        self.assertIn(
+            "pt-station-c-postgres-1",
+            run.call_args_list[1].args[0][-1],
+        )
+
     def test_login_session_requires_ptid_token_and_session(self) -> None:
         session = _login_session(
             {

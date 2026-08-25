@@ -471,6 +471,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         <Flexbox horizontal align="center" gap={8} justify="flex-end">
           {isStreaming ? (
             <ActionIcon
+              data-pt-agent-stop
               icon={Square}
               onClick={stopStreaming}
               title={t('chat.input.stop')}

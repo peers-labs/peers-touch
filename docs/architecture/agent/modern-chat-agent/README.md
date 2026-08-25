@@ -93,7 +93,10 @@ device-possession proof for all capability commands. The Owner accepted D19B
 into the main Goal G1 task on 2026-08-22. G1-A and G1-B are complete. The G1-C
 completion audit then exposed an undefined post-restart execution-authority
 handoff for externally idempotent PREPARED work; the Owner accepted
-`MCA-D19C` on 2026-08-22. The tracked execution source is
+`MCA-D19C` on 2026-08-22. XR-4 later exposed that filtered provider lists and
+TurnTrace cannot prove conditional-runtime absence or zero local side effects;
+the Owner accepted production-owned advertisement/readiness and monotonic
+activity snapshots as `MCA-D19D` on 2026-08-25. The tracked execution source is
 `../execution-plans/20260817-modern-chat-agent-v2-execution.md`.
 
 ## 5. Review Status
@@ -111,7 +114,9 @@ execution-ingress protocol. The Owner accepted `MCA-D19` on 2026-08-21.
 The subsequent G1-C audit reopened G1-A/B formal closure and produced
 `MCA-D19A`, accepted on 2026-08-22. The G1-A auth audit then produced
 `MCA-D19B`, accepted into the main task on 2026-08-22. MCA-D19C was then
-accepted to require Station-authorized higher-fence restart takeover. G1-A,
+accepted to require Station-authorized higher-fence restart takeover. MCA-D19D
+was accepted on 2026-08-25 to make P12/CLI non-advertisement falsifiable through
+Station/Desktop production snapshots and isolated Browser evidence. G1-A,
 G1-B, G1-C, G1-D, G1-E, and G1-F are complete; Acceptance D-12 and the
 G1-XR matrix/schema/validator cutover are complete, while real adapters are active.
 No production capability currently advertises external idempotency, and all V2

@@ -61,6 +61,8 @@ export type TurnStreamEventType =
   | 'progress'
   | 'image'
   | 'conversation_created'
+  | 'queued'
+  | 'admission_replayed'
   | 'error'
   | 'cancelled'
   | 'reconciling'

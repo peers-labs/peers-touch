@@ -49,6 +49,7 @@ GENERATED_ATTESTATION_ROLES = {
 }
 RUNTIME_ATTESTATION_PROFILES = {
     "direct_runtime",
+    "direct_runtime_no_local_capability",
     "contract_only",
     "orchestration_guard",
     "non_advertised",
@@ -451,7 +452,6 @@ def validate_runtime_attestation(
         "conversationRuntimeBinding",
         "runtimeSnapshot",
         "turnAttempt",
-        "toolCallBinding",
         "clientSession",
         "stationProfile",
         "desktopMode",
@@ -460,8 +460,13 @@ def validate_runtime_attestation(
         "coldWarmState",
         "observedAt",
     }
-    if expected_profile == "direct_runtime":
+    if expected_profile in {
+        "direct_runtime",
+        "direct_runtime_no_local_capability",
+    }:
         expected_fields.add("attestationProfile")
+    if expected_profile != "direct_runtime_no_local_capability":
+        expected_fields.add("toolCallBinding")
     require(
         set(item) == expected_fields,
         f"{label} direct runtime payload fields mismatch",
@@ -577,14 +582,31 @@ def validate_runtime_attestation(
             "connectionId",
             "leaseId",
         }
-        and all(client.values()),
+        and all(
+            value
+            for key, value in client.items()
+            if key != "capabilities"
+        ),
         f"{label} client session fields mismatch",
     )
     require_sha256(client["actorIdHash"], f"{label} client actor identity")
     client_capabilities = client["capabilities"]
     require(
-        isinstance(client_capabilities, list) and client_capabilities,
-        f"{label} client capabilities must be non-empty",
+        isinstance(client_capabilities, list)
+        and (
+            (
+                expected_profile
+                == "direct_runtime_no_local_capability"
+                and client["platform"] == "browser"
+                and not client_capabilities
+            )
+            or (
+                expected_profile
+                != "direct_runtime_no_local_capability"
+                and bool(client_capabilities)
+            )
+        ),
+        f"{label} client capabilities mismatch for {expected_profile}",
     )
     for index, capability in enumerate(client_capabilities):
         require(
@@ -667,6 +689,8 @@ def validate_runtime_attestation(
         turn_attempt["runtimeSnapshotHash"] == runtime_snapshot_hash,
         f"{label} TurnAttempt runtime snapshot hash mismatch",
     )
+    if expected_profile == "direct_runtime_no_local_capability":
+        return
     tool_binding = item.get("toolCallBinding")
     require(
         isinstance(tool_binding, dict)

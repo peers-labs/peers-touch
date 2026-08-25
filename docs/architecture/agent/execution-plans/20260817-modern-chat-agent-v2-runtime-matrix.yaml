@@ -1,5 +1,5 @@
 id: modern-chat-agent-v2-runtime-matrix
-version: 2026-08-23.1
+version: 2026-08-25.1
 status: plan-review
 tuple_expansion:
   mode: cartesian
@@ -298,7 +298,7 @@ rows:
     gate: agent-v2-kernel-foundation-e2e
     platform: browser
     runtime: direct_model
-    runtime_attestation_profile: direct_runtime
+    runtime_attestation_profile: direct_runtime_no_local_capability
     role_policy:
       always: [cell-results, runtime-attestation-set, cleanup]
       required: [receiver-dom, station-readback, runtime-events, measurement-report, side-effect-count, replay]

@@ -54,12 +54,14 @@ EVIDENCE_ROLES = tuple(
 )
 RuntimeAttestationProfile = Literal[
     "direct_runtime",
+    "direct_runtime_no_local_capability",
     "contract_only",
     "orchestration_guard",
     "non_advertised",
 ]
 RUNTIME_ATTESTATION_PROFILES = {
     "direct_runtime",
+    "direct_runtime_no_local_capability",
     "contract_only",
     "orchestration_guard",
     "non_advertised",

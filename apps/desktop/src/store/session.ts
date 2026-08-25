@@ -136,6 +136,11 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
 
   logout: async () => {
     markLocalIdentityAction();
+    await runIdentityPipeline({
+      reason: 'logout',
+      actorId: null,
+      loginMethod: null,
+    });
     try {
       await api.realtimeStreamStop();
     } catch {
@@ -146,11 +151,6 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     } catch {
       // Best-effort: if the session is already expired/revoked, still clear local state.
     }
-    await runIdentityPipeline({
-      reason: 'logout',
-      actorId: null,
-      loginMethod: null,
-    });
   },
 
   activateAppletLaunchSession: (user) => {

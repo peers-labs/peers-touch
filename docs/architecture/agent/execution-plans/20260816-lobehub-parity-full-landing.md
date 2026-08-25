@@ -1,6 +1,6 @@
 # LobeHub Parity 全量对齐落地执行计划
 
-> **Status**: active
+> **Status**: complete
 > **Delivery**: partial / marketplace-data-future
 > **Created**: 2026-08-16
 > **Owner**: Peers-Touch Agent Team
@@ -20,17 +20,17 @@
 | Tracking source | `docs/architecture/agent/lobehub-parity-mindmap.source.md`（45 节点） |
 | Worktree | `<repo-root>` |
 | Branch | `feat/p0-streaming-runtime-message-actions` |
-| Stage | `EXECUTE` |
-| Current workstream | Future Work — Marketplace 数据供应与治理 |
-| Current step | 已将 X3 从完整对齐降为部分闭环，并登记未来数据平面与 Acceptance 闭环 |
-| Progress | 源码追踪 38/45 完整闭环 + X3 部分闭环；本计划非候选范围 15/16 完整闭环；Native product proof 5/5 `PROVEN`（I1/C6/C7/R9/P2） |
-| Last completed | Marketplace 当前实现与 LobeHub hosted market 数据来源完成源码审计；本地 JSON index parser/ledger 与未来官方/联邦 catalog 明确分界 |
-| Current action | 保留现有 Marketplace UI 与安装分发，停止宣称数据供应和开箱体验完整对齐 |
-| Next action | Marketplace 重新进入实施时，先完成 catalog truth owner、默认可信 source、发布/撤销/签名治理和 source-to-install Acceptance 的产品与架构评审 |
-| Blockers | Future scope 未进入 PRODUCT/DESIGN；当前无可执行实现任务 |
-| Decisions required | 未来需决定官方集中 catalog、Station 联邦 catalog 或两者组合的产品边界 |
-| Evidence | Source audit: `MarketplacePage.tsx#loadMarketplaceCatalog`, `skills_market/mod.rs#load_market_store/#skills_market_sync`, LobeHub `discover.ts` + `MarketService`; Agent capability 保留 Marketplace data-plane `UNPROVEN` |
-| Last updated | 2026-08-21 |
+| Stage | `complete` |
+| Current workstream | Residual Product Closure — R6 replay visibility + X5 Skill runtime |
+| Current step | R6 与 X5 产品级残差闭环完成 |
+| Progress | X5 Skill list/create/toggle/delete/cleanup 与 Settings UI 已通过真实 Gateway/Station 验证；R6 Native Gate 已证明可见 reconciling、单调 cursor replay、Station 内容一致、logout abort、auth gate 零 tray、re-login projection 隔离与资源清理 |
+| Last completed | `agent-stream-resilience-e2e` 在 `one` profile 通过，外层 Acceptance Run 为 `PASSED / PROVEN` |
+| Current action | 本计划停止；按用户要求返回 Modern Chat Agent V2 主项计划 |
+| Next action | 恢复 `20260817-modern-chat-agent-v2-execution.md` 的当前 Gate：评审并闭合 XR-4 non-advertisement proof authority |
+| Blockers | 本计划无 blocker；Modern Chat Agent V2 主计划仍保留其已登记的设计门与未证明 runtime cells |
+| Decisions required | none |
+| Evidence | X5 Gateway lifecycle PASS (create/list/toggle/delete/cleanup) and Settings Skills DOM PASS; current-source R6 `agent-stream-resilience-e2e` run `20260824T185740538544Z-de8991b6a54c8890eda5a2fe9bdadfee` and outer run `20260824T185740418434Z-9d4e6090774b8e5a95b96cc8670bc495` are `PASSED / PROVEN`; replay seq 2→74 with Desktop=Station content; logout/re-login operation count 0; cleanup 3030/3210/4448 and fault proxy PASS |
+| Last updated | 2026-08-25 |
 
 ---
 

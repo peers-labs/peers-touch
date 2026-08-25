@@ -1038,25 +1038,38 @@
       ],
       "synthetic_paths": [
         "apps/station/app/subserver/agent/handler/turn_handler.go",
-        "apps/station/app/subserver/agent/service/live_resume_broker.go"
+        "apps/station/app/subserver/agent/service/live_resume_broker.go",
+        "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
+        "apps/desktop/src/components/OpStatusTray.tsx",
+        "apps/desktop/src/kernel/identityRuntime.ts",
+        "apps/desktop/src/services/desktop_api.ts",
+        "apps/desktop/src/services/identityHandlers.ts",
+        "apps/desktop/src/store/chat.ts",
+        "apps/desktop/src/store/session.ts"
       ],
       "evidence": {
         "truth_sources": [
           "Station turn state machine",
-          "Station live_resume_broker session registry"
+          "Station live_resume_broker session registry",
+          "Desktop Agent operation projection",
+          "Desktop identity lifecycle state machine"
         ],
         "surfaces": [
           "Native Tauri stop button and reconnect indicator",
+          "Native Tauri auth gate with zero previous-actor operations",
           "Station turn terminal states"
         ],
         "proven_by": [
           "agent-stream-resilience-e2e"
         ],
         "proven_scope": [
-          "PENDING: Cancel mid-stream, reconnect resume, provider error handling, and partial content preservation"
+          "R6 native disconnect recovery shows a visible reconciling state and resumes by monotonic Station cursor without duplicate projection",
+          "R6 logout aborts actor-scoped operations, removes both Agent trays at the auth gate, and keeps the client projection empty after re-login",
+          "R6 Station conversation readback matches the recovered Desktop assistant content and retains the logout-interrupted turn"
         ],
         "unproven_scope": [
-          "Cancel mid-stream, reconnect resume, provider error handling, and partial content preservation"
+          "Dedicated stop-button cancellation with cancelled-message presentation",
+          "Provider error presentation and retry without full-context resubmission"
         ]
       }
     },

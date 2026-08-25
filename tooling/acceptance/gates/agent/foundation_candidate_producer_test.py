@@ -212,7 +212,16 @@ def _runtime_attestation(
         ),
         "observedAt": OBSERVED_AT,
     }
-    return FoundationRuntimeAttestation("direct_runtime", payload)
+    if (
+        runtime_tuple.runtime_attestation_profile
+        == "direct_runtime_no_local_capability"
+    ):
+        del payload["toolCallBinding"]
+        payload["clientSession"]["capabilities"] = []
+    return FoundationRuntimeAttestation(
+        runtime_tuple.runtime_attestation_profile,
+        payload,
+    )
 
 
 def _role_observations(runtime_tuple: FoundationTuple) -> dict[str, dict[str, object]]:
@@ -383,7 +392,8 @@ class FoundationCandidateProducerTest(unittest.TestCase):
             Counter(item.runtime_attestation_profile for item in tuples),
             Counter(
                 {
-                    "direct_runtime": 394,
+                    "direct_runtime": 197,
+                    "direct_runtime_no_local_capability": 197,
                     "contract_only": 15,
                     "orchestration_guard": 2,
                     "non_advertised": 8,
@@ -424,7 +434,8 @@ class FoundationCandidateProducerTest(unittest.TestCase):
                     ),
                     Counter(
                         {
-                            "direct_runtime": 394,
+                            "direct_runtime": 197,
+                            "direct_runtime_no_local_capability": 197,
                             "contract_only": 15,
                             "orchestration_guard": 2,
                             "non_advertised": 8,
@@ -631,6 +642,85 @@ class FoundationCandidateProducerTest(unittest.TestCase):
         ):
             FoundationCandidateProducer(
                 _adapters(RecordingAdapter(replace_profile))
+            ).collect()
+
+    def test_browser_no_local_capability_profile_rejects_local_authority(
+        self,
+    ) -> None:
+        def add_local_capability(
+            runtime_tuple: FoundationTuple,
+            observation: FoundationTupleObservation,
+        ) -> FoundationTupleObservation:
+            if (
+                runtime_tuple.runtime_attestation_profile
+                != "direct_runtime_no_local_capability"
+            ):
+                return observation
+            payload = dict(observation.runtime_attestation.payload)
+            session = dict(payload["clientSession"])
+            session["capabilities"] = [
+                {
+                    "capabilityId": "fabricated",
+                    "schemaVersion": "1",
+                    "permission": "granted",
+                    "constraints": {
+                        "maxRequestBytes": 1,
+                        "maxResultBytes": 1,
+                        "allowedResourceKinds": ["text"],
+                    },
+                }
+            ]
+            payload["clientSession"] = session
+            return FoundationTupleObservation(
+                tuple_key=observation.tuple_key,
+                observed=True,
+                passed=True,
+                runtime_attestation=FoundationRuntimeAttestation(
+                    observation.runtime_attestation.profile,
+                    payload,
+                ),
+                role_observations=observation.role_observations,
+            )
+
+        with self.assertRaisesRegex(
+            FoundationCandidateError,
+            "client capabilities mismatch",
+        ):
+            FoundationCandidateProducer(
+                _adapters(RecordingAdapter(add_local_capability))
+            ).collect()
+
+    def test_browser_no_local_capability_profile_rejects_tool_call(
+        self,
+    ) -> None:
+        def add_tool_call(
+            runtime_tuple: FoundationTuple,
+            observation: FoundationTupleObservation,
+        ) -> FoundationTupleObservation:
+            if (
+                runtime_tuple.runtime_attestation_profile
+                != "direct_runtime_no_local_capability"
+            ):
+                return observation
+            payload = dict(observation.runtime_attestation.payload)
+            payload["toolCallBinding"] = {"toolCallId": "fabricated"}
+            return FoundationTupleObservation(
+                tuple_key=observation.tuple_key,
+                observed=True,
+                passed=True,
+                runtime_attestation=FoundationRuntimeAttestation(
+                    observation.runtime_attestation.profile,
+                    payload,
+                ),
+                role_observations=observation.role_observations,
+            )
+
+        with self.assertRaisesRegex(
+            FoundationCandidateError,
+            "payload fields mismatch",
+        ):
+            FoundationCandidateProducer(
+                _adapters(RecordingAdapter(add_tool_call))
             ).collect()
 
     def test_duplicate_tuple_and_matrix_hash_mismatch_fail_closed(self) -> None:

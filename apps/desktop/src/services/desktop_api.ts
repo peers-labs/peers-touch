@@ -2458,6 +2458,7 @@ export interface McpToolSchemaEntry {
 
 export interface AgentExecuteTurnInput {
   stream_id?: string;
+  client_idempotency_key: string;
   conversation_id: string;
   agent_id: string;
   user_input: string;
@@ -2494,6 +2495,31 @@ export interface AgentTurnStreamCancelInput {
   turn_id: string;
 }
 
+export interface AgentTurnQueueEntry {
+  queue_entry_id: string;
+  conversation_id: string;
+  agent_id: string;
+  client_idempotency_key: string;
+  status: string;
+  queue_sequence: number;
+  queue_position: number;
+  admitted_turn_id: string;
+  user_input: string;
+}
+
+export interface AgentTurnQueueListOutput {
+  entries: AgentTurnQueueEntry[];
+  queue_capacity: number;
+  conversation_version: number;
+}
+
+export interface AgentTurnQueueCancelInput {
+  conversation_id: string;
+  queue_entry_id: string;
+  idempotency_key: string;
+  expected_conversation_version: number;
+}
+
 export interface AgentTurnTraceListInput {
   agent_id: string;
   conversation_id?: string;
@@ -2508,6 +2534,111 @@ export interface AgentTurnTraceGetInput {
 
 export interface AgentTurnDiagnosticsInput {
   turn_id: string;
+}
+
+export interface AgentRuntimeProfileInput {
+  agent_id: string;
+}
+
+export interface AgentCapabilityReadinessInput {
+  agent_id: string;
+  runtime_snapshot_id?: string;
+  client_capability_session_id?: string;
+}
+
+export interface AgentCapabilityReadinessSnapshot {
+  snapshot_id: string;
+  ptid: string;
+  agent_id: string;
+  runtime_snapshot_id: string;
+  model_capabilities: Record<string, unknown> | null;
+  binding_revisions: string[];
+  connection_revisions: string[];
+  selected_client_session_id?: string;
+  capabilities: Array<{
+    capability_id: string;
+    capability_version: string;
+    binding_id: string;
+    binding_revision: number;
+    state: string;
+    authority: string;
+    reason_code: string;
+  }>;
+  created_at: { seconds: number; nanos: number } | null;
+  expires_at: { seconds: number; nanos: number } | null;
+}
+
+export interface AgentRuntimeActivityInput {
+  runtime_kind: 1 | 2;
+  runtime_id: 'trae-cli' | 'external-agent';
+}
+
+export interface AgentRuntimeAdvertisement {
+  runtime_kind: string;
+  runtime_id: string;
+  state: string;
+  reason_code: string;
+}
+
+export interface AgentEffectiveRuntimeProfile {
+  snapshot_id: string;
+  ptid: string;
+  agent_id: string;
+  profile_id: string;
+  profile_revision: number;
+  readiness_snapshot_id: string;
+  runtimes: AgentRuntimeAdvertisement[];
+  observed_at: { seconds: number; nanos: number } | null;
+}
+
+export interface AgentRuntimeActivitySnapshot {
+  snapshot_id: string;
+  owner: string;
+  owner_instance_id: string;
+  ptid: string;
+  runtime_kind: string;
+  runtime_id: string;
+  counter_epoch: string;
+  counters: {
+    runtime_bindings_created: number;
+    external_sessions_created: number;
+    runtime_homes_created: number;
+    processes_started: number;
+    workspaces_created: number;
+  };
+  observed_at?: { seconds: number; nanos: number } | null;
+  observed_at_unix_ms?: number;
+}
+
+export interface AgentCapabilitySessionSnapshot {
+  active_session_count: number;
+  sessions: Array<{
+    actor_id_hash: string;
+    device_id_hash: string;
+    capability_session_id_hash: string;
+    lease_id_hash: string;
+    lease_revision: number;
+    capability_set_hash: string;
+    platform: string;
+    capability_ids: string[];
+    expires_at_ms: number;
+  }>;
+}
+
+export interface AgentCapabilitySessionList {
+  sessions: Array<{
+    session_id: string;
+    ptid: string;
+    device_id: string;
+    platform: string;
+    typed_capabilities: Array<{
+      capability_id: string;
+      schema_version: string;
+      permission: string;
+    }>;
+    expires_at: { seconds: number; nanos: number } | null;
+    connection_id: string;
+  }>;
 }
 
 export interface AgentConversation {
@@ -4295,10 +4426,71 @@ export const api = {
       { turn_id: turnId },
     ),
 
+  listAgentTurnQueue: (conversationId: string) =>
+    invokeRustDataFromStatus<{ conversation_id: string }, AgentTurnQueueListOutput>(
+      'agent_turn_queue_list',
+      { conversation_id: conversationId },
+    ),
+
+  cancelQueuedAgentTurn: (input: AgentTurnQueueCancelInput) =>
+    invokeRustDataFromStatus<AgentTurnQueueCancelInput, {
+      entry: AgentTurnQueueEntry;
+      conversation_version: number;
+      replayed: boolean;
+    }>('agent_turn_queue_cancel', input),
+
   submitAgentToolDecision: (input: AgentToolDecisionIntentInput) =>
     invokeRustDataFromStatus<AgentToolDecisionIntentInput, AgentToolDecisionIntentResponse>(
       'agent_submit_tool_decision',
       input,
+    ),
+
+  getAgentEffectiveRuntimeProfile: (input: AgentRuntimeProfileInput) =>
+    invokeRustDataFromStatus<AgentRuntimeProfileInput, AgentEffectiveRuntimeProfile>(
+      'agent_runtime_profile_effective',
+      input,
+    ),
+
+  getAgentCapabilityReadiness: (input: AgentCapabilityReadinessInput) =>
+    invokeRustDataFromStatus<AgentCapabilityReadinessInput, AgentCapabilityReadinessSnapshot>(
+      'agent_capability_readiness',
+      input,
+    ),
+
+  getAgentStationRuntimeActivity: (input: AgentRuntimeActivityInput) =>
+    invokeRustDataFromStatus<AgentRuntimeActivityInput, AgentRuntimeActivitySnapshot>(
+      'agent_runtime_activity_station',
+      input,
+    ),
+
+  getAgentLocalRuntimeActivity: (input: AgentRuntimeActivityInput) =>
+    invokeRustDataFromStatus<AgentRuntimeActivityInput, AgentRuntimeActivitySnapshot>(
+      'agent_runtime_activity_local',
+      input,
+    ),
+
+  getAgentCapabilitySessionSnapshot: () =>
+    invokeRustDataFromStatus<Record<string, never>, AgentCapabilitySessionSnapshot>(
+      'agent_capability_session_snapshot',
+      {},
+    ),
+
+  listAgentCapabilitySessions: () =>
+    invokeRustDataFromStatus<Record<string, never>, AgentCapabilitySessionList>(
+      'agent_capability_sessions',
+      {},
+    ),
+
+  openBrowserCapabilitySession: () =>
+    invokeRustDataFromStatus<Record<string, never>, { state: string }>(
+      'agent_browser_capability_session_open',
+      {},
+    ),
+
+  closeBrowserCapabilitySession: () =>
+    invokeRustDataFromStatus<Record<string, never>, { state: string }>(
+      'agent_browser_capability_session_close',
+      {},
     ),
 
   listAgentConversations: (agentId: string, options?: { status?: string; page?: number; pageSize?: number }) =>
@@ -5553,6 +5745,26 @@ function isHttpGatewayMode() {
   return typeof window !== 'undefined' && Boolean((window as any).__PT_GATEWAY_BASE__);
 }
 
+const AGENT_REPLAY_BACKOFF_MS = [500, 1_000, 2_000, 4_000, 8_000] as const;
+
+function waitForAgentReplay(delayMs: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Agent replay cancelled', 'AbortError'));
+      return;
+    }
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException('Agent replay cancelled', 'AbortError'));
+    };
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 async function consumeAgentSSE(
   response: Response,
   signal: AbortSignal,
@@ -5597,6 +5809,21 @@ async function consumeAgentSSE(
   return terminal;
 }
 
+export function classifyAgentTurnTerminalEvent(
+  event: StreamEvent,
+): 'complete' | 'queued' | 'error' | null {
+  if (event.event === 'error') return 'error';
+  if (event.event === 'queued' || event.event === 'admission_replayed') return 'queued';
+  if (event.event === 'done' || event.event === 'cancelled') return 'complete';
+  if (event.event !== 'snapshot') return null;
+  const status = String(event.data?.status || '').toLowerCase();
+  if (status === 'failed') return 'error';
+  if (status === 'completed' || status === 'cancelled' || status === 'interrupted') {
+    return 'complete';
+  }
+  return null;
+}
+
 export function streamAgentTurn(
   input: AgentExecuteTurnInput,
   onEvent: (event: StreamEvent) => void,
@@ -5619,12 +5846,17 @@ export function streamAgentTurn(
         if (eventTurnId) turnId = eventTurnId;
         if (eventConversationId) conversationId = eventConversationId;
         onEvent(event);
-        if (event.event === 'error') {
-          onError(new Error(String(event.data?.error || 'agent.error.streamFailed')));
+        const terminal = classifyAgentTurnTerminalEvent(event);
+        if (terminal === 'error') {
+          onError(new Error(String(
+            event.data?.error
+            || event.data?.terminal_reason
+            || 'agent.error.streamFailed',
+          )));
           settled = true;
           return true;
         }
-        if (event.event === 'done' || event.event === 'cancelled' || event.event === 'catchup_done') {
+        if (terminal === 'complete' || terminal === 'queued') {
           onDone();
           settled = true;
           return true;
@@ -5652,17 +5884,30 @@ export function streamAgentTurn(
             throw new Error('agent.error.streamIdentityMissing');
           }
           onEvent({ event: 'reconciling', data: { turnId, conversationId, seq: lastSequence } });
-          const replay = await fetch(`${gatewayBase}/agent/turn/events`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-            body: JSON.stringify({
-              conversation_id: conversationId,
-              turn_id: turnId,
-              after_seq: lastSequence,
-            }),
-            signal: controller.signal,
-          });
-          await consumeAgentSSE(replay, controller.signal, forward);
+          let replayError: Error | null = null;
+          for (let attempt = 0; attempt <= AGENT_REPLAY_BACKOFF_MS.length; attempt += 1) {
+            if (attempt > 0) {
+              await waitForAgentReplay(AGENT_REPLAY_BACKOFF_MS[attempt - 1], controller.signal);
+            }
+            try {
+              const replay = await fetch(`${gatewayBase}/agent/turn/events`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+                body: JSON.stringify({
+                  conversation_id: conversationId,
+                  turn_id: turnId,
+                  after_seq: lastSequence,
+                }),
+                signal: controller.signal,
+              });
+              const replayTerminal = await consumeAgentSSE(replay, controller.signal, forward);
+              if (replayTerminal || settled) return;
+              replayError = new Error('agent.error.replayIncomplete');
+            } catch (error) {
+              replayError = error instanceof Error ? error : new Error(String(error));
+            }
+          }
+          throw replayError ?? new Error('agent.error.replayFailed');
         }
       } catch (err: unknown) {
         if (!controller.signal.aborted && !settled) {
@@ -5740,13 +5985,17 @@ export function streamAgentTurn(
           return;
         }
         forwardEvent(payload);
-        if (payload.event === 'done' || payload.event === 'cancelled' || payload.event === 'catchup_done') {
+        const terminal = classifyAgentTurnTerminalEvent({
+          event: payload.event,
+          data: payload.data || {},
+        });
+        if (terminal === 'complete' || terminal === 'queued') {
           unlistenLive?.();
           unlistenLive = undefined;
           onDone();
           settle();
         }
-        if (payload.event === 'error') {
+        if (terminal === 'error') {
           unlistenLive?.();
           unlistenLive = undefined;
           const data = payload.data || {};

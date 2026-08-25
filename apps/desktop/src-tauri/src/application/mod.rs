@@ -29,6 +29,7 @@ pub mod plugins;
 pub mod presence;
 pub mod profile;
 pub mod provider;
+pub mod runtime_evidence;
 pub mod search;
 pub mod security;
 pub mod session_resolver;

@@ -204,6 +204,7 @@ export function BuilderPanel({
     let modelName = '';
     const controller = executeAgentTurn(
       {
+        client_idempotency_key: crypto.randomUUID(),
         conversation_id: sessionKey,
         agent_id: selectedAgent.id,
         user_input: buildScopedBuilderRequest(text, contextPayload),

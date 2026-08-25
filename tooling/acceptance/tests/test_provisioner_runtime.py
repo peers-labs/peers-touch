@@ -132,6 +132,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "PT_STATION_DEPLOY_ENV": "station-1",
                 "PT_DESKTOP_APP_GATEWAY_PORT": "23030",
                 "PT_DESKTOP_APP_WEB_PORT": "23210",
+                "PT_DESKTOP_WEB_GATEWAY_PORT": "23031",
+                "PT_DESKTOP_WEB_WEB_PORT": "23211",
+                "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
+                "CHAT_ACCEPTANCE_RESET": "1",
             },
         )
 
@@ -175,6 +179,42 @@ class ProvisionerBlockingTests(unittest.TestCase):
                         "chat-native-two-client-e2e",
                         "run-webdriver-conflict",
                     )
+
+    def test_agent_stream_client_uses_one_profile_and_isolated_storage(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        profile_env = {
+            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
+            "PT_DESKTOP_APP_WEB_PORT": "13511",
+        }
+        with patch.dict(
+            "os.environ",
+            {"PT_AGENT_STREAM_WEBDRIVER_PORT": "14449"},
+            clear=True,
+        ):
+            client = provisioner._agent_stream_client(
+                "run-stream-resilience",
+                1,
+                profile_env,
+            )
+
+        self.assertEqual(client.actor, "alice")
+        self.assertEqual(client.profile, "one")
+        self.assertEqual(client.gateway_port, 13331)
+        self.assertEqual(client.renderer_port, 13511)
+        self.assertEqual(client.webdriver_port, 14449)
+        self.assertIn("pt-agent-stream-run-stream-resilience", client.storage_root)
+
+    def test_agent_stream_credentials_must_come_from_one_profile(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        with self.assertRaisesRegex(
+            BlockedError,
+            "One profile is missing required credential",
+        ):
+            provisioner._export_profile_credential_refs({})
 
     def test_unreachable_station_returns_blocked_manifest(self):
         contract = EnvironmentContract.from_yaml(
@@ -301,7 +341,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
         self.assertIn("reset", manifest.blocked_reason.lower())
 
-    def test_agent_v2_foundation_provisions_reference_only_native_manifest(self):
+    def test_agent_v2_foundation_provisions_native_and_browser_manifest(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"
         )
@@ -329,6 +369,21 @@ class ProvisionerBlockingTests(unittest.TestCase):
         ), patch(
             "tooling.acceptance.provisioners.home_station.source_proto_digest",
             return_value="proto-digest",
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.produce_actor_manifest",
+            return_value=(
+                None,
+                None,
+                {
+                    "artifactKind": "acceptance-artifact-ref",
+                    "workspaceId": "0" * 16,
+                    "gateId": "agent-v2-kernel-foundation-e2e",
+                    "runId": "20260817T000000000000Z-" + "0" * 32,
+                    "path": "runtime/actors.json",
+                    "sha256": "0" * 64,
+                    "mediaType": "application/json",
+                },
+            ),
         ), patch.object(
             provisioner,
             "acquire_profile_lease",
@@ -346,6 +401,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {
                 "PT_AGENT_V2_NATIVE_WEBDRIVER_PORT": "24445",
+                "PT_AGENT_V2_BROWSER_WEBDRIVER_PORT": "24446",
             },
             clear=True,
         ):
@@ -359,19 +415,26 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(
             manifest.credential_refs,
             (
+                "profile:CHAT_NATIVE_DEMO_PASSWORD",
                 "profile:PT_AGENT_PROVIDER_API_KEY",
                 "profile:PT_AGENT_DEFAULT_MODEL_ID",
             ),
         )
-        self.assertEqual(len(manifest.clients), 1)
-        client = manifest.clients[0]
-        self.assertEqual(client.actor, "agent-primary")
-        self.assertEqual(client.runtime, "native-tauri")
-        self.assertEqual(client.gateway_port, 23030)
-        self.assertEqual(client.renderer_port, 23210)
-        self.assertEqual(client.webdriver_port, 24445)
-        self.assertIn(manifest.run_id, client.profile)
-        self.assertIn(manifest.run_id, client.storage_root)
+        self.assertEqual(len(manifest.clients), 2)
+        native, browser = manifest.clients
+        self.assertEqual(native.actor, "alice")
+        self.assertEqual(native.runtime, "native-tauri")
+        self.assertEqual(native.gateway_port, 23030)
+        self.assertEqual(native.renderer_port, 23210)
+        self.assertEqual(native.webdriver_port, 24445)
+        self.assertEqual(browser.actor, "alice")
+        self.assertEqual(browser.runtime, "browser")
+        self.assertEqual(browser.gateway_port, 23031)
+        self.assertEqual(browser.renderer_port, 23211)
+        self.assertEqual(browser.webdriver_port, 24446)
+        for client in manifest.clients:
+            self.assertIn(manifest.run_id, client.profile)
+            self.assertIn(manifest.run_id, client.storage_root)
         self.assertTrue(manifest.cleanup_registered)
         self.assertEqual(
             manifest.cleanup_resources,

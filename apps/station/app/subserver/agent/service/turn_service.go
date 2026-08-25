@@ -172,11 +172,16 @@ type TurnService struct {
 	activeTurns        sync.Mutex
 	activeTurnCancel   map[string]context.CancelFunc
 	admissionResolver  *RuntimeAdmissionResolver
+	turnAdmission      *TurnAdmissionService
 	resumeProviderCall continuationProviderCall
 }
 
 func (s *TurnService) SetAdmissionResolver(r *RuntimeAdmissionResolver) {
 	s.admissionResolver = r
+}
+
+func (s *TurnService) SetTurnAdmissionService(admission *TurnAdmissionService) {
+	s.turnAdmission = admission
 }
 
 // SetToolDispatch injects the durable ToolDispatchService for F4 tool governance.
@@ -228,6 +233,217 @@ func (s *TurnService) SetLiveResumeBroker(broker *LiveResumeBroker) {
 func (s *TurnService) SetEventBus(eventBus domain.EventBus) {
 	s.eventBus = eventBus
 	s.eventWriter = NewTaskEventWriter(eventBus)
+}
+
+func (s *TurnService) RunTurnQueueWorker(ctx context.Context) {
+	if s.turnAdmission == nil {
+		return
+	}
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := s.drainQueuedTurns(ctx); err != nil {
+			logger.Errorf(ctx, "queued turn drain failed: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *TurnService) drainQueuedTurns(ctx context.Context) error {
+	pending, err := s.turnAdmission.PendingConversations(ctx, 32)
+	if err != nil {
+		return err
+	}
+	for _, conversation := range pending {
+		admitted, admitErr := s.turnAdmission.AdmitNext(
+			ctx,
+			conversation.ActorID,
+			conversation.ConversationID,
+		)
+		if admitErr != nil {
+			logger.Warnf(
+				ctx,
+				"queued turn admission failed: conversation_id=%s err=%v",
+				conversation.ConversationID,
+				admitErr,
+			)
+			continue
+		}
+		if admitted == nil {
+			continue
+		}
+		go s.executeAdmittedQueuedTurn(
+			context.WithoutCancel(ctx),
+			conversation.ActorID,
+			admitted,
+		)
+	}
+	return nil
+}
+
+func (s *TurnService) executeAdmittedQueuedTurn(
+	ctx context.Context,
+	actorID string,
+	admitted *AdmittedTurn,
+) {
+	if admitted == nil || admitted.Request == nil || admitted.Admission == nil {
+		return
+	}
+	request := admitted.Request
+	config := s.queuedTurnConfig(actorID, request, admitted.Admission.GetTurnId())
+	if s.chatTaskService != nil {
+		taskID, err := s.chatTaskService.EnsureChatTask(
+			ctx,
+			actorID,
+			request.GetAgentId(),
+			request.GetConversationId(),
+			request.GetUserInput(),
+		)
+		if err != nil {
+			_ = s.failTurn(
+				ctx,
+				request.GetAgentId(),
+				admitted.Admission.GetTurnId(),
+				"",
+				"",
+				"failed to prepare queued chat task",
+			)
+			return
+		}
+		stepID, err := s.chatTaskService.BeginChatStep(
+			ctx,
+			taskID,
+			request.GetAgentId(),
+			request.GetUserInput(),
+		)
+		if err != nil {
+			_ = s.failTurn(
+				ctx,
+				request.GetAgentId(),
+				admitted.Admission.GetTurnId(),
+				taskID,
+				"",
+				"failed to begin queued chat step",
+			)
+			return
+		}
+		config.TaskID = taskID
+		config.StepID = stepID
+	}
+	turn, err := s.ExecuteTurn(ctx, config, request.GetUserInput())
+	if err != nil {
+		if s.chatTaskService != nil && config.StepID != "" {
+			_ = s.chatTaskService.FailChatStep(ctx, config.TaskID, config.StepID, err.Error())
+		}
+		return
+	}
+	if s.chatTaskService != nil &&
+		config.StepID != "" &&
+		turn != nil &&
+		turn.Status == domain.TurnStatusCompleted {
+		_ = s.chatTaskService.FinishChatStep(
+			ctx,
+			config.TaskID,
+			config.StepID,
+			turn.TurnID,
+			turn.FinalResponse,
+		)
+	}
+}
+
+func (s *TurnService) queuedTurnConfig(
+	actorID string,
+	request *model.ExecuteTurnRequest,
+	turnID string,
+) *TurnConfig {
+	contextWindowSize := int(request.GetContextWindowSize())
+	if contextWindowSize <= 0 {
+		contextWindowSize = 128000
+	}
+	maxRetries := int(request.GetMaxRetries())
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+	var availableTools []string
+	if s.toolRegistry != nil {
+		availableTools = s.toolRegistry.ToolNames()
+	}
+	return &TurnConfig{
+		TurnID:                    turnID,
+		PrecreatedTurnID:          turnID,
+		AgentID:                   request.GetAgentId(),
+		ActorID:                   actorID,
+		ConversationID:            request.GetConversationId(),
+		Identity:                  request.GetIdentity(),
+		AgentConfigPrompt:         request.GetAgentConfigPrompt(),
+		AvailableTools:            availableTools,
+		ContextWindowSize:         contextWindowSize,
+		MaxRetries:                maxRetries,
+		Provider:                  request.GetProvider(),
+		Model:                     request.GetModel(),
+		Effort:                    request.GetEffort(),
+		ClientCapabilitySessionID: request.GetClientCapabilitySessionId(),
+		KnowledgeResources:        queuedKnowledgeResources(request),
+		MemoryDisabled:            request.GetMemoryDisabled(),
+	}
+}
+
+func queuedKnowledgeResources(request *model.ExecuteTurnRequest) []domain.KnowledgeResource {
+	resources := request.GetKnowledgeResources()
+	result := make([]domain.KnowledgeResource, 0, len(resources))
+	for _, resource := range resources {
+		if strings.TrimSpace(resource.GetSource()) == "" {
+			continue
+		}
+		result = append(result, domain.KnowledgeResource{
+			ResourceID: resource.GetResourceId(),
+			AgentID:    resource.GetAgentId(),
+			Type:       queuedKnowledgeResourceType(resource.GetType()),
+			Title:      resource.GetTitle(),
+			Source:     resource.GetSource(),
+			Policy:     queuedKnowledgeResourcePolicy(resource.GetPolicy()),
+			Status:     resource.GetStatus().String(),
+		})
+	}
+	return result
+}
+
+func queuedKnowledgeResourceType(
+	value model.KnowledgeResourceType,
+) domain.KnowledgeResourceType {
+	switch value {
+	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_FOLDER:
+		return domain.KnowledgeResourceTypeFolder
+	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_PROJECT:
+		return domain.KnowledgeResourceTypeProject
+	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_URL:
+		return domain.KnowledgeResourceTypeURL
+	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_NOTEBOOK:
+		return domain.KnowledgeResourceTypeNotebook
+	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_WORKSPACE:
+		return domain.KnowledgeResourceTypeWorkspace
+	default:
+		return domain.KnowledgeResourceTypeDocument
+	}
+}
+
+func queuedKnowledgeResourcePolicy(
+	value model.KnowledgeResourcePolicy,
+) domain.KnowledgeResourcePolicy {
+	switch value {
+	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_AUTO:
+		return domain.KnowledgeResourcePolicyAuto
+	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_ALWAYS:
+		return domain.KnowledgeResourcePolicyAlways
+	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_DISABLED:
+		return domain.KnowledgeResourcePolicyDisabled
+	default:
+		return domain.KnowledgeResourcePolicyManual
+	}
 }
 
 func (s *TurnService) publishDomainEvent(ctx context.Context, agentID, turnID, taskID, stepID, eventType string, payload interface{}) {
@@ -285,6 +501,16 @@ func (s *TurnService) RegisterClientCapabilityLease(
 		return nil, fmt.Errorf("tool dispatch not configured")
 	}
 	return s.toolDispatch.RegisterCapabilityLease(ctx, actorID, authSessionID, deviceID, request)
+}
+
+func (s *TurnService) ListClientCapabilitySessions(
+	ctx context.Context,
+	actorID string,
+) (*model.ListClientCapabilitySessionsResponse, error) {
+	if s.toolDispatch == nil {
+		return nil, fmt.Errorf("tool dispatch not configured")
+	}
+	return s.toolDispatch.ListCapabilitySessions(ctx, actorID)
 }
 
 func (s *TurnService) RenewClientCapabilityLease(

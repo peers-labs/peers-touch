@@ -30,6 +30,7 @@ type TurnHandlers struct {
 	toolRegistry    *service.ToolRegistryService
 	chatTaskService *service.ChatTaskService
 	convService     *service.ConversationService
+	admission       *service.TurnAdmissionService
 }
 
 type cancelTurnRequest struct {
@@ -38,6 +39,10 @@ type cancelTurnRequest struct {
 
 func NewTurnHandlers(turnService *service.TurnService, toolRegistry *service.ToolRegistryService, chatTaskService *service.ChatTaskService, convService *service.ConversationService) *TurnHandlers {
 	return &TurnHandlers{turnService: turnService, toolRegistry: toolRegistry, chatTaskService: chatTaskService, convService: convService}
+}
+
+func (h *TurnHandlers) SetAdmissionService(admission *service.TurnAdmissionService) {
+	h.admission = admission
 }
 
 // beginChatTaskStep ensures the Station-owned Chat root task for the conversation
@@ -101,6 +106,19 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 	}
 
 	config := h.turnConfigFromRequest(ctx, req, nil)
+	var admission *model.TurnAdmission
+	if h.admission != nil {
+		admissionResult, admissionErr := h.admission.Admit(ctx, subjectActorID(ctx), req)
+		if admissionErr != nil {
+			return nil, toHandlerError(admissionErr)
+		}
+		admission = admissionResult
+		if admission.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
+			return &model.ExecuteTurnResponse{Admission: admission}, nil
+		}
+		config.PrecreatedTurnID = admission.GetTurnId()
+		config.TurnID = admission.GetTurnId()
+	}
 	taskID, stepID := h.beginChatTaskStep(ctx, req)
 	config.TaskID = taskID
 	config.StepID = stepID
@@ -118,8 +136,9 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 	}
 
 	return &model.ExecuteTurnResponse{
-		Turn:   domainTurnToProto(turn),
-		TaskId: taskID,
+		Turn:      domainTurnToProto(turn),
+		TaskId:    taskID,
+		Admission: admission,
 	}, nil
 }
 
@@ -233,6 +252,36 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		return nil
 	}
 
+	var admission *model.TurnAdmission
+	if h.admission != nil {
+		var err error
+		admission, err = h.admission.Admit(
+			ctx,
+			subjectActorID(ctx),
+			&input,
+			turnID,
+		)
+		if err != nil {
+			_ = writeTurnStreamEvent(resp, "error", map[string]any{
+				"type":  "error",
+				"error": err.Error(),
+			})
+			return nil
+		}
+		if admission.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
+			event := "admission_replayed"
+			if admission.GetStatus() == model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED {
+				event = "queued"
+			}
+			_ = writeTurnStreamEvent(resp, event, map[string]any{
+				"type":      event,
+				"admission": admission,
+			})
+			return nil
+		}
+		turnID = admission.GetTurnId()
+	}
+
 	events := make(chan service.TurnEvent, 32)
 	done := make(chan turnStreamResult, 1)
 	var errorEmitted atomic.Bool
@@ -247,6 +296,9 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 	})
 	config.TurnID = turnID
 	config.ExecutionContext = turnCtx
+	if admission != nil {
+		config.PrecreatedTurnID = turnID
+	}
 	taskID, stepID := h.beginChatTaskStep(ctx, &input)
 	config.TaskID = taskID
 	config.StepID = stepID
@@ -298,6 +350,9 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 				"turn":        result.turn,
 				"task_id":     result.taskID,
 				"suggestions": result.suggestions,
+			}
+			if admission != nil {
+				donePayload["admission"] = admission
 			}
 			// Include model at top level so the BFF and frontend can
 			// extract it without navigating the proto Turn structure.

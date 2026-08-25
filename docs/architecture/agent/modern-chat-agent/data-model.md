@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-22
+> **Created**: 2026-07-30 | **Updated**: 2026-08-25
 > **Owner**: Peers-Touch Agent Team
 > **Proto Root**: `model/domain/agent/`
 
@@ -1528,3 +1528,71 @@ Typed receipt errors add `RECOVERY_REQUIRED = 8`,
 `RECOVERY_CREDENTIAL_EXPIRED = 9`, `RECOVERY_SCOPE_MISMATCH = 10`,
 `RECOVERY_SIGNATURE_INVALID = 11`, `RECOVERY_DEVICE_KEY_REVOKED = 12`, and
 `RECOVERY_NONCE_CONFLICT = 13`.
+
+### 8.10 Runtime Advertisement And Activity Snapshots
+
+MCA-D19D adds production readback contracts:
+
+```protobuf
+enum RuntimeAdvertisementState {
+  RUNTIME_ADVERTISEMENT_STATE_UNSPECIFIED = 0;
+  RUNTIME_ADVERTISEMENT_STATE_READY = 1;
+  RUNTIME_ADVERTISEMENT_STATE_DEGRADED = 2;
+  RUNTIME_ADVERTISEMENT_STATE_NOT_ADVERTISED = 3;
+  RUNTIME_ADVERTISEMENT_STATE_BLOCKED = 4;
+}
+
+message EffectiveRuntimeAdvertisement {
+  RuntimeKind runtime_kind = 1;
+  string runtime_id = 2;
+  RuntimeAdvertisementState state = 3;
+  string reason_code = 4;
+}
+
+message EffectiveRuntimeProfileSnapshot {
+  string snapshot_id = 1;
+  string ptid = 2;
+  string agent_id = 3;
+  string profile_id = 4;
+  uint64 profile_revision = 5;
+  string readiness_snapshot_id = 6;
+  repeated EffectiveRuntimeAdvertisement runtimes = 7;
+  google.protobuf.Timestamp observed_at = 8;
+}
+
+message RuntimeActivityCounters {
+  uint64 runtime_bindings_created = 1;
+  uint64 external_sessions_created = 2;
+  uint64 runtime_homes_created = 3;
+  uint64 processes_started = 4;
+  uint64 workspaces_created = 5;
+}
+
+message RuntimeActivitySnapshot {
+  string snapshot_id = 1;
+  string owner = 2;
+  string owner_instance_id = 3;
+  string ptid = 4;
+  RuntimeKind runtime_kind = 5;
+  string runtime_id = 6;
+  string counter_epoch = 7;
+  RuntimeActivityCounters counters = 8;
+  google.protobuf.Timestamp observed_at = 9;
+}
+```
+
+Rules:
+
+- Station returns every known conditional runtime candidate explicitly; omitted
+  rows are `UNKNOWN`, never `NOT_ADVERTISED`.
+- `runtime_id` identifies a registered candidate such as `external-agent` or
+  `trae-cli`; it is not a command or executable path.
+- Station activity counters are actor-scoped and monotonic within the Station
+  counter epoch.
+- Desktop activity counters are actor/device/boot-scoped and monotonic within
+  the Desktop boot epoch.
+- Snapshot requests are read-only and expose no reset, decrement, or arbitrary
+  actor selector.
+- Counter comparison requires equal owner, owner instance, actor, epoch,
+  profile revision, and readiness snapshot identity.
+- Values contain no local path, PID, command line, credential, or secret.

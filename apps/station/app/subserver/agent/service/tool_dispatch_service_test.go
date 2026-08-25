@@ -233,6 +233,117 @@ func (f toolDispatchFixture) signedPullRequest(
 	return request
 }
 
+func TestBrowserCapabilitySessionAllowsEmptyCapabilitiesAndListsByActor(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	request := &model.RegisterClientCapabilityLeaseRequest{
+		Advertisement: &model.ClientCapabilityAdvertisement{
+			AdvertisementId:    "browser-advertisement",
+			DeviceId:           fixture.deviceID,
+			DeviceSigningKeyId: proofTestSigningKeyID,
+			Platform:           model.ClientPlatform_CLIENT_PLATFORM_BROWSER,
+			ConnectionId:       "browser-connection",
+		},
+	}
+	fixture.signRequest(
+		t,
+		request,
+		model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_REGISTER_LEASE,
+		"register-browser",
+		31,
+	)
+	response, err := fixture.service.RegisterCapabilityLease(
+		context.Background(),
+		fixture.actorID,
+		"auth-session-1",
+		fixture.deviceID,
+		request,
+	)
+	if err != nil {
+		t.Fatalf("register browser capability lease: %v", err)
+	}
+	browserLease := response.GetLease()
+	if browserLease.GetPlatform() != model.ClientPlatform_CLIENT_PLATFORM_BROWSER ||
+		len(browserLease.GetCapabilities()) != 0 {
+		t.Fatalf("unexpected browser capability lease: %+v", browserLease)
+	}
+
+	sessions, err := fixture.service.ListCapabilitySessions(
+		context.Background(),
+		fixture.actorID,
+	)
+	if err != nil {
+		t.Fatalf("list browser capability sessions: %v", err)
+	}
+	if len(sessions.GetSessions()) != 2 {
+		t.Fatalf("expected desktop and browser sessions, got %+v", sessions.GetSessions())
+	}
+	var browserSession *model.ClientCapabilitySession
+	for _, session := range sessions.GetSessions() {
+		if session.GetSessionId() == browserLease.GetCapabilitySessionId() {
+			browserSession = session
+			break
+		}
+	}
+	if browserSession == nil || browserSession.GetConnectionId() != "browser-connection" {
+		t.Fatalf("browser session readback mismatch: %+v", sessions.GetSessions())
+	}
+	resolved, err := fixture.service.GetActiveCapabilitySession(
+		context.Background(),
+		fixture.actorID,
+		browserLease.GetCapabilitySessionId(),
+	)
+	if err != nil {
+		t.Fatalf("resolve browser capability session: %v", err)
+	}
+	if resolved == nil ||
+		resolved.GetPlatformKind() != model.ClientPlatform_CLIENT_PLATFORM_BROWSER {
+		t.Fatalf("resolved browser capability session mismatch: %+v", resolved)
+	}
+
+	otherActor, err := fixture.service.ListCapabilitySessions(
+		context.Background(),
+		"ptid:other-actor",
+	)
+	if err != nil {
+		t.Fatalf("list other actor capability sessions: %v", err)
+	}
+	if len(otherActor.GetSessions()) != 0 {
+		t.Fatalf("cross-actor capability sessions leaked: %+v", otherActor.GetSessions())
+	}
+
+	if err := fixture.db.Model(&persistence.ClientCapabilityLease{}).
+		Where("session_id = ?", browserLease.GetCapabilitySessionId()).
+		Update("revoked_at", fixture.now).Error; err != nil {
+		t.Fatalf("revoke browser capability session fixture: %v", err)
+	}
+	if err := fixture.db.Model(&persistence.ClientCapabilityLease{}).
+		Where("session_id = ?", fixture.session.GetCapabilitySessionId()).
+		Update("expires_at", fixture.now.Add(-time.Minute)).Error; err != nil {
+		t.Fatalf("expire desktop capability session fixture: %v", err)
+	}
+	active, err := fixture.service.ListCapabilitySessions(
+		context.Background(),
+		fixture.actorID,
+	)
+	if err != nil {
+		t.Fatalf("list filtered capability sessions: %v", err)
+	}
+	if len(active.GetSessions()) != 0 {
+		t.Fatalf("revoked or expired capability session leaked: %+v", active.GetSessions())
+	}
+	resolved, err = fixture.service.GetActiveCapabilitySession(
+		context.Background(),
+		fixture.actorID,
+		browserLease.GetCapabilitySessionId(),
+	)
+	if err != nil {
+		t.Fatalf("resolve revoked capability session: %v", err)
+	}
+	if resolved != nil {
+		t.Fatalf("revoked capability session remained selectable: %+v", resolved)
+	}
+}
+
 func TestToolDispatchServiceProposeBatch(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
 	fixture.propose(t, "tool-call-1", "tool-call-2")

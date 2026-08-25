@@ -26,6 +26,7 @@
           "attestationProfile": {
             "enum": [
               "direct_runtime",
+              "direct_runtime_no_local_capability",
               "contract_only",
               "orchestration_guard",
               "non_advertised"
@@ -85,7 +86,6 @@
             "properties": {
               "capabilities": {
                 "type": "array",
-                "minItems": 1,
                 "items": {
                   "type": "object",
                   "required": [
@@ -134,13 +134,38 @@
         "oneOf": [
           {
             "properties": {
-              "attestationProfile": {"const": "direct_runtime"}
+              "attestationProfile": {"const": "direct_runtime"},
+              "clientSession": {
+                "properties": {
+                  "capabilities": {"minItems": 1}
+                }
+              }
             },
             "required": [
               "actorIdentityHash", "conversationRuntimeBinding",
               "runtimeSnapshot", "turnAttempt", "toolCallBinding",
               "clientSession", "desktopMode"
             ]
+          },
+          {
+            "properties": {
+              "attestationProfile": {
+                "const": "direct_runtime_no_local_capability"
+              },
+              "clientSession": {
+                "properties": {
+                  "platform": {"const": "browser"},
+                  "capabilities": {"maxItems": 0}
+                }
+              }
+            },
+            "required": [
+              "actorIdentityHash", "conversationRuntimeBinding",
+              "runtimeSnapshot", "turnAttempt", "clientSession", "desktopMode"
+            ],
+            "not": {
+              "required": ["toolCallBinding"]
+            }
           },
           {
             "properties": {

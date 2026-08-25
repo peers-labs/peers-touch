@@ -1,11 +1,11 @@
 {
   "artifactKind": "agent-v2-proof-contract",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "matrix": {
     "id": "modern-chat-agent-v2-runtime-matrix",
-    "version": "2026-08-23.1",
+    "version": "2026-08-25.1",
     "source": "docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml",
-    "sha256": "dba059834fdb4a989be3fa6c0b56fa258a1f2a9ef9d24e6f19f52e3bc2dbf4f0",
+    "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
     "expandedTupleCount": 742
   },
   "generatedRoles": [
@@ -21,7 +21,7 @@
     },
     "runtime-attestation-set": {
       "id": "peers-touch.agent-v2.runtime-attestation-set",
-      "version": 2,
+      "version": 3,
       "file": "runtime-attestation-set.schema.json"
     },
     "source-identity": {

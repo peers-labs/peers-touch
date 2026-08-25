@@ -16,9 +16,9 @@ use crate::contracts::{
     AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput, AgentTaskStatusInput,
     AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput, AgentThreadCreateInput,
     AgentThreadListInput, AgentThreadMessagesInput, AgentTombstoneMessageInput,
-    AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput, AgentTurnTraceGetInput,
-    AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput, TopicCommentDeleteInput,
-    TopicCommentListInput,
+    AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput, AgentTurnQueueCancelInput,
+    AgentTurnQueueListInput, AgentTurnTraceGetInput, AgentTurnTraceListInput, StubPayload,
+    TopicCommentCreateInput, TopicCommentDeleteInput, TopicCommentListInput,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -30,13 +30,14 @@ use reqwest::Method;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 const AGENT_TURN_STREAM_EVENT: &str = "agent:turn-stream-event";
+const AGENT_REPLAY_BACKOFF_MS: [u64; 5] = [500, 1_000, 2_000, 4_000, 8_000];
 pub fn submit_tool_decision(
     input: AgentToolDecisionIntentInput,
     token: &str,
@@ -364,6 +365,67 @@ pub fn agent_turn_trace_list(
     }
 }
 
+pub fn agent_turn_queue_list(
+    input: AgentTurnQueueListInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let conversation_id = input.conversation_id.trim().to_string();
+    if conversation_id.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id is required",
+            None,
+        );
+    }
+    let request = agent::ListQueuedTurnsRequest { conversation_id };
+    match station_client::request_proto::<_, agent::ListQueuedTurnsResponse>(
+        Method::POST,
+        "/sub-agent/agent/turn/queue/list",
+        token,
+        None,
+        Some(&request),
+    ) {
+        Ok(response) => success_payload(
+            "agent_turn_queue_list",
+            json!({
+                "entries": response.entries.iter().map(turn_queue_entry_json).collect::<Vec<_>>(),
+                "queue_capacity": response.queue_capacity,
+                "conversation_version": response.conversation_version,
+            }),
+        ),
+        Err(error) => error.into_app_result("agent.turnQueueListFailed"),
+    }
+}
+
+pub fn agent_turn_queue_cancel(
+    input: AgentTurnQueueCancelInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let request = agent::CancelQueuedTurnRequest {
+        conversation_id: input.conversation_id,
+        queue_entry_id: input.queue_entry_id,
+        idempotency_key: input.idempotency_key,
+        expected_conversation_version: input.expected_conversation_version,
+    };
+    match station_client::request_proto::<_, agent::CancelQueuedTurnResponse>(
+        Method::POST,
+        "/sub-agent/agent/turn/queue/cancel",
+        token,
+        None,
+        Some(&request),
+    ) {
+        Ok(response) => success_payload(
+            "agent_turn_queue_cancel",
+            json!({
+                "entry": response.entry.as_ref().map(turn_queue_entry_json),
+                "conversation_version": response.conversation_version,
+                "replayed": response.replayed,
+            }),
+        ),
+        Err(error) => error.into_app_result("agent.turnQueueCancelFailed"),
+    }
+}
+
 pub fn agent_turn_trace_get(input: AgentTurnTraceGetInput, token: &str) -> AppResult<StubPayload> {
     let trace_id = input.trace_id.unwrap_or_default().trim().to_string();
     let turn_id = input.turn_id.unwrap_or_default().trim().to_string();
@@ -453,6 +515,7 @@ pub fn agent_execute_turn_stream(
 
 fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value {
     let mut body = json!({
+        "client_idempotency_key": input.client_idempotency_key,
         "conversation_id": input.conversation_id,
         "agent_id": input.agent_id,
         "user_input": input.user_input,
@@ -532,8 +595,6 @@ fn stream_station_turn(
         ));
     }
 
-    let mut bytes = [0_u8; 4096];
-    let mut buffer = String::new();
     let mut error_emitted = false;
     let mut terminal_received = false;
     let mut last_sequence = 0_i64;
@@ -544,12 +605,13 @@ fn stream_station_turn(
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
+    let mut reader = BufReader::new(response);
     loop {
         if cancel_flag.load(Ordering::SeqCst) {
             return Ok(());
         }
-        let read = match response.read(&mut bytes) {
-            Ok(read) => read,
+        let frame = match read_sse_frame(&mut reader) {
+            Ok(frame) => frame,
             Err(error) => {
                 transport_error = Some(format!("failed to read Station turn stream: {error}"));
                 break;
@@ -558,61 +620,33 @@ fn stream_station_turn(
         if cancel_flag.load(Ordering::SeqCst) {
             return Ok(());
         }
-        if read == 0 {
+        let Some((event, data)) = frame else {
             break;
+        };
+        update_turn_cursor(
+            &data,
+            &mut turn_id,
+            &mut conversation_id,
+            &mut last_sequence,
+        );
+        if matches!(event.as_str(), "done" | "error" | "cancelled") {
+            terminal_received = true;
         }
-        buffer.push_str(&String::from_utf8_lossy(&bytes[..read]));
-        while let Some(frame_end) = buffer.find("\n\n") {
-            let frame = buffer[..frame_end].to_string();
-            buffer = buffer[frame_end + 2..].to_string();
-            if let Some((event, data)) = parse_sse_frame(&frame) {
-                update_turn_cursor(
-                    &data,
-                    &mut turn_id,
-                    &mut conversation_id,
-                    &mut last_sequence,
-                );
-                if matches!(event.as_str(), "done" | "error" | "cancelled") {
-                    terminal_received = true;
-                }
-                if event == "error" {
-                    if error_emitted {
-                        continue;
-                    }
-                    error_emitted = true;
-                    let raw = data
-                        .get("error")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("Unknown error");
-                    emit_resolved_error(app, stream_id, effective_provider, raw);
-                } else {
-                    emit_turn_stream_event(app, stream_id, &event, data);
-                }
+        if event == "error" {
+            if error_emitted {
+                continue;
             }
+            error_emitted = true;
+            let raw = data
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error");
+            emit_resolved_error(app, stream_id, effective_provider, raw);
+        } else {
+            emit_turn_stream_event(app, stream_id, &event, data);
         }
-    }
-    if !buffer.trim().is_empty() {
-        if let Some((event, data)) = parse_sse_frame(&buffer) {
-            update_turn_cursor(
-                &data,
-                &mut turn_id,
-                &mut conversation_id,
-                &mut last_sequence,
-            );
-            if matches!(event.as_str(), "done" | "error" | "cancelled") {
-                terminal_received = true;
-            }
-            if event == "error" {
-                if !error_emitted {
-                    let raw = data
-                        .get("error")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("Unknown error");
-                    emit_resolved_error(app, stream_id, effective_provider, raw);
-                }
-            } else {
-                emit_turn_stream_event(app, stream_id, &event, data);
-            }
+        if terminal_received {
+            return Ok(());
         }
     }
     if !terminal_received && !cancel_flag.load(Ordering::SeqCst) {
@@ -630,13 +664,14 @@ fn stream_station_turn(
                 "reason": "station_cursor_replay_required"
             }),
         );
-        replay_station_turn_events(
+        replay_station_turn_events_with_retry(
             app,
             stream_id,
             token,
             &conversation_id,
             &turn_id,
             last_sequence,
+            cancel_flag,
         )?;
     }
     Ok(())
@@ -673,6 +708,80 @@ fn update_turn_cursor(
     }
 }
 
+fn replay_station_turn_events_with_retry(
+    app: &AppHandle,
+    stream_id: &str,
+    token: &str,
+    conversation_id: &str,
+    turn_id: &str,
+    after_sequence: i64,
+    cancel_flag: &AtomicBool,
+) -> Result<(), String> {
+    let mut last_error = None;
+    let mut replay_cursor = after_sequence;
+    for attempt in 0..=AGENT_REPLAY_BACKOFF_MS.len() {
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        if attempt > 0 {
+            let delay_ms = AGENT_REPLAY_BACKOFF_MS[attempt - 1];
+            let mut waited_ms = 0;
+            while waited_ms < delay_ms {
+                if cancel_flag.load(Ordering::SeqCst) {
+                    return Ok(());
+                }
+                let slice_ms = (delay_ms - waited_ms).min(100);
+                std::thread::sleep(Duration::from_millis(slice_ms));
+                waited_ms += slice_ms;
+            }
+        }
+        match replay_station_turn_events(
+            app,
+            stream_id,
+            token,
+            conversation_id,
+            turn_id,
+            replay_cursor,
+            cancel_flag,
+        ) {
+            Ok(ReplayOutcome::Terminal) => return Ok(()),
+            Ok(ReplayOutcome::CaughtUp(sequence)) => {
+                replay_cursor = replay_cursor.max(sequence);
+                last_error = Some(format!(
+                    "turn remains non-terminal at replay cursor {replay_cursor}"
+                ));
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(format!(
+        "Station turn replay failed after {} attempts: {}",
+        AGENT_REPLAY_BACKOFF_MS.len() + 1,
+        last_error.unwrap_or_else(|| "unknown replay failure".to_string())
+    ))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ReplayOutcome {
+    Terminal,
+    CaughtUp(i64),
+}
+
+fn replay_event_is_terminal(event: &str, data: &Value) -> bool {
+    if matches!(event, "done" | "error" | "cancelled") {
+        return true;
+    }
+    if event != "snapshot" {
+        return false;
+    }
+    matches!(
+        data.get("status")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+        "completed" | "failed" | "cancelled" | "interrupted"
+    )
+}
+
 fn replay_station_turn_events(
     app: &AppHandle,
     stream_id: &str,
@@ -680,7 +789,8 @@ fn replay_station_turn_events(
     conversation_id: &str,
     turn_id: &str,
     after_sequence: i64,
-) -> Result<(), String> {
+    cancel_flag: &AtomicBool,
+) -> Result<ReplayOutcome, String> {
     if conversation_id.trim().is_empty() || turn_id.trim().is_empty() {
         return Err("Station stream closed before turn identity was received".to_string());
     }
@@ -693,7 +803,7 @@ fn replay_station_turn_events(
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| format!("failed to create Station replay client: {error}"))?;
-    let mut response = client
+    let response = client
         .post(url)
         .header(CONTENT_TYPE, "application/json")
         .header(AUTHORIZATION, format!("Bearer {}", token.trim()))
@@ -711,29 +821,57 @@ fn replay_station_turn_events(
             response.status()
         ));
     }
-    let mut bytes = [0_u8; 4096];
-    let mut buffer = String::new();
+    let mut reader = BufReader::new(response);
+    let mut last_sequence = after_sequence;
+    let mut replay_turn_id = turn_id.to_string();
+    let mut replay_conversation_id = conversation_id.to_string();
     loop {
-        let read = response
-            .read(&mut bytes)
-            .map_err(|error| format!("failed to read Station turn replay: {error}"))?;
-        if read == 0 {
-            break;
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Ok(ReplayOutcome::Terminal);
         }
-        buffer.push_str(&String::from_utf8_lossy(&bytes[..read]));
-        while let Some(frame_end) = buffer.find("\n\n") {
-            let frame = buffer[..frame_end].to_string();
-            buffer = buffer[frame_end + 2..].to_string();
-            if let Some((event, data)) = parse_sse_frame(&frame) {
-                let finished = event == "catchup_done" || event == "error";
-                emit_turn_stream_event(app, stream_id, &event, data);
-                if finished {
-                    return Ok(());
-                }
-            }
+        let Some((event, data)) = read_sse_frame(&mut reader)
+            .map_err(|error| format!("failed to read Station turn replay: {error}"))?
+        else {
+            break;
+        };
+        update_turn_cursor(
+            &data,
+            &mut replay_turn_id,
+            &mut replay_conversation_id,
+            &mut last_sequence,
+        );
+        let terminal = replay_event_is_terminal(&event, &data);
+        let caught_up = event == "catchup_done";
+        emit_turn_stream_event(app, stream_id, &event, data);
+        if terminal {
+            return Ok(ReplayOutcome::Terminal);
+        }
+        if caught_up {
+            return Ok(ReplayOutcome::CaughtUp(last_sequence));
         }
     }
     Err("Station turn replay closed without catchup_done".to_string())
+}
+
+fn read_sse_frame<R: BufRead>(reader: &mut R) -> Result<Option<(String, Value)>, String> {
+    let mut frame = String::new();
+    loop {
+        let mut line = String::new();
+        let read = reader
+            .read_line(&mut line)
+            .map_err(|error| format!("failed to read SSE frame: {error}"))?;
+        if read == 0 {
+            return Ok(parse_sse_frame(&frame));
+        }
+        if line == "\n" || line == "\r\n" {
+            if let Some(parsed) = parse_sse_frame(&frame) {
+                return Ok(Some(parsed));
+            }
+            frame.clear();
+            continue;
+        }
+        frame.push_str(&line);
+    }
 }
 
 fn string_field(data: &Value, key: &str) -> Option<String> {
@@ -1712,6 +1850,30 @@ pub fn agent_tombstone_message(
     )
 }
 
+fn turn_queue_entry_json(entry: &agent::TurnQueueEntry) -> Value {
+    json!({
+        "queue_entry_id": entry.queue_entry_id,
+        "conversation_id": entry.conversation_id,
+        "agent_id": entry.agent_id,
+        "client_idempotency_key": entry.client_idempotency_key,
+        "status": agent::TurnQueueStatus::try_from(entry.status)
+            .unwrap_or(agent::TurnQueueStatus::Unspecified)
+            .as_str_name(),
+        "queue_sequence": entry.queue_sequence,
+        "queue_position": entry.queue_position,
+        "admitted_turn_id": entry.admitted_turn_id,
+        "user_input": entry.user_input,
+        "created_at": entry.created_at.as_ref().map(|value| json!({
+            "seconds": value.seconds,
+            "nanos": value.nanos,
+        })),
+        "updated_at": entry.updated_at.as_ref().map(|value| json!({
+            "seconds": value.seconds,
+            "nanos": value.nanos,
+        })),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1734,5 +1896,44 @@ mod tests {
         assert_eq!(event, "text");
         assert_eq!(data.get("type").and_then(Value::as_str), Some("text"));
         assert_eq!(data.get("text").and_then(Value::as_str), Some("hello"));
+    }
+
+    #[test]
+    fn replay_backoff_is_bounded() {
+        assert_eq!(AGENT_REPLAY_BACKOFF_MS, [500, 1_000, 2_000, 4_000, 8_000]);
+        assert_eq!(AGENT_REPLAY_BACKOFF_MS.iter().sum::<u64>(), 15_500);
+    }
+
+    #[test]
+    fn catchup_done_is_not_a_terminal_turn_event() {
+        assert!(!replay_event_is_terminal(
+            "catchup_done",
+            &json!({"type": "catchup_done", "seq": 4}),
+        ));
+        assert!(!replay_event_is_terminal(
+            "snapshot",
+            &json!({"status": "running", "seq": 4}),
+        ));
+        assert!(replay_event_is_terminal(
+            "snapshot",
+            &json!({"status": "completed", "seq": 9}),
+        ));
+        assert!(replay_event_is_terminal("done", &json!({"seq": 9}),));
+    }
+
+    #[test]
+    fn sse_reader_returns_each_frame_without_waiting_for_stream_eof() {
+        let payload = b"event: text\ndata: {\"text\":\"hello\",\"seq\":1}\n\nevent: catchup_done\ndata: {\"seq\":1}\n\n";
+        let mut reader = std::io::BufReader::new(&payload[..]);
+
+        let first = read_sse_frame(&mut reader)
+            .expect("first frame read should succeed")
+            .expect("first frame should exist");
+        assert_eq!(first.0, "text");
+
+        let second = read_sse_frame(&mut reader)
+            .expect("second frame read should succeed")
+            .expect("second frame should exist");
+        assert_eq!(second.0, "catchup_done");
     }
 }
