@@ -208,6 +208,61 @@ def _extract_machine_id(runtime_manifest: dict[str, Any]) -> str:
     return _socket.gethostname()
 
 
+def _authenticate_clients(
+    runtime_pair: FoundationRuntimePair,
+    profile_env: dict[str, str],
+) -> None:
+    """Login, navigate, and configure provider on both runtime clients.
+
+    This step is required before any harness probe that reads agent state.
+    The actor account is alice@p.t with CHAT_NATIVE_DEMO_PASSWORD from the
+    profile environment. Provider configuration uses PT_AGENT_PROVIDER_API_KEY
+    and PT_AGENT_DEFAULT_MODEL_ID.
+    """
+    account = "alice@p.t"
+    password = profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
+    provider_api_key = profile_env.get("PT_AGENT_PROVIDER_API_KEY", "")
+    model_id = profile_env.get("PT_AGENT_DEFAULT_MODEL_ID", "")
+
+    for client in (runtime_pair.native, runtime_pair.browser):
+        # Step 1: Login
+        login_result = client.harness(
+            "loginWithPassword",
+            {"account": account, "password": password},
+            timeout=60,
+        )
+        if not isinstance(login_result, Mapping) or not login_result.get("authenticated"):
+            raise ScenarioRunnerError(
+                f"{client.spec.runtime} login failed: {login_result}"
+            )
+
+        # Step 2: Navigate to agent surface
+        nav_result = client.harness("navigateToAgent", {}, timeout=60)
+        if not isinstance(nav_result, Mapping) or not nav_result.get("navigated"):
+            raise ScenarioRunnerError(
+                f"{client.spec.runtime} navigation failed: {nav_result}"
+            )
+
+        # Step 3: Configure provider (only if credentials available)
+        if provider_api_key and model_id:
+            provider_result = client.harness(
+                "ensureProvider",
+                {
+                    "providerId": "acceptance-provider",
+                    "apiKey": provider_api_key,
+                    "modelId": model_id,
+                },
+                timeout=60,
+            )
+            if not isinstance(provider_result, Mapping) or not provider_result.get(
+                "configured"
+            ):
+                raise ScenarioRunnerError(
+                    f"{client.spec.runtime} provider configuration failed: "
+                    f"{provider_result}"
+                )
+
+
 def run_scenario(*, dry_run: bool = False) -> Path:
     """Execute Phase 1: produce the Foundation candidate manifest.
 
@@ -239,6 +294,9 @@ def run_scenario(*, dry_run: bool = False) -> Path:
     )
     try:
         runtime_pair.start()
+
+        # --- Authenticate and configure both clients ---
+        _authenticate_clients(runtime_pair, profile_env)
 
         # --- Build adapters ---
 
