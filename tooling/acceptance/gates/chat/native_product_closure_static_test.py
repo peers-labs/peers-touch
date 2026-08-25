@@ -340,9 +340,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "self.native_adapter.post_mouse((MouseAction.MOVE,), point)"
         )
         self.assertIn(pointer_move, click_source)
+        self.assertIn("point = self.calibrate_native_point(", click_source)
         self.assertIn(
             '"Native click target changed after pointer positioning"',
             click_source,
+        )
+        self.assertLess(
+            click_source.index("point = self.calibrate_native_point("),
+            click_source.index(pointer_move),
         )
         self.assertLess(
             click_source.index(pointer_move),
