@@ -388,6 +388,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_source,
         )
         self.assertIn("let deliveredPoint = null;", self.source)
+        self.assertIn("const mutations = [];", self.source)
+        self.assertIn("reactionStates: inspectReactionStates()", self.source)
+        self.assertIn("probeSnapshot: probe?.snapshot?.() || null", self.source)
         self.assertIn(
             "const anchoredPoint = deliveredPoint || expectedPoint;",
             self.source,
