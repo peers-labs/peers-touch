@@ -1240,7 +1240,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertLess(tab_post, focus_wait)
         self.assertLess(focus_wait, changed_focus)
 
-    def test_reaction_retry_reacquires_transient_dom_action(self) -> None:
+    def test_reaction_connection_loss_proves_automatic_exact_retry(self) -> None:
         reaction_start = self.source.index("def prove_reaction(")
         reaction_end = self.source.index(
             "def prove_identity_station(",
@@ -1253,10 +1253,19 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             reaction_source,
         )
         self.assertIn(
+            '"reaction automatic retry convergence"',
+            reaction_source,
+        )
+        self.assertIn("len(command_hashes) < 2", reaction_source)
+        self.assertIn("len(set(command_hashes)) != 1", reaction_source)
+        self.assertIn(
+            'forwarded_paths.get("/messaging/command/submit")',
+            reaction_source,
+        )
+        self.assertNotIn(
             "f'[data-message-reaction-retry=\"{message_id}\"]'",
             reaction_source,
         )
-        self.assertNotIn("error_surface.find_element(", reaction_source)
 
     def test_attachment_ledger_binds_outcome_engine_and_dom_ids(self) -> None:
         self.assertIn(
