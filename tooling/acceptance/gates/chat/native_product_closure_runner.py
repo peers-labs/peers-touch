@@ -1189,7 +1189,6 @@ class NativeProductClosureGate(AcceptanceGate):
             const candidate = selector ? hit?.closest(selector) : element;
             const rect = candidate?.getBoundingClientRect();
             return {
-              element: candidate || null,
               connected: Boolean(candidate?.isConnected),
               disabled: Boolean(candidate?.disabled),
               hit: Boolean(
@@ -1214,19 +1213,16 @@ class NativeProductClosureGate(AcceptanceGate):
             float(target["x"]),
             float(target["y"]),
         )
-        current_element = pointer_target.pop("element", None)
         if (
             not pointer_target.get("connected")
             or pointer_target.get("disabled")
             or not pointer_target.get("hit")
-            or current_element is None
         ):
             raise GateError(
                 "Native click target changed after pointer positioning"
                 ": "
                 f"{json.dumps(pointer_target, sort_keys=True)}"
             )
-        element = current_element
 
         probe_id = self.install_native_input_probe(
             client,
