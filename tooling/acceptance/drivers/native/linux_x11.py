@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
-import time
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +23,7 @@ _KEY_SYMBOLS = {
     NativeKey.A: "a",
     NativeKey.G: "g",
     NativeKey.L: "l",
+    NativeKey.SLASH: "slash",
     NativeKey.V: "v",
     NativeKey.DELETE: "Delete",
     NativeKey.ENTER: "Return",
@@ -149,11 +149,7 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             )
             for modifier_code in modifier_codes:
                 xtest.fake_input(display, X.KeyPress, modifier_code)
-            display.sync()
-            time.sleep(0.01)
             xtest.fake_input(display, X.KeyPress, key_code)
-            display.sync()
-            time.sleep(0.01)
             xtest.fake_input(display, X.KeyRelease, key_code)
             for modifier_code in reversed(modifier_codes):
                 xtest.fake_input(display, X.KeyRelease, modifier_code)
@@ -168,10 +164,7 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             display.close()
 
     def reveal_file_chooser_location(self) -> None:
-        self.post_key(
-            NativeKey.L,
-            modifiers=(NativeModifier.PRIMARY,),
-        )
+        self.post_key(NativeKey.SLASH)
 
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         process_id = self._validated_process_id(process_id)
