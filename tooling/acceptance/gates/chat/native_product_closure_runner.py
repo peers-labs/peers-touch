@@ -1284,6 +1284,30 @@ class NativeProductClosureGate(AcceptanceGate):
                 const y = arguments[3];
                 const hit = document.elementFromPoint(x, y);
                 const candidate = selector ? hit?.closest(selector) : element;
+                const selectorMatches = selector
+                  ? Array.from(document.querySelectorAll(selector)).map((match) => {
+                      const matchRect = match.getBoundingClientRect();
+                      return {
+                        connected: match.isConnected,
+                        disabled: Boolean(match.disabled),
+                        containsPoint: (
+                          x >= matchRect.left
+                          && x <= matchRect.right
+                          && y >= matchRect.top
+                          && y <= matchRect.bottom
+                        ),
+                        ownsHit: Boolean(
+                          hit === match || match.contains(hit)
+                        ),
+                        rect: {
+                          left: matchRect.left,
+                          top: matchRect.top,
+                          width: matchRect.width,
+                          height: matchRect.height,
+                        },
+                      };
+                    })
+                  : [];
                 return {
                   connected: Boolean(candidate?.isConnected),
                   disabled: Boolean(candidate?.disabled),
@@ -1311,6 +1335,7 @@ class NativeProductClosureGate(AcceptanceGate):
                   screenY,
                   viewportWidth: innerWidth,
                   viewportHeight: innerHeight,
+                  selectorMatches,
                 };
                 """,
                 element,

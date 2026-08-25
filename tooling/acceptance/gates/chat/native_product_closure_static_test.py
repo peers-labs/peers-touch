@@ -336,6 +336,12 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"Native click target changed before event delivery"',
             click_source,
         )
+        self.assertEqual(
+            click_source.count("const selectorMatches = selector"),
+            2,
+        )
+        self.assertIn("containsPoint:", click_source)
+        self.assertIn("ownsHit:", click_source)
         pointer_move = (
             "self.native_adapter.post_mouse((MouseAction.MOVE,), point)"
         )
