@@ -240,7 +240,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.assertGreaterEqual(len(node.args), 2)
             self.assertIsInstance(node.args[1], ast.Constant)
             methods.append(str(node.args[1].value))
-        self.assertEqual(sorted(methods), ["getRealtimeDevice", "loginWithPassword"])
+        self.assertEqual(
+            sorted(methods),
+            ["getRealtimeDevice", "hydrateActiveActor", "loginWithPassword"],
+        )
         self.assertIn(
             "self.launch_actor(actor, restore_session=True)",
             self.source,
