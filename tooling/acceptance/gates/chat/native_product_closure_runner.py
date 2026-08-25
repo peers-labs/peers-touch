@@ -3162,9 +3162,55 @@ class NativeProductClosureGate(AcceptanceGate):
             and preview_snapshot.get("complete") is True
             and int(preview_snapshot.get("naturalWidth") or 0) > 0
         ):
+            resource_snapshot = self.clients["alice"].execute_script(
+                """
+                const url = arguments[0];
+                const request = new XMLHttpRequest();
+                try {
+                  request.open('GET', url, false);
+                  request.send();
+                  return {
+                    ok: request.status >= 200 && request.status < 300,
+                    status: request.status,
+                    contentType: request.getResponseHeader('content-type') || '',
+                    byteLength: request.responseText.length,
+                  };
+                } catch (error) {
+                  return {
+                    ok: false,
+                    errorName: error?.name || '',
+                    errorMessage: error?.message || String(error),
+                  };
+                }
+                """,
+                str(preview_snapshot.get("currentSrc") or ""),
+            )
+            # #region debug-point M,N:composer-image-resource
+            self.clients["alice"].execute_script(
+                """
+                fetch('http://127.0.0.1:7780/event', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    sessionId: 'attachment-send-draft',
+                    runId: 'pre-fix-linux',
+                    hypothesisId: 'M,N',
+                    location: 'native_product_closure_runner:prove_attachments',
+                    msg: '[DEBUG] Native Gate fetched failed Composer image resource',
+                    data: {
+                      image: arguments[0],
+                      resource: arguments[1],
+                    },
+                    ts: Date.now(),
+                  }),
+                }).catch(() => {});
+                """,
+                preview_snapshot,
+                resource_snapshot,
+            )
+            # #endregion
             raise GateError(
                 "Composer image preview did not load: "
-                f"{json.dumps(preview_snapshot, sort_keys=True)}"
+                f"{json.dumps({'image': preview_snapshot, 'resource': resource_snapshot}, sort_keys=True)}"
             )
         composer = self.clients["alice"].find_element(
             f'[data-chat-composer="{group_id}"]',

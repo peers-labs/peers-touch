@@ -23,9 +23,11 @@
 | G | The lifecycle deletes a completed upload source before the pending message is committed, leaving the eager sender preview without either a valid local source or canonical projection. | High | Low | Cleanup reports the attachment before `open_attachment_once`; pending lookup is missing/incomplete and canonical projection is absent. | Rejected in the latest run; cleanup first listed the IDs after canonical projection became available |
 | H | The sender commit omits canonical attachment projections even after the pending row is removed. | Medium | Low | `open_attachment_once` reports no pending source and no canonical projection after command commit. | Rejected in the latest run; canonical projection was available |
 | I | The attachment row and projection exist, but image decoding or asset URL conversion fails. | Low | Low | Engine returns a verified path while the DOM image remains unloaded or errors. | Rejected in the latest run; the sender and receiver image rows passed |
-| J | The selected Composer image URL is complete with zero intrinsic width because WebKitGTK rejects the scoped `asset://` resource. | Medium | Low | The preview snapshot reports `complete=true`, `naturalWidth=0`, and a populated asset URL. | Rejected; `complete=true`, `naturalWidth=1` |
+| J | The selected Composer image URL is complete with zero intrinsic width because WebKitGTK rejects the scoped `asset://` resource. | Medium | Low | The preview snapshot reports `complete=true`, `naturalWidth=0`, and a populated asset URL. | Confirmed as intermittent: one run loaded at 1x1, the next completed at 0x0 |
 | K | The Gate samples the Composer image before WebKitGTK finishes decoding it. | High | Low | The preview snapshot reports `complete=false` immediately after the ready draft appears. | Rejected in the latest run; `complete=true` |
 | L | The picked attachment loses its preview URL or image classification before render. | Low | Low | The draft is ready but `src`, `currentSrc`, or `data-chat-attachment-preview` is empty or malformed. | Rejected; all URL fields contained the same scoped asset URL |
+| M | Tauri's asset scope does not retain permission for the selected file, or the staged file is missing when WebKit requests it. | High | Low | Picker instrumentation reports `scopeAllowed=false`, `isFile=false`, or a size other than 70 bytes; failed-resource fetch returns 403/404. | Pending |
+| N | The asset protocol returns the expected PNG bytes but WebKitGTK intermittently rejects image decoding. | Medium | Low | Picker reports an allowed 70-byte file and fetch returns HTTP success with PNG signature while `<img>` remains complete with zero intrinsic size. | Pending |
 
 ## Log Evidence
 - Pre-instrumentation Native run `20260823T170346937849Z-df8e52a09b8fcec409c868892409bcb6`:
@@ -151,3 +153,12 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
   retaining four attachment-ledger call sites. The repair restores the
   streaming helper and locks it with a known SHA-256 test vector. Runtime
   cleanup passed.
+- Exact-source Linux run
+  `20260825T182841519698Z-de1c8df2c6608b2a2a5add62e7254585`
+  at `e57be2a83e1a030d32d882921811029fa80cca2f` reproduced the Composer
+  preview failure with a decisive state: the draft was `ready`, all URL fields
+  contained the same scoped `asset://` URL, `complete=true`, and both intrinsic
+  dimensions were zero. This confirms J and rejects K/L for the failing run.
+  The next diagnostic run distinguishes M from N by recording the Rust scope
+  and staged-file state, then fetching the failed resource after the unchanged
+  image assertion has already failed. Runtime cleanup passed.
