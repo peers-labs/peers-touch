@@ -53,10 +53,54 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
 
     def test_file_chooser_location_uses_gtk_location_shortcut(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
-        with patch.object(adapter, "post_key") as post_key:
+        with (
+            patch.object(
+                adapter,
+                "_focused_accessible",
+                return_value={"kind": "list", "role": "list"},
+            ),
+            patch.object(adapter, "post_key") as post_key,
+        ):
             adapter.reveal_file_chooser_location()
 
         post_key.assert_called_once_with(NativeKey.SLASH)
+
+    def test_file_chooser_location_moves_focus_from_action_to_list(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        with (
+            patch.object(
+                adapter,
+                "_focused_accessible",
+                side_effect=(
+                    {
+                        "kind": "unknown",
+                        "role": "push button",
+                        "title": "Cancel",
+                    },
+                    {
+                        "kind": "unknown",
+                        "role": "push button",
+                        "title": "OK",
+                    },
+                    {
+                        "kind": "unknown",
+                        "role": "list item",
+                        "title": "Recent files",
+                    },
+                ),
+            ),
+            patch.object(adapter, "post_key") as post_key,
+        ):
+            adapter.reveal_file_chooser_location()
+
+        self.assertEqual(
+            post_key.call_args_list,
+            [
+                call(NativeKey.TAB),
+                call(NativeKey.TAB),
+                call(NativeKey.SLASH),
+            ],
+        )
 
     def test_key_chord_preserves_native_event_order(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")

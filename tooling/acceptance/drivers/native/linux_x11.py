@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,11 @@ _CONTROL_KINDS = {
     "list": "list",
     "file chooser": "application-dialog",
 }
+_FILE_CHOOSER_NAVIGATION_ROLES = frozenset(
+    {"list", "list item", "scroll pane"}
+)
+_FILE_CHOOSER_FOCUS_STEPS = 8
+_FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS = 1.0
 
 
 class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
@@ -164,7 +170,34 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             display.close()
 
     def reveal_file_chooser_location(self) -> None:
-        self.post_key(NativeKey.SLASH)
+        focused = self._focused_accessible()
+        for _ in range(_FILE_CHOOSER_FOCUS_STEPS):
+            if focused.get("kind") == "text-field":
+                return
+            if focused.get("role") in _FILE_CHOOSER_NAVIGATION_ROLES:
+                self.post_key(NativeKey.SLASH)
+                return
+
+            previous = (
+                str(focused.get("role") or ""),
+                str(focused.get("title") or ""),
+            )
+            self.post_key(NativeKey.TAB)
+            deadline = time.monotonic() + _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS
+            while time.monotonic() < deadline:
+                focused = self._focused_accessible()
+                current = (
+                    str(focused.get("role") or ""),
+                    str(focused.get("title") or ""),
+                )
+                if current != previous:
+                    break
+                time.sleep(0.02)
+
+        raise DriverError(
+            "Linux Native file chooser did not expose a navigation control: "
+            f"{focused}"
+        )
 
     def focused_control(self, process_id: int) -> NativeControlSnapshot:
         process_id = self._validated_process_id(process_id)
