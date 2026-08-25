@@ -562,8 +562,25 @@ class NativeProductClosureGate(AcceptanceGate):
 
         self.native_adapter.reveal_file_chooser_location()
 
+        observed_location_states: set[str] = set()
+
         def go_to_field_ready(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
+            # #region debug-point F,G:file-chooser-location
+            state = json.dumps(control.to_dict(), sort_keys=True)
+            if state not in observed_location_states:
+                observed_location_states.add(state)
+                report_native_mousedown_debug(
+                    "F,G",
+                    "native_product_closure_runner.py:choose_native_file:location",
+                    "Native file chooser location state",
+                    {
+                        "actor": actor,
+                        "processId": client.process_id,
+                        "control": control.to_dict(),
+                    },
+                )
+            # #endregion
             return control if control.kind == "text-field" else None
         WebDriverWait(
             client.driver,
