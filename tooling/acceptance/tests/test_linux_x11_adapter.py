@@ -135,12 +135,14 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
                 role: str,
                 name: str = "",
                 focused: bool = False,
+                text_value: str | None = None,
                 children: tuple["Node", ...] = (),
             ) -> None:
                 self.process_id = process_id
                 self.role = role
                 self.name = name
                 self.focused = focused
+                self.text_value = text_value
                 self.children = children
 
             @property
@@ -160,7 +162,16 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
                 return State(self.focused)
 
             def queryText(self) -> object:
-                raise RuntimeError("not text")
+                if self.text_value is None:
+                    raise RuntimeError("not text")
+                return types.SimpleNamespace(
+                    characterCount=len(self.text_value),
+                    getText=lambda start, end: (
+                        self.text_value
+                        if (start, end) == (0, len(self.text_value))
+                        else ""
+                    ),
+                )
 
         desktop_button = Node(
             process_id=42,
@@ -170,8 +181,9 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         )
         chooser_list = Node(
             process_id=84,
-            role="list",
+            role="text",
             focused=True,
+            text_value="/tmp/chooser.png",
         )
         desktop = Node(
             process_id=0,
@@ -201,10 +213,10 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         self.assertEqual(
             focused,
             {
-                "kind": "list",
+                "kind": "text-field",
                 "title": "",
-                "value": "",
-                "role": "list",
+                "value": "/tmp/chooser.png",
+                "role": "text",
                 "subrole": "",
             },
         )
