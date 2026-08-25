@@ -90,7 +90,7 @@ export function installDeferredAppRuntimeProjections(): Promise<void> {
       method: 'POST',
       body: JSON.stringify({
         sessionId: 'login-runtime-bootstrap',
-        runId: 'pre-fix',
+        runId: 'post-fix',
         hypothesisId: 'A,B,D',
         location: 'appRuntime:deferred:start',
         msg: '[DEBUG] Deferred runtime pipeline started',
@@ -106,7 +106,7 @@ export function installDeferredAppRuntimeProjections(): Promise<void> {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'login-runtime-bootstrap',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'A,B',
           location: 'appRuntime:deferred:runtime-start',
           msg: '[DEBUG] Deferred runtime bootstrap started',
@@ -123,7 +123,7 @@ export function installDeferredAppRuntimeProjections(): Promise<void> {
         method: 'POST',
         body: JSON.stringify({
           sessionId: 'login-runtime-bootstrap',
-          runId: 'pre-fix',
+          runId: 'post-fix',
           hypothesisId: 'A,B',
           location: 'appRuntime:deferred:runtime-end',
           msg: '[DEBUG] Deferred runtime bootstrap completed',
@@ -140,7 +140,7 @@ export function installDeferredAppRuntimeProjections(): Promise<void> {
       method: 'POST',
       body: JSON.stringify({
         sessionId: 'login-runtime-bootstrap',
-        runId: 'pre-fix',
+        runId: 'post-fix',
         hypothesisId: 'A,C,D',
         location: 'appRuntime:deferred:end',
         msg: '[DEBUG] Deferred runtime pipeline completed',
