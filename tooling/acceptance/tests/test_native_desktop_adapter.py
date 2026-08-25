@@ -95,6 +95,7 @@ class SyntheticLinuxRuntimeCell:
         self.validations: list[tuple[str, str]] = []
         self.exposed_endpoints: list[tuple[str, str]] = []
         self.released_endpoints: list[str] = []
+        self.staged_files: list[tuple[str, Path]] = []
 
     def validate_binding(self, gate_id: str, source_commit: str) -> None:
         self.validations.append((gate_id, source_commit))
@@ -123,6 +124,10 @@ class SyntheticLinuxRuntimeCell:
             "sha256": "a" * 64,
             "sourceCommit": "abc123",
         }
+
+    def stage_actor_file(self, actor: str, source: Path) -> str:
+        self.staged_files.append((actor, source))
+        return f"/workspace/run/actors/{actor}/fixtures/{source.name}"
 
     def expose_orchestrator_endpoint(
         self,
@@ -216,6 +221,15 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
             cell.validations,
             [("chat-native-product-closure-e2e", "abc123")],
         )
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "fixture.png"
+            source.write_bytes(b"fixture")
+            staged = binding.stage_native_file("alice", source)
+        self.assertEqual(
+            staged,
+            Path("/workspace/run/actors/alice/fixtures/fixture.png"),
+        )
+        self.assertEqual(cell.staged_files, [("alice", source)])
         self.assertFalse(
             binding.request_cooperative_activation(session, (session,))
         )
@@ -364,6 +378,9 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
             endpoint = binding.expose_orchestrator_endpoint(
                 "http://127.0.0.1:51219"
             )
+            fixture = Path(tmp) / "fixture.png"
+            fixture.write_bytes(b"fixture")
+            staged = binding.stage_native_file("alice", fixture)
             binary_identity = binding.binary_identity()
 
         self.assertEqual(binding.cell_id, "desktop-macos-native")
@@ -371,6 +388,7 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
         self.assertEqual(session.gateway_port, 3330)
         self.assertEqual(endpoint.url, "http://127.0.0.1:51219")
         self.assertEqual(endpoint.lease_id, "local-direct")
+        self.assertEqual(staged, fixture.resolve())
         self.assertEqual(
             binary_identity["sha256"],
             "a37cdd0591588a0016117ba6b84e7182977a007c332bccbc55ba656e74e6f45a",

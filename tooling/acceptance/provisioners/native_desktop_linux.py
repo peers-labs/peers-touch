@@ -54,6 +54,7 @@ _CARGO_INDEX = re.compile(
     r"^(?:sparse\+)?https://[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$"
 )
 _ENDPOINT_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+_FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _DEFAULT_PROFILE_ROOT = REPO_ROOT / ".local" / "acceptance" / "runtime-cells"
 _DEFAULT_DEPLOY_ROOT = REPO_ROOT / ".local" / "deploy" / "envs"
 _DEFAULT_RUNTIME_ROOT = ".cache/peers-touch/acceptance-cells"
@@ -438,6 +439,14 @@ def _digest(value: str, name: str) -> str:
     if matched is None:
         raise ProvisioningError(f"{name} is not a SHA-256 digest")
     return matched.group(1)
+
+
+def _file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _json_output(completed: subprocess.CompletedProcess[str], operation: str) -> dict[str, Any]:
@@ -1157,6 +1166,112 @@ class NativeDesktopLinuxProvisioner:
             ),
             "sourceCommit": str(source.get("commit") or ""),
         }
+
+    def stage_actor_file(
+        self,
+        actor: str,
+        source: Path,
+    ) -> str:
+        normalized_actor = actor.strip()
+        if not _ENDPOINT_ID.fullmatch(normalized_actor):
+            raise ProvisioningError("Linux runtime-cell actor id is invalid")
+        runtime = self._actors.get(normalized_actor)
+        if runtime is None or runtime.released:
+            raise ProvisioningError(
+                f"Linux runtime-cell actor {normalized_actor!r} is not active"
+            )
+
+        local_source = source.expanduser().resolve()
+        if not local_source.is_file():
+            raise ProvisioningError(
+                f"Linux runtime-cell fixture is missing: {local_source}"
+            )
+        state = self._require_state()
+        content_digest = _file_digest(local_source)
+        filename = local_source.name
+        if not _FILE_NAME.fullmatch(filename):
+            raise ProvisioningError(
+                "Linux runtime-cell fixture filename is invalid"
+            )
+        remote_run_root = Path(str(state["remoteControl"])).parent
+        host_stage = (
+            remote_run_root
+            / "staging"
+            / normalized_actor
+            / content_digest
+            / filename
+        )
+        container_stage = Path(
+            f"/workspace/run/actors/{normalized_actor}/fixtures/"
+            f"{content_digest}/{filename}"
+        )
+        container_name = str(state["containerName"])
+
+        self.transport.run_argv(
+            ("mkdir", "-p", str(host_stage.parent)),
+            timeout=15,
+            check=True,
+        )
+        self.transport.copy_file(local_source, host_stage, timeout=60)
+        try:
+            self.transport.run_argv(
+                (
+                    "docker",
+                    "exec",
+                    container_name,
+                    "mkdir",
+                    "-p",
+                    str(container_stage.parent),
+                ),
+                timeout=15,
+                check=True,
+            )
+            self.transport.run_argv(
+                (
+                    "docker",
+                    "cp",
+                    str(host_stage),
+                    f"{container_name}:{container_stage}",
+                ),
+                timeout=60,
+                check=True,
+            )
+            observed = self.transport.run_argv(
+                (
+                    "docker",
+                    "exec",
+                    container_name,
+                    "sha256sum",
+                    str(container_stage),
+                ),
+                timeout=15,
+                check=True,
+            ).stdout.split(maxsplit=1)[0]
+            if observed != content_digest:
+                raise ProvisioningError(
+                    "Linux runtime-cell staged fixture digest mismatch"
+                )
+        except BaseException:
+            self.transport.run_argv(
+                (
+                    "docker",
+                    "exec",
+                    container_name,
+                    "rm",
+                    "-f",
+                    str(container_stage),
+                ),
+                timeout=15,
+                check=False,
+            )
+            raise
+        finally:
+            self.transport.run_argv(
+                ("rm", "-f", str(host_stage)),
+                timeout=15,
+                check=False,
+            )
+        return str(container_stage)
 
     def execute_adapter(
         self,

@@ -18,6 +18,7 @@ from tooling.acceptance.core.errors import ProvisioningError
 
 _HOST_PATTERN = re.compile(r"^[A-Za-z0-9._:%-]+$")
 _USER_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+_REMOTE_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._/-]+$")
 
 
 def _validate_atom(
@@ -180,6 +181,69 @@ class SshTransport:
                 f"{detail[-4000:]}"
             )
         return completed
+
+    def copy_file(
+        self,
+        source: Path,
+        remote_path: Path,
+        *,
+        timeout: float = 30,
+    ) -> None:
+        local_source = source.expanduser().resolve()
+        remote_destination = str(remote_path)
+        if not local_source.is_file():
+            raise ProvisioningError(
+                f"SSH copy source is missing or not a file: {local_source}"
+            )
+        if (
+            not remote_path.is_absolute()
+            or not _REMOTE_PATH_PATTERN.fullmatch(remote_destination)
+        ):
+            raise ProvisioningError("SSH copy destination is invalid")
+        if timeout <= 0:
+            raise ProvisioningError("SSH copy timeout must be positive")
+
+        command = [
+            "scp",
+            "-q",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            f"ConnectTimeout={self.connect_timeout}",
+            "-o",
+            "ConnectionAttempts=1",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-P",
+            str(self.target.port),
+        ]
+        if self.target.known_hosts_file:
+            command.extend(
+                [
+                    "-o",
+                    "UserKnownHostsFile="
+                    + str(Path(self.target.known_hosts_file).expanduser()),
+                ]
+            )
+        command.extend(
+            (
+                str(local_source),
+                f"{self.target.destination}:{remote_destination}",
+            )
+        )
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise ProvisioningError(
+                "SSH file copy failed with exit "
+                f"{completed.returncode}: {detail[-4000:]}"
+            )
 
     def start_local_forward(
         self,

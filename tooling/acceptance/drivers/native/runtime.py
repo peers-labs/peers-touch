@@ -64,6 +64,13 @@ class LinuxRuntimeCell(Protocol):
     def binary_identity(self) -> dict[str, str]:
         ...
 
+    def stage_actor_file(
+        self,
+        actor: str,
+        source: Path,
+    ) -> str:
+        ...
+
     def execute_adapter(
         self,
         operation: str,
@@ -105,6 +112,14 @@ class NativeDesktopRuntimeBinding(ABC):
 
     @abstractmethod
     def expose_orchestrator_endpoint(self, url: str) -> RuntimeEndpoint:
+        ...
+
+    @abstractmethod
+    def stage_native_file(
+        self,
+        actor: str,
+        source: Path,
+    ) -> Path:
         ...
 
     @abstractmethod
@@ -351,6 +366,19 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
         self._endpoint_ids.append(endpoint_id)
         return RuntimeEndpoint(url=exposed_url, lease_id=endpoint_id)
 
+    def stage_native_file(
+        self,
+        actor: str,
+        source: Path,
+    ) -> Path:
+        staged = self._cell.stage_actor_file(actor, source)
+        path = Path(staged)
+        if not path.is_absolute():
+            raise DriverError(
+                "Linux runtime-cell returned a relative staged file path"
+            )
+        return path
+
     def request_cooperative_activation(
         self,
         target: TauriSession,
@@ -450,6 +478,19 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
 
     def expose_orchestrator_endpoint(self, url: str) -> RuntimeEndpoint:
         return RuntimeEndpoint(url=url, lease_id="local-direct")
+
+    def stage_native_file(
+        self,
+        actor: str,
+        source: Path,
+    ) -> Path:
+        del actor
+        resolved = source.expanduser().resolve()
+        if not resolved.is_file():
+            raise DriverError(
+                f"Native file selection source is missing: {resolved}"
+            )
+        return resolved
 
     def request_cooperative_activation(
         self,
