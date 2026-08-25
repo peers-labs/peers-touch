@@ -1,8 +1,8 @@
 # Messaging Platform — Benchmark Disposition
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-08 | **Updated**: 2026-08-08
+> **Version**: v1.1
+> **Created**: 2026-08-08 | **Updated**: 2026-08-17
 > **Owner**: Messaging Platform Team
 
 ---
@@ -15,8 +15,11 @@
 - `simplexmq@27a37387`
 - `signalapp/Signal-Server` 官方 message queue / WebSocket source
 - Matrix Olm/Megolm 与 sync contract
+- 微信公开撤回行为：普通消息限时撤回、撤回留痕
+- WhatsApp 官方 `Delete for everyone` 行为与失败边界
 
 外部项目提供行为证据，不成为 Peers-Touch 真源。
+公开产品行为只能证明用户可观察语义，不能反推其内部 transaction 或 storage 实现。
 
 ## 2. Disposition Ledger
 
@@ -38,6 +41,8 @@
 | MP-B14 | Signal client success response 后删除 queue message | Signal WebSocketConnection | adopt | ACK 等于 durable device consumption |
 | MP-B15 | Matrix sync cursor 负责可靠恢复，push 负责延迟 | Matrix sync contract | adopt | SSE/push 只 wake；resume 是唯一消费路径 |
 | MP-B16 | Matrix per-device encryption | Matrix/Element | adapt | Direct endpoint sessions + MLS device leaves |
+| MP-B17 | 微信、WhatsApp 对已发送消息提供留痕撤回/全员删除，而不是承诺撤销结果未知的 in-flight submit | 微信公开撤回说明；WhatsApp 官方 Help Center | adopt | 已 accepted 消息使用 Authority retract event；不提供 post-dispatch reliable cancel |
+| MP-B18 | 网络提交前的 composer draft 可本地放弃；提交结果未知时保留 pending/retrying | 主流 IM 可观察发送/失败/重试交互 | adapt | 仅未进入 durable outbox 的本地 draft 可 cancel；outbox admission 后 exact command 只能 retry 或收敛到 accepted/failed |
 
 ## 3. Explicit Rejections
 
@@ -49,6 +54,8 @@
 - 复制 live ratchet state 实现多设备。
 - Megolm 或 Sender Keys 替代 RFC 9420 MLS。
 - Signal/Matrix 服务部署和账号模型的机械复制。
+- 为结果未知的已提交 command 新增跨层 cancellation tombstone；该能力超出当前行业
+  对标与产品范围。
 
 ## 4. Required Learnings
 
@@ -60,3 +67,5 @@ Benchmark 调研最终约束以下产品和架构要求：
 4. 用户可见消息必须来自本地 durable projection。
 5. 群聊可扩展性必须由 Station fan-out 与 MLS 解决，而非客户端完全连接图。
 6. 多设备必须显式建模，不能把“同一用户”当成一个 crypto endpoint。
+7. “撤回”是 accepted fact 之后的新 Authority event，不是回滚或抹除原始发送。
+8. transport timeout 保持 pending/retrying；只有网络提交前的本地 draft 可以取消。

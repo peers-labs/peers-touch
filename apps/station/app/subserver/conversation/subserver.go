@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
@@ -51,6 +52,7 @@ type subServer struct {
 	localStationID       string
 	fedKpFetcher         *FederatedKeyPackageFetcher
 	gateEval             *ConversationGateEvaluator
+	relQuerier           social_gate.RelationshipQuerier
 	db                   *gorm.DB
 }
 
@@ -83,10 +85,11 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		&conversationCommandReceiptModel{},
 		&conversationCommandProposalModel{},
 		&mlsLeaveIntentModel{},
-		&readCursorModel{},
 	); err != nil {
 		return err
 	}
+
+	repairMemberIndex(rds)
 
 	s.localStationID = conversationLocalAudience()
 	s.db = rds
@@ -164,6 +167,7 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	relAdapter := NewConversationRelationshipAdapter(repo, rds)
 	roleAdapter := NewConversationGroupRoleAdapter(repo)
 	s.gateEval = NewConversationGateEvaluator(relAdapter, roleAdapter, nil)
+	s.relQuerier = relAdapter
 
 	return nil
 }
@@ -172,6 +176,7 @@ func (s *subServer) Start(ctx context.Context, opts ...option.Option) error {
 	workerCtx, cancel := context.WithCancel(context.Background())
 	s.proposalWorkerCancel = cancel
 	go s.runCommandProposalWorker(workerCtx)
+	registerSignalAuthorizer(s.relQuerier)
 	s.status = server.StatusRunning
 	return nil
 }
@@ -181,6 +186,7 @@ func (s *subServer) Stop(ctx context.Context) error {
 		s.proposalWorkerCancel()
 		s.proposalWorkerCancel = nil
 	}
+	registerSignalAuthorizer(nil)
 	s.status = server.StatusStopped
 	return nil
 }
@@ -335,10 +341,6 @@ func (s *subServer) Handlers() []server.Handler {
 			s.handleListThreadMessages, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-thread-counts", "/conversation/thread/counts", server.POST,
 			s.handleGetThreadCounts, logID, s.jwtWrapper),
-		server.NewTypedHandler("conv-read-cursor", "/conversation/read-cursor", server.POST,
-			s.handleSetReadCursor, logID, s.jwtWrapper),
-		server.NewTypedHandler("conv-unread", "/conversation/unread", server.GET,
-			s.handleGetUnread, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-member-settings-get", "/conversation/member/settings", server.GET,
 			s.handleGetMemberSettings, logID, s.jwtWrapper),
 		server.NewTypedHandler("conv-member-settings-put", "/conversation/member/settings", server.PUT,
@@ -521,6 +523,7 @@ func (s *subServer) handleSubmitReceipt(ctx context.Context, req *chat.SubmitCon
 		Ptid:           subject.ID,
 		DeviceId:       req.DeviceId,
 		ReceiptType:    req.ReceiptType,
+		Ts:             timestamppb.Now(),
 	}
 
 	if err := s.service.SubmitReceipt(ctx, receipt); err != nil {

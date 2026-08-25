@@ -34,8 +34,6 @@ export interface ConversationServiceContract {
   listMessages(conversationId: string, afterSeq?: number, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
   listThreadMessages(conversationId: string, rootId: string, afterSeq?: number, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
   threadCounts(conversationId: string, rootIds: string[]): Promise<{ counts: ThreadCountResult[] }>
-  setReadCursor(conversationId: string, lastReadSeq: number): Promise<void>
-  getUnread(conversationId: string): Promise<number>
   getMemberSettings(conversationId: string): Promise<MemberSettingsResult>
   updateMemberSettings(conversationId: string, settings: Partial<MemberSettingsResult>): Promise<void>
   syncFromStation(conversationId: string, limit?: number): Promise<{ events: CommittedConversationEvent[]; hasMore: boolean }>
@@ -284,6 +282,21 @@ export interface MessagingProjection {
   attachments: MessagingAttachmentProjection[]
   state: string
   timestampUnixMs: number
+  replyToMessageId?: string
+  threadRootMessageId?: string
+  editedText?: string
+  editedAtUnixMs?: number
+  retracted: boolean
+  reactions: MessagingReactionProjection[]
+  pinnedByPtid?: string
+  pinnedAtUnixMs?: number
+  readByPtids: string[]
+}
+
+export interface MessagingReactionProjection {
+  actorPtid: string
+  reaction: string
+  createdAtUnixMs: number
 }
 
 export interface MessagingAttachmentProjection {
@@ -336,6 +349,10 @@ export interface MessagingServiceContract {
     conversationKind: 'direct' | 'group',
     plaintext: string,
     attachments?: readonly MessagingLocalAttachmentIntent[],
+    relation?: {
+      replyToMessageId?: string
+      threadRootMessageId?: string
+    },
   ): Promise<{
     commandId?: string
     messageId: string

@@ -63,12 +63,6 @@ type Service interface {
 
 	// GetThreadCounts returns reply count summaries for multiple thread roots.
 	GetThreadCounts(ctx context.Context, conversationID string, rootIDs []string) (map[string]ThreadSummary, error)
-
-	// SetReadCursor updates the read position for an actor.
-	SetReadCursor(ctx context.Context, conversationID, ptid string, seq int64) error
-
-	// GetUnreadCount returns unread message count for an actor.
-	GetUnreadCount(ctx context.Context, conversationID, ptid string) (int64, error)
 }
 
 // Repository is the persistence contract for the conversation domain.
@@ -143,15 +137,6 @@ type Repository interface {
 
 	// CountThreadReplies returns reply counts for multiple thread roots in one query.
 	CountThreadReplies(ctx context.Context, conversationID string, rootIDs []string) (map[string]ThreadSummary, error)
-
-	// GetReadCursor returns the last-read event seq for an actor in a conversation.
-	GetReadCursor(ctx context.Context, conversationID, ptid string) (int64, error)
-
-	// SetReadCursor upserts the read position for an actor.
-	SetReadCursor(ctx context.Context, conversationID, ptid string, seq int64) error
-
-	// CountUnread returns the number of message events after the actor's read cursor.
-	CountUnread(ctx context.Context, conversationID, ptid string) (int64, error)
 }
 
 // TransitionRepositories are transaction-scoped adapters over one Station DB

@@ -26,6 +26,7 @@ import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { log } from '../utils/logger';
 import { SettingsContainer, SettingsSection, SettingsItemCard, SettingsRow } from '../components/settings/SettingsLayout';
 import { FederationTab } from '../components/settings/FederationTab';
+import { RecoverySettings } from '../components/settings/RecoverySettings';
 import { ModelProviderSelect } from '../components/ModelProviderSelect';
 import { usePrefetch } from '../kernel/usePrefetch';
 import {
@@ -105,6 +106,13 @@ function useSettingsSections(): SectionDef[] {
 
     const localSections: SectionDef[] = [
       {
+        key: 'security',
+        label: t('settings.tab.security', { defaultValue: 'Security' }),
+        icon: ShieldCheck,
+        order: 15,
+        render: () => <RecoverySettings />,
+      },
+      {
         key: 'federation',
         label: t('settings.tab.federation', { defaultValue: 'Federation' }),
         icon: Network,
@@ -169,7 +177,7 @@ function useTabGroups(): TabGroupDef[] {
         key: 'general',
         label: t('settings.group.general'),
         icon: Settings,
-        sectionKeys: ['account', 'general'],
+        sectionKeys: ['account', 'security', 'general'],
       },
       {
         key: 'federation',
@@ -210,7 +218,7 @@ function useTabGroups(): TabGroupDef[] {
     ];
 
     // Only keep section keys that actually exist in the registry or local definitions
-    const knownKeys = new Set([...allSections, 'federation', 'statistics', 'applets', 'general', 'tools', 'help']);
+    const knownKeys = new Set([...allSections, 'security', 'federation', 'statistics', 'applets', 'general', 'tools', 'help']);
     return groups.map((g) => ({
       ...g,
       sectionKeys: g.sectionKeys.filter((k) => knownKeys.has(k)),
@@ -1840,10 +1848,11 @@ function DangerZoneResetOnboarding() {
       onOk: async () => {
         setLoading(true);
         try {
+          await api.authLogout();
           await api.resetOnboarding();
-          // Clear warm-resume marker so reload lands on onboarding, not ready view
           const { clearWarmResume } = await import('../hooks/useAppLifecycle');
           clearWarmResume();
+          sessionStorage.clear();
           message.success(t('settings.danger.resetSuccess'));
           window.location.hash = '';
           window.location.reload();

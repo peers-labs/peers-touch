@@ -186,7 +186,8 @@ fn run_cycle(engine: &MessagingEngine, token: &str) -> Result<(), String> {
     if let Err(error) = engine.cleanup_completed_attachment_sources() {
         failures.push(format!("attachment source cleanup: {error}"));
     }
-    if let Err(error) = engine.resume_attachment_download_once(token, super::engine::now_unix_ms()) {
+    if let Err(error) = engine.resume_attachment_download_once(token, super::engine::now_unix_ms())
+    {
         failures.push(format!("attachment download: {error}"));
     }
     if let Err(error) = engine.resume_message_draft_once(token, super::engine::now_unix_ms()) {
@@ -208,10 +209,19 @@ fn run_cycle(engine: &MessagingEngine, token: &str) -> Result<(), String> {
     if let Err(error) = engine.drain_once(token, DRAIN_BATCH_LIMIT) {
         failures.push(format!("queue drain: {error}"));
     }
+    if let Err(error) = engine.dispatch_delivery_receipt_once(token) {
+        failures.push(format!("delivery receipt dispatch: {error}"));
+    }
     if failures.is_empty() {
         Ok(())
     } else {
-        Err(failures.join("; "))
+        let combined = failures.join("; ");
+        if combined.contains("endpoint is not active") {
+            if engine.recover_stale_enrollment(&combined) {
+                tracing::info!("device enrollment reset; re-enrollment will occur on next cycle");
+            }
+        }
+        Err(combined)
     }
 }
 
@@ -276,12 +286,18 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
         let membership_epoch = conv
             .get("membership_epoch")
             .or_else(|| conv.get("membershipEpoch"))
-            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
             .unwrap_or(1);
         let mls_epoch = conv
             .get("mls_epoch")
             .or_else(|| conv.get("mlsEpoch"))
-            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
             .unwrap_or(0);
         let member_ptids = conv
             .get("member_ptids")
@@ -308,7 +324,10 @@ fn hydrate_projections_from_station(engine: &MessagingEngine, token: &str) -> Re
     }
     let count = engine.hydrate_conversation_projections(&projections)?;
     if count > 0 {
-        tracing::info!(count, "messaging conversation projections bootstrapped from Station");
+        tracing::info!(
+            count,
+            "messaging conversation projections bootstrapped from Station"
+        );
     }
     Ok(())
 }

@@ -54,6 +54,39 @@ type conversationMemberModel struct {
 
 func (*conversationMemberModel) TableName() string { return "conversation_members" }
 
+func repairMemberIndex(db *gorm.DB) {
+	var columns []struct {
+		ColumnName string `gorm:"column:column_name"`
+	}
+	db.Raw(`
+		SELECT a.attname AS column_name
+		FROM pg_index i
+		JOIN pg_class c ON c.oid = i.indexrelid
+		JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+		WHERE c.relname = 'idx_member_conv_actor'
+		ORDER BY array_position(i.indkey, a.attnum)
+	`).Scan(&columns)
+
+	if len(columns) == 0 {
+		return
+	}
+	needsRepair := false
+	for _, col := range columns {
+		if col.ColumnName == "actor_did" {
+			needsRepair = true
+			break
+		}
+	}
+	if !needsRepair {
+		return
+	}
+
+	db.Exec("DROP INDEX IF EXISTS idx_member_conv_actor")
+	db.Exec("CREATE UNIQUE INDEX idx_member_conv_actor ON conversation_members (conversation_id, ptid)")
+	db.Exec("DROP INDEX IF EXISTS idx_member_actor")
+	db.Exec("CREATE INDEX idx_member_actor ON conversation_members (ptid)")
+}
+
 type conversationMemberDeviceModel struct {
 	ID                uint      `gorm:"column:id;primaryKey"`
 	ConversationID    string    `gorm:"column:conversation_id;size:128;index:idx_member_device_conv;uniqueIndex:uidx_member_device"`
@@ -507,17 +540,6 @@ func (m *conversationMemberModel) toProto() *chat.ConversationMember {
 	}
 }
 
-// --- Read Cursor Model ---
-
-type readCursorModel struct {
-	ConversationID string    `gorm:"column:conversation_id;size:128;primaryKey"`
-	Ptid           string    `gorm:"column:ptid;size:255;primaryKey"`
-	LastReadSeq    int64     `gorm:"column:last_read_seq"`
-	UpdatedAt      time.Time `gorm:"column:updated_at"`
-}
-
-func (*readCursorModel) TableName() string { return "conversation_read_cursors" }
-
 // --- New Repository Methods ---
 
 func (r *postgresConversationRepo) ListThreadEvents(ctx context.Context, conversationID, threadRootID string, afterSeq int64, limit int) ([]*chat.CommittedConversationEvent, error) {
@@ -571,46 +593,4 @@ func (r *postgresConversationRepo) CountThreadReplies(ctx context.Context, conve
 		}
 	}
 	return summaries, nil
-}
-
-func (r *postgresConversationRepo) GetReadCursor(ctx context.Context, conversationID, ptid string) (int64, error) {
-	var model readCursorModel
-	err := r.db.WithContext(ctx).
-		Where("conversation_id = ? AND ptid = ?", conversationID, ptid).
-		First(&model).Error
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return 0, nil
-		}
-		return 0, err
-	}
-	return model.LastReadSeq, nil
-}
-
-func (r *postgresConversationRepo) SetReadCursor(ctx context.Context, conversationID, ptid string, seq int64) error {
-	model := &readCursorModel{
-		ConversationID: conversationID,
-		Ptid:           ptid,
-		LastReadSeq:    seq,
-		UpdatedAt:      time.Now(),
-	}
-	return r.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "conversation_id"}, {Name: "ptid"}},
-			DoUpdates: clause.AssignmentColumns([]string{"last_read_seq", "updated_at"}),
-		}).
-		Create(model).Error
-}
-
-func (r *postgresConversationRepo) CountUnread(ctx context.Context, conversationID, ptid string) (int64, error) {
-	cursor, err := r.GetReadCursor(ctx, conversationID, ptid)
-	if err != nil {
-		return 0, err
-	}
-	var count int64
-	err = r.db.WithContext(ctx).
-		Model(&conversationEventModel{}).
-		Where("conversation_id = ? AND group_seq > ?", conversationID, cursor).
-		Count(&count).Error
-	return count, err
 }

@@ -16,7 +16,7 @@ import { scheduleIdle } from '../kernel/boot';
 import { useActiveSocialChatSlice } from '../components/chat/useActiveSocialChatStore';
 import { log } from '../utils/logger';
 import { readFeatureFlags } from '../modules/settings/featureFlags';
-import { friendChatP2p } from '../modules/p2p/friendChatP2p';
+import { callP2p } from '../modules/p2p/callP2p';
 
 type ChatSubPage = 'chats' | 'contacts';
 
@@ -116,16 +116,16 @@ export function SocialChatPage() {
     // P2P here only carries transport status (so the UI can show
     // "P2P direct / via relay / SSE-only"). The text data plane is
     // consumed by the app-level social realtime bridge.
-    friendChatP2p.setOnStatus((_myDid, peerDid, status) => {
+    callP2p.setOnStatus((_myDid, peerDid, status) => {
       const sid = activeSessionRef.current;
       if (!sid || activeTabRef.current !== 'friend') return;
       if (activePeerDidRef.current !== peerDid) return;
       setFriendP2pStatus(sid, status.state, status.detail, status.transport);
     });
 
-    friendChatP2p.ensurePeerRegistered(currentUserDid).catch(() => {});
+    callP2p.ensurePeerRegistered(currentUserDid).catch(() => {});
     return () => {
-      friendChatP2p.setOnStatus(null);
+      callP2p.setOnStatus(null);
     };
   }, [currentUserDid, setFriendP2pStatus]);
 
@@ -134,7 +134,7 @@ export function SocialChatPage() {
     const sid = activeSessionRef.current;
     if (!currentUserDid || !activePeerDid || !sid) return;
     setFriendP2pStatus(sid, 'connecting');
-    friendChatP2p.ensureConnected(currentUserDid, activePeerDid).catch((error) => {
+    callP2p.ensureConnected(currentUserDid, activePeerDid).catch((error) => {
       const currentSid = activeSessionRef.current;
       if (currentSid) {
         setFriendP2pStatus(currentSid, 'failed', error instanceof Error ? error.message : String(error));
@@ -147,14 +147,14 @@ export function SocialChatPage() {
       // (peer B can call while the user reads peer C) — see
       // docs/architecture/realtime/voice-video-calls.md §7. Full
       // teardown belongs to the dedicated page-unmount effect below.
-      friendChatP2p.closeIdleConnections();
+      callP2p.closeIdleConnections();
     };
   }, [currentUserDid, activePeerDid, setFriendP2pStatus]);
 
   // --- Page unmount: full teardown of every connection and any live call ---
   useEffect(() => {
     return () => {
-      friendChatP2p.closeAll();
+      callP2p.closeAll();
     };
   }, []);
 
@@ -217,6 +217,12 @@ export function SocialChatPage() {
             selectedContact={selectedContact}
             onSelectContact={(contact) => {
               setOwnedContactSelection({ actorId: currentUserDid || '', contact });
+            }}
+            onStartChat={(contact) => {
+              setOwnedContactSelection({ actorId: currentUserDid || '', contact });
+              if (contact.conversationId) {
+                setSubPage('chats');
+              }
             }}
           />
         </div>
