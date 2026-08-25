@@ -224,6 +224,48 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         self.assertEqual(control.actual_frontmost_pid, 84)
         display.close.assert_called_once_with()
 
+    def test_focused_control_preserves_descendant_dialog_text_field(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        application_window = Mock()
+        dialog_window = Mock()
+        display.get_input_focus.return_value.focus = dialog_window
+
+        def window_pid(_display: object, window: object) -> int:
+            return 42 if window is application_window else 84
+
+        with (
+            patch.object(
+                adapter,
+                "_client_windows",
+                return_value=(application_window,),
+            ),
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_active_window", return_value=dialog_window),
+            patch.object(adapter, "_window_pid", side_effect=window_pid),
+            patch.object(adapter, "_is_dialog", return_value=False),
+            patch.object(adapter, "_is_native_dialog", return_value=True),
+            patch.object(adapter, "_is_descendant_process", return_value=True),
+            patch.object(
+                adapter,
+                "_focused_accessible",
+                return_value={
+                    "kind": "text-field",
+                    "title": "Location",
+                    "value": "",
+                    "role": "text",
+                },
+            ),
+        ):
+            control = adapter.focused_control(42)
+
+        self.assertEqual(control.kind, "text-field")
+        self.assertEqual(control.title, "Location")
+        self.assertEqual(control.dialog_count, 1)
+        self.assertTrue(control.frontmost)
+        self.assertTrue(control.focused_window)
+        display.close.assert_called_once_with()
+
     def test_focused_control_rejects_unrelated_active_dialog(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
         display = Mock()
