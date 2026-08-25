@@ -388,6 +388,18 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             )
 
     def read_clipboard(self) -> bytes:
+        display = self._open_display()
+        try:
+            clipboard = display.intern_atom("CLIPBOARD")
+            if not display.get_selection_owner(clipboard):
+                return b""
+        except Exception as error:
+            raise DriverError(
+                f"Linux Native clipboard owner probe failed: {error}"
+            ) from error
+        finally:
+            display.close()
+
         completed = self._run(
             ("xclip", "-selection", "clipboard", "-out"),
             operation="clipboard read",
