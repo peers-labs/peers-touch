@@ -439,6 +439,7 @@ class SourceSyncContractTests(unittest.TestCase):
         self.assertIn("ServerAliveInterval=10", command)
         self.assertIn("ServerAliveCountMax=3", command)
         self.assertIn("TCPKeepAlive=yes", command)
+        self.assertIs(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
 
     def test_remote_loopback_probe_reports_connection_result(self) -> None:
         transport = SshTransport(
