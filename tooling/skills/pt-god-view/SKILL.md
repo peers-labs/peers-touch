@@ -1,11 +1,6 @@
 ---
 name: "pt-god-view"
-description: >
-  God view: the Peers-Touch methodology operating system. When invoked, the agent
-  enters structured thinking mode — using the project's stage pipeline, skill
-  system, and architectural principles to reason about and execute work. Invoke
-  when user says "continue", "resume", "use the system", "think properly", or
-  any time the agent should operate under the full Peers-Touch methodology.
+description: "Orchestrates stage-aware Peers-Touch work. Invoke for new tasks, resume or status requests, and work requiring product-to-delivery gates."
 stage: "orchestrator"
 requires: []
 produces: ["stage-aware reasoning", "correct skill dispatch", "active_work updates", "Context Anchor projection"]
@@ -29,7 +24,8 @@ right skill, follows gates, tracks progress.
 2. **Stage reasoning** — determine which stage applies to what the user wants
 3. **Skill dispatch** — invoke the correct methodology/execution skill
 4. **Methodology enforcement** — ensure work follows Peers-Touch principles
-5. **Progress tracking** — update active_work registry after state changes
+5. **Progress tracking** — after a formal plan exists, synchronize plan evidence,
+   `active_work`, and the required chat Context Anchor
 
 ---
 
@@ -59,7 +55,7 @@ First, classify the work mode:
 | Mode | Signal | What to do |
 |------|--------|-----------|
 | **Tracked project** | User mentions something in active_work registry, or says "continue" | Read registry → locate plan → resume from stage+step (§3.2) |
-| **New multi-step work** | Cross-module, new capability, architecture implications | Classify stage (§4) → maybe create registry entry → dispatch |
+| **New multi-step work** | Cross-module, new capability, architecture implications | Classify stage (§4) → dispatch; register only after a formal plan exists |
 | **Standalone task** | Small feature, bug fix, single-module change, "just do X" | Apply execution standards (§3.3) directly — no plan/registry needed |
 | **Review/audit** | "Check", "review", "is this right", "validate", "audit" | Identify what to review → pick the right review skill (§3.6) |
 | **Unknown** | Cannot confidently classify into any of the above | Apply §3.7 (Uncertainty Protocol) |
@@ -72,8 +68,9 @@ under methodology: proper edits, proper checks, proper commits.
 ```
 Read project_memory.md → active_work registry table
 Match user's intent to a registry entry (by plan name, keyword, or #id)
-If resuming: locate plan → invoke pt-context-anchor → verify worktree/branch/stage/current_step
-If new multi-step: classify (§4) and add to registry
+If resuming: locate plan file path + stage + current_step
+If new multi-step: classify (§4); PRODUCT/DESIGN remain untracked
+When pt-plan-and-document creates the formal plan: add the active_work row
 ```
 
 | Stage | The agent is asking... | Key skill |
@@ -138,7 +135,7 @@ The agent must NOT do the work itself when a skill exists for it:
 | Need to design architecture | Write design ad-hoc | `pt-architecture-design-methodology` |
 | Need to break down into steps | List steps from memory | `pt-architecture-execution-methodology` |
 | Need to write plan to file | Just dump markdown | `pt-plan-and-document` |
-| Need status, resume, handoff, or progress context | Reconstruct from chat | `pt-context-anchor` |
+| Need tracked-work status, resume, handoff, or blocker projection | Reconstruct from chat | `pt-context-anchor` |
 | Need to implement planned step | Code without checking plan | `pt-execution-plan-guardian` |
 | Need to optimize/audit Acceptance Infra | Let business evidence drive framework readiness | `pt-acceptance-infra-engineering` |
 | Need business Domain Acceptance injection/proof | Infer onboarding or start from a Gate | `pt-acceptance-engineering` |
@@ -220,9 +217,15 @@ implementation of something already accepted and planned?"
 
 ## 5. Status Display
 
-When asked for status or resuming, invoke `pt-context-anchor`, verify actual Git
-context, and return its single copyable fenced projection as the final response
-section. Never reconstruct progress from chat history.
+When asked for tracked-work status or resume:
+
+1. Resolve the `active_work` entry and readable formal plan.
+2. Invoke `pt-context-anchor`.
+3. Verify actual worktree and branch.
+4. End the response with the exact fenced chat projection required by that skill.
+
+If no formal plan and matching `active_work` row exist, do not fabricate an
+Anchor. Report the current PRODUCT/DESIGN/PLAN gate in normal prose.
 
 ---
 
@@ -230,7 +233,7 @@ section. Never reconstruct progress from chat history.
 
 | User says | Action |
 |-----------|--------|
-| "new task" | Classify → add to registry → dispatch |
+| "new task" | Classify → dispatch; add to registry only after a formal plan is created |
 | "close #N" | Set `stage: complete` |
 | "blocked" | Set `blocked: true` + reason |
 | "switch to #N" | Change focus → dispatch |
@@ -265,8 +268,8 @@ When showing status, flag entries with `last_session` >14 days:
 ```
 pt-god-view (methodology OS / entry point)
   │
-  ├── CONTEXT synchronization
-  │     └── pt-context-anchor (plan-owned anchor + verified status projection)
+  ├── TRACKED-WORK projection
+  │     └── pt-context-anchor (active_work + plan evidence → fenced chat block)
   │
   ├── ACCEPTANCE cross-stage entry
   │     ├── pt-acceptance-infra-engineering
@@ -307,6 +310,7 @@ pt-god-view (methodology OS / entry point)
 2. **Methodology over speed** — when active, the agent follows the system even if it's "slower" than freestyling.
 3. **Show reasoning** — state which stage, which skill, why, before acting.
 4. **Delegate to skills** — god-view decides WHO to call, never does the work itself.
-5. **Track state** — update the plan-owned Context Anchor first, then synchronize
-   active_work and status projections on every meaningful state change.
+5. **Track state** — pre-plan PRODUCT/DESIGN work has no Anchor. Once a formal
+   plan exists, update plan/tracking evidence first, then `active_work`, then
+   emit the `pt-context-anchor` chat projection when reporting.
 6. **Respect gates** — never skip a review boundary.
