@@ -208,15 +208,25 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
                 )
             )
             accessible = self._focused_accessible()
+            accessible_kind = str(accessible.get("kind") or "")
+            descendant_control_kind = (
+                accessible_kind
+                if (
+                    active_descendant_dialog
+                    and actor_focused
+                    and accessible_kind in {"list", "text-field"}
+                )
+                else "application-dialog"
+            )
             return NativeControlSnapshot(
                 kind=(
-                    "application-dialog"
+                    descendant_control_kind
                     if active_descendant_dialog
-                    else str(accessible.get("kind") or (
+                    else accessible_kind or (
                         "application-dialog"
                         if owned_dialog_count > 0 and active_pid == process_id
                         else "application"
-                    ))
+                    )
                 ),
                 title=str(accessible.get("title") or ""),
                 value=str(accessible.get("value") or ""),
