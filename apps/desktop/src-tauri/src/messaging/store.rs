@@ -112,6 +112,12 @@ pub struct AttachmentDownloadProjection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingSenderAttachmentSource {
+    pub source_local_ref: String,
+    pub plaintext_sha256: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachmentTransferRecord {
     pub attachment_id: String,
     pub conversation_id: String,
@@ -3000,6 +3006,46 @@ impl MessagingStore {
             }
         }
         Ok(projection)
+    }
+
+    pub fn pending_sender_attachment_source(
+        &self,
+        attachment_id: &str,
+    ) -> Result<Option<PendingSenderAttachmentSource>, String> {
+        if attachment_id.trim().is_empty() {
+            return Err("messaging attachment ID is required".to_string());
+        }
+        let source = self
+            .connection()?
+            .query_row(
+                "SELECT transfer.source_local_ref, draft.plaintext_sha256
+                 FROM messaging_attachment_transfers transfer
+                 JOIN messaging_attachment_drafts draft
+                   ON draft.attachment_id = transfer.attachment_id
+                  AND draft.conversation_id = transfer.conversation_id
+                  AND draft.message_id = transfer.message_id
+                 JOIN messaging_pending_messages pending
+                   ON pending.conversation_id = transfer.conversation_id
+                  AND pending.message_id = transfer.message_id
+                 WHERE transfer.attachment_id = ?1
+                   AND transfer.direction = 1
+                   AND transfer.state = ?2",
+                params![attachment_id, AttachmentTransferState::Complete as i32],
+                |row| {
+                    Ok(PendingSenderAttachmentSource {
+                        source_local_ref: row.get(0)?,
+                        plaintext_sha256: row.get(1)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if source.as_ref().is_some_and(|value| {
+            value.source_local_ref.trim().is_empty() || value.plaintext_sha256.len() != 32
+        }) {
+            return Err("messaging pending sender attachment source is incomplete".to_string());
+        }
+        Ok(source)
     }
 
     pub fn attachment_upload_media_type(&self, attachment_id: &str) -> Result<String, String> {
@@ -8347,6 +8393,85 @@ mod tests {
         assert_eq!(persisted.attempt_count, 1);
         assert_eq!(persisted.next_attempt_at_unix_ms, 20);
         assert_eq!(persisted.last_error_code, 8);
+    }
+
+    #[test]
+    fn pending_sender_attachment_source_requires_completed_owned_upload() {
+        let store = MessagingStore::in_memory().unwrap();
+        let transfer = attachment_transfer();
+        let plaintext_sha256 = vec![3_u8; 32];
+        let connection = store.connection().unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_pending_messages(
+                    conversation_id, conversation_kind, message_id,
+                    sender_ptid, sender_device_id, plaintext,
+                    reply_to_message_id, thread_root_message_id, state,
+                    attempt_count, next_attempt_at_unix_ms, last_error_code,
+                    created_at_unix_ms
+                 ) VALUES (
+                    ?1, 2, ?2, 'ptid:alice', 'alice-device', '',
+                    '', '', 'submitted', 0, 0, '', 10
+                 )",
+                params![transfer.conversation_id, transfer.message_id],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_attachment_drafts(
+                    attachment_id, conversation_id, message_id, filename,
+                    mime_type, plaintext_sha256, descriptor_bytes, created_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, 'proof.txt', 'text/plain', ?4, X'01', 10)",
+                params![
+                    transfer.attachment_id,
+                    transfer.conversation_id,
+                    transfer.message_id,
+                    plaintext_sha256,
+                ],
+            )
+            .unwrap();
+        drop(connection);
+        assert!(store.create_attachment_transfer(&transfer).unwrap());
+        assert!(store
+            .pending_sender_attachment_source(&transfer.attachment_id)
+            .unwrap()
+            .is_none());
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE messaging_attachment_transfers SET state = ?2
+                 WHERE attachment_id = ?1",
+                params![
+                    transfer.attachment_id,
+                    AttachmentTransferState::Complete as i32,
+                ],
+            )
+            .unwrap();
+
+        assert_eq!(
+            store
+                .pending_sender_attachment_source(&transfer.attachment_id)
+                .unwrap(),
+            Some(PendingSenderAttachmentSource {
+                source_local_ref: transfer.source_local_ref.clone(),
+                plaintext_sha256,
+            })
+        );
+
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "DELETE FROM messaging_pending_messages
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params![transfer.conversation_id, transfer.message_id],
+            )
+            .unwrap();
+        assert!(store
+            .pending_sender_attachment_source(&transfer.attachment_id)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
