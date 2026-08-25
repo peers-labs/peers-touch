@@ -263,18 +263,18 @@ def _authenticate_clients(
                 )
 
     # Step 4: Wait for capability sessions on both clients (Station async)
-    # Capability session registration is asynchronous on Station; give it up
-    # to 60s total after both clients have completed login + navigation.
+    # Capability session registration is asynchronous on Station; the
+    # messaging engine + signing identity must be ready before the worker
+    # can register a lease. Give each client an independent 90s window.
     import time as _time
 
-    deadline = _time.monotonic() + 60
     for client in (runtime_pair.native, runtime_pair.browser):
-        remaining = max(5.0, deadline - _time.monotonic())
+        client_deadline = _time.monotonic() + 90
         try:
             cap_result = client.harness(
                 "getFoundationCapabilitySessions",
                 {},
-                timeout=remaining + 10,
+                timeout=80,
             )
         except Exception:
             # If capability session is not available yet, it's not fatal;
@@ -285,12 +285,13 @@ def _authenticate_clients(
         ):
             continue
         # Wait and retry once
-        _time.sleep(min(10.0, max(0, deadline - _time.monotonic())))
+        _time.sleep(min(10.0, max(0, client_deadline - _time.monotonic())))
+        retry_timeout = max(10.0, client_deadline - _time.monotonic()) + 10
         try:
             cap_result = client.harness(
                 "getFoundationCapabilitySessions",
                 {},
-                timeout=max(5.0, deadline - _time.monotonic()) + 10,
+                timeout=retry_timeout,
             )
         except Exception as error:
             raise ScenarioRunnerError(
