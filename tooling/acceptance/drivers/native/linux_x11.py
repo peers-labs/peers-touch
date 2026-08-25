@@ -46,6 +46,8 @@ _FILE_CHOOSER_NAVIGATION_ROLES = frozenset(
 )
 _FILE_CHOOSER_FOCUS_STEPS = 8
 _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS = 1.0
+_CLIPBOARD_OWNER_READY_TIMEOUT_SECONDS = 2.0
+_CLIPBOARD_OWNER_PID_FILE = "native-clipboard-owner.pid"
 
 
 class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
@@ -388,18 +390,8 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             )
 
     def read_clipboard(self) -> bytes:
-        display = self._open_display()
-        try:
-            clipboard = display.intern_atom("CLIPBOARD")
-            if not display.get_selection_owner(clipboard):
-                return b""
-        except Exception as error:
-            raise DriverError(
-                f"Linux Native clipboard owner probe failed: {error}"
-            ) from error
-        finally:
-            display.close()
-
+        if self._clipboard_selection_owner() <= 0:
+            return b""
         completed = self._run(
             ("xclip", "-selection", "clipboard", "-out"),
             operation="clipboard read",
@@ -408,11 +400,56 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
         return bytes(completed.stdout)
 
     def write_clipboard(self, value: bytes) -> None:
-        self._run(
-            ("xclip", "-selection", "clipboard", "-in"),
-            operation="clipboard write",
-            input_bytes=value,
-            text=False,
+        owner_path = self._clipboard_owner_path()
+        self._stop_managed_clipboard_owner(owner_path)
+        if not value:
+            return
+
+        environment = os.environ.copy()
+        environment["DISPLAY"] = self.display_name
+        try:
+            process = subprocess.Popen(
+                (
+                    "xclip",
+                    "-quiet",
+                    "-selection",
+                    "clipboard",
+                    "-in",
+                    "-loops",
+                    "1",
+                ),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=environment,
+                start_new_session=True,
+            )
+            if process.stdin is None:
+                raise DriverError("Linux Native clipboard owner has no stdin")
+            process.stdin.write(value)
+            process.stdin.close()
+            deadline = (
+                time.monotonic() + _CLIPBOARD_OWNER_READY_TIMEOUT_SECONDS
+            )
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    raise DriverError(
+                        "Linux Native clipboard owner exited before registration"
+                    )
+                if self._clipboard_selection_owner() > 0:
+                    owner_path.write_text(f"{process.pid}\n", encoding="utf-8")
+                    return
+                time.sleep(0.02)
+        except DriverError:
+            raise
+        except Exception as error:
+            raise DriverError(
+                f"Linux Native clipboard write failed: {error}"
+            ) from error
+
+        process.terminate()
+        raise DriverError(
+            "Linux Native clipboard owner registration timed out"
         )
 
     def _open_display(self) -> Any:
@@ -424,6 +461,57 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             raise DriverError(
                 f"cannot connect to Linux X11 display {self.display_name!r}: {error}"
             ) from error
+
+    def _clipboard_selection_owner(self) -> int:
+        display = self._open_display()
+        try:
+            clipboard = display.intern_atom("CLIPBOARD")
+            owner = display.get_selection_owner(clipboard)
+            return int(getattr(owner, "id", 0) or 0)
+        except Exception as error:
+            raise DriverError(
+                f"Linux Native clipboard owner probe failed: {error}"
+            ) from error
+        finally:
+            display.close()
+
+    @staticmethod
+    def _clipboard_owner_path() -> Path:
+        runtime_root = (
+            os.environ.get("PT_CELL_RUN_ROOT")
+            or os.environ.get("XDG_RUNTIME_DIR")
+        )
+        if not runtime_root:
+            raise DriverError(
+                "Linux Native clipboard owner requires a runtime directory"
+            )
+        return Path(runtime_root) / _CLIPBOARD_OWNER_PID_FILE
+
+    @staticmethod
+    def _stop_managed_clipboard_owner(owner_path: Path) -> None:
+        try:
+            process_id = int(owner_path.read_text(encoding="utf-8").strip())
+            command = Path(f"/proc/{process_id}/cmdline").read_bytes().split(b"\0")
+            if command[:4] != [
+                b"xclip",
+                b"-quiet",
+                b"-selection",
+                b"clipboard",
+            ]:
+                raise DriverError(
+                    "Linux Native clipboard owner identity mismatch"
+                )
+            os.kill(process_id, signal.SIGTERM)
+        except FileNotFoundError:
+            pass
+        except ProcessLookupError:
+            pass
+        except ValueError as error:
+            raise DriverError(
+                "Linux Native clipboard owner PID is invalid"
+            ) from error
+        finally:
+            owner_path.unlink(missing_ok=True)
 
     @staticmethod
     def _validated_process_id(process_id: int) -> int:

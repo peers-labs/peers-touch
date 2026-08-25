@@ -505,59 +505,97 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         ):
             self.assertTrue(adapter._is_native_dialog(display, window))
 
-    def test_clipboard_commands_are_bound_to_the_declared_display(self) -> None:
+    def test_clipboard_read_is_bound_to_the_declared_display(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
-        display = Mock()
-        display.get_selection_owner.return_value = Mock()
         read = subprocess.CompletedProcess(
             args=(),
             returncode=0,
             stdout=b"clipboard",
             stderr=b"",
         )
-        write = subprocess.CompletedProcess(
-            args=(),
-            returncode=0,
-            stdout=b"",
-            stderr=b"",
-        )
         with (
-            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_clipboard_selection_owner", return_value=84),
             patch(
                 "tooling.acceptance.drivers.native.linux_x11.subprocess.run",
-                side_effect=(read, write),
+                return_value=read,
             ) as run,
         ):
             self.assertEqual(adapter.read_clipboard(), b"clipboard")
-            adapter.write_clipboard(b"next")
 
-        display.intern_atom.assert_called_once_with("CLIPBOARD")
-        display.get_selection_owner.assert_called_once_with(
-            display.intern_atom.return_value
-        )
-        display.close.assert_called_once_with()
-        self.assertEqual(run.call_args_list[0].args[0], (
+        self.assertEqual(run.call_args.args[0], (
             "xclip",
             "-selection",
             "clipboard",
             "-out",
         ))
-        self.assertEqual(run.call_args_list[0].kwargs["env"]["DISPLAY"], ":99")
-        self.assertEqual(run.call_args_list[1].kwargs["input"], b"next")
+        self.assertEqual(run.call_args.kwargs["env"]["DISPLAY"], ":99")
 
     def test_empty_clipboard_without_selection_owner_is_valid(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
-        display = Mock()
-        display.get_selection_owner.return_value = 0
 
         with (
-            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_clipboard_selection_owner", return_value=0),
             patch.object(adapter, "_run") as run,
         ):
             self.assertEqual(adapter.read_clipboard(), b"")
 
         run.assert_not_called()
-        display.close.assert_called_once_with()
+
+    def test_clipboard_write_starts_single_request_owner(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        process = Mock(pid=84)
+        process.poll.return_value = None
+        process.stdin = Mock()
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.dict("os.environ", {"PT_CELL_RUN_ROOT": tmp}),
+            patch.object(
+                adapter,
+                "_clipboard_selection_owner",
+                return_value=1024,
+            ),
+            patch(
+                "tooling.acceptance.drivers.native.linux_x11.subprocess.Popen",
+                return_value=process,
+            ) as popen,
+        ):
+            adapter.write_clipboard(b"next")
+            owner_path = Path(tmp) / "native-clipboard-owner.pid"
+            self.assertEqual(owner_path.read_text(encoding="utf-8"), "84\n")
+
+        self.assertEqual(
+            popen.call_args.args[0],
+            (
+                "xclip",
+                "-quiet",
+                "-selection",
+                "clipboard",
+                "-in",
+                "-loops",
+                "1",
+            ),
+        )
+        self.assertEqual(popen.call_args.kwargs["env"]["DISPLAY"], ":99")
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        process.stdin.write.assert_called_once_with(b"next")
+        process.stdin.close.assert_called_once_with()
+
+    def test_empty_clipboard_stops_managed_owner(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        owner_path = Path("/runtime/native-clipboard-owner.pid")
+
+        with (
+            patch.object(adapter, "_clipboard_owner_path", return_value=owner_path),
+            patch.object(adapter, "_stop_managed_clipboard_owner") as stop,
+            patch(
+                "tooling.acceptance.drivers.native.linux_x11.subprocess.Popen"
+            ) as popen,
+        ):
+            adapter.write_clipboard(b"")
+
+        stop.assert_called_once_with(owner_path)
+        popen.assert_not_called()
 
     def test_screenshot_must_create_a_nonempty_file(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
