@@ -355,6 +355,7 @@ class SshTransport:
                 specification,
                 self.target.destination,
             ],
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             start_new_session=True,
