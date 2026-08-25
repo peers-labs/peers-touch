@@ -47,6 +47,7 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         self.assertEqual(_KEY_SYMBOLS[NativeKey.DELETE], "Delete")
         self.assertEqual(_KEY_SYMBOLS[NativeKey.ENTER], "Return")
         self.assertEqual(_KEY_SYMBOLS[NativeKey.L], "l")
+        self.assertEqual(_KEY_SYMBOLS[NativeKey.SLASH], "slash")
         self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.PRIMARY], "Control_L")
         self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.SHIFT], "Shift_L")
 
@@ -55,12 +56,9 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         with patch.object(adapter, "post_key") as post_key:
             adapter.reveal_file_chooser_location()
 
-        post_key.assert_called_once_with(
-            NativeKey.L,
-            modifiers=(NativeModifier.PRIMARY,),
-        )
+        post_key.assert_called_once_with(NativeKey.SLASH)
 
-    def test_key_chord_settles_modifier_and_key_press_states(self) -> None:
+    def test_key_chord_preserves_native_event_order(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
         display = Mock()
         xtest = types.ModuleType("Xlib.ext.xtest")
@@ -74,9 +72,6 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         with (
             patch.object(adapter, "_open_display", return_value=display),
             patch.object(adapter, "_keycode", side_effect=(37, 38)),
-            patch(
-                "tooling.acceptance.drivers.native.linux_x11.time.sleep"
-            ) as sleep,
             patch.dict(
                 sys.modules,
                 {
@@ -100,8 +95,7 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
                 call(display, 3, 37),
             ],
         )
-        self.assertEqual(display.sync.call_count, 3)
-        self.assertEqual(sleep.call_args_list, [call(0.01), call(0.01)])
+        display.sync.assert_called_once_with()
         display.close.assert_called_once_with()
 
     def test_mouse_buttons_move_pointer_to_the_contract_point_first(self) -> None:

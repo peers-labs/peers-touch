@@ -16,6 +16,7 @@ class NativeKey(str, Enum):
     A = "a"
     G = "g"
     L = "l"
+    SLASH = "slash"
     V = "v"
     DELETE = "delete"
     ENTER = "enter"
