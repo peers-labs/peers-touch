@@ -507,6 +507,8 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
 
     def test_clipboard_commands_are_bound_to_the_declared_display(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        display.get_selection_owner.return_value = Mock()
         read = subprocess.CompletedProcess(
             args=(),
             returncode=0,
@@ -519,13 +521,21 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
             stdout=b"",
             stderr=b"",
         )
-        with patch(
-            "tooling.acceptance.drivers.native.linux_x11.subprocess.run",
-            side_effect=(read, write),
-        ) as run:
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch(
+                "tooling.acceptance.drivers.native.linux_x11.subprocess.run",
+                side_effect=(read, write),
+            ) as run,
+        ):
             self.assertEqual(adapter.read_clipboard(), b"clipboard")
             adapter.write_clipboard(b"next")
 
+        display.intern_atom.assert_called_once_with("CLIPBOARD")
+        display.get_selection_owner.assert_called_once_with(
+            display.intern_atom.return_value
+        )
+        display.close.assert_called_once_with()
         self.assertEqual(run.call_args_list[0].args[0], (
             "xclip",
             "-selection",
@@ -534,6 +544,20 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
         ))
         self.assertEqual(run.call_args_list[0].kwargs["env"]["DISPLAY"], ":99")
         self.assertEqual(run.call_args_list[1].kwargs["input"], b"next")
+
+    def test_empty_clipboard_without_selection_owner_is_valid(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        display.get_selection_owner.return_value = 0
+
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_run") as run,
+        ):
+            self.assertEqual(adapter.read_clipboard(), b"")
+
+        run.assert_not_called()
+        display.close.assert_called_once_with()
 
     def test_screenshot_must_create_a_nonempty_file(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
