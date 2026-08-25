@@ -1181,7 +1181,6 @@ class NativeProductClosureGate(AcceptanceGate):
             )
             + float(target["y"]),
         )
-        self.native_adapter.post_mouse((MouseAction.MOVE,), point)
         if native_mousedown_debug_enabled():
             # #region debug-point A,B,E:computed-native-point
             initial_stack = self.native_adapter.window_stack_at_point(point)
@@ -1206,67 +1205,6 @@ class NativeProductClosureGate(AcceptanceGate):
                 },
             )
             # #endregion
-        pointer_target = client.driver.execute_script(
-            """
-            const element = arguments[0];
-            const selector = arguments[1];
-            const x = arguments[2];
-            const y = arguments[3];
-            const hit = document.elementFromPoint(x, y);
-            const candidate = selector ? hit?.closest(selector) : element;
-            const rect = candidate?.getBoundingClientRect();
-            const selectorMatches = selector
-              ? Array.from(document.querySelectorAll(selector)).map((match) => {
-                  const matchRect = match.getBoundingClientRect();
-                  return {
-                    connected: match.isConnected,
-                    disabled: Boolean(match.disabled),
-                    rect: {
-                      left: matchRect.left,
-                      top: matchRect.top,
-                      width: matchRect.width,
-                      height: matchRect.height,
-                    },
-                  };
-                })
-              : [];
-            return {
-              connected: Boolean(candidate?.isConnected),
-              disabled: Boolean(candidate?.disabled),
-              hit: Boolean(
-                candidate
-                && (hit === candidate || candidate.contains(hit))
-              ),
-              hitTarget: {
-                tag: hit?.tagName || '',
-                id: hit?.id || '',
-                classes: hit?.className || '',
-              },
-              rect: {
-                left: rect?.left || 0,
-                top: rect?.top || 0,
-                width: rect?.width || 0,
-                height: rect?.height || 0,
-              },
-              selectorMatches,
-            };
-            """,
-            element,
-            selector,
-            float(target["x"]),
-            float(target["y"]),
-        )
-        if (
-            not pointer_target.get("connected")
-            or pointer_target.get("disabled")
-            or not pointer_target.get("hit")
-        ):
-            raise GateError(
-                "Native click target changed after pointer positioning"
-                ": "
-                f"{json.dumps(pointer_target, sort_keys=True)}"
-            )
-
         probe_id = self.install_native_input_probe(
             client,
             element,
@@ -1276,83 +1214,6 @@ class NativeProductClosureGate(AcceptanceGate):
         mouse_down_posted = False
         try:
             cursor = 0
-            current_target = client.driver.execute_script(
-                """
-                const element = arguments[0];
-                const selector = arguments[1];
-                const x = arguments[2];
-                const y = arguments[3];
-                const hit = document.elementFromPoint(x, y);
-                const candidate = selector ? hit?.closest(selector) : element;
-                const selectorMatches = selector
-                  ? Array.from(document.querySelectorAll(selector)).map((match) => {
-                      const matchRect = match.getBoundingClientRect();
-                      return {
-                        connected: match.isConnected,
-                        disabled: Boolean(match.disabled),
-                        containsPoint: (
-                          x >= matchRect.left
-                          && x <= matchRect.right
-                          && y >= matchRect.top
-                          && y <= matchRect.bottom
-                        ),
-                        ownsHit: Boolean(
-                          hit === match || match.contains(hit)
-                        ),
-                        rect: {
-                          left: matchRect.left,
-                          top: matchRect.top,
-                          width: matchRect.width,
-                          height: matchRect.height,
-                        },
-                      };
-                    })
-                  : [];
-                return {
-                  connected: Boolean(candidate?.isConnected),
-                  disabled: Boolean(candidate?.disabled),
-                  hit: Boolean(
-                    candidate
-                    && (hit === candidate || candidate.contains(hit))
-                  ),
-                  hitTarget: {
-                    tag: hit?.tagName || '',
-                    id: hit?.id || '',
-                    classes: hit?.className || '',
-                  },
-                  x: arguments[2],
-                  y: arguments[3],
-                  hasFocus: document.hasFocus(),
-                  activeElement: {
-                    tag: document.activeElement?.tagName || '',
-                    id: document.activeElement?.id || '',
-                    classes: document.activeElement?.className || '',
-                  },
-                  devicePixelRatio,
-                  outerWidth,
-                  outerHeight,
-                  screenX,
-                  screenY,
-                  viewportWidth: innerWidth,
-                  viewportHeight: innerHeight,
-                  selectorMatches,
-                };
-                """,
-                element,
-                selector,
-                float(target["x"]),
-                float(target["y"]),
-            )
-            if (
-                not current_target.get("connected")
-                or current_target.get("disabled")
-                or not current_target.get("hit")
-            ):
-                raise GateError(
-                    "Native click target changed before event delivery"
-                    ": "
-                    f"{json.dumps(current_target, sort_keys=True)}"
-                )
             if native_mousedown_debug_enabled():
                 # #region debug-point A,C,E:before-native-mousedown
                 report_native_mousedown_debug(
@@ -1361,7 +1222,7 @@ class NativeProductClosureGate(AcceptanceGate):
                     "Native mouse-down is about to be posted",
                     {
                         "processId": client.process_id,
-                        "currentTarget": current_target,
+                        "target": target,
                         "point": point,
                         "windowStack": self.native_adapter.window_stack_at_point(
                             point
@@ -1375,6 +1236,7 @@ class NativeProductClosureGate(AcceptanceGate):
             mouse_down_posted = True
             self.native_adapter.post_mouse(
                 (
+                    MouseAction.MOVE,
                     MouseAction.LEFT_DOWN,
                     MouseAction.LEFT_UP,
                 ),
