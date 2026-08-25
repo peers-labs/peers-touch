@@ -2628,6 +2628,37 @@ export interface AgentCapabilitySessionSnapshot {
   }>;
 }
 
+export type AgentCapabilityNegativeControl =
+  | 'unsupported'
+  | 'unauthorized'
+  | 'signatureTamper'
+  | 'schemaMismatch'
+  | 'crossDevice';
+
+export interface AgentCapabilityNegativeControlFact {
+  control: AgentCapabilityNegativeControl;
+  availability: 'available' | 'unavailable';
+  unavailableReason?: string;
+  capabilitySessionIdHash: string;
+  before: {
+    localExecutionAttemptCount: number;
+    localSideEffectCount: number;
+  };
+  station?: {
+    endpoint: string;
+    requestSent: boolean;
+    responseReceived: boolean;
+    commandErrorCode?: string;
+    httpStatus?: number;
+    transportErrorKind?: string;
+    stationErrorDetails?: Record<string, unknown>;
+  };
+  after: {
+    localExecutionAttemptCount: number;
+    localSideEffectCount: number;
+  };
+}
+
 export interface AgentCapabilitySessionList {
   sessions: Array<{
     session_id: string;
@@ -4477,6 +4508,28 @@ export const api = {
       'agent_capability_session_snapshot',
       {},
     ),
+
+  runAgentCapabilityNegativeControl: (
+    control: AgentCapabilityNegativeControl,
+    capabilitySessionIdHash: string,
+    crossDeviceSessionId?: string,
+  ) =>
+    invokeRustDataFromStatus<
+      {
+        negativeControl: {
+          control: AgentCapabilityNegativeControl;
+          capabilitySessionIdHash: string;
+          crossDeviceSessionId?: string;
+        };
+      },
+      AgentCapabilityNegativeControlFact
+    >('agent_capability_session_snapshot', {
+      negativeControl: {
+        control,
+        capabilitySessionIdHash,
+        crossDeviceSessionId,
+      },
+    }),
 
   listAgentCapabilitySessions: () =>
     invokeRustDataFromStatus<Record<string, never>, AgentCapabilitySessionList>(

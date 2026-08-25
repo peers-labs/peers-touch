@@ -2,7 +2,9 @@ use super::fenced_executor::{CapabilityContract, ExecutionLease, FencedExecutor}
 use super::local_executor::LocalCapabilityExecutor;
 use super::receipt_ledger::ReceiptLedger;
 use super::resource_registry::ResourceRegistry;
-use super::station_transport::CapabilityStationTransport;
+use super::station_transport::{
+    CapabilityNegativeControl, CapabilityNegativeControlStationFact, CapabilityStationTransport,
+};
 use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::domain::identity::ActiveSession;
 use crate::model::agent::{
@@ -11,9 +13,11 @@ use crate::model::agent::{
     ClientPlatform,
 };
 use crate::state::AppState;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -23,6 +27,7 @@ const PULL_LIMIT: u32 = 32;
 const RENEW_BEFORE_EXPIRY_MS: i64 = 60_000;
 const MAX_ARGUMENT_BYTES: usize = 64 * 1024;
 const MAX_RESULT_BYTES: u64 = 256 * 1024;
+const NEGATIVE_CONTROL_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct CapabilityWorkerSupervisor {
     state: Arc<AppState>,
@@ -30,6 +35,7 @@ pub struct CapabilityWorkerSupervisor {
     stopping: Arc<AtomicBool>,
     thread: Mutex<Option<JoinHandle<()>>>,
     snapshot: Arc<Mutex<Vec<CapabilityWorkerSnapshot>>>,
+    negative_controls: Arc<Mutex<VecDeque<CapabilityNegativeControlRequest>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,6 +91,62 @@ pub struct CapabilityWorkerSnapshot {
     pub expires_at_ms: i64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RequestedCapabilityNegativeControl {
+    Unsupported,
+    Unauthorized,
+    SignatureTamper,
+    SchemaMismatch,
+    CrossDevice,
+}
+
+impl RequestedCapabilityNegativeControl {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unsupported => "unsupported",
+            Self::Unauthorized => "unauthorized",
+            Self::SignatureTamper => "signatureTamper",
+            Self::SchemaMismatch => "schemaMismatch",
+            Self::CrossDevice => "crossDevice",
+        }
+    }
+
+    fn station_control(self) -> Option<CapabilityNegativeControl> {
+        match self {
+            Self::Unauthorized => Some(CapabilityNegativeControl::Unauthorized),
+            Self::SignatureTamper => Some(CapabilityNegativeControl::SignatureTamper),
+            Self::CrossDevice => Some(CapabilityNegativeControl::CrossDevice),
+            Self::Unsupported | Self::SchemaMismatch => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityExecutionCounters {
+    pub local_execution_attempt_count: u64,
+    pub local_side_effect_count: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityNegativeControlFacts {
+    pub control: &'static str,
+    pub availability: &'static str,
+    pub unavailable_reason: Option<&'static str>,
+    pub capability_session_id_hash: String,
+    pub before: CapabilityExecutionCounters,
+    pub station: Option<CapabilityNegativeControlStationFact>,
+    pub after: CapabilityExecutionCounters,
+}
+
+struct CapabilityNegativeControlRequest {
+    control: RequestedCapabilityNegativeControl,
+    capability_session_id_hash: String,
+    cross_device_session_id: Option<String>,
+    response: mpsc::SyncSender<Result<CapabilityNegativeControlFacts, String>>,
+}
+
 impl CapabilityWorkerSupervisor {
     pub fn new(state: Arc<AppState>) -> Self {
         Self {
@@ -93,6 +155,7 @@ impl CapabilityWorkerSupervisor {
             stopping: Arc::new(AtomicBool::new(false)),
             thread: Mutex::new(None),
             snapshot: Arc::new(Mutex::new(Vec::new())),
+            negative_controls: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -108,11 +171,14 @@ impl CapabilityWorkerSupervisor {
         let state = self.state.clone();
         let stopping = self.stopping.clone();
         let snapshot = self.snapshot.clone();
+        let negative_controls = self.negative_controls.clone();
         let surface = self.surface;
         *handle = Some(
             thread::Builder::new()
                 .name("client-capability-supervisor".to_string())
-                .spawn(move || run_supervisor(state, surface, stopping, snapshot))
+                .spawn(move || {
+                    run_supervisor(state, surface, stopping, snapshot, negative_controls)
+                })
                 .map_err(|error| format!("start client capability supervisor: {error}"))?,
         );
         Ok(())
@@ -146,6 +212,30 @@ impl CapabilityWorkerSupervisor {
             .lock()
             .map(|snapshot| snapshot.clone())
             .map_err(|_| "client capability supervisor snapshot lock poisoned".to_string())
+    }
+
+    pub fn emit_negative_control(
+        &self,
+        control: RequestedCapabilityNegativeControl,
+        capability_session_id_hash: String,
+        cross_device_session_id: Option<String>,
+    ) -> Result<CapabilityNegativeControlFacts, String> {
+        if capability_session_id_hash.trim().is_empty() {
+            return Err("AS_F10_CAPABILITY_SESSION_HASH_REQUIRED".to_string());
+        }
+        let (response, receiver) = mpsc::sync_channel(1);
+        self.negative_controls
+            .lock()
+            .map_err(|_| "client capability negative-control queue lock poisoned".to_string())?
+            .push_back(CapabilityNegativeControlRequest {
+                control,
+                capability_session_id_hash,
+                cross_device_session_id,
+                response,
+            });
+        receiver
+            .recv_timeout(NEGATIVE_CONTROL_TIMEOUT)
+            .map_err(|_| "AS_F10_NEGATIVE_CONTROL_TIMEOUT".to_string())?
     }
 }
 
@@ -299,10 +389,12 @@ fn run_supervisor(
     surface: ClientSurface,
     stopping: Arc<AtomicBool>,
     snapshot: Arc<Mutex<Vec<CapabilityWorkerSnapshot>>>,
+    negative_controls: Arc<Mutex<VecDeque<CapabilityNegativeControlRequest>>>,
 ) {
     let mut workers = HashMap::<String, ActiveWorker>::new();
     while !stopping.load(Ordering::SeqCst) {
         reconcile_workers(&state, surface, &mut workers);
+        process_negative_controls(&negative_controls, &workers);
         let mut replace_accounts = Vec::new();
         for worker in workers.values_mut() {
             if let Err(error) = worker.tick() {
@@ -328,6 +420,83 @@ fn run_supervisor(
         ClientCapabilityLeaseRevokeReason::WorkerShutdown,
     );
     publish_worker_snapshot(&snapshot, &workers);
+}
+
+fn process_negative_controls(
+    queue: &Mutex<VecDeque<CapabilityNegativeControlRequest>>,
+    workers: &HashMap<String, ActiveWorker>,
+) {
+    loop {
+        let request = match queue.lock() {
+            Ok(mut queue) => queue.pop_front(),
+            Err(_) => return,
+        };
+        let Some(request) = request else {
+            return;
+        };
+        let result = emit_negative_control_from_worker(workers, &request);
+        let _ = request.response.send(result);
+    }
+}
+
+fn emit_negative_control_from_worker(
+    workers: &HashMap<String, ActiveWorker>,
+    request: &CapabilityNegativeControlRequest,
+) -> Result<CapabilityNegativeControlFacts, String> {
+    let mut matches = workers.values().filter(|worker| {
+        hash_identifier(&worker.lease.capability_session_id) == request.capability_session_id_hash
+    });
+    let worker = matches
+        .next()
+        .ok_or_else(|| "AS_F10_CAPABILITY_SESSION_NOT_FOUND".to_string())?;
+    if matches.next().is_some() {
+        return Err("AS_F10_CAPABILITY_SESSION_AMBIGUOUS".to_string());
+    }
+    let before = execution_counters(worker);
+    let Some(station_control) = request.control.station_control() else {
+        return Ok(CapabilityNegativeControlFacts {
+            control: request.control.as_str(),
+            availability: "unavailable",
+            unavailable_reason: Some("NO_PRODUCTION_CAPABILITY_ENDPOINT"),
+            capability_session_id_hash: request.capability_session_id_hash.clone(),
+            before: before.clone(),
+            station: None,
+            after: before,
+        });
+    };
+    let station = worker.transport()?.emit_negative_control(
+        station_control,
+        &worker.lease.capability_session_id,
+        request.cross_device_session_id.as_deref(),
+    )?;
+    Ok(CapabilityNegativeControlFacts {
+        control: station_control.as_str(),
+        availability: "available",
+        unavailable_reason: None,
+        capability_session_id_hash: request.capability_session_id_hash.clone(),
+        before,
+        station: Some(station),
+        after: execution_counters(worker),
+    })
+}
+
+fn execution_counters(worker: &ActiveWorker) -> CapabilityExecutionCounters {
+    CapabilityExecutionCounters {
+        local_execution_attempt_count: worker
+            .executor
+            .as_ref()
+            .map(LocalCapabilityExecutor::execution_attempt_count)
+            .unwrap_or_default(),
+        local_side_effect_count: worker
+            .executor
+            .as_ref()
+            .map(LocalCapabilityExecutor::side_effect_count)
+            .unwrap_or_default(),
+    }
+}
+
+fn hash_identifier(value: &str) -> String {
+    hex::encode(Sha256::digest(value.as_bytes()))
 }
 
 fn publish_worker_snapshot(

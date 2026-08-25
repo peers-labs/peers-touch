@@ -1,4 +1,6 @@
-use crate::application::desktop_executor_worker::supervisor::CapabilityWorkerSnapshot;
+use crate::application::desktop_executor_worker::supervisor::{
+    CapabilityWorkerSnapshot, CapabilityWorkerSupervisor, RequestedCapabilityNegativeControl,
+};
 use crate::contracts::{
     AgentCapabilityReadinessInput, AgentRuntimeActivityInput, AgentRuntimeProfileInput, StubPayload,
 };
@@ -6,6 +8,7 @@ use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::model::agent;
 use reqwest::Method;
+use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -14,6 +17,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const RUNTIME_ID_EXTERNAL_AGENT: &str = "external-agent";
 const RUNTIME_ID_TRAE_CLI: &str = "trae-cli";
+const AS_F10_NEGATIVE_CONTROL_ENV: &str = "PT_AGENT_AS_F10_NEGATIVE_CONTROL";
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCapabilitySessionSnapshotInput {
+    pub negative_control: Option<AgentCapabilityNegativeControlInput>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCapabilityNegativeControlInput {
+    pub control: String,
+    pub capability_session_id_hash: String,
+    pub cross_device_session_id: Option<String>,
+}
 
 #[derive(Clone, Copy, Default)]
 struct LocalRuntimeActivityCounters {
@@ -256,6 +274,69 @@ pub fn capability_session_snapshot(
             "sessions": sessions,
         }),
     )
+}
+
+pub fn capability_negative_control(
+    input: AgentCapabilityNegativeControlInput,
+    supervisor: &CapabilityWorkerSupervisor,
+) -> AppResult<StubPayload> {
+    if !negative_control_feature_enabled() {
+        return AppResult::fail(
+            ErrorCode::NotImplemented,
+            "agent.capabilityNegativeControlUnavailable",
+            Some(json!({ "reason": "acceptanceFeatureDisabled" })),
+        );
+    }
+    if std::env::var(AS_F10_NEGATIVE_CONTROL_ENV).as_deref() != Ok("1") {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "agent.capabilityNegativeControlUnavailable",
+            Some(json!({ "reason": "acceptanceEnvironmentDisabled" })),
+        );
+    }
+    let control = match input.control.as_str() {
+        "unsupported" => RequestedCapabilityNegativeControl::Unsupported,
+        "unauthorized" => RequestedCapabilityNegativeControl::Unauthorized,
+        "signatureTamper" => RequestedCapabilityNegativeControl::SignatureTamper,
+        "schemaMismatch" => RequestedCapabilityNegativeControl::SchemaMismatch,
+        "crossDevice" => RequestedCapabilityNegativeControl::CrossDevice,
+        _ => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "agent.capabilityNegativeControlInvalid",
+                None,
+            )
+        }
+    };
+    match supervisor.emit_negative_control(
+        control,
+        input.capability_session_id_hash,
+        input.cross_device_session_id,
+    ) {
+        Ok(facts) => match serde_json::to_value(facts) {
+            Ok(value) => success_payload("agent_capability_negative_control", value),
+            Err(error) => AppResult::fail(
+                ErrorCode::InternalError,
+                "agent.capabilityNegativeControlSerializationFailed",
+                Some(json!({ "cause": error.to_string() })),
+            ),
+        },
+        Err(error) => AppResult::fail(
+            ErrorCode::InternalError,
+            "agent.capabilityNegativeControlFailed",
+            Some(json!({ "cause": error })),
+        ),
+    }
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+fn negative_control_feature_enabled() -> bool {
+    true
+}
+
+#[cfg(not(feature = "acceptance-webdriver"))]
+fn negative_control_feature_enabled() -> bool {
+    false
 }
 
 pub fn open_browser_capability_session(

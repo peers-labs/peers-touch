@@ -109,12 +109,19 @@ pub fn agent_runtime_activity_local(
 
 #[tauri::command]
 pub fn agent_capability_session_snapshot(
+    input: Option<application_runtime_evidence::AgentCapabilitySessionSnapshotInput>,
     state: State<'_, Arc<AppState>>,
     supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
     window: Window,
 ) -> AppResult<StubPayload> {
     if let Err(error) = authenticated_token(state.inner(), &window) {
         return error;
+    }
+    if let Some(negative_control) = input.and_then(|value| value.negative_control) {
+        return application_runtime_evidence::capability_negative_control(
+            negative_control,
+            supervisor.inner(),
+        );
     }
     match supervisor.snapshot() {
         Ok(snapshot) => application_runtime_evidence::capability_session_snapshot(snapshot),

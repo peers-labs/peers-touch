@@ -404,6 +404,27 @@ export function installAcceptanceHarness(): void {
       return waitForCapabilitySessionEvidence();
     },
 
+    async runFoundationCapabilityNegativeControl({
+      control,
+      capabilitySessionIdHash,
+      crossDeviceSessionId,
+    }: {
+      control:
+        | 'unsupported'
+        | 'unauthorized'
+        | 'signatureTamper'
+        | 'schemaMismatch'
+        | 'crossDevice';
+      capabilitySessionIdHash: string;
+      crossDeviceSessionId?: string;
+    }) {
+      return api.runAgentCapabilityNegativeControl(
+        control,
+        capabilitySessionIdHash,
+        crossDeviceSessionId,
+      );
+    },
+
     async captureFoundationRuntimeState({
       conversationId,
       turnId,

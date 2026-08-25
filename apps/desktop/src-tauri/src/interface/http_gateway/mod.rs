@@ -3357,6 +3357,25 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             let supervisor = app.state::<
                 Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
             >();
+            if args.get("negativeControl").is_some() {
+                let input = match parse_args::<
+                    app_runtime_evidence::AgentCapabilitySessionSnapshotInput,
+                >(args) {
+                    Ok(input) => input,
+                    Err(error) => return error,
+                };
+                let Some(negative_control) = input.negative_control else {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        "agent.capabilityNegativeControlInvalid",
+                        None,
+                    ));
+                };
+                return to_json(app_runtime_evidence::capability_negative_control(
+                    negative_control,
+                    supervisor.inner(),
+                ));
+            }
             match supervisor.snapshot() {
                 Ok(snapshot) => {
                     to_json(app_runtime_evidence::capability_session_snapshot(snapshot))

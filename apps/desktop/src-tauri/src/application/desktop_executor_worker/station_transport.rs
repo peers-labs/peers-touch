@@ -1,9 +1,10 @@
 use super::fenced_executor::ReceiptReporter;
 use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::infrastructure::station_client;
+use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
 use crate::model::agent::{
-    ClientCapabilityAdvertisement, ClientCapabilityCommandDomain, ClientCapabilityCommandProof,
-    ClientCapabilityCommandSigningPayload, ClientCapabilityLease,
+    ClientCapabilityAdvertisement, ClientCapabilityCommandDomain, ClientCapabilityCommandErrorCode,
+    ClientCapabilityCommandProof, ClientCapabilityCommandSigningPayload, ClientCapabilityLease,
     ClientCapabilityLeaseRevokeReason, ClientCapabilityReceipt,
     PullClientCapabilityRequestsRequest, PullClientCapabilityRequestsResponse,
     RegisterClientCapabilityLeaseRequest, RegisterClientCapabilityLeaseResponse,
@@ -15,6 +16,7 @@ use crate::model::agent::{
 use prost::Message;
 use rand::RngCore;
 use reqwest::Method;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 const PULL_PATH: &str = "/agent/capability/requests/pull";
@@ -23,6 +25,35 @@ const RENEW_PATH: &str = "/agent/capability/lease/renew";
 const REVOKE_PATH: &str = "/agent/capability/lease/revoke";
 const ACTIVE_RECEIPT_PATH: &str = "/agent/capability/receipt";
 const RECOVERY_RECEIPT_PATH: &str = "/agent/capability/receipt/recover";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CapabilityNegativeControl {
+    Unauthorized,
+    SignatureTamper,
+    CrossDevice,
+}
+
+impl CapabilityNegativeControl {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unauthorized => "unauthorized",
+            Self::SignatureTamper => "signatureTamper",
+            Self::CrossDevice => "crossDevice",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityNegativeControlStationFact {
+    pub endpoint: &'static str,
+    pub request_sent: bool,
+    pub response_received: bool,
+    pub command_error_code: Option<String>,
+    pub http_status: Option<u16>,
+    pub transport_error_kind: Option<&'static str>,
+    pub station_error_details: Option<serde_json::Value>,
+}
 
 pub struct CapabilityStationTransport<'a> {
     station_url: &'a str,
@@ -211,6 +242,87 @@ impl<'a> CapabilityStationTransport<'a> {
         Ok(response)
     }
 
+    pub fn emit_negative_control(
+        &self,
+        control: CapabilityNegativeControl,
+        capability_session_id: &str,
+        cross_device_session_id: Option<&str>,
+    ) -> Result<CapabilityNegativeControlStationFact, String> {
+        let target_session_id = match control {
+            CapabilityNegativeControl::CrossDevice => cross_device_session_id
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| "AS_F10_CROSS_DEVICE_SESSION_UNAVAILABLE".to_string())?,
+            _ => capability_session_id,
+        };
+        let mut request = self.signed_pull_request(target_session_id)?;
+        match control {
+            CapabilityNegativeControl::Unauthorized => {
+                let result = station_client::request_proto_no_auth_at::<
+                    _,
+                    PullClientCapabilityRequestsResponse,
+                >(self.station_url, Method::POST, PULL_PATH, &request);
+                Ok(negative_control_station_fact(result))
+            }
+            CapabilityNegativeControl::SignatureTamper => {
+                let proof = request
+                    .command_proof
+                    .as_mut()
+                    .ok_or_else(|| "AS_F10_COMMAND_PROOF_UNAVAILABLE".to_string())?;
+                let first = proof
+                    .signature
+                    .first_mut()
+                    .ok_or_else(|| "AS_F10_COMMAND_SIGNATURE_UNAVAILABLE".to_string())?;
+                *first ^= 0x01;
+                Ok(negative_control_station_fact(
+                    station_client::request_proto_for_device_at::<
+                        _,
+                        PullClientCapabilityRequestsResponse,
+                    >(
+                        self.station_url,
+                        Method::POST,
+                        PULL_PATH,
+                        self.token,
+                        None,
+                        Some(&request),
+                        self.device_id,
+                    ),
+                ))
+            }
+            CapabilityNegativeControl::CrossDevice => Ok(negative_control_station_fact(
+                station_client::request_proto_for_device_at::<
+                    _,
+                    PullClientCapabilityRequestsResponse,
+                >(
+                    self.station_url,
+                    Method::POST,
+                    PULL_PATH,
+                    self.token,
+                    None,
+                    Some(&request),
+                    self.device_id,
+                ),
+            )),
+        }
+    }
+
+    fn signed_pull_request(
+        &self,
+        capability_session_id: &str,
+    ) -> Result<PullClientCapabilityRequestsRequest, String> {
+        let mut request = PullClientCapabilityRequestsRequest {
+            capability_session_id: capability_session_id.to_string(),
+            device_id: self.device_id.to_string(),
+            after_sequence: 0,
+            limit: 1,
+            command_proof: None,
+        };
+        request.command_proof = Some(self.sign_command(
+            ClientCapabilityCommandDomain::PullRequests,
+            &request_without_pull_proof(&request),
+        )?);
+        Ok(request)
+    }
+
     fn submit_active(
         &self,
         receipt: &ClientCapabilityReceipt,
@@ -358,6 +470,51 @@ fn validate_command_response(error_code: i32, operation: &str) -> Result<(), Str
         ));
     }
     Ok(())
+}
+
+fn negative_control_station_fact(
+    result: Result<PullClientCapabilityRequestsResponse, StationClientError>,
+) -> CapabilityNegativeControlStationFact {
+    match result {
+        Ok(response) => CapabilityNegativeControlStationFact {
+            endpoint: PULL_PATH,
+            request_sent: true,
+            response_received: true,
+            command_error_code: Some(command_error_code_name(response.error_code)),
+            http_status: Some(200),
+            transport_error_kind: None,
+            station_error_details: None,
+        },
+        Err(error) => CapabilityNegativeControlStationFact {
+            endpoint: PULL_PATH,
+            request_sent: true,
+            response_received: matches!(error.kind, StationClientErrorKind::HttpStatus(_)),
+            command_error_code: None,
+            http_status: match error.kind {
+                StationClientErrorKind::HttpStatus(status) => Some(status),
+                _ => None,
+            },
+            transport_error_kind: Some(station_error_kind_name(&error.kind)),
+            station_error_details: error.details,
+        },
+    }
+}
+
+fn command_error_code_name(value: i32) -> String {
+    ClientCapabilityCommandErrorCode::try_from(value)
+        .unwrap_or(ClientCapabilityCommandErrorCode::Unspecified)
+        .as_str_name()
+        .to_string()
+}
+
+fn station_error_kind_name(value: &StationClientErrorKind) -> &'static str {
+    match value {
+        StationClientErrorKind::SessionRevoked => "sessionRevoked",
+        StationClientErrorKind::HttpStatus(_) => "httpStatus",
+        StationClientErrorKind::Network => "network",
+        StationClientErrorKind::Decode => "decode",
+        StationClientErrorKind::InvalidResponse => "invalidResponse",
+    }
 }
 
 fn validate_lease(
