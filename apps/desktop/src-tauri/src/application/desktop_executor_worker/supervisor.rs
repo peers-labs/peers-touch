@@ -80,6 +80,8 @@ pub struct CapabilityWorkerSnapshot {
     pub capability_set_hash: String,
     pub platform: i32,
     pub capability_ids: Vec<String>,
+    pub local_execution_attempt_count: u64,
+    pub local_side_effect_count: u64,
     pub expires_at_ms: i64,
 }
 
@@ -348,6 +350,16 @@ fn publish_worker_snapshot(
                 .iter()
                 .map(|capability| capability.capability_id.clone())
                 .collect(),
+            local_execution_attempt_count: worker
+                .executor
+                .as_ref()
+                .map(LocalCapabilityExecutor::execution_attempt_count)
+                .unwrap_or_default(),
+            local_side_effect_count: worker
+                .executor
+                .as_ref()
+                .map(LocalCapabilityExecutor::side_effect_count)
+                .unwrap_or_default(),
             expires_at_ms: worker
                 .lease
                 .expires_at

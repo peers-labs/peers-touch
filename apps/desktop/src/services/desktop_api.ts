@@ -2470,6 +2470,7 @@ export interface AgentExecuteTurnInput {
   effort?: string;
   context_window_size?: number;
   max_retries?: number;
+  client_capability_session_id?: string;
   knowledge_resources?: AgentExecuteTurnKnowledgeResource[];
   available_tools?: McpToolSchemaEntry[];
   memory_disabled?: boolean;
@@ -2621,6 +2622,8 @@ export interface AgentCapabilitySessionSnapshot {
     capability_set_hash: string;
     platform: string;
     capability_ids: string[];
+    local_execution_attempt_count: number;
+    local_side_effect_count: number;
     expires_at_ms: number;
   }>;
 }

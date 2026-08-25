@@ -541,6 +541,12 @@ fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value 
     {
         body["agent_config_prompt"] = json!(prompt);
     }
+    if let Some(session_id) = input
+        .client_capability_session_id
+        .filter(|value| !value.trim().is_empty())
+    {
+        body["client_capability_session_id"] = json!(session_id);
+    }
     if let Some(tools) = input.available_tools.filter(|value| !value.is_empty()) {
         body["available_tools"] = json!(tools);
     }
@@ -1919,6 +1925,26 @@ mod tests {
             &json!({"status": "completed", "seq": 9}),
         ));
         assert!(replay_event_is_terminal("done", &json!({"seq": 9}),));
+    }
+
+    #[test]
+    fn turn_request_preserves_selected_capability_session() {
+        let input: AgentExecuteTurnInput = serde_json::from_value(json!({
+            "client_idempotency_key": "request-1",
+            "conversation_id": "conversation-1",
+            "agent_id": "agent-1",
+            "user_input": "read the selected resource",
+            "client_capability_session_id": "capability-session-1"
+        }))
+        .expect("turn input should deserialize");
+
+        let body = build_turn_request_body(input, true);
+
+        assert_eq!(
+            body.get("client_capability_session_id")
+                .and_then(Value::as_str),
+            Some("capability-session-1"),
+        );
     }
 
     #[test]

@@ -1181,10 +1181,16 @@ Group 1 now has a manifest-bound Native/Browser lifecycle controller, bounded
 session convergence, unified raw runtime capture, and an exact matrix-driven
 28-tuple dispatcher. AS-F02 additionally has explicit-idempotency concurrent
 Turn submission, pre-drain queue capture, visible queue projection, typed stream
-outcomes, and queued cancellation controls. Scenario-specific oracles and
-remaining production controls remain open, as do the remaining direct-runtime
-adapters and exact-source deployment; all affected product cells remain
-`UNPROVEN`.
+outcomes, and queued cancellation controls. After rebasing onto
+`origin/master@6a0dce42b`, commits `c2498afd3` and `83f75f9d8` removed restored
+runtime artifacts and reconciled Acceptance/Chat contracts. AS-F10 now has a
+fail-closed oracle for unsupported, unauthorized, signature-tamper,
+schema-mismatch, cross-device, selected-device, Desktop-fallback, and
+zero-execution facts; Station also explicitly rejects a capability-session pull
+whose persisted device differs from the authenticated device. The remaining
+AS-F10 production action/readback controls, other scenario-specific controls,
+remaining direct-runtime adapters, and exact-source deployment remain open; all
+affected product cells remain `UNPROVEN`.
 
 **XR-4 execution finding (2026-08-24)**:
 

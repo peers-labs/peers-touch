@@ -18,6 +18,7 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter import (
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
     evaluate_as_f02,
+    evaluate_as_f10,
 )
 
 
@@ -151,23 +152,31 @@ class FoundationGroupOneProbeRunner:
         runtime_tuple: FoundationTuple,
         capture: Mapping[str, Any],
     ) -> None:
-        if runtime_tuple.cell != "AS-F02":
+        evaluators = {
+            "AS-F02": lambda facts: evaluate_as_f02(facts),
+            "AS-F10": lambda facts: evaluate_as_f10(
+                facts,
+                platform=runtime_tuple.platform,
+            ),
+        }
+        evaluator = evaluators.get(runtime_tuple.cell)
+        if evaluator is None:
             return
         scenario_facts = capture.get("scenarioFacts")
         assertions = capture.get("assertions")
         if not isinstance(scenario_facts, Mapping):
             raise GroupOneProbeError(
-                "AS-F02 capture must contain scenarioFacts"
+                f"{runtime_tuple.cell} capture must contain scenarioFacts"
             )
         if not isinstance(assertions, Mapping):
             raise GroupOneProbeError(
-                "AS-F02 capture must contain assertions"
+                f"{runtime_tuple.cell} capture must contain assertions"
             )
         try:
-            evaluated = evaluate_as_f02(scenario_facts)
+            evaluated = evaluator(scenario_facts)
         except GroupOneScenarioError as error:
             raise GroupOneProbeError(str(error)) from error
         if dict(assertions) != evaluated:
             raise GroupOneProbeError(
-                "AS-F02 assertions do not match production scenario facts"
+                f"{runtime_tuple.cell} assertions do not match production scenario facts"
             )

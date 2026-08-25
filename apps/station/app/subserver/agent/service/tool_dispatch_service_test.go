@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	touchmodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -211,6 +212,49 @@ func (f toolDispatchFixture) pullSingleEnvelope(t *testing.T) *model.ClientCapab
 		t.Fatalf("expected one capability request, got %d", len(response.GetRequests()))
 	}
 	return response.GetRequests()[0]
+}
+
+func TestToolDispatchServiceRejectsCrossDeviceCapabilitySessionPull(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	foreignLease := proto.Clone(fixture.session).(*model.ClientCapabilityLease)
+	foreignLease.DeviceId = "device-other"
+	encodedLease, err := proto.MarshalOptions{Deterministic: true}.Marshal(foreignLease)
+	if err != nil {
+		t.Fatalf("encode foreign-device lease: %v", err)
+	}
+	if err := fixture.db.Model(&persistence.ClientCapabilityLease{}).
+		Where("session_id = ?", fixture.session.GetCapabilitySessionId()).
+		Updates(map[string]interface{}{
+			"device_id":     foreignLease.GetDeviceId(),
+			"lease_payload": encodedLease,
+		}).Error; err != nil {
+		t.Fatalf("persist foreign-device lease: %v", err)
+	}
+
+	response, err := fixture.service.PullCapabilityRequests(
+		context.Background(),
+		fixture.actorID,
+		fixture.deviceID,
+		fixture.signedPullRequest(t, "cross-device-session", 22),
+	)
+	if response != nil {
+		t.Fatalf("cross-device capability pull returned response: %+v", response)
+	}
+	var businessError *errcode.BizError
+	if !errors.As(err, &businessError) ||
+		businessError.Code != errcode.AgentUnauthorized {
+		t.Fatalf("cross-device capability pull error = %v", err)
+	}
+
+	var commandCount int64
+	if err := fixture.db.Model(&persistence.ClientCapabilityCommand{}).
+		Where("command_id = ?", "pull-cross-device-session").
+		Count(&commandCount).Error; err != nil {
+		t.Fatalf("count rejected capability command: %v", err)
+	}
+	if commandCount != 0 {
+		t.Fatalf("cross-device capability pull committed %d command rows", commandCount)
+	}
 }
 
 func (f toolDispatchFixture) signedPullRequest(

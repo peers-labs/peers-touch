@@ -243,6 +243,8 @@ pub fn capability_session_snapshot(
                 "capability_set_hash": worker.capability_set_hash,
                 "platform": runtime_platform_name(worker.platform),
                 "capability_ids": worker.capability_ids,
+                "local_execution_attempt_count": worker.local_execution_attempt_count,
+                "local_side_effect_count": worker.local_side_effect_count,
                 "expires_at_ms": worker.expires_at_ms,
             })
         })
@@ -535,6 +537,8 @@ mod tests {
             capability_set_hash: "capability-hash".to_string(),
             platform: agent::ClientPlatform::Desktop as i32,
             capability_ids: vec!["clipboard.read".to_string()],
+            local_execution_attempt_count: 3,
+            local_side_effect_count: 2,
             expires_at_ms: 123,
         }]);
         assert!(result.ok);
@@ -544,6 +548,8 @@ mod tests {
         assert!(!status.contains("session-secret"));
         assert!(!status.contains("lease-secret"));
         assert!(status.contains("capability-hash"));
+        assert!(status.contains("\"local_execution_attempt_count\":3"));
+        assert!(status.contains("\"local_side_effect_count\":2"));
     }
 
     #[test]
@@ -557,12 +563,16 @@ mod tests {
             capability_set_hash: "browser-capability-hash".to_string(),
             platform: agent::ClientPlatform::Browser as i32,
             capability_ids: Vec::new(),
+            local_execution_attempt_count: 0,
+            local_side_effect_count: 0,
             expires_at_ms: 456,
         }]);
         assert!(result.ok);
         let status = result.data.expect("browser snapshot data").status;
         assert!(status.contains("CLIENT_PLATFORM_BROWSER"));
         assert!(status.contains("\"capability_ids\":[]"));
+        assert!(status.contains("\"local_execution_attempt_count\":0"));
+        assert!(status.contains("\"local_side_effect_count\":0"));
         assert!(!status.contains("filesystem.read"));
         assert!(!status.contains("shell.execute"));
     }

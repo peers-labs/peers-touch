@@ -795,8 +795,19 @@ func (s *ToolDispatchService) PullCapabilityRequests(
 		); err != nil {
 			return err
 		}
-		if _, err := loadActiveCapabilityLeaseTx(tx, actorID, request.GetCapabilitySessionId(), s.now()); err != nil {
+		lease, err := loadActiveCapabilityLeaseTx(
+			tx,
+			actorID,
+			request.GetCapabilitySessionId(),
+			s.now(),
+		)
+		if err != nil {
 			return err
+		}
+		if lease.GetDeviceId() != deviceID {
+			return unauthorizedToolRequest(
+				"capability session does not belong to authenticated device",
+			)
 		}
 		if err := tx.Where(
 			"actor_id = ? AND capability_session_id = ? AND target_device_id = ? AND dispatch_sequence > ?",

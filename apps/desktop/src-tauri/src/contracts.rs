@@ -986,6 +986,7 @@ pub struct AgentExecuteTurnInput {
     pub workspace_root: Option<String>,
     pub context_window_size: Option<u32>,
     pub max_retries: Option<u32>,
+    pub client_capability_session_id: Option<String>,
     pub knowledge_resources: Option<Vec<Value>>,
     pub available_tools: Option<Vec<Value>>,
     pub memory_disabled: Option<bool>,

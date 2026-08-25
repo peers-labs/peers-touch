@@ -88,9 +88,13 @@ REQUIRED_ASSERTIONS = {
         {
             "coreOutcomesMatch",
             "unsupportedRejected",
+            "unauthorizedRejected",
+            "signatureTamperRejected",
+            "schemaMismatchRejected",
             "selectedDeviceOwnsExecution",
             "noDesktopFallback",
             "crossDeviceRejected",
+            "zeroExecutionOnReject",
         }
     ),
     "AS-F12": frozenset(

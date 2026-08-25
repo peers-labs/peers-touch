@@ -64,22 +64,30 @@ async function capabilitySessionEvidence() {
     api.getAgentCapabilitySessionSnapshot(),
     api.listAgentCapabilitySessions(),
   ]);
-  let selectedStationSession: (typeof station.sessions)[number] | null = null;
+  const matches: Array<(typeof station.sessions)[number]> = [];
   for (const session of station.sessions) {
-    const sessionHash = await sha256Hex(session.session_id);
+    const [actorHash, deviceHash, sessionHash] = await Promise.all([
+      sha256Hex(session.ptid),
+      sha256Hex(session.device_id),
+      sha256Hex(session.session_id),
+    ]);
     if (local.sessions.some(
       (candidate) =>
+        candidate.actor_id_hash === actorHash &&
+        candidate.device_id_hash === deviceHash &&
         candidate.capability_session_id_hash === sessionHash &&
         candidate.platform === session.platform,
     )) {
-      selectedStationSession = session;
-      break;
+      matches.push(session);
     }
+  }
+  if (matches.length > 1) {
+    throw new Error('agent.acceptance.capabilitySessionAmbiguous');
   }
   return {
     local,
     station,
-    selectedStationSession,
+    selectedStationSession: matches[0] ?? null,
   };
 }
 
@@ -524,11 +532,13 @@ export function installAcceptanceHarness(): void {
       submissions,
       expectedQueueSize,
       cancelQueuedIndex,
+      clientCapabilitySessionId,
     }: {
       conversationId: string;
       submissions: FoundationTurnSubmission[];
       expectedQueueSize: number;
       cancelQueuedIndex?: number;
+      clientCapabilitySessionId?: string;
     }) {
       const agent = selectedAgent();
       if (!agent) throw new Error('agent.acceptance.agentMissing');
@@ -560,6 +570,7 @@ export function installAcceptanceHarness(): void {
             client_idempotency_key: submission.idempotencyKey,
             provider: agent.provider || undefined,
             model: agent.model || undefined,
+            client_capability_session_id: clientCapabilitySessionId,
           }, (event) => {
             events.push({
               event: event.event,

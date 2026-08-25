@@ -6,6 +6,7 @@ import unittest
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
     evaluate_as_f02,
+    evaluate_as_f10,
 )
 
 
@@ -64,6 +65,60 @@ def valid_capture() -> dict[str, object]:
     }
 
 
+def valid_as_f10_capture(platform: str = "desktop_app") -> dict[str, object]:
+    browser = platform == "browser"
+    return {
+        "coreOutcome": {
+            "stationStatus": "completed",
+            "receiverStatus": "completed",
+        },
+        "capabilitySession": {
+            "platform": platform,
+            "sessionId": "session-1",
+            "readinessSessionId": "session-1",
+            "deviceId": "device-1",
+            "capabilityCount": 0 if browser else 1,
+        },
+        "selectedDevice": {
+            "sessionDeviceId": "device-1",
+            "executionDeviceId": None if browser else "device-1",
+        },
+        "rejections": {
+            "unsupported": {
+                "accepted": False,
+                "errorCode": "CAPABILITY_UNAVAILABLE",
+            },
+            "unauthorized": {
+                "accepted": False,
+                "errorCode": "UNAUTHORIZED",
+            },
+            "signatureTamper": {
+                "accepted": False,
+                "errorCode": (
+                    "CLIENT_CAPABILITY_COMMAND_ERROR_CODE_SIGNATURE_INVALID"
+                ),
+            },
+            "schemaMismatch": {
+                "accepted": False,
+                "errorCode": "CLIENT_CAPABILITY_SCHEMA_MISMATCH",
+            },
+            "crossDevice": {
+                "accepted": False,
+                "errorCode": (
+                    "CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_AUTHORITY_MISMATCH"
+                ),
+            },
+        },
+        "execution": {
+            "localAttemptDelta": 0,
+            "sideEffectDelta": 0,
+            "resultDelta": 0,
+            "continuationDelta": 0,
+            "desktopFallbackDelta": 0,
+        },
+    }
+
+
 class FoundationGroupOneScenariosTest(unittest.TestCase):
     def test_as_f02_accepts_complete_production_facts(self) -> None:
         assertions = evaluate_as_f02(valid_capture())
@@ -101,6 +156,47 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "firstTurnId must be a non-empty string",
         ):
             evaluate_as_f02(capture)
+
+    def test_as_f10_accepts_desktop_and_browser_production_facts(self) -> None:
+        for platform in ("desktop_app", "browser"):
+            with self.subTest(platform=platform):
+                assertions = evaluate_as_f10(
+                    valid_as_f10_capture(platform),
+                    platform=platform,
+                )
+
+                self.assertEqual(len(assertions), 9)
+                self.assertTrue(all(assertions.values()))
+
+    def test_as_f10_rejects_any_execution_delta(self) -> None:
+        capture = valid_as_f10_capture("browser")
+        capture["execution"]["sideEffectDelta"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroExecutionOnReject",
+        ):
+            evaluate_as_f10(capture, platform="browser")
+
+    def test_as_f10_rejects_browser_local_capabilities(self) -> None:
+        capture = valid_as_f10_capture("browser")
+        capture["capabilitySession"]["capabilityCount"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "selectedDeviceOwnsExecution",
+        ):
+            evaluate_as_f10(capture, platform="browser")
+
+    def test_as_f10_rejects_unexpected_rejection_code(self) -> None:
+        capture = valid_as_f10_capture()
+        capture["rejections"]["signatureTamper"]["errorCode"] = "AGENT_5000"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "signatureTamperRejected",
+        ):
+            evaluate_as_f10(capture, platform="desktop_app")
 
 
 if __name__ == "__main__":

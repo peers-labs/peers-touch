@@ -5,9 +5,12 @@ use crate::contracts::McpExecuteToolInput;
 use crate::model::agent::ClientCapabilityRequest;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub struct LocalCapabilityExecutor {
     contracts: HashMap<String, CapabilityContract>,
+    execution_attempts: AtomicU64,
+    side_effects_started: AtomicU64,
 }
 
 impl LocalCapabilityExecutor {
@@ -47,7 +50,19 @@ impl LocalCapabilityExecutor {
                 return Err("duplicate local capability contract".to_string());
             }
         }
-        Ok(Self { contracts: indexed })
+        Ok(Self {
+            contracts: indexed,
+            execution_attempts: AtomicU64::new(0),
+            side_effects_started: AtomicU64::new(0),
+        })
+    }
+
+    pub fn execution_attempt_count(&self) -> u64 {
+        self.execution_attempts.load(Ordering::SeqCst)
+    }
+
+    pub fn side_effect_count(&self) -> u64 {
+        self.side_effects_started.load(Ordering::SeqCst)
     }
 }
 
@@ -62,6 +77,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
         resources: &[LocalResource],
         external_idempotency_key: Option<&str>,
     ) -> Result<Vec<u8>, String> {
+        self.execution_attempts.fetch_add(1, Ordering::SeqCst);
         if external_idempotency_key.is_some() {
             return Err("CLIENT_CAPABILITY_EXTERNAL_IDEMPOTENCY_UNSUPPORTED".to_string());
         }
@@ -76,47 +92,65 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
             .map(|resource| resource.locator.clone())
             .collect::<Vec<_>>();
         let mut result = match request.capability_id.as_str() {
-            "filesystem.read" => execute_builtin(
-                "local_file_read",
-                arguments,
-                workspace_root,
-                &allowed_roots,
-                &request.tool_call_id,
-            )?,
-            "filesystem.list" => execute_builtin(
-                "local_workspace_list",
-                arguments,
-                workspace_root,
-                &allowed_roots,
-                &request.tool_call_id,
-            )?,
-            "clipboard.read" => execute_builtin(
-                "local_clipboard_read",
-                arguments,
-                None,
-                &[],
-                &request.tool_call_id,
-            )?,
-            "clipboard.write" => execute_builtin(
-                "local_clipboard_write",
-                arguments,
-                None,
-                &[],
-                &request.tool_call_id,
-            )?,
-            "shell.execute" => execute_builtin(
-                "local_shell_safe",
-                arguments,
-                workspace_root,
-                &allowed_roots,
-                &request.tool_call_id,
-            )?,
-            "mcp.invoke" => execute_mcp(
-                arguments,
-                workspace_root,
-                &allowed_roots,
-                &request.tool_call_id,
-            )?,
+            "filesystem.read" => {
+                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                execute_builtin(
+                    "local_file_read",
+                    arguments,
+                    workspace_root,
+                    &allowed_roots,
+                    &request.tool_call_id,
+                )?
+            }
+            "filesystem.list" => {
+                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                execute_builtin(
+                    "local_workspace_list",
+                    arguments,
+                    workspace_root,
+                    &allowed_roots,
+                    &request.tool_call_id,
+                )?
+            }
+            "clipboard.read" => {
+                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                execute_builtin(
+                    "local_clipboard_read",
+                    arguments,
+                    None,
+                    &[],
+                    &request.tool_call_id,
+                )?
+            }
+            "clipboard.write" => {
+                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                execute_builtin(
+                    "local_clipboard_write",
+                    arguments,
+                    None,
+                    &[],
+                    &request.tool_call_id,
+                )?
+            }
+            "shell.execute" => {
+                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                execute_builtin(
+                    "local_shell_safe",
+                    arguments,
+                    workspace_root,
+                    &allowed_roots,
+                    &request.tool_call_id,
+                )?
+            }
+            "mcp.invoke" => {
+                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                execute_mcp(
+                    arguments,
+                    workspace_root,
+                    &allowed_roots,
+                    &request.tool_call_id,
+                )?
+            }
             _ => return Err("CLIENT_CAPABILITY_NOT_REGISTERED".to_string()),
         };
         redact_local_locators(&mut result, resources);
@@ -253,10 +287,14 @@ mod tests {
             bounded_arguments: br#"{"path":"note.txt"}"#.to_vec(),
             ..Default::default()
         };
+        assert_eq!(executor.execution_attempt_count(), 0);
+        assert_eq!(executor.side_effect_count(), 0);
         assert_eq!(
             executor.execute(&request, &[], None).unwrap_err(),
             "CLIENT_CAPABILITY_RESOURCE_REQUIRED"
         );
+        assert_eq!(executor.execution_attempt_count(), 1);
+        assert_eq!(executor.side_effect_count(), 0);
     }
 
     #[test]

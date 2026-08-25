@@ -12,6 +12,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_probe import (
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f02,
+    evaluate_as_f10,
 )
 
 
@@ -35,6 +36,64 @@ class RecordingHarnessClient:
 
 def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, Any]:
     result = capture(probe)
+    if probe.cell == "AS-F10":
+        browser = probe.platform == "browser"
+        facts = {
+            "coreOutcome": {
+                "stationStatus": "completed",
+                "receiverStatus": "completed",
+            },
+            "capabilitySession": {
+                "platform": probe.platform,
+                "sessionId": "session-1",
+                "readinessSessionId": "session-1",
+                "deviceId": "device-1",
+                "capabilityCount": 0 if browser else 1,
+            },
+            "selectedDevice": {
+                "sessionDeviceId": "device-1",
+                "executionDeviceId": None if browser else "device-1",
+            },
+            "rejections": {
+                "unsupported": {
+                    "accepted": False,
+                    "errorCode": "CAPABILITY_UNAVAILABLE",
+                },
+                "unauthorized": {
+                    "accepted": False,
+                    "errorCode": "UNAUTHORIZED",
+                },
+                "signatureTamper": {
+                    "accepted": False,
+                    "errorCode": (
+                        "CLIENT_CAPABILITY_COMMAND_ERROR_CODE_SIGNATURE_INVALID"
+                    ),
+                },
+                "schemaMismatch": {
+                    "accepted": False,
+                    "errorCode": "CLIENT_CAPABILITY_SCHEMA_MISMATCH",
+                },
+                "crossDevice": {
+                    "accepted": False,
+                    "errorCode": (
+                        "CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_AUTHORITY_MISMATCH"
+                    ),
+                },
+            },
+            "execution": {
+                "localAttemptDelta": 0,
+                "sideEffectDelta": 0,
+                "resultDelta": 0,
+                "continuationDelta": 0,
+                "desktopFallbackDelta": 0,
+            },
+        }
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_as_f10(
+            facts,
+            platform=probe.platform,
+        )
+        return result
     if probe.cell != "AS-F02":
         return result
     facts = {
@@ -154,6 +213,30 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneProbeError,
             "assertions do not match production scenario facts",
+        ):
+            runner.collect(mismatched)
+
+    def test_as_f10_rejects_assertions_not_derived_from_facts(self) -> None:
+        runner = FoundationGroupOneProbeRunner(
+            desktop_native=RecordingHarnessClient(),
+            browser=RecordingHarnessClient(),
+        )
+
+        def mismatched(
+            client: RecordingHarnessClient,
+            probe: Any,
+        ) -> dict[str, Any]:
+            result = scenario_capture(client, probe)
+            if probe.cell == "AS-F10":
+                result["assertions"] = {
+                    **result["assertions"],
+                    "zeroExecutionOnReject": False,
+                }
+            return result
+
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "AS-F10 assertions do not match production scenario facts",
         ):
             runner.collect(mismatched)
 
