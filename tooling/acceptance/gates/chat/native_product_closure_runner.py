@@ -704,7 +704,31 @@ class NativeProductClosureGate(AcceptanceGate):
             ];
             const events = [];
             const documentEvents = [];
+            const mutations = [];
             let deliveredPoint = null;
+            const inspectSelector = () => selector
+              ? Array.from(document.querySelectorAll(selector)).map((match) => {
+                  const rect = match.getBoundingClientRect();
+                  return {
+                    connected: match.isConnected,
+                    rect: {
+                      left: rect.left,
+                      top: rect.top,
+                      width: rect.width,
+                      height: rect.height,
+                    },
+                  };
+                })
+              : [];
+            const inspectReactionStates = () => Array.from(
+              document.querySelectorAll('[data-message-reaction-state]'),
+            ).map((state) => ({
+              phase: state.getAttribute('data-message-reaction-state') || '',
+              emoji: state.getAttribute('data-message-reaction-emoji') || '',
+              retryCount: state.querySelectorAll(
+                '[data-message-reaction-retry]',
+              ).length,
+            }));
             const describe = (candidate) => {
               if (!(candidate instanceof Element)) return null;
               return {
@@ -777,10 +801,32 @@ class NativeProductClosureGate(AcceptanceGate):
               document.addEventListener(type, listener, true);
               window.addEventListener(type, documentListener, true);
             });
+            const observer = new MutationObserver(() => {
+              if (mutations.length >= 64) return;
+              mutations.push({
+                at: performance.now(),
+                selectorMatches: inspectSelector(),
+                reactionStates: inspectReactionStates(),
+              });
+            });
+            observer.observe(document.body, {
+              attributes: true,
+              childList: true,
+              subtree: true,
+            });
             registry[probeId] = {
               events,
               documentEvents,
+              selector,
+              expectedPoint,
+              snapshot: () => ({
+                deliveredPoint,
+                mutations,
+                reactionStates: inspectReactionStates(),
+                selectorMatches: inspectSelector(),
+              }),
               cleanup: () => {
+                observer.disconnect();
                 eventTypes.forEach((type) => {
                   document.removeEventListener(type, listener, true);
                   window.removeEventListener(type, documentListener, true);
@@ -855,6 +901,7 @@ class NativeProductClosureGate(AcceptanceGate):
                   documentEvents: probe?.documentEvents || [],
                   events: probe?.events || [],
                   hasFocus: document.hasFocus(),
+                  probeSnapshot: probe?.snapshot?.() || null,
                   viewportCenterTarget: {
                     tag: target?.tagName || '',
                     id: target?.id || '',
