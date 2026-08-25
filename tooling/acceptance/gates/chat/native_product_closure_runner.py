@@ -680,12 +680,17 @@ class NativeProductClosureGate(AcceptanceGate):
         self,
         client: TauriSession,
         element: Any,
+        *,
+        selector: str | None = None,
+        expected_point: tuple[float, float] | None = None,
     ) -> str:
         probe_id = secrets.token_hex(8)
         client.execute_script(
             """
             const target = arguments[0];
             const probeId = arguments[1];
+            const selector = arguments[2];
+            const expectedPoint = arguments[3];
             const registry = window.__PT_NATIVE_INPUT_PROBES__ ||= {};
             const existing = registry[probeId];
             existing?.cleanup?.();
@@ -713,11 +718,23 @@ class NativeProductClosureGate(AcceptanceGate):
             };
             const listener = (event) => {
               const eventTarget = event.target;
-              const owned = (
+              const exactOwned = (
                 eventTarget === target
                 || (
                   eventTarget instanceof Node
                   && target.contains(eventTarget)
+                )
+              );
+              const semanticOwned = Boolean(
+                selector
+                && eventTarget instanceof Element
+                && eventTarget.closest(selector)
+              );
+              const pointOwned = (
+                !expectedPoint
+                || (
+                  Math.abs(event.clientX - expectedPoint.x) <= 2
+                  && Math.abs(event.clientY - expectedPoint.y) <= 2
                 )
               );
               events.push({
@@ -726,7 +743,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 buttons: event.buttons,
                 clientX: event.clientX,
                 clientY: event.clientY,
-                owned,
+                owned: pointOwned && (exactOwned || semanticOwned),
                 target: describe(eventTarget),
               });
             };
@@ -762,6 +779,12 @@ class NativeProductClosureGate(AcceptanceGate):
             """,
             element,
             probe_id,
+            selector,
+            (
+                {"x": expected_point[0], "y": expected_point[1]}
+                if expected_point is not None
+                else None
+            ),
         )
         return probe_id
 
@@ -1023,7 +1046,13 @@ class NativeProductClosureGate(AcceptanceGate):
         client = self.focus_actor_window(actor)
         return self._click_focused_element(client, element)
 
-    def _click_focused_element(self, client: TauriSession, element: Any) -> Any:
+    def _click_focused_element(
+        self,
+        client: TauriSession,
+        element: Any,
+        *,
+        selector: str | None = None,
+    ) -> Any:
         WebDriverWait(client.driver, 30).until(
             lambda _: element.is_displayed() and element.is_enabled()
         )
@@ -1153,62 +1182,83 @@ class NativeProductClosureGate(AcceptanceGate):
         pointer_target = client.driver.execute_script(
             """
             const element = arguments[0];
-            const rect = element.getBoundingClientRect();
-            const x = rect.left + rect.width / 2;
-            const y = rect.top + rect.height / 2;
+            const selector = arguments[1];
+            const x = arguments[2];
+            const y = arguments[3];
             const hit = document.elementFromPoint(x, y);
+            const candidate = selector ? hit?.closest(selector) : element;
+            const rect = candidate?.getBoundingClientRect();
             return {
-              connected: element.isConnected,
-              disabled: Boolean(element.disabled),
-              hit: hit === element || element.contains(hit),
+              element: candidate || null,
+              connected: Boolean(candidate?.isConnected),
+              disabled: Boolean(candidate?.disabled),
+              hit: Boolean(
+                candidate
+                && (hit === candidate || candidate.contains(hit))
+              ),
               hitTarget: {
                 tag: hit?.tagName || '',
                 id: hit?.id || '',
                 classes: hit?.className || '',
               },
               rect: {
-                left: rect.left,
-                top: rect.top,
-                width: rect.width,
-                height: rect.height,
+                left: rect?.left || 0,
+                top: rect?.top || 0,
+                width: rect?.width || 0,
+                height: rect?.height || 0,
               },
             };
             """,
             element,
+            selector,
+            float(target["x"]),
+            float(target["y"]),
         )
+        current_element = pointer_target.pop("element", None)
         if (
             not pointer_target.get("connected")
             or pointer_target.get("disabled")
             or not pointer_target.get("hit")
+            or current_element is None
         ):
             raise GateError(
                 "Native click target changed after pointer positioning"
                 ": "
                 f"{json.dumps(pointer_target, sort_keys=True)}"
             )
+        element = current_element
 
-        probe_id = self.install_native_input_probe(client, element)
+        probe_id = self.install_native_input_probe(
+            client,
+            element,
+            selector=selector,
+            expected_point=(float(target["x"]), float(target["y"])),
+        )
         mouse_down_posted = False
         try:
             cursor = 0
             current_target = client.driver.execute_script(
                 """
                 const element = arguments[0];
-                const rect = element.getBoundingClientRect();
-                const x = rect.left + rect.width / 2;
-                const y = rect.top + rect.height / 2;
+                const selector = arguments[1];
+                const x = arguments[2];
+                const y = arguments[3];
                 const hit = document.elementFromPoint(x, y);
+                const candidate = selector ? hit?.closest(selector) : element;
                 return {
-                  connected: element.isConnected,
-                  disabled: Boolean(element.disabled),
-                  hit: hit === element || element.contains(hit),
+                  connected: Boolean(candidate?.isConnected),
+                  disabled: Boolean(candidate?.disabled),
+                  hit: Boolean(
+                    candidate
+                    && (hit === candidate || candidate.contains(hit))
+                  ),
                   hitTarget: {
                     tag: hit?.tagName || '',
                     id: hit?.id || '',
                     classes: hit?.className || '',
                   },
-                  x,
-                  y,
+                  x: arguments[2],
+                  y: arguments[3],
                   hasFocus: document.hasFocus(),
                   activeElement: {
                     tag: document.activeElement?.tagName || '',
@@ -1225,6 +1275,9 @@ class NativeProductClosureGate(AcceptanceGate):
                 };
                 """,
                 element,
+                selector,
+                float(target["x"]),
+                float(target["y"]),
             )
             if (
                 not current_target.get("connected")
@@ -1236,14 +1289,6 @@ class NativeProductClosureGate(AcceptanceGate):
                     ": "
                     f"{json.dumps(current_target, sort_keys=True)}"
                 )
-            point = (
-                window["left"]
-                + content_offset_x
-                + float(current_target["x"]),
-                window["top"]
-                + content_offset_y
-                + float(current_target["y"]),
-            )
             if native_mousedown_debug_enabled():
                 # #region debug-point A,C,E:before-native-mousedown
                 report_native_mousedown_debug(
@@ -1342,7 +1387,11 @@ class NativeProductClosureGate(AcceptanceGate):
     def click(self, actor: str, selector: str, timeout: float = 30) -> Any:
         client = self.focus_actor_window(actor)
         element = client.find_element(selector, timeout)
-        return self._click_focused_element(client, element)
+        return self._click_focused_element(
+            client,
+            element,
+            selector=selector,
+        )
 
     def hover_message(self, actor: str, message_id: str) -> Any:
         client = self.focus_actor_window(actor)

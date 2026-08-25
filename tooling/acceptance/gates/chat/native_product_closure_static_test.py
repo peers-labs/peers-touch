@@ -380,8 +380,21 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             selector_click_source.index("client.find_element(selector, timeout)"),
         )
         self.assertIn(
-            "return self._click_focused_element(client, element)",
+            "return self._click_focused_element(\n"
+            "            client,\n"
+            "            element,\n"
+            "            selector=selector,\n"
+            "        )",
             selector_click_source,
+        )
+        self.assertIn(
+            "const candidate = selector ? hit?.closest(selector) : element;",
+            click_source,
+        )
+        self.assertIn("selector=selector,", click_source)
+        self.assertIn(
+            'expected_point=(float(target["x"]), float(target["y"]))',
+            click_source,
         )
         self.assertNotIn("self.click_element(actor, element)", selector_click_source)
         self.assertNotIn("staging_point", self.source)
