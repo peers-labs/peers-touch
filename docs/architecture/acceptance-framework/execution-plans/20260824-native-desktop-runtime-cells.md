@@ -303,8 +303,9 @@ Deliver:
 - Keep native file-chooser navigation platform-owned: macOS uses the Finder
   location shortcut, while Linux uses the GTK/Zenity location shortcut.
 - Stabilize hover-sensitive native clicks by positioning the native pointer,
-  revalidating the target, and only then installing the DOM acknowledgement
-  probe and sending one atomic down/up sequence.
+  rebinding selector-driven actions to the current semantic target at the
+  fixed physical point, and only then sending one atomic down/up sequence with
+  point-bound DOM acknowledgement.
 - Keep runtime-cell retention bounded by skipping recursive cache inspection
   when the cache unit itself is within the retention window.
 - Preserve screenshots, DOM, native diagnostics, attachment byte/count ledger,
