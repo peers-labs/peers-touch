@@ -91,3 +91,6 @@ apps/mobile/android/gradle/wrapper/gradle-wrapper.jar
 apps/mobile/flutter/
 packages/messaging-core/target/
 tooling/acceptance/reports/
+apps/desktop/test-results/
+tooling/scripts/__pycache__/
+*.pyc
