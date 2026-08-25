@@ -59,8 +59,8 @@ interface ChatMessageActionOverlayProps {
   onForward: (message: ChatMessage) => void;
   onOpenThread: (rootUlid: string) => void;
   onPin: (message: ChatMessage) => void;
-  onPointerEnter: () => void;
-  onPointerLeave: () => void;
+  onHoverEnter: () => void;
+  onHoverLeave: () => void;
   onReact: (message: ChatMessage, emoji: string) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
@@ -93,8 +93,8 @@ export function ChatMessageActionOverlay({
   onForward,
   onOpenThread,
   onPin,
-  onPointerEnter,
-  onPointerLeave,
+  onHoverEnter,
+  onHoverLeave,
   onReact,
   onRecall,
   onReply,
@@ -279,21 +279,21 @@ export function ChatMessageActionOverlay({
       data-message-action-placement={geometry?.placement ?? 'unplaced'}
       onPointerDownCapture={() => {
         pointerInsideRef.current = true;
-        onPointerEnter();
+        onHoverEnter();
       }}
-      onPointerEnter={() => {
+      onMouseEnter={() => {
         pointerInsideRef.current = true;
-        onPointerEnter();
+        onHoverEnter();
       }}
-      onPointerLeave={() => {
+      onMouseLeave={() => {
         pointerInsideRef.current = false;
-        onPointerLeave();
+        onHoverLeave();
       }}
       onFocusCapture={() => {
         // #region debug-point D:overlay-focus-capture
         fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'post-fix', hypothesisId: 'C,D', location: 'ChatMessageActionOverlay:onFocusCapture', msg: '[DEBUG] overlay captured focus', data: { pickerOpen, activeAction: document.activeElement?.getAttribute('data-message-action') ?? '', activeReaction: document.activeElement?.getAttribute('data-reaction-emoji') ?? '' }, ts: Date.now() }) }).catch(() => {});
         // #endregion
-        onPointerEnter();
+        onHoverEnter();
       }}
       onBlurCapture={(event) => {
         const relatedContained = event.relatedTarget instanceof Node
@@ -302,7 +302,7 @@ export function ChatMessageActionOverlay({
         fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'post-fix', hypothesisId: 'C,D', location: 'ChatMessageActionOverlay:onBlurCapture', msg: '[DEBUG] overlay captured blur', data: { pickerOpen, relatedContained, pointerInside: pointerInsideRef.current, relatedTag: event.relatedTarget instanceof Element ? event.relatedTarget.tagName : '' }, ts: Date.now() }) }).catch(() => {});
         // #endregion
         if (relatedContained || pointerInsideRef.current) return;
-        onPointerLeave();
+        onHoverLeave();
       }}
       style={{
         position: 'absolute',
