@@ -221,8 +221,8 @@ export function ChatMessageTimeline({
         onForward={onForward}
         onOpenThread={onOpenThread}
         onPin={onPin}
-        onPointerEnter={cancelActionClose}
-        onPointerLeave={scheduleActionClose}
+        onHoverEnter={cancelActionClose}
+        onHoverLeave={scheduleActionClose}
         onReact={onReact}
         onRecall={onRecall}
         onReply={onReply}
