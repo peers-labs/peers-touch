@@ -29,8 +29,18 @@ class FoundationClientError(RuntimeError):
 
 
 def port_open(port: int) -> bool:
-    with socket.socket() as probe:
-        return probe.connect_ex(("127.0.0.1", port)) == 0
+    """Check if a port is listening on localhost (IPv4 or IPv6)."""
+    for family, addr in (
+        (socket.AF_INET, "127.0.0.1"),
+        (socket.AF_INET6, "::1"),
+    ):
+        try:
+            with socket.socket(family) as probe:
+                if probe.connect_ex((addr, port)) == 0:
+                    return True
+        except OSError:
+            continue
+    return False
 
 
 def wait_until(
