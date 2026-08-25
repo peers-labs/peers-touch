@@ -478,63 +478,6 @@ class NativeProductClosureGate(AcceptanceGate):
             "height": float(rect["height"]) / scale,
         }
 
-    def calibrate_native_point(
-        self,
-        client: TauriSession,
-        point: tuple[float, float],
-        expected_point: tuple[float, float],
-    ) -> tuple[float, float]:
-        probe_id = secrets.token_hex(8)
-        client.driver.execute_script(
-            """
-            const probeId = arguments[0];
-            const probes = window.__PT_NATIVE_POINTER_PROBES__ ||= {};
-            const listener = (event) => {
-              probes[probeId].point = {
-                x: event.clientX,
-                y: event.clientY,
-              };
-            };
-            probes[probeId] = {
-              point: null,
-              cleanup: () => {
-                document.removeEventListener('pointermove', listener, true);
-                delete probes[probeId];
-              },
-            };
-            document.addEventListener('pointermove', listener, true);
-            """,
-            probe_id,
-        )
-        try:
-            self.native_adapter.post_mouse((MouseAction.MOVE,), point)
-            delivered = WebDriverWait(
-                client.driver,
-                5,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(
-                lambda driver: driver.execute_script(
-                    """
-                    return window.__PT_NATIVE_POINTER_PROBES__
-                      ?.[arguments[0]]?.point || null;
-                    """,
-                    probe_id,
-                )
-            )
-        finally:
-            client.driver.execute_script(
-                """
-                window.__PT_NATIVE_POINTER_PROBES__
-                  ?.[arguments[0]]?.cleanup?.();
-                """,
-                probe_id,
-            )
-        return (
-            point[0] + expected_point[0] - float(delivered["x"]),
-            point[1] + expected_point[1] - float(delivered["y"]),
-        )
-
-
     def choose_native_file(
         self,
         actor: str,
@@ -1219,14 +1162,22 @@ class NativeProductClosureGate(AcceptanceGate):
             0.0,
             window["height"] - float(target["viewportHeight"]),
         )
-        point = (
-            window["left"] + content_offset_x + float(target["x"]),
-            window["top"] + content_offset_y + float(target["y"]),
+        content_origin = self.native_adapter.content_origin(
+            client.process_id or 0
         )
-        point = self.calibrate_native_point(
-            client,
-            point,
-            (float(target["x"]), float(target["y"])),
+        point = (
+            (
+                content_origin[0]
+                if content_origin is not None
+                else window["left"] + content_offset_x
+            )
+            + float(target["x"]),
+            (
+                content_origin[1]
+                if content_origin is not None
+                else window["top"] + content_offset_y
+            )
+            + float(target["y"]),
         )
         self.native_adapter.post_mouse((MouseAction.MOVE,), point)
         if native_mousedown_debug_enabled():
