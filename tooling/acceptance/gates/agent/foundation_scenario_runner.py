@@ -319,7 +319,16 @@ def _authenticate_clients(
                 f"{f' — client log: {log_path}' if log_path else ''}"
             )
 
-    # Step 5: Wait for capability sessions on both clients (Station async)
+    # Step 5: Open browser capability session explicitly (browser worker does
+    # not auto-start; it requires an explicit openBrowserCapabilitySession call).
+    try:
+        runtime_pair.browser.harness(
+            "openBrowserCapabilitySession", {}, timeout=30
+        )
+    except Exception:
+        pass  # May already be open or handled by the runtime; polling will verify.
+
+    # Step 6: Wait for capability sessions on both clients (Station async)
     # Capability session registration is asynchronous on Station; the
     # messaging engine + signing identity must be ready before the worker
     # can register a lease. Give each client an independent 90s window.

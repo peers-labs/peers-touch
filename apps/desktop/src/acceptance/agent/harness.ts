@@ -602,6 +602,11 @@ export function installAcceptanceHarness(): void {
       return waitForCapabilitySessionEvidence();
     },
 
+    async openBrowserCapabilitySession() {
+      await api.openBrowserCapabilitySession();
+      return { opened: true };
+    },
+
     async runFoundationCapabilityNegativeControl({
       control,
       capabilitySessionIdHash,
