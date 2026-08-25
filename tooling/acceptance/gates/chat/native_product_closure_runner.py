@@ -992,6 +992,11 @@ class NativeProductClosureGate(AcceptanceGate):
                 """,
                 probe_id,
             )
+            if isinstance(snapshot, dict):
+                snapshot["waitException"] = {
+                    "type": type(error).__name__,
+                    "message": str(error),
+                }
             report_native_mousedown_debug(
                 "C,D",
                 "native_product_closure_runner:wait_native_input_event",
