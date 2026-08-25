@@ -13,7 +13,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from tooling.acceptance.core import REPO_ROOT, RuntimeCellContract
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
@@ -475,11 +475,15 @@ class LinuxCellProfileTests(unittest.TestCase):
         provisioner.stop.assert_not_called()
         self.assertNotIn("alice", provisioner._actors)
 
-    def test_actor_file_staging_is_digest_verified_and_actor_scoped(self) -> None:
+    def test_actor_file_staging_refreshes_one_actor_scoped_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "fixture.png"
             source.write_bytes(b"fixture")
-            digest = hashlib.sha256(b"fixture").hexdigest()
+            first_digest = hashlib.sha256(b"fixture").hexdigest()
+            second_digest = hashlib.sha256(b"updated fixture").hexdigest()
+            source_identity = hashlib.sha256(
+                os.fsencode(source.resolve())
+            ).hexdigest()
             provisioner = object.__new__(NativeDesktopLinuxProvisioner)
             provisioner._actors = {
                 "alice": SimpleNamespace(released=False),
@@ -498,32 +502,148 @@ class LinuxCellProfileTests(unittest.TestCase):
                 subprocess.CompletedProcess(
                     (),
                     0,
-                    f"{digest}  /workspace/run/actors/alice/fixtures/file\n",
+                    f"{first_digest}  incoming\n",
                     "",
                 ),
                 subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess(
+                    (),
+                    0,
+                    f"{second_digest}  incoming\n",
+                    "",
+                ),
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess((), 0, "", ""),
             )
 
-            staged = provisioner.stage_actor_file("alice", source)
+            first_staged = provisioner.stage_actor_file("alice", source)
+            source.write_bytes(b"updated fixture")
+            second_staged = provisioner.stage_actor_file("alice", source)
 
         expected = (
-            f"/workspace/run/actors/alice/fixtures/{digest}/fixture.png"
+            f"/workspace/run/actors/alice/fixtures/"
+            f"{source_identity}/fixture.png"
         )
-        self.assertEqual(staged, expected)
-        provisioner.transport.copy_file.assert_called_once_with(
-            source.resolve(),
-            Path(f"/remote/run/staging/alice/{digest}/fixture.png"),
-            timeout=60,
-        )
-        copy_command = provisioner.transport.run_argv.call_args_list[2].args[0]
+        self.assertEqual(first_staged, expected)
+        self.assertEqual(second_staged, expected)
         self.assertEqual(
-            copy_command,
+            provisioner.transport.copy_file.call_args_list,
+            [
+                call(
+                    source.resolve(),
+                    Path(
+                        f"/remote/run/staging/alice/"
+                        f"{first_digest}/fixture.png"
+                    ),
+                    timeout=60,
+                ),
+                call(
+                    source.resolve(),
+                    Path(
+                        f"/remote/run/staging/alice/"
+                        f"{second_digest}/fixture.png"
+                    ),
+                    timeout=60,
+                ),
+            ],
+        )
+        first_copy = provisioner.transport.run_argv.call_args_list[2].args[0]
+        first_move = provisioner.transport.run_argv.call_args_list[4].args[0]
+        second_copy = provisioner.transport.run_argv.call_args_list[8].args[0]
+        second_move = provisioner.transport.run_argv.call_args_list[10].args[0]
+        first_incoming = (
+            f"/workspace/run/actors/alice/fixtures/{source_identity}/"
+            f".fixture.png.{first_digest}.incoming"
+        )
+        second_incoming = (
+            f"/workspace/run/actors/alice/fixtures/{source_identity}/"
+            f".fixture.png.{second_digest}.incoming"
+        )
+        self.assertEqual(
+            first_copy,
             (
                 "docker",
                 "cp",
-                f"/remote/run/staging/alice/{digest}/fixture.png",
-                f"runtime-cell:{expected}",
+                f"/remote/run/staging/alice/{first_digest}/fixture.png",
+                f"runtime-cell:{first_incoming}",
             ),
+        )
+        self.assertEqual(
+            first_move,
+            (
+                "docker",
+                "exec",
+                "runtime-cell",
+                "mv",
+                "-f",
+                first_incoming,
+                expected,
+            ),
+        )
+        self.assertEqual(
+            second_copy,
+            (
+                "docker",
+                "cp",
+                f"/remote/run/staging/alice/{second_digest}/fixture.png",
+                f"runtime-cell:{second_incoming}",
+            ),
+        )
+        self.assertEqual(
+            second_move,
+            (
+                "docker",
+                "exec",
+                "runtime-cell",
+                "mv",
+                "-f",
+                second_incoming,
+                expected,
+            ),
+        )
+
+    def test_actor_file_staging_preserves_target_on_digest_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "fixture.png"
+            source.write_bytes(b"fixture")
+            provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+            provisioner._actors = {
+                "alice": SimpleNamespace(released=False),
+            }
+            provisioner.transport = Mock()
+            provisioner._require_state = Mock(
+                return_value={
+                    "containerName": "runtime-cell",
+                    "remoteControl": "/remote/run/remote_control.py",
+                }
+            )
+            provisioner.transport.run_argv.side_effect = (
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess((), 0, f"{'0' * 64}  incoming\n", ""),
+                subprocess.CompletedProcess((), 0, "", ""),
+                subprocess.CompletedProcess((), 0, "", ""),
+            )
+
+            with self.assertRaisesRegex(ProvisioningError, "digest mismatch"):
+                provisioner.stage_actor_file("alice", source)
+
+        commands = [
+            item.args[0]
+            for item in provisioner.transport.run_argv.call_args_list
+        ]
+        self.assertFalse(
+            any(
+                len(command) > 3
+                and command[:3] == ("docker", "exec", "runtime-cell")
+                and "mv" in command
+                for command in commands
+            )
         )
 
     def test_explicit_orchestrator_endpoint_owns_reverse_tunnel(self) -> None:
