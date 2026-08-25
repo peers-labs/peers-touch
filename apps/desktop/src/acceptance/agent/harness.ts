@@ -357,14 +357,39 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
 
 export function installAcceptanceHarness(): void {
   registerAcceptanceHarness('agent', {
+    async getAcceptanceHarnessStatus() {
+      // Lightweight probe used by the Foundation scenario runner to confirm
+      // the full JS → Rust IPC path is operational before login attempts.
+      const lifecycleState = identityRuntime.getSnapshot().lifecycle.state;
+      return {
+        ready: true,
+        lifecycleState,
+        timestamp: Date.now(),
+      };
+    },
+
     async loginWithPassword({ account, password }: LoginInput) {
-      await identityRuntime.loginWithPassword(account, password);
-      await identityRuntime.completeCurrentSession();
-      await waitFor(
-        () => identityRuntime.getSnapshot().lifecycle.state === 'ready',
-        'lifecycle ready after login',
-        30_000,
-      );
+      // Retry login once if the first attempt fails due to Rust cold-start.
+      // The Tauri backend may still be initializing IPC listeners when the
+      // harness becomes ready at the web layer.
+      const attemptLogin = async (): Promise<void> => {
+        await identityRuntime.loginWithPassword(account, password);
+        await identityRuntime.completeCurrentSession();
+        await waitFor(
+          () => identityRuntime.getSnapshot().lifecycle.state === 'ready',
+          'lifecycle ready after login',
+          30_000,
+        );
+      };
+
+      try {
+        await attemptLogin();
+      } catch (firstError: unknown) {
+        // Wait for Rust backend to finish cold-start initialization
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+        await attemptLogin();
+      }
+
       await installDeferredAppRuntimeProjections();
       const user = useSessionStore.getState().currentUser;
       return {

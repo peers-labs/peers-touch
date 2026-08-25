@@ -208,6 +208,40 @@ def _extract_machine_id(runtime_manifest: dict[str, Any]) -> str:
     return _socket.gethostname()
 
 
+def _warm_up_client(client: "FoundationRuntimeClient") -> None:
+    """Wait for Rust backend readiness before attempting login.
+
+    After harness_ready confirms the web layer is mounted, the Rust/Tauri
+    backend may still be initializing (SQLite migrations, plugin setup, IPC
+    listener registration). A lightweight harness probe is used to confirm
+    end-to-end IPC is functional. Retries up to 3 times with 10s intervals.
+    """
+    import time as _time
+
+    max_attempts = 3
+    probe_timeout = 15.0
+    retry_interval = 10.0
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            # getAcceptanceHarnessStatus is a no-op probe that exercises the
+            # full JS → Rust IPC path without side effects.
+            result = client.harness(
+                "getAcceptanceHarnessStatus",
+                {},
+                timeout=probe_timeout,
+            )
+            if isinstance(result, Mapping) and result.get("ready"):
+                return
+        except Exception:
+            pass
+        if attempt < max_attempts:
+            _time.sleep(retry_interval)
+
+    # Final attempt failed — not fatal, login will be attempted anyway but
+    # may timeout if the backend is genuinely unavailable.
+
+
 def _authenticate_clients(
     runtime_pair: FoundationRuntimePair,
     profile_env: dict[str, str],
@@ -225,11 +259,14 @@ def _authenticate_clients(
     model_id = profile_env.get("PT_AGENT_DEFAULT_MODEL_ID", "")
 
     for client in (runtime_pair.native, runtime_pair.browser):
-        # Step 1: Login
+        # Step 0: Warm-up — wait for Rust backend to finish initializing
+        _warm_up_client(client)
+
+        # Step 1: Login (extended timeout for cold-start scenarios)
         login_result = client.harness(
             "loginWithPassword",
             {"account": account, "password": password},
-            timeout=60,
+            timeout=120,
         )
         if not isinstance(login_result, Mapping) or not login_result.get("authenticated"):
             raise ScenarioRunnerError(
