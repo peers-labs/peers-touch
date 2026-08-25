@@ -170,7 +170,22 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             display.close()
 
     def reveal_file_chooser_location(self) -> None:
-        focused = self._focused_accessible()
+        display = self._open_display()
+        try:
+            active_window = self._active_window(display)
+            active_pid = (
+                self._window_pid(display, active_window)
+                if active_window is not None
+                else -1
+            )
+        finally:
+            display.close()
+        if active_pid <= 0:
+            raise DriverError(
+                "Linux Native file chooser has no active process"
+            )
+
+        focused = self._focused_accessible(active_pid)
         for _ in range(_FILE_CHOOSER_FOCUS_STEPS):
             if focused.get("kind") == "text-field":
                 return
@@ -185,7 +200,7 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             self.post_key(NativeKey.TAB)
             deadline = time.monotonic() + _FILE_CHOOSER_FOCUS_TIMEOUT_SECONDS
             while time.monotonic() < deadline:
-                focused = self._focused_accessible()
+                focused = self._focused_accessible(active_pid)
                 current = (
                     str(focused.get("role") or ""),
                     str(focused.get("title") or ""),
@@ -238,7 +253,9 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
                     and self._is_descendant_process(focused_pid, process_id)
                 )
             )
-            accessible = self._focused_accessible()
+            accessible = self._focused_accessible(
+                active_pid if actor_frontmost else process_id
+            )
             accessible_kind = str(accessible.get("kind") or "")
             descendant_control_kind = (
                 accessible_kind
@@ -540,7 +557,7 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
         )
 
     @staticmethod
-    def _focused_accessible() -> dict[str, object]:
+    def _focused_accessible(process_id: int) -> dict[str, object]:
         previous_handler = signal.getsignal(signal.SIGALRM)
 
         def timeout_handler(_signum: int, _frame: object) -> None:
@@ -552,7 +569,12 @@ class LinuxX11NativeDesktopAdapter(NativeDesktopAdapter):
             import pyatspi
 
             desktop = pyatspi.Registry.getDesktop(0)
-            stack = [desktop]
+            applications = [
+                desktop[index]
+                for index in range(desktop.childCount)
+                if int(desktop[index].get_process_id()) == process_id
+            ]
+            stack = list(reversed(applications))
             while stack:
                 node = stack.pop()
                 state = node.getState()
