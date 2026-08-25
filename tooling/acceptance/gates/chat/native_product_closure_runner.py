@@ -593,23 +593,37 @@ class NativeProductClosureGate(AcceptanceGate):
             modifiers=(NativeModifier.PRIMARY,),
         )
         self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
+
+        observed_clear_states: set[str] = set()
+
+        def location_field_cleared(_: Any) -> NativeControlSnapshot | None:
+            control = self.native_adapter.focused_control(client.process_id or 0)
+            # #region debug-point F,G,H:file-chooser-clear
+            state = json.dumps(control.to_dict(), sort_keys=True)
+            if state not in observed_clear_states:
+                observed_clear_states.add(state)
+                report_native_mousedown_debug(
+                    "F,G,H",
+                    "native_product_closure_runner.py:choose_native_file:clear",
+                    "Native file chooser cleared location state",
+                    {
+                        "actor": actor,
+                        "processId": client.process_id,
+                        "control": control.to_dict(),
+                    },
+                )
+            # #endregion
+            return (
+                control
+                if control.kind == "text-field" and control.value == ""
+                else None
+            )
+
         WebDriverWait(
             client.driver,
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(
-            lambda _: (
-                control
-                if (
-                    (control := self.native_adapter.focused_control(
-                        client.process_id or 0
-                    )).kind
-                    == "text-field"
-                    and control.value == ""
-                )
-                else None
-            )
-        )
+        ).until(location_field_cleared)
         original_clipboard = self.native_adapter.read_clipboard()
         try:
             self.native_adapter.write_clipboard(
