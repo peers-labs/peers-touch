@@ -85,14 +85,70 @@ export function installDeferredAppRuntimeProjections(): Promise<void> {
   installAppRuntime();
 
   deferredInstallInFlight = (async () => {
+    // #region debug-point A,B,D:deferred-runtime-pipeline-start
+    fetch('http://127.0.0.1:7781/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'login-runtime-bootstrap',
+        runId: 'pre-fix',
+        hypothesisId: 'A,B,D',
+        location: 'appRuntime:deferred:start',
+        msg: '[DEBUG] Deferred runtime pipeline started',
+        data: { runtimeIds: DEFERRED_APP_RUNTIME_IDS },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     const installedRuntimes: string[] = [];
     for (const runtimeId of DEFERRED_APP_RUNTIME_IDS) {
+      // #region debug-point A,B:deferred-runtime-start
+      fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'login-runtime-bootstrap',
+          runId: 'pre-fix',
+          hypothesisId: 'A,B',
+          location: 'appRuntime:deferred:runtime-start',
+          msg: '[DEBUG] Deferred runtime bootstrap started',
+          data: { runtimeId, completedRuntimeIds: installedRuntimes },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       installRuntime(runtimeId);
       await bootstrapRuntime(runtimeId, null);
       installedRuntimes.push(runtimeId);
+      // #region debug-point A,B:deferred-runtime-end
+      fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'login-runtime-bootstrap',
+          runId: 'pre-fix',
+          hypothesisId: 'A,B',
+          location: 'appRuntime:deferred:runtime-end',
+          msg: '[DEBUG] Deferred runtime bootstrap completed',
+          data: { runtimeId, completedRuntimeIds: installedRuntimes },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       await yieldToRenderer();
     }
     deferredInstalled = true;
+    // #region debug-point A,C,D:deferred-runtime-pipeline-end
+    fetch('http://127.0.0.1:7781/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'login-runtime-bootstrap',
+        runId: 'pre-fix',
+        hypothesisId: 'A,C,D',
+        location: 'appRuntime:deferred:end',
+        msg: '[DEBUG] Deferred runtime pipeline completed',
+        data: { completedRuntimeIds: installedRuntimes },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     log.info('appRuntime', 'deferred projections installed', { installed: installedRuntimes });
   })().finally(() => {
     deferredInstallInFlight = null;
