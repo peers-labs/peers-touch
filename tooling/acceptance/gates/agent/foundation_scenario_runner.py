@@ -326,40 +326,30 @@ def _authenticate_clients(
     import time as _time
 
     for client in (runtime_pair.native, runtime_pair.browser):
-        client_deadline = _time.monotonic() + 90
-        try:
-            cap_result = client.harness(
-                "getFoundationCapabilitySessions",
-                {},
-                timeout=80,
-            )
-        except Exception:
-            # If capability session is not available yet, it's not fatal;
-            # individual probes will retry with their own timeouts.
-            cap_result = None
-        if isinstance(cap_result, Mapping) and cap_result.get(
-            "selectedStationSession"
-        ):
-            continue
-        # Wait and retry once
-        _time.sleep(min(10.0, max(0, client_deadline - _time.monotonic())))
-        retry_timeout = max(10.0, client_deadline - _time.monotonic()) + 10
-        try:
-            cap_result = client.harness(
-                "getFoundationCapabilitySessions",
-                {},
-                timeout=retry_timeout,
-            )
-        except Exception as error:
+        client_deadline = _time.monotonic() + 300
+        established = False
+        while _time.monotonic() < client_deadline:
+            try:
+                cap_result = client.harness(
+                    "getFoundationCapabilitySessions",
+                    {},
+                    timeout=min(60, max(10, client_deadline - _time.monotonic())),
+                )
+            except Exception:
+                cap_result = None
+            if isinstance(cap_result, Mapping) and cap_result.get(
+                "selectedStationSession"
+            ):
+                established = True
+                break
+            remaining = client_deadline - _time.monotonic()
+            if remaining <= 0:
+                break
+            _time.sleep(min(15.0, remaining))
+        if not established:
             raise ScenarioRunnerError(
                 f"{client.spec.runtime} capability session not established "
-                f"after extended wait: {error}"
-            ) from error
-        if not isinstance(cap_result, Mapping) or not cap_result.get(
-            "selectedStationSession"
-        ):
-            raise ScenarioRunnerError(
-                f"{client.spec.runtime} capability session not established"
+                f"after 300s polling"
             )
 
 
