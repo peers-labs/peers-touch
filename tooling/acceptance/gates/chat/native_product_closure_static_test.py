@@ -396,6 +396,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'expected_point=(float(target["x"]), float(target["y"]))',
             click_source,
         )
+        self.assertIn("let deliveredPoint = null;", self.source)
+        self.assertIn(
+            "const anchoredPoint = deliveredPoint || expectedPoint;",
+            self.source,
+        )
+        self.assertIn(
+            "Math.abs(event.clientY - anchoredPoint.y) <= 2",
+            self.source,
+        )
         self.assertNotIn("self.click_element(actor, element)", selector_click_source)
         self.assertNotIn("staging_point", self.source)
         self.assertIn(
