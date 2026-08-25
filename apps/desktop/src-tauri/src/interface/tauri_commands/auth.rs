@@ -85,6 +85,7 @@ fn broadcast_identity(
             reason,
             actor_id: data.actor_id.clone(),
             login_method: data.login_method.clone(),
+            device_type: Some("desktop-native".to_string()),
         },
     );
 }

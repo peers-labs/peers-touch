@@ -92,6 +92,7 @@ pub fn account_switch(
                 reason: IdentityChangeReason::Switch,
                 actor_id,
                 login_method: None,
+                device_type: Some("desktop-native".to_string()),
             },
         );
     }
@@ -349,6 +350,7 @@ pub fn account_unlock(
             reason: IdentityChangeReason::Unlock,
             actor_id: Some(session.actor_id),
             login_method: p_method,
+            device_type: Some("desktop-native".to_string()),
         },
     );
 

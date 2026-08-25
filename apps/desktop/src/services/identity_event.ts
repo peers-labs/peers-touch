@@ -8,6 +8,7 @@ import { listen } from '@tauri-apps/api/event';
 import { log } from '../utils/logger';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
+import { isBrowserGatewayRuntime } from '../kernel/gateway';
 import { api, type PresenceTrigger } from './desktop_api';
 import { useSessionStore } from '../store/session';
 import {
@@ -49,6 +50,27 @@ interface TauriIdentityPayload {
   actorId?: string | null;
   login_method?: string | null;
   loginMethod?: string | null;
+  device_type?: string | null;
+  deviceType?: string | null;
+}
+
+/**
+ * Resolve the device type of the current client runtime.
+ * Native Tauri windows are "desktop-native"; browser-gateway clients are "desktop-browser".
+ */
+function currentClientDeviceType(): string {
+  return isBrowserGatewayRuntime() ? 'desktop-browser' : 'desktop-native';
+}
+
+/**
+ * Returns true when the event originated from a different device type than
+ * the current client. In multi-device mode, a login from a different device
+ * type should NOT kick the current session.
+ */
+function isFromDifferentDeviceType(raw: TauriIdentityPayload | undefined): boolean {
+  const incoming = raw?.device_type ?? raw?.deviceType ?? null;
+  if (!incoming) return false; // absent → cannot determine, assume same (safe default)
+  return incoming !== currentClientDeviceType();
 }
 
 function normalizeReason(raw: string | undefined): IdentityChangeReason {
@@ -114,9 +136,22 @@ export function installIdentityChangedBridge(): void {
     // same newly-issued Station session. If this window is already the
     // same actor, its older token has just been revoked by Station's
     // CreateWithKick policy, so route it through the normal kicked flow.
+    //
+    // EXCEPTION (MCA-D19 multi-device): When the login originated from a
+    // different device type (e.g. browser login while native is running),
+    // Station scopes sessions by device_type and does NOT revoke the other
+    // device's session. In that case, ignore the event entirely.
     if (isLoginLike(payload.reason)) {
       const current = useSessionStore.getState().currentUser;
       if (current?.actorId && current.actorId === payload.actorId) {
+        if (isFromDifferentDeviceType(raw)) {
+          log.info('identity', 'ignoring same-actor login from different device type (multi-device)', {
+            actorId: current.actorId,
+            incomingDeviceType: raw?.device_type ?? raw?.deviceType,
+            currentDeviceType: currentClientDeviceType(),
+          });
+          return;
+        }
         log.warn('identity', 'same actor logged in elsewhere; ending this session', {
           actorId: current.actorId,
         });

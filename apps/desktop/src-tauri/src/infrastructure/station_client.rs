@@ -161,11 +161,17 @@ pub fn session_revoked_details_from_text(text: &str) -> Option<Value> {
         .get("reason")
         .and_then(|x| x.as_str())
         .unwrap_or("unknown");
-    Some(serde_json::json!({
+    let mut details = serde_json::json!({
         "code": "session_revoked",
         "reason": reason,
         "raw": text,
-    }))
+    });
+    // Forward device_type so the frontend can filter revocations targeting
+    // a different device type in multi-device mode (MCA-D19).
+    if let Some(device_type) = v.get("device_type").and_then(|x| x.as_str()) {
+        details["device_type"] = serde_json::json!(device_type);
+    }
+    Some(details)
 }
 
 fn build_error_for_status(status: u16, path: &str, body: &str) -> StationClientError {
