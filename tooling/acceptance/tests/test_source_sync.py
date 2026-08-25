@@ -428,6 +428,25 @@ class SourceSyncContractTests(unittest.TestCase):
         command = run_argv.call_args.args[0]
         self.assertEqual(command[-1], "51219")
         self.assertIn("socket.create_connection", command[-2])
+        self.assertEqual(run_argv.call_args.kwargs["timeout"], 2)
+
+    def test_remote_loopback_probe_treats_control_timeout_as_not_ready(self) -> None:
+        transport = SshTransport(
+            SshTarget(host="station.example", user="acceptance")
+        )
+        with patch.object(
+            transport,
+            "run_argv",
+            side_effect=subprocess.TimeoutExpired(("ssh",), 7.5),
+        ) as run_argv:
+            self.assertFalse(
+                transport.remote_loopback_port_listening(
+                    51219,
+                    timeout=7.5,
+                )
+            )
+
+        self.assertEqual(run_argv.call_args.kwargs["timeout"], 7.5)
 
     def test_request_loads_profile_backed_target(self) -> None:
         root = Path(tempfile.mkdtemp())
