@@ -20,6 +20,9 @@
 | D | One attachment upload or metadata operation fails after IDs are allocated, preventing outbox enqueue. | High | Low | Attachment result contains a failed/non-ready item or upload error before submit returns. | Rejected in the reproduction |
 | E | The preceding failure injection remains active and contaminates the normal send. | Medium | Low | Fault state remains enabled at normal submit entry or the normal path reports the injected failure. | Rejected |
 | F | The pending sender row renders before the committed attachment projection exists, so eager image open fails once and never resolves the preview. | High | Low | Gate accepts a two-ID pending send and clears drafts, then `openAttachment` reports `messaging attachment projection is unavailable` while Alice never reaches an image-loaded row. | Confirmed |
+| G | The lifecycle deletes a completed upload source before the pending message is committed, leaving the eager sender preview without either a valid local source or canonical projection. | High | Low | Cleanup reports the attachment before `open_attachment_once`; pending lookup is missing/incomplete and canonical projection is absent. | Pending |
+| H | The sender commit omits canonical attachment projections even after the pending row is removed. | Medium | Low | `open_attachment_once` reports no pending source and no canonical projection after command commit. | Pending |
+| I | The attachment row and projection exist, but image decoding or asset URL conversion fails. | Low | Low | Engine returns a verified path while the DOM image remains unloaded or errors. | Pending |
 
 ## Log Evidence
 - Pre-instrumentation Native run `20260823T170346937849Z-df8e52a09b8fcec409c868892409bcb6`:
@@ -112,3 +115,14 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
   revalidates the source bytes against the durable draft plaintext SHA-256.
   Committed sender and receiver paths retain the canonical projection and
   download verification flow.
+- Exact-source Linux run
+  `20260825T163209869286Z-756e3bd025991a3bae94acc70da349a8`
+  at `4e7062b3ae97a61dcf860c30a3175ad4ec6dc0d0` passed source/runtime
+  identity, transcript/thread, reactions, avatar/Station attribution,
+  background upload recovery, settings readback, and failed-attachment draft
+  retention. It accepted and cleared the two ready attachment drafts, then
+  timed out waiting for the Alice two-attachment row. Runtime evidence again
+  recorded `messaging attachment projection is unavailable` for attachment
+  `01M0WXCBR1PKE0AW0933CNQPWC`. All actor processes, tunnels, endpoint leases,
+  ports, and storage were released. The next diagnostic run must distinguish
+  G/H/I at the Engine lifecycle boundary.
