@@ -883,7 +883,16 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS", self.source)
         self.assertIn("def native_app_baseline_ready(", self.source)
         self.assertIn('def native_window_restored(', self.source)
-        self.assertIn('control.kind != "unknown"', self.source)
+        restored_start = self.source.index("        def native_window_restored(")
+        restored_end = self.source.index(
+            "        WebDriverWait(",
+            restored_start,
+        )
+        restored_source = self.source[restored_start:restored_end]
+        self.assertIn("control.main_window", restored_source)
+        self.assertIn("control.frontmost", restored_source)
+        self.assertIn("control.focused_window", restored_source)
+        self.assertNotIn('control.kind != "unknown"', restored_source)
         self.assertNotIn("report_native_file_snapshot", self.source)
         self.assertIn("self.focus_actor_window(actor)", self.source)
         self.assertIn('trigger_selector="[data-chat-background-upload]"', self.source)
