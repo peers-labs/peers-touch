@@ -1187,10 +1187,17 @@ runtime artifacts and reconciled Acceptance/Chat contracts. AS-F10 now has a
 fail-closed oracle for unsupported, unauthorized, signature-tamper,
 schema-mismatch, cross-device, selected-device, Desktop-fallback, and
 zero-execution facts; Station also explicitly rejects a capability-session pull
-whose persisted device differs from the authenticated device. The remaining
-AS-F10 production action/readback controls, other scenario-specific controls,
-remaining direct-runtime adapters, and exact-source deployment remain open; all
-affected product cells remain `UNPROVEN`.
+whose persisted device differs from the authenticated device. Commit
+`f5c59fe33` adds acceptance-gated emitters that send real unauthorized,
+signature-tampered, and cross-device pull requests through the production
+Station endpoints while recording before/after executor counters.
+Unsupported-capability and schema-mismatch rejection remain blocked because
+their authority path exists only inside Station `ProposeBatch`; no production
+callable trigger currently reaches that path. An Acceptance-only bypass is
+forbidden because it would not prove the product path. The remaining AS-F10
+controls, other scenario-specific controls, remaining direct-runtime adapters,
+and exact-source deployment remain open; all affected product cells remain
+`UNPROVEN`.
 
 **XR-4 execution finding (2026-08-24)**:
 
