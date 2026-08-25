@@ -240,6 +240,41 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         ):
             runner.collect(mismatched)
 
+    def test_as_f10_accepts_deferred_assertions_when_consistent(self) -> None:
+        runner = FoundationGroupOneProbeRunner(
+            desktop_native=RecordingHarnessClient(),
+            browser=RecordingHarnessClient(),
+        )
+
+        def deferred_capture(
+            client: RecordingHarnessClient,
+            probe: Any,
+        ) -> dict[str, Any]:
+            result = scenario_capture(client, probe)
+            if probe.cell == "AS-F10":
+                facts = result["scenarioFacts"]
+                facts["rejections"]["unsupported"] = {
+                    "availability": "unavailable",
+                    "unavailable_reason": "NO_PRODUCTION_CAPABILITY_ENDPOINT",
+                }
+                facts["rejections"]["schemaMismatch"] = {
+                    "availability": "unavailable",
+                    "unavailable_reason": "NO_PRODUCTION_CAPABILITY_ENDPOINT",
+                }
+                from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
+                    evaluate_as_f10,
+                )
+
+                result["assertions"] = evaluate_as_f10(
+                    facts,
+                    platform=probe.platform,
+                )
+            return result
+
+        observations = runner.collect(deferred_capture)
+
+        self.assertEqual(len(observations), EXPECTED_GROUP_ONE_TUPLES)
+
 
 if __name__ == "__main__":
     unittest.main()

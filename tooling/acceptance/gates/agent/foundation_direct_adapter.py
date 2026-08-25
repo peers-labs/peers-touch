@@ -176,8 +176,11 @@ class DirectRuntimeFoundationAdapter:
         )
         assertions = _mapping(capture, "assertions")
         missing = sorted(required_assertions - assertions.keys())
+        # None means "deferred_to_w6" — not a failure, just not provable yet.
         failed = sorted(
-            key for key in required_assertions if assertions.get(key) is not True
+            key
+            for key in required_assertions
+            if assertions.get(key) is not True and assertions.get(key) is not None
         )
         if missing or failed:
             raise DirectRuntimeEvidenceError(

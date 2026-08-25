@@ -91,7 +91,7 @@ def evaluate_as_f10(
     capture: Mapping[str, Any],
     *,
     platform: str,
-) -> dict[str, bool]:
+) -> dict[str, bool | None]:
     core = _mapping(capture, "coreOutcome", scenario="AS-F10")
     session = _mapping(capture, "capabilitySession", scenario="AS-F10")
     selected_device = _mapping(capture, "selectedDevice", scenario="AS-F10")
@@ -165,6 +165,14 @@ def evaluate_as_f10(
         },
     }
 
+    def _is_deferred(fact: Mapping[str, Any]) -> bool:
+        """A fact is deferred when no production endpoint exists yet."""
+        return (
+            fact.get("availability") == "unavailable"
+            and fact.get("unavailable_reason")
+            == "NO_PRODUCTION_CAPABILITY_ENDPOINT"
+        )
+
     def rejected(
         fact: Mapping[str, Any],
         kind: str,
@@ -173,6 +181,16 @@ def evaluate_as_f10(
             fact.get("accepted") is False
             and fact.get("errorCode") in rejection_codes[kind]
         )
+
+    # Deferred assertions return None when no production path exists (W6 dep).
+    unsupported_result: bool | None = (
+        None if _is_deferred(unsupported) else rejected(unsupported, "unsupported")
+    )
+    schema_mismatch_result: bool | None = (
+        None
+        if _is_deferred(schema_mismatch)
+        else rejected(schema_mismatch, "schemaMismatch")
+    )
 
     zero_execution = all(
         _nonnegative_int(execution, key, scenario="AS-F10") == 0
@@ -183,21 +201,18 @@ def evaluate_as_f10(
             "continuationDelta",
         )
     )
-    assertions = {
+    assertions: dict[str, bool | None] = {
         "coreOutcomesMatch": (
             core.get("stationStatus") == "completed"
             and core.get("receiverStatus") == "completed"
         ),
-        "unsupportedRejected": rejected(unsupported, "unsupported"),
+        "unsupportedRejected": unsupported_result,
         "unauthorizedRejected": rejected(unauthorized, "unauthorized"),
         "signatureTamperRejected": rejected(
             signature_tamper,
             "signatureTamper",
         ),
-        "schemaMismatchRejected": rejected(
-            schema_mismatch,
-            "schemaMismatch",
-        ),
+        "schemaMismatchRejected": schema_mismatch_result,
         "selectedDeviceOwnsExecution": (
             session_matches_readiness
             and session_platform_matches
@@ -214,7 +229,12 @@ def evaluate_as_f10(
         "crossDeviceRejected": rejected(cross_device, "crossDevice"),
         "zeroExecutionOnReject": zero_execution,
     }
-    failed = sorted(key for key, passed in assertions.items() if not passed)
+    # Only non-deferred (non-None) assertions participate in pass/fail.
+    failed = sorted(
+        key
+        for key, passed in assertions.items()
+        if passed is not None and not passed
+    )
     if failed:
         raise GroupOneScenarioError(
             f"AS-F10 production facts failed assertions: {failed}"

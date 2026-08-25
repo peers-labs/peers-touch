@@ -1963,6 +1963,32 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Evidence**: Desktop/Browser DOM, Mobile executable contract tests, readiness/session rows, zero hidden dispatch.
 - **Status**: pending
 
+**DESIGN_AMENDMENT (2026-08-25) — unsupported/schemaMismatch production proof path**:
+
+The only non-fabricated production path for `unsupported` and `schemaMismatch`
+capability rejection is:
+
+1. Native Gate runtime sends a real Agent conversation message.
+2. Station provider returns a response containing a ToolCall.
+3. Station `ProposeBatch` checks the client capability advertisement.
+4. The requested ToolCall capability is either absent from the advertisement
+   (`REJECTED_UNSUPPORTED`) or its schema version does not match
+   (`REJECTED_SCHEMA_MISMATCH`).
+5. Station marks the ToolCall with the rejection status in ProposeBatch.
+6. Client reads the rejection via `TurnDiagnosticReplay` ToolCall status.
+
+This path requires W6 (Governed ToolCall Fencing, Action 18+) to land the
+ProposeBatch capability-check logic. No external endpoint currently triggers it.
+
+Consequence:
+- `unsupported` and `schemaMismatch` sub-assertions are deferred to post-W6.
+  They do not block the current G-F gate for the remaining tuples.
+- The 3 already-proven emitters (`unauthorized`, `signatureTamper`,
+  `crossDevice`) plus `zeroExecutionOnReject` proceed in-gate.
+- Oracle/probe treat these two sub-assertions as `None` (deferred) when the
+  capture reports `availability: "unavailable"` with
+  `unavailable_reason: "NO_PRODUCTION_CAPABILITY_ENDPOINT"`.
+
 ### AS-F11 Conditional External Agent Runtime
 - **Precondition**: Read Station effective provider/model projection, D12 profile, and D05 readiness snapshot for P12 `EXTERNAL_AGENT`.
 - **Action**: Run `AS-F11-NON_ADVERTISED` on Desktop and Browser; query the effective profile/readiness APIs and every runtime selector.

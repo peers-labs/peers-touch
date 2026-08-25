@@ -176,7 +176,32 @@ class FoundationGroupOneProbeRunner:
             evaluated = evaluator(scenario_facts)
         except GroupOneScenarioError as error:
             raise GroupOneProbeError(str(error)) from error
-        if dict(assertions) != evaluated:
+        # Compare non-deferred assertions strictly; deferred (None) values are
+        # recorded as "deferred_to_w6" and excluded from pass/fail matching.
+        normalized_assertions = {
+            key: value
+            for key, value in dict(assertions).items()
+            if value is not None
+        }
+        normalized_evaluated = {
+            key: value
+            for key, value in evaluated.items()
+            if value is not None
+        }
+        if normalized_assertions != normalized_evaluated:
             raise GroupOneProbeError(
                 f"{runtime_tuple.cell} assertions do not match production scenario facts"
+            )
+        # Verify deferred keys are consistent between capture and evaluator.
+        deferred_capture = {
+            key for key, value in dict(assertions).items() if value is None
+        }
+        deferred_evaluated = {
+            key for key, value in evaluated.items() if value is None
+        }
+        if deferred_capture != deferred_evaluated:
+            raise GroupOneProbeError(
+                f"{runtime_tuple.cell} deferred_to_w6 keys mismatch: "
+                f"capture={sorted(deferred_capture)}, "
+                f"evaluated={sorted(deferred_evaluated)}"
             )

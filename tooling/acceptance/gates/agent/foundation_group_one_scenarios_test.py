@@ -198,6 +198,26 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         ):
             evaluate_as_f10(capture, platform="desktop_app")
 
+    def test_as_f10_defers_unsupported_when_no_production_endpoint(self) -> None:
+        capture = valid_as_f10_capture()
+        capture["rejections"]["unsupported"] = {
+            "availability": "unavailable",
+            "unavailable_reason": "NO_PRODUCTION_CAPABILITY_ENDPOINT",
+        }
+        capture["rejections"]["schemaMismatch"] = {
+            "availability": "unavailable",
+            "unavailable_reason": "NO_PRODUCTION_CAPABILITY_ENDPOINT",
+        }
+
+        assertions = evaluate_as_f10(capture, platform="desktop_app")
+
+        self.assertIsNone(assertions["unsupportedRejected"])
+        self.assertIsNone(assertions["schemaMismatchRejected"])
+        # Other assertions still pass normally.
+        self.assertTrue(assertions["unauthorizedRejected"])
+        self.assertTrue(assertions["crossDeviceRejected"])
+        self.assertTrue(assertions["zeroExecutionOnReject"])
+
 
 if __name__ == "__main__":
     unittest.main()
