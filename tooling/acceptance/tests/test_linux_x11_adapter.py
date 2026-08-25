@@ -53,21 +53,33 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
 
     def test_file_chooser_location_uses_gtk_location_shortcut(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        active_window = Mock()
         with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_active_window", return_value=active_window),
+            patch.object(adapter, "_window_pid", return_value=84),
             patch.object(
                 adapter,
                 "_focused_accessible",
                 return_value={"kind": "list", "role": "list"},
-            ),
+            ) as focused_accessible,
             patch.object(adapter, "post_key") as post_key,
         ):
             adapter.reveal_file_chooser_location()
 
         post_key.assert_called_once_with(NativeKey.SLASH)
+        focused_accessible.assert_called_once_with(84)
+        display.close.assert_called_once_with()
 
     def test_file_chooser_location_moves_focus_from_action_to_list(self) -> None:
         adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        active_window = Mock()
         with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_active_window", return_value=active_window),
+            patch.object(adapter, "_window_pid", return_value=84),
             patch.object(
                 adapter,
                 "_focused_accessible",
@@ -88,7 +100,7 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
                         "title": "Recent files",
                     },
                 ),
-            ),
+            ) as focused_accessible,
             patch.object(adapter, "post_key") as post_key,
         ):
             adapter.reveal_file_chooser_location()
@@ -100,6 +112,101 @@ class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
                 call(NativeKey.TAB),
                 call(NativeKey.SLASH),
             ],
+        )
+        self.assertEqual(
+            focused_accessible.call_args_list,
+            [call(84), call(84), call(84)],
+        )
+        display.close.assert_called_once_with()
+
+    def test_focused_accessible_is_scoped_to_active_process(self) -> None:
+        class State:
+            def __init__(self, focused: bool) -> None:
+                self.focused = focused
+
+            def contains(self, _state: object) -> bool:
+                return self.focused
+
+        class Node:
+            def __init__(
+                self,
+                *,
+                process_id: int,
+                role: str,
+                name: str = "",
+                focused: bool = False,
+                children: tuple["Node", ...] = (),
+            ) -> None:
+                self.process_id = process_id
+                self.role = role
+                self.name = name
+                self.focused = focused
+                self.children = children
+
+            @property
+            def childCount(self) -> int:
+                return len(self.children)
+
+            def __getitem__(self, index: int) -> "Node":
+                return self.children[index]
+
+            def get_process_id(self) -> int:
+                return self.process_id
+
+            def getRoleName(self) -> str:
+                return self.role
+
+            def getState(self) -> State:
+                return State(self.focused)
+
+            def queryText(self) -> object:
+                raise RuntimeError("not text")
+
+        desktop_button = Node(
+            process_id=42,
+            role="push button",
+            name="Upload background from local file",
+            focused=True,
+        )
+        chooser_list = Node(
+            process_id=84,
+            role="list",
+            focused=True,
+        )
+        desktop = Node(
+            process_id=0,
+            role="desktop",
+            children=(
+                Node(
+                    process_id=42,
+                    role="application",
+                    children=(desktop_button,),
+                ),
+                Node(
+                    process_id=84,
+                    role="application",
+                    children=(chooser_list,),
+                ),
+            ),
+        )
+        pyatspi = types.ModuleType("pyatspi")
+        pyatspi.STATE_FOCUSED = object()  # type: ignore[attr-defined]
+        pyatspi.Registry = types.SimpleNamespace(  # type: ignore[attr-defined]
+            getDesktop=lambda _index: desktop
+        )
+
+        with patch.dict(sys.modules, {"pyatspi": pyatspi}):
+            focused = LinuxX11NativeDesktopAdapter._focused_accessible(84)
+
+        self.assertEqual(
+            focused,
+            {
+                "kind": "list",
+                "title": "",
+                "value": "",
+                "role": "list",
+                "subrole": "",
+            },
         )
 
     def test_key_chord_preserves_native_event_order(self) -> None:
