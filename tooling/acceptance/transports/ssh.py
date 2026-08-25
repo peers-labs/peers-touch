@@ -84,6 +84,20 @@ class SshTunnel:
         process = self._process
         return process is not None and process.poll() is None
 
+    def failure_detail(self) -> dict[str, object] | None:
+        process = self._process
+        if process is None or process.poll() is None:
+            return None
+        detail = (
+            process.stderr.read().decode("utf-8", errors="replace").strip()
+            if process.stderr is not None
+            else ""
+        )
+        return {
+            "exitCode": process.returncode,
+            "stderr": detail[-4000:],
+        }
+
     def stop(self) -> None:
         process = self._process
         if process is None:

@@ -35,6 +35,9 @@ class SyntheticTunnel:
     def is_alive(self) -> bool:
         return not self.stopped
 
+    def failure_detail(self) -> dict[str, object] | None:
+        return None
+
     def stop(self) -> None:
         self.stopped = True
 

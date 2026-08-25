@@ -544,6 +544,7 @@ class NativeDesktopLinuxProvisioner:
         self.transport = SshTransport(self.target)
         self._actors: dict[str, _ActorRuntime] = {}
         self._endpoints: dict[str, _EndpointRuntime] = {}
+        self._tunnel_failures: list[dict[str, object]] = []
 
     def ready(self, gate_id: str = "runtime-cell-preflight") -> RuntimeCellManifest:
         if self.state_path.exists():
@@ -1049,6 +1050,15 @@ class NativeDesktopLinuxProvisioner:
         ):
             if tunnel is None:
                 continue
+            failure_detail = tunnel.failure_detail()
+            if failure_detail is not None:
+                self._tunnel_failures.append(
+                    {
+                        "actor": actor,
+                        "tunnel": name,
+                        **failure_detail,
+                    }
+                )
             try:
                 tunnel.stop()
             except Exception as error:
@@ -1116,6 +1126,7 @@ class NativeDesktopLinuxProvisioner:
         return {
             "activeLocalActors": active_local,
             "activeRemoteActors": active_remote,
+            "tunnelFailures": list(getattr(self, "_tunnel_failures", [])),
             "portsReleased": not active_local and not active_remote,
             "processesReleased": not active_remote,
             "storageReleased": not active_remote,
