@@ -1172,38 +1172,41 @@ class NativeDesktopLinuxProvisioner:
         actor: str,
         source: Path,
     ) -> str:
-        normalized_actor = actor.strip()
-        if not _ENDPOINT_ID.fullmatch(normalized_actor):
-            raise ProvisioningError("Linux runtime-cell actor id is invalid")
-        runtime = self._actors.get(normalized_actor)
-        if runtime is None or runtime.released:
-            raise ProvisioningError(
-                f"Linux runtime-cell actor {normalized_actor!r} is not active"
-            )
-
-        local_source = source.expanduser().resolve()
-        if not local_source.is_file():
-            raise ProvisioningError(
-                f"Linux runtime-cell fixture is missing: {local_source}"
-            )
-        state = self._require_state()
+        normalized_actor, local_source = self._actor_file_source(actor, source)
+        source_identity = hashlib.sha256(os.fsencode(local_source)).hexdigest()
         content_digest = _file_digest(local_source)
-        filename = local_source.name
-        if not _FILE_NAME.fullmatch(filename):
-            raise ProvisioningError(
-                "Linux runtime-cell fixture filename is invalid"
-            )
+        container_stage = Path(
+            f"/workspace/run/actors/{normalized_actor}/fixtures/"
+            f"{source_identity}/{local_source.name}"
+        )
+        container_incoming = container_stage.with_name(
+            f".{local_source.name}.{content_digest}.incoming"
+        )
+        self._copy_actor_file(
+            normalized_actor,
+            local_source,
+            container_stage,
+            container_incoming,
+            content_digest,
+        )
+        return str(container_stage)
+
+    def _copy_actor_file(
+        self,
+        actor: str,
+        source: Path,
+        container_stage: Path,
+        container_incoming: Path,
+        content_digest: str,
+    ) -> None:
+        state = self._require_state()
         remote_run_root = Path(str(state["remoteControl"])).parent
         host_stage = (
             remote_run_root
             / "staging"
-            / normalized_actor
+            / actor
             / content_digest
-            / filename
-        )
-        container_stage = Path(
-            f"/workspace/run/actors/{normalized_actor}/fixtures/"
-            f"{content_digest}/{filename}"
+            / source.name
         )
         container_name = str(state["containerName"])
 
@@ -1212,7 +1215,7 @@ class NativeDesktopLinuxProvisioner:
             timeout=15,
             check=True,
         )
-        self.transport.copy_file(local_source, host_stage, timeout=60)
+        self.transport.copy_file(source, host_stage, timeout=60)
         try:
             self.transport.run_argv(
                 (
@@ -1231,7 +1234,7 @@ class NativeDesktopLinuxProvisioner:
                     "docker",
                     "cp",
                     str(host_stage),
-                    f"{container_name}:{container_stage}",
+                    f"{container_name}:{container_incoming}",
                 ),
                 timeout=60,
                 check=True,
@@ -1242,7 +1245,7 @@ class NativeDesktopLinuxProvisioner:
                     "exec",
                     container_name,
                     "sha256sum",
-                    str(container_stage),
+                    str(container_incoming),
                 ),
                 timeout=15,
                 check=True,
@@ -1251,6 +1254,19 @@ class NativeDesktopLinuxProvisioner:
                 raise ProvisioningError(
                     "Linux runtime-cell staged fixture digest mismatch"
                 )
+            self.transport.run_argv(
+                (
+                    "docker",
+                    "exec",
+                    container_name,
+                    "mv",
+                    "-f",
+                    str(container_incoming),
+                    str(container_stage),
+                ),
+                timeout=15,
+                check=True,
+            )
         except BaseException:
             self.transport.run_argv(
                 (
@@ -1259,7 +1275,7 @@ class NativeDesktopLinuxProvisioner:
                     container_name,
                     "rm",
                     "-f",
-                    str(container_stage),
+                    str(container_incoming),
                 ),
                 timeout=15,
                 check=False,
@@ -1271,7 +1287,30 @@ class NativeDesktopLinuxProvisioner:
                 timeout=15,
                 check=False,
             )
-        return str(container_stage)
+
+    def _actor_file_source(
+        self,
+        actor: str,
+        source: Path,
+    ) -> tuple[str, Path]:
+        normalized_actor = actor.strip()
+        if not _ENDPOINT_ID.fullmatch(normalized_actor):
+            raise ProvisioningError("Linux runtime-cell actor id is invalid")
+        runtime = self._actors.get(normalized_actor)
+        if runtime is None or runtime.released:
+            raise ProvisioningError(
+                f"Linux runtime-cell actor {normalized_actor!r} is not active"
+            )
+        local_source = source.expanduser().resolve()
+        if not local_source.is_file():
+            raise ProvisioningError(
+                f"Linux runtime-cell fixture is missing: {local_source}"
+            )
+        if not _FILE_NAME.fullmatch(local_source.name):
+            raise ProvisioningError(
+                "Linux runtime-cell fixture filename is invalid"
+            )
+        return normalized_actor, local_source
 
     def execute_adapter(
         self,
