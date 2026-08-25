@@ -610,7 +610,7 @@
       "when": {
         "paths": [
           "apps/station/app/subserver/agent/**/memory*",
-          "apps/desktop/src/store/agentMemory.ts"
+          "apps/desktop/src/store/memory.ts"
         ]
       },
       "require": [
@@ -627,7 +627,7 @@
       "when": {
         "paths": [
           "apps/station/app/subserver/agent/**/skill*",
-          "apps/desktop/src/store/agentSkills.ts"
+          "apps/desktop/src/store/skill.ts"
         ]
       },
       "require": [
@@ -644,7 +644,7 @@
       "when": {
         "paths": [
           "apps/station/app/subserver/agent/**/growth*",
-          "apps/desktop/src/store/agentGrowth.ts"
+          "apps/desktop/src/components/settings/AgentGrowthTab.tsx"
         ]
       },
       "require": [
@@ -712,7 +712,8 @@
       "when": {
         "paths": [
           "apps/station/app/subserver/agent/**/task*",
-          "apps/desktop/src/store/agentTask.ts"
+          "apps/station/app/subserver/agent/service/agent_task_service.go",
+          "apps/desktop/src/store/tasks.ts"
         ]
       },
       "require": [
@@ -771,7 +772,8 @@
       "when": {
         "paths": [
           "apps/station/app/subserver/agent/**/quick_completion*",
-          "apps/desktop/src/store/agentQuickCompletion.ts"
+          "apps/station/app/subserver/agent/service/agent_service.go",
+          "apps/desktop/src/services/desktop_api.ts"
         ]
       },
       "require": [
@@ -1015,7 +1017,11 @@
           "Makefile"
         ]
       },
-      "require": ["acceptance-plan-self"]
+      "require": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-runtime-provisioning-self"
+      ]
     },
     {
       "id": "desktop-dev-runtime-isolation",

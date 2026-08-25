@@ -35,7 +35,7 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
-    applets, auth, channels, chat, conversation, cron, crypto, desktop_capture, federation,
+    applets, auth, channels, conversation, cron, crypto, desktop_capture, federation,
     frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice,
     key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery, mls,
     model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,

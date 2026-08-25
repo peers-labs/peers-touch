@@ -228,7 +228,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             "tooling.acceptance.fixtures.chat_native_reset.subprocess.run",
             side_effect=(discovery, reset),
         ) as run:
-            reset_station_messaging_state("station-1")
+            reset_station_messaging_state("station-three")
 
         self.assertEqual(run.call_count, 2)
         self.assertIn("publish=18080", run.call_args_list[0].args[0][-1])

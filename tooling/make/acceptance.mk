@@ -2,6 +2,7 @@
 
 .PHONY: acceptance-plan acceptance-run acceptance-run-ci acceptance-run-local-evidence \
         acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate \
+        acceptance-infra-validate \
         acceptance-driver-build acceptance-driver-smoke \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-desktop-gateway \
@@ -76,6 +77,9 @@ acceptance:
 
 acceptance-validate:
 	python3 tooling/scripts/acceptance-validate.py $(if $(DOMAIN),--domain $(DOMAIN),)
+
+acceptance-infra-validate:
+	python3 tooling/scripts/acceptance-validate.py --infra
 
 acceptance-coverage-report:
 	python3 tooling/scripts/acceptance-coverage-report.py
@@ -278,12 +282,6 @@ acceptance-agent-domain-validation:
 
 acceptance-agent-native-static:
 	python3 tooling/scripts/acceptance-run.py --gate agent-native-turn-static
-
-acceptance-driver-build:
-	cd apps/desktop/src-tauri && cargo build --features acceptance-webdriver
-
-acceptance-driver-smoke:
-	python3 tooling/acceptance/drivers/tauri.py
 
 acceptance-agent-native-e2e:
 	python3 tooling/scripts/acceptance-run.py --gate agent-native-turn-e2e

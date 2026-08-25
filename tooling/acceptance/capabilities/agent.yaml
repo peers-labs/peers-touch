@@ -389,7 +389,7 @@
         "agent-v2-connector-invocation-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/agent/service/connector_resource_manifest.go"
+        "apps/desktop/src/store/agentConnectors.ts"
       ],
       "evidence": {
         "truth_sources": [
@@ -525,7 +525,7 @@
       ],
       "synthetic_paths": [
         "apps/station/app/subserver/agent/service/memory_service.go",
-        "apps/desktop/src/store/agentMemory.ts"
+        "apps/desktop/src/store/memory.ts"
       ],
       "evidence": {
         "truth_sources": [
@@ -559,7 +559,7 @@
       ],
       "synthetic_paths": [
         "apps/station/app/subserver/agent/service/skill_service.go",
-        "apps/desktop/src/store/agentSkills.ts"
+        "apps/desktop/src/store/skill.ts"
       ],
       "evidence": {
         "truth_sources": [
@@ -592,8 +592,8 @@
         "agent-growth-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/agent/service/growth_service.go",
-        "apps/desktop/src/store/agentGrowth.ts"
+        "apps/station/app/subserver/agent/service/growth_diagnostic_service.go",
+        "apps/desktop/src/components/settings/AgentGrowthTab.tsx"
       ],
       "evidence": {
         "truth_sources": [
@@ -626,8 +626,7 @@
         "agent-orchestration-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/agent/service/orchestration_service.go",
-        "apps/desktop/src/store/agentOrchestration.ts"
+        "apps/station/app/subserver/agent/service/orchestration_service.go"
       ],
       "evidence": {
         "truth_sources": [
@@ -660,8 +659,7 @@
         "agent-thread-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/agent/service/thread_service.go",
-        "apps/desktop/src/store/agentThread.ts"
+        "apps/station/app/subserver/agent/service/thread_service.go"
       ],
       "evidence": {
         "truth_sources": [
@@ -694,8 +692,7 @@
         "agent-ecosystem-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/agent/service/ecosystem_service.go",
-        "apps/desktop/src/store/agentEcosystem.ts"
+        "apps/station/app/subserver/agent/service/ecosystem_service.go"
       ],
       "evidence": {
         "truth_sources": [
@@ -729,8 +726,8 @@
         "agent-task-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/agent/service/task_service.go",
-        "apps/desktop/src/store/agentTask.ts"
+        "apps/station/app/subserver/agent/service/agent_task_service.go",
+        "apps/desktop/src/store/tasks.ts"
       ],
       "evidence": {
         "truth_sources": [
@@ -763,8 +760,7 @@
         "agent-scheduler-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/agent/service/scheduler_service.go",
-        "apps/desktop/src/store/agentScheduler.ts"
+        "apps/station/app/subserver/agent/service/scheduler_service.go"
       ],
       "evidence": {
         "truth_sources": [
@@ -831,8 +827,8 @@
         "agent-quick-completion-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/agent/service/quick_completion_service.go",
-        "apps/desktop/src/store/agentQuickCompletion.ts"
+        "apps/station/app/subserver/agent/service/agent_service.go",
+        "apps/desktop/src/services/desktop_api.ts"
       ],
       "evidence": {
         "truth_sources": [
@@ -899,8 +895,7 @@
         "agent-atelier-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/agent/service/atelier_service.go",
-        "apps/desktop/src/store/agentAtelier.ts"
+        "apps/station/app/subserver/agent/service/atelier_projection.go"
       ],
       "evidence": {
         "truth_sources": [
