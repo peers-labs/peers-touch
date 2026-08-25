@@ -1,9 +1,9 @@
 ---
 name: "pt-execution-plan-guardian"
-description: "Executes an approved plan without architecture or scope drift, preserving dependency order, cutovers, gates, and evidence. Invoke only after a formal plan exists when implementing, continuing, merging, or reporting planned work."
+description: "Executes approved plans without scope or architecture drift. Invoke for implementation, continuation, merging, or status after a formal plan exists."
 stage: "EXECUTE"
-requires: ["accepted execution plan with status table and Context Anchor"]
-produces: ["code changes", "tests", "evidence", "updated plan status", "synchronized Context Anchor"]
+requires: ["accepted execution plan with status table", "matching active_work entry"]
+produces: ["code changes", "tests", "evidence", "updated plan status", "synchronized active_work state"]
 next: "pt-github-commit"
 ---
 
@@ -157,8 +157,7 @@ Before any code edit, verify:
 - Product status is accepted/active where product design is required.
 - Architecture status is accepted/active where architecture is required.
 - A formal execution plan exists and is approved.
-- The plan contains a `Context Anchor` maintained through `pt-context-anchor`.
-- Anchor worktree and branch match `pwd`, Git root, and current branch.
+- A matching `active_work` entry points to that plan and the verified branch.
 - Requested work maps to a plan workstream/task ID.
 - Dependencies for that task are complete.
 - Required cutover, deletion, gates, and evidence are defined.
@@ -301,8 +300,10 @@ non-trivial:
 For readiness reports with predefined gates, use the gate table from the
 readiness document instead of a free-form claim.
 
-End every tracked progress, readiness, blocker, or handoff response with the
-single copyable fenced projection required by `pt-context-anchor`.
+After updating plan/tracking evidence, synchronize `active_work`. Any
+tracked-work progress, readiness, blocker, or handoff response must then invoke
+`pt-context-anchor` and end with its required fenced chat projection. Never add
+a `## Context Anchor` section to the execution plan.
 
 ## Claim Rules
 

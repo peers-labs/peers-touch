@@ -1,69 +1,81 @@
 ---
 name: "pt-context-anchor"
-description: "Maintains a plan-owned Context Anchor and verified worktree projection. Invoke for plan creation, resume, status, handoff, blockers, stage changes, or session close."
+description: "Synchronizes verified tracked-work state and emits a copyable chat anchor. Invoke for resume, status, handoff, blockers, stage changes, or session close."
 stage: "cross-stage"
-requires: ["formal execution plan for tracked work"]
-produces: ["plan-owned Context Anchor", "verified worktree context", "synchronized status projection"]
+requires: ["formal execution plan and active_work entry for tracked work"]
+produces: ["synchronized active_work state", "verified chat Context Anchor"]
 ---
 
 # Context Anchor
 
 ## Invoke When
 
-- Creating or updating a formal execution plan.
-- Starting, resuming, switching, reporting, or closing tracked work.
-- Worktree, branch, stage, workstream, evidence, blocker, or next action changes.
-- The user supplies or requests a Context Anchor or handoff.
+- Resuming, switching, reporting, handing off, or closing tracked work.
+- A tracked worktree, branch, stage, step, evidence state, blocker, or decision changes.
+- The user requests a Context Anchor or continuation prompt for tracked work.
 - Before context compaction or session close while tracked work remains active.
+
+Do not invoke for standalone work or PRODUCT/DESIGN discussion that has no
+formal execution plan and no `active_work` entry.
 
 ## Core Rule
 
-Every tracked execution plan owns exactly one durable `## Context Anchor`.
-`active_work`, todo lists, dashboards, and chat responses are projections of
-that section, not competing truth sources.
+A Context Anchor is a normalized projection contract for tracked work, not a
+separate durable state document.
 
-Resolve disagreement in this order:
+It is materialized in two places only:
 
-1. Actual repository state: `pwd`, Git root, branch, status.
-2. Accepted architecture and product decisions.
-3. Formal execution plan and its Context Anchor.
-4. Tracking source and evidence ledger.
-5. `active_work`, todos, dashboards, and chat summaries.
+1. `active_work` in `project_memory.md` stores the durable locator and
+   current-state index.
+2. Chat carries the complete copyable human-readable projection.
 
-A worktree or branch mismatch blocks edits until reconciled.
+Execution plans and tracking artifacts remain the durable sources for scope,
+status details, and evidence. They MUST NOT contain a `## Context Anchor`
+section. Chat, todos, and dashboards are projections and never become truth
+sources.
 
-## Required Plan Schema
+If no readable formal plan or matching `active_work` entry exists, do not
+invent an Anchor. Continue through PRODUCT/DESIGN/PLAN using the owning skills;
+`pt-plan-and-document` registers tracked work only after creating the plan.
+
+## Field Ownership
+
+Resolve each field from its owner instead of applying one global precedence:
+
+| Field | Owner |
+|---|---|
+| Worktree and branch | Actual Git state |
+| Product and architecture decisions | Accepted source documents |
+| Plan path, stage, current step, blocked flag, last session | `active_work` |
+| Main task and scope | Formal execution plan |
+| Progress, last completed, blocker detail, decisions | Plan status table or linked tracking source |
+| Evidence | Named commands and repository evidence |
+| Chat Anchor | Projection of the sources above |
+
+Any disagreement blocks progress reporting until reconciled. Never choose the
+most convenient value or reconstruct state from conversation memory.
+
+## Required Active Work Schema
 
 ```markdown
-## Context Anchor
+## active_work
 
-| Field | Current value |
-|---|---|
-| Main task | <durable objective> |
-| Plan source | `<repo-relative execution plan path>` |
-| Tracking source | `<repo-relative path or this plan>` |
-| Worktree | `<repo-root>` |
-| Branch | `<verified branch>` |
-| Stage | `PRODUCT / DESIGN / PLAN / EXECUTE / DELIVER / complete` |
-| Current workstream | `<formal task ID>` |
-| Current step | `<one dependency-ready step>` |
-| Progress | `<evidence-backed completed/total>` |
-| Last completed | `<closed step and evidence>` |
-| Current action | `<current action and reason>` |
-| Next action | `<one dependency-ready action>` |
-| Blockers | `<none or concrete blocker>` |
-| Decisions required | `<none or explicit decision>` |
-| Evidence | `<PASS/FAIL/UNPROVEN commands and repo-relative evidence>` |
-| Last updated | `<YYYY-MM-DD HH:MM timezone or date>` |
+| id | plan | stage | current_step | branch | blocked | last_session |
+|----|------|-------|--------------|--------|---------|--------------|
+| 1 | docs/.../execution-plans/example.md | EXECUTE | Step 2 | feat/example | false | YYYY-MM-DD |
 ```
 
-Persist `<repo-root>`, never a developer or CI user's home-directory path.
-Verify the real absolute root at runtime without copying it into committed text.
+Rules:
+
+- `plan` is repository-relative and must resolve to a formal execution plan.
+- A row is created only after the plan file exists.
+- `branch` must match verified Git state.
+- `stage`, `current_step`, and `blocked` must agree with the plan/tracking state.
+- Completed work remains addressable with `stage: complete` until explicitly archived.
 
 ## Required Chat Projection
 
-Every status, resume, progress, blocker, readiness, or handoff response ends
-with one copyable fenced block:
+Every user-facing Context Anchor is one fenced `markdown` block exactly like:
 
 ````markdown
 ```markdown
@@ -81,17 +93,22 @@ with one copyable fenced block:
 ```
 ````
 
-Use repo-relative paths. Do not split, quote, or replace this block with
-rendered bullets or a table. Explanatory prose belongs before it.
+The block is mandatory for tracked-work status, resume, handoff, progress,
+blocker, readiness, and session-close responses. It must be the final section
+of the response.
+
+Use repository-relative paths inside the block. Do not split, quote, render as
+a table, wrap in a widget, or omit worktree, branch, evidence, next action, or
+tracking document.
 
 ## Workflow
 
-### 1. Resolve The Active Plan
+### 1. Resolve Tracked Work
 
 1. Read `active_work`.
-2. Open its execution plan and Context Anchor.
-3. Read the tracking source and current workstream.
-4. If no Anchor exists, add one before tracked execution.
+2. Select the matching non-complete row.
+3. Open its formal plan and linked tracking source.
+4. Stop if the row is missing, ambiguous, or points to a missing plan.
 
 ### 2. Verify Physical Context
 
@@ -104,54 +121,64 @@ git branch --show-current
 git status --short
 ```
 
-The Git root and branch must match the Anchor. Preserve unrelated dirty files.
+The actual root and branch must match the selected work. Preserve unrelated
+dirty files. Persist repository paths as `<repo-root>` or repo-relative paths,
+never a developer or CI home-directory path.
 
-### 3. Synchronize Meaningful Changes
+### 3. Derive And Reconcile
 
-Update the plan status table and Anchor together after:
+1. Read objective and scope from the plan.
+2. Read progress and evidence from its status table or tracking source.
+3. Compare those facts with `active_work`.
+4. Reconcile stale fields before reporting or executing.
+5. Mark absent proof `UNPROVEN`; do not infer success.
 
-- workstream or step start/completion;
-- verification PASS, FAIL, NOT RUN, or UNPROVEN;
-- worktree, branch, scope, stage, blocker, or decision change;
-- handoff, resume, or session close.
+### 4. Synchronize Meaningful Changes
 
-Then update `active_work` and other projections. Never update a projection
-first and backfill the plan later.
+After a step, stage, branch, blocker, decision, or evidence change:
 
-### 4. Apply Evidence Discipline
+1. Update the plan status table or tracking evidence first.
+2. Update `active_work` to match.
+3. Update current-session todos if used.
+4. Emit the chat projection when reporting to the user.
 
-- Progress comes from the plan status table or tracking source.
-- Name commands or evidence for `PASS`.
-- Static/type evidence is not runtime or Native proof.
-- Missing evidence remains `UNPROVEN`.
-- Anchor changes never make a workstream complete by themselves.
+Anchor synchronization never completes a task by itself.
+
+### 5. Handoff And Resume
+
+At handoff, record the last completed evidence, exact current action, one
+dependency-ready next action, blockers, and decisions. At resume, verify Git
+state and reconcile sources before continuing from that next action.
 
 ## Integration
 
-- `pt-plan-and-document` creates the Anchor.
-- `pt-god-view` resolves it after `active_work`.
-- `pt-dev-workflow` verifies it before stage dispatch.
-- `pt-execution-plan-guardian` synchronizes it during execution.
-- `pt-completion-auditor` checks projections against it.
+- `pt-plan-and-document` creates the formal plan, then registers `active_work`.
+- `pt-god-view` resolves tracked work through `active_work`.
+- `pt-execution-plan-guardian` updates plan/tracking evidence before Anchor state.
+- `pt-completion-auditor` verifies Anchor claims against repository evidence.
+- `pt-dev-workflow` synchronizes stage transitions and handoffs.
 
 ## Verification
 
-- The plan contains exactly one `## Context Anchor`.
-- Runtime Git root and branch were verified.
-- Persisted Worktree is `<repo-root>`.
-- Stage, step, progress, blockers, and evidence agree with plan details.
-- The chat projection is one final fenced `markdown` block.
-- `git diff --check -- tooling/skills AGENTS.md docs` passes.
+- Frontmatter name matches `pt-context-anchor`.
+- A matching `active_work` row and readable plan exist before Anchor output.
+- The execution plan contains no `## Context Anchor` section.
+- Actual Git root and branch were verified.
+- Progress and evidence match plan/tracking sources.
+- Evidence distinguishes `PASS`, `FAIL`, `NOT RUN`, and `UNPROVEN`.
+- The chat Anchor is one final fenced `markdown` block.
+- `git diff --check -- tooling/skills AGENTS.md` passes.
 
 ## Anti-Patterns
 
 Never:
 
-- reconstruct status from conversation memory;
-- continue after worktree or branch mismatch;
-- treat chat, `active_work`, or a todo list as the durable source;
-- persist user-home absolute paths;
-- copy an Anchor from another worktree without verification;
-- infer completion from summaries or missing evidence;
-- omit worktree, branch, evidence, tracking document, or next action;
-- use the Anchor to bypass product, architecture, plan, or review gates.
+- create an Anchor before a formal plan and `active_work` row exist;
+- write a Context Anchor section into an execution plan;
+- reconstruct tracked state from chat history;
+- continue after a worktree or branch mismatch;
+- use chat, todos, or dashboards as durable truth;
+- copy an Anchor across worktrees without verification;
+- claim completion from summaries or missing evidence;
+- persist absolute user-home paths, transient command logs, or secrets;
+- use an Anchor to bypass product, architecture, plan, or review gates.
