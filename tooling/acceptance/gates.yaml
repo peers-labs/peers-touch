@@ -718,8 +718,8 @@
       "description": "Portal navigation: push, back, collapse/reopen, explicit close."
     },
     "agent-v2-kernel-foundation-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-kernel-foundation-e2e",
-      "timeout_seconds": 600,
+      "command": "PT_AGENT_V2_CANDIDATE_MANIFEST=$(python3 tooling/acceptance/gates/agent/foundation_scenario_runner.py) && python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-kernel-foundation-e2e",
+      "timeout_seconds": 3600,
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
