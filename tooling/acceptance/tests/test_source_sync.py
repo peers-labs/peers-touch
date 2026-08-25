@@ -338,6 +338,51 @@ class SourceSyncContractTests(unittest.TestCase):
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)
 
+    def test_ssh_copy_uses_strict_host_verification_and_remote_path(self) -> None:
+        transport = SshTransport(
+            SshTarget(host="station.example", user="acceptance", port=2222)
+        )
+        with (
+            tempfile.NamedTemporaryFile() as source,
+            patch(
+                "tooling.acceptance.transports.ssh.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    args=(),
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                ),
+            ) as run,
+        ):
+            transport.copy_file(
+                Path(source.name),
+                Path("/remote/run/staging/file.png"),
+            )
+
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], "scp")
+        self.assertIn("StrictHostKeyChecking=yes", command)
+        self.assertIn("-P", command)
+        self.assertIn("2222", command)
+        self.assertEqual(
+            command[-1],
+            "acceptance@station.example:/remote/run/staging/file.png",
+        )
+
+    def test_ssh_copy_rejects_relative_remote_path(self) -> None:
+        transport = SshTransport(
+            SshTarget(host="station.example", user="acceptance")
+        )
+        with tempfile.NamedTemporaryFile() as source:
+            with self.assertRaisesRegex(
+                ProvisioningError,
+                "destination is invalid",
+            ):
+                transport.copy_file(
+                    Path(source.name),
+                    Path("remote/run/file"),
+                )
+
     def test_reverse_forward_requires_remote_end_to_end_readiness(self) -> None:
         transport = SshTransport(
             SshTarget(host="station.example", user="acceptance")
