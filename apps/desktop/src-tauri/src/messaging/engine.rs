@@ -399,6 +399,21 @@ impl MessagingEngine {
         if token.trim().is_empty() || attachment_id.trim().is_empty() {
             return Err("messaging attachment open intent is incomplete".to_string());
         }
+        if let Some(source) = self
+            .store
+            .pending_sender_attachment_source(attachment_id)?
+        {
+            let expected_plaintext_sha256: [u8; 32] = source
+                .plaintext_sha256
+                .as_slice()
+                .try_into()
+                .map_err(|_| "messaging attachment plaintext commitment is invalid".to_string())?;
+            let path = Path::new(&source.source_local_ref);
+            if !path.is_file() || sha256_path(path)? != expected_plaintext_sha256 {
+                return Err("messaging pending sender attachment source is invalid".to_string());
+            }
+            return Ok(AttachmentOpenProgress::Ready(source.source_local_ref));
+        }
         let projection = self
             .store
             .attachment_download_projection(attachment_id)?
