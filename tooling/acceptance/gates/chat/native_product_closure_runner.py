@@ -581,35 +581,12 @@ class NativeProductClosureGate(AcceptanceGate):
             # #endregion
             return control if control.kind == "text-field" else None
 
-        location_control: NativeControlSnapshot | None = None
-        for attempt in range(2):
-            self.native_adapter.reveal_file_chooser_location()
-            try:
-                location_control = WebDriverWait(
-                    client.driver,
-                    NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS / 2,
-                    poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-                ).until(go_to_field_ready)
-                break
-            except TimeoutException:
-                if attempt > 0:
-                    raise
-                control = self.native_adapter.focused_control(
-                    client.process_id or 0
-                )
-                if not (
-                    control.kind == "application-dialog"
-                    and control.dialog_count > baseline_control.dialog_count
-                    and control.frontmost
-                    and control.focused_window
-                ):
-                    raise GateError(
-                        "Native file chooser lost its owned active dialog "
-                        "before the location field became visible: "
-                        f"{json.dumps(control.to_dict(), sort_keys=True)}"
-                    )
-        if location_control is None:
-            raise GateError("Native file chooser location field did not open")
+        self.native_adapter.reveal_file_chooser_location()
+        WebDriverWait(
+            client.driver,
+            10,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(go_to_field_ready)
 
         self.native_adapter.post_key(
             NativeKey.A,
