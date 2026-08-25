@@ -154,7 +154,6 @@ class NonAdvertisementFoundationAdapter:
                         "surfaceId": runtime_id,
                         "zeroExecutionCount": 0,
                     },
-                    "actorIdentityHash": actor_hash,
                     "stationProfile": self._station_profile,
                     "networkPath": str(capture.get("networkPath") or ""),
                     "machine": self._machine,
