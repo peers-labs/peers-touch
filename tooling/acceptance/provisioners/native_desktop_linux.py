@@ -903,6 +903,11 @@ class NativeDesktopLinuxProvisioner:
             gateway_tunnel=gateway_tunnel,
             log_path=log_path,
         )
+        # #region debug-point E:actor-tunnel-ownership
+        gateway_tunnel.report_owner(f"actor:{actor}:gateway")
+        if webdriver_tunnel is not None:
+            webdriver_tunnel.report_owner(f"actor:{actor}:webdriver")
+        # #endregion
         self._actors[actor] = runtime
         metadata = AppLaunchMetadata(
             webdriver_host="127.0.0.1",
