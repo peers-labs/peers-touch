@@ -2862,6 +2862,7 @@ class NativeProductClosureGate(AcceptanceGate):
             )
 
         empty_image.write_bytes(valid_image.read_bytes())
+        self.runtime_binding.stage_native_file("alice", empty_image)
         try:
             self.click_element("alice", retry)
             retry_transitions = wait_until(

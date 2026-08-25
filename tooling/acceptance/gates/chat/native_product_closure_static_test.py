@@ -969,6 +969,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "empty_image.write_bytes(valid_image.read_bytes())",
             settings_source,
         )
+        refreshed = settings_source.index(
+            'self.runtime_binding.stage_native_file("alice", empty_image)'
+        )
+        retried = settings_source.index('self.click_element("alice", retry)')
+        self.assertLess(refreshed, retried)
         self.assertIn(
             'state.get("backgroundRetry") == "true"',
             settings_source,
