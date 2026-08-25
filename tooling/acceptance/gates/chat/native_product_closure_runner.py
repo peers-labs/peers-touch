@@ -1234,8 +1234,39 @@ class NativeProductClosureGate(AcceptanceGate):
             initial_focus = self.native_adapter.focused_control(
                 client.process_id or 0
             )
+            live_dom = client.driver.execute_script(
+                """
+                const selector = arguments[0];
+                return {
+                  selectorMatches: selector
+                    ? Array.from(document.querySelectorAll(selector)).map((match) => {
+                        const rect = match.getBoundingClientRect();
+                        return {
+                          connected: match.isConnected,
+                          rect: {
+                            left: rect.left,
+                            top: rect.top,
+                            width: rect.width,
+                            height: rect.height,
+                          },
+                        };
+                      })
+                    : [],
+                  reactionStates: Array.from(
+                    document.querySelectorAll('[data-message-reaction-state]'),
+                  ).map((state) => ({
+                    phase: state.getAttribute('data-message-reaction-state') || '',
+                    emoji: state.getAttribute('data-message-reaction-emoji') || '',
+                    retryCount: state.querySelectorAll(
+                      '[data-message-reaction-retry]',
+                    ).length,
+                  })),
+                };
+                """,
+                selector,
+            )
             report_native_mousedown_debug(
-                "A,B,E",
+                "A,B,E,F,G,H",
                 "native_product_closure_runner:_click_focused_element:computed",
                 "Computed native click point",
                 {
@@ -1249,6 +1280,7 @@ class NativeProductClosureGate(AcceptanceGate):
                     "point": point,
                     "windowStack": initial_stack.to_dict(),
                     "focusedControl": initial_focus.to_dict(),
+                    "liveDom": live_dom,
                 },
             )
             # #endregion
