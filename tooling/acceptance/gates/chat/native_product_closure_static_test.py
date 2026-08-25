@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import ast
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
 from tooling.acceptance.gates.chat.native_product_closure_runner import (
+    file_sha256,
     native_input_event_cursor,
 )
 
@@ -101,6 +103,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             5,
         )
         self.assertIsNone(native_input_event_cursor(events, "mousedown", 3))
+
+    def test_file_sha256_hashes_attachment_evidence_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            attachment = Path(directory) / "attachment.bin"
+            attachment.write_bytes(b"abc")
+
+            self.assertEqual(
+                file_sha256(attachment),
+                "ba7816bf8f01cfea414140de5dae2223"
+                "b00361a396177a9cb410ff61f20015ad",
+            )
 
     def test_runner_consumes_injected_runtime_without_local_fallback(self) -> None:
         self.assertIn(
