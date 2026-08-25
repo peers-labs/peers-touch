@@ -873,6 +873,8 @@ class NativeProductClosureGate(AcceptanceGate):
             # #endregion
             raise GateError(
                 f"Native {event_type} was not acknowledged by the target DOM"
+                ": "
+                f"{json.dumps(snapshot, sort_keys=True, default=str)}"
             ) from error
 
     def remove_native_input_probe(
