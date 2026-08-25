@@ -269,7 +269,7 @@ export function installAcceptanceHarness(): void {
         }),
       }).catch(() => {});
       // #endregion
-      await installDeferredAppRuntimeProjections();
+      void installDeferredAppRuntimeProjections();
       // #region debug-point A,C,D:harness-deferred-runtime-end
       fetch('http://127.0.0.1:7781/event', {
         method: 'POST',
@@ -277,8 +277,8 @@ export function installAcceptanceHarness(): void {
           sessionId: 'login-runtime-bootstrap',
           runId: 'pre-fix',
           hypothesisId: 'A,C,D',
-          location: 'chatHarness:login:after-deferred',
-          msg: '[DEBUG] Harness completed deferred runtime installation',
+          location: 'chatHarness:login:after-deferred-schedule',
+          msg: '[DEBUG] Harness scheduled deferred runtime installation',
           data: { account },
           ts: Date.now(),
         }),
