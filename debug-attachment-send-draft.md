@@ -19,6 +19,7 @@
 | C | Rust-to-TypeScript outcome mapping converts a queued result into `draft`. | Medium | Low | Rust outcome and renderer outcome disagree for the same message ID/revision. | Rejected |
 | D | One attachment upload or metadata operation fails after IDs are allocated, preventing outbox enqueue. | High | Low | Attachment result contains a failed/non-ready item or upload error before submit returns. | Rejected in the reproduction |
 | E | The preceding failure injection remains active and contaminates the normal send. | Medium | Low | Fault state remains enabled at normal submit entry or the normal path reports the injected failure. | Rejected |
+| F | The pending sender row renders before the committed attachment projection exists, so eager image open fails once and never resolves the preview. | High | Low | Gate accepts a two-ID pending send and clears drafts, then `openAttachment` reports `messaging attachment projection is unavailable` while Alice never reaches an image-loaded row. | Confirmed |
 
 ## Log Evidence
 - Pre-instrumentation Native run `20260823T170346937849Z-df8e52a09b8fcec409c868892409bcb6`:
@@ -92,3 +93,22 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
   clearing shortcut as text. The fix routes select-all and backspace through the
   existing CoreGraphics keyboard path and waits until the Composer value is
   empty before inserting the intended text.
+- Exact-source Linux run
+  `20260825T105212735213Z-01976d5d011a067dddb2692d7d6b7721`
+  at `906b5fe67f5f1e651c7b960964150bcc55029855` passed two ready Composer
+  attachments, a `pending` send outcome with two attachment IDs, Composer draft
+  cleanup, background upload recovery, and failed-attachment draft retention.
+  It then timed out waiting for the Alice image attachment to load. Runtime log
+  line 1585 recorded `messaging attachment projection is unavailable` for the
+  eager image open.
+- The Engine's visible-message query intentionally merges
+  `messaging_pending_messages` with committed projections and loads completed
+  draft metadata for pending rows. `open_attachment_once`, however, required
+  `messaging_attachment_projections` before checking the completed upload
+  transfer. The sender row could therefore render before its canonical
+  projection and permanently retain the one-shot eager-open error.
+- The owning-layer repair lets the Engine resolve only an actor-local source
+  joined to the same pending message and a completed upload transfer. It
+  revalidates the source bytes against the durable draft plaintext SHA-256.
+  Committed sender and receiver paths retain the canonical projection and
+  download verification flow.
