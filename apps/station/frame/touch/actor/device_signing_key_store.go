@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	model "github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -337,6 +338,7 @@ func (s *DeviceStore) ResolveSigningKey(
 		).
 		First(&record).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		fmt.Printf("[DIAG] ResolveSigningKey NOT FOUND ptid=%q device=%q key=%q\n", ptid, deviceID, signingKeyID)
 		return nil, ErrDeviceSigningKeyNotFound
 	}
 	if err != nil {
