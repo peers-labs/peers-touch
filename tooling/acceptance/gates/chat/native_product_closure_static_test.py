@@ -892,6 +892,20 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
         self.assertIn("data-message-content={message.ulid}", self.message_row)
+        transcript_start = self.source.index("    def transcript(")
+        transcript_end = self.source.index(
+            "    def engine_messages(",
+            transcript_start,
+        )
+        transcript_source = self.source[transcript_start:transcript_end]
+        self.assertIn(
+            "row.querySelector('[data-message-text]')",
+            transcript_source,
+        )
+        self.assertNotIn(
+            "row.querySelector('[data-message-content]')",
+            transcript_source,
+        )
 
     def test_product_files_use_real_native_chooser(self) -> None:
         self.assertIn("def choose_native_file(", self.source)
