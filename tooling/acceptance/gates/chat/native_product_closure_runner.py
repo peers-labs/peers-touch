@@ -3623,7 +3623,11 @@ class NativeProductClosureGate(AcceptanceGate):
             for actor in ("alice", "bob")
         }
         if before["alice"] != before["bob"]:
-            raise GateError("Alice and Bob diverged before offline recovery")
+            self.write_json_evidence("offline-before-divergence", before)
+            raise GateError(
+                "Alice and Bob diverged before offline recovery: "
+                f"{json.dumps(before, sort_keys=True)}"
+            )
 
         self.clients["bob"].stop()
         offline_text = f"w13-offline-{os.getpid()}"
