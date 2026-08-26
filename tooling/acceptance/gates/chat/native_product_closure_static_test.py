@@ -825,6 +825,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             messaging.count("allow_attachment_preview(&window,"),
             4,
         )
+        preview_scope = messaging[
+            messaging.index("fn allow_attachment_preview("):
+            messaging.index(
+                "#[tauri::command]\npub async fn messaging_pick_attachment_source",
+            )
+        ]
+        self.assertIn("tauri::async_runtime::spawn(async move", preview_scope)
+        self.assertIn("reqwest::Client::builder()", preview_scope)
+        self.assertNotIn("reqwest::blocking::Client", preview_scope)
         self.assertIn("previous_outcome_revision", self.source)
         self.assertIn("revision <= previous_outcome_revision", self.source)
         self.assertIn("data-messaging-attachment-open-state", attachment_item)
