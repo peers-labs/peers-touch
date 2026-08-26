@@ -1279,6 +1279,84 @@ class NativeProductClosureGate(AcceptanceGate):
             element,
         )
         if resolved is None:
+            # #region debug-point A,B,C,D:native-click-surface-resolution
+            if (
+                os.environ.get("DEBUG_SESSION_ID", "").strip()
+                == "clear-cursor-visibility"
+            ):
+                diagnostics = client.driver.execute_script(
+                    """
+                    const root = arguments[0];
+                    const interactiveSelector = (
+                      'button, [role="button"], a[href], input, select, textarea'
+                    );
+                    const describe = (candidate) => {
+                      const rect = candidate.getBoundingClientRect();
+                      const style = getComputedStyle(candidate);
+                      const x = rect.left + rect.width / 2;
+                      const y = rect.top + rect.height / 2;
+                      const hit = rect.width > 0 && rect.height > 0
+                        ? document.elementFromPoint(x, y)
+                        : null;
+                      const className = candidate.className?.baseVal
+                        || candidate.className
+                        || '';
+                      return {
+                        tag: candidate.tagName,
+                        id: candidate.id || '',
+                        classes: String(className),
+                        role: candidate.getAttribute('role') || '',
+                        tabIndex: candidate.tabIndex,
+                        disabled: Boolean(candidate.disabled),
+                        display: style.display,
+                        visibility: style.visibility,
+                        opacity: style.opacity,
+                        pointerEvents: style.pointerEvents,
+                        matchesInteractive: candidate.matches(interactiveSelector),
+                        childCount: candidate.children.length,
+                        rect: {
+                          left: rect.left,
+                          top: rect.top,
+                          width: rect.width,
+                          height: rect.height,
+                        },
+                        centerHit: hit ? {
+                          tag: hit.tagName,
+                          id: hit.id || '',
+                          classes: String(
+                            hit.className?.baseVal || hit.className || '',
+                          ),
+                          role: hit.getAttribute?.('role') || '',
+                        } : null,
+                        centerHitOwnedByRoot: Boolean(hit && root.contains(hit)),
+                      };
+                    };
+                    return {
+                      documentFocused: document.hasFocus(),
+                      root: describe(root),
+                      interactiveDescendants: Array.from(
+                        root.querySelectorAll(interactiveSelector),
+                      ).map(describe),
+                      descendants: Array.from(root.querySelectorAll('*'))
+                        .slice(0, 40)
+                        .map(describe),
+                      animations: root.getAnimations({ subtree: true }).map(
+                        (animation) => ({
+                          playState: animation.playState,
+                          currentTime: animation.currentTime,
+                        }),
+                      ),
+                    };
+                    """,
+                    element,
+                )
+                report_native_mousedown_debug(
+                    "A,B,C,D",
+                    "native_product_closure_runner:_resolve_native_click_surface",
+                    "Native click surface resolution failed",
+                    diagnostics,
+                )
+            # #endregion
             raise GateError(
                 "Native click target has no unique interactive surface"
             )
