@@ -3122,12 +3122,23 @@ impl MessagingStore {
         let connection = self.connection()?;
         let mut statement = connection
             .prepare(
-                "SELECT attachment_id, source_local_ref
-                 FROM messaging_attachment_transfers
-                 WHERE direction = 1
-                   AND state = ?1
-                   AND source_local_ref <> ''
-                 ORDER BY attachment_id",
+                "SELECT transfer.attachment_id, transfer.source_local_ref
+                 FROM messaging_attachment_transfers transfer
+                 JOIN messaging_attachment_projections attachment
+                   ON attachment.attachment_id = transfer.attachment_id
+                  AND attachment.message_id = transfer.message_id
+                 JOIN messaging_message_projections message
+                   ON message.message_id = transfer.message_id
+                  AND message.conversation_id = transfer.conversation_id
+                 WHERE transfer.direction = 1
+                   AND transfer.state = ?1
+                   AND transfer.source_local_ref <> ''
+                   AND NOT EXISTS (
+                       SELECT 1 FROM messaging_pending_messages pending
+                       WHERE pending.conversation_id = transfer.conversation_id
+                         AND pending.message_id = transfer.message_id
+                   )
+                 ORDER BY transfer.attachment_id",
             )
             .map_err(|error| error.to_string())?;
         let rows = statement
@@ -8458,6 +8469,10 @@ mod tests {
                 plaintext_sha256,
             })
         );
+        assert!(store
+            .completed_attachment_source_paths()
+            .unwrap()
+            .is_empty());
 
         store
             .connection()
@@ -8472,6 +8487,10 @@ mod tests {
             .pending_sender_attachment_source(&transfer.attachment_id)
             .unwrap()
             .is_none());
+        assert!(store
+            .completed_attachment_source_paths()
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -9317,6 +9336,13 @@ mod tests {
             updated_at_unix_ms: 100,
         };
         store.create_attachment_transfer(&upload).unwrap();
+        assert_eq!(
+            store.completed_attachment_source_paths().unwrap(),
+            vec![(
+                upload.attachment_id.clone(),
+                upload.source_local_ref.clone()
+            )]
+        );
 
         let download = AttachmentTransferRecord {
             direction: 2,
