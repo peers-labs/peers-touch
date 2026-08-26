@@ -111,6 +111,17 @@ function projectConversationMemberSettings(
   };
 }
 
+export function conversationLocalStateForProfile(
+  currentUserDid: string | null,
+  profileDid: string | null,
+  currentState: Record<string, ConversationLocalState>,
+  persistedState: Record<string, ConversationLocalState>,
+): Record<string, ConversationLocalState> {
+  return profileDid && currentUserDid === profileDid
+    ? currentState
+    : persistedState;
+}
+
 export type MessagingSendOutcomeErrorCode =
   | 'not_queued'
   | 'missing_command_id'
@@ -1231,7 +1242,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           ...projectConversationMemberSettings(settings),
         };
       }
-      saveConversationLocalState(actorId, nextConversationLocalState);
+      saveConversationLocalState(get().currentUserDid, nextConversationLocalState);
       set({
         conversations: allConversations,
         conversationMembers: memberMap,
@@ -1796,7 +1807,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     try {
       const profile = await api.profileGet();
       const profileDid = profile?.id?.trim() || null;
-      set({
+      const persistedConversationLocalState =
+        loadConversationLocalState(profileDid);
+      set((state) => ({
         currentUserProfile: {
           id: profile.id,
           username: profile.username,
@@ -1804,8 +1817,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           avatar: profile.avatar,
         },
         currentUserDid: profileDid,
-        conversationLocalState: loadConversationLocalState(profileDid),
-      });
+        conversationLocalState: conversationLocalStateForProfile(
+          state.currentUserDid,
+          profileDid,
+          state.conversationLocalState,
+          persistedConversationLocalState,
+        ),
+      }));
     } catch (error) {
       if (isUnauthorizedError(error)) return;
       const message = error instanceof Error ? error.message : String(error);

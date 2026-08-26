@@ -261,7 +261,8 @@ fn configure_acceptance_window(
     window.set_always_on_top(true).map_err(|error| {
         std::io::Error::other(format!("acceptance window layering failed: {error}"))
     })?;
-    configure_acceptance_window_level(window)
+    configure_acceptance_window_level(window)?;
+    Ok(())
 }
 
 #[cfg(all(test, feature = "acceptance-webdriver"))]

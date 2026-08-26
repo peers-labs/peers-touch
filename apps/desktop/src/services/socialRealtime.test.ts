@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EVENT, eventBus } from '../kernel/events';
 import {
   installSocialRealtimeBridge,
+  refreshSocialProjection,
   teardownSocialRealtimeBridge,
 } from './socialRealtime';
 import type { RealtimeGroupMembershipChangeKind } from '../kernel/events/types';
@@ -27,7 +28,9 @@ class TestWindow extends EventTarget {
 }
 
 const mocks = vi.hoisted(() => ({
+  authenticatedActorId: null as string | null,
   selectGroup: vi.fn(),
+  loadCurrentUserProfile: vi.fn(),
   loadSessions: vi.fn(),
   loadGroups: vi.fn(),
   loadFriendRequests: vi.fn(),
@@ -45,7 +48,7 @@ const originalWindow = globalThis.window;
 const originalCustomEvent = globalThis.CustomEvent;
 
 vi.mock('../store/session', () => ({
-  currentAuthenticatedActorId: () => null,
+  currentAuthenticatedActorId: () => mocks.authenticatedActorId,
   useSessionStore: {
     subscribe: vi.fn(() => () => undefined),
   },
@@ -58,10 +61,13 @@ vi.mock('../store/socialChat', () => ({
       activeTab: 'group',
       sessions: [],
       groups: [],
+      conversationMembers: {},
+      groupMembers: {},
       conversationLocalState: {},
       messages: {},
       activeGroupUlid: 'group-1',
       selectGroup: mocks.selectGroup,
+      loadCurrentUserProfile: mocks.loadCurrentUserProfile,
       loadSessions: mocks.loadSessions,
       loadGroups: mocks.loadGroups,
       loadFriendRequests: mocks.loadFriendRequests,
@@ -132,7 +138,9 @@ describe('social realtime group membership side effects', () => {
       };
     }
     vi.clearAllMocks();
+    mocks.authenticatedActorId = null;
     mocks.ingestRealtimeMessage.mockResolvedValue(undefined);
+    mocks.loadCurrentUserProfile.mockResolvedValue(undefined);
     mocks.loadSessions.mockResolvedValue(undefined);
     mocks.loadGroups.mockResolvedValue(undefined);
     mocks.loadFriendRequests.mockResolvedValue(undefined);
@@ -223,6 +231,21 @@ describe('social realtime group membership side effects', () => {
       expect(mocks.loadSessions).toHaveBeenCalledTimes(2);
     });
     expect(mocks.loadGroups).not.toHaveBeenCalled();
+  });
+
+  it('hydrates the actor profile before reconciling Station conversation settings', async () => {
+    const calls: string[] = [];
+    mocks.authenticatedActorId = 'ptid:peer:self';
+    mocks.loadCurrentUserProfile.mockImplementation(async () => {
+      calls.push('profile');
+    });
+    mocks.loadSessions.mockImplementation(async () => {
+      calls.push('sessions');
+    });
+
+    await refreshSocialProjection('test');
+
+    expect(calls).toEqual(['profile', 'sessions']);
   });
 });
 
