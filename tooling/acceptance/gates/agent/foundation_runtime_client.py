@@ -16,7 +16,6 @@ from typing import Any, Mapping
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
-from selenium.webdriver.remote.client_config import ClientConfig
 from selenium.webdriver.remote.remote_connection import RemoteConnection
 
 from tooling.acceptance.core.harness import call_async_harness, harness_ready
@@ -212,16 +211,15 @@ class FoundationRuntimeClient:
                 self.startup_timeout,
             )
             endpoint = f"http://127.0.0.1:{self.spec.webdriver_port}"
-            connection = RemoteConnection(
-                client_config=ClientConfig(
-                    remote_server_addr=endpoint,
-                    timeout=min(self.startup_timeout, 120),
-                ),
-            )
-            self.driver = webdriver.Remote(
-                command_executor=connection,
-                options=ChromeOptions(),
-            )
+            previous_timeout = RemoteConnection.get_timeout()
+            RemoteConnection.set_timeout(min(self.startup_timeout, 120))
+            try:
+                self.driver = webdriver.Remote(
+                    command_executor=endpoint,
+                    options=ChromeOptions(),
+                )
+            finally:
+                RemoteConnection.set_timeout(previous_timeout)
             return
 
         wait_until(
