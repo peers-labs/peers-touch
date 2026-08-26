@@ -162,3 +162,20 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
   The next diagnostic run distinguishes M from N by recording the Rust scope
   and staged-file state, then fetching the failed resource after the unchanged
   image assertion has already failed. Runtime cleanup passed.
+- Exact-source Linux run
+  `20260826T011952570754Z-be781daf68d9fa39703743973692d3dd`
+  at `9889c4ec671382ab6b87006fcaddaf484f121ef1` ran without the competing
+  Foundation executor and passed source/runtime identity, transcript/thread,
+  reaction recovery, avatar/Station attribution, background upload recovery,
+  background rendering, and Station settings readback. It then timed out
+  waiting for the failed attachment draft.
+- The runtime log proves the attachment chooser closed but
+  `messaging_pick_attachment_source` never returned. Immediately afterward,
+  its Tokio worker panicked with `Cannot drop a runtime in a context where
+  blocking is not allowed`, followed by a `reqwest::blocking::client` startup
+  error. The M/N diagnostic probe created and dropped a blocking Reqwest client
+  inside the async Tauri picker command, interrupting the product flow before
+  the Composer could append the zero-byte draft.
+- The post-fix probe uses `tauri::async_runtime::spawn` with the async Reqwest
+  client. Scope registration and all M/N fields remain unchanged, while the
+  picker command no longer owns a blocking runtime.
