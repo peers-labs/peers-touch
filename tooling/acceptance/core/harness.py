@@ -31,6 +31,10 @@ def _set_script_timeout(driver: Any, timeout: float) -> None:
     setter = getattr(target, "set_script_timeout", None)
     if callable(setter):
         setter(timeout)
+    command_executor = getattr(target, "command_executor", None)
+    transport_setter = getattr(command_executor, "set_timeout", None)
+    if callable(transport_setter):
+        transport_setter(timeout + 5)
 
 
 def call_async_harness(
