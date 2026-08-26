@@ -2149,6 +2149,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // Auth (state-dependent)
         // =================================================================
         "auth_login" => {
+            tracing::info!("http_gateway: auth_login invoked");
             let mut input = match parse_args::<AuthLoginInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
@@ -2179,13 +2180,29 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                                         .unwrap_or_else(|| {
                                             crate::infrastructure::local_scope::account_id_for_password_actor(actor_id)
                                         });
+                                if let Err(error) = app_auth::activate_messaging_profile(
+                                    state,
+                                    &account_id,
+                                    actor_id,
+                                    &token,
+                                ) {
+                                    tracing::warn!(
+                                        account_id = %account_id,
+                                        error = %error,
+                                        "http_gateway: messaging profile activation failed"
+                                    );
+                                }
                                 state.sessions.bind_exclusive(
                                     crate::domain::identity::ActiveSession::new(
                                         "http-gateway",
-                                        account_id,
+                                        account_id.clone(),
                                         actor,
                                         token,
                                     ),
+                                );
+                                tracing::info!(
+                                    account_id = %account_id,
+                                    "http_gateway: auth_login session bound to WindowSessionRegistry"
                                 );
                             }
                         }
