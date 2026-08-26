@@ -552,12 +552,16 @@ fn reconcile_workers(
     workers: &mut HashMap<String, ActiveWorker>,
 ) {
     let mut desired = HashMap::new();
-    for session in state.sessions.snapshot_all() {
+    let all_sessions = state.sessions.snapshot_all();
+    if all_sessions.is_empty() {
+        tracing::info!("capability supervisor: no window sessions registered");
+    }
+    for session in all_sessions {
         match worker_context(state, session) {
             Ok(context) => {
                 desired.insert(context.account_id.clone(), context);
             }
-            Err(error) => tracing::debug!(
+            Err(error) => tracing::warn!(
                 error = %error,
                 "client capability session is not ready for registration"
             ),
