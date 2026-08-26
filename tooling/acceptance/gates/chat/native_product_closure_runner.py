@@ -482,12 +482,18 @@ class NativeProductClosureGate(AcceptanceGate):
             client.stop()
             raise
 
-    def restart_actor(self, actor: str) -> None:
-        previous_device = self.device_ids[actor]
+    def stop_actor_for_restart(self, actor: str) -> None:
         self.clients[actor].stop(preserve_state=True)
+
+    def restore_actor_after_restart(self, actor: str) -> None:
+        previous_device = self.device_ids[actor]
         self.launch_actor(actor, restore_session=True)
         if self.device_ids[actor] != previous_device:
             raise GateError(f"{actor} device identity changed across restart")
+
+    def restart_actor(self, actor: str) -> None:
+        self.stop_actor_for_restart(actor)
+        self.restore_actor_after_restart(actor)
 
     def bind_recovered_device(self, actor: str) -> str:
         device = self.wait_for_realtime_device(
@@ -3629,12 +3635,12 @@ class NativeProductClosureGate(AcceptanceGate):
                 f"{json.dumps(before, sort_keys=True)}"
             )
 
-        self.clients["bob"].stop()
+        self.stop_actor_for_restart("bob")
         offline_text = f"w13-offline-{os.getpid()}"
         self.composer_send("alice", offline_text)
         self.wait_message_text("alice", offline_text)
 
-        self.restart_actor("bob")
+        self.restore_actor_after_restart("bob")
         self.open_existing_group("bob", group_id)
         wait_until(
             lambda: (
