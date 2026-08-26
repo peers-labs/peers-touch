@@ -106,7 +106,7 @@ describe('chat attachment preview substrate', () => {
       mimeType: 'image/png',
       size: 42,
       status: 'ready',
-      managedSource: false,
+      managedSource: true,
       attachment,
     });
   });
