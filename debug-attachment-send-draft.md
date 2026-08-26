@@ -179,3 +179,16 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
 - The post-fix probe uses `tauri::async_runtime::spawn` with the async Reqwest
   client. Scope registration and all M/N fields remain unchanged, while the
   picker command no longer owns a blocking runtime.
+- Exact-source post-fix run
+  `20260826T015033635598Z-1cff14fd279e4b3d26757f52f355bcb4`
+  at `71c18a722ff1994bf2b1f03568ed60d88bfc1d07` proved the picker
+  command no longer panics. The zero-byte attachment reached and passed
+  `attachment_failure_draft_retained`; subsequent image and text picks recorded
+  allowed files of 70 and 32 bytes.
+- The normal image still completed at zero intrinsic dimensions while a direct
+  asset request returned HTTP 200 and `image/png`. Strict parsing of the
+  embedded 70-byte fixture then found an invalid IDAT CRC and a failing zlib
+  checksum. This rejects M and confirms that the apparent WebKitGTK decode
+  failure was caused by malformed Gate fixture bytes, not the asset protocol.
+- The Gate now uses a CRC-valid, zlib-valid 1x1 RGBA PNG. A static regression
+  test validates every PNG chunk CRC and decompresses the IDAT scanline.
