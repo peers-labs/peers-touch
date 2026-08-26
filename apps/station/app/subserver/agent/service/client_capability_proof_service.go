@@ -212,7 +212,7 @@ func (s *ClientCapabilityProofService) Verify(
 			fmt.Errorf("device signing key is revoked"),
 		)
 	}
-	if key.GetActorPtid() != actorID ||
+	if key.GetActorPtid() != resolvedActorID ||
 		key.GetActorDeviceId() != headerDeviceID ||
 		key.GetSigningKeyId() != proof.GetDeviceSigningKeyId() ||
 		len(key.GetEd25519PublicKey()) != ed25519.PublicKeySize ||
@@ -226,7 +226,7 @@ func (s *ClientCapabilityProofService) Verify(
 
 	signingPayload := &model.ClientCapabilityCommandSigningPayload{
 		Domain:    domain,
-		ActorPtid: actorID,
+		ActorPtid: resolvedActorID,
 		DeviceId:  headerDeviceID,
 		CommandId: proof.GetCommandId(),
 		BodyHash:  bodyHash[:],
