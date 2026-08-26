@@ -19,12 +19,12 @@ use reqwest::Method;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-const PULL_PATH: &str = "/agent/capability/requests/pull";
-const REGISTER_PATH: &str = "/agent/capability/lease/register";
-const RENEW_PATH: &str = "/agent/capability/lease/renew";
-const REVOKE_PATH: &str = "/agent/capability/lease/revoke";
-const ACTIVE_RECEIPT_PATH: &str = "/agent/capability/receipt";
-const RECOVERY_RECEIPT_PATH: &str = "/agent/capability/receipt/recover";
+const PULL_PATH: &str = "/sub-agent/agent/capability/requests/pull";
+const REGISTER_PATH: &str = "/sub-agent/agent/capability/lease/register";
+const RENEW_PATH: &str = "/sub-agent/agent/capability/lease/renew";
+const REVOKE_PATH: &str = "/sub-agent/agent/capability/lease/revoke";
+const ACTIVE_RECEIPT_PATH: &str = "/sub-agent/agent/capability/receipt";
+const RECOVERY_RECEIPT_PATH: &str = "/sub-agent/agent/capability/receipt/recover";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CapabilityNegativeControl {
