@@ -96,6 +96,7 @@ class SyntheticLinuxRuntimeCell:
         self.exposed_endpoints: list[tuple[str, str]] = []
         self.released_endpoints: list[str] = []
         self.staged_files: list[tuple[str, Path]] = []
+        self.hashed_files: list[tuple[str, str]] = []
 
     def validate_binding(self, gate_id: str, source_commit: str) -> None:
         self.validations.append((gate_id, source_commit))
@@ -128,6 +129,10 @@ class SyntheticLinuxRuntimeCell:
     def stage_actor_file(self, actor: str, source: Path) -> str:
         self.staged_files.append((actor, source))
         return f"/workspace/run/actors/{actor}/fixtures/{source.name}"
+
+    def actor_file_sha256(self, actor: str, path: str) -> str:
+        self.hashed_files.append((actor, path))
+        return "b" * 64
 
     def expose_orchestrator_endpoint(
         self,
@@ -235,6 +240,14 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
         self.assertEqual(
             cell.staged_files,
             [("alice", source), ("alice", source)],
+        )
+        self.assertEqual(
+            binding.native_file_sha256("alice", staged),
+            "b" * 64,
+        )
+        self.assertEqual(
+            cell.hashed_files,
+            [("alice", str(staged))],
         )
         self.assertFalse(
             binding.request_cooperative_activation(session, (session,))
@@ -389,6 +402,7 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
             staged = binding.stage_native_file("alice", fixture)
             fixture.write_bytes(b"updated fixture")
             refreshed = binding.stage_native_file("alice", fixture)
+            fixture_digest = binding.native_file_sha256("alice", fixture)
             binary_identity = binding.binary_identity()
 
         self.assertEqual(binding.cell_id, "desktop-macos-native")
@@ -398,6 +412,10 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
         self.assertEqual(endpoint.lease_id, "local-direct")
         self.assertEqual(staged, fixture.resolve())
         self.assertEqual(refreshed, staged)
+        self.assertEqual(
+            fixture_digest,
+            "3060b27910b7e28b2fccde2d1b221079ae7694aa4523081f23614cfc74713450",
+        )
         self.assertEqual(
             binary_identity["sha256"],
             "a37cdd0591588a0016117ba6b84e7182977a007c332bccbc55ba656e74e6f45a",
