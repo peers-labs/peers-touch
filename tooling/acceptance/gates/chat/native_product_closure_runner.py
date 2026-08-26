@@ -1232,52 +1232,89 @@ class NativeProductClosureGate(AcceptanceGate):
         client: TauriSession,
         element: Any,
     ) -> Any:
-        resolved = client.driver.execute_script(
+        root_area = client.driver.execute_script(
             """
             const element = arguments[0];
             const rect = element.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) return element;
-            const interactiveSelector = (
-              'button, [role="button"], a[href], input, select, textarea'
-            );
-            const isVisibleSurface = (candidate) => {
-              const candidateRect = candidate.getBoundingClientRect();
-              const style = getComputedStyle(candidate);
-              return (
-                candidateRect.width > 0
-                && candidateRect.height > 0
-                && style.visibility !== 'hidden'
-                && style.display !== 'none'
-                && !candidate.disabled
-              );
-            };
-            const interactive = Array.from(
-              element.querySelectorAll(interactiveSelector),
-            ).filter(isVisibleSurface);
-            if (interactive.length === 1) return interactive[0];
-            if (!element.matches(interactiveSelector)) return null;
-            const surfaces = Array.from(element.querySelectorAll('*'))
-              .filter(isVisibleSurface)
-              .filter((candidate) => {
-                const candidateRect = candidate.getBoundingClientRect();
-                const hit = document.elementFromPoint(
-                  candidateRect.left + candidateRect.width / 2,
-                  candidateRect.top + candidateRect.height / 2,
-                );
-                return hit && element.contains(hit);
-              })
-              .sort((left, right) => {
-                const leftRect = left.getBoundingClientRect();
-                const rightRect = right.getBoundingClientRect();
-                return (
-                  rightRect.width * rightRect.height
-                  - leftRect.width * leftRect.height
-                );
-              });
-            return surfaces[0] || null;
+            return rect.width * rect.height;
             """,
             element,
         )
+        if float(root_area or 0) > 0:
+            return element
+
+        interactive_selector = (
+            'button, [role="button"], a[href], input, select, textarea'
+        )
+
+        def visible_area(candidate: Any) -> float:
+            area = client.driver.execute_script(
+                """
+                const candidate = arguments[0];
+                const rect = candidate.getBoundingClientRect();
+                const style = getComputedStyle(candidate);
+                return (
+                  rect.width > 0
+                  && rect.height > 0
+                  && style.visibility !== 'hidden'
+                  && style.display !== 'none'
+                  && !candidate.disabled
+                ) ? rect.width * rect.height : 0;
+                """,
+                candidate,
+            )
+            return float(area or 0)
+
+        interactive = [
+            candidate
+            for candidate in element.find_elements(
+                By.CSS_SELECTOR,
+                interactive_selector,
+            )
+            if visible_area(candidate) > 0
+        ]
+        if len(interactive) == 1:
+            return interactive[0]
+
+        root_is_interactive = bool(
+            client.driver.execute_script(
+                "return arguments[0].matches(arguments[1]);",
+                element,
+                interactive_selector,
+            )
+        )
+        if not root_is_interactive:
+            resolved = None
+        else:
+            surfaces: list[tuple[float, Any]] = []
+            for candidate in element.find_elements(By.CSS_SELECTOR, "*"):
+                area = client.driver.execute_script(
+                    """
+                    const root = arguments[0];
+                    const candidate = arguments[1];
+                    const rect = candidate.getBoundingClientRect();
+                    const style = getComputedStyle(candidate);
+                    if (
+                      rect.width <= 0
+                      || rect.height <= 0
+                      || style.visibility === 'hidden'
+                      || style.display === 'none'
+                      || candidate.disabled
+                    ) return 0;
+                    const hit = document.elementFromPoint(
+                      rect.left + rect.width / 2,
+                      rect.top + rect.height / 2,
+                    );
+                    return hit && root.contains(hit)
+                      ? rect.width * rect.height
+                      : 0;
+                    """,
+                    element,
+                    candidate,
+                )
+                if float(area or 0) > 0:
+                    surfaces.append((float(area), candidate))
+            resolved = max(surfaces, default=(0, None), key=lambda item: item[0])[1]
         if resolved is None:
             # #region debug-point A,B,C,D:native-click-surface-resolution
             if (

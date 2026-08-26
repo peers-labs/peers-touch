@@ -9,6 +9,8 @@ import unittest
 import zlib
 from pathlib import Path
 
+from selenium.webdriver.common.by import By
+
 from tooling.acceptance.gates.chat.native_product_closure_runner import (
     NativeProductClosureGate,
     VALID_ATTACHMENT_IMAGE_BYTES,
@@ -79,8 +81,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         class Driver:
             def execute_script(self, script: str, target: object):
                 self.assert_target(target)
-                if "querySelectorAll" in script:
-                    return target
+                if "rect.width * rect.height" in script:
+                    return 1
                 if "scrollIntoView" in script:
                     self.fail("visible target must not be scrolled")
                 return True
@@ -115,9 +117,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
 
         class Driver:
             def execute_script(self, script: str, target: object):
-                if "querySelectorAll" in script:
+                if "rect.width * rect.height" in script:
                     events.append("resolve")
-                    return target
+                    return 1
                 if "scrollIntoView" in script:
                     self_test.assertIs(target, original)
                     events.append("scroll")
@@ -155,14 +157,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
 
     def test_native_click_resolves_zero_geometry_wrapper(self) -> None:
-        wrapper = object()
         interactive_child = object()
+
+        class Wrapper:
+            def find_elements(self, by: str, selector: str) -> list[object]:
+                self_test.assertEqual(by, By.CSS_SELECTOR)
+                self_test.assertIn('[role="button"]', selector)
+                return [interactive_child]
+
+        wrapper = Wrapper()
 
         class Driver:
             def execute_script(self, script: str, target: object):
-                self_test.assertIs(target, wrapper)
-                self_test.assertIn("interactive.length === 1", script)
-                return interactive_child
+                if target is wrapper:
+                    self_test.assertIn("rect.width * rect.height", script)
+                    return 0
+                self_test.assertIs(target, interactive_child)
+                self_test.assertIn("style.visibility", script)
+                return 16
 
         class Client:
             driver = Driver()
@@ -171,6 +183,42 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         gate = object.__new__(NativeProductClosureGate)
         actual = gate._resolve_native_click_surface(Client(), wrapper)
         self.assertIs(actual, interactive_child)
+
+    def test_native_click_resolves_interactive_zero_geometry_root_surface(
+        self,
+    ) -> None:
+        surface = object()
+
+        class Root:
+            def find_elements(self, by: str, selector: str) -> list[object]:
+                self_test.assertEqual(by, By.CSS_SELECTOR)
+                return [] if selector != "*" else [surface]
+
+        root = Root()
+
+        class Driver:
+            def execute_script(self, script: str, *targets: object):
+                if len(targets) == 1 and targets[0] is root:
+                    if ".matches(arguments[1])" in script:
+                        self_test.fail("selector argument must be present")
+                    return 0
+                if len(targets) == 2 and targets[0] is root:
+                    if targets[1] == (
+                        'button, [role="button"], a[href], '
+                        'input, select, textarea'
+                    ):
+                        return True
+                    self_test.assertIs(targets[1], surface)
+                    return 24
+                self_test.fail(f"unexpected resolver call: {targets}")
+
+        class Client:
+            driver = Driver()
+
+        self_test = self
+        gate = object.__new__(NativeProductClosureGate)
+        actual = gate._resolve_native_click_surface(Client(), root)
+        self.assertIs(actual, surface)
 
     def test_runner_is_a_real_acceptance_gate(self) -> None:
         gate = next(
@@ -517,12 +565,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         click_source = self.source[click_start:click_end]
         self.assertIn("def _resolve_native_click_surface(", click_source)
-        self.assertIn("interactive.length === 1", click_source)
+        self.assertIn("if float(root_area or 0) > 0:", click_source)
+        self.assertIn("element.find_elements(", click_source)
+        self.assertIn("if len(interactive) == 1:", click_source)
         self.assertIn(
-            "if (!element.matches(interactiveSelector)) return null;",
+            '"return arguments[0].matches(arguments[1]);"',
             click_source,
         )
-        self.assertIn("return surfaces[0] || null;", click_source)
+        self.assertIn("resolved = max(", click_source)
+        self.assertNotIn("return element;", click_source)
         self.assertIn(
             "Native click target has no unique interactive surface",
             click_source,
