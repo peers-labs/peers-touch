@@ -652,6 +652,47 @@ class LinuxCellProfileTests(unittest.TestCase):
             )
         )
 
+    def test_actor_file_digest_is_scoped_to_actor_runtime_root(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner._actors = {
+            "alice": SimpleNamespace(released=False),
+        }
+        provisioner.transport = Mock()
+        provisioner._require_state = Mock(
+            return_value={"containerName": "runtime-cell"}
+        )
+        expected = "a" * 64
+        provisioner.transport.run_argv.return_value = subprocess.CompletedProcess(
+            (),
+            0,
+            f"{expected}  cache.bin\n",
+            "",
+        )
+
+        observed = provisioner.actor_file_sha256(
+            "alice",
+            "/workspace/run/actors/alice/storage/cache.bin",
+        )
+
+        self.assertEqual(observed, expected)
+        provisioner.transport.run_argv.assert_called_once_with(
+            (
+                "docker",
+                "exec",
+                "runtime-cell",
+                "sha256sum",
+                "--",
+                "/workspace/run/actors/alice/storage/cache.bin",
+            ),
+            timeout=15,
+            check=True,
+        )
+        with self.assertRaisesRegex(ProvisioningError, "outside"):
+            provisioner.actor_file_sha256(
+                "alice",
+                "/workspace/run/actors/bob/storage/cache.bin",
+            )
+
     def test_explicit_orchestrator_endpoint_owns_reverse_tunnel(self) -> None:
         provisioner = object.__new__(NativeDesktopLinuxProvisioner)
         provisioner._endpoints = {}
