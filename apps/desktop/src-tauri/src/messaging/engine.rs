@@ -34,7 +34,7 @@ use reqwest::Method;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -325,10 +325,33 @@ impl MessagingEngine {
     }
 
     pub fn stage_attachment_source(&self, filename: &str, bytes: &[u8]) -> Result<String, String> {
+        self.persist_attachment_source(filename, bytes.len() as u64, bytes)
+    }
+
+    pub fn stage_attachment_file(
+        &self,
+        filename: &str,
+        source_path: &Path,
+    ) -> Result<String, String> {
+        let source = File::open(source_path)
+            .map_err(|error| format!("open selected messaging attachment: {error}"))?;
+        let plaintext_size = source
+            .metadata()
+            .map_err(|error| format!("stat selected messaging attachment: {error}"))?
+            .len();
+        self.persist_attachment_source(filename, plaintext_size, source)
+    }
+
+    fn persist_attachment_source(
+        &self,
+        filename: &str,
+        plaintext_size: u64,
+        mut source: impl Read,
+    ) -> Result<String, String> {
         if filename.trim().is_empty()
             || filename.len() > 1024
-            || bytes.is_empty()
-            || bytes.len() as u64 > super::attachment::ATTACHMENT_MAX_PLAINTEXT_SIZE
+            || plaintext_size == 0
+            || plaintext_size > super::attachment::ATTACHMENT_MAX_PLAINTEXT_SIZE
         {
             return Err("messaging attachment source is invalid".to_string());
         }
@@ -346,9 +369,19 @@ impl MessagingEngine {
         let mut file = options
             .open(&path)
             .map_err(|error| format!("create messaging attachment source: {error}"))?;
-        file.write_all(bytes)
-            .and_then(|_| file.sync_all())
-            .map_err(|error| format!("persist messaging attachment source: {error}"))?;
+        let persisted = std::io::copy(&mut source, &mut file)
+            .and_then(|copied| {
+                file.sync_all()?;
+                Ok(copied)
+            })
+            .map_err(|error| {
+                let _ = std::fs::remove_file(&path);
+                format!("persist messaging attachment source: {error}")
+            })?;
+        if persisted != plaintext_size {
+            let _ = std::fs::remove_file(&path);
+            return Err("messaging attachment source size changed while staging".to_string());
+        }
         Ok(path.display().to_string())
     }
 
@@ -609,6 +642,40 @@ impl MessagingEngine {
         source: &CompletedSenderAttachmentSource,
     ) -> Result<PathBuf, String> {
         let source_path = Path::new(&source.source_local_ref);
+        // #region debug-point P:sender-source-root
+        if let Ok(expected_root) = attachment_source_root(&self.profile_id) {
+            if let Ok(client) = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_millis(250))
+                .build()
+            {
+                let _ = client
+                    .post("http://127.0.0.1:7780/event")
+                    .json(&serde_json::json!({
+                        "sessionId": "attachment-send-draft",
+                        "runId": "diagnostic-sender-source-root",
+                        "hypothesisId": "P",
+                        "location": "messaging::engine:promote_sender_attachment_cache",
+                        "msg": "[DEBUG] Engine compared sender source ownership",
+                        "data": {
+                            "attachmentId": source.attachment_id,
+                            "sourcePath": source.source_local_ref,
+                            "sourceParent": source_path.parent().map(|path| path.display().to_string()),
+                            "expectedRoot": expected_root.display().to_string(),
+                            "sourceExists": source_path.is_file(),
+                            "filenameValid": source_path
+                                .file_name()
+                                .and_then(|value| value.to_str())
+                                .is_some_and(|value| {
+                                    value.len() == 26
+                                        && value.chars().all(|ch| ch.is_ascii_alphanumeric())
+                                }),
+                        },
+                        "ts": now_unix_ms(),
+                    }))
+                    .send();
+            }
+        }
+        // #endregion
         if !managed_attachment_source(&self.profile_id, source_path)? {
             return Err("messaging attachment source is not Engine-managed".to_string());
         }
@@ -2374,6 +2441,32 @@ mod tests {
         assert_eq!(error, "messaging sender attachment source is invalid");
         assert!(source_path.is_file());
         assert!(!cache_path.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_attachment_file_is_copied_into_engine_managed_staging() {
+        let profile_id = format!("native-picker-{}", Ulid::new());
+        let engine = MessagingEngine::in_memory(profile_id.clone(), endpoint("device-a")).unwrap();
+        let root = std::env::temp_dir().join(format!("native-picker-source-{}", Ulid::new()));
+        let source_path = root.join("selected.png");
+        let bytes = b"selected attachment bytes";
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&source_path, bytes).unwrap();
+
+        let staged_path = engine
+            .stage_attachment_file("selected.png", &source_path)
+            .unwrap();
+        let staged_path = PathBuf::from(staged_path);
+
+        assert!(source_path.is_file());
+        assert!(managed_attachment_source(&profile_id, &staged_path).unwrap());
+        assert_eq!(std::fs::read(&staged_path).unwrap(), bytes);
+
+        engine
+            .discard_staged_attachment_source(&staged_path.display().to_string())
+            .unwrap();
+        assert!(!staged_path.exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 
