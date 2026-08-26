@@ -1,4 +1,3 @@
-use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::model::agent::{
     ClientCapabilityReceipt, ClientCapabilityRequest, ReceiptRecoveryProof,
     ReceiptRecoverySigningPayload,
@@ -9,10 +8,12 @@ use sha2::{Digest, Sha256};
 pub const RECEIPT_RECOVERY_DOMAIN: &str = "peers-touch/agent/tool-receipt-recovery/v1";
 
 pub fn sign_terminal_recovery(
-    identity: &ActorDeviceIdentity,
+    signing_key_id: &str,
+    signing_key: &ed25519_dalek::SigningKey,
     envelope: &ClientCapabilityRequest,
     receipt: &mut ClientCapabilityReceipt,
 ) -> Result<(), String> {
+    use ed25519_dalek::Signer;
     if !matches!(
         crate::model::agent::ClientCapabilityReceiptStatus::try_from(receipt.status),
         Ok(crate::model::agent::ClientCapabilityReceiptStatus::Applied)
@@ -25,7 +26,6 @@ pub fn sign_terminal_recovery(
         .recovery_credential
         .as_ref()
         .ok_or_else(|| "CLIENT_CAPABILITY_RECOVERY_CREDENTIAL_REQUIRED".to_string())?;
-    let (signing_key_id, _) = identity.signing_identity()?;
     if signing_key_id != credential.device_signing_key_id {
         return Err("CLIENT_CAPABILITY_RECOVERY_SIGNING_KEY_MISMATCH".to_string());
     }
@@ -40,11 +40,12 @@ pub fn sign_terminal_recovery(
         scope_hash: credential.scope_hash.clone(),
         receipt_digest,
     };
+    let signature = signing_key.sign(&signing_payload.encode_to_vec());
     receipt.recovery_proof = Some(ReceiptRecoveryProof {
         credential_id: credential.credential_id.clone(),
         nonce: credential.nonce.clone(),
         device_signing_key_id: credential.device_signing_key_id.clone(),
-        signature: identity.sign(&signing_payload.encode_to_vec())?,
+        signature: signature.to_bytes().to_vec(),
     });
     Ok(())
 }

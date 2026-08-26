@@ -1,5 +1,4 @@
 use super::fenced_executor::ReceiptReporter;
-use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::infrastructure::station_client;
 use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
 use crate::model::agent::{
@@ -60,7 +59,8 @@ pub struct CapabilityStationTransport<'a> {
     actor_ptid: &'a str,
     device_id: &'a str,
     token: &'a str,
-    identity: &'a ActorDeviceIdentity,
+    signing_key_id: &'a str,
+    signing_key: &'a ed25519_dalek::SigningKey,
 }
 
 impl<'a> CapabilityStationTransport<'a> {
@@ -69,7 +69,8 @@ impl<'a> CapabilityStationTransport<'a> {
         actor_ptid: &'a str,
         device_id: &'a str,
         token: &'a str,
-        identity: &'a ActorDeviceIdentity,
+        signing_key_id: &'a str,
+        signing_key: &'a ed25519_dalek::SigningKey,
     ) -> Result<Self, String> {
         if station_url.trim().is_empty()
             || !actor_ptid.starts_with("ptid:")
@@ -86,7 +87,8 @@ impl<'a> CapabilityStationTransport<'a> {
             actor_ptid,
             device_id,
             token,
-            identity,
+            signing_key_id,
+            signing_key,
         })
     }
 
@@ -377,7 +379,7 @@ impl<'a> CapabilityStationTransport<'a> {
         domain: ClientCapabilityCommandDomain,
         body: &M,
     ) -> Result<ClientCapabilityCommandProof, String> {
-        let (signing_key_id, _) = self.identity.signing_identity()?;
+        use ed25519_dalek::Signer;
         let mut nonce = vec![0u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut nonce);
         let issued_at = now_timestamp();
@@ -390,12 +392,13 @@ impl<'a> CapabilityStationTransport<'a> {
             nonce: nonce.clone(),
             issued_at: Some(issued_at.clone()),
         };
+        let signature = self.signing_key.sign(&payload.encode_to_vec());
         Ok(ClientCapabilityCommandProof {
             command_id: payload.command_id.clone(),
-            device_signing_key_id: signing_key_id,
+            device_signing_key_id: self.signing_key_id.to_string(),
             nonce,
             issued_at: Some(issued_at),
-            signature: self.identity.sign(&payload.encode_to_vec())?,
+            signature: signature.to_bytes().to_vec(),
         })
     }
 }

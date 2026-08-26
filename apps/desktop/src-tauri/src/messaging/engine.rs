@@ -242,6 +242,13 @@ impl MessagingEngine {
         self.mls_manager.actor_identity()
     }
 
+    pub fn device_signing_identity(&self) -> Result<Option<(String, ed25519_dalek::SigningKey)>, String> {
+        let Some((seed, key_id)) = self.store.device_signing_seed()? else {
+            return Ok(None);
+        };
+        Ok(Some((key_id, ed25519_dalek::SigningKey::from_bytes(&seed))))
+    }
+
     pub fn store(&self) -> &MessagingStore {
         self.store.as_ref()
     }

@@ -143,6 +143,7 @@ pub(crate) fn activate_messaging_profile(
         actor_identity_seed,
         crate::messaging::INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
     )?;
+    crate::domain::device_identity::ensure_device_enrolled(state, account_id, token)?;
     state
         .messaging_engines
         .activate_profile_worker(account_id, token.to_string())

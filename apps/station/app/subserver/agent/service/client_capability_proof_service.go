@@ -58,20 +58,28 @@ func (e *ClientCapabilityCommandProofError) Unwrap() error {
 	return e.Cause
 }
 
+// ActorPTIDResolver resolves a numeric actor ID to its canonical PTID.
+type ActorPTIDResolver interface {
+	ResolvePTID(ctx context.Context, actorID string) (string, error)
+}
+
 type ClientCapabilityProofService struct {
-	resolver DeviceSigningKeyResolver
-	now      func() time.Time
+	resolver     DeviceSigningKeyResolver
+	ptidResolver ActorPTIDResolver
+	now          func() time.Time
 }
 
 // NewClientCapabilityProofService creates a verifier with explicit key and
 // clock dependencies. Production callers must provide both dependencies.
 func NewClientCapabilityProofService(
 	resolver DeviceSigningKeyResolver,
+	ptidResolver ActorPTIDResolver,
 	now func() time.Time,
 ) *ClientCapabilityProofService {
 	return &ClientCapabilityProofService{
-		resolver: resolver,
-		now:      now,
+		resolver:     resolver,
+		ptidResolver: ptidResolver,
+		now:          now,
 	}
 }
 
@@ -168,9 +176,21 @@ func (s *ClientCapabilityProofService) Verify(
 	}
 	bodyHash := sha256.Sum256(bodyBytes)
 
+	resolvedActorID := actorID
+	if s.ptidResolver != nil && !strings.HasPrefix(actorID, "ptid:") {
+		ptid, resolveErr := s.ptidResolver.ResolvePTID(ctx, actorID)
+		if resolveErr != nil {
+			return nil, proofError(
+				model.ClientCapabilityCommandErrorCode_CLIENT_CAPABILITY_COMMAND_ERROR_CODE_KEY_NOT_FOUND,
+				fmt.Errorf("resolve actor PTID: %w", resolveErr),
+			)
+		}
+		resolvedActorID = ptid
+	}
+
 	key, err := s.resolver.ResolveSigningKey(
 		ctx,
-		actorID,
+		resolvedActorID,
 		headerDeviceID,
 		proof.GetDeviceSigningKeyId(),
 	)

@@ -256,6 +256,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	// F4: Durable tool dispatch service with policy and fencing.
 	proofSvc := service.NewClientCapabilityProofService(
 		s.deviceKeys,
+		actorPTIDResolverAdapter{},
 		func() time.Time { return time.Now().UTC() },
 	)
 	toolDispatchSvc := service.NewToolDispatchService()

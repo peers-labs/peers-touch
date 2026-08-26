@@ -137,7 +137,8 @@ mod tests {
             &fixture.lease,
             &reopened,
             &fixture.resources,
-            &fixture.identity,
+            &fixture.signing_key_id,
+            &fixture.signing_key,
             &executor,
             &reporter,
         );
@@ -444,8 +445,8 @@ mod tests {
             scope_hash: credential.scope_hash.clone(),
             receipt_digest: recovery_signer::receipt_digest(&recovered.receipt),
         };
-        let (_, public_key) = fixture.identity.signing_identity().unwrap();
-        let public_key: [u8; 32] = public_key.try_into().expect("Ed25519 public key");
+        let public_key = ed25519_dalek::VerifyingKey::from(&fixture.signing_key);
+        let public_key: [u8; 32] = public_key.to_bytes();
         let signature: [u8; 64] = proof
             .signature
             .clone()
@@ -468,6 +469,8 @@ mod tests {
         ledger: ReceiptLedger,
         resources: ResourceRegistry,
         identity: ActorDeviceIdentity,
+        signing_key_id: String,
+        signing_key: ed25519_dalek::SigningKey,
         lease: ExecutionLease,
     }
 
@@ -481,6 +484,13 @@ mod tests {
             let device_id = "alice-device";
             let identity = ActorDeviceIdentity::new();
             identity.init(actor_ptid, device_id).unwrap();
+            let signing_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+            let signing_key_id = format!(
+                "{}",
+                hex::encode(sha2::Sha256::digest(
+                    ed25519_dalek::VerifyingKey::from(&signing_key).as_bytes()
+                ))
+            );
             Self {
                 now_ms,
                 ledger: ReceiptLedger::open_test(&ledger_path).unwrap(),
@@ -492,6 +502,8 @@ mod tests {
                 )
                 .unwrap(),
                 identity,
+                signing_key_id,
+                signing_key,
                 lease: ExecutionLease {
                     station_url: "https://station.example".to_string(),
                     actor_ptid: actor_ptid.to_string(),
@@ -506,7 +518,7 @@ mod tests {
         }
 
         fn envelope(&self, replay_policy: ClientExecutionReplayPolicy) -> ClientCapabilityRequest {
-            let (signing_key_id, _) = self.identity.signing_identity().unwrap();
+            let signing_key_id = self.signing_key_id.clone();
             let mut envelope = ClientCapabilityRequest {
                 request_id: "request-1".to_string(),
                 turn_id: "turn-1".to_string(),
@@ -562,7 +574,8 @@ mod tests {
                 &self.lease,
                 &self.ledger,
                 &self.resources,
-                &self.identity,
+                &self.signing_key_id,
+                &self.signing_key,
                 executor,
                 reporter,
             )

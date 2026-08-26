@@ -62,9 +62,10 @@ func newToolDispatchFixture(t *testing.T) toolDispatchFixture {
 			ActorPtid:          proofTestActorID,
 			ActorDeviceId:      proofTestDeviceID,
 			SigningKeyId:       proofTestSigningKeyID,
-			Ed25519PublicKey:   publicKey,
+			Ed25519PublicKey:   publicKey[:],
 			VerificationSource: touchmodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION,
 		}},
+		nil,
 		func() time.Time { return now },
 	))
 	fixture := toolDispatchFixture{

@@ -5,7 +5,6 @@ use super::resource_registry::ResourceRegistry;
 use super::station_transport::{
     CapabilityNegativeControl, CapabilityNegativeControlStationFact, CapabilityStationTransport,
 };
-use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::domain::identity::ActiveSession;
 use crate::model::agent::{
     CapabilityConstraints, CapabilityPermissionState, ClientCapability,
@@ -246,7 +245,7 @@ struct WorkerContext {
     device_id: String,
     token: String,
     signing_key_id: String,
-    identity: Arc<ActorDeviceIdentity>,
+    signing_key: ed25519_dalek::SigningKey,
 }
 
 struct ActiveWorker {
@@ -276,7 +275,8 @@ impl ActiveWorker {
             &context.actor_ptid,
             &context.device_id,
             &context.token,
-            context.identity.as_ref(),
+            &context.signing_key_id,
+            &context.signing_key,
         )?;
         let lease = transport.register(advertisement(&context, &contracts, surface))?;
         ensure_lease_identity(&context, &lease)?;
@@ -343,7 +343,8 @@ impl ActiveWorker {
                 &execution_lease,
                 ledger,
                 resources,
-                self.context.identity.as_ref(),
+                &self.context.signing_key_id,
+                &self.context.signing_key,
                 executor,
                 &transport,
             );
@@ -379,7 +380,8 @@ impl ActiveWorker {
             &self.context.actor_ptid,
             &self.context.device_id,
             &self.context.token,
-            self.context.identity.as_ref(),
+            &self.context.signing_key_id,
+            &self.context.signing_key,
         )
     }
 }
@@ -392,8 +394,9 @@ fn run_supervisor(
     negative_controls: Arc<Mutex<VecDeque<CapabilityNegativeControlRequest>>>,
 ) {
     let mut workers = HashMap::<String, ActiveWorker>::new();
+    let mut enrollment_backoff: HashMap<String, std::time::Instant> = HashMap::new();
     while !stopping.load(Ordering::SeqCst) {
-        reconcile_workers(&state, surface, &mut workers);
+        reconcile_workers(&state, surface, &mut workers, &mut enrollment_backoff);
         process_negative_controls(&negative_controls, &workers);
         let mut replace_accounts = Vec::new();
         for worker in workers.values_mut() {
@@ -546,10 +549,13 @@ fn publish_worker_snapshot(
     }
 }
 
+const KEY_NOT_FOUND_BACKOFF: Duration = Duration::from_secs(5);
+
 fn reconcile_workers(
     state: &AppState,
     surface: ClientSurface,
     workers: &mut HashMap<String, ActiveWorker>,
+    enrollment_backoff: &mut HashMap<String, std::time::Instant>,
 ) {
     let mut desired = HashMap::new();
     let all_sessions = state.sessions.snapshot_all();
@@ -592,19 +598,36 @@ fn reconcile_workers(
                 &account_id,
                 ClientCapabilityLeaseRevokeReason::StationSwitch,
             );
+            enrollment_backoff.remove(&account_id);
         }
         if workers.contains_key(&account_id) {
             continue;
+        }
+        if let Some(cooldown_until) = enrollment_backoff.get(&account_id) {
+            if cooldown_until.elapsed() < KEY_NOT_FOUND_BACKOFF {
+                continue;
+            }
+            enrollment_backoff.remove(&account_id);
         }
         match ActiveWorker::register(context, surface) {
             Ok(worker) => {
                 workers.insert(account_id, worker);
             }
-            Err(error) => tracing::warn!(
-                account = %account_id,
-                error = %error,
-                "client capability lease registration failed"
-            ),
+            Err(error) => {
+                if error.contains("command error 2") {
+                    tracing::info!(
+                        account = %account_id,
+                        "capability lease blocked by pending device enrollment, backing off"
+                    );
+                    enrollment_backoff.insert(account_id, std::time::Instant::now());
+                } else {
+                    tracing::warn!(
+                        account = %account_id,
+                        error = %error,
+                        "client capability lease registration failed"
+                    );
+                }
+            }
         }
     }
 }
@@ -662,11 +685,9 @@ fn worker_context(state: &AppState, session: ActiveSession) -> Result<WorkerCont
             "DESIGN_AMENDMENT_REQUIRED: session and actor-device endpoint disagree".to_string(),
         );
     }
-    let identity = engine.actor_device_identity();
-    let (signing_key_id, _) = identity.signing_identity().map_err(|_| {
-        "DESIGN_AMENDMENT_REQUIRED: current actor-device signing identity is unavailable"
-            .to_string()
-    })?;
+    let (signing_key_id, signing_key) = engine
+        .device_signing_identity()?
+        .ok_or_else(|| "device signing identity not yet enrolled".to_string())?;
     Ok(WorkerContext {
         account_id: session.account_id,
         station_url: crate::infrastructure::station_client::station_base_url(),
@@ -674,7 +695,7 @@ fn worker_context(state: &AppState, session: ActiveSession) -> Result<WorkerCont
         device_id: engine.endpoint().device_id.clone(),
         token: session.jwt,
         signing_key_id,
-        identity,
+        signing_key,
     })
 }
 
@@ -803,13 +824,15 @@ fn recover_persisted_receipts(
             &context.actor_ptid,
             &context.device_id,
             &context.token,
-            context.identity.as_ref(),
+            &context.signing_key_id,
+            &context.signing_key,
         )?;
         let fenced = FencedExecutor::new(
             &recovery_lease,
             ledger,
             resources,
-            context.identity.as_ref(),
+            &context.signing_key_id,
+            &context.signing_key,
             executor,
             &transport,
         );

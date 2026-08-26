@@ -1,7 +1,6 @@
 use super::receipt_ledger::{ReceiptLedger, ReceiptRecord};
 use super::recovery_signer::sign_terminal_recovery;
 use super::resource_registry::{LocalResource, ResourceRegistry};
-use crate::domain::actor_device_identity::ActorDeviceIdentity;
 use crate::model::agent::{
     ClientCapabilityReceipt, ClientCapabilityReceiptStatus, ClientCapabilityRequest,
     ClientExecutionReplayPolicy, ReceiptRecoveryScopePayload,
@@ -56,7 +55,8 @@ pub struct FencedExecutor<'a> {
     lease: &'a ExecutionLease,
     ledger: &'a ReceiptLedger,
     resources: &'a ResourceRegistry,
-    identity: &'a ActorDeviceIdentity,
+    signing_key_id: &'a str,
+    signing_key: &'a ed25519_dalek::SigningKey,
     executor: &'a dyn CapabilityExecutor,
     reporter: &'a dyn ReceiptReporter,
 }
@@ -66,7 +66,8 @@ impl<'a> FencedExecutor<'a> {
         lease: &'a ExecutionLease,
         ledger: &'a ReceiptLedger,
         resources: &'a ResourceRegistry,
-        identity: &'a ActorDeviceIdentity,
+        signing_key_id: &'a str,
+        signing_key: &'a ed25519_dalek::SigningKey,
         executor: &'a dyn CapabilityExecutor,
         reporter: &'a dyn ReceiptReporter,
     ) -> Self {
@@ -74,7 +75,8 @@ impl<'a> FencedExecutor<'a> {
             lease,
             ledger,
             resources,
-            identity,
+            signing_key_id,
+            signing_key,
             executor,
             reporter,
         }
@@ -280,7 +282,7 @@ impl<'a> FencedExecutor<'a> {
             if reconciliation_deadline <= now_ms {
                 return Err("CLIENT_CAPABILITY_RECONCILIATION_DEADLINE_EXPIRED".to_string());
             }
-            sign_terminal_recovery(self.identity, envelope, &mut receipt)?;
+            sign_terminal_recovery(self.signing_key_id, self.signing_key, envelope, &mut receipt)?;
         }
         Ok(receipt)
     }

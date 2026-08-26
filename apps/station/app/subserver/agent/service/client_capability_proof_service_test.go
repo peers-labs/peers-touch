@@ -125,7 +125,7 @@ func TestClientCapabilityProofServiceVerifyAllCommandDomains(t *testing.T) {
 			)
 			attachCapabilityCommandProofForTest(t, test.request, proof)
 
-			service := NewClientCapabilityProofService(resolver, func() time.Time { return now })
+			service := NewClientCapabilityProofService(resolver, nil, func() time.Time { return now })
 			verified, err := service.Verify(
 				context.Background(),
 				proofTestActorID,
@@ -296,7 +296,7 @@ func TestClientCapabilityProofServiceRejectsInvalidProofs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			resolver, request, proof, domain, headerDeviceID := test.prepare(t)
-			service := NewClientCapabilityProofService(resolver, func() time.Time { return now })
+			service := NewClientCapabilityProofService(resolver, nil, func() time.Time { return now })
 
 			verified, err := service.Verify(
 				context.Background(),
@@ -332,6 +332,7 @@ func TestClientCapabilityProofServiceAllowsExactClockSkewBoundary(t *testing.T) 
 		request, proof := signedProofTestPull(t, issuedAt, privateKey)
 		service := NewClientCapabilityProofService(
 			proofTestResolver(publicKey),
+			nil,
 			func() time.Time { return now },
 		)
 		if _, err := service.Verify(

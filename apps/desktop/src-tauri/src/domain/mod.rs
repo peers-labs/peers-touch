@@ -1,5 +1,6 @@
 pub mod actor_device_identity;
 pub mod admin;
+pub mod device_identity;
 pub mod applets;
 pub mod auth;
 pub mod chat;
