@@ -32,6 +32,14 @@ from tooling.acceptance.drivers.tauri import (
 )
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 class LinuxRuntimeCell(Protocol):
     def validate_binding(
         self,
@@ -68,6 +76,13 @@ class LinuxRuntimeCell(Protocol):
         self,
         actor: str,
         source: Path,
+    ) -> str:
+        ...
+
+    def actor_file_sha256(
+        self,
+        actor: str,
+        path: str,
     ) -> str:
         ...
 
@@ -120,6 +135,14 @@ class NativeDesktopRuntimeBinding(ABC):
         actor: str,
         source: Path,
     ) -> Path:
+        ...
+
+    @abstractmethod
+    def native_file_sha256(
+        self,
+        actor: str,
+        path: Path,
+    ) -> str:
         ...
 
     @abstractmethod
@@ -379,6 +402,13 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
             )
         return path
 
+    def native_file_sha256(
+        self,
+        actor: str,
+        path: Path,
+    ) -> str:
+        return self._cell.actor_file_sha256(actor, str(path))
+
     def request_cooperative_activation(
         self,
         target: TauriSession,
@@ -492,6 +522,17 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             )
         return resolved
 
+    def native_file_sha256(
+        self,
+        actor: str,
+        path: Path,
+    ) -> str:
+        del actor
+        resolved = path.expanduser().resolve()
+        if not resolved.is_file():
+            raise DriverError(f"Native file is missing: {resolved}")
+        return _file_sha256(resolved)
+
     def request_cooperative_activation(
         self,
         target: TauriSession,
@@ -529,13 +570,9 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         return True
 
     def binary_identity(self) -> dict[str, str]:
-        digest = hashlib.sha256()
-        with self._binary.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
         return {
             "path": str(self._binary),
-            "sha256": digest.hexdigest(),
+            "sha256": _file_sha256(self._binary),
             "sourceCommit": subprocess.run(
                 ("git", "rev-parse", "HEAD"),
                 cwd=REPO_ROOT,

@@ -14,7 +14,7 @@ import textwrap
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -1206,6 +1206,41 @@ class NativeDesktopLinuxProvisioner:
             content_digest,
         )
         return str(container_stage)
+
+    def actor_file_sha256(self, actor: str, path: str) -> str:
+        state = self._require_state()
+        normalized_actor = actor.strip()
+        if not _ENDPOINT_ID.fullmatch(normalized_actor):
+            raise ProvisioningError("Linux runtime-cell actor id is invalid")
+        runtime = self._actors.get(normalized_actor)
+        if runtime is None or runtime.released:
+            raise ProvisioningError(
+                f"Linux runtime-cell actor {normalized_actor!r} is not active"
+            )
+        source = PurePosixPath(path)
+        actor_root = PurePosixPath("/workspace/run/actors") / normalized_actor
+        if (
+            not source.is_absolute()
+            or source == actor_root
+            or actor_root not in source.parents
+        ):
+            raise ProvisioningError(
+                "Linux runtime-cell file is outside the actor runtime root"
+            )
+        completed = self.transport.run_argv(
+            (
+                "docker",
+                "exec",
+                str(state["containerName"]),
+                "sha256sum",
+                "--",
+                str(source),
+            ),
+            timeout=15,
+            check=True,
+        )
+        observed = completed.stdout.split(maxsplit=1)[0]
+        return _digest(observed, "runtime-cell actor file digest")
 
     def _copy_actor_file(
         self,
