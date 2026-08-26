@@ -10,6 +10,7 @@ import zlib
 from pathlib import Path
 
 from tooling.acceptance.gates.chat.native_product_closure_runner import (
+    NativeProductClosureGate,
     VALID_ATTACHMENT_IMAGE_BYTES,
     file_sha256,
     native_input_event_cursor,
@@ -71,6 +72,72 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.create_group_modal = CREATE_GROUP_MODAL.read_text(encoding="utf-8")
         self.http_gateway = HTTP_GATEWAY.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
+
+    def test_native_click_reveal_leaves_visible_target_unchanged(self) -> None:
+        element = object()
+
+        class Driver:
+            def execute_script(self, script: str, target: object) -> bool:
+                self.assert_target(target)
+                if "scrollIntoView" in script:
+                    self.fail("visible target must not be scrolled")
+                return True
+
+            def assert_target(self, target: object) -> None:
+                self_test.assertIs(target, element)
+
+            def fail(self, message: str) -> None:
+                self_test.fail(message)
+
+        class Client:
+            driver = Driver()
+
+            def find_element(self, selector: str, timeout: float) -> object:
+                self_test.fail(
+                    f"visible target must not be rebound: {selector} {timeout}"
+                )
+
+        self_test = self
+        gate = object.__new__(NativeProductClosureGate)
+        actual = gate._reveal_native_click_target(
+            Client(),
+            element,
+            selector="[data-action]",
+        )
+        self.assertIs(actual, element)
+
+    def test_native_click_reveal_rebinds_selector_after_scroll(self) -> None:
+        original = object()
+        rebound = object()
+        events: list[str] = []
+
+        class Driver:
+            def execute_script(self, script: str, target: object):
+                if "scrollIntoView" in script:
+                    self_test.assertIs(target, original)
+                    events.append("scroll")
+                    return None
+                events.append("visible")
+                return target is rebound
+
+        class Client:
+            driver = Driver()
+
+            def find_element(self, selector: str, timeout: float) -> object:
+                self_test.assertEqual(selector, "[data-action]")
+                self_test.assertEqual(timeout, 30)
+                events.append("rebind")
+                return rebound
+
+        self_test = self
+        gate = object.__new__(NativeProductClosureGate)
+        actual = gate._reveal_native_click_target(
+            Client(),
+            original,
+            selector="[data-action]",
+        )
+        self.assertIs(actual, rebound)
+        self.assertEqual(events, ["visible", "scroll", "rebind", "visible"])
 
     def test_runner_is_a_real_acceptance_gate(self) -> None:
         gate = next(
@@ -416,6 +483,23 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             click_start,
         )
         click_source = self.source[click_start:click_end]
+        self.assertIn("def _reveal_native_click_target(", click_source)
+        self.assertIn("if not center_is_in_view():", click_source)
+        self.assertIn("arguments[0].scrollIntoView({", click_source)
+        self.assertIn("block: 'center'", click_source)
+        self.assertIn("inline: 'nearest'", click_source)
+        self.assertIn(
+            "element = client.find_element(selector, 30)",
+            click_source,
+        )
+        self.assertLess(
+            click_source.index("arguments[0].scrollIntoView({"),
+            click_source.index("target = client.driver.execute_script("),
+        )
+        self.assertLess(
+            click_source.index("target = client.driver.execute_script("),
+            click_source.index("probe_id = self.install_native_input_probe("),
+        )
         self.assertNotIn('"mousemove"', click_source)
         self.assertIn('"mousedown"', click_source)
         self.assertIn('"mouseup"', click_source)
