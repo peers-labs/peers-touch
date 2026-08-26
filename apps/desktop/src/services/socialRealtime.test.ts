@@ -247,6 +247,15 @@ describe('social realtime group membership side effects', () => {
 
     expect(calls).toEqual(['profile', 'sessions']);
   });
+
+  it('continues Station reconciliation when profile hydration fails', async () => {
+    mocks.authenticatedActorId = 'ptid:peer:self';
+    mocks.loadCurrentUserProfile.mockRejectedValue(new Error('profile unavailable'));
+
+    await refreshSocialProjection('test');
+
+    expect(mocks.loadSessions).toHaveBeenCalledOnce();
+  });
 });
 
 function publishGroupMembership(kind: RealtimeGroupMembershipChangeKind, actorDid: string): void {
