@@ -1288,6 +1288,9 @@ export function installAcceptanceHarness(): void {
       const agent = selectedAgent();
       if (!agent) throw new Error('agent.acceptance.agentMissing');
       const agentId = agent.id || agent.name;
+      const capabilitySessions = await waitForCapabilitySessionEvidence();
+      let preparedConversationId: string | null = null;
+      let preparedTurnId: string | null = null;
 
       if (cell === 'AS-F01') {
         const conversation = await api.createAgentConversation({
@@ -1296,21 +1299,55 @@ export function installAcceptanceHarness(): void {
           provider_id: agent.provider,
           model_name: agent.model,
         });
+        preparedConversationId = conversation.conversation_id;
         await useChatStore.getState().selectSession(conversation.conversation_id);
-        useChatStore.getState().sendMessage('Reply with ready.');
-        await waitFor(() => {
-          const state = useChatStore.getState();
-          const latest = [...state.messages]
-            .reverse()
-            .find((message) => message.role === 'assistant');
-          return !state.isStreaming
-            && Boolean(latest?.turnId)
-            && !latest?.loading
-            && !latest?.error;
-        }, 'Foundation AS-F01 direct turn', 120_000);
+        preparedTurnId = await new Promise<string>((resolve, reject) => {
+          let observedTurnId = '';
+          let controller: AbortController;
+          const timeout = window.setTimeout(() => {
+            controller.abort();
+            reject(new Error('agent.acceptance.foundationTurnTimeout'));
+          }, 120_000);
+          controller = streamAgentTurn({
+            conversation_id: conversation.conversation_id,
+            agent_id: agentId,
+            user_input: 'Reply with ready.',
+            client_idempotency_key: crypto.randomUUID(),
+            provider: agent.provider || undefined,
+            model: agent.model || undefined,
+            client_capability_session_id:
+              capabilitySessions.selectedStationSession?.session_id,
+          }, (event) => {
+            const data = event.data as Record<string, unknown>;
+            const candidate = data.turn_id ?? data.turnId;
+            if (typeof candidate === 'string' && candidate) {
+              observedTurnId = candidate;
+            }
+          }, () => {
+            window.clearTimeout(timeout);
+            if (observedTurnId) {
+              resolve(observedTurnId);
+              return;
+            }
+            void foundationConversationReadback(conversation.conversation_id)
+              .then((readback) => {
+                const turnId = [...readback.messages]
+                  .reverse()
+                  .find((message) => message.turnId)?.turnId;
+                if (!turnId) {
+                  reject(new Error('agent.acceptance.foundationTurnIdMissing'));
+                  return;
+                }
+                resolve(turnId);
+              })
+              .catch(reject);
+          }, (error) => {
+            window.clearTimeout(timeout);
+            reject(error);
+          });
+        });
       }
 
-      const capabilitySessions = await waitForCapabilitySessionEvidence();
       const [profile, readiness, conversations] = await Promise.all([
         api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
         api.getAgentCapabilityReadiness({
@@ -1322,7 +1359,8 @@ export function installAcceptanceHarness(): void {
       ]);
 
       const chatState = useChatStore.getState();
-      const currentConversationId = chatState.currentSessionKey;
+      const currentConversationId =
+        preparedConversationId ?? chatState.currentSessionKey;
       const [conversationReadback, turnQueue] = await Promise.all([
         currentConversationId
           ? foundationConversationReadback(currentConversationId)
@@ -1335,7 +1373,7 @@ export function installAcceptanceHarness(): void {
       const lastAssistant = [...chatState.messages]
         .reverse()
         .find((message) => message.role === 'assistant');
-      const turnId = lastAssistant?.turnId ?? null;
+      const turnId = preparedTurnId ?? lastAssistant?.turnId ?? null;
       const turnEvidence = currentConversationId && turnId
         ? await foundationTurnEvidence(currentConversationId, turnId)
         : null;
