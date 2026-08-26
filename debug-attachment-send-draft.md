@@ -29,6 +29,7 @@
 | M | Tauri's asset scope does not retain permission for the selected file, or the staged file is missing when WebKit requests it. | High | Low | Picker instrumentation reports `scopeAllowed=false`, `isFile=false`, or a size other than 70 bytes; failed-resource fetch returns 403/404. | Pending |
 | N | The asset protocol returns the expected PNG bytes but WebKitGTK intermittently rejects image decoding. | Medium | Low | Picker reports an allowed 70-byte file and fetch returns HTTP success with PNG signature while `<img>` remains complete with zero intrinsic size. | Pending |
 | P | The Native picker returns the external chooser path without staging it under Engine ownership, so durable-cache promotion rejects it. | High | Low | Runtime reports `messaging attachment source is not Engine-managed`; source shows the picker returns `handle.path()` while promotion requires `attachment_source_root(profile_id)`. | Confirmed |
+| Q | The background lifecycle races the foreground multi-attachment submission and admits the next due transfer before `submit_message` reaches it. | High | Low | The first transfer completes; the second returns `Deferred` with `next_attempt_at_unix_ms` equal to the current attempt time, which is the `AlreadyActive` branch. | Confirmed |
 
 ## Log Evidence
 - Pre-instrumentation Native run `20260823T170346937849Z-df8e52a09b8fcec409c868892409bcb6`:
@@ -210,3 +211,17 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
   retain the existing failed-draft behavior. The Composer now marks successful
   native selections as managed so remove, conversation switch, and unmount
   cleanup use the same Engine lifecycle.
+- Exact-source Linux run
+  `20260826T061843141512Z-00bc9fcfe02985dd601530a2fab046bd`
+  at `dd003aaa8a535b0c920428f78a0c3d1db4505fd8` reproduced the intermittent
+  draft outcome. Both Composer drafts were ready and Engine-managed. The first
+  upload returned `Complete`; the second returned
+  `Deferred { next_attempt_at_unix_ms: 1787726213828 }`, exactly the current
+  attempt timestamp. `AttachmentTransferWorker::run_upload_once` emits that
+  shape only when the same attachment ID is already active.
+- Source inspection confirms `submit_message` holds `send_intent_lock` across
+  draft creation, every foreground upload, and command preparation, while
+  `resume_attachment_upload_once` selected and admitted due uploads without
+  that lock. The lifecycle could therefore claim attachment two after the
+  foreground transaction persisted both transfers but before it completed
+  attachment one.
