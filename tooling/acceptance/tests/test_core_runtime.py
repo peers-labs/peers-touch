@@ -478,6 +478,29 @@ class TauriLauncherSessionTests(unittest.TestCase):
             process.terminate.assert_called_once()
             self.assertFalse(storage_root.exists())
 
+    def test_local_launcher_preserves_restart_state_until_final_release(self):
+        process = MagicMock()
+        process.pid = 8123
+        process.poll.return_value = None
+        with patch(
+            "tooling.acceptance.drivers.tauri.subprocess.Popen",
+            return_value=process,
+        ):
+            launcher = LocalTauriLauncher(
+                app_binary="/tmp/peers-touch-desktop",
+                port=4555,
+                gateway_port=3030,
+                profile="acceptance-local",
+            )
+            storage_root = Path(launcher.storage_root)
+            launcher.start()
+
+            launcher.stop(preserve_state=True)
+            self.assertTrue(storage_root.exists())
+
+            launcher.stop()
+            self.assertFalse(storage_root.exists())
+
     def test_provisioned_launcher_releases_owned_runtime_once(self):
         release = MagicMock()
         launcher = ProvisionedTauriLauncher(
@@ -497,8 +520,28 @@ class TauriLauncherSessionTests(unittest.TestCase):
         launcher.stop()
         launcher.stop()
 
-        release.assert_called_once()
+        release.assert_called_once_with(preserve_state=False)
         self.assertFalse(launcher.is_alive())
+
+    def test_provisioned_launcher_releases_process_but_preserves_restart_state(self):
+        release = MagicMock()
+        launcher = ProvisionedTauriLauncher(
+            AppLaunchMetadata(
+                webdriver_host="127.0.0.1",
+                webdriver_port=4555,
+                gateway_port=3030,
+                profile="linux-cell",
+                storage_root="/cell/storage",
+                process_id=42,
+            ),
+            release=release,
+        )
+
+        launcher.start()
+        launcher.stop(preserve_state=True)
+        launcher.stop()
+
+        release.assert_called_once_with(preserve_state=True)
 
     def test_provisioned_launcher_rejects_non_loopback_webdriver(self):
         with self.assertRaisesRegex(ValueError, "loopback"):
@@ -545,6 +588,29 @@ class TauriLauncherSessionTests(unittest.TestCase):
             events,
             ["launcher.start", "driver.start", "driver.stop", "launcher.stop"],
         )
+
+    def test_session_preserves_launcher_state_for_restart(self):
+        launcher = MagicMock()
+        launcher.metadata = AppLaunchMetadata(
+            webdriver_host="127.0.0.1",
+            webdriver_port=4555,
+            gateway_port=3030,
+            profile="acceptance-local",
+            storage_root="/tmp/storage",
+        )
+        launcher.start.return_value = launcher.metadata
+        webdriver_client = MagicMock()
+
+        with patch(
+            "tooling.acceptance.drivers.tauri.TauriDriver",
+            return_value=webdriver_client,
+        ):
+            session = TauriSession(launcher)
+            session.start()
+            session.stop(preserve_state=True)
+
+        webdriver_client.stop.assert_called_once()
+        launcher.stop.assert_called_once_with(preserve_state=True)
 
     def test_session_releases_launcher_when_webdriver_connect_fails(self):
         launcher = MagicMock()
