@@ -602,6 +602,17 @@ export function installAcceptanceHarness(): void {
       return waitForCapabilitySessionEvidence();
     },
 
+    async debugCapabilitySnapshot() {
+      const [local, station] = await Promise.allSettled([
+        api.getAgentCapabilitySessionSnapshot(),
+        api.listAgentCapabilitySessions(),
+      ]);
+      return {
+        local: local.status === 'fulfilled' ? local.value : { error: String(local.reason) },
+        station: station.status === 'fulfilled' ? station.value : { error: String(station.reason) },
+      };
+    },
+
     async openBrowserCapabilitySession() {
       await api.openBrowserCapabilitySession();
       return { opened: true };

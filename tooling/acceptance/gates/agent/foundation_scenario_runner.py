@@ -335,7 +335,7 @@ def _authenticate_clients(
     import time as _time
 
     for client in (runtime_pair.native, runtime_pair.browser):
-        client_deadline = _time.monotonic() + 300
+        client_deadline = _time.monotonic() + 90
         established = False
         while _time.monotonic() < client_deadline:
             try:
@@ -356,9 +356,25 @@ def _authenticate_clients(
                 break
             _time.sleep(min(15.0, remaining))
         if not established:
+            # Collect diagnostic snapshot for debugging.
+            diag = ""
+            try:
+                raw = client.harness(
+                    "getAcceptanceHarnessStatus", {}, timeout=10
+                )
+                diag += f" harness={raw}"
+            except Exception as diag_err:
+                diag += f" harness_probe_failed={diag_err}"
+            try:
+                snap = client.harness(
+                    "debugCapabilitySnapshot", {}, timeout=15
+                )
+                diag += f" snapshot={snap}"
+            except Exception:
+                diag += f" last_cap_result={cap_result}"
             raise ScenarioRunnerError(
                 f"{client.spec.runtime} capability session not established "
-                f"after 300s polling"
+                f"after 300s polling.{diag}"
             )
 
 
