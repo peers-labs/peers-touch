@@ -324,6 +324,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "self.clients[actor].stop(preserve_state=True)",
             self.source,
         )
+        offline_start = self.source.index("    def prove_offline_recovery(")
+        offline_end = self.source.index(
+            "    def prove_restart(",
+            offline_start,
+        )
+        offline_source = self.source[offline_start:offline_end]
+        self.assertIn(
+            'self.stop_actor_for_restart("bob")',
+            offline_source,
+        )
+        self.assertIn(
+            'self.restore_actor_after_restart("bob")',
+            offline_source,
+        )
+        self.assertNotIn(
+            'self.clients["bob"].stop()',
+            offline_source,
+        )
         self.assertEqual(self.source.count("station.auth_logout()"), 1)
 
     def test_claimed_actions_cannot_use_store_or_command_bypasses(self) -> None:
