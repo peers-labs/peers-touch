@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  conversationLocalStateForProfile,
   MessagingSendOutcomeError,
   requireQueuedMessagingSendOutcome,
   resolveReplyThreadRootUlid,
@@ -80,5 +81,42 @@ describe('social chat reply thread ownership', () => {
 
   it('does not create a thread root for a non-reply message', () => {
     expect(resolveReplyThreadRootUlid(messages)).toBeUndefined();
+  });
+});
+
+describe('social chat profile hydration', () => {
+  const authoritativeState = {
+    'group:group-1': {
+      muted: true,
+      sticky: true,
+      background: 'paper' as const,
+      backgroundImage: 'oss://self/background.png',
+      clearedAt: 0,
+    },
+  };
+
+  it('preserves the current Station projection when the profile identity is unchanged', () => {
+    expect(conversationLocalStateForProfile(
+      'ptid:self',
+      'ptid:self',
+      authoritativeState,
+      {},
+    )).toBe(authoritativeState);
+  });
+
+  it('loads actor-scoped persisted state when the profile identity changes', () => {
+    const persistedState = {
+      'group:group-2': {
+        hidden: true,
+        deletedMessageUlids: { 'message-1': true as const },
+      },
+    };
+
+    expect(conversationLocalStateForProfile(
+      'ptid:previous',
+      'ptid:self',
+      authoritativeState,
+      persistedState,
+    )).toBe(persistedState);
   });
 });
