@@ -94,13 +94,34 @@ def _load_runtime_manifest() -> dict[str, Any]:
 
 
 def _load_profile_env(manifest: dict[str, Any]) -> dict[str, str]:
-    """Extract profile environment from the runtime manifest."""
-    profile_env_path = manifest.get("profileEnvPath")
-    if isinstance(profile_env_path, str) and profile_env_path:
-        path = Path(profile_env_path).expanduser().resolve()
-        if path.is_file():
-            return load_env_file(path)
-    return {}
+    """Load the same active profile identity recorded by the provisioner."""
+    profile = manifest.get("profile")
+    expected_name = (
+        str(profile.get("resolvedName") or "")
+        if isinstance(profile, Mapping)
+        else ""
+    )
+    active_profile = (
+        REPO_ROOT
+        / ".local"
+        / "dev"
+        / "active"
+        / f"{REPO_ROOT.name}.env"
+    )
+    try:
+        profile_path = active_profile.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise ScenarioRunnerError(
+            f"active profile cannot be resolved: {active_profile}"
+        ) from error
+
+    values = load_env_file(profile_path)
+    actual_name = values.get("PT_DEV_PROFILE", "")
+    if not expected_name or actual_name != expected_name:
+        raise ScenarioRunnerError(
+            "active profile identity does not match the provisioned runtime"
+        )
+    return values
 
 
 def _build_client_manifest(runtime_manifest: dict[str, Any]) -> dict[str, Any]:
