@@ -4144,6 +4144,94 @@ class NativeProductClosureGate(AcceptanceGate):
             "restoredTranscript": expected,
         }
 
+    def arm_recovery_feedback_probe(self, actor: str) -> None:
+        self.clients[actor].execute_script(
+            """
+            const selector = arguments[0];
+            window.__PT_RECOVERY_FEEDBACK_PROBE__?.cleanup?.();
+            const events = [];
+            const preexisting = new WeakSet(
+              document.querySelectorAll(selector)
+            );
+            const describe = (element) => ({
+              tag: element.tagName,
+              id: element.id || '',
+              classes: String(
+                element.className?.baseVal || element.className || '',
+              ),
+              role: element.getAttribute('role') || '',
+              text: (element.textContent || '').trim().slice(0, 160),
+            });
+            const isVisible = (element) => {
+              const bounds = element.getBoundingClientRect();
+              const style = window.getComputedStyle(element);
+              return (
+                bounds.width > 0
+                && bounds.height > 0
+                && style.display !== 'none'
+                && style.visibility !== 'hidden'
+                && element.getAttribute('aria-hidden') !== 'true'
+              );
+            };
+            const capture = (root) => {
+              if (!(root instanceof Element)) return;
+              const candidates = [
+                ...(root.matches(selector) ? [root] : []),
+                ...root.querySelectorAll(selector),
+              ];
+              for (const candidate of candidates) {
+                if (preexisting.has(candidate)) continue;
+                if (isVisible(candidate)) events.push(describe(candidate));
+              }
+            };
+            const observer = new MutationObserver((mutations) => {
+              for (const mutation of mutations) {
+                if (mutation.type === 'attributes') capture(mutation.target);
+                for (const node of mutation.addedNodes) capture(node);
+              }
+            });
+            observer.observe(document.documentElement, {
+              attributes: true,
+              attributeFilter: ['aria-hidden', 'class', 'role', 'style'],
+              childList: true,
+              subtree: true,
+            });
+            window.__PT_RECOVERY_FEEDBACK_PROBE__ = {
+              cleanup: () => observer.disconnect(),
+              observed: () => events.length > 0,
+              snapshot: () => events.slice(),
+            };
+            """,
+            RECOVERY_SELECTORS["feedback"],
+        )
+
+    def recovery_feedback_observed(self, actor: str) -> bool:
+        return bool(
+            self.clients[actor].execute_script(
+                """
+                return Boolean(
+                  window.__PT_RECOVERY_FEEDBACK_PROBE__?.observed?.()
+                );
+                """
+            )
+        )
+
+    def recovery_feedback_snapshot(self, actor: str) -> list[dict[str, str]]:
+        value = self.clients[actor].execute_script(
+            """
+            return window.__PT_RECOVERY_FEEDBACK_PROBE__?.snapshot?.() || [];
+            """
+        )
+        return value if isinstance(value, list) else []
+
+    def stop_recovery_feedback_probe(self, actor: str) -> None:
+        self.clients[actor].execute_script(
+            """
+            window.__PT_RECOVERY_FEEDBACK_PROBE__?.cleanup?.();
+            delete window.__PT_RECOVERY_FEEDBACK_PROBE__;
+            """
+        )
+
     def create_recovery_revision(self, actor: str) -> str:
         client = self.clients[actor]
         self.click(actor, RECOVERY_SELECTORS["settings_nav"])
@@ -4167,115 +4255,51 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         if len(phrase.split()) != 24:
             raise GateError("recovery phrase does not contain exactly 24 words")
-        # #region debug-point A,B,C,D:recovery-success-feedback
         recovery_feedback_debug = (
             os.environ.get("DEBUG_SESSION_ID", "").strip()
             == "recovery-success-feedback"
         )
-        if recovery_feedback_debug:
-            client.execute_script(
-                """
-                window.__PT_RECOVERY_FEEDBACK_OBSERVER__?.disconnect();
-                window.__PT_RECOVERY_FEEDBACK_EVENTS__ = [];
-                const selector = [
-                  '[role="dialog"]',
-                  '[role="alertdialog"]',
-                  '[role="status"]',
-                  '[data-type]',
-                  '.ant-message-success',
-                ].join(',');
-                const describe = (element) => ({
-                  tag: element.tagName,
-                  id: element.id || '',
-                  classes: String(
-                    element.className?.baseVal || element.className || '',
-                  ),
-                  role: element.getAttribute('role') || '',
-                  dataType: element.getAttribute('data-type') || '',
-                  text: (element.textContent || '').trim().slice(0, 160),
-                });
-                const record = (root) => {
-                  if (!(root instanceof Element)) return;
-                  if (root.matches(selector)) {
-                    window.__PT_RECOVERY_FEEDBACK_EVENTS__.push(describe(root));
-                  }
-                  for (const match of root.querySelectorAll(selector)) {
-                    window.__PT_RECOVERY_FEEDBACK_EVENTS__.push(describe(match));
-                  }
-                };
-                window.__PT_RECOVERY_FEEDBACK_OBSERVER__ = new MutationObserver(
-                  (mutations) => {
-                    for (const mutation of mutations) {
-                      for (const node of mutation.addedNodes) record(node);
-                    }
-                  },
-                );
-                window.__PT_RECOVERY_FEEDBACK_OBSERVER__.observe(
-                  document.documentElement,
-                  { childList: true, subtree: true },
-                );
-                return Array.from(document.querySelectorAll(selector)).map(describe);
-                """
-            )
-        # #endregion
-        self.click(actor, RECOVERY_SELECTORS["backup"])
+        self.arm_recovery_feedback_probe(actor)
         try:
+            self.click(actor, RECOVERY_SELECTORS["backup"])
             WebDriverWait(client.driver, 120).until(
-                lambda driver: bool(
-                    driver.find_elements(
-                        By.CSS_SELECTOR,
-                        RECOVERY_SELECTORS["feedback"],
-                    )
-                )
+                lambda _driver: self.recovery_feedback_observed(actor)
             )
+            # #region debug-point A,B,C,D:recovery-success-observed
+            if recovery_feedback_debug:
+                report_native_mousedown_debug(
+                    "A,B,C,D",
+                    "native_product_closure_runner:create_recovery_revision",
+                    "Recovery success feedback observed",
+                    {"observed": self.recovery_feedback_snapshot(actor)},
+                )
+            # #endregion
         except TimeoutException:
             # #region debug-point A,B,C,D:recovery-success-timeout
             if recovery_feedback_debug:
-                diagnostics = client.execute_script(
-                    """
-                    const selector = [
-                      '[role="dialog"]',
-                      '[role="alertdialog"]',
-                      '[role="status"]',
-                      '[data-type]',
-                      '.ant-message-success',
-                    ].join(',');
-                    const describe = (element) => ({
-                      tag: element.tagName,
-                      id: element.id || '',
-                      classes: String(
-                        element.className?.baseVal || element.className || '',
-                      ),
-                      role: element.getAttribute('role') || '',
-                      dataType: element.getAttribute('data-type') || '',
-                      text: (element.textContent || '').trim().slice(0, 160),
-                    });
-                    window.__PT_RECOVERY_FEEDBACK_OBSERVER__?.disconnect();
-                    return {
-                      observed: window.__PT_RECOVERY_FEEDBACK_EVENTS__ || [],
-                      current: Array.from(
-                        document.querySelectorAll(selector),
-                      ).map(describe),
-                      backupButton: (() => {
-                        const button = document.querySelector(
-                          '[data-recovery-backup-create]',
-                        );
-                        return button ? {
-                          disabled: Boolean(button.disabled),
-                          text: (button.textContent || '').trim().slice(0, 160),
-                        } : null;
-                      })(),
-                    };
-                    """
-                )
                 report_native_mousedown_debug(
                     "A,B,C,D",
                     "native_product_closure_runner:create_recovery_revision",
                     "Recovery success feedback wait timed out",
-                    diagnostics,
+                    {
+                        "observed": self.recovery_feedback_snapshot(actor),
+                        "backupButton": client.execute_script(
+                            """
+                            const button = document.querySelector(
+                              '[data-recovery-backup-create]'
+                            );
+                            return button ? {
+                              disabled: Boolean(button.disabled),
+                              text: (button.textContent || '').trim().slice(0, 160),
+                            } : null;
+                            """
+                        ),
+                    },
                 )
             # #endregion
             raise
+        finally:
+            self.stop_recovery_feedback_probe(actor)
         return phrase
 
     def restore_recovery_revision(self, actor: str, phrase: str) -> None:
@@ -4294,21 +4318,20 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
         restore_input.send_keys(phrase)
-        self.click(actor, RECOVERY_SELECTORS["restore_submit"])
-        WebDriverWait(client.driver, 180).until(
-            lambda driver: (
-                not driver.find_elements(
-                    By.CSS_SELECTOR,
-                    RECOVERY_SELECTORS["restore_input"],
-                )
-                and bool(
-                    driver.find_elements(
+        self.arm_recovery_feedback_probe(actor)
+        try:
+            self.click(actor, RECOVERY_SELECTORS["restore_submit"])
+            WebDriverWait(client.driver, 180).until(
+                lambda driver: (
+                    not driver.find_elements(
                         By.CSS_SELECTOR,
-                        RECOVERY_SELECTORS["feedback"],
+                        RECOVERY_SELECTORS["restore_input"],
                     )
+                    and self.recovery_feedback_observed(actor)
                 )
             )
-        )
+        finally:
+            self.stop_recovery_feedback_probe(actor)
 
     def prove_second_device(
         self,

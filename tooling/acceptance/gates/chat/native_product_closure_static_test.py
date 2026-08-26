@@ -1037,7 +1037,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('RECOVERY_SELECTORS["restore_submit"]', self.source)
         self.assertNotIn("shutil.copy2", self.source)
 
-    def test_recovery_waits_for_lobehub_toast_roles(self) -> None:
+    def test_recovery_latches_transient_lobehub_toast_roles(self) -> None:
         create_recovery = self.source.split(
             "    def create_recovery_revision(",
             maxsplit=1,
@@ -1057,10 +1057,51 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"feedback": \'[role="dialog"], [role="alertdialog"]\'',
             self.source,
         )
-        self.assertIn('RECOVERY_SELECTORS["feedback"]', create_recovery)
-        self.assertIn('RECOVERY_SELECTORS["feedback"]', restore_recovery)
+        self.assertIn(
+            'RECOVERY_SELECTORS["feedback"]',
+            self.source.split(
+                "    def arm_recovery_feedback_probe(",
+                maxsplit=1,
+            )[1].split(
+                "    def create_recovery_revision(",
+                maxsplit=1,
+            )[0],
+        )
+        create_arm = create_recovery.index(
+            "self.arm_recovery_feedback_probe(actor)"
+        )
+        create_click = create_recovery.index(
+            'self.click(actor, RECOVERY_SELECTORS["backup"])'
+        )
+        self.assertLess(create_arm, create_click)
+        self.assertIn("self.recovery_feedback_observed(actor)", create_recovery)
+        restore_arm = restore_recovery.index(
+            "self.arm_recovery_feedback_probe(actor)"
+        )
+        restore_click = restore_recovery.index(
+            'self.click(actor, RECOVERY_SELECTORS["restore_submit"])'
+        )
+        self.assertLess(restore_arm, restore_click)
+        self.assertIn("self.recovery_feedback_observed(actor)", restore_recovery)
+        self.assertIn(
+            'RECOVERY_SELECTORS["restore_input"]',
+            restore_recovery,
+        )
+        self.assertIn(
+            "window.__PT_RECOVERY_FEEDBACK_PROBE__?.cleanup?.()",
+            self.source,
+        )
+        self.assertIn(
+            "const preexisting = new WeakSet(",
+            self.source,
+        )
+        self.assertIn("if (preexisting.has(candidate)) continue;", self.source)
+        self.assertIn("bounds.width > 0", self.source)
+        self.assertIn("bounds.height > 0", self.source)
         self.assertNotIn(
-            'find_elements(By.CSS_SELECTOR, ".ant-message-success")',
+            'find_elements(\n'
+            '                        By.CSS_SELECTOR,\n'
+            '                        RECOVERY_SELECTORS["feedback"],',
             create_recovery + restore_recovery,
         )
 
