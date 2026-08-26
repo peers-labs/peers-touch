@@ -484,7 +484,7 @@ class NativeProductClosureGate(AcceptanceGate):
 
     def restart_actor(self, actor: str) -> None:
         previous_device = self.device_ids[actor]
-        self.clients[actor].stop()
+        self.clients[actor].stop(preserve_state=True)
         self.launch_actor(actor, restore_session=True)
         if self.device_ids[actor] != previous_device:
             raise GateError(f"{actor} device identity changed across restart")
