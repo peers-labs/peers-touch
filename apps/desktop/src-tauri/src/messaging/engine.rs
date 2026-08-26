@@ -1118,6 +1118,10 @@ impl MessagingEngine {
         token: &str,
         now_unix_ms: i64,
     ) -> Result<bool, String> {
+        let _guard = self
+            .send_intent_lock
+            .lock()
+            .map_err(|_| "messaging send intent lock poisoned".to_string())?;
         let Some(attachment_id) = self.store.next_due_attachment_upload(now_unix_ms)? else {
             return Ok(false);
         };
@@ -2359,6 +2363,8 @@ mod tests {
     use super::*;
     use crate::domain::mls_group::MlsMemberKeyPackage;
     use std::collections::VecDeque;
+    use std::sync::mpsc;
+    use std::thread;
 
     fn endpoint(device_id: &str) -> EngineEndpoint {
         EngineEndpoint {
@@ -2468,6 +2474,37 @@ mod tests {
             .unwrap();
         assert!(!staged_path.exists());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn background_attachment_resume_waits_for_active_send_intent() {
+        let engine = Arc::new(
+            MessagingEngine::in_memory(
+                format!("attachment-resume-{}", Ulid::new()),
+                endpoint("device-a"),
+            )
+            .unwrap(),
+        );
+        let send_guard = engine.send_intent_lock.lock().unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let worker_engine = engine.clone();
+        let handle = thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            finished_tx
+                .send(worker_engine.resume_attachment_upload_once("token", now_unix_ms()))
+                .unwrap();
+        });
+
+        started_rx.recv().unwrap();
+        assert!(finished_rx.recv_timeout(Duration::from_millis(50)).is_err());
+
+        drop(send_guard);
+        assert!(!finished_rx
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .unwrap());
+        handle.join().unwrap();
     }
 
     #[test]
