@@ -528,7 +528,7 @@ committed to this plan.
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Chat runner receives `NativeDesktopRuntimeBinding`, `TauriSession` and `NativeDesktopAdapter`; local launcher/platform factory dependencies are deleted; required assertions, journey order and 3600-second timeout remain locked; Acceptance Core 230/230, Chat static 38/38 and runner 20/20 PASS |
-| NDR-W7 Linux MP-W13 proof | in progress | Exact-source run `20260826T175258636392Z-ec6e95a2dc518fa3eef7d6b92aea7457` at `458a510d5` proved recovery backup feedback through the pre-click semantic latch, launched and rebound Alice2, then failed when slot `2/3` placed an actual 862 px outer window at x=1280 on a 1920 px X11 root. Diagnostic cells at `e397df381` and `6f104f871` showed that reading outer size before or immediately after showing the window observes pre-WM geometry and incorrectly placed slot `2/3` at x=1800. The acceptance-only Desktop host must start at the monitor origin, wait for the WM `Resized` event, then read the constrained outer width and distribute the window over the remaining monitor span. The unchanged Gate remains required. All diagnostic actors cleaned successfully |
+| NDR-W7 Linux MP-W13 proof | in progress | Exact-source run `20260826T192954307015Z-43a00b13dbb20de1595f79c1162acfc5` at `ad815464d` proved source/Station/binary identity plus transcript, thread, toolbar, reaction, identity, settings, background, attachments, offline recovery, restart and clear-cursor assertions. The final slot `2/3` geometry probe passed at x=1058 with an 862 px outer window ending exactly at the 1920 px X11 boundary, and the run opened Alice2 Details through native input. The new first failed boundary is the compound Alice second-device settings recovery wait; diagnostic instrumentation must distinguish the five UI fields from authoritative Station readback before an owning-layer fix. Runtime actor and endpoint cleanup passed; the cell remains leased for the next exact-source run |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
@@ -610,6 +610,19 @@ macOS-only `Primary+Shift+G` shortcut. The adapter contract now owns the semanti
 `reveal_file_chooser_location` operation: macOS preserves
 `Primary+Shift+G`, while Linux and Remote Linux use GTK/Zenity `Primary+L`.
 The Chat Gate remains platform-neutral and its chooser assertions are unchanged.
+
+Exact-source run
+`20260826T192954307015Z-43a00b13dbb20de1595f79c1162acfc5`
+at `ad815464d` proved the final three-slot placement on real Xorg and advanced
+through transcript, thread, toolbar, reaction, identity, settings, background,
+attachments, offline recovery, restart, clear-cursor restore, recovery backup,
+Alice2 launch, and native opening of Alice2 Details. It then timed out waiting
+for the compound Alice2 settings projection. Station and the original Alice
+had already proved `muted=true`, `pinned=true`, `background=paper`, the uploaded
+background reference, and `clearedAt=0`; the failed wait did not preserve which
+Alice2 field diverged. The next exact-source run therefore adds evidence-only
+DOM-versus-Station snapshots without changing the existing predicate, actors,
+selectors, ordering, or timeout.
 
 ## 13. Final Readiness Gate
 
