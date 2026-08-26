@@ -380,10 +380,13 @@ mod tests {
         CryptoEndpoint as SessionEndpoint, DirectSession, DirectSessionKey,
     };
     use crate::messaging::private_content::test_attachment_metadata;
-    use crate::messaging::{DirectSendCommit, PendingSenderProjection};
+    use crate::messaging::{
+        AttachmentTransferRecord, DirectSendCommit, PendingSenderProjection,
+    };
     use crate::model::chat::{
-        AttachmentPlaintextMetadata, ConversationEvent, DeviceEventDelivery,
-        EncryptedObjectDescriptor, MessageCommittedFact, MessagingContentKind,
+        AttachmentPlaintextMetadata, AttachmentTransferState, ConversationEvent,
+        DeviceEventDelivery, EncryptedObjectDescriptor, MessageCommittedFact,
+        MessagingContentKind,
     };
     use sha2::{Digest, Sha256};
 
@@ -537,6 +540,37 @@ mod tests {
         let store = Arc::new(MessagingStore::in_memory().unwrap());
         let attachment = test_attachment_metadata("attachment-1");
         prepare_send_with_attachments(&store, std::slice::from_ref(&attachment));
+        let descriptor = attachment.object.as_ref().unwrap();
+        let upload = AttachmentTransferRecord {
+            attachment_id: attachment.attachment_id.clone(),
+            conversation_id: "conversation-1".to_string(),
+            message_id: "message-1".to_string(),
+            authority_station_id: "station-local".to_string(),
+            direction: 1,
+            state: AttachmentTransferState::Complete as i32,
+            upload_id: "upload-1".to_string(),
+            generation: 1,
+            descriptor_sha256: Sha256::digest(descriptor.encode_to_vec()).to_vec(),
+            completed_chunk_bitmap: vec![0xff; descriptor.chunk_count.div_ceil(8) as usize],
+            source_local_ref: "/tmp/sender-source".to_string(),
+            partial_local_ref: String::new(),
+            object_key: attachment.object_key.clone(),
+            base_nonce: attachment.base_nonce.clone(),
+            plaintext_size: attachment.plaintext_size,
+            chunk_size: descriptor.chunk_size,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            last_error_code: 0,
+            updated_at_unix_ms: 900,
+        };
+        store.create_attachment_transfer(&upload).unwrap();
+        let source = store
+            .completed_sender_attachment_source(&attachment.attachment_id)
+            .unwrap()
+            .unwrap();
+        store
+            .promote_completed_upload_cache(&source, "/tmp/sender-cache")
+            .unwrap();
         let processor = PublicEventProcessor::new(
             store.clone(),
             EngineEndpoint {
@@ -556,6 +590,15 @@ mod tests {
         assert_eq!(projection.plaintext, "exact sender plaintext");
         assert_eq!(projection.attachments, vec![attachment]);
         assert_eq!(state, "accepted");
+        assert_eq!(
+            store
+                .completed_sender_attachment_source("attachment-1")
+                .unwrap()
+                .unwrap()
+                .local_cache_path
+                .as_deref(),
+            Some("/tmp/sender-cache")
+        );
         assert_eq!(store.lane_checkpoint().unwrap(), (1, 3));
         assert!(store
             .consumption_marker_matches("item-1", &item.payload_sha256)
