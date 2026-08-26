@@ -1227,6 +1227,63 @@ class NativeProductClosureGate(AcceptanceGate):
         client = self.focus_actor_window(actor)
         return self._click_focused_element(client, element)
 
+    def _resolve_native_click_surface(
+        self,
+        client: TauriSession,
+        element: Any,
+    ) -> Any:
+        resolved = client.driver.execute_script(
+            """
+            const element = arguments[0];
+            const rect = element.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) return element;
+            const interactiveSelector = (
+              'button, [role="button"], a[href], input, select, textarea'
+            );
+            const isVisibleSurface = (candidate) => {
+              const candidateRect = candidate.getBoundingClientRect();
+              const style = getComputedStyle(candidate);
+              return (
+                candidateRect.width > 0
+                && candidateRect.height > 0
+                && style.visibility !== 'hidden'
+                && style.display !== 'none'
+                && !candidate.disabled
+              );
+            };
+            const interactive = Array.from(
+              element.querySelectorAll(interactiveSelector),
+            ).filter(isVisibleSurface);
+            if (interactive.length === 1) return interactive[0];
+            if (!element.matches(interactiveSelector)) return null;
+            const surfaces = Array.from(element.querySelectorAll('*'))
+              .filter(isVisibleSurface)
+              .filter((candidate) => {
+                const candidateRect = candidate.getBoundingClientRect();
+                const hit = document.elementFromPoint(
+                  candidateRect.left + candidateRect.width / 2,
+                  candidateRect.top + candidateRect.height / 2,
+                );
+                return hit && element.contains(hit);
+              })
+              .sort((left, right) => {
+                const leftRect = left.getBoundingClientRect();
+                const rightRect = right.getBoundingClientRect();
+                return (
+                  rightRect.width * rightRect.height
+                  - leftRect.width * leftRect.height
+                );
+              });
+            return surfaces[0] || null;
+            """,
+            element,
+        )
+        if resolved is None:
+            raise GateError(
+                "Native click target has no unique interactive surface"
+            )
+        return resolved
+
     def _reveal_native_click_target(
         self,
         client: TauriSession,
@@ -1234,6 +1291,8 @@ class NativeProductClosureGate(AcceptanceGate):
         *,
         selector: str | None,
     ) -> Any:
+        element = self._resolve_native_click_surface(client, element)
+
         def center_is_in_view() -> bool:
             return bool(
                 client.driver.execute_script(
@@ -1269,6 +1328,7 @@ class NativeProductClosureGate(AcceptanceGate):
             )
             if selector is not None:
                 element = client.find_element(selector, 30)
+                element = self._resolve_native_click_surface(client, element)
             try:
                 WebDriverWait(
                     client.driver,
