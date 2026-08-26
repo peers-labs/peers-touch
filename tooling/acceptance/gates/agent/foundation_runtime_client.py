@@ -171,7 +171,7 @@ class FoundationRuntimeClient:
             "PT_AGENT_AS_F10_NEGATIVE_CONTROL": "1",
             "TAURI_WEBDRIVER_PORT": str(self.spec.webdriver_port),
             "RESTART": "1",
-            "CARGO_BUILD_JOBS": "1",
+            "CARGO_BUILD_JOBS": "2",
         }
 
     def start(self) -> None:
