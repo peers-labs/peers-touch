@@ -109,6 +109,7 @@ export async function refreshSocialProjection(label: string, includeNotification
 
     const chat = useSocialChatStore.getState();
     const notifications = useNotificationStore.getState();
+    await Promise.allSettled([chat.loadCurrentUserProfile()]);
     await Promise.allSettled([
       chat.loadFriendRequests(),
       chat.loadSessions(),
@@ -127,7 +128,6 @@ export async function refreshSocialProjection(label: string, includeNotification
         .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserDid),
     ));
     await Promise.allSettled([
-      refreshed.loadCurrentUserProfile(),
       ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
       refreshed.loadGroupUnreadCounts(),
       refreshed.loadConversationPreviews(),
@@ -181,8 +181,10 @@ async function bootstrapSocialProjection(actorId: string, sequence: number): Pro
   const chat = useSocialChatStore.getState();
   const notifications = useNotificationStore.getState();
 
+  await Promise.allSettled([chat.loadCurrentUserProfile()]);
+  if (sequence !== bootstrapSequence) return;
+
   await Promise.allSettled([
-    chat.loadCurrentUserProfile(),
     chat.initEncryption(),
     chat.loadSessions(),
     chat.loadFriendRequests(),
