@@ -102,7 +102,7 @@ export function createPickedDraftAttachment(
     size: attachment.size ?? 0,
     ...createChatAttachmentPreview(mimeType, name, attachment.filePath),
     status: valid ? 'ready' : 'failed',
-    managedSource: false,
+    managedSource: valid,
     attachment: valid ? attachment : undefined,
   };
 }
