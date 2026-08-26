@@ -273,6 +273,23 @@ def _authenticate_clients(
                 f"{client.spec.runtime} login failed: {login_result}"
             )
 
+        # Step 1.5: Diagnostic — check capability snapshot immediately after login
+        import time as _diag_time
+        _diag_time.sleep(2)
+        try:
+            _post_login_snap = client.harness("debugCapabilitySnapshot", {}, timeout=15)
+            import sys as _sys
+            print(
+                f"[DIAG] {client.spec.runtime} post-login capability: {_post_login_snap}",
+                file=_sys.stderr,
+            )
+        except Exception as _diag_err:
+            import sys as _sys
+            print(
+                f"[DIAG] {client.spec.runtime} post-login probe failed: {_diag_err}",
+                file=_sys.stderr,
+            )
+
         # Step 2: Navigate to agent surface
         nav_result = client.harness("navigateToAgent", {}, timeout=60)
         if not isinstance(nav_result, Mapping) or not nav_result.get("navigated"):
@@ -378,7 +395,7 @@ def _authenticate_clients(
                     lines = Path(str(log_path)).read_text(
                         encoding="utf-8", errors="replace"
                     ).splitlines()
-                    tail = "\n".join(lines[-80:])
+                    tail = "\n".join(lines[-200:])
                     diag += f"\n--- CLIENT LOG TAIL ({log_path}) ---\n{tail}"
                 except Exception:
                     pass
