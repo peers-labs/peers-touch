@@ -26,6 +26,5 @@ func (actorPTIDResolverAdapter) ResolvePTID(ctx context.Context, actorID string)
 		logger.Warnf(ctx, "actorPTIDResolver: actor %d has no PTID", numericID)
 		return "", fmt.Errorf("actor %s has no PTID", actorID)
 	}
-	logger.Infof(ctx, "actorPTIDResolver: resolved %s → %s", actorID, actor.PTID)
 	return actor.PTID, nil
 }

@@ -143,7 +143,9 @@ pub(crate) fn activate_messaging_profile(
         actor_identity_seed,
         crate::messaging::INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
     )?;
-    crate::domain::device_identity::ensure_device_enrolled(state, account_id, token)?;
+    if let Err(e) = crate::domain::device_identity::try_enroll_device_once(state, account_id, token) {
+        tracing::info!(error = %e, "device enrollment deferred to lifecycle worker");
+    }
     state
         .messaging_engines
         .activate_profile_worker(account_id, token.to_string())

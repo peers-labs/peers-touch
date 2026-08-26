@@ -83,6 +83,19 @@ func NewClientCapabilityProofService(
 	}
 }
 
+// ResolveActorPTID attempts to resolve a numeric actor ID to its canonical PTID.
+// If the resolver is nil, the actorID already has a ptid: prefix, or resolution
+// fails, the original actorID is returned unchanged.
+func (s *ClientCapabilityProofService) ResolveActorPTID(ctx context.Context, actorID string) string {
+	if s == nil || s.ptidResolver == nil || strings.HasPrefix(actorID, "ptid:") {
+		return actorID
+	}
+	if resolved, err := s.ptidResolver.ResolvePTID(ctx, actorID); err == nil {
+		return resolved
+	}
+	return actorID
+}
+
 // Verify authenticates one capability command without mutating or persisting
 // the request. Replay CAS remains the coordinator's responsibility.
 func (s *ClientCapabilityProofService) Verify(
