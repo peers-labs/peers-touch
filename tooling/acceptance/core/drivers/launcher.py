@@ -27,7 +27,7 @@ class AppLauncher(ABC):
         ...
 
     @abstractmethod
-    def stop(self) -> None:
+    def stop(self, *, preserve_state: bool = False) -> None:
         ...
 
     @abstractmethod

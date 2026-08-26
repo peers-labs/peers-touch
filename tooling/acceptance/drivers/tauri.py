@@ -11,7 +11,7 @@ import urllib.request
 import warnings
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Generator, Mapping, Optional
+from typing import Any, Callable, Generator, Mapping, Optional, Protocol
 
 from selenium import webdriver
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -36,6 +36,11 @@ EXPECTED_TITLE = "Peers Touch Desktop"
 EXPECTED_URL = "tauri://localhost"
 DEDICATED_APP_BINARY = ".local/acceptance/bin/peers-touch-desktop"
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+class RuntimeRelease(Protocol):
+    def __call__(self, *, preserve_state: bool = False) -> None:
+        ...
 
 
 def find_app_binary() -> str:
@@ -303,7 +308,7 @@ class LocalTauriLauncher(AppLauncher):
             )
         return self.metadata
 
-    def stop(self) -> None:
+    def stop(self, *, preserve_state: bool = False) -> None:
         cleanup_errors: list[str] = []
         if self._process is not None:
             try:
@@ -325,7 +330,7 @@ class LocalTauriLauncher(AppLauncher):
                 cleanup_errors.append(f"log: {error}")
             finally:
                 self._log_file = None
-        if self._owns_storage_root:
+        if self._owns_storage_root and not preserve_state:
             try:
                 shutil.rmtree(self.storage_root)
             except FileNotFoundError:
@@ -347,7 +352,7 @@ class ProvisionedTauriLauncher(AppLauncher):
         self,
         metadata: AppLaunchMetadata,
         *,
-        release: Callable[[], None] | None = None,
+        release: RuntimeRelease | None = None,
         alive: Callable[[], bool] | None = None,
     ) -> None:
         if metadata.webdriver_host not in LOOPBACK_HOSTS:
@@ -368,13 +373,13 @@ class ProvisionedTauriLauncher(AppLauncher):
         self._started = True
         return self.metadata
 
-    def stop(self) -> None:
+    def stop(self, *, preserve_state: bool = False) -> None:
         if self._released:
             return
         self._released = True
         self._started = False
         if self._release is not None:
-            self._release()
+            self._release(preserve_state=preserve_state)
 
     def is_alive(self) -> bool:
         if not self._started or self._released:
@@ -438,12 +443,15 @@ class TauriSession(DomDriver):
             self.stop()
             raise
 
-    def stop(self) -> None:
+    def stop(self, *, preserve_state: bool = False) -> None:
         if self._driver is not None:
             self._driver.stop()
             self._driver = None
         if self._launcher_started:
-            self.launcher.stop()
+            if preserve_state:
+                self.launcher.stop(preserve_state=True)
+            else:
+                self.launcher.stop()
             self._launcher_started = False
 
     def is_alive(self) -> bool:

@@ -320,6 +320,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "self.launch_actor(actor, restore_session=True)",
             self.source,
         )
+        self.assertIn(
+            "self.clients[actor].stop(preserve_state=True)",
+            self.source,
+        )
         self.assertEqual(self.source.count("station.auth_logout()"), 1)
 
     def test_claimed_actions_cannot_use_store_or_command_bypasses(self) -> None:

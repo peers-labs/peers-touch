@@ -246,6 +246,8 @@ def _stop_actor_record(
     container_name: str,
     run_root: Path,
     record: dict[str, object],
+    *,
+    preserve_state: bool = False,
 ) -> dict[str, object]:
     actor = _slug(str(record.get("actor") or ""), "actor")
     process_id = int(record.get("processId") or 0)
@@ -320,11 +322,17 @@ def _stop_actor_record(
         if log_path.is_file()
         else ""
     )
-    _remove_tree(actor_root)
+    if preserve_state:
+        (actor_root / "app.pid").unlink(missing_ok=True)
+        log_path.unlink(missing_ok=True)
+        _remove_tree(actor_root / "runtime")
+    else:
+        _remove_tree(actor_root)
     return {
         "actor": actor,
         "processId": process_id,
         "logContent": log_content,
+        "statePreserved": preserve_state,
         "stopped": True,
     }
 
@@ -952,6 +960,7 @@ def actor_stop(args: argparse.Namespace) -> int:
         container_name,
         root / cell_id / "runs" / run_id,
         record,
+        preserve_state=args.preserve_state,
     )
     stopped_ports = {
         int(record.get("webdriverPort") or 0),
@@ -1117,6 +1126,8 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument("--run-id", required=True)
         command.add_argument("--container-name", required=True)
         command.add_argument("--actor", required=True)
+        if name == "actor-stop":
+            command.add_argument("--preserve-state", action="store_true")
         if name == "actor-start":
             command.add_argument("--display", required=True)
             command.add_argument("--webdriver-port", type=int, required=True)

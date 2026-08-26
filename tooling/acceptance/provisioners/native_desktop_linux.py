@@ -889,12 +889,16 @@ class NativeDesktopLinuxProvisioner:
                 actor=actor,
             )
             raise
-        log_path = (
+        log_root = (
             self.state_path.parent
             / "logs"
             / str(state["runId"])
-            / f"{actor}.log"
         )
+        launch_counts = getattr(self, "_actor_launch_counts", {})
+        launch_sequence = int(launch_counts.get(actor, 0)) + 1
+        launch_counts[actor] = launch_sequence
+        self._actor_launch_counts = launch_counts
+        log_path = log_root / f"{actor}-{launch_sequence:02d}.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         runtime = _ActorRuntime(
             actor=actor,
@@ -920,7 +924,10 @@ class NativeDesktopLinuxProvisioner:
         )
         return ProvisionedTauriLauncher(
             metadata,
-            release=lambda: self.release_actor(actor),
+            release=lambda *, preserve_state=False: self.release_actor(
+                actor,
+                preserve_state=preserve_state,
+            ),
             alive=lambda: self.actor_is_alive(actor),
         )
 
@@ -1043,7 +1050,12 @@ class NativeDesktopLinuxProvisioner:
             "endpointsReleased": not active,
         }
 
-    def release_actor(self, actor: str) -> None:
+    def release_actor(
+        self,
+        actor: str,
+        *,
+        preserve_state: bool = False,
+    ) -> None:
         runtime = self._actors.get(actor)
         if runtime is None or runtime.released:
             return
@@ -1076,6 +1088,7 @@ class NativeDesktopLinuxProvisioner:
                     run_id=str(state["runId"]),
                     container_name=str(state["containerName"]),
                     actor=actor,
+                    preserve_state=preserve_state,
                 )
                 content = str(stopped.get("logContent") or "")
                 if content:
@@ -2170,9 +2183,9 @@ class NativeDesktopLinuxProvisioner:
         run_id: str,
         container_name: str,
         actor: str,
+        preserve_state: bool = False,
     ) -> dict[str, Any]:
-        completed = self._remote_control(
-            remote_control,
+        arguments = [
             "actor-stop",
             "--runtime-root",
             self.profile.runtime_root,
@@ -2184,6 +2197,12 @@ class NativeDesktopLinuxProvisioner:
             container_name,
             "--actor",
             actor,
+        ]
+        if preserve_state:
+            arguments.append("--preserve-state")
+        completed = self._remote_control(
+            remote_control,
+            *arguments,
         )
         return _json_output(completed, f"actor {actor} stop")
 
