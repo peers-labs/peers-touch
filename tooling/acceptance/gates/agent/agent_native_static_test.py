@@ -78,7 +78,10 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
     def test_runner_consumes_provisioned_runtime(self) -> None:
         self.assertIn("PT_ACCEPTANCE_RUNTIME_MANIFEST", self.source)
         self.assertIn("load_runtime_manifest", self.source)
-        self.assertIn('APPROVED_PROFILE = "one"', self.source)
+        self.assertIn(
+            'APPROVED_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")',
+            self.source,
+        )
 
     def test_runner_dispatches_stream_resilience(self) -> None:
         self.assertIn('"stream-resilience": "agent-stream-resilience-e2e"', self.source)
