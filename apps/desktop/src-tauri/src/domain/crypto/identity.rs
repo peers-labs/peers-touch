@@ -25,6 +25,8 @@ pub fn ed25519_verifying_to_x25519_public(
 // ---------------------------------------------------------------------------
 
 const CRYPTO_SERVICE: &str = "peers-touch.desktop.crypto";
+const ACTOR_IDENTITY_ROOT_ENV: &str = "PEERS_ACTOR_IDENTITY_ROOT";
+const STORAGE_ROOT_ENV: &str = "PEERS_STORAGE_ROOT";
 
 fn identity_cache() -> &'static Mutex<HashMap<String, [u8; 32]>> {
     static CACHE: OnceLock<Mutex<HashMap<String, [u8; 32]>>> = OnceLock::new();
@@ -32,7 +34,10 @@ fn identity_cache() -> &'static Mutex<HashMap<String, [u8; 32]>> {
 }
 
 fn scoped_identity_file(identity_key_ref: &str) -> Option<PathBuf> {
-    let root = std::env::var("PEERS_STORAGE_ROOT").ok()?;
+    let root = std::env::var(ACTOR_IDENTITY_ROOT_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| std::env::var(STORAGE_ROOT_ENV).ok())?;
     let root = root.trim();
     if root.is_empty() {
         return None;
@@ -74,6 +79,20 @@ fn harden_path(_path: &Path) -> Result<(), CryptoError> {
     Ok(())
 }
 
+fn load_scoped_identity_key(
+    identity_key_ref: &str,
+    path: &Path,
+) -> Result<Option<IdentityKeyPair>, CryptoError> {
+    match fs::read_to_string(path) {
+        Ok(content) => {
+            harden_path(path)?;
+            parse_hex_seed(identity_key_ref, content.trim())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(CryptoError::IoError(error.to_string())),
+    }
+}
+
 pub fn store_identity_key(identity_key_ref: &str, seed: &[u8; 32]) -> Result<(), CryptoError> {
     let hex_seed: String = seed.iter().map(|b| format!("{b:02x}")).collect();
 
@@ -107,14 +126,7 @@ pub fn load_identity_key(identity_key_ref: &str) -> Result<Option<IdentityKeyPai
     }
 
     if let Some(path) = scoped_identity_file(identity_key_ref) {
-        match fs::read_to_string(&path) {
-            Ok(content) => {
-                harden_path(&path)?;
-                return parse_hex_seed(identity_key_ref, content.trim());
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(CryptoError::IoError(e.to_string())),
-        }
+        return load_scoped_identity_key(identity_key_ref, &path);
     }
 
     let entry = keyring_entry(identity_key_ref)?;
@@ -143,6 +155,7 @@ pub fn delete_identity_key(identity_key_ref: &str) -> Result<(), CryptoError> {
         if path.exists() {
             fs::remove_file(&path).map_err(|e| CryptoError::IoError(e.to_string()))?;
         }
+        return Ok(());
     }
     let entry = keyring_entry(identity_key_ref)?;
     match entry.delete_credential() {
@@ -184,6 +197,17 @@ mod tests {
             kp.verifying_key().as_bytes(),
             restored.verifying_key().as_bytes()
         );
+    }
+
+    #[test]
+    fn missing_scoped_identity_does_not_fall_through_to_keyring() {
+        let path = std::env::temp_dir()
+            .join(format!("peers-touch-identity-test-{}", std::process::id()))
+            .join("missing.key");
+
+        assert!(load_scoped_identity_key("actor:test", &path)
+            .expect("missing scoped identity")
+            .is_none());
     }
 
     #[test]

@@ -215,6 +215,29 @@ func (f toolDispatchFixture) pullSingleEnvelope(t *testing.T) *model.ClientCapab
 	return response.GetRequests()[0]
 }
 
+func TestCapabilitySessionReadbackUsesCanonicalLeasePTID(t *testing.T) {
+	row := &persistence.ClientCapabilityLease{
+		SessionID:    "session-1",
+		ActorID:      "347760690666143747",
+		DeviceID:     "device-1",
+		PlatformKind: int32(model.ClientPlatform_CLIENT_PLATFORM_DESKTOP),
+		ExpiresAt:    time.Now().Add(time.Minute),
+	}
+	lease := &model.ClientCapabilityLease{
+		Ptid: "ptid:v1:actor:peers:p:alice:fixture",
+	}
+
+	session := capabilitySessionFromLeaseRow(row, lease)
+
+	if session.GetPtid() != lease.GetPtid() {
+		t.Fatalf(
+			"capability session leaked internal actor ID: got %q want %q",
+			session.GetPtid(),
+			lease.GetPtid(),
+		)
+	}
+}
+
 func TestToolDispatchServiceRejectsCrossDeviceCapabilitySessionPull(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
 	foreignLease := proto.Clone(fixture.session).(*model.ClientCapabilityLease)
@@ -331,6 +354,13 @@ func TestBrowserCapabilitySessionAllowsEmptyCapabilitiesAndListsByActor(t *testi
 	}
 	if browserSession == nil || browserSession.GetConnectionId() != "browser-connection" {
 		t.Fatalf("browser session readback mismatch: %+v", sessions.GetSessions())
+	}
+	if browserSession.GetPtid() != browserLease.GetPtid() {
+		t.Fatalf(
+			"browser session PTID mismatch: got %q want %q",
+			browserSession.GetPtid(),
+			browserLease.GetPtid(),
+		)
 	}
 	resolved, err := fixture.service.GetActiveCapabilitySession(
 		context.Background(),

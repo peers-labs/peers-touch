@@ -713,6 +713,38 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(leaked_paths, ["roles/receiver-dom.json"])
         self.assertEqual(serialized, original)
 
+    def test_runtime_log_is_registered_after_artifact_redaction(self) -> None:
+        module = load_module()
+        secret = "runtime-secret-value"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("runtime-gate", source={})
+            artifact = run.run_dir / "reports" / "runtime.json"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text(
+                json.dumps({"password": secret}),
+                encoding="utf-8",
+            )
+
+            log_ref, redacted_paths, leaked_paths = module.finalize_runtime_log(
+                run,
+                "runtime-gate",
+                f"password={secret}",
+                (secret,),
+            )
+            collected = run.collect_existing_artifacts()
+            run.close()
+
+        self.assertIn("reports/runtime.json", redacted_paths)
+        self.assertEqual(
+            leaked_paths,
+            ["logs/runtime-gate.log", "reports/runtime.json"],
+        )
+        self.assertEqual(collected["log"], log_ref)
+
     def test_build_run_report_deduplicates_review_commands_by_command_text(self) -> None:
         module = load_module()
         report = module.build_run_report(

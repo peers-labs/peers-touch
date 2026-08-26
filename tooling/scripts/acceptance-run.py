@@ -326,6 +326,32 @@ def redact_runtime_artifacts(
     return sorted(redacted_paths), sorted(leaked_paths)
 
 
+def finalize_runtime_log(
+    gate_run: Any,
+    gate_id: str,
+    output_text: str,
+    runtime_secrets: tuple[str, ...],
+) -> tuple[Any, list[str], list[str]]:
+    redacted_artifacts, leaked_artifacts = redact_runtime_artifacts(
+        gate_run.run_dir,
+        runtime_secrets,
+    )
+    log_path = f"logs/{gate_id}.log"
+    if any(
+        len(value) >= 16 and value in output_text
+        for value in runtime_secrets
+    ):
+        leaked_artifacts = sorted({*leaked_artifacts, log_path})
+    redacted_output = redact_runtime_text(output_text, runtime_secrets)
+    log_ref = gate_run.write_bytes(
+        log_path,
+        redacted_output.encode("utf-8"),
+        media_type="text/plain",
+        role="log",
+    )
+    return log_ref, redacted_artifacts, leaked_artifacts
+
+
 def provisioning_failure_result(
     *,
     gate_id: str,
@@ -1128,15 +1154,10 @@ def main() -> int:
                         cleanup_error = str(error)
                         output_text += f"\nProvisioning cleanup failed: {error}\n"
 
-            output_text = redact_runtime_text(output_text, runtime_secrets)
-            log_ref = gate_run.write_bytes(
-                f"logs/{gate_id}.log",
-                output_text.encode("utf-8"),
-                media_type="text/plain",
-                role="log",
-            )
-            redacted_artifacts, leaked_artifacts = redact_runtime_artifacts(
-                gate_run.run_dir,
+            log_ref, redacted_artifacts, leaked_artifacts = finalize_runtime_log(
+                gate_run,
+                gate_id,
+                output_text,
                 runtime_secrets,
             )
             duration = round(time.time() - started, 3)

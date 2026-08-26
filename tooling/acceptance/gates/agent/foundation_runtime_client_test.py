@@ -62,6 +62,10 @@ class FoundationClientSpecTest(unittest.TestCase):
         self.assertEqual(environment["WEB_PORT"], "23210")
         self.assertEqual(environment["PEERS_STATION_URL"], "https://station.example")
         self.assertEqual(environment["PT_DESKTOP_E2E"], "true")
+        self.assertEqual(
+            environment["PEERS_ACTOR_IDENTITY_ROOT"],
+            str(root / "actor-identity"),
+        )
         self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", environment)
 
     def test_runtime_pair_requires_exact_native_and_browser_clients(self) -> None:
@@ -95,6 +99,10 @@ class FoundationClientSpecTest(unittest.TestCase):
 
         self.assertEqual(pair.native.spec.runtime, "native-tauri")
         self.assertEqual(pair.browser.spec.runtime, "browser")
+        self.assertEqual(
+            pair.native.actor_identity_root,
+            pair.browser.actor_identity_root,
+        )
 
     def test_runtime_pair_rejects_missing_browser_client(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -119,6 +127,45 @@ class FoundationClientSpecTest(unittest.TestCase):
                     },
                     profile_env={},
                 )
+
+    def test_runtime_pair_releases_shared_actor_identity_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            native = {
+                "runtime": "native-tauri",
+                "worktree": str(root),
+                "gateway_port": 23030,
+                "renderer_port": 23210,
+                "webdriver_port": 24445,
+                "storage_root": str(root / "native" / "storage"),
+                "profile": "foundation-native",
+            }
+            browser = {
+                **native,
+                "runtime": "browser",
+                "gateway_port": 23031,
+                "renderer_port": 23211,
+                "webdriver_port": 24446,
+                "storage_root": str(root / "browser" / "storage"),
+                "profile": "foundation-browser",
+            }
+            pair = FoundationRuntimePair.from_manifest(
+                {
+                    "station": {"url": "https://station.example"},
+                    "clients": [native, browser],
+                },
+                profile_env={},
+            )
+            pair.native.actor_identity_root.mkdir(parents=True)
+            (pair.native.actor_identity_root / "identity.key").write_text(
+                "fixture",
+                encoding="utf-8",
+            )
+
+            result = pair.stop()
+
+            self.assertTrue(result["actorIdentityReleased"])
+            self.assertFalse(pair.native.actor_identity_root.exists())
 
 
 if __name__ == "__main__":

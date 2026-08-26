@@ -130,9 +130,15 @@ class FoundationRuntimeClient:
         self.driver: Any = None
         self.chrome: ChromeDriver | None = None
 
+    @property
+    def actor_identity_root(self) -> Path:
+        return self.run_root.parent / "actor-identity"
+
     def _write_runtime_profile(self) -> None:
         self.run_root.mkdir(parents=True, exist_ok=True)
         self.spec.storage_root.mkdir(parents=True, exist_ok=True)
+        self.actor_identity_root.mkdir(parents=True, exist_ok=True)
+        self.actor_identity_root.chmod(0o700)
         values = {
             **self.profile_env,
             "PT_DEV_PROFILE": os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one"),
@@ -140,6 +146,7 @@ class FoundationRuntimeClient:
             "PT_STATION_URL": self.station_url,
             "PEERS_STATION_URL": self.station_url,
             "PEERS_STORAGE_ROOT": str(self.spec.storage_root),
+            "PEERS_ACTOR_IDENTITY_ROOT": str(self.actor_identity_root),
             "PT_DESKTOP_APP_GATEWAY_PORT": str(self.spec.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.spec.renderer_port),
             "PT_DESKTOP_WEB_GATEWAY_PORT": str(self.spec.gateway_port),
@@ -165,6 +172,7 @@ class FoundationRuntimeClient:
             "PT_DESKTOP_WEB_GATEWAY_PORT": str(self.spec.gateway_port),
             "PT_DESKTOP_WEB_WEB_PORT": str(self.spec.renderer_port),
             "PEERS_STORAGE_ROOT": str(self.spec.storage_root),
+            "PEERS_ACTOR_IDENTITY_ROOT": str(self.actor_identity_root),
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": self.station_url,
             "PEERS_STATION_URL": self.station_url,
@@ -363,11 +371,22 @@ class FoundationRuntimePair:
             "browser": self.browser.stop(),
             "desktop_app": self.native.stop(),
         }
+        actor_identity_roots = {
+            self.native.actor_identity_root,
+            self.browser.actor_identity_root,
+        }
+        for root in actor_identity_roots:
+            shutil.rmtree(root, ignore_errors=True)
+        actor_identity_released = all(
+            not root.exists() for root in actor_identity_roots
+        )
         return {
             "status": (
                 "clean"
                 if all(item["status"] == "clean" for item in results.values())
+                and actor_identity_released
                 else "failed"
             ),
             "clients": results,
+            "actorIdentityReleased": actor_identity_released,
         }

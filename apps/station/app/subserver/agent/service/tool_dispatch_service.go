@@ -317,7 +317,7 @@ func capabilitySessionFromLeaseRow(
 ) *model.ClientCapabilitySession {
 	return &model.ClientCapabilitySession{
 		SessionId:         row.SessionID,
-		Ptid:              row.ActorID,
+		Ptid:              lease.GetPtid(),
 		DeviceId:          row.DeviceID,
 		PlatformKind:      model.ClientPlatform(row.PlatformKind),
 		TypedCapabilities: lease.GetCapabilities(),
