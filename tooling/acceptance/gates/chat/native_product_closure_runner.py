@@ -2817,7 +2817,7 @@ class NativeProductClosureGate(AcceptanceGate):
 
     def setting_state(self, actor: str) -> dict[str, Any]:
         panel = self.open_details(actor)
-        return self.clients[actor].execute_script(
+        value = self.clients[actor].execute_script(
             """
             const panel = arguments[0];
             return {
@@ -2835,6 +2835,38 @@ class NativeProductClosureGate(AcceptanceGate):
             """,
             panel,
         )
+        if (
+            actor == "alice2"
+            and os.environ.get("DEBUG_SESSION_ID", "").strip()
+            == "alice2-settings-recovery"
+            and time.monotonic()
+            - float(getattr(self, "_alice2_settings_debug_at", 0.0))
+            >= 30
+        ):
+            self._alice2_settings_debug_at = time.monotonic()
+            group_id = str(panel.get_attribute("data-chat-detail-conversation") or "")
+            station = (
+                gateway_read(
+                    self.clients[actor],
+                    "conversation_get_member_settings",
+                    {"conversation_id": group_id},
+                )
+                if group_id
+                else {}
+            )
+            # #region debug-point A,B,C,D,E:alice2-settings-recovery
+            report_native_mousedown_debug(
+                "A,B,C,D,E",
+                "native_product_closure_runner:setting_state",
+                "Alice2 settings recovery snapshot",
+                {
+                    "groupId": group_id,
+                    "ui": value,
+                    "station": station,
+                },
+            )
+            # #endregion
+        return value
 
     def background_resource_snapshot(self, actor: str) -> dict[str, Any]:
         client = self.clients[actor]
