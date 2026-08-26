@@ -1227,6 +1227,60 @@ class NativeProductClosureGate(AcceptanceGate):
         client = self.focus_actor_window(actor)
         return self._click_focused_element(client, element)
 
+    def _reveal_native_click_target(
+        self,
+        client: TauriSession,
+        element: Any,
+        *,
+        selector: str | None,
+    ) -> Any:
+        def center_is_in_view() -> bool:
+            return bool(
+                client.driver.execute_script(
+                    """
+                    const rect = arguments[0].getBoundingClientRect();
+                    const viewport = window.visualViewport;
+                    const left = viewport?.offsetLeft || 0;
+                    const top = viewport?.offsetTop || 0;
+                    const right = left + (viewport?.width || innerWidth);
+                    const bottom = top + (viewport?.height || innerHeight);
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    return (
+                      centerX >= left
+                      && centerX < right
+                      && centerY >= top
+                      && centerY < bottom
+                    );
+                    """,
+                    element,
+                )
+            )
+
+        if not center_is_in_view():
+            client.driver.execute_script(
+                """
+                arguments[0].scrollIntoView({
+                  block: 'center',
+                  inline: 'nearest',
+                });
+                """,
+                element,
+            )
+            if selector is not None:
+                element = client.find_element(selector, 30)
+            try:
+                WebDriverWait(
+                    client.driver,
+                    5,
+                    poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+                ).until(lambda _: center_is_in_view())
+            except TimeoutException:
+                raise GateError(
+                    "Native click target did not enter the viewport"
+                ) from None
+        return element
+
     def _click_focused_element(
         self,
         client: TauriSession,
@@ -1236,6 +1290,11 @@ class NativeProductClosureGate(AcceptanceGate):
     ) -> Any:
         WebDriverWait(client.driver, 30).until(
             lambda _: element.is_displayed() and element.is_enabled()
+        )
+        element = self._reveal_native_click_target(
+            client,
+            element,
+            selector=selector,
         )
         target = client.driver.execute_script(
             """
