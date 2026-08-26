@@ -60,6 +60,7 @@ RECOVERY_SELECTORS = {
     "generate": "[data-recovery-generate]",
     "reveal": "[data-recovery-reveal]",
     "backup": "[data-recovery-backup-create]",
+    "feedback": '[role="dialog"], [role="alertdialog"]',
     "restore_open": "[data-recovery-restore-open]",
     "restore_input": "[data-recovery-restore-input]",
     "restore_submit": "[data-recovery-restore-submit]",
@@ -4221,7 +4222,10 @@ class NativeProductClosureGate(AcceptanceGate):
         try:
             WebDriverWait(client.driver, 120).until(
                 lambda driver: bool(
-                    driver.find_elements(By.CSS_SELECTOR, ".ant-message-success")
+                    driver.find_elements(
+                        By.CSS_SELECTOR,
+                        RECOVERY_SELECTORS["feedback"],
+                    )
                 )
             )
         except TimeoutException:
@@ -4298,7 +4302,10 @@ class NativeProductClosureGate(AcceptanceGate):
                     RECOVERY_SELECTORS["restore_input"],
                 )
                 and bool(
-                    driver.find_elements(By.CSS_SELECTOR, ".ant-message-success")
+                    driver.find_elements(
+                        By.CSS_SELECTOR,
+                        RECOVERY_SELECTORS["feedback"],
+                    )
                 )
             )
         )
