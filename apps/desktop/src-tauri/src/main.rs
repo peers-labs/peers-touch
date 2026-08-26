@@ -36,10 +36,10 @@ pub mod peers_touch {
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
     applets, auth, channels, chat, conversation, cron, crypto, desktop_capture, federation,
-    frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice,
-    key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery, mls,
-    model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
-    search, settings, skills, skills_market, social, station, system, tools, tts,
+    frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice, key_exchange, mcp,
+    memory, messaging as messaging_commands, messaging_recovery, mls, model_config, notebook,
+    notification, oauth2, oss, presence, profile, provider, realtime, search, settings, skills,
+    skills_market, social, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -117,7 +117,67 @@ fn acceptance_request_activation() -> error::AppResult<serde_json::Value> {
 }
 
 #[cfg(feature = "acceptance-webdriver")]
-fn configure_acceptance_window(window: &tauri::WebviewWindow) -> std::io::Result<()> {
+fn acceptance_window_x(
+    monitor_x: f64,
+    monitor_width: f64,
+    window_width: f64,
+    slot: u32,
+    count: u32,
+) -> Option<f64> {
+    if window_width > monitor_width {
+        return None;
+    }
+
+    let available_span = monitor_width - window_width;
+    let slot_ratio = if count <= 1 {
+        0.0
+    } else {
+        f64::from(slot) / f64::from(count - 1)
+    };
+    Some(monitor_x + available_span * slot_ratio)
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+fn position_acceptance_window(
+    window: &tauri::WebviewWindow,
+    monitor_x: f64,
+    monitor_width: f64,
+    window_y: f64,
+    scale: f64,
+    slot: u32,
+    count: u32,
+) -> std::io::Result<()> {
+    let actual_window_width = window
+        .outer_size()
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window size lookup failed: {error}"))
+        })?
+        .to_logical::<f64>(scale)
+        .width;
+    let window_x = acceptance_window_x(
+        monitor_x,
+        monitor_width,
+        actual_window_width,
+        slot,
+        count,
+    )
+    .ok_or_else(|| {
+        std::io::Error::other(format!(
+            "acceptance window width {actual_window_width} exceeds monitor width {monitor_width}"
+        ))
+    })?;
+    window
+        .set_position(tauri::LogicalPosition::new(window_x, window_y))
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window positioning failed: {error}"))
+        })
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+fn configure_acceptance_window(
+    window: &tauri::WebviewWindow,
+    minimum_window_width: f64,
+) -> std::io::Result<()> {
     let slot = std::env::var("PT_ACCEPTANCE_WINDOW_SLOT")
         .map_err(|error| {
             std::io::Error::other(format!("acceptance window slot is missing: {error}"))
@@ -153,29 +213,94 @@ fn configure_acceptance_window(window: &tauri::WebviewWindow) -> std::io::Result
     let logical_height = f64::from(monitor_size.height) / scale;
     let logical_x = f64::from(monitor_position.x) / scale;
     let logical_y = f64::from(monitor_position.y) / scale;
-    let window_width = logical_width / f64::from(count);
+    let window_width = (logical_width / f64::from(count)).max(minimum_window_width);
     let window_height = (logical_height - 64.0).min(800.0);
+    let window_y = logical_y + 32.0;
 
+    window
+        .set_position(tauri::LogicalPosition::new(logical_x, window_y))
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window positioning failed: {error}"))
+        })?;
+    let placement_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let positioned_window = window.clone();
+    let expected_resize_width = window_width * scale;
+    window.on_window_event(move |event| {
+        let tauri::WindowEvent::Resized(size) = event else {
+            return;
+        };
+        if (f64::from(size.width) - expected_resize_width).abs() > 1.0
+            || placement_started.swap(true, std::sync::atomic::Ordering::AcqRel)
+        {
+            return;
+        }
+
+        let positioned_window = positioned_window.clone();
+        std::thread::spawn(move || {
+            if let Err(error) = position_acceptance_window(
+                &positioned_window,
+                logical_x,
+                logical_width,
+                window_y,
+                scale,
+                slot,
+                count,
+            ) {
+                tracing::error!(error = %error, "acceptance window placement failed");
+            }
+        });
+    });
     window
         .set_size(tauri::LogicalSize::new(window_width, window_height))
         .map_err(|error| {
             std::io::Error::other(format!("acceptance window resize failed: {error}"))
         })?;
     window
-        .set_position(tauri::LogicalPosition::new(
-            logical_x + window_width * f64::from(slot),
-            logical_y + 32.0,
-        ))
-        .map_err(|error| {
-            std::io::Error::other(format!("acceptance window positioning failed: {error}"))
-        })?;
+        .show()
+        .map_err(|error| std::io::Error::other(format!("acceptance window show failed: {error}")))?;
     window.set_always_on_top(true).map_err(|error| {
         std::io::Error::other(format!("acceptance window layering failed: {error}"))
     })?;
-    configure_acceptance_window_level(window)?;
-    window
-        .show()
-        .map_err(|error| std::io::Error::other(format!("acceptance window show failed: {error}")))
+    configure_acceptance_window_level(window)
+}
+
+#[cfg(all(test, feature = "acceptance-webdriver"))]
+mod acceptance_window_tests {
+    use super::acceptance_window_x;
+
+    #[test]
+    fn three_actor_windows_stay_within_monitor_bounds() {
+        let monitor_width = 1920.0;
+        for (window_width, expected_positions) in [
+            (860.0, vec![0.0, 530.0, 1060.0]),
+            (862.0, vec![0.0, 529.0, 1058.0]),
+        ] {
+            let positions = (0..3)
+                .map(|slot| {
+                    acceptance_window_x(0.0, monitor_width, window_width, slot, 3)
+                        .expect("window should fit")
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(positions, expected_positions);
+            assert!(positions
+                .iter()
+                .all(|position| position + window_width <= monitor_width));
+        }
+    }
+
+    #[test]
+    fn single_actor_window_uses_monitor_origin() {
+        assert_eq!(
+            acceptance_window_x(320.0, 1920.0, 1200.0, 0, 1),
+            Some(320.0)
+        );
+    }
+
+    #[test]
+    fn window_wider_than_monitor_fails_closed() {
+        assert_eq!(acceptance_window_x(0.0, 800.0, 862.0, 0, 1), None);
+    }
 }
 
 fn main() {
@@ -207,10 +332,18 @@ fn main() {
         .setup(|app| {
             #[cfg(feature = "acceptance-webdriver")]
             if std::env::var_os("PT_ACCEPTANCE_WINDOW_SLOT").is_some() {
+                let minimum_window_width = app
+                    .config()
+                    .app
+                    .windows
+                    .iter()
+                    .find(|config| config.label == "main")
+                    .and_then(|config| config.min_width)
+                    .unwrap_or_default();
                 let window = app
                     .get_webview_window("main")
                     .ok_or_else(|| std::io::Error::other("acceptance main window is missing"))?;
-                configure_acceptance_window(&window)?;
+                configure_acceptance_window(&window, minimum_window_width)?;
             }
 
             let resource_dir = app.path()

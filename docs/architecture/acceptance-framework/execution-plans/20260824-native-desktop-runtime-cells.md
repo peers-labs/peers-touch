@@ -306,6 +306,9 @@ Deliver:
   rebinding selector-driven actions to the current semantic target at the
   fixed physical point, and only then sending one atomic down/up sequence with
   point-bound DOM acknowledgement.
+- Place acceptance actor windows from their actual outer width so every slot
+  remains within the selected monitor even when the product minimum width is
+  wider than the nominal equal-width tile.
 - Keep runtime-cell retention bounded by skipping recursive cache inspection
   when the cache unit itself is within the retention window.
 - Preserve screenshots, DOM, native diagnostics, attachment byte/count ledger,
@@ -317,6 +320,9 @@ Targets:
 - `apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx`
 - `apps/desktop/src/components/chat/message/messageReactionState.ts`
 - `apps/desktop/src/components/chat/message/messageReactionState.test.ts`
+- `apps/desktop/src-tauri/src/main.rs`
+- `tooling/acceptance/features/chat-product-closure.yaml`
+- `tooling/acceptance/registry.yaml`
 - `tooling/acceptance/drivers/native/base.py`
 - `tooling/acceptance/drivers/native/macos.py`
 - `tooling/acceptance/drivers/native/linux_x11.py`
@@ -522,7 +528,7 @@ committed to this plan.
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Chat runner receives `NativeDesktopRuntimeBinding`, `TauriSession` and `NativeDesktopAdapter`; local launcher/platform factory dependencies are deleted; required assertions, journey order and 3600-second timeout remain locked; Acceptance Core 230/230, Chat static 38/38 and runner 20/20 PASS |
-| NDR-W7 Linux MP-W13 proof | in progress | Exact-source run `20260824T210747163196Z-405dfb06c0469c5edd11879266059514` first reached `transcript_thread` after the reaction owner fix; diagnostic run `20260824T211742109650Z-6e9c3a6eb67c5eff955ed9ce6d22c8cc` then proved thread, toolbar, reaction recovery, avatars and Station attribution before exposing the macOS-only chooser location shortcut on GTK/Zenity. Run `20260824T221611515158Z-cc67f643fb24697c744ce105d878fd1b` used the corrected GTK shortcut and reproduced a reaction-retry race where pointer positioning could replace a hover-sensitive target before the acknowledgement probe was installed. The platform mechanic now belongs to `NativeDesktopAdapter`; the input driver now positions and revalidates the target before probe installation. Exact-source Linux rerun remains required. All runs cleaned actors, endpoint leases, ports and storage |
+| NDR-W7 Linux MP-W13 proof | in progress | Exact-source run `20260826T175258636392Z-ec6e95a2dc518fa3eef7d6b92aea7457` at `458a510d5` proved recovery backup feedback through the pre-click semantic latch, launched and rebound Alice2, then failed when slot `2/3` placed an actual 862 px outer window at x=1280 on a 1920 px X11 root. Diagnostic cells at `e397df381` and `6f104f871` showed that reading outer size before or immediately after showing the window observes pre-WM geometry and incorrectly placed slot `2/3` at x=1800. The acceptance-only Desktop host must start at the monitor origin, wait for the WM `Resized` event, then read the constrained outer width and distribute the window over the remaining monitor span. The unchanged Gate remains required. All diagnostic actors cleaned successfully |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
