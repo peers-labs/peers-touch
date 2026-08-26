@@ -1728,7 +1728,7 @@ class NativeProductClosureGate(AcceptanceGate):
               .map((row) => ({
                 id: row.getAttribute('data-message-ulid') || '',
                 sequence: Number(row.getAttribute('data-message-authority-sequence') || 0),
-                content: row.querySelector('[data-message-content]')?.innerText || '',
+                content: row.querySelector('[data-message-text]')?.innerText || '',
                 attachmentCount: Number(row.getAttribute('data-message-attachment-count') || 0),
               }))
               .sort((a, b) => (a.sequence - b.sequence) || a.id.localeCompare(b.id));
