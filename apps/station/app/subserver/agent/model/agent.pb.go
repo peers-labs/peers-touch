@@ -4594,6 +4594,8 @@ type ClientCapabilitySession struct {
 	TypedCapabilities []*ClientCapability    `protobuf:"bytes,8,rep,name=typed_capabilities,json=typedCapabilities,proto3" json:"typed_capabilities,omitempty"`
 	ExpiresAt         *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	ConnectionId      string                 `protobuf:"bytes,10,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	LeaseId           string                 `protobuf:"bytes,11,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	LeaseRevision     uint64                 `protobuf:"varint,12,opt,name=lease_revision,json=leaseRevision,proto3" json:"lease_revision,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -4682,6 +4684,20 @@ func (x *ClientCapabilitySession) GetConnectionId() string {
 		return x.ConnectionId
 	}
 	return ""
+}
+
+func (x *ClientCapabilitySession) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *ClientCapabilitySession) GetLeaseRevision() uint64 {
+	if x != nil {
+		return x.LeaseRevision
+	}
+	return 0
 }
 
 type ListClientCapabilitySessionsRequest struct {
@@ -13106,7 +13122,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x17\n" +
 	"\aturn_id\x18\x02 \x01(\tR\x06turnId\"X\n" +
 	"\x14GetTurnTraceResponse\x12@\n" +
-	"\x05entry\x18\x01 \x01(\v2*.peers_touch.model.agent.v1.TurnTraceEntryR\x05entry\"\xaa\x03\n" +
+	"\x05entry\x18\x01 \x01(\v2*.peers_touch.model.agent.v1.TurnTraceEntryR\x05entry\"\xec\x03\n" +
 	"\x17ClientCapabilitySession\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12%\n" +
@@ -13118,7 +13134,9 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12#\n" +
 	"\rconnection_id\x18\n" +
-	" \x01(\tR\fconnectionIdJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04\"%\n" +
+	" \x01(\tR\fconnectionId\x12\x19\n" +
+	"\blease_id\x18\v \x01(\tR\aleaseId\x12%\n" +
+	"\x0elease_revision\x18\f \x01(\x04R\rleaseRevisionJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04\"%\n" +
 	"#ListClientCapabilitySessionsRequest\"w\n" +
 	"$ListClientCapabilitySessionsResponse\x12O\n" +
 	"\bsessions\x18\x01 \x03(\v23.peers_touch.model.agent.v1.ClientCapabilitySessionR\bsessions\"\xae\x01\n" +

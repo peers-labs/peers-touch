@@ -1430,6 +1430,11 @@ Only then may G-F preflight begin.
 
 **Depends on**: F1, F2, F3, F4.
 **Owns**: the C01-C10/A01-A14 advancement decision, not implementation.
+**Status**: in progress. The source-matched 2026-08-26 run reached the first
+419-cell tuple after Native/Browser capability-session establishment, then
+failed closed at `foundation-browser-direct / AS-F01 / en / single /
+sample-001` because `foundationDirectProbe` emitted an incomplete
+`runtimeAttestation`. The Gate remains `PARTIAL / UNPROVEN`; W1 is blocked.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"

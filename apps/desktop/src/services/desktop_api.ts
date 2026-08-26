@@ -2672,9 +2672,16 @@ export interface AgentCapabilitySessionList {
       capability_id: string;
       schema_version: string;
       permission: string;
+      constraints: {
+        max_request_bytes: number;
+        max_result_bytes: number;
+        allowed_resource_kinds: string[];
+      } | null;
     }>;
     expires_at: { seconds: number; nanos: number } | null;
     connection_id: string;
+    lease_id: string;
+    lease_revision: number;
   }>;
 }
 
@@ -2691,6 +2698,18 @@ export interface AgentConversation {
   active_branch_message_id: string;
   queued_turn_count: number;
   version: number;
+  runtime_binding?: {
+    runtime_kind: number;
+    provider_id: string;
+    model_id: string;
+    runtime_profile_id: string;
+    external_session_id: string;
+    external_session_epoch: number;
+    runtime_home_ref: string;
+    capability_snapshot_hash: string;
+    config_snapshot_hash: string;
+    bound_at: { seconds: number; nanos: number } | null;
+  };
   meta?: Record<string, string>;
   created_at: string;
   updated_at: string;

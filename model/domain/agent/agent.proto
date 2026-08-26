@@ -430,6 +430,8 @@ message ClientCapabilitySession {
   repeated ClientCapability typed_capabilities = 8;
   google.protobuf.Timestamp expires_at = 9;
   string connection_id = 10;
+  string lease_id = 11;
+  uint64 lease_revision = 12;
 }
 
 message ListClientCapabilitySessionsRequest {}

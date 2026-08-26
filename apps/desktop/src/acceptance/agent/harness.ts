@@ -60,6 +60,56 @@ async function sha256Hex(value: string): Promise<string> {
     byte.toString(16).padStart(2, '0')).join('');
 }
 
+function evidenceRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`agent.acceptance.${label}Missing`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function evidenceArray(value: unknown, label: string): unknown[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`agent.acceptance.${label}Missing`);
+  }
+  return value;
+}
+
+function evidenceField(
+  value: Record<string, unknown>,
+  camelCase: string,
+  snakeCase: string,
+): unknown {
+  return value[camelCase] ?? value[snakeCase];
+}
+
+function runtimeKindName(value: unknown): string {
+  if (value === 1 || value === 'RUNTIME_KIND_DIRECT_MODEL') return 'direct_model';
+  if (value === 2 || value === 'RUNTIME_KIND_EXTERNAL_AGENT') return 'external_agent';
+  if (typeof value === 'string' && value.length > 0) return value.toLowerCase();
+  throw new Error('agent.acceptance.runtimeKindMissing');
+}
+
+function timestampIso(value: unknown): string {
+  if (typeof value === 'string' && value.length > 0) return value;
+  const timestamp = evidenceRecord(value, 'timestamp');
+  const seconds = Number(timestamp.seconds ?? 0);
+  const nanos = Number(timestamp.nanos ?? 0);
+  return new Date(seconds * 1000 + Math.floor(nanos / 1_000_000)).toISOString();
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
 async function capabilitySessionEvidence() {
   const [local, station] = await Promise.all([
     api.getAgentCapabilitySessionSnapshot(),
@@ -132,11 +182,15 @@ function foundationDomSnapshot() {
 }
 
 async function foundationConversationReadback(conversationId: string) {
-  const result = await api.listAgentConversationMessages({
-    conversation_id: conversationId,
-    limit: 200,
-  });
+  const [conversation, result] = await Promise.all([
+    api.getAgentConversation(conversationId),
+    api.listAgentConversationMessages({
+      conversation_id: conversationId,
+      limit: 200,
+    }),
+  ]);
   return {
+    conversation,
     messages: result.messages.map((message) => ({
       messageId: message.message_id,
       turnId: message.turn_id ?? null,
@@ -209,6 +263,124 @@ interface DirectCellAssertionContext {
   operation: ReturnType<typeof useChatStore.getState>['operations'][string] | undefined;
   lastAssistant: { turnId?: string; content?: string; loading?: boolean; error?: unknown } | undefined;
   platform: string;
+}
+
+async function buildDirectRuntimeAttestation(
+  ctx: DirectCellAssertionContext,
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const session = ctx.capabilitySessions.selectedStationSession;
+  if (!session || !ctx.conversationReadback || !ctx.turnEvidence) {
+    throw new Error('agent.acceptance.directRuntimeFactsMissing');
+  }
+  const conversation = ctx.conversationReadback.conversation;
+  const binding = evidenceRecord(conversation.runtime_binding, 'runtimeBinding');
+  const evidence = evidenceRecord(ctx.turnEvidence, 'turnEvidence');
+  const diagnostics = evidenceRecord(evidence.diagnostics, 'turnDiagnostics');
+  const replay = evidenceRecord(diagnostics.replay, 'turnDiagnosticReplay');
+  const attempts = evidenceArray(replay.attempts, 'turnAttempts');
+  const attempt = evidenceRecord(attempts[attempts.length - 1], 'turnAttempt');
+  const snapshot = evidenceRecord(
+    evidenceField(attempt, 'runtimeSnapshot', 'runtime_snapshot'),
+    'runtimeSnapshot',
+  );
+  const capabilities = evidenceRecord(snapshot.capabilities, 'runtimeCapabilities');
+  const normalizedCapabilities = {
+    input: evidenceRecord(capabilities.input, 'runtimeInputCapabilities'),
+    output: evidenceRecord(capabilities.output, 'runtimeOutputCapabilities'),
+    runtime: evidenceRecord(capabilities.runtime, 'runtimeExecutionCapabilities'),
+    agentic: evidenceRecord(capabilities.agentic, 'runtimeAgenticCapabilities'),
+    limits: evidenceRecord(capabilities.limits, 'runtimeCapabilityLimits'),
+    resolution: evidenceArray(capabilities.resolution, 'runtimeCapabilityResolution'),
+    provenance: evidenceRecord(capabilities.provenance, 'runtimeCapabilityProvenance'),
+  };
+  const runtimeSnapshot = {
+    runtimeKind: runtimeKindName(evidenceField(snapshot, 'runtimeKind', 'runtime_kind')),
+    providerId: evidenceField(snapshot, 'providerId', 'provider_id'),
+    modelId: evidenceField(snapshot, 'modelId', 'model_id'),
+    runtimeProfileId: evidenceField(snapshot, 'runtimeProfileId', 'runtime_profile_id'),
+    capabilities: normalizedCapabilities,
+    providerConfigVersion: evidenceField(
+      snapshot,
+      'providerConfigVersion',
+      'provider_config_version',
+    ),
+    agentConfigVersion: evidenceField(
+      snapshot,
+      'agentConfigVersion',
+      'agent_config_version',
+    ),
+    externalSessionId: evidenceField(
+      snapshot,
+      'externalSessionId',
+      'external_session_id',
+    ),
+    externalSessionEpoch: evidenceField(
+      snapshot,
+      'externalSessionEpoch',
+      'external_session_epoch',
+    ),
+  };
+
+  return {
+    actorIdentityHash: await sha256Hex(session.ptid),
+    conversationRuntimeBinding: {
+      runtimeKind: runtimeKindName(binding.runtime_kind),
+      providerId: binding.provider_id,
+      modelId: binding.model_id,
+      runtimeProfileId: binding.runtime_profile_id,
+      externalSessionId: binding.external_session_id,
+      externalSessionEpoch: binding.external_session_epoch,
+      runtimeHomeRefHash: await sha256Hex(String(binding.runtime_home_ref ?? '')),
+      capabilitySnapshotHash: binding.capability_snapshot_hash,
+      configSnapshotHash: binding.config_snapshot_hash,
+      boundAt: timestampIso(binding.bound_at),
+    },
+    runtimeSnapshot,
+    turnAttempt: {
+      attemptId: evidenceField(attempt, 'attemptId', 'attempt_id'),
+      turnId: evidenceField(attempt, 'turnId', 'turn_id'),
+      index: attempt.index,
+      contextLedgerId: evidenceField(attempt, 'contextLedgerId', 'context_ledger_id'),
+      capabilityReadinessSnapshotId: evidenceField(
+        attempt,
+        'capabilityReadinessSnapshotId',
+        'capability_readiness_snapshot_id',
+      ),
+      status: attempt.status,
+      runtimeSnapshotHash: await sha256Hex(stableJson(runtimeSnapshot)),
+    },
+    clientSession: {
+      capabilitySessionId: session.session_id,
+      actorIdHash: await sha256Hex(session.ptid),
+      deviceId: session.device_id,
+      platform: session.platform,
+      capabilities: session.typed_capabilities.map((capability) => ({
+        capabilityId: capability.capability_id,
+        schemaVersion: capability.schema_version,
+        permission: capability.permission,
+        constraints: {
+          maxRequestBytes: capability.constraints?.max_request_bytes ?? 0,
+          maxResultBytes: capability.constraints?.max_result_bytes ?? 0,
+          allowedResourceKinds:
+            capability.constraints?.allowed_resource_kinds ?? [],
+        },
+      })),
+      expiresAt: timestampIso(session.expires_at),
+      connectionId: session.connection_id,
+      leaseId: session.lease_id,
+    },
+    stationProfile: ctx.profile.profile_id,
+    desktopMode: ctx.platform,
+    networkPath: 'station',
+    machine: navigator.userAgent,
+    coldWarmState: sampleId.startsWith('cold-')
+      ? 'cold'
+      : sampleId.startsWith('warm-')
+        ? 'warm'
+        : 'neutral',
+    observedAt: new Date().toISOString(),
+  };
 }
 
 /**
@@ -1117,6 +1289,27 @@ export function installAcceptanceHarness(): void {
       if (!agent) throw new Error('agent.acceptance.agentMissing');
       const agentId = agent.id || agent.name;
 
+      if (cell === 'AS-F01') {
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Foundation ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: agent.model,
+        });
+        await useChatStore.getState().selectSession(conversation.conversation_id);
+        useChatStore.getState().sendMessage('Reply with ready.');
+        await waitFor(() => {
+          const state = useChatStore.getState();
+          const latest = [...state.messages]
+            .reverse()
+            .find((message) => message.role === 'assistant');
+          return !state.isStreaming
+            && Boolean(latest?.turnId)
+            && !latest?.loading
+            && !latest?.error;
+        }, 'Foundation AS-F01 direct turn', 120_000);
+      }
+
       const capabilitySessions = await waitForCapabilitySessionEvidence();
       const [profile, readiness, conversations] = await Promise.all([
         api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
@@ -1151,8 +1344,7 @@ export function installAcceptanceHarness(): void {
       const providerState = useProviderStore.getState();
       const operation = chatState.operations[currentConversationId];
 
-      // Evaluate cell-specific assertions from observable runtime state
-      const assertions = await evaluateDirectCellAssertions({
+      const assertionContext: DirectCellAssertionContext = {
         cell,
         agent,
         agentId,
@@ -1169,36 +1361,14 @@ export function installAcceptanceHarness(): void {
         operation,
         lastAssistant,
         platform,
-      });
+      };
+      const assertions = await evaluateDirectCellAssertions(assertionContext);
 
       const receiverDom = foundationDomSnapshot();
-      const observedAt = new Date().toISOString();
-      const actorHash = sessionState.currentUser?.actorId
-        ? await sha256Hex(sessionState.currentUser.actorId)
-        : '';
-
-      // Build runtime attestation
-      const runtimeAttestation: Record<string, unknown> = {
-        capabilityInventoryAttestation: {
-          inventoryHash: await sha256Hex(
-            JSON.stringify({
-              profileId: profile.profile_id,
-              readinessSnapshotId: profile.readiness_snapshot_id,
-              agentId,
-              platform,
-            }),
-          ),
-          surfaceId: agentId,
-          snapshotId: profile.snapshot_id,
-        },
-        actorIdentityHash: actorHash,
-        stationProfile: profile.profile_id,
-        observedAt,
-        platform,
-        locale,
-        cell,
+      const runtimeAttestation = await buildDirectRuntimeAttestation(
+        assertionContext,
         sampleId,
-      };
+      );
 
       // Build role evidence
       const stationReadback: Record<string, unknown> = {

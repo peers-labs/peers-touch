@@ -323,6 +323,8 @@ func capabilitySessionFromLeaseRow(
 		TypedCapabilities: lease.GetCapabilities(),
 		ExpiresAt:         timestamppb.New(row.ExpiresAt),
 		ConnectionId:      row.ConnectionID,
+		LeaseId:           lease.GetLeaseId(),
+		LeaseRevision:     lease.GetLeaseRevision(),
 	}
 }
 

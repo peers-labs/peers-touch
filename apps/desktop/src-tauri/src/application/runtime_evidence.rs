@@ -460,10 +460,17 @@ fn capability_session_json(value: &agent::ClientCapabilitySession) -> serde_json
                 "permission": agent::CapabilityPermissionState::try_from(capability.permission)
                     .unwrap_or(agent::CapabilityPermissionState::Unspecified)
                     .as_str_name(),
+                "constraints": capability.constraints.as_ref().map(|constraints| json!({
+                    "max_request_bytes": constraints.max_request_bytes,
+                    "max_result_bytes": constraints.max_result_bytes,
+                    "allowed_resource_kinds": constraints.allowed_resource_kinds,
+                })),
             })
         }).collect::<Vec<_>>(),
         "expires_at": timestamp_json(value.expires_at.as_ref()),
         "connection_id": value.connection_id,
+        "lease_id": value.lease_id,
+        "lease_revision": value.lease_revision,
     })
 }
 
