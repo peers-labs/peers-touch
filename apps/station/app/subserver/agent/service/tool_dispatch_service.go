@@ -126,6 +126,12 @@ func (s *ToolDispatchService) RegisterCapabilityLease(
 	if actorID == "" || authSessionID == "" || deviceID == "" {
 		return nil, invalidToolRequest("authenticated actor, session, and device are required")
 	}
+	leasePTID := actorID
+	if s.capabilityProof != nil && s.capabilityProof.ptidResolver != nil && !strings.HasPrefix(actorID, "ptid:") {
+		if resolved, err := s.capabilityProof.ptidResolver.ResolvePTID(ctx, actorID); err == nil {
+			leasePTID = resolved
+		}
+	}
 	if s.capabilityProof == nil {
 		return nil, internalToolError("verify capability command", fmt.Errorf("proof service is not configured"))
 	}
@@ -160,7 +166,7 @@ func (s *ToolDispatchService) RegisterCapabilityLease(
 	}
 	lease := &model.ClientCapabilityLease{
 		CapabilitySessionId: generateID("capability_session"),
-		Ptid:                actorID,
+		Ptid:                leasePTID,
 		DeviceId:            deviceID,
 		Platform:            input.GetPlatform(),
 		Capabilities:        input.GetCapabilities(),
