@@ -139,6 +139,7 @@ class FoundationRuntimeClient:
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": self.station_url,
             "PEERS_STATION_URL": self.station_url,
+            "PEERS_STORAGE_ROOT": str(self.spec.storage_root),
             "PT_DESKTOP_APP_GATEWAY_PORT": str(self.spec.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.spec.renderer_port),
             "PT_DESKTOP_WEB_GATEWAY_PORT": str(self.spec.gateway_port),
