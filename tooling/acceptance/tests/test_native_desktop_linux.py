@@ -477,8 +477,95 @@ class LinuxCellProfileTests(unittest.TestCase):
 
         self.assertTrue(webdriver.stopped)
         self.assertTrue(gateway.stopped)
-        provisioner._stop_remote_actor.assert_called_once()
+        provisioner._stop_remote_actor.assert_called_once_with(
+            remote_control=Path("/remote/control.py"),
+            run_id="run-1",
+            container_name="runtime-cell",
+            actor="alice",
+            preserve_state=False,
+        )
         provisioner.stop.assert_not_called()
+        self.assertNotIn("alice", provisioner._actors)
+
+    def test_actor_restart_preserves_state_and_keeps_per_launch_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+            provisioner.contract = SimpleNamespace(
+                cell_id="desktop-linux-native",
+            )
+            provisioner.profile = SimpleNamespace(runtime_root=".cache/runtime")
+            provisioner.state_path = Path(tmp) / "cell.json"
+            provisioner._actors = {}
+            provisioner.transport = Mock()
+            tunnels = [
+                SyntheticTunnel(4445),
+                SyntheticTunnel(3330),
+                SyntheticTunnel(4445),
+                SyntheticTunnel(3330),
+            ]
+            provisioner.transport.start_local_forward.side_effect = tunnels
+            state = {
+                "runId": "run-1",
+                "containerName": "runtime-cell",
+                "remoteControl": "/remote/control.py",
+            }
+            remote = {
+                "actor": "alice",
+                "webdriverPort": 4445,
+                "gatewayPort": 3330,
+                "profile": "chat-native-alice",
+                "storageRoot": "/workspace/run/actors/alice/storage",
+            }
+            provisioner._require_state = Mock(return_value=state)
+            provisioner._read_state = Mock(return_value=state)
+            provisioner._start_remote_actor = Mock(
+                side_effect=(
+                    {**remote, "processId": 101},
+                    {**remote, "processId": 102},
+                )
+            )
+            provisioner._stop_remote_actor = Mock(
+                return_value={
+                    "actor": "alice",
+                    "stopped": True,
+                    "logContent": "",
+                }
+            )
+
+            first = provisioner.launch_actor(
+                "alice",
+                {
+                    "webdriver_port": 4445,
+                    "gateway_port": 3330,
+                    "profile": "chat-native-alice",
+                },
+                {},
+            )
+            first.start()
+            first.stop(preserve_state=True)
+
+            second = provisioner.launch_actor(
+                "alice",
+                {
+                    "webdriver_port": 4445,
+                    "gateway_port": 3330,
+                    "profile": "chat-native-alice",
+                },
+                {},
+            )
+            second.start()
+            second.stop()
+
+        self.assertEqual(first.metadata.log_path.name, "alice-01.log")
+        self.assertEqual(second.metadata.log_path.name, "alice-02.log")
+        self.assertEqual(
+            [
+                item.kwargs["preserve_state"]
+                for item in provisioner._stop_remote_actor.call_args_list
+            ],
+            [True, False],
+        )
+        self.assertTrue(all(tunnel.stopped for tunnel in tunnels))
         self.assertNotIn("alice", provisioner._actors)
 
     def test_actor_file_staging_refreshes_one_actor_scoped_path(self) -> None:
@@ -838,6 +925,7 @@ class RemoteLinuxCellControlTests(unittest.TestCase):
             "environment_json": "{}",
             "timeout": 1,
             "retention_days": 14,
+            "preserve_state": False,
         }
         return argparse.Namespace(**values)
 
@@ -1062,6 +1150,49 @@ class RemoteLinuxCellControlTests(unittest.TestCase):
                 )
 
         self.assertEqual(stopped, ["alice2", "bob", "alice"])
+
+    def test_actor_restart_stop_preserves_state_and_clears_runtime_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_root = Path(tmp)
+            actor_root = run_root / "actors" / "alice"
+            (actor_root / "home").mkdir(parents=True)
+            (actor_root / "storage").mkdir()
+            (actor_root / "runtime").mkdir()
+            (actor_root / "home" / "device.key").write_text(
+                "device",
+                encoding="utf-8",
+            )
+            (actor_root / "storage" / "session.json").write_text(
+                "session",
+                encoding="utf-8",
+            )
+            (actor_root / "runtime" / "socket").write_text(
+                "runtime",
+                encoding="utf-8",
+            )
+            (actor_root / "app.pid").write_text("101", encoding="utf-8")
+            (actor_root / "app.log").write_text("launch log", encoding="utf-8")
+            completed = subprocess.CompletedProcess((), 0, "", "")
+            stopped = subprocess.CompletedProcess((), 1, "", "")
+
+            with patch.object(
+                remote_control.subprocess,
+                "run",
+                side_effect=(completed, stopped),
+            ):
+                result = remote_control._stop_actor_record(
+                    "runtime-cell",
+                    run_root,
+                    {"actor": "alice", "processId": 101},
+                    preserve_state=True,
+                )
+
+            self.assertTrue(result["statePreserved"])
+            self.assertTrue((actor_root / "home" / "device.key").is_file())
+            self.assertTrue((actor_root / "storage" / "session.json").is_file())
+            self.assertFalse((actor_root / "runtime").exists())
+            self.assertFalse((actor_root / "app.pid").exists())
+            self.assertFalse((actor_root / "app.log").exists())
 
     def test_acquire_status_and_stop_preserve_run_ownership(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
