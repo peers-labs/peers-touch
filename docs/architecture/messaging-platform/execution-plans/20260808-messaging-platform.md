@@ -14,19 +14,19 @@
 | Main task | Complete Messaging Platform across Desktop and Mobile with source-bound Native evidence |
 | Plan source | `docs/architecture/messaging-platform/execution-plans/20260808-messaging-platform.md` |
 | Tracking source | `docs/architecture/messaging-platform/acceptance-matrix.md` |
-| Worktree | `<repo-root>` (peers-group-chat) |
-| Branch | `refactor/chat-acceptance-cutover` |
+| Worktree | `<repo-root>` (peers-group-chat verification worktree) |
+| Branch | `verify/ndr-w7-8b8977ffc` |
 | Stage | `EXECUTE` |
 | Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-D/F` prove exact attachment-only and text-plus-attachment semantics across sender and receiver Native DOM |
-| Progress | Instrumentation commit `c27d615e8` reproduced the normal attachment journey on exact HEAD. Native run `20260823T171841857361Z-14eded7ef7d01d037840bf1f38352ed6` proved two ready Composer drafts, two complete Engine transfers, and an identical `pending` outcome with command ID across Engine, Tauri, store, and Gate. It then exposed that `[data-message-content]` wraps attachment card chrome, so an attachment-only row reports filename/size/visibility labels as message text and differs by sender visibility badge. |
-| Last completed | Uploaded background rendering, Station settings readback, failed attachment draft retention, normal attachment staging, upload completion, and pending command enqueue are source-bound Native-proven. Runtime log audit and process/port/storage cleanup pass. |
-| Current action | Diagnose the exact cooperative Native activation predicate that timed out on the unlocked exact-HEAD run; do not weaken or bypass the Native focus contract |
-| Next action | Add evidence-only activation snapshots for process identity, frontmost application, window-stack ownership, and `document.hasFocus()`, then rerun the unchanged product closure Gate |
-| Blockers | Run `20260824T013241143244Z-e4945039f87e362b28ede31d5b5a9e8f` ran with no macOS lock marker and exact source/build/runtime identity, but timed out inside the cooperative activation wait before `group.create.ui`. Alice emitted the real `host:app-resume:window-focus` event, while the current evidence does not distinguish whether `document.hasFocus()` or Native point ownership remained false. The attachment plaintext fix remains Native-unproven. The earlier intermittent `state=draft` outcome also remains unclosed because it did not reproduce under instrumentation. |
+| Current step | `MP-W13-F` exact-range Acceptance, Gap Detector, and Completion Audit |
+| Progress | Unchanged Linux Native run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` passed all 25 assertions at exact source and Station commit `e5b3fd74943cdba46e16c72c415a2031051448b7`. Alice2 recovered the Station-authoritative mute, pin, background, image, and clear-cursor state. |
+| Last completed | Linux `desktop-linux-native` product proof and both Gate-owned and independent runtime-cell cleanup passed. Source, Station, binary, runtime cell, actors, native input, attachments, recovery, and second-device evidence are bound in the immutable run. |
+| Current action | Run the exact-range selected Gates and final Acceptance Gap Detector and Completion Audit without weakening MP-W13 assertions. |
+| Next action | Close MP-W13-F only if the exact-range selected Gates, detector, and auditor all pass; otherwise report the first remaining gap. |
+| Blockers | none |
 | Decisions required | none; Owner approved the root-cause plan and the accepted Messaging architecture already defines one Station authority membership truth |
-| Evidence | Fix commit `6887f2f2c90dba26a183614f964cc5171955acbb`; exact HEAD `c52950e10d350396310a4ff94bbfd41e216a6c11`; Desktop check, Rust `acceptance-webdriver` check, 32/32 target static tests, Profile Three deploy, dedicated binary build, and WebDriver smoke PASS. Native run `20260824T013241143244Z-e4945039f87e362b28ede31d5b5a9e8f` proves exact source/build/runtime identity and cleanup, runs without a macOS lock marker, and stops at the first cooperative Native activation predicate before product interaction; `.dbg/trae-debug-log-attachment-send-draft.ndjson` remains empty. Attachment content semantics, restart, second-device recovery, and later assertions remain unproven. MP-W13 remains `PARTIAL / UNPROVEN`. |
-| Last updated | 2026-08-24 09:35 CST |
+| Evidence | Linux Gate run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0`; runtime cell run `20260826T212010860319Z-94cab5dfe099f313`; Linux binary SHA-256 `fd1d4877c5d2279b4ee5515e3ea687f7074ddbcbc72216b4452022dfb3c09d6b`; 25/25 assertions PASS; Gate cleanup PASS; final cell state `CLEANED`; no retained remote container, checkout, tunnel, actor, port, process, or storage. MP-W13 remains in progress until the final audit chain passes. |
+| Last updated | 2026-08-27 06:05 CST |
 
 ## 1. Plan Sources And Gate
 
@@ -1004,7 +1004,7 @@ Closure enforcement (deterministic):
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
 | MP-W10-E | reopened by W13 | W05/W10-D | Prior byte-exact Engine evidence remains valid for its recorded runtime, but current product use proves the Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, and count conservation are not closed. W13-E/F must replace the product-proof claim with real UI evidence. |
 | MP-W12 | reopened by W13 (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | Prior authority/Engine interaction evidence remains useful, but current product use proves thread panel, reaction picker, hover toolbar, and complete transcript convergence were bypassed or unasserted. W13-A/B/F must rerun through real Native UI actions. Mobile remains pending W09. |
-| MP-W13 | in progress | W10-E/W12 + Social Runtime Phase 3 | Corrective plan defines six closures for projection, interaction UI, identity/Station attribution, conversation actions/background, attachments, and source-bound Native proof. W13-A through W13-E implementation inventory is active; runtime evidence is pending. |
+| MP-W13 | in progress | W10-E/W12 + Social Runtime Phase 3 | W13-A through W13-E and the unchanged Linux Native product Gate are source-bound proven by run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` at `e5b3fd749`. MP-W13-F remains open only for the exact-range selected Gates, Acceptance Gap Detector, Completion Audit, and independent review. |
 | MP-W11 | reopened pending W13 | W02-W10/W12/W13 | The previous closure verdict is invalid for full product readiness because its Native evidence did not prove the receiver-visible paths exposed by W13. Rerun only after W13-F passes and stale reports are rejected by source/build/runtime identity. |
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
