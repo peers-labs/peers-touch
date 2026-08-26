@@ -23,10 +23,11 @@ fn bind_window_session(
 ) {
     let actor_id = match payload.actor_id.as_deref() {
         Some(id) if !id.is_empty() => id.to_string(),
-        _ => return,
+        _ => {
+            tracing::warn!("bind_window_session: skipped — no actor_id in payload");
+            return;
+        }
     };
-    // The token is intentionally read from the legacy `AppState.session`
-    // here: PR-3 keeps both stores in sync; PR-4 cuts the legacy store.
     let token = state
         .session
         .lock()
@@ -34,6 +35,7 @@ fn bind_window_session(
         .and_then(|g| g.token.clone())
         .unwrap_or_default();
     if token.is_empty() {
+        tracing::warn!("bind_window_session: skipped — token is empty in legacy session");
         return;
     }
     let mut actor = ActorRef::new_person(actor_id.clone());
@@ -97,10 +99,13 @@ fn bind_after(
     result: &AppResult<AuthSessionPayload>,
 ) {
     if !result.ok {
+        tracing::info!("bind_after: skipped — result.ok is false");
         return;
     }
     if let Some(data) = &result.data {
         bind_window_session(state, app, window, data);
+    } else {
+        tracing::warn!("bind_after: skipped — result.data is None");
     }
 }
 
