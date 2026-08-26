@@ -2158,7 +2158,41 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             if input.device_type.is_none() {
                 input.device_type = Some("desktop-browser".to_string());
             }
-            to_json(app_auth::auth_login(input, state))
+            let result = app_auth::auth_login(input, state);
+            if result.ok {
+                if let Some(ref data) = result.data {
+                    if let Some(ref actor_id) = data.actor_id {
+                        if !actor_id.is_empty() {
+                            let token = state
+                                .session
+                                .lock()
+                                .ok()
+                                .and_then(|g| g.token.clone())
+                                .unwrap_or_default();
+                            if !token.is_empty() {
+                                let mut actor =
+                                    crate::domain::identity::ActorRef::new_person(actor_id.clone());
+                                actor.ptid =
+                                    data.ptid.clone().unwrap_or_default();
+                                let account_id =
+                                    crate::infrastructure::auth_identity::find_account_id_by_actor_id(actor_id)
+                                        .unwrap_or_else(|| {
+                                            crate::infrastructure::local_scope::account_id_for_password_actor(actor_id)
+                                        });
+                                state.sessions.bind_exclusive(
+                                    crate::domain::identity::ActiveSession::new(
+                                        "http-gateway",
+                                        account_id,
+                                        actor,
+                                        token,
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            to_json(result)
         }
         // Interactive access-gate login chain (Email Login path). These mirror
         // the one-shot `auth_login` but drive the Station's pre-login gate

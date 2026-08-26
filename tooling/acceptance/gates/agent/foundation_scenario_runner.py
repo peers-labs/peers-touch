@@ -372,9 +372,19 @@ def _authenticate_clients(
                 diag += f" snapshot={snap}"
             except Exception:
                 diag += f" last_cap_result={cap_result}"
+            log_path = getattr(client, "log_path", None)
+            if log_path and Path(str(log_path)).is_file():
+                try:
+                    lines = Path(str(log_path)).read_text(
+                        encoding="utf-8", errors="replace"
+                    ).splitlines()
+                    tail = "\n".join(lines[-80:])
+                    diag += f"\n--- CLIENT LOG TAIL ({log_path}) ---\n{tail}"
+                except Exception:
+                    pass
             raise ScenarioRunnerError(
                 f"{client.spec.runtime} capability session not established "
-                f"after 300s polling.{diag}"
+                f"after 90s polling.{diag}"
             )
 
 
