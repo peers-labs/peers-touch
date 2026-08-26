@@ -610,6 +610,11 @@ export function installAcceptanceHarness(): void {
       return {
         local: local.status === 'fulfilled' ? local.value : { error: String(local.reason) },
         station: station.status === 'fulfilled' ? station.value : { error: String(station.reason) },
+        runtime: {
+          hasTauriInternals: '__TAURI_INTERNALS__' in window,
+          hasGatewayBase: '__PT_GATEWAY_BASE__' in window,
+          gatewayBase: (window as any).__PT_GATEWAY_BASE__ ?? null,
+        },
       };
     },
 
