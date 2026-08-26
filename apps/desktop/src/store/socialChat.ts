@@ -1242,7 +1242,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           ...projectConversationMemberSettings(settings),
         };
       }
-      saveConversationLocalState(get().currentUserDid, nextConversationLocalState);
+      saveConversationLocalState(actorId, nextConversationLocalState);
       set({
         conversations: allConversations,
         conversationMembers: memberMap,
