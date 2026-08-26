@@ -1037,6 +1037,33 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('RECOVERY_SELECTORS["restore_submit"]', self.source)
         self.assertNotIn("shutil.copy2", self.source)
 
+    def test_recovery_waits_for_lobehub_toast_roles(self) -> None:
+        create_recovery = self.source.split(
+            "    def create_recovery_revision(",
+            maxsplit=1,
+        )[1].split(
+            "    def restore_recovery_revision(",
+            maxsplit=1,
+        )[0]
+        restore_recovery = self.source.split(
+            "    def restore_recovery_revision(",
+            maxsplit=1,
+        )[1].split(
+            "    def prove_second_device(",
+            maxsplit=1,
+        )[0]
+
+        self.assertIn(
+            '"feedback": \'[role="dialog"], [role="alertdialog"]\'',
+            self.source,
+        )
+        self.assertIn('RECOVERY_SELECTORS["feedback"]', create_recovery)
+        self.assertIn('RECOVERY_SELECTORS["feedback"]', restore_recovery)
+        self.assertNotIn(
+            'find_elements(By.CSS_SELECTOR, ".ant-message-success")',
+            create_recovery + restore_recovery,
+        )
+
     def test_product_file_controls_share_the_visible_user_path(self) -> None:
         composer = (
             ROOT / "apps/desktop/src/components/chat/ChatComposer.tsx"
