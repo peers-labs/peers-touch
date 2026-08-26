@@ -649,7 +649,12 @@ fn worker_context(state: &AppState, session: ActiveSession) -> Result<WorkerCont
         .messaging_engines
         .get(&session.account_id)?
         .ok_or_else(|| {
-            "DESIGN_AMENDMENT_REQUIRED: active session has no actor-device engine".to_string()
+            let keys = state.messaging_engines.profile_ids().unwrap_or_default();
+            format!(
+                "DESIGN_AMENDMENT_REQUIRED: active session has no actor-device engine \
+                 (session.account_id={:?}, engines={:?})",
+                session.account_id, keys
+            )
         })?;
     if engine.endpoint().ptid != session.actor.ptid || engine.endpoint().device_id.trim().is_empty()
     {

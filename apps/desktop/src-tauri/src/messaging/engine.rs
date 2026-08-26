@@ -1370,6 +1370,13 @@ impl EngineRegistry {
             .map(|engines| engines.get(profile_id).cloned())
     }
 
+    pub fn profile_ids(&self) -> Result<Vec<String>, String> {
+        self.engines
+            .lock()
+            .map_err(|_| "messaging engine registry lock poisoned".to_string())
+            .map(|engines| engines.keys().cloned().collect())
+    }
+
     pub fn activate_profile(
         &self,
         profile_id: String,
