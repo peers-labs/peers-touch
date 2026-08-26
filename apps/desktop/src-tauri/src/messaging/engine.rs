@@ -2,6 +2,7 @@ use super::identity::{
     generate_fresh_device_identity, validate_enrollment_actor, FreshDeviceEnrollment,
 };
 use super::recovery::{restore_profile_database_atomically, MessagingRecoveryArchive};
+use super::store::CompletedSenderAttachmentSource;
 use super::{
     AttachmentCryptoMaterial, AttachmentDownloadProjection, AttachmentRetryPolicy,
     AttachmentTransferControl, AttachmentTransferProgress, AttachmentTransferRecord,
@@ -43,6 +44,7 @@ use ulid::Ulid;
 const INTERACTION_PREFLIGHT_DRAIN_LIMIT: u32 = 100;
 const ATTACHMENT_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
 const ATTACHMENT_OPEN_RETRY_FLOOR: Duration = Duration::from_millis(10);
+const SENDER_ATTACHMENT_SOURCE_INVALID: &str = "messaging sender attachment source is invalid";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessagingProjectionChange {
@@ -136,6 +138,7 @@ pub struct MessagingEngine {
     dispatch_lock: Mutex<()>,
     send_intent_lock: Mutex<()>,
     membership_transition_lock: Mutex<()>,
+    attachment_source_lock: Mutex<()>,
     attachment_transfer_control: Arc<AttachmentTransferControl>,
     runtime_consumer_epoch: Arc<AtomicU64>,
     projection_notifier: Mutex<Option<MessagingProjectionNotifier>>,
@@ -279,6 +282,7 @@ impl MessagingEngine {
             dispatch_lock: Mutex::new(()),
             send_intent_lock: Mutex::new(()),
             membership_transition_lock: Mutex::new(()),
+            attachment_source_lock: Mutex::new(()),
             attachment_transfer_control: Arc::new(AttachmentTransferControl::new()),
             runtime_consumer_epoch: Arc::new(AtomicU64::new(0)),
             projection_notifier: Mutex::new(None),
@@ -349,9 +353,16 @@ impl MessagingEngine {
     }
 
     pub fn discard_staged_attachment_source(&self, source_local_ref: &str) -> Result<(), String> {
+        let _guard = self
+            .attachment_source_lock
+            .lock()
+            .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
         let path = Path::new(source_local_ref);
         if !managed_attachment_source(&self.profile_id, path)? {
             return Err("messaging attachment source is not Engine-managed".to_string());
+        }
+        if self.store.owns_attachment_source(source_local_ref)? {
+            return Ok(());
         }
         match std::fs::remove_file(path) {
             Ok(()) => Ok(()),
@@ -361,8 +372,12 @@ impl MessagingEngine {
     }
 
     pub fn cleanup_completed_attachment_sources(&self) -> Result<usize, String> {
+        let _guard = self
+            .attachment_source_lock
+            .lock()
+            .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
         let mut cleaned = 0;
-        let completed_sources = self.store.completed_attachment_source_paths()?;
+        let completed_sources = self.store.completed_attachment_sources()?;
         // #region debug-point G:completed-source-cleanup
         if let Ok(client) = reqwest::blocking::Client::builder()
             .timeout(Duration::from_millis(250))
@@ -372,14 +387,14 @@ impl MessagingEngine {
                 .post("http://127.0.0.1:7780/event")
                 .json(&serde_json::json!({
                     "sessionId": "attachment-send-draft",
-                    "runId": "pre-fix-linux",
+                    "runId": "post-fix-sender-cache",
                     "hypothesisId": "G",
                     "location": "messaging::engine:cleanup_completed_attachment_sources",
                     "msg": "[DEBUG] Engine found completed attachment sources to clean",
                     "data": {
                         "attachmentIds": completed_sources
                             .iter()
-                            .map(|(attachment_id, _)| attachment_id)
+                            .map(|source| &source.attachment_id)
                             .collect::<Vec<_>>(),
                     },
                     "ts": now_unix_ms(),
@@ -387,8 +402,18 @@ impl MessagingEngine {
                 .send();
         }
         // #endregion
-        for (attachment_id, source_local_ref) in completed_sources {
-            let path = Path::new(&source_local_ref);
+        for source in completed_sources {
+            let source_path = Path::new(&source.source_local_ref);
+            let cache_path = self.promote_sender_attachment_cache(&source)?;
+            let cache_path_string = cache_path.display().to_string();
+            let expected_plaintext_sha256: [u8; 32] =
+                source.plaintext_sha256.as_slice().try_into().map_err(|_| {
+                    "messaging attachment plaintext commitment is invalid".to_string()
+                })?;
+            if sha256_path(&cache_path)? != expected_plaintext_sha256 {
+                return Err("messaging promoted attachment cache is invalid".to_string());
+            }
+            let path = source_path;
             if !managed_attachment_source(&self.profile_id, path)? {
                 continue;
             }
@@ -402,7 +427,7 @@ impl MessagingEngine {
                 }
             }
             self.store
-                .clear_completed_attachment_source(&attachment_id, &source_local_ref)?;
+                .clear_completed_attachment_source(&source, &cache_path_string)?;
             cleaned += 1;
         }
         Ok(cleaned)
@@ -424,7 +449,31 @@ impl MessagingEngine {
         if token.trim().is_empty() || attachment_id.trim().is_empty() {
             return Err("messaging attachment open intent is incomplete".to_string());
         }
-        let pending_source = self.store.pending_sender_attachment_source(attachment_id);
+        let sender_cache = {
+            let _guard = self
+                .attachment_source_lock
+                .lock()
+                .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
+            match self
+                .store
+                .completed_sender_attachment_source(attachment_id)?
+            {
+                Some(source) => match self.promote_sender_attachment_cache(&source) {
+                    Ok(cache_path) => Some(cache_path),
+                    Err(error)
+                        if error == SENDER_ATTACHMENT_SOURCE_INVALID
+                            && self
+                                .store
+                                .attachment_download_projection(attachment_id)?
+                                .is_some() =>
+                    {
+                        None
+                    }
+                    Err(error) => return Err(error),
+                },
+                None => None,
+            }
+        };
         // #region debug-point G,H,I:attachment-open-resolution
         if let Ok(client) = reqwest::blocking::Client::builder()
             .timeout(Duration::from_millis(250))
@@ -434,34 +483,23 @@ impl MessagingEngine {
                 .post("http://127.0.0.1:7780/event")
                 .json(&serde_json::json!({
                     "sessionId": "attachment-send-draft",
-                    "runId": "pre-fix-linux",
+                    "runId": "post-fix-sender-cache",
                     "hypothesisId": "G,H,I",
                     "location": "messaging::engine:open_attachment_once",
-                    "msg": "[DEBUG] Engine resolved pending sender attachment source",
+                    "msg": "[DEBUG] Engine resolved durable sender attachment cache",
                     "data": {
                         "attachmentId": attachment_id,
-                        "state": match &pending_source {
-                            Ok(Some(_)) => "ready",
-                            Ok(None) => "missing",
-                            Err(_) => "invalid",
-                        },
-                        "error": pending_source.as_ref().err(),
+                        "state": if sender_cache.is_some() { "ready" } else { "missing" },
                     },
                     "ts": now_unix_ms(),
                 }))
                 .send();
         }
         // #endregion
-        if let Some(source) = pending_source? {
-            let expected_plaintext_sha256: [u8; 32] =
-                source.plaintext_sha256.as_slice().try_into().map_err(|_| {
-                    "messaging attachment plaintext commitment is invalid".to_string()
-                })?;
-            let path = Path::new(&source.source_local_ref);
-            if !path.is_file() || sha256_path(path)? != expected_plaintext_sha256 {
-                return Err("messaging pending sender attachment source is invalid".to_string());
-            }
-            return Ok(AttachmentOpenProgress::Ready(source.source_local_ref));
+        if let Some(cache_path) = sender_cache {
+            return Ok(AttachmentOpenProgress::Ready(
+                cache_path.display().to_string(),
+            ));
         }
         let projection = self.store.attachment_download_projection(attachment_id)?;
         // #region debug-point H,I:attachment-open-projection
@@ -473,7 +511,7 @@ impl MessagingEngine {
                 .post("http://127.0.0.1:7780/event")
                 .json(&serde_json::json!({
                     "sessionId": "attachment-send-draft",
-                    "runId": "pre-fix-linux",
+                    "runId": "post-fix-sender-cache",
                     "hypothesisId": "H,I",
                     "location": "messaging::engine:open_attachment_once",
                     "msg": "[DEBUG] Engine resolved canonical attachment projection",
@@ -502,19 +540,37 @@ impl MessagingEngine {
         }
         let download_transfer =
             attachment_download_transfer(&self.profile_id, &projection, now_unix_ms())?;
-        match self.store.attachment_transfer(attachment_id)? {
-            Some(transfer) if transfer.direction == 1 => {
-                let source = Path::new(&transfer.source_local_ref);
-                if source.is_file() && sha256_path(source)? == expected_plaintext_sha256 {
-                    return Ok(AttachmentOpenProgress::Ready(transfer.source_local_ref));
+        {
+            let _guard = self
+                .attachment_source_lock
+                .lock()
+                .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
+            match self.store.attachment_transfer(attachment_id)? {
+                Some(transfer) if transfer.direction == 1 => {
+                    self.store
+                        .replace_completed_upload_with_download(&download_transfer)?;
+                    let source_path = Path::new(&transfer.source_local_ref);
+                    if !transfer.source_local_ref.is_empty()
+                        && managed_attachment_source(&self.profile_id, source_path)?
+                    {
+                        match std::fs::remove_file(source_path) {
+                            Ok(()) => {}
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(error) => {
+                                return Err(format!(
+                                    "remove invalid messaging attachment source: {error}"
+                                ))
+                            }
+                        }
+                    }
                 }
-                self.store
-                    .replace_completed_upload_with_download(&download_transfer)?;
-            }
-            Some(transfer) if transfer.direction == 2 => {}
-            Some(_) => return Err("messaging attachment transfer direction is invalid".to_string()),
-            None => {
-                self.store.create_attachment_transfer(&download_transfer)?;
+                Some(transfer) if transfer.direction == 2 => {}
+                Some(_) => {
+                    return Err("messaging attachment transfer direction is invalid".to_string())
+                }
+                None => {
+                    self.store.create_attachment_transfer(&download_transfer)?;
+                }
             }
         }
         let object = projection
@@ -546,6 +602,46 @@ impl MessagingEngine {
                 Err("messaging attachment download failed".to_string())
             }
         }
+    }
+
+    fn promote_sender_attachment_cache(
+        &self,
+        source: &CompletedSenderAttachmentSource,
+    ) -> Result<PathBuf, String> {
+        let source_path = Path::new(&source.source_local_ref);
+        if !managed_attachment_source(&self.profile_id, source_path)? {
+            return Err("messaging attachment source is not Engine-managed".to_string());
+        }
+        let expected_plaintext_sha256: [u8; 32] = source
+            .plaintext_sha256
+            .as_slice()
+            .try_into()
+            .map_err(|_| "messaging attachment plaintext commitment is invalid".to_string())?;
+        let cache_path = attachment_cache_path(&self.profile_id, &source.attachment_id)?;
+        if source
+            .local_cache_path
+            .as_deref()
+            .is_some_and(|recorded| Path::new(recorded) != cache_path)
+        {
+            return Err("messaging sender attachment cache path conflicts".to_string());
+        }
+        let source_moved =
+            materialize_attachment_cache(source_path, &cache_path, &expected_plaintext_sha256)?;
+        let cache_path_string = cache_path.display().to_string();
+        if let Err(error) = self
+            .store
+            .promote_completed_upload_cache(source, &cache_path_string)
+        {
+            if source_moved {
+                std::fs::rename(&cache_path, source_path).map_err(|rollback_error| {
+                    format!(
+                        "{error}; restore messaging attachment source after cache promotion failure: {rollback_error}"
+                    )
+                })?;
+            }
+            return Err(error);
+        }
+        Ok(cache_path)
     }
 
     pub fn resume_attachment_download_once(
@@ -856,8 +952,14 @@ impl MessagingEngine {
         if uploads.is_empty() {
             self.store.create_message_draft(&draft)?;
         } else {
-            self.store
-                .create_message_draft_with_uploads(&draft, &uploads)?;
+            {
+                let _source_guard = self
+                    .attachment_source_lock
+                    .lock()
+                    .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
+                self.store
+                    .create_message_draft_with_uploads(&draft, &uploads)?;
+            }
             let worker = self.attachment_transfer_worker(token.to_string())?;
             for attachment_id in &attachment_ids {
                 let progress = worker.run_upload_once(attachment_id, now_unix_ms())?;
@@ -2120,6 +2222,47 @@ fn attachment_cache_path(profile_id: &str, attachment_id: &str) -> Result<PathBu
     Ok(root.join(attachment_id))
 }
 
+fn materialize_attachment_cache(
+    source_path: &Path,
+    cache_path: &Path,
+    expected_plaintext_sha256: &[u8; 32],
+) -> Result<bool, String> {
+    if cache_path.is_file() && sha256_path(cache_path)? == *expected_plaintext_sha256 {
+        return Ok(false);
+    }
+    let source_valid =
+        source_path.is_file() && sha256_path(source_path)? == *expected_plaintext_sha256;
+    if cache_path.exists() {
+        if !source_valid {
+            return Err(SENDER_ATTACHMENT_SOURCE_INVALID.to_string());
+        }
+        std::fs::remove_file(cache_path)
+            .map_err(|error| format!("remove invalid messaging sender attachment cache: {error}"))?;
+    }
+    if !source_valid {
+        return Err(SENDER_ATTACHMENT_SOURCE_INVALID.to_string());
+    }
+    let parent = cache_path
+        .parent()
+        .ok_or_else(|| "messaging attachment cache parent is unavailable".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("create messaging attachment cache directory: {error}"))?;
+    File::open(source_path)
+        .and_then(|source| source.sync_all())
+        .map_err(|error| format!("sync messaging attachment source: {error}"))?;
+    std::fs::rename(source_path, cache_path)
+        .map_err(|error| format!("promote messaging attachment cache: {error}"))?;
+    #[cfg(unix)]
+    File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| format!("sync messaging attachment cache directory: {error}"))?;
+    if sha256_path(cache_path)? != *expected_plaintext_sha256 {
+        let _ = std::fs::rename(cache_path, source_path);
+        return Err("messaging promoted attachment cache is invalid".to_string());
+    }
+    Ok(true)
+}
+
 fn sha256_path(path: &Path) -> Result<[u8; 32], String> {
     let mut file =
         File::open(path).map_err(|error| format!("open messaging attachment cache: {error}"))?;
@@ -2196,6 +2339,42 @@ mod tests {
             error,
             "messaging attachment download did not complete before open deadline"
         );
+    }
+
+    #[test]
+    fn sender_attachment_source_is_atomically_promoted_to_durable_cache() {
+        let root = std::env::temp_dir().join(format!("sender-cache-{}", Ulid::new()));
+        let source_path = root.join("sources").join("attachment");
+        let cache_path = root.join("cache").join("attachment-1");
+        let bytes = b"verified sender attachment";
+        std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+        std::fs::write(&source_path, bytes).unwrap();
+        let expected: [u8; 32] = Sha256::digest(bytes).into();
+
+        assert!(materialize_attachment_cache(&source_path, &cache_path, &expected).unwrap());
+
+        assert!(!source_path.exists());
+        assert_eq!(std::fs::read(&cache_path).unwrap(), bytes);
+        assert_eq!(sha256_path(&cache_path).unwrap(), expected);
+        assert!(!materialize_attachment_cache(&source_path, &cache_path, &expected).unwrap());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_sender_attachment_cache_promotion_retains_source() {
+        let root = std::env::temp_dir().join(format!("sender-cache-{}", Ulid::new()));
+        let source_path = root.join("sources").join("attachment");
+        let cache_path = root.join("cache").join("attachment-1");
+        std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+        std::fs::write(&source_path, b"unexpected bytes").unwrap();
+
+        let error = materialize_attachment_cache(&source_path, &cache_path, &[7; 32])
+            .expect_err("hash mismatch must fail closed");
+
+        assert_eq!(error, "messaging sender attachment source is invalid");
+        assert!(source_path.is_file());
+        assert!(!cache_path.exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -112,9 +112,12 @@ pub struct AttachmentDownloadProjection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingSenderAttachmentSource {
+pub struct CompletedSenderAttachmentSource {
+    pub attachment_id: String,
+    pub message_id: String,
     pub source_local_ref: String,
     pub plaintext_sha256: Vec<u8>,
+    pub local_cache_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3008,44 +3011,65 @@ impl MessagingStore {
         Ok(projection)
     }
 
-    pub fn pending_sender_attachment_source(
+    pub fn completed_sender_attachment_source(
         &self,
         attachment_id: &str,
-    ) -> Result<Option<PendingSenderAttachmentSource>, String> {
+    ) -> Result<Option<CompletedSenderAttachmentSource>, String> {
         if attachment_id.trim().is_empty() {
             return Err("messaging attachment ID is required".to_string());
         }
         let source = self
             .connection()?
             .query_row(
-                "SELECT transfer.source_local_ref, draft.plaintext_sha256
+                "SELECT transfer.attachment_id, transfer.message_id,
+                        transfer.source_local_ref, attachment.plaintext_sha256,
+                        attachment.local_cache_path
                  FROM messaging_attachment_transfers transfer
-                 JOIN messaging_attachment_drafts draft
-                   ON draft.attachment_id = transfer.attachment_id
-                  AND draft.conversation_id = transfer.conversation_id
-                  AND draft.message_id = transfer.message_id
-                 JOIN messaging_pending_messages pending
-                   ON pending.conversation_id = transfer.conversation_id
-                  AND pending.message_id = transfer.message_id
+                 JOIN messaging_attachment_projections attachment
+                   ON attachment.attachment_id = transfer.attachment_id
+                  AND attachment.message_id = transfer.message_id
                  WHERE transfer.attachment_id = ?1
                    AND transfer.direction = 1
-                   AND transfer.state = ?2",
+                   AND transfer.state = ?2
+                   AND transfer.source_local_ref <> ''",
                 params![attachment_id, AttachmentTransferState::Complete as i32],
                 |row| {
-                    Ok(PendingSenderAttachmentSource {
-                        source_local_ref: row.get(0)?,
-                        plaintext_sha256: row.get(1)?,
+                    Ok(CompletedSenderAttachmentSource {
+                        attachment_id: row.get(0)?,
+                        message_id: row.get(1)?,
+                        source_local_ref: row.get(2)?,
+                        plaintext_sha256: row.get(3)?,
+                        local_cache_path: row.get(4)?,
                     })
                 },
             )
             .optional()
             .map_err(|error| error.to_string())?;
         if source.as_ref().is_some_and(|value| {
-            value.source_local_ref.trim().is_empty() || value.plaintext_sha256.len() != 32
+            value.attachment_id.trim().is_empty()
+                || value.message_id.trim().is_empty()
+                || value.source_local_ref.trim().is_empty()
+                || value.plaintext_sha256.len() != 32
         }) {
-            return Err("messaging pending sender attachment source is incomplete".to_string());
+            return Err("messaging completed sender attachment source is incomplete".to_string());
         }
         Ok(source)
+    }
+
+    pub fn owns_attachment_source(&self, source_local_ref: &str) -> Result<bool, String> {
+        if source_local_ref.trim().is_empty() {
+            return Err("messaging attachment source is required".to_string());
+        }
+        self.connection()?
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM messaging_attachment_transfers
+                    WHERE direction = 1 AND source_local_ref = ?1
+                 )",
+                params![source_local_ref],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())
     }
 
     pub fn attachment_upload_media_type(&self, attachment_id: &str) -> Result<String, String> {
@@ -3118,11 +3142,15 @@ impl MessagingStore {
             .map_err(|error| error.to_string())
     }
 
-    pub fn completed_attachment_source_paths(&self) -> Result<Vec<(String, String)>, String> {
+    pub fn completed_attachment_sources(
+        &self,
+    ) -> Result<Vec<CompletedSenderAttachmentSource>, String> {
         let connection = self.connection()?;
         let mut statement = connection
             .prepare(
-                "SELECT transfer.attachment_id, transfer.source_local_ref
+                "SELECT transfer.attachment_id, transfer.message_id,
+                        transfer.source_local_ref, attachment.plaintext_sha256,
+                        attachment.local_cache_path
                  FROM messaging_attachment_transfers transfer
                  JOIN messaging_attachment_projections attachment
                    ON attachment.attachment_id = transfer.attachment_id
@@ -3143,20 +3171,85 @@ impl MessagingStore {
             .map_err(|error| error.to_string())?;
         let rows = statement
             .query_map(params![AttachmentTransferState::Complete as i32], |row| {
-                Ok((row.get(0)?, row.get(1)?))
+                Ok(CompletedSenderAttachmentSource {
+                    attachment_id: row.get(0)?,
+                    message_id: row.get(1)?,
+                    source_local_ref: row.get(2)?,
+                    plaintext_sha256: row.get(3)?,
+                    local_cache_path: row.get(4)?,
+                })
             })
             .map_err(|error| error.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| error.to_string())?;
+        if rows.iter().any(|source| {
+            source.attachment_id.trim().is_empty()
+                || source.message_id.trim().is_empty()
+                || source.source_local_ref.trim().is_empty()
+                || source.plaintext_sha256.len() != 32
+        }) {
+            return Err("messaging completed sender attachment source is incomplete".to_string());
+        }
         Ok(rows)
+    }
+
+    pub fn promote_completed_upload_cache(
+        &self,
+        source: &CompletedSenderAttachmentSource,
+        cache_path: &str,
+    ) -> Result<(), String> {
+        if source.attachment_id.trim().is_empty()
+            || source.message_id.trim().is_empty()
+            || source.source_local_ref.trim().is_empty()
+            || source.plaintext_sha256.len() != 32
+            || cache_path.trim().is_empty()
+        {
+            return Err("messaging sender cache promotion is incomplete".to_string());
+        }
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE messaging_attachment_projections
+                 SET availability_state = 'local', local_cache_path = ?2
+                 WHERE attachment_id = ?1
+                   AND message_id = ?3
+                   AND plaintext_sha256 = ?4
+                   AND (local_cache_path IS NULL OR local_cache_path = ?2)
+                   AND EXISTS (
+                       SELECT 1 FROM messaging_attachment_transfers transfer
+                       WHERE transfer.attachment_id = ?1
+                         AND transfer.message_id = ?3
+                         AND transfer.direction = 1
+                         AND transfer.state = ?5
+                         AND transfer.source_local_ref = ?6
+                   )",
+                params![
+                    source.attachment_id,
+                    cache_path,
+                    source.message_id,
+                    source.plaintext_sha256,
+                    AttachmentTransferState::Complete as i32,
+                    source.source_local_ref,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging sender cache promotion was not fenced".to_string());
+        }
+        Ok(())
     }
 
     pub fn clear_completed_attachment_source(
         &self,
-        attachment_id: &str,
-        source_local_ref: &str,
+        source: &CompletedSenderAttachmentSource,
+        cache_path: &str,
     ) -> Result<(), String> {
-        if attachment_id.trim().is_empty() || source_local_ref.trim().is_empty() {
+        if source.attachment_id.trim().is_empty()
+            || source.message_id.trim().is_empty()
+            || source.source_local_ref.trim().is_empty()
+            || source.plaintext_sha256.len() != 32
+            || cache_path.trim().is_empty()
+        {
             return Err("messaging attachment source cleanup is incomplete".to_string());
         }
         let changed = self
@@ -3167,11 +3260,27 @@ impl MessagingStore {
                  WHERE attachment_id = ?1
                    AND direction = 1
                    AND state = ?2
-                   AND source_local_ref = ?3",
+                   AND source_local_ref = ?3
+                   AND NOT EXISTS (
+                       SELECT 1 FROM messaging_pending_messages pending
+                       WHERE pending.conversation_id = messaging_attachment_transfers.conversation_id
+                         AND pending.message_id = messaging_attachment_transfers.message_id
+                   )
+                   AND EXISTS (
+                       SELECT 1 FROM messaging_attachment_projections attachment
+                       WHERE attachment.attachment_id = ?1
+                         AND attachment.message_id = ?4
+                         AND attachment.plaintext_sha256 = ?5
+                         AND attachment.availability_state = 'local'
+                         AND attachment.local_cache_path = ?6
+                   )",
                 params![
-                    attachment_id,
+                    source.attachment_id,
                     AttachmentTransferState::Complete as i32,
-                    source_local_ref
+                    source.source_local_ref,
+                    source.message_id,
+                    source.plaintext_sha256,
+                    cache_path,
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -8407,7 +8516,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_sender_attachment_source_requires_completed_owned_upload() {
+    fn completed_sender_attachment_source_requires_projection_and_completed_upload() {
         let store = MessagingStore::in_memory().unwrap();
         let transfer = attachment_transfer();
         let plaintext_sha256 = vec![3_u8; 32];
@@ -8444,7 +8553,7 @@ mod tests {
         drop(connection);
         assert!(store.create_attachment_transfer(&transfer).unwrap());
         assert!(store
-            .pending_sender_attachment_source(&transfer.attachment_id)
+            .completed_sender_attachment_source(&transfer.attachment_id)
             .unwrap()
             .is_none());
         store
@@ -8460,19 +8569,10 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(
-            store
-                .pending_sender_attachment_source(&transfer.attachment_id)
-                .unwrap(),
-            Some(PendingSenderAttachmentSource {
-                source_local_ref: transfer.source_local_ref.clone(),
-                plaintext_sha256,
-            })
-        );
         assert!(store
-            .completed_attachment_source_paths()
+            .completed_sender_attachment_source(&transfer.attachment_id)
             .unwrap()
-            .is_empty());
+            .is_none());
 
         store
             .connection()
@@ -8483,14 +8583,6 @@ mod tests {
                 params![transfer.conversation_id, transfer.message_id],
             )
             .unwrap();
-        assert!(store
-            .pending_sender_attachment_source(&transfer.attachment_id)
-            .unwrap()
-            .is_none());
-        assert!(store
-            .completed_attachment_source_paths()
-            .unwrap()
-            .is_empty());
     }
 
     #[test]
@@ -9336,13 +9428,87 @@ mod tests {
             updated_at_unix_ms: 100,
         };
         store.create_attachment_transfer(&upload).unwrap();
+        assert!(store
+            .owns_attachment_source(&upload.source_local_ref)
+            .unwrap());
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_pending_messages(
+                    conversation_id, conversation_kind, message_id,
+                    sender_ptid, sender_device_id, plaintext,
+                    reply_to_message_id, thread_root_message_id, state,
+                    attempt_count, next_attempt_at_unix_ms, last_error_code,
+                    created_at_unix_ms
+                 ) VALUES (
+                    ?1, 2, ?2, 'ptid:alice', 'alice-device', '',
+                    '', '', 'pending', 0, 0, '', 100
+                 )",
+                params![upload.conversation_id, upload.message_id],
+            )
+            .unwrap();
+        let source = CompletedSenderAttachmentSource {
+            attachment_id: upload.attachment_id.clone(),
+            message_id: upload.message_id.clone(),
+            source_local_ref: upload.source_local_ref.clone(),
+            plaintext_sha256: projection.metadata.plaintext_sha256.clone(),
+            local_cache_path: None,
+        };
         assert_eq!(
-            store.completed_attachment_source_paths().unwrap(),
-            vec![(
-                upload.attachment_id.clone(),
-                upload.source_local_ref.clone()
-            )]
+            store
+                .completed_sender_attachment_source(&upload.attachment_id)
+                .unwrap(),
+            Some(source.clone())
         );
+        assert!(store.completed_attachment_sources().unwrap().is_empty());
+        assert!(store
+            .clear_completed_attachment_source(&source, "/tmp/sender-cache")
+            .is_err());
+        store
+            .promote_completed_upload_cache(&source, "/tmp/sender-cache")
+            .unwrap();
+        store
+            .promote_completed_upload_cache(&source, "/tmp/sender-cache")
+            .unwrap();
+        assert!(store
+            .promote_completed_upload_cache(&source, "/tmp/other-sender-cache")
+            .is_err());
+        assert!(store
+            .clear_completed_attachment_source(&source, "/tmp/sender-cache")
+            .is_err());
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "DELETE FROM messaging_pending_messages
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params![upload.conversation_id, upload.message_id],
+            )
+            .unwrap();
+        assert_eq!(
+            store.completed_attachment_sources().unwrap(),
+            vec![CompletedSenderAttachmentSource {
+                local_cache_path: Some("/tmp/sender-cache".to_string()),
+                ..source.clone()
+            }]
+        );
+        assert_eq!(
+            store
+                .attachment_download_projection(&upload.attachment_id)
+                .unwrap()
+                .unwrap()
+                .local_cache_path
+                .as_deref(),
+            Some("/tmp/sender-cache")
+        );
+        store
+            .clear_completed_attachment_source(&source, "/tmp/sender-cache")
+            .unwrap();
+        assert!(store.completed_attachment_sources().unwrap().is_empty());
+        assert!(!store
+            .owns_attachment_source(&upload.source_local_ref)
+            .unwrap());
 
         let download = AttachmentTransferRecord {
             direction: 2,
