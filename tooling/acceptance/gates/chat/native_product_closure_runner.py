@@ -66,6 +66,11 @@ RECOVERY_SELECTORS = {
 }
 NATIVE_INPUT_ACK_POLL_SECONDS = 0.01
 NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS = 30
+VALID_ATTACHMENT_IMAGE_BYTES = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+    "0000000d49444154789c63f8cfc0f01f00050001ff89993d1d"
+    "0000000049454e44ae426082"
+)
 READBACK_COMMANDS = {
     "conversation_get_member_settings",
     "messaging_list_conversations",
@@ -4255,12 +4260,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.assert_condition("native_dom_only", True)
 
         image_file = self.fixture_root / "w13-image.png"
-        image_file.write_bytes(
-            bytes.fromhex(
-                "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
-                "0000000d49444154789c6360f8cfc000000301010018dd8db10000000049454e44ae426082"
-            )
-        )
+        image_file.write_bytes(VALID_ATTACHMENT_IMAGE_BYTES)
         text_file = self.fixture_root / "w13-file.txt"
         text_file.write_text("MP-W13 attachment byte identity\n", encoding="utf-8")
         empty_image = self.fixture_root / "w13-empty.png"

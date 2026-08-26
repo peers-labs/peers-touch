@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import ast
+import binascii
 import json
+import struct
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
 
 from tooling.acceptance.gates.chat.native_product_closure_runner import (
+    VALID_ATTACHMENT_IMAGE_BYTES,
     file_sha256,
     native_input_event_cursor,
 )
@@ -114,6 +118,38 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 "ba7816bf8f01cfea414140de5dae2223"
                 "b00361a396177a9cb410ff61f20015ad",
             )
+
+    def test_attachment_image_fixture_has_valid_png_chunks(self) -> None:
+        self.assertEqual(
+            VALID_ATTACHMENT_IMAGE_BYTES[:8],
+            b"\x89PNG\r\n\x1a\n",
+        )
+        position = 8
+        chunks: dict[bytes, bytes] = {}
+        while position < len(VALID_ATTACHMENT_IMAGE_BYTES):
+            length = struct.unpack(
+                ">I",
+                VALID_ATTACHMENT_IMAGE_BYTES[position:position + 4],
+            )[0]
+            chunk_type = VALID_ATTACHMENT_IMAGE_BYTES[position + 4:position + 8]
+            chunk_data = VALID_ATTACHMENT_IMAGE_BYTES[
+                position + 8:position + 8 + length
+            ]
+            chunk_crc = struct.unpack(
+                ">I",
+                VALID_ATTACHMENT_IMAGE_BYTES[
+                    position + 8 + length:position + 12 + length
+                ],
+            )[0]
+            self.assertEqual(
+                chunk_crc,
+                binascii.crc32(chunk_type + chunk_data) & 0xFFFFFFFF,
+            )
+            chunks[chunk_type] = chunk_data
+            position += 12 + length
+
+        self.assertEqual(position, len(VALID_ATTACHMENT_IMAGE_BYTES))
+        self.assertEqual(zlib.decompress(chunks[b"IDAT"]), b"\x00\xff\x00\x00\xff")
 
     def test_runner_consumes_injected_runtime_without_local_fallback(self) -> None:
         self.assertIn(
