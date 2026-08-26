@@ -344,9 +344,10 @@ pub async fn messaging_pick_attachment_source(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> Result<AppResult<Value>, String> {
-    if let Err(error) = active_engine(state.inner(), &window) {
-        return Ok(error);
-    }
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return Ok(error),
+    };
     let selected = rfd::AsyncFileDialog::new()
         .set_title("Select File")
         .pick_file()
@@ -376,15 +377,55 @@ pub async fn messaging_pick_attachment_source(
             ))
         }
     };
-    if let Err(error) = allow_attachment_preview(&window, path) {
-        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
+    let filename = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Attachment")
+        .to_string();
+    let mime_type = attachment_mime_type(path);
+    let (preview_path, managed_source) = if metadata.len() == 0 {
+        (path.to_path_buf(), false)
+    } else {
+        let selected_path = path.to_path_buf();
+        let staging_engine = Arc::clone(&engine);
+        let staging_filename = filename.clone();
+        let local_path = match tauri::async_runtime::spawn_blocking(move || {
+            staging_engine.stage_attachment_file(&staging_filename, &selected_path)
+        })
+        .await
+        {
+            Ok(Ok(value)) => value,
+            Ok(Err(error)) => return Ok(AppResult::fail(ErrorCode::InvalidArgument, error, None)),
+            Err(error) => {
+                return Ok(AppResult::fail(
+                    ErrorCode::InternalError,
+                    format!("messaging attachment staging worker failed: {error}"),
+                    None,
+                ))
+            }
+        };
+        (std::path::PathBuf::from(local_path), true)
+    };
+    if let Err(error) = allow_attachment_preview(&window, &preview_path) {
+        let cleanup = if managed_source {
+            engine
+                .discard_staged_attachment_source(&preview_path.to_string_lossy())
+                .err()
+                .map(|cleanup| format!("; staged-source cleanup failed: {cleanup}"))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        return Ok(AppResult::fail(
+            ErrorCode::InternalError,
+            format!("{error}{cleanup}"),
+            None,
+        ));
     }
     Ok(AppResult::success(json!({
-        "file_path": path.to_string_lossy(),
-        "filename": path.file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("Attachment"),
-        "mime_type": attachment_mime_type(path),
+        "file_path": preview_path.to_string_lossy(),
+        "filename": filename,
+        "mime_type": mime_type,
         "size": metadata.len(),
     })))
 }

@@ -28,6 +28,7 @@
 | L | The picked attachment loses its preview URL or image classification before render. | Low | Low | The draft is ready but `src`, `currentSrc`, or `data-chat-attachment-preview` is empty or malformed. | Rejected; all URL fields contained the same scoped asset URL |
 | M | Tauri's asset scope does not retain permission for the selected file, or the staged file is missing when WebKit requests it. | High | Low | Picker instrumentation reports `scopeAllowed=false`, `isFile=false`, or a size other than 70 bytes; failed-resource fetch returns 403/404. | Pending |
 | N | The asset protocol returns the expected PNG bytes but WebKitGTK intermittently rejects image decoding. | Medium | Low | Picker reports an allowed 70-byte file and fetch returns HTTP success with PNG signature while `<img>` remains complete with zero intrinsic size. | Pending |
+| P | The Native picker returns the external chooser path without staging it under Engine ownership, so durable-cache promotion rejects it. | High | Low | Runtime reports `messaging attachment source is not Engine-managed`; source shows the picker returns `handle.path()` while promotion requires `attachment_source_root(profile_id)`. | Confirmed |
 
 ## Log Evidence
 - Pre-instrumentation Native run `20260823T170346937849Z-df8e52a09b8fcec409c868892409bcb6`:
@@ -192,3 +193,20 @@ open because intermittent `draft` evidence has not yet been reproduced or closed
   failure was caused by malformed Gate fixture bytes, not the asset protocol.
 - The Gate now uses a CRC-valid, zlib-valid 1x1 RGBA PNG. A static regression
   test validates every PNG chunk CRC and decompresses the IDAT scanline.
+- Exact-source Linux run
+  `20260826T050806266717Z-095a788ed79e6a2ff52ebe7e6f1ae166`
+  at `6691cbb2ed47b91b5a167992e9b66dac5b27b706` again passed all product
+  boundaries through failed-attachment draft retention and then timed out
+  waiting for Alice's two-attachment row. The lifecycle reported
+  `attachment source cleanup: messaging attachment source is not Engine-managed`;
+  sender open reported the same ownership error. The next evidence-only probe
+  records the canonical source parent and the Engine's expected source root.
+- Source inspection closes hypothesis P: `messaging_pick_attachment_source`
+  returned the external native chooser path directly, while
+  `promote_sender_attachment_cache` intentionally accepts only paths created
+  under the active Engine's `messaging-sources/<profile-hash>` root.
+- The owning-boundary fix streams every non-empty native selection into
+  Engine-managed staging before exposing it to the Composer. Empty selections
+  retain the existing failed-draft behavior. The Composer now marks successful
+  native selections as managed so remove, conversation switch, and unmount
+  cleanup use the same Engine lifecycle.
