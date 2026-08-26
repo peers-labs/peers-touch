@@ -775,6 +775,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 "messaging_open_attachment",
             },
         )
+        self.assertIn(
+            "self.runtime_binding.native_file_sha256(",
+            self.source,
+        )
+        self.assertNotIn(
+            "if not local_path.is_file():",
+            self.source,
+        )
 
     def test_required_native_actions_and_evidence_are_fail_closed(self) -> None:
         for required in (

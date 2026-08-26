@@ -3513,9 +3513,12 @@ class NativeProductClosureGate(AcceptanceGate):
                         {"attachment_id": attachment_id},
                     )
                     local_path = Path(str(opened.get("local_path") or ""))
-                    if not local_path.is_file():
-                        raise GateError(f"{actor} attachment cache path is missing")
-                    actor_hashes[filename] = file_sha256(local_path)
+                    actor_hashes[filename] = (
+                        self.runtime_binding.native_file_sha256(
+                            actor,
+                            local_path,
+                        )
+                    )
                 if actor_hashes != expectation["hashes"]:
                     raise GateError(
                         f"{actor} {label} attachment byte hashes differ: "
