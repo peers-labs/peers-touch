@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-24 | **Updated**: 2026-08-25
+> **Created**: 2026-08-24 | **Updated**: 2026-08-27
 > **Owner**: Acceptance Infrastructure + Desktop Platform + Chat Domain
 > **Branch**: `refactor/chat-acceptance-cutover`
 > **Parent Design**: [../design.md](../design.md)
@@ -528,7 +528,7 @@ committed to this plan.
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | done | Chat runner receives `NativeDesktopRuntimeBinding`, `TauriSession` and `NativeDesktopAdapter`; local launcher/platform factory dependencies are deleted; required assertions, journey order and 3600-second timeout remain locked; Acceptance Core 230/230, Chat static 38/38 and runner 20/20 PASS |
-| NDR-W7 Linux MP-W13 proof | in progress | Exact-source run `20260826T192954307015Z-43a00b13dbb20de1595f79c1162acfc5` at `ad815464d` proved source/Station/binary identity plus transcript, thread, toolbar, reaction, identity, settings, background, attachments, offline recovery, restart and clear-cursor assertions. The final slot `2/3` geometry probe passed at x=1058 with an 862 px outer window ending exactly at the 1920 px X11 boundary, and the run opened Alice2 Details through native input. The new first failed boundary is the compound Alice second-device settings recovery wait; diagnostic instrumentation must distinguish the five UI fields from authoritative Station readback before an owning-layer fix. Runtime actor and endpoint cleanup passed; the cell remains leased for the next exact-source run |
+| NDR-W7 Linux MP-W13 proof | done | Unchanged exact-source run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` at `e5b3fd74943cdba46e16c72c415a2031051448b7` passed all 25 product, runtime identity, and cleanup assertions on `desktop-linux-native`. Station live commit matched, the Linux binary SHA-256 was `fd1d4877c5d2279b4ee5515e3ea687f7074ddbcbc72216b4452022dfb3c09d6b`, and Alice2 DOM settings matched authoritative Station state. Gate cleanup released actors, endpoints, ports, processes, and storage. Independent final cell stop returned `CLEANED`; remote container/checkout and allocated local forwards were absent. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
@@ -623,6 +623,31 @@ background reference, and `clearedAt=0`; the failed wait did not preserve which
 Alice2 field diverged. The next exact-source run therefore adds evidence-only
 DOM-versus-Station snapshots without changing the existing predicate, actors,
 selectors, ordering, or timeout.
+
+### 2026-08-27 NDR-W7 Final Linux Proof
+
+The owning Desktop projection repair preserves the current same-actor Station
+projection during profile refresh and hydrates actor-scoped persisted state
+before authoritative session reconciliation. Unchanged source-bound run
+`20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0`
+passed all 25 assertions on `desktop-linux-native`.
+
+The proof binds:
+
+- source and Station commit
+  `e5b3fd74943cdba46e16c72c415a2031051448b7`;
+- runtime cell run
+  `20260826T212010860319Z-94cab5dfe099f313`;
+- Linux binary SHA-256
+  `fd1d4877c5d2279b4ee5515e3ea687f7074ddbcbc72216b4452022dfb3c09d6b`;
+- Alice2 DOM and Station settings with matching mute, pin, background,
+  background image, and clear cursor;
+- successful actor, endpoint, port, process, log, and storage cleanup.
+
+The required independent final stop returned `CLEANED`. Remote inspection found
+no acceptance cell container or retained run checkout, and every allocated
+local forward was released. This closes NDR-W7 for Linux only; NDR-W8 macOS and
+NDR-W9 Windows remain separate platform proofs.
 
 ## 13. Final Readiness Gate
 
