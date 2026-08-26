@@ -4166,12 +4166,112 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         if len(phrase.split()) != 24:
             raise GateError("recovery phrase does not contain exactly 24 words")
-        self.click(actor, RECOVERY_SELECTORS["backup"])
-        WebDriverWait(client.driver, 120).until(
-            lambda driver: bool(
-                driver.find_elements(By.CSS_SELECTOR, ".ant-message-success")
-            )
+        # #region debug-point A,B,C,D:recovery-success-feedback
+        recovery_feedback_debug = (
+            os.environ.get("DEBUG_SESSION_ID", "").strip()
+            == "recovery-success-feedback"
         )
+        if recovery_feedback_debug:
+            client.execute_script(
+                """
+                window.__PT_RECOVERY_FEEDBACK_OBSERVER__?.disconnect();
+                window.__PT_RECOVERY_FEEDBACK_EVENTS__ = [];
+                const selector = [
+                  '[role="dialog"]',
+                  '[role="alertdialog"]',
+                  '[role="status"]',
+                  '[data-type]',
+                  '.ant-message-success',
+                ].join(',');
+                const describe = (element) => ({
+                  tag: element.tagName,
+                  id: element.id || '',
+                  classes: String(
+                    element.className?.baseVal || element.className || '',
+                  ),
+                  role: element.getAttribute('role') || '',
+                  dataType: element.getAttribute('data-type') || '',
+                  text: (element.textContent || '').trim().slice(0, 160),
+                });
+                const record = (root) => {
+                  if (!(root instanceof Element)) return;
+                  if (root.matches(selector)) {
+                    window.__PT_RECOVERY_FEEDBACK_EVENTS__.push(describe(root));
+                  }
+                  for (const match of root.querySelectorAll(selector)) {
+                    window.__PT_RECOVERY_FEEDBACK_EVENTS__.push(describe(match));
+                  }
+                };
+                window.__PT_RECOVERY_FEEDBACK_OBSERVER__ = new MutationObserver(
+                  (mutations) => {
+                    for (const mutation of mutations) {
+                      for (const node of mutation.addedNodes) record(node);
+                    }
+                  },
+                );
+                window.__PT_RECOVERY_FEEDBACK_OBSERVER__.observe(
+                  document.documentElement,
+                  { childList: true, subtree: true },
+                );
+                return Array.from(document.querySelectorAll(selector)).map(describe);
+                """
+            )
+        # #endregion
+        self.click(actor, RECOVERY_SELECTORS["backup"])
+        try:
+            WebDriverWait(client.driver, 120).until(
+                lambda driver: bool(
+                    driver.find_elements(By.CSS_SELECTOR, ".ant-message-success")
+                )
+            )
+        except TimeoutException:
+            # #region debug-point A,B,C,D:recovery-success-timeout
+            if recovery_feedback_debug:
+                diagnostics = client.execute_script(
+                    """
+                    const selector = [
+                      '[role="dialog"]',
+                      '[role="alertdialog"]',
+                      '[role="status"]',
+                      '[data-type]',
+                      '.ant-message-success',
+                    ].join(',');
+                    const describe = (element) => ({
+                      tag: element.tagName,
+                      id: element.id || '',
+                      classes: String(
+                        element.className?.baseVal || element.className || '',
+                      ),
+                      role: element.getAttribute('role') || '',
+                      dataType: element.getAttribute('data-type') || '',
+                      text: (element.textContent || '').trim().slice(0, 160),
+                    });
+                    window.__PT_RECOVERY_FEEDBACK_OBSERVER__?.disconnect();
+                    return {
+                      observed: window.__PT_RECOVERY_FEEDBACK_EVENTS__ || [],
+                      current: Array.from(
+                        document.querySelectorAll(selector),
+                      ).map(describe),
+                      backupButton: (() => {
+                        const button = document.querySelector(
+                          '[data-recovery-backup-create]',
+                        );
+                        return button ? {
+                          disabled: Boolean(button.disabled),
+                          text: (button.textContent || '').trim().slice(0, 160),
+                        } : null;
+                      })(),
+                    };
+                    """
+                )
+                report_native_mousedown_debug(
+                    "A,B,C,D",
+                    "native_product_closure_runner:create_recovery_revision",
+                    "Recovery success feedback wait timed out",
+                    diagnostics,
+                )
+            # #endregion
+            raise
         return phrase
 
     def restore_recovery_revision(self, actor: str, phrase: str) -> None:
