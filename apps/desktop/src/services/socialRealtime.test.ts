@@ -29,6 +29,7 @@ class TestWindow extends EventTarget {
 
 const mocks = vi.hoisted(() => ({
   authenticatedActorId: null as string | null,
+  sessionSubscriber: null as (() => void) | null,
   selectGroup: vi.fn(),
   loadCurrentUserProfile: vi.fn(),
   loadSessions: vi.fn(),
@@ -40,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   loadMessages: vi.fn(),
   markGroupRead: vi.fn(),
   ingestRealtimeMessage: vi.fn(),
+  prewarmMessages: vi.fn(),
   bumpChatUnread: vi.fn(),
   clearChatUnread: vi.fn(),
 }));
@@ -50,7 +52,12 @@ const originalCustomEvent = globalThis.CustomEvent;
 vi.mock('../store/session', () => ({
   currentAuthenticatedActorId: () => mocks.authenticatedActorId,
   useSessionStore: {
-    subscribe: vi.fn(() => () => undefined),
+    subscribe: vi.fn((subscriber: () => void) => {
+      mocks.sessionSubscriber = subscriber;
+      return () => {
+        mocks.sessionSubscriber = null;
+      };
+    }),
   },
 }));
 
@@ -108,7 +115,10 @@ vi.mock('../store/navigationBadges', () => ({
 
 vi.mock('./mediaRuntime', () => ({
   useMediaRuntimeStore: {
-    getState: () => ({ mediaCallActive: false }),
+    getState: () => ({
+      mediaCallActive: false,
+      prewarmMessages: mocks.prewarmMessages,
+    }),
   },
 }));
 
@@ -139,6 +149,7 @@ describe('social realtime group membership side effects', () => {
     }
     vi.clearAllMocks();
     mocks.authenticatedActorId = null;
+    mocks.sessionSubscriber = null;
     mocks.ingestRealtimeMessage.mockResolvedValue(undefined);
     mocks.loadCurrentUserProfile.mockResolvedValue(undefined);
     mocks.loadSessions.mockResolvedValue(undefined);
@@ -247,6 +258,25 @@ describe('social realtime group membership side effects', () => {
 
     expect(calls).toEqual(['profile', 'sessions']);
   });
+
+  it('coalesces authenticated bootstrap with an explicit projection refresh', async () => {
+    const profileLoad = deferred<void>();
+    mocks.authenticatedActorId = 'ptid:peer:self';
+    mocks.loadCurrentUserProfile.mockImplementationOnce(() => profileLoad.promise);
+
+    mocks.sessionSubscriber?.();
+    const explicitRefresh = refreshSocialProjection('acceptance hydration', true);
+
+    await vi.waitFor(() => {
+      expect(mocks.loadCurrentUserProfile).toHaveBeenCalledTimes(1);
+    });
+    profileLoad.resolve();
+    await explicitRefresh;
+
+    expect(mocks.loadSessions).toHaveBeenCalledTimes(1);
+    expect(mocks.prewarmMessages).toHaveBeenCalledTimes(1);
+  });
+
 
   it('continues Station reconciliation when profile hydration fails', async () => {
     mocks.authenticatedActorId = 'ptid:peer:self';
