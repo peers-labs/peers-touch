@@ -527,19 +527,23 @@ def validate_runtime_attestation(
         and all(capabilities[field] for field in capability_fields),
         f"{label} runtime capability snapshot fields mismatch",
     )
+    binding_snapshot_fields = (
+        "runtimeKind",
+        "providerId",
+        "modelId",
+        "runtimeProfileId",
+        "externalSessionId",
+        "externalSessionEpoch",
+    )
+    mismatched_binding_fields = [
+        field
+        for field in binding_snapshot_fields
+        if binding[field] != snapshot[field]
+    ]
     require(
-        all(
-            binding[field] == snapshot[field]
-            for field in (
-                "runtimeKind",
-                "providerId",
-                "modelId",
-                "runtimeProfileId",
-                "externalSessionId",
-                "externalSessionEpoch",
-            )
-        ),
-        f"{label} runtime binding does not match runtime snapshot",
+        not mismatched_binding_fields,
+        f"{label} runtime binding does not match runtime snapshot: "
+        f"{mismatched_binding_fields}",
     )
     capability_snapshot_hash = hashlib.sha256(
         json.dumps(

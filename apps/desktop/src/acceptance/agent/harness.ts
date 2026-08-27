@@ -427,7 +427,13 @@ async function buildDirectRuntimeAttestation(
       snapshot,
       'externalSessionEpoch',
       'external_session_epoch',
-    ),
+    ) === undefined
+      ? 0
+      : Number(evidenceField(
+        snapshot,
+        'externalSessionEpoch',
+        'external_session_epoch',
+      )),
   };
 
   return {
@@ -438,7 +444,7 @@ async function buildDirectRuntimeAttestation(
       modelId: binding.model_id,
       runtimeProfileId: binding.runtime_profile_id,
       externalSessionId: binding.external_session_id,
-      externalSessionEpoch: binding.external_session_epoch,
+      externalSessionEpoch: Number(binding.external_session_epoch ?? 0),
       runtimeHomeRefHash: await sha256Hex(String(binding.runtime_home_ref ?? '')),
       capabilitySnapshotHash: binding.capability_snapshot_hash,
       configSnapshotHash: binding.config_snapshot_hash,
