@@ -1439,6 +1439,14 @@ export function installAcceptanceHarness(): void {
       const capabilitySessions = await waitForCapabilitySessionEvidence();
       let preparedConversationId: string | null = null;
       let preparedTurnId: string | null = null;
+      const preparedRuntimeEvent: {
+        current: {
+          eventType: string;
+          sequence: number;
+          observedAt: string;
+        } | null;
+      } = { current: null };
+      let turnDurationMs: number | null = null;
 
       if (cell === 'AS-F01') {
         const conversation = await api.createAgentConversation({
@@ -1449,6 +1457,7 @@ export function installAcceptanceHarness(): void {
         });
         preparedConversationId = conversation.conversation_id;
         await useChatStore.getState().selectSession(conversation.conversation_id);
+        const turnStartedAt = performance.now();
         preparedTurnId = await new Promise<string>((resolve, reject) => {
           let observedTurnId = '';
           let controller: AbortController;
@@ -1471,8 +1480,14 @@ export function installAcceptanceHarness(): void {
             if (typeof candidate === 'string' && candidate) {
               observedTurnId = candidate;
             }
+            preparedRuntimeEvent.current = {
+              eventType: event.event,
+              sequence: Number(data.seq ?? 0),
+              observedAt: new Date().toISOString(),
+            };
           }, () => {
             window.clearTimeout(timeout);
+            turnDurationMs = performance.now() - turnStartedAt;
             if (observedTurnId) {
               resolve(observedTurnId);
               return;
@@ -1555,6 +1570,16 @@ export function installAcceptanceHarness(): void {
         assertionContext,
         sampleId,
       );
+      const replayReadback = currentConversationId && conversationReadback
+        ? await foundationConversationReadback(currentConversationId)
+        : null;
+      const sourceReadbackHash = conversationReadback
+        ? await sha256Hex(stableJson(conversationReadback))
+        : '';
+      const replayReadbackHash = replayReadback
+        ? await sha256Hex(stableJson(replayReadback))
+        : '';
+      const observedRuntimeEvent = preparedRuntimeEvent.current;
 
       // Build role evidence
       const stationReadback: Record<string, unknown> = {
@@ -1571,36 +1596,45 @@ export function installAcceptanceHarness(): void {
         ),
       };
 
-      const runtimeEvents: Record<string, unknown> = turnEvidence
+      const runtimeEvents: Record<string, unknown> = turnEvidence && observedRuntimeEvent
         ? {
-            traceCount: (turnEvidence as Record<string, unknown>).traces
-              ? ((turnEvidence as Record<string, unknown>).traces as { traces?: unknown[] })?.traces?.length ?? 0
-              : 0,
-            turnId,
-            conversationId: currentConversationId,
-            eventCount: operation?.lastEventSeq ?? 0,
+            eventId: await sha256Hex(stableJson({
+              turnId,
+              sequence: observedRuntimeEvent.sequence,
+              eventType: observedRuntimeEvent.eventType,
+            })),
+            sequence: observedRuntimeEvent.sequence,
+            eventType: observedRuntimeEvent.eventType,
+            occurredAt: observedRuntimeEvent.observedAt,
           }
-        : { traceCount: 0, turnId: null, conversationId: null, eventCount: 0 };
+        : { eventId: '', sequence: 0, eventType: '', occurredAt: '' };
 
       const measurementReport: Record<string, unknown> = {
+        metric: 'foundation-turn-duration-ms',
+        sampleIds: [sampleId],
+        threshold: '<=120000',
+        passed: turnDurationMs !== null && turnDurationMs <= 120_000,
         tokenUsage: turnEvidence
           ? ((turnEvidence as Record<string, unknown>).diagnostics as Record<string, unknown>)?.token_usage ?? null
           : null,
-        latencyMs: turnEvidence
-          ? ((turnEvidence as Record<string, unknown>).diagnostics as Record<string, unknown>)?.latency_ms ?? null
-          : null,
+        latencyMs: turnDurationMs,
         cell,
       };
 
       const queueEntryCount = turnQueue?.entries?.length ?? 0;
       const sideEffectCount: Record<string, unknown> = {
+        counterId: 'pending-turn-queue',
         count: queueEntryCount,
         maximum: 8,
       };
 
-      const replayEvidence: Record<string, unknown> = turnEvidence
-        ? { equal: true, turnId, cell }
-        : { equal: true, turnId: null, cell };
+      const replayEvidence: Record<string, unknown> = {
+        sourceHash: sourceReadbackHash,
+        replayHash: replayReadbackHash,
+        equal: Boolean(sourceReadbackHash) && sourceReadbackHash === replayReadbackHash,
+        turnId,
+        cell,
+      };
 
       const cleanup: Record<string, unknown> = {
         status: 'clean',

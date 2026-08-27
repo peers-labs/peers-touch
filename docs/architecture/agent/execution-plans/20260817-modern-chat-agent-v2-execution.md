@@ -1449,17 +1449,16 @@ Only then may G-F preflight begin.
 
 **Depends on**: F1, F2, F3, F4.
 **Owns**: the C01-C10/A01-A14 advancement decision, not implementation.
-**Status**: in progress. Commits through `24808fa16` repaired the profile-owned
-provider/model fixture, added durable Station-owned conversation runtime
-bindings plus TurnAttempt runtime snapshots, corrected token-usage field
-classification, and normalized binding/capability scalar representations. The
-source-matched 2026-08-27 rerun passed those layers, then failed closed at
-`foundation-browser-direct / AS-F01 / en / single / sample-001` because the
-Browser session platform retained the protobuf enum name
-`CLIENT_PLATFORM_BROWSER` instead of the portable `browser` value. The Gate
-remains `PARTIAL / UNPROVEN`; cleanup passed and W1 is blocked while the client
-platform enum is normalized without changing the Browser zero-capability
-contract.
+**Status**: in progress. Commits through `76b873098` repaired the profile-owned
+provider/model fixture, durable Station runtime authority, evidence token-field
+classification, and portable binding/capability/session normalization. The
+source-matched 2026-08-27 rerun passed the complete AS-F01 runtime attestation,
+then failed closed at `foundation-browser-direct / AS-F01 / en / single /
+sample-001` because early role payloads lacked required source-backed
+`runtime-events`, `measurement-report`, `side-effect-count`, and `replay`
+fields. The Gate remains `PARTIAL / UNPROVEN`; cleanup passed and W1 is blocked
+while those roles are populated from the actual stream, elapsed time, queue
+readback, and repeated Station readback.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
