@@ -260,9 +260,9 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         source = HARNESS.read_text(encoding="utf-8")
         self.assertIn("const queuedTurns = Array.from({ length: 8 }", source)
         self.assertIn("queuedTurns.map((queued) => queued.result)", source)
-        self.assertIn("completedObservedTurnId(activeResult)", source)
-        self.assertNotIn("1200-word", source)
-        self.assertNotIn("20 concise numbered rules", source)
+        self.assertIn("await api.cancelAgentTurn(activeTurnId)", source)
+        self.assertIn("completedObservedTurnId(evidenceResult)", source)
+        self.assertIn("content: 'Reply with ready.'", source)
 
     def test_group_one_controller_uses_manifest_bound_client_modes(self) -> None:
         source = FOUNDATION_RUNTIME_CLIENT.read_text(encoding="utf-8")

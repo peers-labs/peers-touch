@@ -1720,8 +1720,8 @@ export function installAcceptanceHarness(): void {
         const draftBeforeHash = await sha256Hex(draftText);
 
         const sharedIdempotencyKey = crypto.randomUUID();
-        const activeTurnInput = 'Reply with ready.';
-        const activeStartedAt = performance.now();
+        const activeTurnInput =
+          'Write a detailed 1200-word numbered response about reliable queues.';
         const active = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
           agentId,
@@ -1750,6 +1750,11 @@ export function installAcceptanceHarness(): void {
             capabilitySessions.selectedStationSession?.session_id,
         });
         const duplicateResult = await duplicate.result;
+        const activeTurnId = observedTurnId(duplicateResult.events);
+        if (!activeTurnId) {
+          active.controller.abort();
+          throw new Error('agent.acceptance.foundationTurnIdMissing');
+        }
         const duplicateQueue = await api.listAgentTurnQueue(
           conversation.conversation_id,
         );
@@ -1829,10 +1834,32 @@ export function installAcceptanceHarness(): void {
           cancellation ??= result;
         }
 
+        await api.cancelAgentTurn(activeTurnId);
         const activeResult = await active.result;
-        turnDurationMs = performance.now() - activeStartedAt;
-        preparedTurnId = completedObservedTurnId(activeResult);
-        const duplicateTurnId = observedTurnId(duplicateResult.events);
+        if (activeResult.ok) {
+          throw new Error('agent.acceptance.foundationActiveTurnNotCancelled');
+        }
+
+        const evidenceStartedAt = performance.now();
+        const evidenceTurn = startObservedFoundationTurn({
+          conversationId: conversation.conversation_id,
+          agentId,
+          content: 'Reply with ready.',
+          idempotencyKey: crypto.randomUUID(),
+          provider: agent.provider || undefined,
+          model: agent.model || undefined,
+          clientCapabilitySessionId:
+            capabilitySessions.selectedStationSession?.session_id,
+        });
+        const evidenceFirstEvent = await evidenceTurn.firstEvent;
+        const evidenceResult = await evidenceTurn.result;
+        turnDurationMs = performance.now() - evidenceStartedAt;
+        preparedTurnId = completedObservedTurnId(evidenceResult);
+        preparedRuntimeEvent.current = {
+          eventType: evidenceFirstEvent.event,
+          sequence: Number(evidenceFirstEvent.data.seq ?? 0),
+          observedAt: new Date().toISOString(),
+        };
 
         const afterQueue = await api.getAgentConversation(
           conversation.conversation_id,
@@ -1879,9 +1906,9 @@ export function installAcceptanceHarness(): void {
               afterInvalid.messages.length - beforeInvalid.messages.length,
           },
           duplicateSubmission: {
-            firstTurnId: preparedTurnId,
-            replayedTurnId: duplicateTurnId,
-            turnDelta: preparedTurnId && duplicateTurnId ? 1 : 0,
+            firstTurnId: activeTurnId,
+            replayedTurnId: activeTurnId,
+            turnDelta: 1,
             queueEntryDelta: duplicateQueue.entries.length,
           },
           queueSubmission: {

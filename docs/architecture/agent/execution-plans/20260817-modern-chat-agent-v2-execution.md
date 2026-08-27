@@ -1466,9 +1466,15 @@ construction. Its source-matched rerun
 `20260827T034717562603Z-456b774434d6ad952826a03261baf6c0` proved that the
 20-item response request still consumed the full 120-second provider deadline
 and now failed honestly as `turnSubmissionTimeout`. W1 stays blocked while
-AS-F02 switches the active request to the already-proven bounded `ready`
-response; queue admission still begins after the persisted `turn_started`
-event and remains concurrent.
+AS-F02 separates the queue workload from attestation: a long running Turn holds
+the real admission window until the eight-entry queue and overflow are proven,
+then the production cancel command settles it; an independent bounded `ready`
+Turn in the same conversation must complete and provide the trace used for
+runtime attestation. The source-matched `eafa75571` rerun
+`20260827T035716041867Z-a6d1e4cce1aa822c6c8434df73daa8ac`
+confirmed that using the bounded Turn for both duties instead let queued work
+drain before the capacity snapshot and failed as
+`queueCapacitySnapshotMismatch`.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
