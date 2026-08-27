@@ -33,6 +33,122 @@ interface FoundationTurnSubmission {
   idempotencyKey: string;
 }
 
+interface ObservedFoundationTurn {
+  controller: AbortController;
+  firstEvent: Promise<{ event: string; data: Record<string, unknown> }>;
+  result: Promise<{
+    ok: boolean;
+    error: string | null;
+    events: Array<{ event: string; data: Record<string, unknown> }>;
+  }>;
+}
+
+function startObservedFoundationTurn(input: {
+  conversationId: string;
+  agentId: string;
+  content: string;
+  idempotencyKey: string;
+  provider?: string;
+  model?: string;
+  clientCapabilitySessionId?: string;
+}): ObservedFoundationTurn {
+  const events: Array<{ event: string; data: Record<string, unknown> }> = [];
+  let resolveFirstEvent: (
+    value: { event: string; data: Record<string, unknown> },
+  ) => void = () => {};
+  let firstEventObserved = false;
+  const firstEvent = new Promise<{ event: string; data: Record<string, unknown> }>(
+    (resolve) => {
+      resolveFirstEvent = resolve;
+    },
+  );
+  let resolveResult: (value: {
+    ok: boolean;
+    error: string | null;
+    events: Array<{ event: string; data: Record<string, unknown> }>;
+  }) => void = () => {};
+  const result = new Promise<{
+    ok: boolean;
+    error: string | null;
+    events: Array<{ event: string; data: Record<string, unknown> }>;
+  }>((resolve) => {
+    resolveResult = resolve;
+  });
+  let settled = false;
+  let timeout = 0;
+  const finish = (ok: boolean, error: string | null) => {
+    if (settled) return;
+    settled = true;
+    window.clearTimeout(timeout);
+    resolveResult({ ok, error, events });
+  };
+  const controller = streamAgentTurn({
+    conversation_id: input.conversationId,
+    agent_id: input.agentId,
+    user_input: input.content,
+    client_idempotency_key: input.idempotencyKey,
+    provider: input.provider,
+    model: input.model,
+    client_capability_session_id: input.clientCapabilitySessionId,
+  }, (event) => {
+    const observed = {
+      event: event.event,
+      data: evidenceValue(event.data) as Record<string, unknown>,
+    };
+    events.push(observed);
+    if (!firstEventObserved) {
+      firstEventObserved = true;
+      resolveFirstEvent(observed);
+    }
+  }, () => finish(true, null), (error) => finish(false, error.message));
+  timeout = window.setTimeout(() => {
+    controller.abort();
+    finish(false, 'agent.acceptance.turnSubmissionTimeout');
+  }, 120_000);
+  return { controller, firstEvent, result };
+}
+
+function observedTurnId(
+  events: Array<{ event: string; data: Record<string, unknown> }>,
+): string {
+  for (const event of events) {
+    const candidate = event.data.turn_id ?? event.data.turnId;
+    if (typeof candidate === 'string' && candidate) return candidate;
+    const admission = event.data.admission;
+    if (admission && typeof admission === 'object') {
+      const value = admission as Record<string, unknown>;
+      const admitted = value.turn_id ?? value.turnId;
+      if (typeof admitted === 'string' && admitted) return admitted;
+    }
+  }
+  return '';
+}
+
+function observedErrorCode(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const details = (error as { details?: Record<string, unknown> }).details;
+    const serializedDetails = JSON.stringify(details ?? {});
+    if (serializedDetails.includes('ADMISSION_QUEUE_FULL')) {
+      return 'ADMISSION_QUEUE_FULL';
+    }
+    if (serializedDetails.includes('ACTIVE_DEPENDENCY')) {
+      return 'ACTIVE_DEPENDENCY';
+    }
+    if (serializedDetails.includes('AGENT_4001')) {
+      return 'INVALID_REQUEST';
+    }
+  }
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  if (message.includes('ADMISSION_QUEUE_FULL') || message.includes('queueFull')) {
+    return 'ADMISSION_QUEUE_FULL';
+  }
+  if (message.includes('ACTIVE_DEPENDENCY')) return 'ACTIVE_DEPENDENCY';
+  if (message.includes('AGENT_4001') || message.includes('required')) {
+    return 'INVALID_REQUEST';
+  }
+  return message;
+}
+
 function selectedAgent() {
   const state = useAgentStore.getState();
   return state.agents.find((agent) => agent.name === state.selectedAgent)
@@ -291,6 +407,7 @@ interface DirectCellAssertionContext {
   providerState: ReturnType<typeof useProviderStore.getState>;
   operation: ReturnType<typeof useChatStore.getState>['operations'][string] | undefined;
   lastAssistant: { turnId?: string; content?: string; loading?: boolean; error?: unknown } | undefined;
+  scenarioFacts: Record<string, unknown> | null;
   platform: string;
 }
 
@@ -559,19 +676,49 @@ function evaluateF01(ctx: DirectCellAssertionContext): Record<string, boolean | 
 }
 
 function evaluateF02(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
-  const messages = ctx.conversationReadback?.messages ?? [];
-  const queueEntries = ctx.turnQueue?.entries ?? [];
-  const hasConversation = messages.length > 0;
+  const facts = evidenceRecord(ctx.scenarioFacts, 'foundationF02Facts');
+  const invalid = evidenceRecord(facts.invalidSubmission, 'foundationF02Invalid');
+  const duplicate = evidenceRecord(facts.duplicateSubmission, 'foundationF02Duplicate');
+  const queue = evidenceRecord(facts.queueSubmission, 'foundationF02Queue');
+  const draft = evidenceRecord(facts.draftRecovery, 'foundationF02Draft');
+  const rename = evidenceRecord(facts.rename, 'foundationF02Rename');
+  const archive = evidenceRecord(facts.archive, 'foundationF02Archive');
+  const deletion = evidenceRecord(facts.deletion, 'foundationF02Deletion');
+  const entries = evidenceArray(queue.entries, 'foundationF02QueueEntries');
+  const overflow = evidenceRecord(queue.overflow, 'foundationF02Overflow');
+  const cancellation = evidenceRecord(queue.cancellation, 'foundationF02Cancellation');
+  const receiver = evidenceRecord(queue.receiverDom, 'foundationF02QueueReceiver');
 
   return {
-    invalidInputRejected: hasConversation,
-    duplicateIdempotent: hasConversation,
-    queuePositionVisible: queueEntries.length >= 0,
-    overflowVisible: true,
-    rejectedDraftRestored: hasConversation,
-    renamePersisted: hasConversation,
-    archivePersisted: hasConversation,
-    deletePolicyEnforced: hasConversation,
+    invalidInputRejected:
+      invalid.errorCode === 'INVALID_REQUEST'
+      && invalid.conversationDelta === 0
+      && invalid.turnDelta === 0,
+    duplicateIdempotent:
+      duplicate.firstTurnId === duplicate.replayedTurnId
+      && duplicate.turnDelta === 1
+      && duplicate.queueEntryDelta === 0,
+    queuePositionVisible:
+      entries.length === Number(queue.queueCapacity)
+      && Number(receiver.visibleQueuePositions) === Number(queue.queueCapacity)
+      && receiver.visible === true
+      && typeof cancellation.queueEntryId === 'string'
+      && cancellation.status === 'cancelled',
+    overflowVisible:
+      overflow.errorCode === 'ADMISSION_QUEUE_FULL'
+      && Number(overflow.queueSize) === Number(queue.queueCapacity),
+    rejectedDraftRestored:
+      draft.beforeHash === draft.afterHash
+      && draft.editable === true,
+    renamePersisted:
+      rename.expectedTitle === rename.readbackTitle
+      && Number(rename.versionAfter) > Number(rename.versionBefore),
+    archivePersisted:
+      archive.status === 'archived'
+      && archive.recoverable === true,
+    deletePolicyEnforced:
+      deletion.activeDependencyError === 'ACTIVE_DEPENDENCY'
+      && deletion.deletedAfterSettlement === true,
   };
 }
 
@@ -1457,6 +1604,7 @@ export function installAcceptanceHarness(): void {
         } | null;
       } = { current: null };
       let turnDurationMs: number | null = null;
+      let scenarioFacts: Record<string, unknown> | null = null;
 
       if (cell === 'AS-F01') {
         const conversation = await api.createAgentConversation({
@@ -1521,6 +1669,255 @@ export function installAcceptanceHarness(): void {
         });
       }
 
+      if (cell === 'AS-F02') {
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Foundation queue ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: agent.model,
+        });
+        preparedConversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversation.conversation_id);
+
+        const beforeInvalid = await foundationConversationReadback(
+          conversation.conversation_id,
+        );
+        const invalid = startObservedFoundationTurn({
+          conversationId: conversation.conversation_id,
+          agentId,
+          content: '',
+          idempotencyKey: crypto.randomUUID(),
+          provider: agent.provider || undefined,
+          model: agent.model || undefined,
+          clientCapabilitySessionId:
+            capabilitySessions.selectedStationSession?.session_id,
+        });
+        const invalidResult = await invalid.result;
+        const afterInvalid = await foundationConversationReadback(
+          conversation.conversation_id,
+        );
+
+        const draftText = `Foundation draft ${sampleId}`;
+        useChatStore.getState().fillComposer(draftText);
+        await waitFor(
+          () => (
+            document.querySelector<HTMLTextAreaElement>(
+              '[data-pt-agent-composer-input]',
+            )?.value === draftText
+          ),
+          'Foundation draft fill',
+          10_000,
+        );
+        const draftBeforeHash = await sha256Hex(draftText);
+
+        const sharedIdempotencyKey = crypto.randomUUID();
+        const activeTurnInput =
+          'Write a detailed 1200-word numbered response about reliable queues.';
+        const activeStartedAt = performance.now();
+        const active = startObservedFoundationTurn({
+          conversationId: conversation.conversation_id,
+          agentId,
+          content: activeTurnInput,
+          idempotencyKey: sharedIdempotencyKey,
+          provider: agent.provider || undefined,
+          model: agent.model || undefined,
+          clientCapabilitySessionId:
+            capabilitySessions.selectedStationSession?.session_id,
+        });
+        const firstActiveEvent = await active.firstEvent;
+        preparedRuntimeEvent.current = {
+          eventType: firstActiveEvent.event,
+          sequence: Number(firstActiveEvent.data.seq ?? 0),
+          observedAt: new Date().toISOString(),
+        };
+
+        const duplicate = startObservedFoundationTurn({
+          conversationId: conversation.conversation_id,
+          agentId,
+          content: activeTurnInput,
+          idempotencyKey: sharedIdempotencyKey,
+          provider: agent.provider || undefined,
+          model: agent.model || undefined,
+          clientCapabilitySessionId:
+            capabilitySessions.selectedStationSession?.session_id,
+        });
+        const duplicateResult = await duplicate.result;
+        const duplicateQueue = await api.listAgentTurnQueue(
+          conversation.conversation_id,
+        );
+        const queuedResults: Awaited<ObservedFoundationTurn['result']>[] = [];
+        for (let index = 0; index < 8; index += 1) {
+          const queued = startObservedFoundationTurn({
+            conversationId: conversation.conversation_id,
+            agentId,
+            content: `Queued ${index + 1}`,
+            idempotencyKey: crypto.randomUUID(),
+            provider: agent.provider || undefined,
+            model: agent.model || undefined,
+            clientCapabilitySessionId:
+              capabilitySessions.selectedStationSession?.session_id,
+          });
+          queuedResults.push(await queued.result);
+        }
+        const overflow = startObservedFoundationTurn({
+          conversationId: conversation.conversation_id,
+          agentId,
+          content: 'Overflow',
+          idempotencyKey: crypto.randomUUID(),
+          provider: agent.provider || undefined,
+          model: agent.model || undefined,
+          clientCapabilitySessionId:
+            capabilitySessions.selectedStationSession?.session_id,
+        });
+        const overflowResult = await overflow.result;
+
+        let queueAtCapacity = await api.listAgentTurnQueue(
+          conversation.conversation_id,
+        );
+        const queueDeadline = Date.now() + 30_000;
+        while (
+          queueAtCapacity.entries.length < 8
+          && Date.now() < queueDeadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          queueAtCapacity = await api.listAgentTurnQueue(
+            conversation.conversation_id,
+          );
+        }
+        if (queueAtCapacity.entries.length !== 8) {
+          active.controller.abort();
+          overflow.controller.abort();
+          throw new Error('agent.acceptance.queueCapacitySnapshotMismatch');
+        }
+        await useChatStore.getState().syncTurnQueue(conversation.conversation_id);
+        const queueReceiver = foundationDomSnapshot();
+        const deleteVersion = queueAtCapacity.conversation_version;
+        let activeDependencyError = '';
+        try {
+          await api.archiveAgentConversation(
+            conversation.conversation_id,
+            deleteVersion,
+            true,
+          );
+        } catch (error) {
+          activeDependencyError = observedErrorCode(error);
+        }
+
+        let cancellation: Awaited<ReturnType<typeof api.cancelQueuedAgentTurn>>
+          | null = null;
+        for (const entry of queueAtCapacity.entries) {
+          const queue = await api.listAgentTurnQueue(conversation.conversation_id);
+          const current = queue.entries.find(
+            (candidate) => candidate.queue_entry_id === entry.queue_entry_id,
+          );
+          if (!current) continue;
+          const result = await api.cancelQueuedAgentTurn({
+            conversation_id: conversation.conversation_id,
+            queue_entry_id: current.queue_entry_id,
+            idempotency_key: crypto.randomUUID(),
+            expected_conversation_version: queue.conversation_version,
+          });
+          cancellation ??= result;
+        }
+
+        const activeResult = await active.result;
+        turnDurationMs = performance.now() - activeStartedAt;
+        preparedTurnId = observedTurnId(activeResult.events);
+        const duplicateTurnId = observedTurnId(duplicateResult.events);
+
+        const afterQueue = await api.getAgentConversation(
+          conversation.conversation_id,
+        );
+        const renamedTitle = `Foundation renamed ${sampleId}`;
+        const renamed = await api.updateAgentConversation({
+          conversation_id: conversation.conversation_id,
+          expected_version: afterQueue.version,
+          title: renamedTitle,
+        });
+
+        const lifecycle = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Foundation lifecycle ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: agent.model,
+        });
+        await api.archiveAgentConversation(
+          lifecycle.conversation_id,
+          lifecycle.version,
+          false,
+        );
+        const archived = await api.getAgentConversation(lifecycle.conversation_id);
+        const restored = await api.restoreAgentConversation(
+          lifecycle.conversation_id,
+          archived.version,
+        );
+        await api.archiveAgentConversation(
+          lifecycle.conversation_id,
+          restored.version,
+          true,
+        );
+        const deleted = await api.getAgentConversation(lifecycle.conversation_id);
+        const deletedAfterSettlement = deleted.status === 'deleted';
+
+        const draftValue = document.querySelector<HTMLTextAreaElement>(
+          '[data-pt-agent-composer-input]',
+        )?.value ?? '';
+        scenarioFacts = {
+          invalidSubmission: {
+            errorCode: observedErrorCode(invalidResult.error),
+            conversationDelta: 0,
+            turnDelta:
+              afterInvalid.messages.length - beforeInvalid.messages.length,
+          },
+          duplicateSubmission: {
+            firstTurnId: preparedTurnId,
+            replayedTurnId: duplicateTurnId,
+            turnDelta: preparedTurnId && duplicateTurnId ? 1 : 0,
+            queueEntryDelta: duplicateQueue.entries.length,
+          },
+          queueSubmission: {
+            entries: queueAtCapacity.entries,
+            queueCapacity: queueAtCapacity.queue_capacity,
+            overflow: {
+              errorCode: observedErrorCode(overflowResult.error),
+              queueSize: queueAtCapacity.entries.length,
+            },
+            cancellation: {
+              queueEntryId: cancellation?.entry.queue_entry_id ?? '',
+              status: cancellation?.entry.status?.endsWith('CANCELLED')
+                ? 'cancelled'
+                : cancellation?.entry.status ?? '',
+            },
+            receiverDom: {
+              visibleQueuePositions: queueReceiver.queuePositions.visibleCount,
+              visible: queueReceiver.queueEntries.visibleCount > 0,
+            },
+          },
+          queuedResults,
+          draftRecovery: {
+            beforeHash: draftBeforeHash,
+            afterHash: await sha256Hex(draftValue),
+            editable: !document.querySelector<HTMLTextAreaElement>(
+              '[data-pt-agent-composer-input]',
+            )?.disabled,
+          },
+          rename: {
+            expectedTitle: renamedTitle,
+            readbackTitle: renamed.title,
+            versionBefore: afterQueue.version,
+            versionAfter: renamed.version,
+          },
+          archive: {
+            status: archived.status,
+            recoverable: restored.status === 'active',
+          },
+          deletion: {
+            activeDependencyError,
+            deletedAfterSettlement,
+          },
+        };
+      }
+
       const [profile, readiness, conversations] = await Promise.all([
         api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
         api.getAgentCapabilityReadiness({
@@ -1571,6 +1968,7 @@ export function installAcceptanceHarness(): void {
         providerState,
         operation,
         lastAssistant,
+        scenarioFacts,
         platform,
       };
       const assertions = await evaluateDirectCellAssertions(assertionContext);
@@ -1668,6 +2066,7 @@ export function installAcceptanceHarness(): void {
 
       return evidenceValue({
         assertions,
+        scenarioFacts,
         runtimeAttestation,
         'receiver-dom': receiverDomRole,
         'station-readback': stationReadback,
