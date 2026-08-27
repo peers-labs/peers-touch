@@ -384,20 +384,35 @@ def _docker_remove(container_name: str) -> None:
         )
 
 
-def _assert_ports_released(ports: tuple[int, ...]) -> None:
-    active: list[int] = []
-    for port in ports:
-        for host in ("127.0.0.1", "::1"):
-            try:
-                with socket.create_connection((host, port), timeout=0.2):
-                    active.append(port)
-                    break
-            except OSError:
-                continue
-    if active:
-        raise RuntimeError(
-            f"runtime-cell ports remain active after cleanup: {active}"
-        )
+def _assert_ports_released(
+    ports: tuple[int, ...],
+    timeout: float = 5,
+) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        unavailable: list[int] = []
+        listeners: list[socket.socket] = []
+        try:
+            for port in ports:
+                listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                try:
+                    listener.bind(("127.0.0.1", port))
+                except OSError:
+                    listener.close()
+                    unavailable.append(port)
+                    continue
+                listeners.append(listener)
+        finally:
+            for listener in listeners:
+                listener.close()
+        if not unavailable:
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                "runtime-cell ports remain unavailable after cleanup: "
+                f"{unavailable}"
+            )
+        time.sleep(0.05)
 
 
 def _assert_ports_available(ports: tuple[int, ...]) -> None:

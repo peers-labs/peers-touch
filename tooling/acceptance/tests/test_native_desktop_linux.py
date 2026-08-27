@@ -10,6 +10,7 @@ import os
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -1219,6 +1220,34 @@ class RemoteLinuxCellControlTests(unittest.TestCase):
                     "actor port .* is already in use",
                 ):
                     remote_control.actor_start(actor)
+
+    def test_port_release_waits_until_the_port_can_be_rebound(self) -> None:
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+
+        def release_listener() -> None:
+            time.sleep(0.1)
+            listener.close()
+
+        release = threading.Thread(target=release_listener)
+        release.start()
+        try:
+            remote_control._assert_ports_released((port,), timeout=1)
+        finally:
+            release.join()
+
+    def test_port_release_fails_closed_when_rebind_remains_blocked(self) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "ports remain unavailable after cleanup",
+            ):
+                remote_control._assert_ports_released(
+                    (listener.getsockname()[1],),
+                    timeout=0,
+                )
 
     def test_outer_cleanup_stops_actors_in_reverse_launch_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
