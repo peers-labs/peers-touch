@@ -36,11 +36,16 @@ interface FoundationTurnSubmission {
 interface ObservedFoundationTurnResult {
   ok: boolean;
   error: string | null;
-  events: Array<{ event: string; data: Record<string, unknown> }>;
+  events: Array<{
+    event: string;
+    data: Record<string, unknown>;
+    observedAt: string;
+  }>;
 }
 
 interface ObservedFoundationTurn {
   controller: AbortController;
+  events: ObservedFoundationTurnResult['events'];
   firstEvent: Promise<{ event: string; data: Record<string, unknown> }>;
   result: Promise<ObservedFoundationTurnResult>;
 }
@@ -54,7 +59,7 @@ function startObservedFoundationTurn(input: {
   model?: string;
   clientCapabilitySessionId?: string;
 }): ObservedFoundationTurn {
-  const events: Array<{ event: string; data: Record<string, unknown> }> = [];
+  const events: ObservedFoundationTurnResult['events'] = [];
   let resolveFirstEvent: (
     value: { event: string; data: Record<string, unknown> },
   ) => void = () => {};
@@ -88,6 +93,7 @@ function startObservedFoundationTurn(input: {
     const observed = {
       event: event.event,
       data: evidenceValue(event.data) as Record<string, unknown>,
+      observedAt: new Date().toISOString(),
     };
     events.push(observed);
     if (!firstEventObserved) {
@@ -99,7 +105,7 @@ function startObservedFoundationTurn(input: {
     controller.abort();
     finish(false, 'agent.acceptance.turnSubmissionTimeout');
   }, 120_000);
-  return { controller, firstEvent, result };
+  return { controller, events, firstEvent, result };
 }
 
 function observedTurnId(
@@ -637,6 +643,8 @@ async function evaluateDirectCellAssertions(
       return evaluateF01(ctx);
     case 'AS-F02':
       return evaluateF02(ctx);
+    case 'AS-F03':
+      return evaluateF03(ctx);
     case 'AS-F07':
       return evaluateF07(ctx);
     case 'AS-F08':
@@ -650,6 +658,39 @@ async function evaluateDirectCellAssertions(
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+function evaluateF03(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
+  const facts = evidenceRecord(ctx.scenarioFacts, 'foundationF03Facts');
+  const events = evidenceArray(facts.events, 'foundationF03Events')
+    .map((value) => evidenceRecord(value, 'foundationF03Event'));
+  const sequences = events.map((event) => Number(event.sequence));
+  const terminalEvents = events.filter((event) =>
+    ['done', 'error', 'cancelled'].includes(String(event.eventType)));
+  const evidence = evidenceRecord(ctx.turnEvidence, 'turnEvidence');
+  const diagnostics = evidenceRecord(evidence.diagnostics, 'turnDiagnostics');
+  const replay = evidenceRecord(diagnostics.replay, 'turnDiagnosticReplay');
+  const turn = evidenceRecord(replay.turn, 'turnDiagnosticTurn');
+
+  return {
+    progressiveEventsSequenced:
+      events.some((event) => event.eventType === 'progress')
+      && events.some((event) => event.eventType === 'text')
+      && sequences.every((sequence) => Number.isInteger(sequence) && sequence > 0)
+      && sequences.every((sequence, index) =>
+        index === 0 || sequence > sequences[index - 1]),
+    cancelledDuringTextAuthoritative:
+      facts.sawTextBeforeCancel === true
+      && String(turn.status).toLowerCase().endsWith('cancelled'),
+    exactlyOneAuthoritativeTerminal:
+      terminalEvents.length === 1
+      && terminalEvents[0]?.eventType === 'cancelled'
+      && !events.some((event) => event.eventType === 'done'),
+    terminalTracePersisted:
+      Boolean(evidence.trace)
+      && Boolean(diagnostics.replay),
+    toolAndApprovalWaits: null,
+  };
 }
 
 function evaluateF01(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
@@ -1920,6 +1961,63 @@ export function installAcceptanceHarness(): void {
         };
       }
 
+      if (cell === 'AS-F03') {
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Foundation stream ${sampleId}`,
+          provider_id: agent.provider,
+          model_name: agent.model,
+        });
+        preparedConversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversation.conversation_id);
+
+        const startedAt = performance.now();
+        const observed = startObservedFoundationTurn({
+          conversationId: conversation.conversation_id,
+          agentId,
+          content: 'Write a detailed numbered explanation of reliable queues.',
+          idempotencyKey: crypto.randomUUID(),
+          provider: agent.provider || undefined,
+          model: agent.model || undefined,
+          clientCapabilitySessionId:
+            capabilitySessions.selectedStationSession?.session_id,
+        });
+        await observed.firstEvent;
+        const textDeadline = Date.now() + 60_000;
+        while (
+          !observed.events.some((event) => event.event === 'text')
+          && Date.now() < textDeadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        if (!observed.events.some((event) => event.event === 'text')) {
+          observed.controller.abort();
+          throw new Error('agent.acceptance.progressiveTextMissing');
+        }
+        preparedTurnId = observedTurnId(observed.events);
+        if (!preparedTurnId) {
+          observed.controller.abort();
+          throw new Error('agent.acceptance.foundationTurnIdMissing');
+        }
+        await api.cancelAgentTurn(preparedTurnId);
+        const result = await observed.result;
+        turnDurationMs = performance.now() - startedAt;
+        const normalizedEvents = result.events.map((event) => ({
+          eventType: event.event,
+          sequence: Number(event.data.seq ?? 0),
+          observedAt: event.observedAt,
+        }));
+        const terminalEvent = [...normalizedEvents]
+          .reverse()
+          .find((event) =>
+            ['done', 'error', 'cancelled'].includes(event.eventType));
+        preparedRuntimeEvent.current = terminalEvent ?? null;
+        scenarioFacts = {
+          events: normalizedEvents,
+          sawTextBeforeCancel: true,
+        };
+      }
+
       const [profile, readiness, conversations] = await Promise.all([
         api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
         api.getAgentCapabilityReadiness({
@@ -1949,6 +2047,9 @@ export function installAcceptanceHarness(): void {
       const turnEvidence = currentConversationId && turnId
         ? await foundationTurnEvidence(currentConversationId, turnId)
         : null;
+      if (cell === 'AS-F03' && scenarioFacts) {
+        scenarioFacts.terminalTracePersisted = Boolean(turnEvidence);
+      }
 
       const sessionState = useSessionStore.getState();
       const providerState = useProviderStore.getState();

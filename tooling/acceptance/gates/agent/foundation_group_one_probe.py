@@ -18,6 +18,7 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter import (
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
     evaluate_as_f02,
+    evaluate_as_f03,
     evaluate_as_f10,
 )
 
@@ -26,6 +27,7 @@ GROUP_ONE_CELLS = frozenset(
     {
         "AS-F01",
         "AS-F02",
+        "AS-F03",
         "AS-F07",
         "AS-F08",
         "AS-F09",
@@ -39,7 +41,7 @@ GROUP_ONE_ROWS = frozenset(
         "foundation-browser-direct",
     }
 )
-EXPECTED_GROUP_ONE_TUPLES = 28
+EXPECTED_GROUP_ONE_TUPLES = 32
 
 
 class GroupOneProbeError(RuntimeError):
@@ -154,6 +156,7 @@ class FoundationGroupOneProbeRunner:
     ) -> None:
         evaluators = {
             "AS-F02": lambda facts: evaluate_as_f02(facts),
+            "AS-F03": lambda facts: evaluate_as_f03(facts),
             "AS-F10": lambda facts: evaluate_as_f10(
                 facts,
                 platform=runtime_tuple.platform,

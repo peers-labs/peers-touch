@@ -52,6 +52,15 @@ REQUIRED_ASSERTIONS = {
             "deletePolicyEnforced",
         }
     ),
+    "AS-F03": frozenset(
+        {
+            "progressiveEventsSequenced",
+            "cancelledDuringTextAuthoritative",
+            "exactlyOneAuthoritativeTerminal",
+            "terminalTracePersisted",
+            "toolAndApprovalWaits",
+        }
+    ),
     "AS-F07": frozenset(
         {
             "retryCreatedAttempt",

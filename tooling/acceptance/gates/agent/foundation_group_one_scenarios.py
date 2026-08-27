@@ -87,6 +87,49 @@ def evaluate_as_f02(capture: Mapping[str, Any]) -> dict[str, bool]:
     return assertions
 
 
+def evaluate_as_f03(capture: Mapping[str, Any]) -> dict[str, bool | None]:
+    events = [
+        _mapping({"event": value}, "event", scenario="AS-F03")
+        for value in _list(capture, "events", scenario="AS-F03")
+    ]
+    sequences = [
+        _positive_int(event, "sequence", scenario="AS-F03")
+        for event in events
+    ]
+    terminal_events = [
+        event
+        for event in events
+        if event.get("eventType") in {"done", "error", "cancelled"}
+    ]
+    assertions: dict[str, bool | None] = {
+        "progressiveEventsSequenced": (
+            any(event.get("eventType") == "progress" for event in events)
+            and any(event.get("eventType") == "text" for event in events)
+            and sequences == sorted(set(sequences))
+        ),
+        "cancelledDuringTextAuthoritative": (
+            capture.get("sawTextBeforeCancel") is True
+        ),
+        "exactlyOneAuthoritativeTerminal": (
+            len(terminal_events) == 1
+            and terminal_events[0].get("eventType") == "cancelled"
+        ),
+        "terminalTracePersisted": (
+            capture.get("terminalTracePersisted") is True
+        ),
+        "toolAndApprovalWaits": None,
+    }
+    failed = sorted(
+        key for key, passed in assertions.items()
+        if passed is not None and not passed
+    )
+    if failed:
+        raise GroupOneScenarioError(
+            f"AS-F03 production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_as_f10(
     capture: Mapping[str, Any],
     *,
@@ -254,19 +297,31 @@ def _mapping(
     return dict(item)
 
 
-def _list(value: Mapping[str, Any], key: str) -> list[dict[str, Any]]:
+def _list(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    scenario: str = "AS-F02",
+) -> list[dict[str, Any]]:
     item = value.get(key)
     if not isinstance(item, list) or any(
         not isinstance(entry, Mapping) for entry in item
     ):
-        raise GroupOneScenarioError(f"AS-F02 {key} fact is invalid")
+        raise GroupOneScenarioError(f"{scenario} {key} fact is invalid")
     return [dict(entry) for entry in item]
 
 
-def _positive_int(value: Mapping[str, Any], key: str) -> int:
+def _positive_int(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    scenario: str = "AS-F02",
+) -> int:
     item = value.get(key)
     if not isinstance(item, int) or isinstance(item, bool) or item <= 0:
-        raise GroupOneScenarioError(f"AS-F02 {key} must be a positive integer")
+        raise GroupOneScenarioError(
+            f"{scenario} {key} must be a positive integer"
+        )
     return item
 
 

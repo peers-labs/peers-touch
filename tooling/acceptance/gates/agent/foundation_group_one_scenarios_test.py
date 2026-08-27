@@ -6,6 +6,7 @@ import unittest
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
     evaluate_as_f02,
+    evaluate_as_f03,
     evaluate_as_f10,
 )
 
@@ -119,7 +120,39 @@ def valid_as_f10_capture(platform: str = "desktop_app") -> dict[str, object]:
     }
 
 
+def valid_as_f03_capture() -> dict[str, object]:
+    return {
+        "events": [
+            {"eventType": "progress", "sequence": 1},
+            {"eventType": "text", "sequence": 2},
+            {"eventType": "cancelled", "sequence": 3},
+        ],
+        "sawTextBeforeCancel": True,
+        "terminalTracePersisted": True,
+    }
+
+
 class FoundationGroupOneScenariosTest(unittest.TestCase):
+    def test_as_f03_accepts_sequenced_text_then_cancel(self) -> None:
+        assertions = evaluate_as_f03(valid_as_f03_capture())
+
+        self.assertTrue(assertions["progressiveEventsSequenced"])
+        self.assertTrue(assertions["cancelledDuringTextAuthoritative"])
+        self.assertTrue(assertions["exactlyOneAuthoritativeTerminal"])
+        self.assertIsNone(assertions["toolAndApprovalWaits"])
+
+    def test_as_f03_rejects_terminal_after_cancel(self) -> None:
+        capture = valid_as_f03_capture()
+        events = capture["events"]
+        assert isinstance(events, list)
+        events.append({"eventType": "done", "sequence": 4})
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "exactlyOneAuthoritativeTerminal",
+        ):
+            evaluate_as_f03(capture)
+
     def test_as_f02_accepts_complete_production_facts(self) -> None:
         assertions = evaluate_as_f02(valid_capture())
 

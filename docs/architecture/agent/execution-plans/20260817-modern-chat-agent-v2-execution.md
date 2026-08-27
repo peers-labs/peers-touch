@@ -1967,6 +1967,13 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Expected**: Progressive events and exactly one authoritative completed/partial/failed/cancelled/interrupted terminal state.
 - **Failure variant**: Provider timeout/rate limit/retry exhaustion stays typed; transport loss alone never marks failed.
 - **Evidence**: Native/Browser DOM, raw event timestamps/sequences, provider cancel, Station Turn/Trace.
+- **Staged proof amendment**: pre-W1 G-F proves ordered progressive text,
+  production cancellation during text, one authoritative cancelled terminal,
+  and durable Station Turn/Attempt/Trace readback. Tool/approval waits and
+  cancellation remain mandatory W6 evidence because governed ToolCall
+  decision/claim/result authority does not exist before W1/W3/W6. This changes
+  dependency ownership only; it does not remove or reduce any of the 419
+  Foundation tuples or final quantitative workloads.
 - **Status**: pending
 
 ### AS-F04 Tool Policy Auto, Manual, Deny, And Expiry
