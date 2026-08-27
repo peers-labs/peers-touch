@@ -15,10 +15,11 @@ func TestOpenAIThinkingModePayload(t *testing.T) {
 		name         string
 		mode         domain.ThinkingMode
 		wantThinking bool
+		wantEffort   bool
 	}{
-		{name: "auto omits provider override", mode: domain.ThinkingModeAuto},
+		{name: "auto omits provider override", mode: domain.ThinkingModeAuto, wantEffort: true},
 		{name: "disabled requests direct text", mode: domain.ThinkingModeDisabled, wantThinking: true},
-		{name: "enabled requests thinking", mode: domain.ThinkingModeEnabled, wantThinking: true},
+		{name: "enabled requests thinking", mode: domain.ThinkingModeEnabled, wantThinking: true, wantEffort: true},
 	}
 
 	for _, test := range tests {
@@ -60,8 +61,17 @@ func TestOpenAIThinkingModePayload(t *testing.T) {
 					t.Fatalf("thinking payload = %#v, want type %q", thinking, test.mode)
 				}
 			}
-			if payload["reasoning_effort"] != "low" {
-				t.Fatalf("reasoning effort changed by thinking mode: %#v", payload)
+			_, effortPresent := payload["reasoning_effort"]
+			if effortPresent != test.wantEffort {
+				t.Fatalf(
+					"reasoning effort presence = %v, want %v: %#v",
+					effortPresent,
+					test.wantEffort,
+					payload,
+				)
+			}
+			if test.wantEffort && payload["reasoning_effort"] != "low" {
+				t.Fatalf("reasoning effort payload changed: %#v", payload)
 			}
 		})
 	}

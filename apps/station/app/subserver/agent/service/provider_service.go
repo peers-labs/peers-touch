@@ -612,7 +612,9 @@ func (s *ProviderService) callOpenAI(
 		"messages":   apiMessages,
 		"max_tokens": maxOutputTokens,
 	}
-	if effort != "" && effort != "medium" {
+	if thinkingMode != domain.ThinkingModeDisabled &&
+		effort != "" &&
+		effort != "medium" {
 		payload["reasoning_effort"] = effort
 	}
 	if thinkingMode != domain.ThinkingModeAuto {

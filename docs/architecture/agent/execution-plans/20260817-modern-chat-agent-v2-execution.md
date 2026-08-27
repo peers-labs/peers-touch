@@ -1525,6 +1525,13 @@ the G-F Gate. Focused Station Agent packages, Desktop checks/tests/build,
 Mobile checks, 49 Foundation/proof-contract tests, Agent Domain validation, and
 Acceptance Infra self-validation pass. The source-matched runtime rerun remains
 pending.
+The source-matched `22a627426` run
+`20260827T074629271369Z-741e668ec785182b93fe37377bceeb02` persisted
+`thinking_mode=disabled` in the AS-F03 RuntimeSnapshot, then failed before text
+because Ark rejected the incompatible wire combination
+`reasoning_effort=low + thinking.type=disabled`. Cleanup passed. The provider
+adapter now omits reasoning effort when thinking is disabled; this preserves
+the independent product controls without remapping `low` to `disabled`.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
