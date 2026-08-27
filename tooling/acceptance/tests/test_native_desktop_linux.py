@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import os
+import socket
 import subprocess
 import tempfile
 import time
@@ -116,6 +117,7 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
         self.assertIn('setsid \\"$PT_CELL_APP_BINARY\\"', source)
         self.assertIn('f"kill -TERM -- -{process_id}"', source)
         self.assertIn('f"kill -KILL -- -{process_id}"', source)
+        self.assertIn("_assert_ports_available", source)
         self.assertIn('"reveal_file_chooser_location"', source)
         self.assertIn(
             "adapter.reveal_file_chooser_location()",
@@ -486,6 +488,91 @@ class LinuxCellProfileTests(unittest.TestCase):
         )
         provisioner.stop.assert_not_called()
         self.assertNotIn("alice", provisioner._actors)
+
+    def test_actor_ports_are_remapped_into_the_cell_owned_range(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+            provisioner.contract = SimpleNamespace(
+                cell_id="desktop-linux-native",
+            )
+            provisioner.profile = SimpleNamespace(
+                runtime_root=".cache/runtime",
+                webdriver_port=4545,
+                gateway_port=3130,
+            )
+            provisioner.state_path = Path(tmp) / "cell.json"
+            provisioner._actors = {}
+            provisioner._actor_port_slots = {}
+            provisioner.transport = Mock()
+            alice_gateway = SyntheticTunnel(53330)
+            bob_webdriver = SyntheticTunnel(54446)
+            bob_gateway = SyntheticTunnel(53331)
+            provisioner.transport.start_local_forward.side_effect = (
+                alice_gateway,
+                bob_webdriver,
+                bob_gateway,
+            )
+            provisioner._validated_tunnel_state = Mock(
+                return_value={
+                    "webdriver": {"localPort": 54545},
+                }
+            )
+            provisioner._read_tunnel_state = Mock(return_value={})
+            state = {
+                "runId": "run-1",
+                "containerName": "runtime-cell",
+                "remoteControl": "/remote/control.py",
+            }
+            provisioner._require_state = Mock(return_value=state)
+            provisioner._start_remote_actor = Mock(
+                side_effect=(
+                    {
+                        "actor": "alice",
+                        "processId": 101,
+                        "webdriverPort": 4545,
+                        "gatewayPort": 3130,
+                        "profile": "chat-native-alice",
+                        "storageRoot": "/workspace/run/actors/alice/storage",
+                    },
+                    {
+                        "actor": "bob",
+                        "processId": 102,
+                        "webdriverPort": 4546,
+                        "gatewayPort": 3131,
+                        "profile": "chat-native-bob",
+                        "storageRoot": "/workspace/run/actors/bob/storage",
+                    },
+                )
+            )
+
+            alice = provisioner.launch_actor(
+                "alice",
+                {
+                    "webdriver_port": 4445,
+                    "gateway_port": 3330,
+                    "profile": "chat-native-alice",
+                },
+                {},
+            )
+            bob = provisioner.launch_actor(
+                "bob",
+                {
+                    "webdriver_port": 4446,
+                    "gateway_port": 3331,
+                    "profile": "chat-native-bob",
+                },
+                {},
+            )
+
+        calls = provisioner._start_remote_actor.call_args_list
+        self.assertEqual(calls[0].kwargs["webdriver_port"], 4545)
+        self.assertEqual(calls[0].kwargs["gateway_port"], 3130)
+        self.assertEqual(calls[1].kwargs["webdriver_port"], 4546)
+        self.assertEqual(calls[1].kwargs["gateway_port"], 3131)
+        self.assertEqual(alice.metadata.webdriver_port, 54545)
+        self.assertEqual(alice.metadata.gateway_port, 53330)
+        self.assertEqual(bob.metadata.webdriver_port, 54446)
+        self.assertEqual(bob.metadata.gateway_port, 53331)
 
     def test_actor_restart_preserves_state_and_keeps_per_launch_logs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1107,6 +1194,31 @@ class RemoteLinuxCellControlTests(unittest.TestCase):
                 "/workspace/run/actors/bob/storage",
             },
         )
+
+    def test_actor_start_rejects_a_port_owned_outside_the_cell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, socket.socket(
+            socket.AF_INET,
+            socket.SOCK_STREAM,
+        ) as listener:
+            home = Path(tmp)
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            args = self._args("acquire", ".cache/runtime")
+            with patch.dict(os.environ, {"HOME": str(home)}), patch.object(
+                remote_control,
+                "_spawn_reaper",
+                return_value=123,
+            ), patch("sys.stdout"):
+                self.assertEqual(remote_control.acquire(args), 0)
+
+            actor = self._args("actor-start", ".cache/runtime")
+            actor.webdriver_port = listener.getsockname()[1]
+            with patch.dict(os.environ, {"HOME": str(home)}):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "actor port .* is already in use",
+                ):
+                    remote_control.actor_start(actor)
 
     def test_outer_cleanup_stops_actors_in_reverse_launch_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

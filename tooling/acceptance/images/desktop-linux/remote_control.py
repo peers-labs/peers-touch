@@ -224,20 +224,20 @@ def _wait_actor_port(
     deadline: float,
 ) -> None:
     while time.monotonic() < deadline:
+        alive = subprocess.run(
+            ("docker", "exec", container_name, "kill", "-0", str(process_id)),
+            capture_output=True,
+            check=False,
+        )
+        if alive.returncode != 0:
+            raise RuntimeError(
+                f"runtime-cell actor process {process_id} exited before "
+                f"port {port} became ready"
+            )
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.2):
                 return
         except OSError:
-            alive = subprocess.run(
-                ("docker", "exec", container_name, "kill", "-0", str(process_id)),
-                capture_output=True,
-                check=False,
-            )
-            if alive.returncode != 0:
-                raise RuntimeError(
-                    f"runtime-cell actor process {process_id} exited before "
-                    f"port {port} became ready"
-                )
             time.sleep(0.1)
     raise RuntimeError(f"runtime-cell actor port {port} readiness timed out")
 
@@ -398,6 +398,24 @@ def _assert_ports_released(ports: tuple[int, ...]) -> None:
         raise RuntimeError(
             f"runtime-cell ports remain active after cleanup: {active}"
         )
+
+
+def _assert_ports_available(ports: tuple[int, ...]) -> None:
+    listeners: list[socket.socket] = []
+    try:
+        for port in ports:
+            listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                listener.bind(("127.0.0.1", port))
+            except OSError as error:
+                listener.close()
+                raise RuntimeError(
+                    f"runtime-cell actor port {port} is already in use"
+                ) from error
+            listeners.append(listener)
+    finally:
+        for listener in listeners:
+            listener.close()
 
 
 def _remove_tree(path: Path) -> None:
@@ -820,6 +838,7 @@ def actor_start(args: argparse.Namespace) -> int:
     requested_ports = {webdriver_port, gateway_port}
     if allocated_ports & requested_ports:
         raise RuntimeError("runtime-cell actor ports are already allocated")
+    _assert_ports_available(tuple(sorted(requested_ports)))
 
     cell_root = root / cell_id
     run_root = cell_root / "runs" / run_id
