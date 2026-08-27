@@ -274,7 +274,8 @@
         ],
         "proven_by": ["chat-native-product-closure-e2e"],
         "proven_scope": [
-          "Only the source-bound Native Gate with real DOM actions, restart and cleanup proves MP-W13"
+          "Only the source-bound Native Gate with real DOM actions, restart and cleanup proves MP-W13",
+          "The Native Gate rejects raw auth, chat or common i18n keys in visible Alice and Bob UI"
         ],
         "unproven_scope": [
           "MP-W13 remains unproven until chat-native-product-closure-e2e passes",

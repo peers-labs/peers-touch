@@ -2,8 +2,22 @@ import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
-import { Alert, Badge, Empty, theme, Typography } from 'antd';
-import { RefreshCw, BellOff, Pin, Search, Plus, UserPlus, Users, UsersRound, Volume2, VolumeX, CheckCheck, EyeOff } from 'lucide-react';
+import { Badge, Empty, theme, Typography } from 'antd';
+import {
+  BellOff,
+  CheckCheck,
+  CircleAlert,
+  EyeOff,
+  Pin,
+  Plus,
+  RefreshCw,
+  Search,
+  UserPlus,
+  Users,
+  UsersRound,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import type { IMConversationProjection } from '@peers-touch/client-chat-core';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -23,6 +37,62 @@ import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
 
 const { Text } = Typography;
+
+function ConversationListError({
+  compact = false,
+  onRetry,
+}: {
+  compact?: boolean;
+  onRetry: () => void;
+}) {
+  const { token } = theme.useToken();
+  const { t } = useTranslation(['chat', 'common']);
+
+  return (
+    <Flexbox
+      data-chat-session-list-error
+      data-chat-session-list-error-mode={compact ? 'stale' : 'blocking'}
+      role="alert"
+      align="center"
+      justify="center"
+      gap={8}
+      style={{
+        boxSizing: 'border-box',
+        minWidth: 0,
+        width: '100%',
+        padding: compact ? '12px' : '24px 16px',
+        background: compact ? token.colorErrorBg : 'transparent',
+        borderBottom: compact ? `1px solid ${token.colorErrorBorder}` : undefined,
+        textAlign: 'center',
+      }}
+    >
+      <CircleAlert size={compact ? 16 : 24} color={token.colorError} aria-hidden />
+      <Text
+        strong
+        style={{
+          display: 'block',
+          minWidth: 0,
+          maxWidth: '100%',
+          fontSize: 12,
+          lineHeight: 1.5,
+          whiteSpace: 'normal',
+          overflowWrap: 'break-word',
+          wordBreak: 'normal',
+        }}
+      >
+        {t('chat.social.sessionList.loadFailed')}
+      </Text>
+      <Button
+        data-chat-session-list-retry
+        size="small"
+        icon={<RefreshCw size={12} />}
+        onClick={onRetry}
+      >
+        {t('common.action.retry', { ns: 'common' })}
+      </Button>
+    </Flexbox>
+  );
+}
 
 function relativeTime(d: Date, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const diffMs = Date.now() - d.getTime();
@@ -343,24 +413,14 @@ export function ChatSessionList() {
           </Flexbox>
         </Flexbox>
 
-        {loadError && (
-          <div style={{ padding: '8px 12px 0', overflow: 'hidden' }}>
-            <Alert
-              type="error"
-              showIcon
-              message={t('chat.social.sessionList.loadFailed')}
-              action={
-                <Button size="small" type="text" icon={<RefreshCw size={12} />} onClick={handleRetry}>
-                  {t('common.action.retry', { ns: 'common' })}
-                </Button>
-              }
-              style={{ fontSize: 12 }}
-            />
-          </div>
+        {loadError && visibleConversations.length > 0 && (
+          <ConversationListError compact onRetry={handleRetry} />
         )}
 
         <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 8px' }} gap={2}>
-          {visibleConversations.length === 0 ? (
+          {loadError && visibleConversations.length === 0 ? (
+            <ConversationListError onRetry={handleRetry} />
+          ) : visibleConversations.length === 0 ? (
             <Flexbox align="center" justify="center" flex={1}>
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
