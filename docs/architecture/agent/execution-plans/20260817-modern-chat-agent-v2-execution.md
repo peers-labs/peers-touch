@@ -104,7 +104,8 @@ this plan are not completion evidence.
 
 This is the minimum cutover inventory. W0 re-runs the searches and records the
 complete source-bound inventory before implementation. F1-F4 own C01-C10
-cutovers; W8 owns the C11-C15 activation/deletion cutover.
+cutovers; W8a owns complete C12 plus D19 governed ToolCall activation/deletion,
+and W8b owns C11/C14/C15 plus C13 CapabilityOperation activation/deletion.
 
 | Concern | Current authority/consumer paths | Required disposition |
 |---|---|---|
@@ -112,13 +113,13 @@ cutovers; W8 owns the C11-C15 activation/deletion cutover.
 | Runtime/stream/recovery | `apps/station/app/subserver/agent/service/turn_service.go`; Desktop `agentCapabilityRuntime.ts`; `apps/desktop/src-tauri/src/application/agent_turn/mod.rs`; `apps/desktop/src/services/desktop_api.ts#streamAgentTurn` browser `executeAgentTurnOnce` fallback | F2 makes App/Browser consume sequenced Station streaming/replay and deletes one-shot/local execution authority |
 | Context/resources | Station context/memory/skill/knowledge services and message persistence; `apps/desktop/src/store/chat.ts`; attachment/composer surfaces; `apps/desktop/src-tauri/src/contracts.rs` portable payloads | F3 adds typed ContextLedger and opaque authorized resource refs; deletes untyped/local-path authority |
 | Usage/feedback/diagnostics | Station TurnTrace/user-feedback/diagnostic persistence and services; `apps/desktop/src/diagnostics/agentTurnDiagnostics.ts`; Agent details/feedback surfaces | F4 makes exact-turn usage/feedback/redacted replay durable; screenshot-only evidence is retired |
-| Agent config/bindings | `apps/station/app/subserver/agent/domain/agent_config_service.go`; `apps/desktop/src/services/desktop_api.ts`; `apps/desktop/src/pages/AgentProfilePage.tsx`; `apps/desktop/src/store/agent.ts#updateAgentConfig/getCurrentAgentChatConfig`; `apps/desktop/src/store/agentConnectors.ts`; `AgentSidebar.tsx` and diagnostics readers of embedded `chatConfig` | Backfill manifests/bindings while disabled; W8 switches all reads/writes and retires embedded `chatConfig` Skill/Knowledge/MCP/Tool/Connector binding arrays and parallel readers |
-| Home | `apps/desktop/src/pages/HomePage.tsx`; `apps/desktop/src/pages/HomePageContainer.tsx`; `apps/desktop/src/pages/HomePage.descriptor.tsx` | W8 replaces page-derived work state with `homeRuntime` projection |
-| Tool approval/execution | `ToolCallCard.tsx` -> `store/chat.ts#decideToolApproval` -> Desktop API/Tauri command -> Rust `tool_approval_registry`; `ToolDetailView.tsx` is a read-only inspector, not a decision submitter; event flow uses handwritten `streaming/types.ts`/`index.ts`, mixed reducer `streaming/handler.ts` with intervention side effects, `chat.ts`, AgentProfile activity projection, and Rust approval input; `turn_stream.proto` lacks typed proposal/decision payloads; live inventory uses read-only `store/tool.ts`, while unimported `store/tool/index.ts#pendingCalls` is dead code | G1-A adds the MCA-D19 typed decision/envelope/receipt contract; G1-B/C establish Station authority and fenced Rust execution; G1-D makes `toolRuntime` the sole Web projection and decision-intent owner; G1-E deletes every legacy Web/Rust/Station execution authority and unfenced continuation before G-F |
+| Agent config/bindings | `apps/station/app/subserver/agent/domain/agent_config_service.go`; `apps/desktop/src/services/desktop_api.ts`; `apps/desktop/src/pages/AgentProfilePage.tsx`; `apps/desktop/src/store/agent.ts#updateAgentConfig/getCurrentAgentChatConfig`; `apps/desktop/src/store/agentConnectors.ts`; `AgentSidebar.tsx` and diagnostics readers of embedded `chatConfig` | Backfill manifests/bindings while disabled; W8a switches every Tool/MCP/Connector/Skill/Knowledge binding/readiness consumer and retires embedded `chatConfig` arrays plus parallel readers |
+| Home | `apps/desktop/src/pages/HomePage.tsx`; `apps/desktop/src/pages/HomePageContainer.tsx`; `apps/desktop/src/pages/HomePage.descriptor.tsx` | W8b replaces page-derived work state with `homeRuntime` projection |
+| Tool approval/execution | `ToolCallCard.tsx` -> `store/chat.ts#decideToolApproval` -> Desktop API/Tauri command -> Rust `tool_approval_registry`; `ToolDetailView.tsx` is a read-only inspector, not a decision submitter; event flow uses handwritten `streaming/types.ts`/`index.ts`, mixed reducer `streaming/handler.ts` with intervention side effects, `chat.ts`, AgentProfile activity projection, and Rust approval input; `turn_stream.proto` lacks typed proposal/decision payloads; live inventory uses read-only `store/tool.ts`, while unimported `store/tool/index.ts#pendingCalls` is dead code | G1-A adds the MCA-D19 typed decision/envelope/receipt contract; G1-B/C establish Station authority and fenced Rust execution; G1-D makes `toolRuntime` the sole Web projection and decision-intent owner; W8a deletes every legacy Web/Rust/Station execution authority and unfenced continuation before G-F |
 | MCP | `apps/desktop/src/store/mcp.ts`; `apps/desktop/src/services/mcp-service.ts`; `apps/desktop/src/modules/mcp.ts`; `apps/desktop/src-tauri/src/application/mcp/`; `apps/desktop/src-tauri/src/interface/tauri_commands/mcp.rs` | Retain local process/config/secret executor only; replace client terminal lifecycle truth |
 | Connector | `apps/desktop/src/store/agentConnectors.ts`; `apps/desktop/src/components/agent/AgentConnectorsPanel.tsx`; OAuth services under Station | Retain OAuth owner; replace `enabledTools`/labels as portable readiness or binding identity |
-| Evaluation | `apps/desktop/src/store/evaluation.ts`; `apps/desktop/src/pages/EvaluationPage.tsx`; `apps/desktop/src/services/desktop_api.ts`; Station ecosystem dataset persistence/service | Backfill dataset truth; W8 removes localStorage run/result and `quickCompletion` execution |
-| Rejected Custom HTTP Plugin | Desktop `CustomPluginsPage*`, `pages/registry.ts`, `hooks/useCommandMenuItems.ts`, `types/navigation.ts`, `store/customPlugins.ts`, locale keys and `peers-ai-custom-plugins`; `model/domain/agent/ecosystem.proto#CustomPlugin*` and generated clients; Station `agent.go` plugin routes, ecosystem handlers/service/model registration/persistence/table `ecosystem_custom_plugins` | W8 freezes and deletes the independent page, direct arbitrary HTTP execution, local credential storage, proto/CRUD/generated contracts, and persistence/table; no automatic import into Tool/MCP/Connector because no accepted successor mapping exists |
+| Evaluation | `apps/desktop/src/store/evaluation.ts`; `apps/desktop/src/pages/EvaluationPage.tsx`; `apps/desktop/src/services/desktop_api.ts`; Station ecosystem dataset persistence/service | Backfill dataset truth; W8b removes localStorage run/result and `quickCompletion` execution |
+| Rejected Custom HTTP Plugin | Desktop `CustomPluginsPage*`, `pages/registry.ts`, `hooks/useCommandMenuItems.ts`, `types/navigation.ts`, `store/customPlugins.ts`, locale keys and `peers-ai-custom-plugins`; `model/domain/agent/ecosystem.proto#CustomPlugin*` and generated clients; Station `agent.go` plugin routes, ecosystem handlers/service/model registration/persistence/table `ecosystem_custom_plugins` | W8b freezes and deletes the independent page, direct arbitrary HTTP execution, local credential storage, proto/CRUD/generated contracts, and persistence/table; no automatic import into Tool/MCP/Connector because no accepted successor mapping exists |
 | Acceptance | `tooling/acceptance/domains/agent.yaml`; `tooling/acceptance/capabilities/agent.yaml`; `tooling/acceptance/features/agent-*.yaml`; `tooling/acceptance/gates.yaml`; `tooling/acceptance/registry.yaml` | W0 registers one foundation plus six V2 Gates; all remain `UNPROVEN` until executed |
 
 ### 3.2 C01-C10 Foundation Closures
@@ -166,20 +167,20 @@ W0 Contract, Evidence, And Gate Foundation
             -> F4 Tool Policy And Observability Baseline
 
 F2 + F3 + F4
-  -> G-F Foundation Native Gate (C01-C10)
-       -> W1 Capability Authority
-       -> W2 Home Projection
+  -> W1 Capability Authority
        -> W3 Capability Operation Substrate
-            -> W4a MCP Operation Lifecycle
-            -> W5a Connector Resource Manifest
             -> W6 Governed ToolCall Fencing
-                 -> W7 Evaluation Aggregate
+                 -> W8a Capability/ToolCall Atomic Cutover
+                      -> G-F Complete 419-Cell Foundation Gate
 
-W4a + W6 -> W4b MCP Invocation Closure
-W5a + W6 -> W5b Connector Invocation Closure
+G-F
+  -> W2 Home Projection
+  -> W4a MCP Operation Lifecycle -> W4b MCP Invocation Closure
+  -> W5a Connector Resource Manifest -> W5b Connector Invocation Closure
+  -> W7 Evaluation Aggregate
 
-W2 + W4b + W5b + W6 + W7
-  -> W8 Desktop/Browser Consumer Cutover
+W2 + W4b + W5b + W7
+  -> W8b Remaining Desktop/Browser Consumer Cutover
        -> W9 Native Acceptance, Deletion, Cleanup, Final Audit
 ```
 
@@ -187,38 +188,51 @@ Parallel policy:
 
 - F3 and F4 may proceed in parallel after F2; both consume the F1 Station
   conversation/turn identity.
+- The source-matched Foundation runs through AS-F03 are diagnostic progress,
+  not a Gate or advancement proof. W1 enters from completed F1-F4
+  implementation checks because AS-F04 itself requires W1/W3/W6.
+- W8a atomically activates complete C12 Manifest/Binding/Readiness authority
+  across Tool/MCP/Connector/Skill/Knowledge consumers plus D19 governed
+  ToolCall authority after W1/W3/W6. It explicitly excludes C13
+  CapabilityOperation activation. MCP/Connector capabilities remain
+  canonically unavailable until W4/W5 complete and never fall back to legacy
+  readiness selectors.
+- G-F then runs the unchanged 419-cell
+  `agent-v2-kernel-foundation-e2e` Gate and must be fully `PROVEN` before W7 or
+  W8b proceeds.
 - Inside F4/G1, production authority changes are serial:
   `G1-A contract -> G1-B Station -> G1-C Rust -> G1-D Web -> G1-E cutover
   deletion -> G1-F observability`. Acceptance contract/fixture work may proceed
   in parallel after G1-A, but it cannot modify production owners or publish
   `PROVEN`.
-- W2 and W3 may proceed in parallel after W1 contracts are stable.
-- W4a lifecycle implementation, W5a resource-manifest implementation, and W6
-  ToolCall fencing may proceed in parallel after W3 and W1 pass.
+- W3 follows W1; W6 follows W1/W3. W2/W4/W5/W7 do not start until the complete
+  G-F Gate is `PROVEN`.
 - W4 and W5 cannot close their invocation deliverables or Gates until W6 passes;
   W4b and W5b are explicit join milestones, not independent workstreams.
 - W7 starts only after W6 canonical Turn/ToolCall fencing is available.
-- W8 performs one source-of-truth activation after all predecessor closures
-  pass. Earlier work may compile behind unreferenced adapters but cannot
-  dual-write, serve production reads, or claim cutover.
+- W8a and W8b are concern-atomic cutovers. W8a owns complete C12 and D19
+  governed ToolCall activation after W1/W3/W6; W8b owns C11/C14/C15 and C13
+  CapabilityOperation activation after its predecessors pass. Earlier work may
+  compile behind unreferenced adapters but cannot dual-write, serve production
+  reads, or claim cutover.
 
 ### 5.1 End-To-End Lifecycle Mapping
 
 | Lifecycle | Ordered workstream ownership | Closure condition |
 |---|---|---|
-| Startup/bootstrap | W0 contracts/evidence -> F1/F2 canonical kernel -> F3/F4 capabilities -> W1 authority -> W2/W3 -> W8 activation | generated contracts load; C01-C10 close before V2 consumers; no dual authority |
-| Authentication/account/Station switch | F1 actor/config authority -> F2 client session -> W1 binding -> W2 projection clearing -> W8 consumers -> W9 isolation | prior actor/device projection is absent before ready; cross-scope mutation/read rejects |
-| Conversation/first turn | F1 Station topic/message identity -> F2 runtime/SSE -> F3/F4 context/tool facts -> W8 consumer activation -> W9 | accepted topic/messages/turn survive restart; Desktop `ChatStore` and Browser one-shot path are deleted |
-| Home Chat/Task write | F1/F2 kernel -> W2 canonical commands -> W6 ToolCall when required -> W8 UI -> W9 Gate | one accepted topic/Turn or Task/run under duplicate delivery; draft survives reject |
-| Capability bind/readiness | W1 manifest/binding/snapshot -> W8 Agent Profile/Home consumers -> W9 Gate | one versioned binding/readiness source; incompatible/stale input rejects before execution |
-| MCP lifecycle/invoke | W3 operation -> W4a lifecycle -> W6 ToolCall -> W4b invocation -> W8 UI -> W9 Gate | authoritative operation and one ToolCall result; cleanup terminal and leak-free |
-| Connector lifecycle/invoke | W1 binding + W3 operation -> W5a resource manifest -> W6 ToolCall -> W5b invocation -> W8 UI -> W9 Gate | pinned OAuth/resource revision, one result/trace, bounded revoke recovery |
-| Streaming/server push/replay | F1 C02 identity -> F2 C05 event/cursor/replay -> W3 outbox -> W6 continuation -> W8 projection -> W9 replay | ordered idempotent projection and one terminal state after reconnect/restart |
+| Startup/bootstrap | W0 contracts/evidence -> F1/F2 canonical kernel -> F3/F4 capabilities -> W1 authority -> W3/W6 -> W8a -> G-F -> W2/W4/W5/W7 -> W8b | generated contracts load; C01-C10 close before W2/W4/W5/W7 consumers; no dual authority |
+| Authentication/account/Station switch | F1 actor/config authority -> F2 client session -> W1 binding -> W8a capability/tool scope -> W2 projection clearing -> W8b remaining consumers -> W9 isolation | prior actor/device projection is absent before ready; cross-scope mutation/read rejects |
+| Conversation/first turn | F1 Station topic/message identity -> F2 runtime/SSE -> F3/F4 context/tool facts -> W8a tool consumer activation -> G-F -> W8b remaining consumer activation -> W9 | accepted topic/messages/turn survive restart; Desktop `ChatStore` and Browser one-shot path are deleted |
+| Home Chat/Task write | F1/F2 kernel -> W2 canonical commands -> W6 ToolCall when required -> W8b UI -> W9 Gate | one accepted topic/Turn or Task/run under duplicate delivery; draft survives reject |
+| Capability bind/readiness | W1 manifest/binding/snapshot -> W8a Agent Profile/tool consumers -> G-F -> W9 Gate | one versioned binding/readiness source; incompatible/stale input rejects before execution |
+| MCP lifecycle/invoke | W1 binding -> W3/W6 substrate -> W8a canonical unavailable state -> G-F -> W4a lifecycle -> W4b invocation -> W8b UI -> W9 Gate | authoritative operation and one ToolCall result; cleanup terminal and leak-free |
+| Connector lifecycle/invoke | W1 binding -> W3/W6 substrate -> W8a canonical unavailable state -> G-F -> W5a resource manifest -> W5b invocation -> W8b UI -> W9 Gate | pinned OAuth/resource revision, one result/trace, bounded revoke recovery |
+| Streaming/server push/replay | F1 C02 identity -> F2 C05 event/cursor/replay -> W3 outbox -> W6 continuation -> W8a tool projection -> G-F -> W8b remaining projection -> W9 replay | ordered idempotent projection and one terminal state after reconnect/restart |
 | Cancellation/timeout | W3 fences/cleanup -> W4/W6 operation/tool cases -> W7 Evaluation CAS -> W9 races | first durable fence wins; cleanup is terminal; no indefinite cancelling/reconnecting |
 | Disconnect/restart/recovery | W2 Home revision -> W3/W4 executor reconciliation -> W5 OAuth revision -> W7 Evaluation restore -> W9 | Station readback reconstructs accepted work; client never infers terminal success |
 | Overload/user spam/duplicate delivery | F1/F2 queue/admission -> W1 readiness -> W2 idempotency -> W3/W6 claims/fences -> W7 scheduler uniqueness | bounded queue/admission and original IDs; no duplicate provider/tool side effect |
-| Deletion/revocation/retention | W1 retirement -> W5/W6 dispatch fence -> W7 retention -> W8 atomic cutover -> W9 races/search | no new admission; in-flight work settles; historical snapshots/tombstones obey `data-model.md §6` |
-| Shutdown/cleanup | W3 cleanup lease -> W4 process/port/secret cleanup -> W6 receipts -> W8 drain -> W9 leak audit | all resources terminal or typed `cleanup_failed`; no process/port/secret/debug residue |
+| Deletion/revocation/retention | W1 retirement -> W6 dispatch fence -> W8a C12/D19 cutover -> W5/W7 retention -> W8b remaining cutover -> W9 races/search | no new admission; in-flight work settles; historical snapshots/tombstones obey `data-model.md §6` |
+| Shutdown/cleanup | W3 cleanup lease -> W4 process/port/secret cleanup -> W6 receipts -> W8a ToolCall drain -> W8b remaining drain -> W9 leak audit | all resources terminal or typed `cleanup_failed`; no process/port/secret/debug residue |
 
 ### 5.2 Workstream Status
 
@@ -228,16 +242,18 @@ Parallel policy:
 | F1 Agent/Conversation Authority | complete | W0 complete |
 | F2 Runtime/Stream/Capability/Portability | complete | F1 |
 | F3 Context/Resource Intelligence | core complete / C08 unproven | F2 |
-| F4 Tool Policy/Observability | G1-A through G1-F complete; G1-XR producer/provisioning closure active; Native proof unproven | F2 + accepted D19A/D19B/D19C |
-| W1 Capability Authority | pending | G-F foundation Gate `PROVEN` |
-| W2 Home Projection | pending | W1 |
+| F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
+| W1 Capability Authority | pending | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
+| W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
 | W3 Capability Operation Substrate | pending | W1 |
-| W4 MCP Lifecycle | pending | W3 + W6 invocation join |
-| W5 Connector Resource Tools | pending | W1 + W3 + W6 invocation join |
+| W4 MCP Lifecycle | pending | G-F + W3 + W6 invocation join |
+| W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | pending | W1 + W3 |
-| W7 Evaluation Aggregate | pending | W1 + W6 |
-| W8 Consumer Cutover | pending | W2 + W4b + W5b + W6 + W7 |
-| W9 Native Acceptance/Final Audit | pending | W8 |
+| W8a Capability/ToolCall Cutover | pending | W1 + W3 + W6 |
+| G-F Complete Foundation Gate | blocked | W8a |
+| W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
+| W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
+| W9 Native Acceptance/Final Audit | pending | W8b |
 
 ## 6. Responsibility Workstreams
 
@@ -353,8 +369,10 @@ trusts only proof envelopes and never a candidate/latest pointer. Generic
 Domain `--require-proven` behavior remains unchanged for existing capabilities.
 
 W0 registers Gate contracts. F1-F4 run deterministic component/integration
-checks, then G-F executes the foundation product Gate before W1. W1-W7 run
-pre-cutover checks only; their six V2 product Gates execute after W8 under W9.
+checks. W1/W3/W6 then build complete C12 plus D19 governed ToolCall authority
+behind inactive adapters; W8a performs their concern-atomic production cutover
+before the complete G-F execution. W2/W4/W5/W7 begin only after G-F and remain
+pre-cutover until W8b; their six V2 product Gates execute after W8b under W9.
 W9 reruns the foundation Gate against the final source snapshot. A pre-cutover
 V2 probe cannot mark a capability `PROVEN` or satisfy a dependency.
 
@@ -1061,11 +1079,13 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 (cd apps/desktop && pnpm run test -- toolRuntime messageActions)
 ```
 
-#### G1-E — Atomic Authority Cutover And Legacy Deletion
+#### G1-E — D19 Baseline Authority Cutover And Legacy Deletion
 
 **Depends on**: G1-B, G1-C, and G1-D deterministic checks pass.
 
-**Owner**: G1 production owner; no concurrent production writer.
+**Owner**: G1 production owner for the D19 baseline; no concurrent production
+writer. W8a later integrates this authority with complete C12 policy and
+readiness without restoring any deleted path.
 
 **Cutover**:
 
@@ -1311,7 +1331,7 @@ XR-1 matrix role policy + new identity
   -> XR-2 evidence contract/schema v2
   -> XR-3 validator/producer subset semantics
   -> XR-4 Desktop/Browser/Mobile/D11/non-advertisement adapters
-  -> XR-5 clean commit + exact Station deployment + G-F
+  -> XR-5 clean commit + exact Station deployment + source-matched diagnostic
 ```
 
 `XR-1` through `XR-3` form one atomic contract cutover. No candidate produced
@@ -1360,7 +1380,7 @@ G1 closes only when:
 - G1-A through G1-F pass in dependency order.
 - G1-X contracts and deterministic tests pass.
 - G1-XR candidate producer, provisioning, secret-redaction, and exact-source
-  deployment checks pass.
+  diagnostic checks pass through the first dependency-blocked tuple.
 - `tooling/scripts/review/agent-v2-old-paths.sh --closure C07,C09` reports
   zero unresolved live matches.
 - Station, Desktop TS, and Desktop Rust checks pass on one stable source
@@ -1369,7 +1389,8 @@ G1 closes only when:
 - No local Station was started; environment-backed evidence uses the approved
   `two` profile and external Evidence Store.
 
-Only then may G-F preflight begin.
+Only then may the source-matched diagnostic begin. The complete G-F Gate remains
+blocked until W8a.
 
 #### F4 Acceptance Scenarios
 
@@ -1447,9 +1468,14 @@ Only then may G-F preflight begin.
 
 ### G-F — Foundation Native Gate
 
-**Depends on**: F1, F2, F3, F4.
+**Depends on**: W8a.
 **Owns**: the C01-C10/A01-A14 advancement decision, not implementation.
-**Status**: in progress. Commits through `cb8652436` repaired the profile-owned
+**Entry condition**: W8a has atomically activated complete C12 capability
+authority and D19 governed ToolCall authority after W1/W3/W6. Earlier
+source-matched runs through AS-F03 are diagnostic evidence only. This unchanged
+419-cell Gate is the only checkpoint allowed to report Foundation `PROVEN`.
+**Status**: blocked on W8a. The following runs are diagnostic history, not
+Foundation Gate passes. Commits through `cb8652436` repaired the profile-owned
 provider/model fixture, durable Station runtime authority, portable
 attestation normalization, AS-F01 source-backed evidence roles, conversation
 lifecycle authority, and the AS-F02 production queue/lifecycle probe. The
@@ -1559,8 +1585,9 @@ python3 tooling/scripts/acceptance-prove.py --gate agent-v2-kernel-foundation-e2
 ```
 
 The Gate emits independent C01-C10 cell results and all mandatory artifact
-roles. W1 remains blocked unless every required cell is source-matching
-`PROVEN`; a broad aggregate PASS is insufficient. It executes all applicable
+roles. It remains blocked until W8a completes, and then every required cell
+must be source-matching `PROVEN`; a broad aggregate PASS is insufficient. It
+executes all applicable
 §8.3 quantitative workloads. P12 and CLI non-advertisement cells on Desktop
 and Browser are mandatory. No hidden-candidate, certification, promotion, or
 advertised-runtime cell exists in this plan. W9 reruns this Gate after all V2
@@ -1568,7 +1595,9 @@ cutovers to prevent foundation regression.
 
 ### W1 — Capability Authority
 
-**Depends on**: G-F foundation Gate `PROVEN`.
+**Depends on**: F1-F4 implementation checks complete. The latest source-matched
+Foundation diagnostic must reach AS-F04 without an earlier failure, but that
+diagnostic is not a Gate and does not claim Foundation `PROVEN`.
 **Owns**: C12, D15, A16.
 
 **Target roots**: Station Agent domain/service/persistence/handler packages,
@@ -1585,6 +1614,9 @@ Deliverables:
 - The rejected Custom HTTP Plugin entity is not a manifest source and cannot be
   auto-imported into Tool/MCP/Connector without a future accepted product and
   architecture mapping.
+- Reclassify the rejected Custom Plugin old-path entry out of C12 so W8a can
+  prove complete C12 deletion without prematurely deleting the W8b-owned
+  C14 product residue.
 
 Staging and migration:
 
@@ -1593,7 +1625,7 @@ Staging and migration:
 - Record row counts, payload hashes, actor ownership, binding revisions, and
   rejected invalid legacy rows, including every embedded
   `store/agent.ts#chatConfig` Skill/Knowledge/MCP/Tool/Connector binding.
-- Keep the new read/write entrypoints unreachable until W8. W1 does not switch
+- Keep the new read/write entrypoints unreachable until W8a. W1 does not switch
   consumers or delete the old path.
 
 Checks:
@@ -1610,7 +1642,7 @@ the backfill reconciliation report.
 
 ### W2 — Home Projection
 
-**Depends on**: W1.
+**Depends on**: complete G-F `PROVEN`.
 **Owns**: C11, D14, A15.
 
 **Target roots**: Home proto, Station Home projection/command handlers,
@@ -1685,7 +1717,8 @@ owning W4/W6 Gates execute.
 
 ### W4 — MCP Lifecycle
 
-**Depends on**: W3 for W4a; W6 for W4b invocation closure.
+**Depends on**: complete G-F `PROVEN`; W3 for W4a; W6 and W8a for W4b
+invocation closure.
 **Owns**: C13, D16, A17.
 
 **Target roots**: Station CapabilityOperation MCP adapter, Desktop Rust MCP
@@ -1717,7 +1750,8 @@ process/port/secret cleanup artifacts are clean.
 
 ### W5 — Connector Resource Tools
 
-**Depends on**: W1 and W3 for W5a; W6 for W5b invocation closure.
+**Depends on**: complete G-F `PROVEN`; W1 and W3 for W5a; W6 and W8a for W5b
+invocation closure.
 **Owns**: C14, D17, A18.
 
 **Target roots**: Station OAuth/resource-manifest adapters, capability manifest
@@ -1753,7 +1787,8 @@ Evidence includes R-06 both-ordering artifacts.
 ### W6 — Governed ToolCall Fencing
 
 **Depends on**: W1, W3.
-**Owns**: C12/C13, D15/D16, A19.
+**Owns**: D19 governed ToolCall slice of C13 and A19; consumes W1-owned C12
+bindings and W3-owned execution substrate.
 
 **Target roots**: canonical ToolCall proto, Station decision/claim/outbox/
 receipt/result services and persistence, Desktop Rust executor receipt store,
@@ -1766,6 +1801,9 @@ Deliverables:
 - dispatch/cancel/revoke/delete linearization.
 - idempotent replay or `UNKNOWN_SIDE_EFFECT`.
 - exactly-one result-to-model continuation.
+- Split old-path inventory entries into `C13-TOOLCALL` and
+  `C13-OPERATION`; the former is W8a-deletable while the latter remains for
+  W8b.
 
 Cutover preparation:
 
@@ -1775,7 +1813,7 @@ Cutover preparation:
 ```bash
 (cd apps/station && go test ./app/subserver/agent/... -run 'ToolCall|ExecutionClaim|SideEffectReceipt|DispatchFence')
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml tool_call_receipt
-tooling/scripts/review/agent-v2-old-paths.sh --inventory-only --closure C12,C13
+tooling/scripts/review/agent-v2-old-paths.sh --inventory-only --closure C12,C13-TOOLCALL
 ```
 
 Final product Gate executed by W9: `agent-v2-governed-tool-loop-e2e`.
@@ -1785,7 +1823,7 @@ race orderings R-03/R-05/R-07, counter <=1, replay equality, and typed
 
 ### W7 — Evaluation Aggregate
 
-**Depends on**: W0, W1, W6.
+**Depends on**: W0, W1, W6, and complete G-F `PROVEN`.
 **Owns**: C15, D18, A20.
 
 **Target roots**: Evaluation proto, Station Evaluation domain/service/
@@ -1820,14 +1858,75 @@ retention results.
 
 ### W8 — Desktop And Browser Consumer Cutover
 
-**Depends on**: W2, W4b, W5b, W6, W7.
+W8 is split by authority concern so each cutover is atomic and testable without
+activating a second source of truth.
 
-**Owns**: the single activation, migration verification, consumer switch, and
-old-authority deletion for C11-C15.
+#### W8a — Capability And ToolCall Atomic Cutover
 
-**Target roots**: C11-C15 consumers in §3.1, including
-`store/agent.ts#chatConfig`; Desktop runtime/page/component registries, browser
-gateway, `packages/locales/{en,zh-CN}/agent.json`; rejected Custom Plugin
+**Depends on**: W1, W3, W6.
+
+**Owns**: complete C12 activation/migration/deletion and D19 governed ToolCall
+activation/deletion required to make AS-F04 production-reachable. Complete C13
+CapabilityOperation activation remains outside W8a.
+
+**Target roots**: Station Manifest/Binding/Readiness and governed ToolCall
+services; every Tool/MCP/Connector/Skill/Knowledge binding/readiness consumer;
+Desktop Agent Profile capability projection, `toolRuntime`, Tool cards,
+Desktop Rust fenced executor, Browser capability routing, and the C12/D19
+old-path inventory in §3.1.
+
+Deliverables:
+
+- Activate Manifest/Binding/Readiness across every C12 consumer and governed
+  ToolCall reads/writes in one versioned deployment.
+- Switch Agent Profile, `toolRuntime`, Tool cards, Desktop Rust executor, and
+  Browser routing to the canonical contracts.
+- MCP/Connector bindings resolve through C12, but readiness remains typed
+  `unavailable` until W4/W5. Legacy selectors cannot answer readiness.
+- Drain or fence active legacy ToolCalls; no in-flight item changes owner
+  without a durable claim/receipt outcome.
+- Delete embedded binding truth, residual non-`toolRuntime` approval
+  projection, unfenced dispatch, and parallel readiness selectors.
+- Split the old-path inventory so D19 governed ToolCall authority has the
+  executable `C13-TOOLCALL` closure distinct from retained pre-W8b
+  CapabilityOperation paths.
+- Activate AS-F04 production fixtures: binding policies for
+  auto/manual/deny/expiry; a Desktop device-local executor; a Browser
+  Station-owned governed tool; loop-budget and duplicate delivery; persisted
+  decision/claim/receipt/result/batch lineage; ToolCall-bound side-effect
+  counters; and replay readback.
+- Make the unchanged complete G-F Gate eligible. G-F, not W8a, executes the
+  Gate; AS-F04 remains `UNPROVEN` until that Gate passes.
+
+**W8a checks**:
+
+```bash
+(cd apps/station && go test ./app/subserver/agent/... -run 'CapabilityManifest|AgentCapabilityBinding|Readiness|ToolCall|DispatchFence')
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml tool_call_receipt
+(cd apps/desktop && pnpm run test -- toolRuntime)
+tooling/scripts/review/agent-v2-old-paths.sh --closure C12,C13-TOOLCALL
+```
+
+**W8a done**:
+
+- C12 reconciliation is exact and every consumer uses one canonical authority.
+- Legacy ToolCall authority is drained/deleted with no split ownership.
+- C13 CapabilityOperation remains inactive; MCP/Connector readiness is
+  explicitly unavailable without legacy fallback.
+- AS-F04 fixtures and evidence readback are production-reachable; G-F itself is
+  still `UNPROVEN` until separately executed.
+
+#### W8b — Remaining Desktop And Browser Consumer Cutover
+
+**Depends on**: W2, W4b, W5b, W7, and complete G-F `PROVEN`.
+
+**Owns**: the remaining activation, migration verification, consumer switch,
+and old-authority deletion for C11/C13 CapabilityOperation/C14/C15 plus
+residual cross-cutting UI.
+
+**Target roots**: C11/C13/C14/C15 consumers in §3.1; Desktop
+runtime/page/component registries, browser gateway,
+`packages/locales/{en,zh-CN}/agent.json`; rejected Custom Plugin
 page/store/navigation/localStorage/direct-fetch files plus Model/Station
 proto/CRUD/persistence/table roots; prototype synchronization; and operational
 knowledge entries covering changed paths.
@@ -1836,11 +1935,9 @@ Deliverables:
 
 - Production UI conforms to confirmed prototype and UI Identity.
 - Runtime descriptors own Home/capability/Evaluation projections.
-- Home, Agent Profile, Tool cards, MCP, Connector, Evaluation use canonical
-  contracts only.
-- `store/agent.ts`, Agent Sidebar/Profile, Connector binding, and diagnostics
-  no longer read or write embedded Skill/Knowledge/MCP/Tool/Connector binding
-  truth from `chatConfig`.
+- Home, MCP operation, Connector resource, and Evaluation consumers use
+  canonical contracts only. C12 binding/readiness and governed ToolCall
+  consumers were already cut over by W8a and must not regress.
 - Retire the rejected Custom HTTP Plugin product: unregister and delete its
   page/command/navigation surface, purge `peers-ai-custom-plugins` without
   logging/copying `authValue`, remove direct arbitrary `fetch`, delete
@@ -1854,22 +1951,20 @@ Deliverables:
 
 Atomic activation:
 
-1. Freeze mutable legacy binding/Evaluation writes and all Custom Plugin
+1. Freeze remaining mutable legacy Evaluation writes and all Custom Plugin
    create/update/test/direct-fetch paths for the migration window.
-2. Backfill and compare actor-scoped counts, IDs, payload hashes, revisions,
-   tombstones, retained historical snapshots, and embedded `chatConfig`
-   bindings.
+2. Backfill and compare remaining actor-scoped counts, IDs, payload hashes,
+   revisions, tombstones, and retained historical snapshots.
 3. Record Custom Plugin actor-scoped row/key counts and non-secret metadata
    hashes only. Automatic import is forbidden because no accepted successor
    mapping exists.
-4. Activate canonical Station reads/writes and Desktop/Browser projections in
-   one versioned deployment.
-5. Drain or fence active legacy ToolCalls/operations; no in-flight item changes
-   owner without a durable claim/receipt outcome.
-6. Irreversibly purge the Custom Plugin localStorage credential key and Station
+4. Activate remaining canonical Station reads/writes and Desktop/Browser
+   projections, including C13 CapabilityOperation, in the W8b versioned
+   deployment.
+5. Irreversibly purge the Custom Plugin localStorage credential key and Station
    rows/table, then delete its page/store/proto/generated/CRUD/persistence
    paths and every other old authority in the same closure.
-7. Rollback is permitted only before step 6. After secret/data purge begins,
+6. Rollback is permitted only before step 5. After secret/data purge begins,
    the deployment is roll-forward-only; no compatibility or credential backup
    is retained.
 
@@ -1879,7 +1974,7 @@ Checks:
 (cd apps/desktop && pnpm run check && pnpm run test && pnpm run build)
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 (cd apps/mobile && pnpm run check && pnpm run test:agent-contract)
-tooling/scripts/review/agent-v2-old-paths.sh
+tooling/scripts/review/agent-v2-old-paths.sh --closure C11,C13,C14,C15
 node tooling/scripts/check-agent-v2-locales.mjs
 ! rg -n 'custom-plugins|CustomPlugins|customPlugins|CustomPlugin|ecosystem/plugin|ecosystem_custom_plugins|peers-ai-custom-plugins' \
   apps/desktop/src apps/station/app/subserver/agent model/domain/agent packages/locales
@@ -1899,7 +1994,7 @@ Done:
 
 ### W9 — Native Acceptance, Deletion, Cleanup, Final Audit
 
-**Depends on**: W8.
+**Depends on**: W8b.
 
 **Target roots**: seven Agent Gate runners/contracts, race fixtures, Acceptance
 Evidence Store, brain-map overlay, plan anchor, and cleanup/leak audit.
@@ -1973,9 +2068,11 @@ Final readiness:
 
 ## 7. Atomic Cutover Matrix
 
-F1-F4 own the C01-C10 foundation cutovers. W8 owns every C11-C15 activation and
-deletion below. W1-W7 may create unreachable target implementations and
-backfill data, but may not activate a second live read/write authority.
+F1-F4 own the initial C01-C10 foundation cutovers. W8a owns complete C12 and
+D19 governed ToolCall activation/deletion before the complete G-F run; W8b owns
+C11/C14/C15 plus C13 CapabilityOperation activation/deletion. W1-W7 may create
+unreachable target implementations and backfill data, but may not activate a
+second live read/write authority outside their concern-owning cutover.
 
 | Concern | New truth | Migration and in-flight rule | Old path deleted | Cutover proof |
 |---|---|---|---|---|
@@ -1987,9 +2084,9 @@ backfill data, but may not activate a second live read/write authority.
 | Home | Station Home projection | no durable backfill; first projection is rebuilt from canonical Agent/topic/task sources; actor switch clears prior revision | page/store durable aggregation and mock Brief success | restart/readback, partial-slice and actor-switch cells, scoped tree search |
 | Binding/readiness | Manifest/Binding/Snapshot | freeze legacy mutation; backfill actor/version/hash; reject invalid rows; no dual-write | embedded arrays/config JSON authority and parallel readiness selectors | exact reconciliation, version conflict, incompatible pre-admission reject, scoped tree search |
 | Rejected Custom HTTP Plugin | none; accepted Tool/MCP/Connector authorities remain the only extension boundaries | freeze all mutations/tests; record actor-scoped non-secret counts/hashes; no auto-import; purge local credentials and Station rows/table at the irreversible cutover boundary | Desktop page/container/descriptor/store/navigation/command/locale/direct fetch/localStorage key; Model proto/generated types; Station routes/handlers/service/model registration/persistence/table | `AS-16-CUSTOM-PLUGIN-RETIREMENT`, zero network call, localStorage canary absent, route/page unavailable, DB migration readback, zero symbol search |
-| MCP operation | Station operation + client executor | new operations use Station only after activation; pre-cutover local operations drain or are cancelled and cleanup-audited | client-only terminal/progress authority; local process/config executor retained | cancel/reconnect/takeover/cleanup proof and no leaked process/port/secret |
-| Connector tools | OAuth owner + resource manifests + binding | pin connection/resource revision; pre-dispatch items reject stale revision; post-dispatch items settle under W6 fence | `enabledTools`/labels as readiness or binding identity | expiry/revoke/invocation cells, provider-revoke outcome, scoped tree search |
-| ToolCall | fenced decision/claim/receipt/result | pre-cutover calls drain; no call changes owner without a durable claim; unresolved non-idempotent work becomes `UNKNOWN_SIDE_EFFECT` | residual non-toolRuntime approval projection and unfenced local dispatch; Rust waiter already deleted by F4 | all crash/race barriers, counter <=1, replay equality, scoped tree search |
+| MCP operation | Station operation + client executor | W8a makes its C12 binding/readiness canonically unavailable; W8b activates operations only after W4b, then pre-cutover local operations drain or are cancelled and cleanup-audited | client-only terminal/progress authority; local process/config executor retained | cancel/reconnect/takeover/cleanup proof and no leaked process/port/secret |
+| Connector tools | OAuth owner + resource manifests + binding | W8a activates C12 binding with canonical unavailable readiness until W5b; W8b activates resource-backed invocation after pinned revision checks | `enabledTools`/labels as readiness or binding identity | expiry/revoke/invocation cells, provider-revoke outcome, scoped tree search |
+| ToolCall | fenced decision/claim/receipt/result | W8a drains pre-cutover calls; no call changes owner without a durable claim; unresolved non-idempotent work becomes `UNKNOWN_SIDE_EFFECT` | residual non-toolRuntime approval projection and unfenced local dispatch; Rust waiter already deleted by F4 | all crash/race barriers, counter <=1, replay equality, scoped tree search |
 | Evaluation | Station aggregate + canonical Turn | freeze legacy mutation; backfill datasets; old terminal runs remain read-only historical snapshots; active local runs are cancelled and never imported as terminal truth | localStorage run/result and `quickCompletion` execution | cancel/retry/restart/isolation/deletion cells, exact backfill report, scoped tree search |
 
 Rollback uses version-control/deployment rollback. No permanent dual write/read
@@ -2027,13 +2124,13 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Expected**: Progressive events and exactly one authoritative completed/partial/failed/cancelled/interrupted terminal state.
 - **Failure variant**: Provider timeout/rate limit/retry exhaustion stays typed; transport loss alone never marks failed.
 - **Evidence**: Native/Browser DOM, raw event timestamps/sequences, provider cancel, Station Turn/Trace.
-- **Staged proof amendment**: pre-W1 G-F proves ordered progressive text,
+- **Diagnostic result**: the pre-W1 source-matched run demonstrates ordered progressive text,
   production cancellation during text, one authoritative cancelled terminal,
   and durable Station Turn/Attempt/Trace readback. Tool/approval waits and
   cancellation remain mandatory W6 evidence because governed ToolCall
   decision/claim/result authority does not exist before W1/W3/W6. This changes
-  dependency ownership only; it does not remove or reduce any of the 419
-  Foundation tuples or final quantitative workloads.
+  dependency ownership only; it is not a Gate pass and does not remove or
+  reduce any of the 419 Foundation tuples or final quantitative workloads.
 - **Status**: pending
 
 ### AS-F04 Tool Policy Auto, Manual, Deny, And Expiry
@@ -2042,6 +2139,15 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Expected**: `POLICY_CHECK -> AUTO_APPROVED/AWAITING_USER`; manual approval executes once; deny/expiry executes zero.
 - **Failure variant**: Executor disconnect/timeout/cancel remains terminal and recoverable; loop budget stops repeated calls.
 - **Evidence**: DOM, policy/decision/execution/result rows, side-effect counter, replay equality.
+- **Dependency amendment**: full AS-F04 proof runs after W1/W3/W6 and W8a.
+  W1 owns configurable manifest/binding approval policy, W3 supplies the shared
+  lease/outbox/cleanup substrate without activating C13 CapabilityOperation,
+  and W6 owns fenced decision/claim/receipt/result plus the ToolCall-bound
+  side-effect counter. Pre-W1 code has no production deny-policy configuration,
+  Browser advertises no local executor, and current diagnostics omit the
+  required receipt/batch lineage. An Acceptance-only proposal endpoint, mutable
+  deny map, synthetic executor result, or deferred assertion reported as passed
+  is forbidden. The tuple remains `UNPROVEN` until W8a and the complete G-F run.
 - **Status**: pending
 
 ### AS-F05 Attachment And Resource Admission
@@ -2106,17 +2212,17 @@ capability rejection is:
 5. Station marks the ToolCall with the rejection status in ProposeBatch.
 6. Client reads the rejection via `TurnDiagnosticReplay` ToolCall status.
 
-This path requires W6 (Governed ToolCall Fencing, Action 18+) to land the
-ProposeBatch capability-check logic. No external endpoint currently triggers it.
+This path requires W6 (Governed ToolCall Fencing) to land the ProposeBatch
+capability-check logic. No external endpoint currently triggers it.
 
 Consequence:
-- `unsupported` and `schemaMismatch` sub-assertions are deferred to post-W6.
-  They do not block the current G-F gate for the remaining tuples.
-- The 3 already-proven emitters (`unauthorized`, `signatureTamper`,
-  `crossDevice`) plus `zeroExecutionOnReject` proceed in-gate.
-- Oracle/probe treat these two sub-assertions as `None` (deferred) when the
-  capture reports `availability: "unavailable"` with
-  `unavailable_reason: "NO_PRODUCTION_CAPABILITY_ENDPOINT"`.
+- `unsupported` and `schemaMismatch` remain `UNPROVEN` until W8a makes the W6
+  production path reachable.
+- The complete G-F run after W8a requires every AS-F10 assertion to be `true`.
+  `None`/deferred values cannot pass a required tuple.
+- The 3 diagnostic emitters (`unauthorized`, `signatureTamper`,
+  `crossDevice`) plus `zeroExecutionOnReject` remain useful implementation
+  evidence but are not a Foundation Gate pass.
 
 ### AS-F11 Conditional External Agent Runtime
 - **Precondition**: Read Station effective provider/model projection, D12 profile, and D05 readiness snapshot for P12 `EXTERNAL_AGENT`.
@@ -2323,7 +2429,7 @@ Any lower successful count, including a no-op recovery, fails.
 
 ### AS-16-CUSTOM-PLUGIN-RETIREMENT Rejected Product Removal
 - **Precondition**: Seed `peers-ai-custom-plugins` with a fake credential, seed actor-owned `ecosystem_custom_plugins` metadata, and install network/secret canaries.
-- **Action**: Execute the W8 cutover, restart Desktop/Station, search/open the former page and command, call every former plugin CRUD route, and trigger the former test action.
+- **Action**: Execute the W8b cutover, restart Desktop/Station, search/open the former page and command, call every former plugin CRUD route, and trigger the former test action.
 - **Expected**: The localStorage key and Station rows/table are absent; page/command/navigation and CRUD routes are unavailable; unified capability inventory contains no Custom Plugin source; network call count is zero.
 - **Failure variant**: Any retained credential, arbitrary HTTP request, page/route/proto/persistence symbol, automatic import, or secret in logs/evidence fails the cell.
 - **Evidence**: LocalStorage canary, Desktop registry/DOM, route responses, Station migration/table readback, network counter, redaction scan, and scoped zero-symbol report.
@@ -2647,9 +2753,9 @@ plan on 2026-08-21. The G1-C entry audit found additional architecture
 requirements, and the Owner accepted `MCA-D19A` on 2026-08-22. G1-A then
 verified a missing device-possession boundary and produced `MCA-D19B`, accepted
 into the main Goal G1 task on 2026-08-22. The active gate is
-`OWNER_APPROVED_EXECUTION`; G1-A through G1-F are complete, G1-XR
-candidate-producer and safe-provisioning closure is active, G-F remains
-blocked, and all Product Gates remain `UNPROVEN`.
+`OWNER_APPROVED_EXECUTION`; G1-A through G1-F and the pre-W1 G1-XR diagnostic
+closure are complete, G-F is blocked on W1/W3/W6/W8a, and all Product Gates
+remain `UNPROVEN`.
 
 Any later independent review must confirm:
 
