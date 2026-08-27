@@ -362,18 +362,26 @@ async function buildDirectRuntimeAttestation(
       localBridge: evidenceField(agenticCapabilities, 'localBridge', 'local_bridge'),
     },
     limits: {
-      contextTokens: evidenceField(capabilityLimits, 'contextTokens', 'context_tokens'),
-      outputTokens: evidenceField(capabilityLimits, 'outputTokens', 'output_tokens'),
-      attachmentCount: evidenceField(
+      contextTokens: Number(evidenceField(
+        capabilityLimits,
+        'contextTokens',
+        'context_tokens',
+      )),
+      outputTokens: Number(evidenceField(
+        capabilityLimits,
+        'outputTokens',
+        'output_tokens',
+      )),
+      attachmentCount: Number(evidenceField(
         capabilityLimits,
         'attachmentCount',
         'attachment_count',
-      ),
-      attachmentBytes: evidenceField(
+      )),
+      attachmentBytes: Number(evidenceField(
         capabilityLimits,
         'attachmentBytes',
         'attachment_bytes',
-      ),
+      )),
     },
     resolution: evidenceArray(
       capabilities.resolution,
