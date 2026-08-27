@@ -35,6 +35,7 @@ from tooling.acceptance.core.errors import (
     EvidenceRootInvalid,
     EvidenceRunActive,
     EvidenceSymlinkRejected,
+    EvidenceWriteInterrupted,
 )
 from tooling.acceptance.core.redaction import REDACTED, redact_text
 
@@ -248,6 +249,191 @@ class EvidenceStoreTests(unittest.TestCase):
         self.assertEqual(
             json.loads(latest_path.read_text())["manifestSha256"],
             json.loads(latest_path.read_text())["manifest"]["sha256"],
+        )
+
+    def test_runtime_cell_latest_pointers_are_independent(self) -> None:
+        generic = self.store.begin_run("unit-gate", source={"commit": "abc"})
+        generic.finalize(result={"status": "passed"})
+        generic.publish_latest()
+        generic.close()
+
+        linux = self.store.begin_run("unit-gate", source={"commit": "abc"})
+        linux.finalize(
+            result={
+                "status": "passed",
+                "runtimeCell": "desktop-linux-native",
+            }
+        )
+        linux.publish_latest(runtime_cell="desktop-linux-native")
+        linux.close()
+
+        macos = self.store.begin_run("unit-gate", source={"commit": "abc"})
+        macos.finalize(
+            result={
+                "status": "passed",
+                "runtimeCell": "desktop-macos-native",
+            }
+        )
+        macos.publish_latest(runtime_cell="desktop-macos-native")
+        macos.close()
+
+        self.assertEqual(
+            self.store.latest("unit-gate")["runId"],
+            generic.run_id,
+        )
+        self.assertEqual(
+            self.store.latest(
+                "unit-gate",
+                runtime_cell="desktop-linux-native",
+            )["runId"],
+            linux.run_id,
+        )
+        self.assertEqual(
+            self.store.latest(
+                "unit-gate",
+                runtime_cell="desktop-macos-native",
+            )["runId"],
+            macos.run_id,
+        )
+
+    def test_runtime_cell_publish_rejects_manifest_mismatch(self) -> None:
+        run = self.store.begin_run("unit-gate", source={"commit": "abc"})
+        run.finalize(
+            result={
+                "status": "passed",
+                "runtimeCell": "desktop-macos-native",
+            }
+        )
+
+        with self.assertRaisesRegex(
+            EvidenceManifestInvalid,
+            "runtime cell mismatch",
+        ):
+            run.publish_latest(runtime_cell="desktop-linux-native")
+        run.close()
+
+        self.assertFalse(
+            (
+                run.run_dir.parent
+                / "latest.desktop-linux-native.json"
+            ).exists()
+        )
+        self.assertFalse((run.run_dir.parent / "latest.json").exists())
+
+    def test_registered_artifact_digest_can_refresh_after_redaction(
+        self,
+    ) -> None:
+        run = self.store.begin_run("unit-gate", source={})
+        reference = run.write_bytes(
+            "evidence/binary.bin",
+            b"\x00resolved-secret-value",
+            role="binary",
+        )
+        self.store.resolve(reference).write_bytes(b"\x00[REDACTED]")
+
+        run.refresh_redacted_artifacts(["evidence/binary.bin"])
+        collected = run.collect_existing_artifacts()
+        run.finalize(result={"status": "failed"})
+        run.close()
+
+        self.assertNotEqual(collected["binary"].sha256, reference.sha256)
+        self.assertEqual(
+            self.store.resolve(collected["binary"]).read_bytes(),
+            b"\x00[REDACTED]",
+        )
+
+    def test_registered_artifact_can_be_removed_after_path_redaction(
+        self,
+    ) -> None:
+        run = self.store.begin_run("unit-gate", source={})
+        reference = run.write_bytes(
+            "evidence/resolved-secret-value.txt",
+            b"safe",
+            role="secret-path",
+        )
+        self.store.resolve(reference).unlink()
+
+        run.refresh_redacted_artifacts(
+            ["evidence/resolved-secret-value.txt"]
+        )
+        collected = run.collect_existing_artifacts()
+        run.finalize(result={"status": "failed"})
+        run.close()
+
+        self.assertNotIn("secret-path", collected)
+
+    def test_runtime_cell_pointer_mismatch_fails_closed(self) -> None:
+        run = self.store.begin_run("unit-gate", source={"commit": "abc"})
+        run.finalize(
+            result={
+                "status": "passed",
+                "runtimeCell": "desktop-linux-native",
+            }
+        )
+        run.publish_latest(runtime_cell="desktop-linux-native")
+        run.close()
+
+        pointer_path = (
+            run.run_dir.parent / "latest.desktop-linux-native.json"
+        )
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+        pointer["runtimeCell"] = "desktop-macos-native"
+        pointer_path.write_text(
+            json.dumps(pointer) + "\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            EvidenceManifestInvalid,
+            "pointer runtime cell mismatch",
+        ):
+            self.store.latest(
+                "unit-gate",
+                runtime_cell="desktop-linux-native",
+            )
+
+    def test_older_run_cannot_replace_newer_runtime_cell_pointer(self) -> None:
+        with patch(
+            "tooling.acceptance.core.evidence_store._utc_now",
+            return_value="2026-08-17T10:00:00.000000+00:00",
+        ):
+            older = self.store.begin_run("unit-gate", source={"commit": "abc"})
+        with patch(
+            "tooling.acceptance.core.evidence_store._utc_now",
+            return_value="2026-08-17T10:00:01.000000+00:00",
+        ):
+            newer = self.store.begin_run("unit-gate", source={"commit": "abc"})
+        with patch(
+            "tooling.acceptance.core.evidence_store._utc_now",
+            return_value="2026-08-17T10:00:02.000000+00:00",
+        ):
+            older.finalize(
+                result={
+                    "status": "passed",
+                    "runtimeCell": "desktop-linux-native",
+                }
+            )
+        with patch(
+            "tooling.acceptance.core.evidence_store._utc_now",
+            return_value="2026-08-17T10:00:03.000000+00:00",
+        ):
+            newer.finalize(
+                result={
+                    "status": "passed",
+                    "runtimeCell": "desktop-linux-native",
+                }
+            )
+        newer.publish_latest(runtime_cell="desktop-linux-native")
+        older.publish_latest(runtime_cell="desktop-linux-native")
+        older.close()
+        newer.close()
+
+        self.assertEqual(
+            self.store.latest(
+                "unit-gate",
+                runtime_cell="desktop-linux-native",
+            )["runId"],
+            newer.run_id,
         )
 
     def test_subprocess_context_resolves_and_parent_collects_artifacts(self) -> None:
@@ -559,6 +745,109 @@ class EvidenceStoreTests(unittest.TestCase):
         self.store.delete_run("unit-gate", old.run_id)
         self.assertFalse(old.run_dir.exists())
 
+    def test_runtime_cell_latest_run_is_cleanup_protected(self) -> None:
+        linux = self.store.begin_run("unit-gate", source={})
+        linux.finalize(
+            result={
+                "status": "passed",
+                "runtimeCell": "desktop-linux-native",
+            }
+        )
+        linux.publish_latest(runtime_cell="desktop-linux-native")
+        linux.close()
+
+        macos = self.store.begin_run("unit-gate", source={})
+        macos.finalize(
+            result={
+                "status": "passed",
+                "runtimeCell": "desktop-macos-native",
+            }
+        )
+        macos.publish_latest(runtime_cell="desktop-macos-native")
+        macos.close()
+
+        self.assertEqual(
+            self.store.latest(
+                "unit-gate",
+                runtime_cell="desktop-macos-native",
+            )["runId"],
+            macos.run_id,
+        )
+        with self.assertRaisesRegex(
+            EvidenceConflict,
+            "latest run",
+        ):
+            self.store.delete_run("unit-gate", linux.run_id)
+
+    def test_cleanup_waits_for_runtime_cell_publication(self) -> None:
+        run = self.store.begin_run("unit-gate", source={})
+        run.finalize(
+            result={
+                "status": "passed",
+                "runtimeCell": "desktop-linux-native",
+            }
+        )
+        from tooling.acceptance.core import evidence_store
+
+        publication_started = threading.Event()
+        allow_publication = threading.Event()
+        failures: list[BaseException] = []
+        real_atomic_write = evidence_store._atomic_write
+
+        def pause_latest_pointer(
+            path: Path,
+            data: bytes,
+            *,
+            path_role: str,
+        ) -> None:
+            if path.name == "latest.desktop-linux-native.json":
+                publication_started.set()
+                self.assertTrue(allow_publication.wait(timeout=10))
+            real_atomic_write(path, data, path_role=path_role)
+
+        def publish() -> None:
+            try:
+                run.publish_latest(runtime_cell="desktop-linux-native")
+            except BaseException as error:
+                failures.append(error)
+
+        def cleanup() -> None:
+            try:
+                self.store.delete_run("unit-gate", run.run_id)
+            except BaseException as error:
+                failures.append(error)
+
+        with patch(
+            "tooling.acceptance.core.evidence_store._atomic_write",
+            side_effect=pause_latest_pointer,
+        ):
+            publisher = threading.Thread(target=publish)
+            publisher.start()
+            self.assertTrue(publication_started.wait(timeout=10))
+
+            cleaner = threading.Thread(target=cleanup)
+            cleaner.start()
+            cleaner.join(timeout=0.1)
+            self.assertTrue(cleaner.is_alive())
+
+            allow_publication.set()
+            publisher.join(timeout=10)
+            cleaner.join(timeout=10)
+        run.close()
+
+        self.assertFalse(publisher.is_alive())
+        self.assertFalse(cleaner.is_alive())
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0], EvidenceConflict)
+        self.assertTrue(run.run_dir.is_dir())
+        self.assertEqual(
+            self.store.latest(
+                "unit-gate",
+                runtime_cell="desktop-linux-native",
+            )["runId"],
+            run.run_id,
+        )
+
     def test_newer_completion_cannot_be_replaced_by_older_run(self) -> None:
         with patch(
             "tooling.acceptance.core.evidence_store._utc_now",
@@ -609,6 +898,88 @@ class EvidenceStoreTests(unittest.TestCase):
             second.publish_latest()
         second.close()
         self.assertEqual(latest_path.read_bytes(), original)
+        self.assertEqual(self.store.latest("unit-gate")["runId"], first.run_id)
+
+    def test_interrupted_runtime_cell_publish_keeps_existing_pointers(
+        self,
+    ) -> None:
+        generic = self.store.begin_run("unit-gate", source={})
+        generic.finalize(result={"status": "passed"})
+        generic.publish_latest()
+        generic.close()
+
+        first = self.store.begin_run("unit-gate", source={})
+        first.finalize(
+            result={
+                "status": "passed",
+                "runtimeCell": "desktop-linux-native",
+            }
+        )
+        first.publish_latest(runtime_cell="desktop-linux-native")
+        first.close()
+
+        second = self.store.begin_run("unit-gate", source={})
+        second.finalize(
+            result={
+                "status": "passed",
+                "runtimeCell": "desktop-linux-native",
+            }
+        )
+        real_replace = os.replace
+
+        def fail_cell_pointer(source: object, target: object) -> None:
+            if Path(target).name == "latest.desktop-linux-native.json":
+                raise OSError(errno.EIO, "injected cell pointer interruption")
+            real_replace(source, target)
+
+        with patch(
+            "tooling.acceptance.core.evidence_store.os.replace",
+            side_effect=fail_cell_pointer,
+        ), self.assertRaises(Exception):
+            second.publish_latest(runtime_cell="desktop-linux-native")
+        second.close()
+
+        self.assertEqual(
+            self.store.latest("unit-gate")["runId"],
+            generic.run_id,
+        )
+        self.assertEqual(
+            self.store.latest(
+                "unit-gate",
+                runtime_cell="desktop-linux-native",
+            )["runId"],
+            first.run_id,
+        )
+
+    def test_post_replace_fsync_failure_rolls_back_latest_pointer(
+        self,
+    ) -> None:
+        first = self.store.begin_run("unit-gate", source={})
+        first.finalize(result={"status": "passed"})
+        first.publish_latest()
+        first.close()
+
+        second = self.store.begin_run("unit-gate", source={})
+        second.finalize(result={"status": "passed"})
+        from tooling.acceptance.core import evidence_store
+
+        real_fsync = evidence_store._fsync_directory
+        calls = 0
+
+        def fail_first_fsync(path: Path) -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise OSError(errno.EIO, "injected directory fsync failure")
+            real_fsync(path)
+
+        with patch(
+            "tooling.acceptance.core.evidence_store._fsync_directory",
+            side_effect=fail_first_fsync,
+        ), self.assertRaises(EvidenceWriteInterrupted):
+            second.publish_latest()
+        second.close()
+
         self.assertEqual(self.store.latest("unit-gate")["runId"], first.run_id)
 
     def test_malformed_latest_fails_typed_and_blocks_publish(self) -> None:

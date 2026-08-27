@@ -401,7 +401,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertEqual(
             [name for _, name in fixed_steps],
             [
-                "localization.visible",
                 "conversation.search.ui",
                 "group.create.ui",
                 "transcript.thread.ui",
@@ -415,6 +414,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 "client.restart.ui",
                 "clear.cursor.restart.ui",
                 "alice.second-device.recovery.ui",
+                "localization.visible",
             ],
         )
         self.assertIn('for actor in ("alice", "bob"):', self.source)
@@ -1157,8 +1157,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 "#[tauri::command]\npub async fn messaging_pick_attachment_source",
             )
         ]
-        self.assertIn("tauri::async_runtime::spawn(async move", preview_scope)
-        self.assertIn("reqwest::Client::builder()", preview_scope)
+        self.assertIn(".allow_file(path)", preview_scope)
+        self.assertIn("allow messaging attachment preview", preview_scope)
+        self.assertNotIn("tauri::async_runtime::spawn", preview_scope)
+        self.assertNotIn("reqwest::Client", preview_scope)
+        self.assertNotIn("127.0.0.1", preview_scope)
         self.assertNotIn("reqwest::blocking::Client", preview_scope)
         self.assertIn("previous_outcome_revision", self.source)
         self.assertIn("revision <= previous_outcome_revision", self.source)
@@ -1538,6 +1541,47 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("imageLoaded: images.length > 0", self.source)
         self.assertIn('image_attachments[0]["imageCount"] > 0', self.source)
 
+    def test_attachment_failure_proves_retry_retains_draft_without_message(
+        self,
+    ) -> None:
+        self.assertIn(
+            'empty_attachment = self.fixture_root / "w13-empty-attachment.png"',
+            self.source,
+        )
+        start = self.source.index("    def prove_attachment_failure(")
+        end = self.source.index("    def attachment_message(", start)
+        journey = self.source[start:end]
+        self.assertIn("before_ids == staged_ids == after_retry_ids", journey)
+        self.assertIn('self.click_element("alice", buttons[0])', journey)
+        self.assertIn('data-chat-attachment-attempt', journey)
+        self.assertIn('evidence["retainedAttempt"] > staged_attempt', journey)
+        self.assertIn("and bool(preview)", journey)
+        self.assertIn("and retained_preview == preview", journey)
+        self.assertIn(
+            "failed attachment draft retained after retry",
+            journey,
+        )
+        self.assertIn('evidence["retainedStatus"] == "failed"', journey)
+        self.assertIn("len(buttons) >= 2", journey)
+        self.assertIn("len(retained_buttons) >= 2", journey)
+        self.assertIn(
+            "data-chat-attachment-attempt={item.attempt}",
+            self.chat_composer,
+        )
+        self.assertNotIn(
+            'self.assert_condition("attachment_failure_draft_retained", True)',
+            journey,
+        )
+
+        retry_index = self.chat_composer.index(
+            "onClick={() => retryDraft(item.id)}"
+        )
+        remove_index = self.chat_composer.index(
+            "onClick={() => removeDraft(item.id)}",
+            retry_index,
+        )
+        self.assertLess(retry_index, remove_index)
+
     def test_runtime_audit_fails_closed_on_missing_resources(self) -> None:
         self.assertIn('"runtime log missing"', self.source)
         self.assertIn('"runtime log empty"', self.source)
@@ -1637,7 +1681,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
 
     def test_native_product_gate_rejects_visible_i18n_keys(self) -> None:
         localization_start = self.source.index(
-            "    def prove_visible_localization(",
+            "    def capture_visible_localization(",
         )
         localization_end = self.source.index(
             "    def bind_recovered_device(",
@@ -1647,9 +1691,49 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("document.body?.innerText", localization_source)
         self.assertIn("visible_ui_has_no_i18n_keys", localization_source)
         self.assertIn(
+            "covered == REQUIRED_LOCALIZATION_CHECKPOINTS",
+            localization_source,
+        )
+        self.assertIn("client is None or not client.is_alive()", localization_source)
+        self.assertNotIn("for actor, client in self.clients.items()", localization_source)
+        expected_checkpoints = {
+            '"search-result", (actor,)',
+            '"direct-open", ("alice",)',
+            '"group-create", ("alice",)',
+            '"group-open", ("alice", "bob")',
+            '"thread", ("alice",)',
+            '"reaction-picker", (actor,)',
+            '"reaction-error", ("alice",)',
+            '"identity", ("alice", "bob")',
+            '"background-picker", (actor,)',
+            '"background-failure", ("alice",)',
+            '"settings", ("alice",)',
+            '"attachment-failure", ("alice",)',
+            '"attachments", ("alice", "bob")',
+            '"offline", ("alice", "bob")',
+            '"restart", ("alice", "bob")',
+            '"clear-cursor", ("alice", "bob")',
+            '"recovery-create", (actor,)',
+            '"recovery-restore", (actor,)',
+            '"alice2", ("alice2",)',
+        }
+        for checkpoint in expected_checkpoints:
+            self.assertIn(
+                f"self.capture_visible_localization({checkpoint})",
+                self.source,
+            )
+        self.assertIn(
             'self.step("localization.visible", self.prove_visible_localization)',
             self.source,
         )
+        second_device_step = self.source.index(
+            'self.step(\n'
+            '                "alice.second-device.recovery.ui",'
+        )
+        localization_step = self.source.index(
+            'self.step("localization.visible", self.prove_visible_localization)'
+        )
+        self.assertLess(second_device_step, localization_step)
         self.assertEqual(
             self.desktop_tauri_config["bundle"]["resources"][
                 "../../../packages/locales/"
@@ -1684,10 +1768,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"conversation_search_open_exact"', journey)
         self.assertIn('"error.unknown"', journey)
         self.assertIn('"conversation action failed"', journey)
-        self.assertIn(
-            r"\b(?:auth|chat|common)\.[A-Za-z0-9_.-]+\b",
-            journey,
-        )
+        self.assertIn("LOCALIZATION_KEY_PATTERN.search", journey)
+        self.assertIn("|provider|", self.source)
+        self.assertIn("|error|errors|", self.source)
         self.assertIn(
             'self.write_json_evidence("direct-search-reuse", direct_search)',
             self.source,
