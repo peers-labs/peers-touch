@@ -112,9 +112,15 @@ class EvidenceReport:
                     f"actor {key!r} must be ActorRuntime or a mapping, got {type(actor).__name__}"
                 )
 
+        passed = self.status == "PASS"
         report = {
+            "artifactKind": "acceptance-gate-evidence-report",
             "gate": self.gate_id,
+            "gateId": self.gate_id,
             "status": self.status,
+            "completionStatus": "DONE" if passed else "PARTIAL",
+            "proofStatus": "PROVEN" if passed else "UNPROVEN",
+            "sampleEmissionAllowed": passed,
             "started_at": self.started_at,
             "duration_ms": self.duration_ms,
             "station_url": self.station_url,

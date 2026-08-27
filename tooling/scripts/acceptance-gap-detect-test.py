@@ -23,6 +23,9 @@ def proven_result(gate_id: str) -> dict[str, Any]:
         "status": "passed",
         "completionStatus": "DONE",
         "proofStatus": "PROVEN",
+        "sourceArtifact": {"path": f"reports/{gate_id}.json"},
+        "sourceArtifactKind": "acceptance-gate-evidence-report",
+        "evidenceGateId": gate_id,
     }
 
 
@@ -173,6 +176,44 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
         self.assertEqual(
             report["gaps"][0]["gapType"],
             "RUNTIME_MANIFEST_MISSING",
+        )
+
+    def test_environment_gate_rejects_noncanonical_evidence_kind(self) -> None:
+        gate_id = "chat-native-two-client-e2e"
+        result = proven_result(gate_id)
+        result["sourceArtifactKind"] = "forged-kind"
+        result["manifest"] = {
+            "state": "FIXTURE_READY",
+            "runId": "run-current",
+            "source": {
+                "commit": "current-head",
+                "workspaceDigest": "clean",
+            },
+        }
+
+        report = MODULE.detect(
+            claim="Native receipt delivery is proven",
+            paths=[],
+            plan={
+                "selected_gates": [
+                    {
+                        "id": gate_id,
+                        "environment": "home-station",
+                        "tier": "env-evidence",
+                        "provisioner": "home-station",
+                    }
+                ]
+            },
+            run={"results": [result]},
+            required_gates=[],
+            source_commit="current-head",
+            workspace_digest="clean",
+        )
+
+        self.assertEqual(report["proofState"], "UNPROVEN")
+        self.assertEqual(
+            report["gaps"][0]["gapType"],
+            "GATE_EVIDENCE_UNPROVEN",
         )
 
     def test_stale_runtime_manifest_is_rejected(self) -> None:
