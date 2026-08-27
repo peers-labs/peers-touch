@@ -679,7 +679,6 @@ function evaluateF03(ctx: DirectCellAssertionContext): Record<string, boolean | 
   const evidence = evidenceRecord(ctx.turnEvidence, 'turnEvidence');
   const diagnostics = evidenceRecord(evidence.diagnostics, 'turnDiagnostics');
   const replay = evidenceRecord(diagnostics.replay, 'turnDiagnosticReplay');
-  const turn = evidenceRecord(replay.turn, 'turnDiagnosticTurn');
 
   return {
     progressiveEventsSequenced:
@@ -691,7 +690,7 @@ function evaluateF03(ctx: DirectCellAssertionContext): Record<string, boolean | 
         index === 0 || sequence > sequences[index - 1]),
     cancelledDuringTextAuthoritative:
       facts.sawTextBeforeCancel === true
-      && String(turn.status).toLowerCase().endsWith('cancelled'),
+      && String(replay.status).toLowerCase().endsWith('cancelled'),
     exactlyOneAuthoritativeTerminal:
       terminalEvents.length === 1
       && terminalEvents[0]?.eventType === 'cancelled'

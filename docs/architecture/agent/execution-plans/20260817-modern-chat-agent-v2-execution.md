@@ -1532,6 +1532,13 @@ because Ark rejected the incompatible wire combination
 `reasoning_effort=low + thinking.type=disabled`. Cleanup passed. The provider
 adapter now omits reasoning effort when thinking is disabled; this preserves
 the independent product controls without remapping `low` to `disabled`.
+The source-matched `576ac2fbc` run
+`20260827T075601574220Z-98a3cebd0b8e800a098b043dc664736f`
+then produced text and reached the production cancellation/readback path.
+It exposed an Acceptance producer bug: `TurnDiagnosticReplay` carries
+authoritative `status` directly, but the AS-F03 evaluator attempted to read a
+nonexistent nested `turn.status` and failed as `turnDiagnosticTurnMissing`.
+The evaluator now reads the generated replay contract directly.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
