@@ -659,7 +659,9 @@ business runner's logical ports. Remote actor launch must fail before process
 creation when an allocated port is already owned and must verify actor-process
 liveness before accepting port readiness. This is an NDR-W5 lifecycle
 correction under D-14; it does not change MP-W13 actors, product assertions, or
-timeout budgets.
+timeout budgets. Client logical ports must derive from the already resolved
+worktree profile slot; reading the parent process environment again can silently
+fall back to slot zero and collide with unrelated local tunnels.
 
 ## 13. Final Readiness Gate
 

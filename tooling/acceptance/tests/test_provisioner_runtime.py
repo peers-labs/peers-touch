@@ -144,22 +144,61 @@ class ProvisionerBlockingTests(unittest.TestCase):
             [4465, 4466],
         )
 
+    def test_resolved_profile_slot_overrides_process_environment(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        with patch.dict(
+            "os.environ",
+            {"PT_DEV_SLOT": "0"},
+            clear=True,
+        ):
+            clients = provisioner._clients(
+                "chat-native-product-closure-e2e",
+                "run-resolved-profile-slot",
+                slot=4,
+            )
+
+        self.assertEqual(
+            [client.webdriver_port for client in clients],
+            [4485, 4486, 4487],
+        )
+        self.assertEqual(
+            [client.gateway_port for client in clients],
+            [3730, 3731, 3732],
+        )
+
     def test_native_webdriver_port_conflict_blocks(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
         )
-        with socket.socket() as listener:
-            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            listener.bind(("127.0.0.1", 4445))
+        listener = None
+        selected_slot = None
+        for slot in range(100, 1000):
+            candidate = socket.socket()
+            candidate.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                candidate.bind(("127.0.0.1", 4445 + slot * 10))
+            except OSError:
+                candidate.close()
+                continue
+            listener = candidate
+            selected_slot = slot
+            break
+        self.assertIsNotNone(listener)
+        self.assertIsNotNone(selected_slot)
+        assert listener is not None
+        assert selected_slot is not None
+        with listener:
             listener.listen()
             with patch.dict(
                 "os.environ",
-                {"PT_DEV_SLOT": "0"},
+                {"PT_DEV_SLOT": str(selected_slot)},
                 clear=True,
             ):
                 with self.assertRaisesRegex(
                     BlockedError,
-                    "webdriver port 4445 is already in use",
+                    "webdriver port .* is already in use",
                 ):
                     provisioner._clients(
                         "chat-native-two-client-e2e",
