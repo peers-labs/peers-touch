@@ -1449,16 +1449,17 @@ Only then may G-F preflight begin.
 
 **Depends on**: F1, F2, F3, F4.
 **Owns**: the C01-C10/A01-A14 advancement decision, not implementation.
-**Status**: in progress. Commits `2271f1604`, `82c603a1d`, `a9e90279f`, and
-`437e8c5e6` repaired the profile-owned provider/model fixture, added durable
-Station-owned conversation runtime bindings plus TurnAttempt runtime snapshots,
-corrected token-usage field classification, and normalized the binding tuple.
-The source-matched 2026-08-27 rerun passed those layers, then failed closed at
-`foundation-browser-direct / AS-F01 / en / single / sample-001` with a
-capability snapshot hash mismatch because protobuf JSON represents `uint64`
-limit fields as strings while Station hashes the portable numeric form. The
-Gate remains `PARTIAL / UNPROVEN`; cleanup passed and W1 is blocked while all
-portable capability limit scalars are normalized before hashing.
+**Status**: in progress. Commits through `24808fa16` repaired the profile-owned
+provider/model fixture, added durable Station-owned conversation runtime
+bindings plus TurnAttempt runtime snapshots, corrected token-usage field
+classification, and normalized binding/capability scalar representations. The
+source-matched 2026-08-27 rerun passed those layers, then failed closed at
+`foundation-browser-direct / AS-F01 / en / single / sample-001` because the
+Browser session platform retained the protobuf enum name
+`CLIENT_PLATFORM_BROWSER` instead of the portable `browser` value. The Gate
+remains `PARTIAL / UNPROVEN`; cleanup passed and W1 is blocked while the client
+platform enum is normalized without changing the Browser zero-capability
+contract.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"

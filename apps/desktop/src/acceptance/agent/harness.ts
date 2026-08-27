@@ -110,6 +110,14 @@ function runtimeCapabilityResolutionName(value: unknown): string {
   throw new Error('agent.acceptance.runtimeCapabilityResolutionMissing');
 }
 
+function clientPlatformName(value: unknown): string {
+  if (value === 1 || value === 'CLIENT_PLATFORM_DESKTOP') return 'desktop';
+  if (value === 2 || value === 'CLIENT_PLATFORM_BROWSER') return 'browser';
+  if (value === 3 || value === 'CLIENT_PLATFORM_MOBILE') return 'mobile';
+  if (typeof value === 'string' && value.length > 0) return value.toLowerCase();
+  throw new Error('agent.acceptance.clientPlatformMissing');
+}
+
 function timestampIso(value: unknown): string {
   if (typeof value === 'string' && value.length > 0) return value;
   const timestamp = evidenceRecord(value, 'timestamp');
@@ -476,7 +484,7 @@ async function buildDirectRuntimeAttestation(
       capabilitySessionId: session.session_id,
       actorIdHash: await sha256Hex(session.ptid),
       deviceId: session.device_id,
-      platform: session.platform,
+      platform: clientPlatformName(session.platform),
       capabilities: session.typed_capabilities.map((capability) => ({
         capabilityId: capability.capability_id,
         schemaVersion: capability.schema_version,
