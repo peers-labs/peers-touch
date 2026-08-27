@@ -1449,16 +1449,20 @@ Only then may G-F preflight begin.
 
 **Depends on**: F1, F2, F3, F4.
 **Owns**: the C01-C10/A01-A14 advancement decision, not implementation.
-**Status**: in progress. Commits through `040e92f14` repaired the profile-owned
+**Status**: in progress. Commits through `cb8652436` repaired the profile-owned
 provider/model fixture, durable Station runtime authority, portable
-attestation normalization, and AS-F01 source-backed evidence roles. The
-source-matched 2026-08-27 rerun completed the first Browser AS-F01 tuple and
-advanced to `foundation-browser-direct / AS-F02 / en / single / sample-001`,
-where it failed closed because AS-F02 has no completed production
-conversation/Turn capture for runtime attestation. The Gate remains
-`PARTIAL / UNPROVEN`; cleanup passed and W1 is blocked while the reviewed
-topic/composer/queue/idempotency lifecycle is wired to production actions and
-readbacks.
+attestation normalization, AS-F01 source-backed evidence roles, conversation
+lifecycle authority, and the AS-F02 production queue/lifecycle probe. The
+source-matched 2026-08-27 run
+`20260827T032844432467Z-41d3cda5cf95768c9328b15de39b69b2` reached
+`foundation-browser-direct / AS-F02 / en / single / sample-001`; the eight-entry
+queue, cancellation, active-dependency guard, rename, archive, restore, and
+delete actions completed, but the deliberately long active provider call hit
+the 120-second request deadline. The harness then attempted runtime-attestation
+readback for the failed Turn and received `turn trace not found`. The Gate
+remains `PARTIAL / UNPROVEN`; cleanup passed and W1 stays blocked while AS-F02
+is changed to fill the queue concurrently, use a bounded successful provider
+response, and reject any non-completed Turn before evidence construction.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"

@@ -256,6 +256,13 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("queueCapacitySnapshotMismatch", source)
         self.assertIn("receiverDomAtCapacity", source)
 
+    def test_group_one_queue_probe_requires_completed_active_turn(self) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        self.assertIn("const queuedTurns = Array.from({ length: 8 }", source)
+        self.assertIn("queuedTurns.map((queued) => queued.result)", source)
+        self.assertIn("completedObservedTurnId(activeResult)", source)
+        self.assertNotIn("1200-word", source)
+
     def test_group_one_controller_uses_manifest_bound_client_modes(self) -> None:
         source = FOUNDATION_RUNTIME_CLIENT.read_text(encoding="utf-8")
         self.assertIn('"native-tauri", "browser"', source)

@@ -33,14 +33,16 @@ interface FoundationTurnSubmission {
   idempotencyKey: string;
 }
 
+interface ObservedFoundationTurnResult {
+  ok: boolean;
+  error: string | null;
+  events: Array<{ event: string; data: Record<string, unknown> }>;
+}
+
 interface ObservedFoundationTurn {
   controller: AbortController;
   firstEvent: Promise<{ event: string; data: Record<string, unknown> }>;
-  result: Promise<{
-    ok: boolean;
-    error: string | null;
-    events: Array<{ event: string; data: Record<string, unknown> }>;
-  }>;
+  result: Promise<ObservedFoundationTurnResult>;
 }
 
 function startObservedFoundationTurn(input: {
@@ -62,16 +64,8 @@ function startObservedFoundationTurn(input: {
       resolveFirstEvent = resolve;
     },
   );
-  let resolveResult: (value: {
-    ok: boolean;
-    error: string | null;
-    events: Array<{ event: string; data: Record<string, unknown> }>;
-  }) => void = () => {};
-  const result = new Promise<{
-    ok: boolean;
-    error: string | null;
-    events: Array<{ event: string; data: Record<string, unknown> }>;
-  }>((resolve) => {
+  let resolveResult: (value: ObservedFoundationTurnResult) => void = () => {};
+  const result = new Promise<ObservedFoundationTurnResult>((resolve) => {
     resolveResult = resolve;
   });
   let settled = false;
@@ -122,6 +116,22 @@ function observedTurnId(
     }
   }
   return '';
+}
+
+function completedObservedTurnId(result: ObservedFoundationTurnResult): string {
+  if (!result.ok) {
+    throw new Error(
+      result.error ?? 'agent.acceptance.foundationTurnFailed',
+    );
+  }
+  if (!result.events.some((event) => event.event === 'done')) {
+    throw new Error('agent.acceptance.foundationTurnNotCompleted');
+  }
+  const turnId = observedTurnId(result.events);
+  if (!turnId) {
+    throw new Error('agent.acceptance.foundationTurnIdMissing');
+  }
+  return turnId;
 }
 
 function observedErrorCode(error: unknown): string {
@@ -833,7 +843,7 @@ export function installAcceptanceHarness(): void {
 
       try {
         await attemptLogin();
-      } catch (firstError: unknown) {
+      } catch {
         // Wait for Rust backend to finish cold-start initialization
         await new Promise((resolve) => setTimeout(resolve, 5_000));
         await attemptLogin();
@@ -1080,7 +1090,7 @@ export function installAcceptanceHarness(): void {
         runtime: {
           hasTauriInternals: '__TAURI_INTERNALS__' in window,
           hasGatewayBase: '__PT_GATEWAY_BASE__' in window,
-          gatewayBase: (window as any).__PT_GATEWAY_BASE__ ?? null,
+          gatewayBase: window.__PT_GATEWAY_BASE__ ?? null,
         },
       };
     },
@@ -1272,7 +1282,6 @@ export function installAcceptanceHarness(): void {
         new Promise<Record<string, unknown>>((resolve) => {
           const events: Array<{ event: string; data: Record<string, unknown> }> = [];
           let settled = false;
-          let controller: AbortController;
           let timeout = 0;
           const finish = (result: Record<string, unknown>) => {
             if (settled) return;
@@ -1280,7 +1289,7 @@ export function installAcceptanceHarness(): void {
             window.clearTimeout(timeout);
             resolve(result);
           };
-          controller = streamAgentTurn({
+          const controller = streamAgentTurn({
             conversation_id: conversationId,
             agent_id: agentId,
             user_input: submission.content,
@@ -1618,12 +1627,8 @@ export function installAcceptanceHarness(): void {
         const turnStartedAt = performance.now();
         preparedTurnId = await new Promise<string>((resolve, reject) => {
           let observedTurnId = '';
-          let controller: AbortController;
-          const timeout = window.setTimeout(() => {
-            controller.abort();
-            reject(new Error('agent.acceptance.foundationTurnTimeout'));
-          }, 120_000);
-          controller = streamAgentTurn({
+          let timeout = 0;
+          const controller = streamAgentTurn({
             conversation_id: conversation.conversation_id,
             agent_id: agentId,
             user_input: 'Reply with ready.',
@@ -1666,6 +1671,10 @@ export function installAcceptanceHarness(): void {
             window.clearTimeout(timeout);
             reject(error);
           });
+          timeout = window.setTimeout(() => {
+            controller.abort();
+            reject(new Error('agent.acceptance.foundationTurnTimeout'));
+          }, 120_000);
         });
       }
 
@@ -1712,7 +1721,7 @@ export function installAcceptanceHarness(): void {
 
         const sharedIdempotencyKey = crypto.randomUUID();
         const activeTurnInput =
-          'Write a detailed 1200-word numbered response about reliable queues.';
+          'Write exactly 20 concise numbered rules for reliable queues.';
         const activeStartedAt = performance.now();
         const active = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
@@ -1745,9 +1754,8 @@ export function installAcceptanceHarness(): void {
         const duplicateQueue = await api.listAgentTurnQueue(
           conversation.conversation_id,
         );
-        const queuedResults: Awaited<ObservedFoundationTurn['result']>[] = [];
-        for (let index = 0; index < 8; index += 1) {
-          const queued = startObservedFoundationTurn({
+        const queuedTurns = Array.from({ length: 8 }, (_, index) =>
+          startObservedFoundationTurn({
             conversationId: conversation.conversation_id,
             agentId,
             content: `Queued ${index + 1}`,
@@ -1756,9 +1764,11 @@ export function installAcceptanceHarness(): void {
             model: agent.model || undefined,
             clientCapabilitySessionId:
               capabilitySessions.selectedStationSession?.session_id,
-          });
-          queuedResults.push(await queued.result);
-        }
+          }),
+        );
+        const queuedResults = await Promise.all(
+          queuedTurns.map((queued) => queued.result),
+        );
         const overflow = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
           agentId,
@@ -1822,7 +1832,7 @@ export function installAcceptanceHarness(): void {
 
         const activeResult = await active.result;
         turnDurationMs = performance.now() - activeStartedAt;
-        preparedTurnId = observedTurnId(activeResult.events);
+        preparedTurnId = completedObservedTurnId(activeResult);
         const duplicateTurnId = observedTurnId(duplicateResult.events);
 
         const afterQueue = await api.getAgentConversation(
