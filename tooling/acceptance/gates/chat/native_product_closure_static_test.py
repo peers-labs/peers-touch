@@ -1697,7 +1697,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("client is None or not client.is_alive()", localization_source)
         self.assertNotIn("for actor, client in self.clients.items()", localization_source)
         expected_checkpoints = {
-            '"search-result", (actor,)',
+            "localization_checkpoint, (actor,)",
             '"direct-open", ("alice",)',
             '"group-create", ("alice",)',
             '"group-open", ("alice", "bob")',
