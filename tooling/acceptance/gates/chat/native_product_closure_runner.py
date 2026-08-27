@@ -788,16 +788,18 @@ class NativeProductClosureGate(AcceptanceGate):
                     },
                 )
             # #endregion
-            if (
-                control.window_count < baseline_window_count
-                or control.kind == "unknown"
-            ):
+            if control.window_count < baseline_window_count:
                 return None
             if control.kind == "application-dialog":
                 return {"selected": False, "control": control}
             if panel_open(control) and control.kind != "text-field":
                 return {"selected": False, "control": control}
-            if not panel_open(control):
+            if (
+                not panel_open(control)
+                and control.main_window
+                and control.frontmost
+                and control.focused_window
+            ):
                 return {"selected": True, "control": control}
             return None
 
