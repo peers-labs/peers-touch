@@ -15,10 +15,19 @@ from selenium.webdriver.support.ui import WebDriverWait
 from tooling.acceptance.core import GateError, REPO_ROOT, call_async_harness
 from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriSession
-from tooling.acceptance.fixtures.chat_native_reset import deploy_environment
+from tooling.acceptance.fixtures.chat_native_reset import (
+    acceptance_station_environment,
+    active_deployment_environment,
+    active_station_url,
+)
 
 
-DEFAULT_STATION = "http://10.37.94.156:18080"
+DEFAULT_STATION = os.environ.get("PT_STATION_URL", "").rstrip("/")
+if not DEFAULT_STATION:
+    try:
+        DEFAULT_STATION = active_station_url()
+    except RuntimeError:
+        DEFAULT_STATION = ""
 DEV_ACCOUNT_PASSWORD = "1"
 ACCOUNTS = {
     "alice": "alice@p.t",
@@ -44,7 +53,7 @@ def reset_fixture(accounts: tuple[str, ...] = ("alice", "bob")) -> None:
                 / "chat_native_reset.py"
             ),
             "--environment",
-            "station-three",
+            active_deployment_environment(),
             "--accounts",
             *accounts,
         ],
@@ -305,15 +314,14 @@ def sql_literal(value: str) -> str:
 
 
 def station_readback(conversation_id: str, message_id: str) -> dict[str, Any]:
-    environment = deploy_environment("station-three")
+    environment = acceptance_station_environment(DEFAULT_STATION)
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     user = environment.get("PT_DEPLOY_USER", "").strip()
     if not host or not user:
-        raise GateError("station-three deployment host identity is unavailable")
-    container = os.environ.get(
-        "CHAT_ACCEPTANCE_POSTGRES_CONTAINER",
-        "pt-station-a-postgres-1",
-    )
+        raise GateError(
+            "Chat Acceptance Station deployment host identity is unavailable"
+        )
+    container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
     conversation = sql_literal(conversation_id)
     message = sql_literal(message_id)
     query = f"""

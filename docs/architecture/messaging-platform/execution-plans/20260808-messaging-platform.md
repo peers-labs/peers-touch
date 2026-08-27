@@ -2,31 +2,10 @@
 
 > **Status**: active
 > **Version**: v1.5
-> **Created**: 2026-08-08 | **Updated**: 2026-08-21
+> **Created**: 2026-08-08 | **Updated**: 2026-08-27
 > **Owner**: Messaging Platform Team
 
 ---
-
-## Context Anchor
-
-| Field | Current value |
-|---|---|
-| Main task | Complete Messaging Platform across Desktop and Mobile with source-bound Native evidence |
-| Plan source | `docs/architecture/messaging-platform/execution-plans/20260808-messaging-platform.md` |
-| Tracking source | `docs/architecture/messaging-platform/acceptance-matrix.md` |
-| Worktree | `<repo-root>` (peers-group-chat verification worktree) |
-| Branch | `verify/ndr-w7-8b8977ffc` |
-| Stage | `EXECUTE` |
-| Current workstream | `MP-W13` Product Truth Repair |
-| Current step | `MP-W13-F` exact-range Acceptance, Gap Detector, and Completion Audit |
-| Progress | Unchanged Linux Native run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` passed all 25 assertions at exact source and Station commit `e5b3fd74943cdba46e16c72c415a2031051448b7`. Alice2 recovered the Station-authoritative mute, pin, background, image, and clear-cursor state. |
-| Last completed | Linux `desktop-linux-native` product proof and both Gate-owned and independent runtime-cell cleanup passed. Source, Station, binary, runtime cell, actors, native input, attachments, recovery, and second-device evidence are bound in the immutable run. |
-| Current action | Run the exact-range selected Gates and final Acceptance Gap Detector and Completion Audit without weakening MP-W13 assertions. |
-| Next action | Close MP-W13-F only if the exact-range selected Gates, detector, and auditor all pass; otherwise report the first remaining gap. |
-| Blockers | none |
-| Decisions required | none; Owner approved the root-cause plan and the accepted Messaging architecture already defines one Station authority membership truth |
-| Evidence | Linux Gate run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0`; runtime cell run `20260826T212010860319Z-94cab5dfe099f313`; Linux binary SHA-256 `fd1d4877c5d2279b4ee5515e3ea687f7074ddbcbc72216b4452022dfb3c09d6b`; 25/25 assertions PASS; Gate cleanup PASS; final cell state `CLEANED`; no retained remote container, checkout, tunnel, actor, port, process, or storage. MP-W13 remains in progress until the final audit chain passes. |
-| Last updated | 2026-08-27 06:05 CST |
 
 ## 1. Plan Sources And Gate
 
@@ -773,7 +752,7 @@ semantics remain unchanged.
 | `MP-W13-C` Identity and attribution | PTID profile and Station identity projections | W05 + Desktop runtime projection contract | One PTID profile resolver for message/group list/Details/thread; `authority_station_id` retained through TS projection; visible Station attribution in both clients | Alice/Bob exact avatar URL/load-state and Station attribution DOM equality |
 | `MP-W13-D` Conversation actions | Mute, sticky, built-in background, uploaded background | Social Runtime Phase 3 + Station membership/settings owner | One canonical membership authorization path; typed settings read/write; pending/error/rollback; sanctioned OSS bucket; typed image reference persistence; realtime invalidation and restart recovery | Real Details clicks, Station readback, Alice/Bob sync, failure rollback, restart evidence |
 | `MP-W13-E` Attachment product path | Picker, preview, upload, send, receive, render, counts | W10-B/C/D/E | `convertFileSrc` preview; strict send outcome handling; draft retention on deferred/failure; no empty message; sender/receiver rendering and open/download; count conservation across all surfaces | Byte-exact Native attachment journey and count ledger |
-| `MP-W13-F` Acceptance truth cutover | Chat business Gate and evidence | W13-A through W13-E | Remove command/store bypasses for claimed UI paths; rebuild dedicated binary; source/build/runtime identity; screenshots, DOM, geometry and cleanup evidence; invalidate stale reports | `chat-native-product-closure-e2e`, structural validation, completion audit, independent review |
+| `MP-W13-F` Acceptance truth cutover | Chat business Gate and evidence | W13-A through W13-E | Remove command/store bypasses for claimed UI paths; prove conversation-list search creates and reuses one Direct; require an Acceptance-exclusive disposable Station reset target; rebuild dedicated binary; source/build/runtime identity; screenshots, DOM, geometry and cleanup evidence; invalidate stale reports | `chat-native-product-closure-e2e`, structural validation, completion audit, independent review |
 
 `MP-W13-F` also requires the generic Acceptance runner to retain list-shaped
 JSON evidence such as restart phase snapshots without interpreting it as a
@@ -886,12 +865,17 @@ per disposable Station reset and records all allocated resources before launch.
 ##### AS-W13-06: Source-bound final proof and cleanup
 - **Precondition**: W13-A through W13-E pass focused tests.
 - **Action**: Build the dedicated Acceptance binary, run the complete Native product
-  closure Gate, then tear down in reverse acquisition order.
+  closure Gate against an Acceptance-exclusive disposable Station, open Bob through
+  the visible conversation-list search twice, then tear down in reverse acquisition
+  order.
 - **Expected**: Report binds source commit, binary identity, Station commit, actors,
   devices, profiles, storage roots, ports, screenshots, DOM and geometry evidence; all
-  processes stop and every allocated port is released.
+  processes stop and every allocated port is released. The first Bob search creates and
+  opens one Direct; the second reuses the same conversation ID without a generic error,
+  raw i18n key, or duplicate session row.
 - **Failure variant**: Missing/stale identity, any Harness bypass, absent screenshot/DOM,
-  or leaked process/port fails the Gate and blocks readiness.
+  a shared persistent Station reset target, duplicate Direct, generic conversation
+  error, or leaked process/port fails the Gate and blocks readiness.
 - **Evidence**: Immutable Gate report, screenshots, DOM/geometry JSON, process inventory,
   and `lsof` no-listener output.
 - **Status**: pending.
@@ -1004,19 +988,22 @@ Closure enforcement (deterministic):
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
 | MP-W10-E | reopened by W13 | W05/W10-D | Prior byte-exact Engine evidence remains valid for its recorded runtime, but current product use proves the Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, and count conservation are not closed. W13-E/F must replace the product-proof claim with real UI evidence. |
 | MP-W12 | reopened by W13 (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | Prior authority/Engine interaction evidence remains useful, but current product use proves thread panel, reaction picker, hover toolbar, and complete transcript convergence were bypassed or unasserted. W13-A/B/F must rerun through real Native UI actions. Mobile remains pending W09. |
-| MP-W13 | in progress | W10-E/W12 + Social Runtime Phase 3 | W13-A through W13-E and the unchanged Linux Native product Gate are source-bound proven by run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` at `e5b3fd749`. MP-W13-F remains open only for the exact-range selected Gates, Acceptance Gap Detector, Completion Audit, and independent review. |
+| MP-W13 | in progress | W10-E/W12 + Social Runtime Phase 3 | The prior Linux run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` remains valid only for its recorded assertions. Persistent Desktop use exposed missing conversation-list search create/reuse proof and destructive reset sharing with Station Three. MP-W13-F remains `UNPROVEN` until the updated Gate runs against an Acceptance-exclusive disposable Station and the exact-range Gates, Gap Detector, Completion Audit, and independent review pass. |
 | MP-W11 | reopened pending W13 | W02-W10/W12/W13 | The previous closure verdict is invalid for full product readiness because its Native evidence did not prove the receiver-visible paths exposed by W13. Rerun only after W13-F passes and stale reports are rejected by source/build/runtime identity. |
 
-The 2026-08-27 persistent Linux Desktop handoff exposed two additional MP-W13-F
+The 2026-08-27 persistent Linux Desktop handoff exposed four additional MP-W13-F
 gaps: the installed runtime did not preserve the runtime-cell keyring boundary,
-and the Tauri bundle omitted built-in locale resources. The operational
-handoff now binds an internal DBus/keyring to the persistent runtime; the
-tracked product repair bundles
+the Tauri bundle omitted built-in locale resources, the conversation-list search
+result path had no Native create/reuse assertion, and the disposable Fixture reset
+shared Station Three with a persistent Desktop. The operational handoff now binds an
+internal DBus/keyring to the persistent runtime; the tracked product repair bundles
 `packages/locales` under `resource_dir/i18n`, replaces the stacked
 conversation-list error plus empty state with a bounded recovery surface, and
-adds a Native visible assertion that rejects raw `auth`, `chat`, or `common`
-i18n keys. Existing Linux evidence predates these changes and remains stale for
-this repair until the exact-source Native Gate is rerun.
+adds Native visible assertions that reject raw `auth`, `chat`, or `common`
+i18n keys and prove search-created Direct identity reuse. Acceptance must use an
+exclusive disposable Station reset target; a Station serving a persistent Desktop
+must fail preflight instead of being reset. Existing Linux evidence predates these
+changes and remains stale for this repair until the exact-source Native Gate is rerun.
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
