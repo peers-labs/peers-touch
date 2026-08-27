@@ -1487,7 +1487,11 @@ for the extra attestation Turn, and Station did not persist `TurnTrace` on the
 cancel/error terminal path even though its attempt/runtime snapshot was
 durable. The current fix persists terminal traces with a non-cancelled context
 and uses the already-proven cancelled Turn for AS-F02 attestation, removing the
-unnecessary second provider call.
+unnecessary second provider call. The source-matched `04dfd5084` run
+`20260827T042720116767Z-86248accfaff35a32fc1841c4a55445e` completed AS-F02
+and advanced to `foundation-browser-direct / AS-F03 / en / single /
+sample-001`, where the direct-runtime adapter failed closed because AS-F03 is
+not yet implemented. Cleanup passed; G-F remains `PARTIAL / UNPROVEN`.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
