@@ -327,6 +327,7 @@ func conversationToJSON(c *domain.Conversation) map[string]any {
 		"status":                   string(c.Status),
 		"parent_id":                c.ParentID,
 		"active_branch_message_id": c.ActiveBranchMessageID,
+		"runtime_binding":          c.RuntimeBinding,
 		"queued_turn_count":        c.QueuedTurnCount,
 		"version":                  c.Version,
 		"created_at":               c.CreatedAt,

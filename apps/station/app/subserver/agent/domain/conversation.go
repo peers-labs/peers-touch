@@ -3,6 +3,8 @@ package domain
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 )
 
 type ConversationStatus string
@@ -26,6 +28,7 @@ type Conversation struct {
 	ConfigJSON            json.RawMessage
 	Meta                  map[string]string
 	ActiveBranchMessageID string
+	RuntimeBinding        *model.ConversationRuntimeBinding
 	QueuedTurnCount       uint32
 	Version               uint64
 	CreatedAt             time.Time

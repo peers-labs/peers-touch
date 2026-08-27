@@ -1285,6 +1285,25 @@ tuple because the Browser session has no device-local executor in this product
 stage. The reviewed matrix advances to `2026-08-25.1`; the proof contract and
 runtime-attestation schema advance to version `3`.
 
+**XR-4-P5 design amendment accepted (2026-08-27)**:
+
+The first source-matched AS-F01 Turn proved that `ConversationRuntimeBinding`
+and `TurnAttempt.runtime_snapshot` existed only in generated contracts. Station
+did not persist, validate, or project either authority. XR-4-P5 closes the
+already accepted MCA-D03/MCA-D05 contract without changing product scope:
+
+1. Station persists the first resolved conversation binding and the complete
+   attempt runtime snapshot before provider execution.
+2. A subsequent mismatched runtime/config/capability tuple rejects instead of
+   overwriting the conversation binding.
+3. Conversation and diagnostic readback return the stored protobuf facts after
+   restart.
+4. Capability, config, and runtime-snapshot hashes use the canonical JSON rules
+   recorded in `modern-chat-agent/data-model.md`; Harness synthesis is
+   forbidden.
+5. Focused persistence, conflict, readback, and restart tests must pass before
+   the next G-F rerun.
+
 **Dependency order**:
 
 ```text
@@ -1430,15 +1449,15 @@ Only then may G-F preflight begin.
 
 **Depends on**: F1, F2, F3, F4.
 **Owns**: the C01-C10/A01-A14 advancement decision, not implementation.
-**Status**: in progress. The source-matched 2026-08-27 run reached the first
-419-cell tuple after Native/Browser capability-session establishment,
-source-backed runtime-attestation construction, and production Turn admission.
-It then failed closed at `foundation-browser-direct / AS-F01 / en / single /
-sample-001` with `AGENT_4001` because model
-`ep-20260623145021-n4xdm` was not registered as available for the
-`acceptance-provider` actor-scoped provider. The Gate remains
-`PARTIAL / UNPROVEN`; W1 is blocked while the production provider/model fixture
-closure is repaired.
+**Status**: in progress. Commit `0d50bfd7e` repaired the profile-owned
+provider/model fixture, and the source-matched 2026-08-27 rerun passed
+provisioning, Native/Browser capability-session establishment, provider/model
+admission, and production Turn execution. It then failed closed at
+`foundation-browser-direct / AS-F01 / en / single / sample-001` because the
+conversation readback exposed no `runtimeBinding` to the attestation builder.
+The Gate remains `PARTIAL / UNPROVEN`; cleanup passed and W1 remains blocked
+while the Station-to-Desktop conversation runtime-binding projection is traced
+and repaired.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"

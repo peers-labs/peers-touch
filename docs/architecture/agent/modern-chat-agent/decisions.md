@@ -209,6 +209,22 @@ Station resolves an immutable `RuntimeCapabilitySnapshot` before execution.
 Each requested capability is classified as native, bridged, degraded, or
 rejected. Degradation is visible before execution.
 
+The resolved runtime facts are committed before the provider call:
+
+- the first accepted runtime for a conversation installs its durable
+  `ConversationRuntimeBinding`;
+- every `TurnAttempt` persists the complete immutable `RuntimeSnapshot`;
+- a later attempt whose runtime kind, provider, model, profile, capability
+  snapshot, or config snapshot differs from the conversation binding rejects
+  instead of overwriting the binding;
+- retries of the same resolved tuple are idempotent.
+
+Snapshot hashes use UTF-8 JSON with recursively lexicographically sorted object
+keys and no insignificant whitespace. `capability_snapshot_hash` covers the
+complete `RuntimeCapabilitySnapshot`; `config_snapshot_hash` covers exactly
+`agentConfigVersion` and `providerConfigVersion`; the attempt snapshot hash
+covers the complete `RuntimeSnapshot`.
+
 ### Rationale
 
 Mid-turn capability surprises cause data loss and misleading UX.
@@ -222,6 +238,9 @@ Mid-turn capability surprises cause data loss and misleading UX.
 
 - Capability discovery requires freshness and provenance.
 - Some models will be rejected for specific turns.
+- Conversation and attempt persistence must retain the resolved snapshots
+  across Station restart; readback must never reconstruct them from current
+  mutable configuration.
 
 ### Review Condition
 

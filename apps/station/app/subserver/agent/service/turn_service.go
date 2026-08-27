@@ -844,12 +844,20 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 
 	// Persist ContextLedger to TurnAttempt (MCA-D04).
 	if config.AttemptID != "" {
-		if ledgerJSON, ledgerErr := json.Marshal(assemblyResult.Segments); ledgerErr == nil {
-			if db, dbErr := s.getDB(ctx); dbErr == nil {
-				_ = db.WithContext(ctx).Model(&persistence.TurnAttempt{}).
-					Where("id = ?", config.AttemptID).
-					Update("context_ledger", string(ledgerJSON)).Error
-			}
+		ledgerJSON, ledgerErr := json.Marshal(assemblyResult.Segments)
+		if ledgerErr != nil {
+			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+				"encode turn attempt context ledger", ledgerErr)
+		}
+		db, dbErr := s.getDB(ctx)
+		if dbErr != nil {
+			return nil, dbErr
+		}
+		if updateErr := db.WithContext(ctx).Model(&persistence.TurnAttempt{}).
+			Where("id = ?", config.AttemptID).
+			Update("context_ledger", string(ledgerJSON)).Error; updateErr != nil {
+			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+				"persist turn attempt context ledger", updateErr)
 		}
 	}
 
@@ -867,12 +875,14 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			return nil, admitErr
 		}
 		trace.CapabilitySnapshotID = snapshot.SnapshotID
-		if config.AttemptID != "" {
-			if db, dbErr := s.getDB(ctx); dbErr == nil {
-				_ = db.WithContext(ctx).Model(&persistence.TurnAttempt{}).
-					Where("id = ?", config.AttemptID).
-					Update("readiness_snapshot_id", snapshot.SnapshotID).Error
-			}
+		if persistErr := s.persistRuntimeAuthority(ctx, config, snapshot); persistErr != nil {
+			_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "runtime authority rejected")
+			s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+				Type:  "error",
+				Stage: "runtime_authority_rejected",
+				Error: persistErr.Error(),
+			})
+			return nil, persistErr
 		}
 	}
 

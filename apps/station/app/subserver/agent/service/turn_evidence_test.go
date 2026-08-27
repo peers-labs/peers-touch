@@ -194,12 +194,22 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode usage: %v", err)
 	}
+	runtimeSnapshot := newDirectRuntimeSnapshot(
+		runtimeAuthorityAdmission("ark", "seed", 27),
+		"11",
+	)
+	encodedRuntimeSnapshot, err := persistence.MarshalRuntimeSnapshot(runtimeSnapshot)
+	if err != nil {
+		t.Fatalf("encode runtime snapshot: %v", err)
+	}
 	if err := db.Model(&persistence.TurnAttempt{}).
 		Where("id = ?", "attempt-1").
 		Updates(map[string]interface{}{
-			"context_ledger": string(segments),
-			"usage_json":     usage,
-			"ended_at":       now.Add(time.Second),
+			"context_ledger":        string(segments),
+			"runtime_snapshot":      encodedRuntimeSnapshot,
+			"readiness_snapshot_id": "readiness-1",
+			"usage_json":            usage,
+			"ended_at":              now.Add(time.Second),
 		}).Error; err != nil {
 		t.Fatalf("update attempt evidence: %v", err)
 	}
@@ -243,6 +253,8 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 	}
 	if len(replay.Attempts) != 1 ||
 		replay.Attempts[0].GetUsage().GetInputTokens() != 10 ||
+		replay.Attempts[0].GetRuntimeSnapshot().GetProviderId() != "ark" ||
+		replay.Attempts[0].GetRuntimeSnapshot().GetModelId() != "seed" ||
 		len(replay.ContextLedgers) != 1 ||
 		replay.ContextLedgers[0].GetSegments()[0].GetContentHash() != "content-hash" ||
 		len(replay.Messages) != 2 ||

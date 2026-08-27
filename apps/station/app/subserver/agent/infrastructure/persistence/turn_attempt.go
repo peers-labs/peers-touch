@@ -14,6 +14,8 @@ type TurnAttempt struct {
 	ErrorCode           string `gorm:"not null;type:varchar(100);default:''"`
 	ProviderRequestRef  string `gorm:"not null;type:text;default:''"`
 	ReadinessSnapshotID string `gorm:"not null;type:varchar(100);default:''"`
+	RuntimeSnapshot     []byte `gorm:"type:bytea;column:runtime_snapshot"`
+	RuntimeSnapshotHash string `gorm:"not null;type:varchar(64);default:''"`
 	// ContextLedger is the JSON-serialized typed ContextLedger for this attempt.
 	// It contains ordered segments with source refs, content hashes, token
 	// estimates, and inclusion/truncation decisions (MCA-D04).

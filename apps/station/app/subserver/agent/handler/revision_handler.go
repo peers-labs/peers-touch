@@ -37,9 +37,13 @@ func (h *RevisionHandlers) HandleRetryTurn(ctx context.Context, req *model.Retry
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
+	attempt, err := revisionAttemptToProto(result.Attempt)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
 	return &model.RetryTurnResponse{
 		Turn:         revisionTurnToProto(result.Turn, input.Ptid, input.IdempotencyKey, result.Message, result.AssistantMessage),
-		Attempt:      revisionAttemptToProto(result.Attempt),
+		Attempt:      attempt,
 		Conversation: revisionConversationToProto(result.Conversation),
 	}, nil
 }
@@ -117,6 +121,7 @@ func revisionConversationToProto(conversation *domain.Conversation) *model.Conve
 		ParentId:              conversation.ParentID,
 		Meta:                  conversation.Meta,
 		ActiveBranchMessageId: conversation.ActiveBranchMessageID,
+		RuntimeBinding:        conversation.RuntimeBinding,
 		QueuedTurnCount:       conversation.QueuedTurnCount,
 		Version:               conversation.Version,
 		CreatedAt:             timestampOrNil(conversation.CreatedAt),
@@ -193,14 +198,19 @@ func revisionTurnToProto(
 	return out
 }
 
-func revisionAttemptToProto(attempt *persistence.TurnAttempt) *model.TurnAttempt {
+func revisionAttemptToProto(attempt *persistence.TurnAttempt) (*model.TurnAttempt, error) {
 	if attempt == nil {
-		return nil
+		return nil, nil
+	}
+	runtimeSnapshot, err := persistence.UnmarshalRuntimeSnapshot(attempt.RuntimeSnapshot)
+	if err != nil {
+		return nil, err
 	}
 	out := &model.TurnAttempt{
 		AttemptId:                     attempt.ID,
 		TurnId:                        attempt.TurnID,
 		Index:                         attempt.AttemptIndex,
+		RuntimeSnapshot:               runtimeSnapshot,
 		Status:                        revisionTurnStatus(domain.TurnStatus(attempt.Status)),
 		ErrorCode:                     attempt.ErrorCode,
 		ProviderRequestRef:            attempt.ProviderRequestRef,
@@ -210,7 +220,7 @@ func revisionAttemptToProto(attempt *persistence.TurnAttempt) *model.TurnAttempt
 	if attempt.EndedAt != nil {
 		out.EndedAt = timestampOrNil(*attempt.EndedAt)
 	}
-	return out
+	return out, nil
 }
 
 func revisionMessageRole(role domain.MessageRole) model.MessageRole {

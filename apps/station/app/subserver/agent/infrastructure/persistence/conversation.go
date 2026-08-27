@@ -19,6 +19,7 @@ type Conversation struct {
 	ConfigJSON            json.RawMessage `gorm:"type:jsonb;column:config_json"`
 	Meta                  json.RawMessage `gorm:"type:jsonb"`
 	ActiveBranchMessageID string          `gorm:"not null;type:varchar(36);default:''"`
+	RuntimeBinding        []byte          `gorm:"type:bytea;column:runtime_binding"`
 	QueuedTurnCount       uint32          `gorm:"not null;default:0"`
 	Version               uint64          `gorm:"not null;default:1"`
 	CreatedAt             time.Time       `gorm:"not null;autoCreateTime;index:idx_conversations_created_at"`

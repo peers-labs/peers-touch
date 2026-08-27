@@ -5,10 +5,13 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type fakeStreamResponse struct {
@@ -102,5 +105,62 @@ func TestTurnConfigFromRequestCarriesKnowledgeResources(t *testing.T) {
 	}
 	if config.KnowledgeResources[0].Source != "trace content" {
 		t.Fatalf("expected resource source to be preserved, got %q", config.KnowledgeResources[0].Source)
+	}
+}
+
+func TestConversationReadbackProjectsRuntimeBinding(t *testing.T) {
+	binding := &model.ConversationRuntimeBinding{
+		RuntimeKind:            model.RuntimeKind_RUNTIME_KIND_DIRECT_MODEL,
+		ProviderId:             "provider-1",
+		ModelId:                "model-1",
+		RuntimeProfileId:       "modern-chat-agent-v1",
+		CapabilitySnapshotHash: strings.Repeat("a", 64),
+		ConfigSnapshotHash:     strings.Repeat("b", 64),
+		BoundAt:                timestamppb.New(time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)),
+	}
+	conversation := &domain.Conversation{
+		ConversationID: "conversation-1",
+		AgentID:        "agent-1",
+		Ptid:           "ptid:person:owner",
+		RuntimeBinding: binding,
+	}
+
+	jsonProjection := conversationToJSON(conversation)
+	if jsonProjection["runtime_binding"] != binding {
+		t.Fatalf("JSON conversation readback lost runtime binding: %+v", jsonProjection)
+	}
+	protoProjection := revisionConversationToProto(conversation)
+	if protoProjection.GetRuntimeBinding().GetCapabilitySnapshotHash() != binding.CapabilitySnapshotHash {
+		t.Fatalf("protobuf conversation readback lost runtime binding: %+v", protoProjection)
+	}
+}
+
+func TestRevisionAttemptReadbackProjectsStoredRuntimeSnapshot(t *testing.T) {
+	snapshot := &model.RuntimeSnapshot{
+		RuntimeKind:           model.RuntimeKind_RUNTIME_KIND_DIRECT_MODEL,
+		ProviderId:            "provider-1",
+		ModelId:               "model-1",
+		RuntimeProfileId:      "modern-chat-agent-v1",
+		ProviderConfigVersion: "7",
+		AgentConfigVersion:    "11",
+	}
+	encoded, err := persistence.MarshalRuntimeSnapshot(snapshot)
+	if err != nil {
+		t.Fatalf("encode runtime snapshot: %v", err)
+	}
+	projected, err := revisionAttemptToProto(&persistence.TurnAttempt{
+		ID:              "attempt-1",
+		TurnID:          "turn-1",
+		AttemptIndex:    1,
+		RuntimeSnapshot: encoded,
+		Status:          "running",
+		StartedAt:       time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("project attempt: %v", err)
+	}
+	if projected.GetRuntimeSnapshot().GetProviderId() != "provider-1" ||
+		projected.GetRuntimeSnapshot().GetAgentConfigVersion() != "11" {
+		t.Fatalf("attempt readback lost runtime snapshot: %+v", projected)
 	}
 }

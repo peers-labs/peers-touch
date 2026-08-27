@@ -89,6 +89,27 @@ function runtimeKindName(value: unknown): string {
   throw new Error('agent.acceptance.runtimeKindMissing');
 }
 
+function runtimeCapabilityResolutionName(value: unknown): string {
+  if (
+    value === 1
+    || value === 'RUNTIME_CAPABILITY_RESOLUTION_NATIVE'
+  ) return 'native';
+  if (
+    value === 2
+    || value === 'RUNTIME_CAPABILITY_RESOLUTION_BRIDGED'
+  ) return 'bridged';
+  if (
+    value === 3
+    || value === 'RUNTIME_CAPABILITY_RESOLUTION_DEGRADED'
+  ) return 'degraded';
+  if (
+    value === 4
+    || value === 'RUNTIME_CAPABILITY_RESOLUTION_REJECTED'
+  ) return 'rejected';
+  if (typeof value === 'string' && value.length > 0) return value.toLowerCase();
+  throw new Error('agent.acceptance.runtimeCapabilityResolutionMissing');
+}
+
 function timestampIso(value: unknown): string {
   if (typeof value === 'string' && value.length > 0) return value;
   const timestamp = evidenceRecord(value, 'timestamp');
@@ -285,14 +306,101 @@ async function buildDirectRuntimeAttestation(
     'runtimeSnapshot',
   );
   const capabilities = evidenceRecord(snapshot.capabilities, 'runtimeCapabilities');
+  const inputCapabilities = evidenceRecord(
+    capabilities.input,
+    'runtimeInputCapabilities',
+  );
+  const outputCapabilities = evidenceRecord(
+    capabilities.output,
+    'runtimeOutputCapabilities',
+  );
+  const executionCapabilities = evidenceRecord(
+    capabilities.runtime,
+    'runtimeExecutionCapabilities',
+  );
+  const agenticCapabilities = evidenceRecord(
+    capabilities.agentic,
+    'runtimeAgenticCapabilities',
+  );
+  const capabilityLimits = evidenceRecord(
+    capabilities.limits,
+    'runtimeCapabilityLimits',
+  );
+  const capabilityProvenance = evidenceRecord(
+    capabilities.provenance,
+    'runtimeCapabilityProvenance',
+  );
   const normalizedCapabilities = {
-    input: evidenceRecord(capabilities.input, 'runtimeInputCapabilities'),
-    output: evidenceRecord(capabilities.output, 'runtimeOutputCapabilities'),
-    runtime: evidenceRecord(capabilities.runtime, 'runtimeExecutionCapabilities'),
-    agentic: evidenceRecord(capabilities.agentic, 'runtimeAgenticCapabilities'),
-    limits: evidenceRecord(capabilities.limits, 'runtimeCapabilityLimits'),
-    resolution: evidenceArray(capabilities.resolution, 'runtimeCapabilityResolution'),
-    provenance: evidenceRecord(capabilities.provenance, 'runtimeCapabilityProvenance'),
+    input: {
+      text: inputCapabilities.text,
+      image: inputCapabilities.image,
+      file: inputCapabilities.file,
+      audio: inputCapabilities.audio,
+    },
+    output: {
+      text: outputCapabilities.text,
+      image: outputCapabilities.image,
+      structured: outputCapabilities.structured,
+    },
+    runtime: {
+      streaming: executionCapabilities.streaming,
+      reasoning: executionCapabilities.reasoning,
+      promptCache: evidenceField(executionCapabilities, 'promptCache', 'prompt_cache'),
+      externalResume: evidenceField(
+        executionCapabilities,
+        'externalResume',
+        'external_resume',
+      ),
+    },
+    agentic: {
+      nativeTools: evidenceField(agenticCapabilities, 'nativeTools', 'native_tools'),
+      parallelTools: evidenceField(
+        agenticCapabilities,
+        'parallelTools',
+        'parallel_tools',
+      ),
+      localBridge: evidenceField(agenticCapabilities, 'localBridge', 'local_bridge'),
+    },
+    limits: {
+      contextTokens: evidenceField(capabilityLimits, 'contextTokens', 'context_tokens'),
+      outputTokens: evidenceField(capabilityLimits, 'outputTokens', 'output_tokens'),
+      attachmentCount: evidenceField(
+        capabilityLimits,
+        'attachmentCount',
+        'attachment_count',
+      ),
+      attachmentBytes: evidenceField(
+        capabilityLimits,
+        'attachmentBytes',
+        'attachment_bytes',
+      ),
+    },
+    resolution: evidenceArray(
+      capabilities.resolution,
+      'runtimeCapabilityResolution',
+    ).map((value) => {
+      const resolution = evidenceRecord(value, 'runtimeCapabilityResolutionEntry');
+      return {
+        capabilityId: evidenceField(resolution, 'capabilityId', 'capability_id'),
+        resolution: runtimeCapabilityResolutionName(resolution.resolution),
+        reasonCode: evidenceField(resolution, 'reasonCode', 'reason_code'),
+      };
+    }),
+    provenance: {
+      discoverySource: evidenceField(
+        capabilityProvenance,
+        'discoverySource',
+        'discovery_source',
+      ),
+      sourceVersion: evidenceField(
+        capabilityProvenance,
+        'sourceVersion',
+        'source_version',
+      ),
+      observedAt: timestampIso(
+        evidenceField(capabilityProvenance, 'observedAt', 'observed_at'),
+      ),
+    },
   };
   const runtimeSnapshot = {
     runtimeKind: runtimeKindName(evidenceField(snapshot, 'runtimeKind', 'runtime_kind')),

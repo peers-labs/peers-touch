@@ -74,7 +74,12 @@ func (s *ConversationService) ListConversations(ctx context.Context, agentID, pt
 
 	result := make([]*domain.Conversation, 0, len(rows))
 	for i := range rows {
-		result = append(result, persistenceConversationToDomain(&rows[i]))
+		conversation, conversionErr := persistenceConversationToDomain(&rows[i])
+		if conversionErr != nil {
+			return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+				"failed to decode conversation runtime binding", conversionErr)
+		}
+		result = append(result, conversation)
 	}
 	return result, total, nil
 }
@@ -96,7 +101,12 @@ func (s *ConversationService) GetConversation(ctx context.Context, ptid, convers
 		}
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to get conversation", err)
 	}
-	return persistenceConversationToDomain(&row), nil
+	conversation, conversionErr := persistenceConversationToDomain(&row)
+	if conversionErr != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to decode conversation runtime binding", conversionErr)
+	}
+	return conversation, nil
 }
 
 func (s *ConversationService) CreateConversation(ctx context.Context, agentID, ptid, title, description, modelName, providerID string) (*domain.Conversation, error) {
@@ -135,7 +145,12 @@ func (s *ConversationService) CreateConversation(ctx context.Context, agentID, p
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create conversation", err)
 	}
 	logger.Infof(ctx, "conversation created: conv_id=%s agent_id=%s ptid=%s", row.ID, agentID, ptid)
-	return persistenceConversationToDomain(row), nil
+	conversation, conversionErr := persistenceConversationToDomain(row)
+	if conversionErr != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to decode conversation runtime binding", conversionErr)
+	}
+	return conversation, nil
 }
 
 func (s *ConversationService) CreateConversationWithID(ctx context.Context, conversationID, agentID, ptid, title, description, modelName, providerID string) (*domain.Conversation, error) {
@@ -177,7 +192,12 @@ func (s *ConversationService) CreateConversationWithID(ctx context.Context, conv
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create conversation", err)
 	}
 	logger.Infof(ctx, "conversation created with id: conv_id=%s agent_id=%s ptid=%s", row.ID, agentID, ptid)
-	return persistenceConversationToDomain(row), nil
+	conversation, conversionErr := persistenceConversationToDomain(row)
+	if conversionErr != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to decode conversation runtime binding", conversionErr)
+	}
+	return conversation, nil
 }
 
 func (s *ConversationService) UpdateConversation(
@@ -607,7 +627,7 @@ func (s *ConversationService) GetTurnEventSnapshot(ctx context.Context, ptid, co
 	return snapshot, nil
 }
 
-func persistenceConversationToDomain(row *persistence.Conversation) *domain.Conversation {
+func persistenceConversationToDomain(row *persistence.Conversation) (*domain.Conversation, error) {
 	c := &domain.Conversation{
 		ConversationID:        row.ID,
 		AgentID:               row.AgentID,
@@ -636,7 +656,12 @@ func persistenceConversationToDomain(row *persistence.Conversation) *domain.Conv
 	if len(row.ConfigJSON) > 0 {
 		c.ConfigJSON = row.ConfigJSON
 	}
-	return c
+	binding, err := persistence.UnmarshalConversationRuntimeBinding(row.RuntimeBinding)
+	if err != nil {
+		return nil, err
+	}
+	c.RuntimeBinding = binding
+	return c, nil
 }
 
 func persistenceAgentMessageToDomain(row *persistence.AgentMessage) *domain.Message {

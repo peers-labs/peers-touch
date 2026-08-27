@@ -182,10 +182,15 @@ func loadDiagnosticAttempts(
 		if err != nil {
 			return nil, nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "decode diagnostic context ledger", err)
 		}
+		runtimeSnapshot, err := persistence.UnmarshalRuntimeSnapshot(record.RuntimeSnapshot)
+		if err != nil {
+			return nil, nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "decode diagnostic runtime snapshot", err)
+		}
 		attempt := &model.TurnAttempt{
 			AttemptId:                     record.ID,
 			TurnId:                        record.TurnID,
 			Index:                         record.AttemptIndex,
+			RuntimeSnapshot:               runtimeSnapshot,
 			ContextLedgerId:               contextLedger.GetContextLedgerId(),
 			Status:                        diagnosticTurnStatus(record.Status),
 			ErrorCode:                     redactDiagnosticText(record.ErrorCode),

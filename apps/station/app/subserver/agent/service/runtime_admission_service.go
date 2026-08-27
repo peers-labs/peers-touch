@@ -32,11 +32,12 @@ func NewRuntimeAdmissionResolver(
 }
 
 type AdmissionSnapshot struct {
-	SnapshotID   string
-	ProviderID   string
-	ModelID      string
-	Capabilities *model.RuntimeCapabilitySnapshot
-	Budget       *model.RuntimeBudget
+	SnapshotID            string
+	ProviderID            string
+	ModelID               string
+	ProviderConfigVersion string
+	Capabilities          *model.RuntimeCapabilitySnapshot
+	Budget                *model.RuntimeBudget
 }
 
 type ResolvedAvailableModel struct {
@@ -255,13 +256,19 @@ func (r *RuntimeAdmissionResolver) Resolve(
 	budget := defaultRuntimeBudget(contextWindow)
 
 	snapshotID := computeSnapshotID(actorID, providerID, modelID, capabilities, budget)
+	capabilities.SnapshotId = snapshotID
+	providerConfigVersion := "0"
+	if userMatch != nil {
+		providerConfigVersion = fmt.Sprintf("%d", userMatch.Version)
+	}
 
 	return &AdmissionSnapshot{
-		SnapshotID:   snapshotID,
-		ProviderID:   providerID,
-		ModelID:      modelID,
-		Capabilities: capabilities,
-		Budget:       budget,
+		SnapshotID:            snapshotID,
+		ProviderID:            providerID,
+		ModelID:               modelID,
+		ProviderConfigVersion: providerConfigVersion,
+		Capabilities:          capabilities,
+		Budget:                budget,
 	}, nil
 }
 

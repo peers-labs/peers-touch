@@ -205,6 +205,27 @@ current Agent configuration.
 This snapshot preserves what actually executed even if configuration changes
 later.
 
+Station persists `ConversationRuntimeBinding` and `RuntimeSnapshot` as the
+generated protobuf contracts. The first successfully resolved attempt installs
+the conversation binding; subsequent attempts must match it or fail before a
+provider call. A `TurnAttempt` stores its full snapshot before execution and
+diagnostic replay returns that stored value rather than rebuilding it from the
+current provider or Agent configuration.
+
+The portable hash representation is canonical UTF-8 JSON with recursively
+sorted object keys and no insignificant whitespace:
+
+- `capability_snapshot_hash` hashes the complete `capabilities` object from the
+  portable `RuntimeSnapshot`;
+- `config_snapshot_hash` hashes exactly `agentConfigVersion` and
+  `providerConfigVersion`, both encoded as strings;
+- `TurnAttempt.runtime_snapshot_hash` hashes the complete portable
+  `RuntimeSnapshot`.
+
+Direct-model bindings leave external-session and runtime-home values empty and
+use epoch `0`; consumers hash the empty runtime-home value rather than receiving
+a local path.
+
 ### 2.8 RuntimeCapabilitySnapshot
 
 | Category | Fields |

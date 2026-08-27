@@ -193,6 +193,12 @@ func TestRuntimeAdmissionResolveSuccess(t *testing.T) {
 	if snapshot.ModelID != "test-model" {
 		t.Fatalf("expected model ID test-model, got %s", snapshot.ModelID)
 	}
+	if snapshot.ProviderConfigVersion != "1" {
+		t.Fatalf(
+			"expected provider config version 1, got %s",
+			snapshot.ProviderConfigVersion,
+		)
+	}
 	if snapshot.Capabilities == nil {
 		t.Fatal("expected non-nil capabilities")
 	}
