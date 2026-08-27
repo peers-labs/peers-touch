@@ -1499,6 +1499,16 @@ provider stream but observed reasoning/progress without a text delta inside the
 60-second cancellation window, so it failed as `progressiveTextMissing`.
 The next run uses the existing production `effort=low` request contract and an
 immediate-text prompt; cancellation still waits for an actual text delta.
+The source-matched `8d610c15f` run
+`20260827T045315184423Z-d8fac63761253066106a96f367d9f4ef` proved that
+`reasoning_effort=low` does not disable Ark Seed 2.1 Pro thinking: Station
+persisted hundreds of ordered `thinking` deltas but no `text` delta within the
+60-second text-cancellation barrier. The actor has no other advertised HTTP
+model; its remaining models are rejected `trae-cli` runtime entries. AS-F03 is
+therefore paused at `PRODUCT_AMENDMENT_REQUIRED`: decide whether Agent/Turn
+configuration exposes an explicit provider-portable thinking mode
+(`auto|enabled|disabled`). Mapping `low` to disabled or treating thinking as
+answer text is forbidden because either silently changes product semantics.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
