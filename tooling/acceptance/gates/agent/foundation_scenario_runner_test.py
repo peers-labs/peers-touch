@@ -59,6 +59,39 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         ):
             self.load_profile("two")
 
+    def test_maps_the_exact_profile_provider_fixture(self) -> None:
+        config = foundation_scenario_runner._agent_provider_config(
+            {
+                "PT_AGENT_PROVIDER_ID": "ark",
+                "PT_AGENT_PROVIDER_API_KEY": "credential",
+                "PT_AGENT_DEFAULT_MODEL_ID": "endpoint-model",
+                "PT_AGENT_PROVIDER_BASE_URL": "https://provider.example/v1",
+            }
+        )
+
+        self.assertEqual(
+            config,
+            {
+                "providerId": "ark",
+                "apiKey": "credential",
+                "modelId": "endpoint-model",
+                "baseUrl": "https://provider.example/v1",
+            },
+        )
+
+    def test_rejects_an_incomplete_profile_provider_fixture(self) -> None:
+        with self.assertRaisesRegex(
+            foundation_scenario_runner.ScenarioRunnerError,
+            "PT_AGENT_PROVIDER_BASE_URL",
+        ):
+            foundation_scenario_runner._agent_provider_config(
+                {
+                    "PT_AGENT_PROVIDER_ID": "ark",
+                    "PT_AGENT_PROVIDER_API_KEY": "credential",
+                    "PT_AGENT_DEFAULT_MODEL_ID": "endpoint-model",
+                }
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

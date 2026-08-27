@@ -635,6 +635,13 @@ export function installAcceptanceHarness(): void {
         const version = existingDetail?.version ?? 0;
         await api.updateProvider(providerId, { api_key: apiKey, base_url: effectiveBaseUrl, enabled: true, version });
       }
+      const availableModels = await api.listAvailableModels();
+      const providerModel = availableModels.models.find(
+        (model) => model.provider_id === providerId && model.id === modelId && model.enabled,
+      );
+      if (!providerModel) {
+        throw new Error('agent.acceptance.providerModelUnavailable');
+      }
       const agentStore = useAgentStore.getState();
       const selected = agentStore.selectedAgent;
       const agent = agentStore.agents.find((a) => a.name === selected) || agentStore.agents[0];
@@ -650,7 +657,18 @@ export function installAcceptanceHarness(): void {
           }),
         });
         await agentStore.loadAgents();
-        await new Promise((r) => setTimeout(r, 500));
+        const readiness = await api.getAgentCapabilityReadiness({
+          agent_id: agentId,
+        });
+        const directModelReadiness = readiness.capabilities.find(
+          (capability) => capability.capability_id === 'runtime.direct-model',
+        );
+        if (
+          !readiness.runtime_snapshot_id
+          || directModelReadiness?.reason_code !== 'runtime_ready'
+        ) {
+          throw new Error('agent.acceptance.providerReadinessBlocked');
+        }
       }
       return { configured: true, providerId, modelId, agentName: agent?.name };
     },

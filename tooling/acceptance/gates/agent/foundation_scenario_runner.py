@@ -65,6 +65,31 @@ class ScenarioRunnerError(RuntimeError):
     """Fatal error during Foundation scenario execution."""
 
 
+def _agent_provider_config(profile_env: Mapping[str, str]) -> dict[str, str]:
+    config = {
+        "providerId": profile_env.get("PT_AGENT_PROVIDER_ID", "").strip(),
+        "apiKey": profile_env.get("PT_AGENT_PROVIDER_API_KEY", ""),
+        "modelId": profile_env.get("PT_AGENT_DEFAULT_MODEL_ID", "").strip(),
+        "baseUrl": profile_env.get("PT_AGENT_PROVIDER_BASE_URL", "").strip(),
+    }
+    missing_fields = [
+        profile_name
+        for profile_name, config_name in (
+            ("PT_AGENT_PROVIDER_ID", "providerId"),
+            ("PT_AGENT_PROVIDER_API_KEY", "apiKey"),
+            ("PT_AGENT_DEFAULT_MODEL_ID", "modelId"),
+            ("PT_AGENT_PROVIDER_BASE_URL", "baseUrl"),
+        )
+        if not config[config_name]
+    ]
+    if missing_fields:
+        raise ScenarioRunnerError(
+            "active profile is missing required Agent provider fields: "
+            + ", ".join(missing_fields)
+        )
+    return config
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
@@ -271,13 +296,12 @@ def _authenticate_clients(
 
     This step is required before any harness probe that reads agent state.
     The actor account is alice@p.t with CHAT_NATIVE_DEMO_PASSWORD from the
-    profile environment. Provider configuration uses PT_AGENT_PROVIDER_API_KEY
-    and PT_AGENT_DEFAULT_MODEL_ID.
+    profile environment. Provider configuration uses the exact provider, model,
+    credential, and base URL bound by the active profile.
     """
     account = "alice@p.t"
     password = profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
-    provider_api_key = profile_env.get("PT_AGENT_PROVIDER_API_KEY", "")
-    model_id = profile_env.get("PT_AGENT_DEFAULT_MODEL_ID", "")
+    provider_config = _agent_provider_config(profile_env)
 
     for client in (runtime_pair.native, runtime_pair.browser):
         # Step 0: Warm-up — wait for Rust backend to finish initializing
@@ -294,23 +318,6 @@ def _authenticate_clients(
                 f"{client.spec.runtime} login failed: {login_result}"
             )
 
-        # Step 1.5: Diagnostic — check capability snapshot immediately after login
-        import time as _diag_time
-        _diag_time.sleep(2)
-        try:
-            _post_login_snap = client.harness("debugCapabilitySnapshot", {}, timeout=15)
-            import sys as _sys
-            print(
-                f"[DIAG] {client.spec.runtime} post-login capability: {_post_login_snap}",
-                file=_sys.stderr,
-            )
-        except Exception as _diag_err:
-            import sys as _sys
-            print(
-                f"[DIAG] {client.spec.runtime} post-login probe failed: {_diag_err}",
-                file=_sys.stderr,
-            )
-
         # Step 2: Navigate to agent surface
         nav_result = client.harness("navigateToAgent", {}, timeout=60)
         if not isinstance(nav_result, Mapping) or not nav_result.get("navigated"):
@@ -318,24 +325,19 @@ def _authenticate_clients(
                 f"{client.spec.runtime} navigation failed: {nav_result}"
             )
 
-        # Step 3: Configure provider (only if credentials available)
-        if provider_api_key and model_id:
-            provider_result = client.harness(
-                "ensureProvider",
-                {
-                    "providerId": "acceptance-provider",
-                    "apiKey": provider_api_key,
-                    "modelId": model_id,
-                },
-                timeout=60,
+        # Step 3: Configure the exact profile-bound provider and model.
+        provider_result = client.harness(
+            "ensureProvider",
+            provider_config,
+            timeout=60,
+        )
+        if not isinstance(provider_result, Mapping) or not provider_result.get(
+            "configured"
+        ):
+            raise ScenarioRunnerError(
+                f"{client.spec.runtime} provider configuration failed: "
+                f"{provider_result}"
             )
-            if not isinstance(provider_result, Mapping) or not provider_result.get(
-                "configured"
-            ):
-                raise ScenarioRunnerError(
-                    f"{client.spec.runtime} provider configuration failed: "
-                    f"{provider_result}"
-                )
 
     # Step 4: Pre-probe health check — verify harness responds before
     # heavy capability probes. Surface diagnostics early if the agent

@@ -149,6 +149,31 @@ class AgentHarnessStaticTest(unittest.TestCase):
     def test_harness_exposes_wait_for_response(self) -> None:
         self.assertIn("waitForAssistantResponse", self.source)
 
+    def test_provider_fixture_requires_station_model_and_readiness(self) -> None:
+        ensure_provider = self.source.index("async ensureProvider")
+        model_readback = self.source.index(
+            "const availableModels = await api.listAvailableModels()",
+            ensure_provider,
+        )
+        profile_update = self.source.index(
+            "await agentStore.updateAgentProfile",
+            ensure_provider,
+        )
+        readiness_readback = self.source.index(
+            "await api.getAgentCapabilityReadiness",
+            profile_update,
+        )
+        configured_result = self.source.index(
+            "return { configured: true",
+            readiness_readback,
+        )
+
+        self.assertLess(model_readback, profile_update)
+        self.assertLess(profile_update, readiness_readback)
+        self.assertLess(readiness_readback, configured_result)
+        self.assertIn("model.provider_id === providerId", self.source)
+        self.assertIn("directModelReadiness?.reason_code !== 'runtime_ready'", self.source)
+
     def test_harness_exposes_r6_production_actions_and_readback(self) -> None:
         for method in (
             "logout",
