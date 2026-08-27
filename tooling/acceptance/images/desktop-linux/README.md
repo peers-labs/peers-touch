@@ -21,6 +21,10 @@ before it starts the detached TTL reaper. The run-bound copy owns the lease,
 stale-run cleanup, and bounded run-directory retention even after the shared
 checkout changes. Cleanup fails closed and retains lease metadata if a
 container, port, source checkout, or run directory cannot be released.
+Actor WebDriver and gateway ports are allocated from the runtime-cell profile
+range, independently of the business runner's local logical ports. Actor launch
+fails before process creation when either remote port is already owned, so a
+persistent Desktop on the same host cannot be mistaken for a runtime-cell actor.
 Persistent Git and build caches are outside run directories and are never
 mounted into source identity checks. The pinned pnpm payload lives in the
 immutable image under `COREPACK_HOME`; mutable XDG cache state cannot replace
