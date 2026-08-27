@@ -106,15 +106,7 @@ export function SquareAvatar({
       <img
         src={src}
         alt={name}
-        onLoad={(event) => {
-          // #region debug-point B,D:resolved-avatar-load
-          fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'avatar-details-load', runId: 'post-fix', hypothesisId: 'B,D', location: 'SquareAvatar:onLoad', msg: '[DEBUG] Resolved avatar loaded', data: { name, source: remoteUrl, currentSrc: event.currentTarget.currentSrc, naturalWidth: event.currentTarget.naturalWidth }, ts: Date.now() }) }).catch(() => {});
-          // #endregion
-        }}
-        onError={(event) => {
-          // #region debug-point B,D:resolved-avatar-error
-          fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'avatar-details-load', runId: 'post-fix', hypothesisId: 'B,D', location: 'SquareAvatar:onError', msg: '[DEBUG] Resolved avatar failed', data: { name, source: remoteUrl, currentSrc: event.currentTarget.currentSrc, complete: event.currentTarget.complete, naturalWidth: event.currentTarget.naturalWidth }, ts: Date.now() }) }).catch(() => {});
-          // #endregion
+        onError={() => {
           if (remoteUrl && !isBrowserGateway()) resolveCache.delete(remoteUrl);
           setImgError(true);
         }}

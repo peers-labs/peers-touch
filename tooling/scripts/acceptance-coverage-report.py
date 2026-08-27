@@ -9,12 +9,15 @@ Usage:
     python3 tooling/scripts/acceptance-coverage-report.py
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os
 import sys
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +26,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 ACCEPTANCE_ROOT = REPO_ROOT / "tooling" / "acceptance"
 CAPABILITIES_DIR = ACCEPTANCE_ROOT / "capabilities"
 FEATURES_DIR = ACCEPTANCE_ROOT / "features"
 GATES_FILE = ACCEPTANCE_ROOT / "gates.yaml"
-EVIDENCE_DIR = ACCEPTANCE_ROOT / "evidence"
 OUTPUT_PATH = REPO_ROOT / "docs" / "architecture" / "acceptance-framework" / "coverage-report.md"
 
 # Domain display order and mapping
@@ -67,14 +70,14 @@ def load_json_or_yaml(path: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def load_registered_gates() -> set:
-    """Return the set of gate IDs registered in gates.yaml."""
+def load_registered_gates() -> dict[str, dict]:
+    """Return Gate definitions keyed by registered Gate ID."""
     if not GATES_FILE.exists():
         logger.warning("gates.yaml not found at %s", GATES_FILE)
-        return set()
+        return {}
     data = load_json_or_yaml(GATES_FILE)
     gates = data.get("gates", {})
-    return set(gates.keys())
+    return gates if isinstance(gates, dict) else {}
 
 
 def load_capabilities() -> list:
@@ -102,42 +105,180 @@ def load_features() -> dict:
     return features
 
 
-def has_evidence_for_gate(gate_id: str) -> bool:
-    """
-    Heuristic check: does evidence exist for the given gate?
-    We check for JSON evidence files that reference the gate name, or evidence
-    directories with matching names.
-    """
-    if not EVIDENCE_DIR.exists():
+def has_evidence_for_gate(
+    gate_id: str,
+    gate_definition: dict | None = None,
+) -> bool:
+    """Return whether the canonical latest run durably proves the Gate."""
+    from tooling.acceptance.core import (
+        ArtifactRef,
+        CellProofState,
+        CellResult,
+        EvidenceError,
+        EvidenceStore,
+        aggregate_matrix,
+        source_identity,
+    )
+
+    try:
+        store = EvidenceStore.from_environment(repo_root=REPO_ROOT)
+        current_source = source_identity(REPO_ROOT)
+
+        def manifest_proves(
+            manifest: dict[str, Any],
+            *,
+            expected_cell: str | None = None,
+        ) -> bool:
+            result = manifest.get("result")
+            artifacts = manifest.get("artifacts")
+            source = manifest.get("source")
+            redaction = manifest.get("redaction")
+            secret_scan = (
+                result.get("secretScan")
+                if isinstance(result, dict)
+                else None
+            )
+            runtime_manifest = (
+                result.get("manifest")
+                if isinstance(result, dict)
+                else None
+            )
+            credential_refs = (
+                runtime_manifest.get("credentialRefs")
+                if isinstance(runtime_manifest, dict)
+                else []
+            )
+            sensitive_credential_refs = (
+                [
+                    reference
+                    for reference in credential_refs
+                    if isinstance(reference, str)
+                    and reference.startswith(("auto:", "env:", "file:"))
+                ]
+                if isinstance(credential_refs, list)
+                else []
+            )
+            scanned_credentials = (
+                secret_scan.get("scannedCredentialValues")
+                if isinstance(secret_scan, dict)
+                else None
+            )
+            source_artifact = (
+                result.get("sourceArtifact")
+                if isinstance(result, dict)
+                else None
+            )
+            environment_proof = (
+                (gate_definition or {}).get("tier") == "env-evidence"
+            )
+            if (
+                manifest.get("artifactKind") != "acceptance-run-manifest"
+                or manifest.get("state") != "DURABLE"
+                or manifest.get("workspaceId") != store.workspace_id
+                or manifest.get("gateId") != gate_id
+                or not isinstance(manifest.get("runId"), str)
+                or not manifest.get("runId")
+                or not isinstance(redaction, dict)
+                or redaction.get("status") != "passed"
+                or not isinstance(source, dict)
+                or source.get("commit") != current_source["commit"]
+                or source.get("workspaceDigest")
+                != current_source["workspaceDigest"]
+                or not isinstance(result, dict)
+                or result.get("status") != "passed"
+                or result.get("completionStatus") != "DONE"
+                or result.get("proofStatus") != "PROVEN"
+                or not isinstance(secret_scan, dict)
+                or secret_scan.get("status") != "passed"
+                or not isinstance(
+                    secret_scan.get("redactedArtifacts"),
+                    list,
+                )
+                or isinstance(scanned_credentials, bool)
+                or not isinstance(scanned_credentials, int)
+                or scanned_credentials < 0
+                or not isinstance(credential_refs, list)
+                or any(
+                    not isinstance(reference, str)
+                    for reference in credential_refs
+                )
+                or scanned_credentials < len(sensitive_credential_refs)
+                or (
+                    expected_cell is not None
+                    and result.get("runtimeCell") != expected_cell
+                )
+                or not isinstance(artifacts, dict)
+                or not artifacts
+            ):
+                return False
+
+            source_reference = None
+            if environment_proof:
+                if (
+                    result.get("evidenceGateId") != gate_id
+                    or result.get("sourceArtifactKind")
+                    != "acceptance-gate-evidence-report"
+                    or not isinstance(source_artifact, dict)
+                ):
+                    return False
+                source_reference = ArtifactRef.from_dict(source_artifact)
+
+            resolved_references: list[ArtifactRef] = []
+            for reference_data in artifacts.values():
+                reference = ArtifactRef.from_dict(reference_data)
+                if (
+                    reference.workspace_id != manifest["workspaceId"]
+                    or reference.gate_id != manifest["gateId"]
+                    or reference.run_id != manifest.get("runId")
+                ):
+                    return False
+                store.resolve(reference, verify_hash=True)
+                resolved_references.append(reference)
+            if (
+                source_reference is not None
+                and source_reference not in resolved_references
+            ):
+                return False
+            if source_reference is not None:
+                source_report = store.read_json(source_reference)
+                if (
+                    source_report.get("artifactKind")
+                    != result.get("sourceArtifactKind")
+                    or source_report.get("gateId") != gate_id
+                    or str(source_report.get("status") or "").lower()
+                    not in {"pass", "passed"}
+                    or source_report.get("completionStatus") != "DONE"
+                    or source_report.get("proofStatus") != "PROVEN"
+                ):
+                    return False
+            return True
+
+        required_cells = tuple(
+            (gate_definition or {}).get("requiredRuntimeCells") or ()
+        )
+        if not required_cells:
+            return manifest_proves(store.latest(gate_id))
+
+        cell_results: dict[str, CellResult] = {}
+        for cell_id in required_cells:
+            manifest = store.latest(gate_id, runtime_cell=cell_id)
+            if not manifest_proves(manifest, expected_cell=cell_id):
+                return False
+            cell_results[cell_id] = CellResult(
+                cell_id=cell_id,
+                proof_state=CellProofState.PROVEN,
+                source_commit=current_source["commit"],
+                run_id=str(manifest["runId"]),
+            )
+        matrix = aggregate_matrix(
+            gate_id,
+            current_source["commit"],
+            required_cells,
+            cell_results,
+        )
+        return matrix.get("proofStatus") == "PROVEN"
+    except (EvidenceError, KeyError, OSError, TypeError, ValueError):
         return False
-
-    # Check for any JSON file containing gate references
-    gate_slug = gate_id.replace("-", "_")
-    gate_kebab = gate_id
-
-    for json_file in EVIDENCE_DIR.rglob("*.json"):
-        try:
-            content = json_file.read_text(encoding="utf-8")
-            data = json.loads(content)
-            # Evidence JSON files often have a "gate" or "status" field
-            if isinstance(data, dict):
-                if data.get("gate") == gate_id or data.get("gate") == gate_kebab:
-                    if data.get("status") == "PASS":
-                        return True
-                # Also check "result" field
-                if data.get("result") == "PASS" and gate_id in content:
-                    return True
-        except (json.JSONDecodeError, OSError):
-            continue
-
-    # Check for directory-based evidence matching gate slug
-    for d in EVIDENCE_DIR.rglob("*"):
-        if d.is_dir() and (gate_slug in d.name or gate_kebab in d.name):
-            # If directory has files, consider evidence exists
-            if any(d.iterdir()):
-                return True
-
-    return False
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +286,11 @@ def has_evidence_for_gate(gate_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def analyze_feature(feature_id: str, feature_data: dict, registered_gates: set) -> dict:
+def analyze_feature(
+    feature_id: str,
+    feature_data: dict,
+    registered_gates: dict[str, dict],
+) -> dict:
     """
     Analyze a single feature and determine its coverage state.
 
@@ -154,7 +299,11 @@ def analyze_feature(feature_id: str, feature_data: dict, registered_gates: set) 
     required_gates = feature_data.get("required_gates", [])
 
     registered = [g for g in required_gates if g in registered_gates]
-    proven = [g for g in registered if has_evidence_for_gate(g)]
+    proven = [
+        g
+        for g in registered
+        if has_evidence_for_gate(g, registered_gates[g])
+    ]
 
     if not required_gates:
         status = "DECLARED"
@@ -174,7 +323,11 @@ def analyze_feature(feature_id: str, feature_data: dict, registered_gates: set) 
     }
 
 
-def build_domain_report(capabilities: list, features: dict, registered_gates: set) -> dict:
+def build_domain_report(
+    capabilities: list,
+    features: dict,
+    registered_gates: dict[str, dict],
+) -> dict:
     """
     Build per-domain feature analysis.
 

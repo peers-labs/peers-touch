@@ -140,6 +140,76 @@ class StationAttestationOwnerTests(unittest.TestCase):
         self.assertTrue(second.startswith("sha256:"))
         self.assertNotEqual(first, second)
 
+    def test_workspace_digest_ignores_generated_coverage_report(self) -> None:
+        native_git_environment = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
+        }
+        native_git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        root = Path(tempfile.mkdtemp())
+        try:
+            with patch.dict(
+                os.environ,
+                native_git_environment,
+                clear=True,
+            ):
+                subprocess.run(
+                    ["git", "init"],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.email", "acceptance@test.invalid"],
+                    cwd=root,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.name", "Acceptance Test"],
+                    cwd=root,
+                    check=True,
+                )
+                report = (
+                    root
+                    / "docs"
+                    / "architecture"
+                    / "acceptance-framework"
+                    / "coverage-report.md"
+                )
+                report.parent.mkdir(parents=True)
+                report.write_text("old\n", encoding="utf-8")
+                source = root / "source.txt"
+                source.write_text("base\n", encoding="utf-8")
+                subprocess.run(
+                    ["git", "add", "docs", "source.txt"],
+                    cwd=root,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", "base"],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
+
+                report.write_text("new\n", encoding="utf-8")
+                self.assertEqual(source_workspace_digest(root), "clean")
+
+                source.write_text("changed\n", encoding="utf-8")
+                self.assertTrue(
+                    source_workspace_digest(root).startswith("sha256:")
+                )
+        finally:
+            for attempt in range(20):
+                try:
+                    shutil.rmtree(root)
+                    break
+                except OSError as error:
+                    if error.errno != errno.ENOTEMPTY or attempt == 19:
+                        raise
+                    time.sleep(0.05)
+
     def test_producer_writes_source_bound_attestation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -9,9 +9,9 @@
 |--------|----------|-------|--------|----------|
 | Chat | 11 | 9 | 0 | 0% |
 | Federation | 7 | 6 | 0 | 0% |
-| Applet | 1 | 1 | 1 | 100% |
+| Applet | 1 | 1 | 0 | 0% |
 | Station Dashboard | 2 | 2 | 0 | 0% |
-| **Total** | 21 | 18 | 1 | 5% |
+| **Total** | 21 | 18 | 0 | 0% |
 
 ## Infra (Core Self-Validation)
 
@@ -51,7 +51,7 @@
 
 | Feature | Required Gates | Registered | Proven | Status |
 |---------|---------------|------------|--------|--------|
-| `applet-desktop-lifecycle-smoothness` | `applet-desktop-lifecycle-smoothness` | 1/1 | 1/1 | COMPLETE |
+| `applet-desktop-lifecycle-smoothness` | `applet-desktop-lifecycle-smoothness` | 1/1 | 0/1 | WIRED |
 
 ## Station Dashboard
 

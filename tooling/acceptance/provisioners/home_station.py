@@ -53,24 +53,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
     def __init__(self, contract: EnvironmentContract) -> None:
         super().__init__(contract)
 
-    def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
-        refs: list[str] = []
-        values: dict[str, str] = {}
-        for credential in self.contract.credentials:
-            try:
-                value = credential.resolve()
-            except Exception as error:
-                raise BlockedError(
-                    reason=(
-                        f"Cannot resolve credential {credential.id} from "
-                        f"{credential.source_ref}: {error}"
-                    ),
-                    resource=f"credential-ref:{credential.source_ref}",
-                ) from error
-            refs.append(credential.source_ref)
-            values[credential.id] = value
-        return tuple(refs), values
-
     def _clients(
         self,
         gate_id: str,

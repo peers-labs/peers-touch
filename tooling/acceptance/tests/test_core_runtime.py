@@ -125,9 +125,28 @@ class EvidenceSchemaTests(unittest.TestCase):
         report.status = "PASS"
         report.duration_ms = 1500
         d = report.to_dict()
-        required = {"gate", "status", "started_at", "duration_ms", "runtime",
-                    "actors", "assertions", "evidence", "error", "station_url", "error_type"}
+        required = {
+            "artifactKind",
+            "gate",
+            "status",
+            "completionStatus",
+            "proofStatus",
+            "sampleEmissionAllowed",
+            "started_at",
+            "duration_ms",
+            "runtime",
+            "actors",
+            "assertions",
+            "evidence",
+            "error",
+            "station_url",
+            "error_type",
+        }
         self.assertTrue(required.issubset(d.keys()), f"missing fields: {required - d.keys()}")
+        self.assertEqual(d["artifactKind"], "acceptance-gate-evidence-report")
+        self.assertEqual(d["completionStatus"], "DONE")
+        self.assertEqual(d["proofStatus"], "PROVEN")
+        self.assertTrue(d["sampleEmissionAllowed"])
 
     def test_report_writes_valid_json(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -6,7 +6,6 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{Manager, State, Window};
 
 #[derive(Debug, Deserialize)]
@@ -305,37 +304,6 @@ fn allow_attachment_preview(window: &Window, path: &Path) -> Result<(), String> 
     scope
         .allow_file(path)
         .map_err(|error| format!("allow messaging attachment preview: {error}"))?;
-    // #region debug-point M,N:attachment-preview-scope
-    let metadata = path.metadata();
-    let payload = json!({
-        "sessionId": "attachment-send-draft",
-        "runId": "post-fix-linux",
-        "hypothesisId": "M,N",
-        "location": "tauri_commands::messaging:allow_attachment_preview",
-        "msg": "[DEBUG] Picker registered attachment preview scope",
-        "data": {
-            "scopeAllowed": scope.is_allowed(path),
-            "isFile": metadata.as_ref().is_ok_and(|value| value.is_file()),
-            "size": metadata.as_ref().map(|value| value.len()).unwrap_or(0),
-        },
-        "ts": SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|value| value.as_millis())
-            .unwrap_or_default(),
-    });
-    tauri::async_runtime::spawn(async move {
-        if let Ok(client) = reqwest::Client::builder()
-            .timeout(Duration::from_millis(250))
-            .build()
-        {
-            let _ = client
-                .post("http://127.0.0.1:7780/event")
-                .json(&payload)
-                .send()
-                .await;
-        }
-    });
-    // #endregion
     Ok(())
 }
 

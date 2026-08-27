@@ -56,7 +56,11 @@ This creates a two-way proof:
 - `make acceptance-chat-desktop-gateway` requires a running Desktop HTTP gateway
   and proves the client-owned E2EE create, send, hydrate, and decrypt flow.
 - `make acceptance-station-dashboard-domain-validation` runs the Station Dashboard gates and then requires latest evidence for the managed domain profile.
-- `make acceptance-coverage-report` writes `tooling/acceptance/reports/project-coverage-report.md` and summarizes active, candidate, planned, and not-onboarded domains.
+- `make acceptance-coverage-report` writes
+  `docs/architecture/acceptance-framework/coverage-report.md` from canonical
+  durable latest manifests. Proof requires successful redaction, intact
+  artifact identity/digests, and a complete same-source runtime-cell matrix
+  when the Gate declares multiple required cells.
 
 ## Agent Workflow
 

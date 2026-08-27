@@ -13,6 +13,7 @@ export type ChatDraftStatus = Exclude<ChatMediaTransferStatus, 'queued'>;
 
 export interface ChatDraftAttachment {
   id: string;
+  attempt: number;
   file?: File;
   filePath?: string;
   name: string;
@@ -76,6 +77,7 @@ function createDraftAttachment(
   const mimeType = file.type || 'application/octet-stream';
   return {
     id: nextDraftId(),
+    attempt: 0,
     file,
     name: file.name || fallbackName,
     mimeType,
@@ -96,6 +98,7 @@ export function createPickedDraftAttachment(
   const valid = Boolean(attachment.filePath) && (attachment.size ?? 0) > 0;
   return {
     id: nextDraftId(),
+    attempt: 0,
     filePath: attachment.filePath,
     name,
     mimeType,
@@ -140,7 +143,10 @@ export function useChatAttachmentDrafts({
 
   const stageDraft = useCallback(async (item: ChatDraftAttachment) => {
     if (!item.file && !item.filePath) return;
-    patchDraft(item.id, { status: 'uploading' });
+    patchDraft(item.id, {
+      attempt: item.attempt + 1,
+      status: 'uploading',
+    });
     if (item.filePath && item.size <= 0) {
       patchDraft(item.id, { status: 'failed', attachment: undefined });
       onUploadFailed();
@@ -183,6 +189,7 @@ export function useChatAttachmentDrafts({
       ...prev,
       {
         id: nextDraftId(),
+        attempt: 0,
         name: attachment.filename || fallbackName,
         mimeType: attachment.mimeType || 'application/octet-stream',
         size: attachment.size ?? 0,

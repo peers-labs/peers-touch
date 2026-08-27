@@ -72,6 +72,11 @@ VALID_ATTACHMENT_IMAGE_BYTES = bytes.fromhex(
     "0000000d49444154789c63f8cfc0f01f00050001ff89993d1d"
     "0000000049454e44ae426082"
 )
+LOCALIZATION_KEY_PATTERN = re.compile(
+    r"\b(?:agent|applet|auth|channels|chat|common|cron|error|errors|layout|memory|"
+    r"moments|notes|oauth|provider|search|settings|share|tts)"
+    r"\.[A-Za-z0-9_.-]+\b"
+)
 READBACK_COMMANDS = {
     "conversation_get_member_settings",
     "messaging_list_conversations",
@@ -133,6 +138,27 @@ REQUIRED_EVIDENCE = {
     "alice-direct-search-second-screenshot",
     "alice-direct-search-second-dom",
     "cleanup",
+}
+REQUIRED_LOCALIZATION_CHECKPOINTS = {
+    "search-result": {"alice"},
+    "direct-open": {"alice"},
+    "group-create": {"alice"},
+    "group-open": {"alice", "bob"},
+    "thread": {"alice"},
+    "reaction-picker": {"alice"},
+    "reaction-error": {"alice"},
+    "identity": {"alice", "bob"},
+    "background-picker": {"alice"},
+    "background-failure": {"alice"},
+    "settings": {"alice"},
+    "attachment-failure": {"alice"},
+    "attachments": {"alice", "bob"},
+    "offline": {"alice", "bob"},
+    "restart": {"alice", "bob"},
+    "clear-cursor": {"alice", "bob"},
+    "recovery-create": {"alice"},
+    "recovery-restore": {"alice2"},
+    "alice2": {"alice2"},
 }
 
 
@@ -271,6 +297,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.device_ids: dict[str, str] = {}
         self.steps: list[dict[str, Any]] = []
         self.structured_evidence: dict[str, Any] = {}
+        self.localization_checks: dict[str, dict[str, list[str]]] = {}
         self.native_activation_diagnostics: list[dict[str, Any]] = []
         self.reaction_proxy: AcceptanceStationSubmitFaultProxy | None = None
         self.reaction_endpoint_url: str | None = None
@@ -459,28 +486,66 @@ class NativeProductClosureGate(AcceptanceGate):
         self.stop_actor_for_restart(actor)
         self.restore_actor_after_restart(actor)
 
-    def prove_visible_localization(self) -> dict[str, list[str]]:
-        leaked_keys: dict[str, list[str]] = {}
-        for actor, client in self.clients.items():
+    def capture_visible_localization(
+        self,
+        checkpoint: str,
+        actors: tuple[str, ...],
+    ) -> None:
+        if checkpoint in self.localization_checks:
+            raise GateError(f"duplicate localization checkpoint: {checkpoint}")
+        snapshots: dict[str, list[str]] = {}
+        for actor in actors:
+            client = self.clients.get(actor)
+            if client is None or not client.is_alive():
+                raise GateError(
+                    f"{checkpoint} localization client is not alive: {actor}"
+                )
             visible_text = str(
                 client.driver.execute_script(
                     "return document.body?.innerText || '';"
                 )
                 or ""
             )
-            leaked = sorted(set(re.findall(
-                r"\b(?:auth|chat|common)\.[A-Za-z0-9_.-]+\b",
-                visible_text,
-            )))
-            if leaked:
-                leaked_keys[actor] = leaked
+            leaked = sorted(set(LOCALIZATION_KEY_PATTERN.findall(visible_text)))
+            snapshots[actor] = leaked
+        self.localization_checks[checkpoint] = snapshots
 
+    def prove_visible_localization(
+        self,
+    ) -> dict[str, dict[str, list[str]]]:
+        covered = {
+            checkpoint: set(snapshots)
+            for checkpoint, snapshots in self.localization_checks.items()
+        }
+        leaked_keys = {
+            checkpoint: {
+                actor: leaked
+                for actor, leaked in snapshots.items()
+                if leaked
+            }
+            for checkpoint, snapshots in self.localization_checks.items()
+            if any(snapshots.values())
+        }
         self.assert_condition(
             "visible_ui_has_no_i18n_keys",
-            not leaked_keys,
-            json.dumps(leaked_keys, sort_keys=True),
+            covered == REQUIRED_LOCALIZATION_CHECKPOINTS and not leaked_keys,
+            json.dumps(
+                {
+                    "covered": {
+                        checkpoint: sorted(actors)
+                        for checkpoint, actors in covered.items()
+                    },
+                    "required": {
+                        checkpoint: sorted(actors)
+                        for checkpoint, actors
+                        in REQUIRED_LOCALIZATION_CHECKPOINTS.items()
+                    },
+                    "leakedKeys": leaked_keys,
+                },
+                sort_keys=True,
+            ),
         )
-        return leaked_keys
+        return self.localization_checks
 
     def bind_recovered_device(self, actor: str) -> str:
         device = self.wait_for_realtime_device(
@@ -1735,6 +1800,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 result.get_attribute("data-chat-search-result-peer-did") or ""
             ),
         }
+        self.capture_visible_localization("search-result", (actor,))
         self.arm_conversation_search_feedback_probe(actor)
         self.click(actor, selector)
         return snapshot
@@ -1819,10 +1885,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 item["role"] in {"alert", "alertdialog"}
                 or "error.unknown" in item["text"].lower()
                 or "conversation action failed" in item["text"].lower()
-                or re.search(
-                    r"\b(?:auth|chat|common)\.[A-Za-z0-9_.-]+\b",
-                    item["text"],
-                )
+                or LOCALIZATION_KEY_PATTERN.search(item["text"])
             )
         ]
         evidence = {
@@ -1853,6 +1916,7 @@ class NativeProductClosureGate(AcceptanceGate):
             and not forbidden_feedback,
             json.dumps(evidence, sort_keys=True),
         )
+        self.capture_visible_localization("direct-open", ("alice",))
         return evidence
 
     def open_group_through_ui(self) -> str:
@@ -1866,6 +1930,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "alice",
             f'[data-chat-create-group-contact="{self.ptids["bob"]}"]',
         )
+        self.capture_visible_localization("group-create", ("alice",))
         self.click("alice", "[data-chat-create-group-submit]")
 
         def active_group() -> str | None:
@@ -1896,6 +1961,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "Bob active MLS group",
             timeout=180,
         )
+        self.capture_visible_localization("group-open", ("alice", "bob"))
         return str(group_id)
 
     def transcript(self, actor: str) -> list[dict[str, Any]]:
@@ -2071,6 +2137,7 @@ class NativeProductClosureGate(AcceptanceGate):
             and panel_snapshot.get("ids") == [reply["id"]],
             json.dumps({"summary": thread_summary, "panel": panel_snapshot}),
         )
+        self.capture_visible_localization("thread", ("alice",))
         self.click("alice", "[data-chat-thread-close]")
 
         expected_top_level_ids = [str(root["id"]), str(bob_root["id"])]
@@ -2259,6 +2326,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 )
             )
         )
+        self.capture_visible_localization("reaction-picker", (actor,))
         self.native_adapter.post_key(NativeKey.ESCAPE, private_source=True)
         self.assert_condition("toolbar_keyboard_reachable", True)
 
@@ -2348,6 +2416,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 "reaction actionable error",
                 timeout=30,
             )
+            self.capture_visible_localization("reaction-error", ("alice",))
             if self.reaction_visible("alice", message_id, failure_emoji):
                 raise GateError("failed reaction remained as terminal optimistic state")
             proxy.disarm()
@@ -2750,6 +2819,7 @@ class NativeProductClosureGate(AcceptanceGate):
             ),
         )
         self.structured_evidence["identityStation"] = snapshots
+        self.capture_visible_localization("identity", ("alice", "bob"))
 
     def setting_state(self, actor: str) -> dict[str, Any]:
         panel = self.open_details(actor)
@@ -2794,31 +2864,16 @@ class NativeProductClosureGate(AcceptanceGate):
                 height: 0,
               };
               const image = new Image();
-              const report = (phase) => {
-                fetch('http://127.0.0.1:7779/event', {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    sessionId: 'uploaded-background-resource',
-                    runId: 'post-fix',
-                    hypothesisId: 'C,D',
-                    location: 'native_product_closure_runner:background_resource_snapshot',
-                    msg: '[DEBUG] Background CSS resource probe changed',
-                    data: { phase, ...state },
-                    ts: Date.now(),
-                  }),
-                }).catch(() => {});
-              };
-              const capture = (phase, errored = false) => {
+              const capture = (errored = false) => {
                 state.loaded = image.complete && image.naturalWidth > 0;
                 state.errored = errored;
                 state.width = image.naturalWidth;
                 state.height = image.naturalHeight;
-                report(phase);
               };
-              image.onload = () => capture('load');
-              image.onerror = () => capture('error', true);
+              image.onload = () => capture();
+              image.onerror = () => capture(true);
               image.src = src;
-              capture('assigned');
+              capture();
               window.__PT_BACKGROUND_RESOURCE_PROBE__ = {
                 src,
                 state,
@@ -2966,6 +3021,7 @@ class NativeProductClosureGate(AcceptanceGate):
             10,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(rendered_options)
+        self.capture_visible_localization("background-picker", (actor,))
         self.click_element(actor, options[1])
 
     def prove_settings_background(
@@ -3026,6 +3082,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "[data-chat-background-retry]",
             10,
         )
+        self.capture_visible_localization("background-failure", ("alice",))
         retry_client = self.clients["alice"]
         retry_client.execute_script(
             """
@@ -3162,6 +3219,7 @@ class NativeProductClosureGate(AcceptanceGate):
             station_matches,
             json.dumps({"ui": final_state, "station": normalized}),
         )
+        self.capture_visible_localization("settings", ("alice",))
         self.wait_for_dialogs_to_stop_intercepting("alice")
         return {
             "ui": final_state,
@@ -3192,14 +3250,76 @@ class NativeProductClosureGate(AcceptanceGate):
             "failed attachment draft",
             timeout=60,
         )
-        after_ids = [item["id"] for item in self.transcript("alice")]
-        if before_ids != after_ids:
+        draft_id = draft.get_attribute("data-chat-attachment-draft") or ""
+        staged_attempt = int(
+            draft.get_attribute("data-chat-attachment-attempt") or 0
+        )
+        preview = draft.get_attribute("data-chat-attachment-preview") or ""
+        staged_ids = [item["id"] for item in self.transcript("alice")]
+        if before_ids != staged_ids:
             raise GateError("failed attachment staging created an empty message")
         buttons = draft.find_elements(By.TAG_NAME, "button")
-        if not buttons:
-            raise GateError("failed attachment draft has no recovery controls")
-        self.click_element("alice", buttons[-1])
-        self.assert_condition("attachment_failure_draft_retained", True)
+        if len(buttons) < 2:
+            raise GateError(
+                "failed attachment draft must expose retry and remove controls"
+            )
+        self.capture_visible_localization("attachment-failure", ("alice",))
+        self.click_element("alice", buttons[0])
+        retained = wait_until(
+            lambda: (
+                items[0]
+                if (
+                    items := self.clients["alice"].find_elements(
+                        f'[data-chat-attachment-draft="{draft_id}"]'
+                        '[data-chat-attachment-status="failed"]'
+                    )
+                )
+                and int(
+                    items[0].get_attribute(
+                        "data-chat-attachment-attempt"
+                    )
+                    or 0
+                )
+                > staged_attempt
+                else None
+            ),
+            "failed attachment draft retained after retry",
+            timeout=30,
+        )
+        retained_buttons = retained.find_elements(By.TAG_NAME, "button")
+        retained_preview = (
+            retained.get_attribute("data-chat-attachment-preview") or ""
+        )
+        after_retry_ids = [item["id"] for item in self.transcript("alice")]
+        evidence = {
+            "draftId": draft_id,
+            "preview": preview,
+            "retainedPreview": retained_preview,
+            "stagedAttempt": staged_attempt,
+            "retainedAttempt": int(
+                retained.get_attribute("data-chat-attachment-attempt") or 0
+            ),
+            "beforeMessageIds": before_ids,
+            "stagedMessageIds": staged_ids,
+            "afterRetryMessageIds": after_retry_ids,
+            "recoveryControlCount": len(buttons),
+            "retainedRecoveryControlCount": len(retained_buttons),
+            "retainedStatus": retained.get_attribute(
+                "data-chat-attachment-status"
+            ),
+        }
+        self.assert_condition(
+            "attachment_failure_draft_retained",
+            bool(draft_id)
+            and bool(preview)
+            and retained_preview == preview
+            and evidence["retainedAttempt"] > staged_attempt
+            and before_ids == staged_ids == after_retry_ids
+            and evidence["retainedStatus"] == "failed"
+            and len(buttons) >= 2
+            and len(retained_buttons) >= 2,
+            json.dumps(evidence, sort_keys=True),
+        )
         self.wait_for_dialogs_to_stop_intercepting("alice")
 
     def attachment_message(
@@ -3673,6 +3793,7 @@ class NativeProductClosureGate(AcceptanceGate):
             ),
         )
         self.assert_condition("attachment_byte_exact", True, json.dumps(byte_hashes))
+        self.capture_visible_localization("attachments", ("alice", "bob"))
         return {
             "outcome": outcome,
             "textOutcome": text_outcome,
@@ -3759,6 +3880,7 @@ class NativeProductClosureGate(AcceptanceGate):
             after["alice"] == after["bob"],
             json.dumps(after, sort_keys=True),
         )
+        self.capture_visible_localization("offline", ("alice", "bob"))
         return {"before": before, "after": after, "offlineText": offline_text}
 
     def prove_restart(
@@ -3877,6 +3999,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "station": normalized_station,
             "background": rendered,
         }
+        self.capture_visible_localization("restart", ("alice", "bob"))
         self.write_json_evidence("restart-detail-ready", result)
         return result
 
@@ -3987,6 +4110,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 sort_keys=True,
             ),
         )
+        self.capture_visible_localization("clear-cursor", ("alice", "bob"))
         return {
             "cleared": cleared,
             "station": normalized,
@@ -4112,6 +4236,7 @@ class NativeProductClosureGate(AcceptanceGate):
             WebDriverWait(client.driver, 120).until(
                 lambda _driver: self.recovery_feedback_observed(actor)
             )
+            self.capture_visible_localization("recovery-create", (actor,))
         finally:
             self.stop_recovery_feedback_probe(actor)
         return phrase
@@ -4144,6 +4269,7 @@ class NativeProductClosureGate(AcceptanceGate):
                     and self.recovery_feedback_observed(actor)
                 )
             )
+            self.capture_visible_localization("recovery-restore", (actor,))
         finally:
             self.stop_recovery_feedback_probe(actor)
 
@@ -4248,6 +4374,7 @@ class NativeProductClosureGate(AcceptanceGate):
             station_matches and client_isolated,
             json.dumps(result, sort_keys=True),
         )
+        self.capture_visible_localization("alice2", ("alice2",))
         return result
 
     def audit_runtime_logs(self) -> dict[str, Any]:
@@ -4456,7 +4583,7 @@ class NativeProductClosureGate(AcceptanceGate):
         text_file.write_text("MP-W13 attachment byte identity\n", encoding="utf-8")
         empty_image = self.fixture_root / "w13-empty.png"
         empty_image.write_bytes(b"")
-        empty_attachment = self.fixture_root / "w13-empty.txt"
+        empty_attachment = self.fixture_root / "w13-empty-attachment.png"
         empty_attachment.write_bytes(b"")
 
         cleanup: dict[str, Any] = {}
@@ -4472,7 +4599,6 @@ class NativeProductClosureGate(AcceptanceGate):
             )
             for actor in ("alice", "bob"):
                 self.step(f"{actor}.launch", lambda actor=actor: self.launch_actor(actor))
-            self.step("localization.visible", self.prove_visible_localization)
             direct_search = self.step(
                 "conversation.search.ui",
                 self.prove_conversation_search_open,
@@ -4543,6 +4669,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 "alice.second-device.recovery.ui",
                 lambda: self.prove_second_device(group_id, settings["ui"]),
             )
+            self.step("localization.visible", self.prove_visible_localization)
             self.collect_final_evidence()
 
             self.write_json_evidence("source-build-runtime", source_identity)

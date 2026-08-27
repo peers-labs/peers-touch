@@ -189,30 +189,6 @@ export function ChatMessageArea() {
   const activeBackground = activeLocalState?.background;
   const activeBackgroundImageUrl = useOssAttachmentUrl(activeLocalState?.backgroundImage || undefined);
 
-  useEffect(() => {
-    // #region debug-point B,D:background-render-input
-    fetch('http://127.0.0.1:7779/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'uploaded-background-resource',
-        runId: 'post-fix',
-        hypothesisId: 'B,D',
-        location: 'ChatMessageArea:background-render-input',
-        msg: '[DEBUG] Chat background render input changed',
-        data: {
-          conversationId: activeUlid || '',
-          reference: activeLocalState?.backgroundImage || '',
-          resolvedSource: activeBackgroundImageUrl?.startsWith('data:')
-            ? 'data-url'
-            : activeBackgroundImageUrl || '',
-          resolvedLength: activeBackgroundImageUrl?.length || 0,
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-  }, [activeBackgroundImageUrl, activeLocalState?.backgroundImage, activeUlid]);
-
   const currentName = activeConversation?.title || '';
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
 

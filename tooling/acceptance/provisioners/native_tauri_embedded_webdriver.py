@@ -46,9 +46,10 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
         super().__init__(contract)
 
     def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
-        return (
+        return self._remember_resolved_credentials(
             ("fixture:apps/station/app/conf/actor.yml#preset_users",),
             {"chat-password": _fixture_password(ACTOR_FIXTURE)},
+            sensitive=False,
         )
 
     def _run_preflight_command(

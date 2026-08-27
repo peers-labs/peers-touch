@@ -49,36 +49,6 @@ async function resolve(cid: string): Promise<Resolved> {
       }
       const src = data.data_url
         || (data.local_path ? convertFileSrc(data.local_path) : data.url);
-      // #region debug-point A,B:background-resolver-output
-      fetch('http://127.0.0.1:7779/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'uploaded-background-resource',
-          runId: 'post-fix',
-          hypothesisId: 'A,B',
-          location: 'useOssAttachmentUrl:resolve',
-          msg: '[DEBUG] OSS attachment resolver selected renderer source',
-          data: {
-            cid,
-            host: data.host,
-            key: data.key,
-            localPath: data.local_path || '',
-            fallbackUrl: data.url,
-            hasDataUrl: Boolean(data.data_url),
-            selectedSource: data.data_url
-              ? 'data-url'
-              : data.local_path
-                ? 'asset-url'
-                : data.url
-                  ? 'network-url'
-                  : 'none',
-            selectedUrl: data.data_url ? '' : src,
-            selectedLength: src?.length || 0,
-          },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       const value: Resolved = src ? { src } : null;
       setCachedOssAttachmentUrl(cid, value);
       return value;

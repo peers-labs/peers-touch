@@ -793,10 +793,20 @@ class EvidenceStore:
         gate_id: str,
         *,
         required: bool,
+        runtime_cell: str | None = None,
     ) -> dict[str, Any] | None:
         normalized_gate = _validate_gate_id(gate_id)
+        normalized_cell = (
+            _validate_gate_id(runtime_cell)
+            if runtime_cell is not None
+            else None
+        )
         gate_dir = self.workspace_dir / normalized_gate
-        pointer_path = gate_dir / "latest.json"
+        pointer_path = gate_dir / (
+            f"latest.{normalized_cell}.json"
+            if normalized_cell is not None
+            else "latest.json"
+        )
         _ensure_no_symlink(self.root, pointer_path)
         if not pointer_path.exists() and not required:
             return None
@@ -814,6 +824,11 @@ class EvidenceStore:
             raise EvidenceManifestInvalid("latest pointer workspace mismatch")
         if pointer.get("gateId") != normalized_gate:
             raise EvidenceManifestInvalid("latest pointer Gate mismatch")
+        if (
+            normalized_cell is not None
+            and pointer.get("runtimeCell") != normalized_cell
+        ):
+            raise EvidenceManifestInvalid("latest pointer runtime cell mismatch")
         reference = ArtifactRef.from_dict(pointer.get("manifest", {}))
         if reference.gate_id != normalized_gate:
             raise EvidenceManifestInvalid("latest manifest Gate mismatch")
@@ -822,10 +837,29 @@ class EvidenceStore:
         if pointer.get("manifestSha256") != reference.sha256:
             raise EvidenceManifestInvalid("latest manifest hash is inconsistent")
         self.resolve(reference)
+        if normalized_cell is not None:
+            manifest = self.read_json(reference)
+            result = manifest.get("result")
+            if (
+                not isinstance(result, dict)
+                or result.get("runtimeCell") != normalized_cell
+            ):
+                raise EvidenceManifestInvalid(
+                    "latest manifest runtime cell mismatch"
+                )
         return pointer
 
-    def latest(self, gate_id: str) -> dict[str, Any]:
-        pointer = self._latest_pointer(gate_id, required=True)
+    def latest(
+        self,
+        gate_id: str,
+        *,
+        runtime_cell: str | None = None,
+    ) -> dict[str, Any]:
+        pointer = self._latest_pointer(
+            gate_id,
+            required=True,
+            runtime_cell=runtime_cell,
+        )
         if pointer is None:
             raise EvidenceManifestInvalid(f"latest pointer is unavailable for {gate_id}")
         return self.read_json(ArtifactRef.from_dict(pointer["manifest"]))
@@ -848,23 +882,45 @@ class EvidenceStore:
             return
         cleanup_lock = _FileLock(gate_dir / ".cleanup.lock")
         cleanup_lock.acquire(blocking=True)
+        publish_lock = _FileLock(gate_dir / ".publish.lock")
         try:
-            pointer = self._latest_pointer(normalized_gate, required=False)
-            if pointer is not None and pointer.get("runId") == normalized_run:
-                raise EvidenceConflict("cleanup cannot delete the latest run")
-            lock = _FileLock(run_dir / ".active.lock")
-            if not lock.acquire(blocking=False):
-                raise EvidenceRunActive(f"run is active: {normalized_run}")
-            lock.release()
             try:
-                shutil.rmtree(run_dir)
-                _fsync_directory(gate_dir)
-            except OSError as error:
-                raise _map_os_error(
-                    error,
-                    operation="cleanup-run",
-                    path_role="run",
-                ) from error
+                publish_lock.acquire(blocking=True)
+                pointer_cells: list[str | None] = [None]
+                pointer_cells.extend(
+                    path.name[len("latest.") : -len(".json")]
+                    for path in sorted(gate_dir.glob("latest.*.json"))
+                )
+                for runtime_cell in pointer_cells:
+                    pointer = self._latest_pointer(
+                        normalized_gate,
+                        required=False,
+                        runtime_cell=runtime_cell,
+                    )
+                    if (
+                        pointer is not None
+                        and pointer.get("runId") == normalized_run
+                    ):
+                        raise EvidenceConflict(
+                            "cleanup cannot delete a latest run"
+                        )
+                lock = _FileLock(run_dir / ".active.lock")
+                if not lock.acquire(blocking=False):
+                    raise EvidenceRunActive(
+                        f"run is active: {normalized_run}"
+                    )
+                lock.release()
+                try:
+                    shutil.rmtree(run_dir)
+                    _fsync_directory(gate_dir)
+                except OSError as error:
+                    raise _map_os_error(
+                        error,
+                        operation="cleanup-run",
+                        path_role="run",
+                    ) from error
+            finally:
+                publish_lock.release()
         finally:
             cleanup_lock.release()
 
@@ -916,6 +972,75 @@ class RunHandle:
             }
         )
         return environment
+
+    def refresh_redacted_artifacts(
+        self,
+        relative_paths: list[str],
+    ) -> None:
+        """Refresh registered digests after the runner redacts leaked bytes."""
+        with self._mutex:
+            if self.state != "ACTIVE":
+                raise EvidenceConflict(
+                    "artifacts can only be refreshed in an active run"
+                )
+            changed = set(relative_paths)
+            if not changed:
+                return
+
+            for role, reference in tuple(self._artifacts.items()):
+                if reference.path not in changed:
+                    continue
+                relative = _validate_relative_path(reference.path)
+                path = self.run_dir.joinpath(*relative.parts)
+                _ensure_no_symlink(self.run_dir, path)
+                if not path.is_file():
+                    del self._artifacts[role]
+                    continue
+                self._artifacts[role] = ArtifactRef(
+                    workspace_id=reference.workspace_id,
+                    gate_id=reference.gate_id,
+                    run_id=reference.run_id,
+                    path=reference.path,
+                    sha256=_sha256_file(path),
+                    media_type=reference.media_type,
+                )
+
+            role_dir = self.run_dir / ".artifact-roles"
+            if not role_dir.is_dir():
+                return
+            for metadata_path in sorted(role_dir.glob("*.json")):
+                metadata = json.loads(
+                    metadata_path.read_text(encoding="utf-8")
+                )
+                if not isinstance(metadata, dict):
+                    raise EvidenceManifestInvalid(
+                        "artifact role metadata must be an object"
+                    )
+                reference = ArtifactRef.from_dict(metadata.get("artifact"))
+                if reference.path not in changed:
+                    continue
+                relative = _validate_relative_path(reference.path)
+                path = self.run_dir.joinpath(*relative.parts)
+                _ensure_no_symlink(self.run_dir, path)
+                if not path.is_file():
+                    metadata_path.unlink()
+                    continue
+                metadata["artifact"] = ArtifactRef(
+                    workspace_id=reference.workspace_id,
+                    gate_id=reference.gate_id,
+                    run_id=reference.run_id,
+                    path=reference.path,
+                    sha256=_sha256_file(path),
+                    media_type=reference.media_type,
+                ).to_dict()
+                encoded = (
+                    json.dumps(metadata, indent=2, sort_keys=True) + "\n"
+                ).encode("utf-8")
+                _atomic_write(
+                    metadata_path,
+                    encoded,
+                    path_role="artifact-role-redaction-refresh",
+                )
 
     def collect_existing_artifacts(self) -> dict[str, ArtifactRef]:
         with self._mutex:
@@ -1094,6 +1219,13 @@ class RunHandle:
                 raise EvidenceConflict("run can only be finalized once")
             self.state = "FINALIZING"
             completed_at = _utc_now()
+            redacted_result = redact_value(dict(result))
+            secret_scan = result.get("secretScan")
+            if isinstance(secret_scan, Mapping):
+                redacted_result["secretScan"] = {
+                    key: redact_value(value)
+                    for key, value in secret_scan.items()
+                }
             manifest = {
                 "artifactKind": "acceptance-run-manifest",
                 "schemaVersion": 1,
@@ -1105,7 +1237,7 @@ class RunHandle:
                 "completedAt": completed_at,
                 "source": self.source,
                 "runtime": redact_value(dict(runtime or {})),
-                "result": redact_value(dict(result)),
+                "result": redacted_result,
                 "artifacts": {
                     role: reference.to_dict()
                     for role, reference in sorted(self._artifacts.items())
@@ -1129,7 +1261,7 @@ class RunHandle:
             self.state = "DURABLE"
             return manifest
 
-    def publish_latest(self) -> Path:
+    def publish_latest(self, *, runtime_cell: str | None = None) -> Path:
         if self.state not in {"DURABLE", "PUBLISHED"}:
             raise EvidenceConflict("latest can only publish a durable manifest")
         if self._manifest is None or self._manifest_ref is None:
@@ -1138,37 +1270,112 @@ class RunHandle:
         lock = _FileLock(gate_dir / ".publish.lock")
         lock.acquire(blocking=True)
         try:
-            latest_path = gate_dir / "latest.json"
-            if latest_path.is_file():
-                current = self.store._latest_pointer(self.gate_id, required=True)
-                if current is None:
-                    raise EvidenceManifestInvalid("existing latest pointer is invalid")
-                current_order = (
-                    str(current.get("completedAt", "")),
-                    str(current.get("runId", "")),
+            normalized_cell = (
+                _validate_gate_id(runtime_cell)
+                if runtime_cell is not None
+                else None
+            )
+            if normalized_cell is not None:
+                result = self._manifest.get("result")
+                if (
+                    not isinstance(result, dict)
+                    or result.get("runtimeCell") != normalized_cell
+                ):
+                    raise EvidenceManifestInvalid(
+                        "durable manifest runtime cell mismatch"
+                    )
+            latest_paths = [
+                (
+                    gate_dir / f"latest.{normalized_cell}.json"
+                    if normalized_cell is not None
+                    else gate_dir / "latest.json"
                 )
-                candidate_order = (
-                    str(self._manifest["completedAt"]),
-                    self.run_id,
+            ]
+            candidate_order = (
+                str(self._manifest["completedAt"]),
+                self.run_id,
+            )
+            pending_writes: list[tuple[Path, bytes]] = []
+            for latest_path in latest_paths:
+                pointer_cell = (
+                    normalized_cell
+                    if latest_path.name != "latest.json"
+                    else None
                 )
-                if current_order > candidate_order:
-                    return latest_path
-            pointer = {
-                "artifactKind": "acceptance-latest-pointer",
-                "schemaVersion": 1,
-                "workspaceId": self.store.workspace_id,
-                "gateId": self.gate_id,
-                "runId": self.run_id,
-                "completedAt": self._manifest["completedAt"],
-                "manifest": self._manifest_ref.to_dict(),
-                "manifestSha256": self._manifest_ref.sha256,
+                if latest_path.is_file():
+                    current = self.store._latest_pointer(
+                        self.gate_id,
+                        required=True,
+                        runtime_cell=pointer_cell,
+                    )
+                    if current is None:
+                        raise EvidenceManifestInvalid(
+                            "existing latest pointer is invalid"
+                        )
+                    current_order = (
+                        str(current.get("completedAt", "")),
+                        str(current.get("runId", "")),
+                    )
+                    if current_order > candidate_order:
+                        continue
+                pointer = {
+                    "artifactKind": "acceptance-latest-pointer",
+                    "schemaVersion": 1,
+                    "workspaceId": self.store.workspace_id,
+                    "gateId": self.gate_id,
+                    "runId": self.run_id,
+                    "completedAt": self._manifest["completedAt"],
+                    "manifest": self._manifest_ref.to_dict(),
+                    "manifestSha256": self._manifest_ref.sha256,
+                }
+                if pointer_cell is not None:
+                    pointer["runtimeCell"] = pointer_cell
+                encoded = (
+                    json.dumps(pointer, indent=2, sort_keys=True) + "\n"
+                ).encode("utf-8")
+                pending_writes.append((latest_path, encoded))
+
+            previous_values = {
+                path: path.read_bytes() if path.is_file() else None
+                for path, _ in pending_writes
             }
-            encoded = (
-                json.dumps(pointer, indent=2, sort_keys=True) + "\n"
-            ).encode("utf-8")
-            _atomic_write(latest_path, encoded, path_role="latest-pointer")
+            written_paths: list[Path] = []
+            try:
+                for latest_path, encoded in pending_writes:
+                    written_paths.append(latest_path)
+                    _atomic_write(
+                        latest_path,
+                        encoded,
+                        path_role="latest-pointer",
+                    )
+            except Exception as publish_error:
+                rollback_failures: list[str] = []
+                for written_path in reversed(written_paths):
+                    previous = previous_values[written_path]
+                    try:
+                        if previous is None:
+                            written_path.unlink(missing_ok=True)
+                            _fsync_directory(written_path.parent)
+                        else:
+                            _atomic_write(
+                                written_path,
+                                previous,
+                                path_role="latest-pointer-rollback",
+                            )
+                    except Exception as rollback_error:
+                        rollback_failures.append(
+                            f"{written_path.name}: {rollback_error}"
+                        )
+                if rollback_failures:
+                    raise EvidenceWriteInterrupted(
+                        "latest pointer publication failed and rollback "
+                        f"was incomplete: {'; '.join(rollback_failures)}",
+                        operation="publish-latest",
+                        path_role="latest-pointer",
+                    ) from publish_error
+                raise
             self.state = "PUBLISHED"
-            return latest_path
+            return latest_paths[0]
         finally:
             lock.release()
 

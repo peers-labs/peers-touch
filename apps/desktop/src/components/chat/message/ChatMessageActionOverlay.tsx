@@ -198,9 +198,6 @@ export function ChatMessageActionOverlay({
       '[data-reaction-emoji]',
     );
     reactionButton?.focus();
-    // #region debug-point B:picker-focus-transfer
-    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'post-fix', hypothesisId: 'B,C,D', location: 'ChatMessageActionOverlay:pickerFocusLayoutEffect', msg: '[DEBUG] picker focus transfer completed', data: { pickerOpen, targetFound: Boolean(reactionButton), focusedReaction: document.activeElement?.hasAttribute('data-reaction-emoji') ?? false, activeTag: document.activeElement?.tagName ?? '' }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
   }, [pickerOpen]);
 
   useLayoutEffect(() => {
@@ -290,17 +287,11 @@ export function ChatMessageActionOverlay({
         onHoverLeave();
       }}
       onFocusCapture={() => {
-        // #region debug-point D:overlay-focus-capture
-        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'post-fix', hypothesisId: 'C,D', location: 'ChatMessageActionOverlay:onFocusCapture', msg: '[DEBUG] overlay captured focus', data: { pickerOpen, activeAction: document.activeElement?.getAttribute('data-message-action') ?? '', activeReaction: document.activeElement?.getAttribute('data-reaction-emoji') ?? '' }, ts: Date.now() }) }).catch(() => {});
-        // #endregion
         onHoverEnter();
       }}
       onBlurCapture={(event) => {
         const relatedContained = event.relatedTarget instanceof Node
           && event.currentTarget.contains(event.relatedTarget);
-        // #region debug-point C:overlay-blur-capture
-        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'post-fix', hypothesisId: 'C,D', location: 'ChatMessageActionOverlay:onBlurCapture', msg: '[DEBUG] overlay captured blur', data: { pickerOpen, relatedContained, pointerInside: pointerInsideRef.current, relatedTag: event.relatedTarget instanceof Element ? event.relatedTarget.tagName : '' }, ts: Date.now() }) }).catch(() => {});
-        // #endregion
         if (relatedContained || pointerInsideRef.current) return;
         onHoverLeave();
       }}
@@ -368,17 +359,7 @@ export function ChatMessageActionOverlay({
               aria-label={t('chat.social.messageArea.actionReact')}
               aria-haspopup="dialog"
               aria-expanded={pickerOpen}
-              onClick={() => {
-                // #region debug-point B:picker-open-request
-                fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'post-fix', hypothesisId: 'B,C', location: 'ChatMessageActionOverlay:reactionClick', msg: '[DEBUG] picker open requested', data: { pickerOpen, activeAction: document.activeElement?.getAttribute('data-message-action') ?? '', pointerInside: pointerInsideRef.current }, ts: Date.now() }) }).catch(() => {});
-                // #endregion
-                setPickerOpen(true);
-              }}
-              onKeyDown={(event) => {
-                // #region debug-point A:reaction-trigger-keydown
-                fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'reaction-picker-focus', runId: 'post-fix', hypothesisId: 'A', location: 'ChatMessageActionOverlay:reactionKeyDown', msg: '[DEBUG] reaction trigger keydown received', data: { key: event.key, activeAction: document.activeElement?.getAttribute('data-message-action') ?? '' }, ts: Date.now() }) }).catch(() => {});
-                // #endregion
-              }}
+              onClick={() => setPickerOpen(true)}
               style={actionButtonStyle}
             />
           </Tooltip>

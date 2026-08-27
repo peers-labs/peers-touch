@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import os
-import json
 import re
 import shlex
 import signal
 import socket
 import subprocess
-import threading
 import time
-import traceback
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -23,42 +19,6 @@ from tooling.acceptance.core.errors import ProvisioningError
 _HOST_PATTERN = re.compile(r"^[A-Za-z0-9._:%-]+$")
 _USER_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 _REMOTE_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._/-]+$")
-
-
-# #region debug-point E-H:ssh-forward-lifecycle
-def _report_ssh_forward_debug(
-    hypothesis_id: str,
-    message: str,
-    data: dict[str, object],
-) -> None:
-    url = os.environ.get("DEBUG_SERVER_URL", "")
-    session_id = os.environ.get("DEBUG_SESSION_ID", "")
-    if not url or session_id != "ssh-forward-readiness":
-        return
-    payload = json.dumps(
-        {
-            "sessionId": session_id,
-            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
-            "hypothesisId": hypothesis_id,
-            "location": "tooling/acceptance/transports/ssh.py",
-            "msg": f"[DEBUG] {message}",
-            "data": data,
-            "ts": int(time.time() * 1000),
-        },
-        sort_keys=True,
-    ).encode("utf-8")
-    try:
-        urllib.request.urlopen(
-            urllib.request.Request(
-                url,
-                data=payload,
-                headers={"Content-Type": "application/json"},
-            ),
-            timeout=0.5,
-        ).read()
-    except OSError:
-        pass
-# #endregion
 
 
 def _validate_atom(
@@ -114,61 +74,6 @@ class SshTunnel:
     def __init__(self, process: subprocess.Popen[bytes], local_port: int) -> None:
         self._process = process
         self.local_port = local_port
-        self._debug_owner = "unbound"
-        try:
-            process_group_id = os.getpgid(process.pid)
-            session_id = os.getsid(process.pid)
-        except ProcessLookupError:
-            process_group_id = None
-            session_id = None
-        _report_ssh_forward_debug(
-            "H",
-            "SSH forward created",
-            {
-                "pid": process.pid,
-                "ppid": os.getpid(),
-                "pgid": process_group_id,
-                "sid": session_id,
-                "localPort": local_port,
-                "command": list(process.args)
-                if isinstance(process.args, (list, tuple))
-                else str(process.args),
-            },
-        )
-        threading.Thread(
-            target=self._observe_exit,
-            args=(process,),
-            name=f"ssh-forward-observer-{process.pid}",
-            daemon=True,
-        ).start()
-
-    # #region debug-point E-H:ssh-forward-lifecycle
-    def _observe_exit(self, process: subprocess.Popen[bytes]) -> None:
-        return_code = process.wait()
-        _report_ssh_forward_debug(
-            "G",
-            "SSH forward exited",
-            {
-                "pid": process.pid,
-                "owner": self._debug_owner,
-                "exitCode": return_code,
-                "monotonic": time.monotonic(),
-            },
-        )
-
-    def report_owner(self, owner: str) -> None:
-        self._debug_owner = owner
-        _report_ssh_forward_debug(
-            "E",
-            "SSH forward owner bound",
-            {
-                "pid": self.process_id,
-                "owner": owner,
-                "alive": self.is_alive(),
-                "monotonic": time.monotonic(),
-            },
-        )
-    # #endregion
 
     @property
     def process_id(self) -> int:
@@ -197,20 +102,6 @@ class SshTunnel:
         process = self._process
         if process is None:
             return
-        # #region debug-point E-F:ssh-forward-stop
-        _report_ssh_forward_debug(
-            "F",
-            "SSH forward stop requested",
-            {
-                "pid": process.pid,
-                "owner": self._debug_owner,
-                "alive": process.poll() is None,
-                "exitCode": process.poll(),
-                "monotonic": time.monotonic(),
-                "callerStack": traceback.format_stack(limit=10),
-            },
-        )
-        # #endregion
         self._process = None
         try:
             if process.poll() is None:

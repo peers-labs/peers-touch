@@ -411,30 +411,6 @@ impl MessagingEngine {
             .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
         let mut cleaned = 0;
         let completed_sources = self.store.completed_attachment_sources()?;
-        // #region debug-point G:completed-source-cleanup
-        if let Ok(client) = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_millis(250))
-            .build()
-        {
-            let _ = client
-                .post("http://127.0.0.1:7780/event")
-                .json(&serde_json::json!({
-                    "sessionId": "attachment-send-draft",
-                    "runId": "post-fix-sender-cache",
-                    "hypothesisId": "G",
-                    "location": "messaging::engine:cleanup_completed_attachment_sources",
-                    "msg": "[DEBUG] Engine found completed attachment sources to clean",
-                    "data": {
-                        "attachmentIds": completed_sources
-                            .iter()
-                            .map(|source| &source.attachment_id)
-                            .collect::<Vec<_>>(),
-                    },
-                    "ts": now_unix_ms(),
-                }))
-                .send();
-        }
-        // #endregion
         for source in completed_sources {
             let source_path = Path::new(&source.source_local_ref);
             let cache_path = self.promote_sender_attachment_cache(&source)?;
@@ -507,56 +483,12 @@ impl MessagingEngine {
                 None => None,
             }
         };
-        // #region debug-point G,H,I:attachment-open-resolution
-        if let Ok(client) = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_millis(250))
-            .build()
-        {
-            let _ = client
-                .post("http://127.0.0.1:7780/event")
-                .json(&serde_json::json!({
-                    "sessionId": "attachment-send-draft",
-                    "runId": "post-fix-sender-cache",
-                    "hypothesisId": "G,H,I",
-                    "location": "messaging::engine:open_attachment_once",
-                    "msg": "[DEBUG] Engine resolved durable sender attachment cache",
-                    "data": {
-                        "attachmentId": attachment_id,
-                        "state": if sender_cache.is_some() { "ready" } else { "missing" },
-                    },
-                    "ts": now_unix_ms(),
-                }))
-                .send();
-        }
-        // #endregion
         if let Some(cache_path) = sender_cache {
             return Ok(AttachmentOpenProgress::Ready(
                 cache_path.display().to_string(),
             ));
         }
         let projection = self.store.attachment_download_projection(attachment_id)?;
-        // #region debug-point H,I:attachment-open-projection
-        if let Ok(client) = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_millis(250))
-            .build()
-        {
-            let _ = client
-                .post("http://127.0.0.1:7780/event")
-                .json(&serde_json::json!({
-                    "sessionId": "attachment-send-draft",
-                    "runId": "post-fix-sender-cache",
-                    "hypothesisId": "H,I",
-                    "location": "messaging::engine:open_attachment_once",
-                    "msg": "[DEBUG] Engine resolved canonical attachment projection",
-                    "data": {
-                        "attachmentId": attachment_id,
-                        "available": projection.is_some(),
-                    },
-                    "ts": now_unix_ms(),
-                }))
-                .send();
-        }
-        // #endregion
         let projection = projection
             .ok_or_else(|| "messaging attachment projection is unavailable".to_string())?;
         let expected_plaintext_sha256: [u8; 32] = projection
@@ -642,40 +574,6 @@ impl MessagingEngine {
         source: &CompletedSenderAttachmentSource,
     ) -> Result<PathBuf, String> {
         let source_path = Path::new(&source.source_local_ref);
-        // #region debug-point P:sender-source-root
-        if let Ok(expected_root) = attachment_source_root(&self.profile_id) {
-            if let Ok(client) = reqwest::blocking::Client::builder()
-                .timeout(Duration::from_millis(250))
-                .build()
-            {
-                let _ = client
-                    .post("http://127.0.0.1:7780/event")
-                    .json(&serde_json::json!({
-                        "sessionId": "attachment-send-draft",
-                        "runId": "diagnostic-sender-source-root",
-                        "hypothesisId": "P",
-                        "location": "messaging::engine:promote_sender_attachment_cache",
-                        "msg": "[DEBUG] Engine compared sender source ownership",
-                        "data": {
-                            "attachmentId": source.attachment_id,
-                            "sourcePath": source.source_local_ref,
-                            "sourceParent": source_path.parent().map(|path| path.display().to_string()),
-                            "expectedRoot": expected_root.display().to_string(),
-                            "sourceExists": source_path.is_file(),
-                            "filenameValid": source_path
-                                .file_name()
-                                .and_then(|value| value.to_str())
-                                .is_some_and(|value| {
-                                    value.len() == 26
-                                        && value.chars().all(|ch| ch.is_ascii_alphanumeric())
-                                }),
-                        },
-                        "ts": now_unix_ms(),
-                    }))
-                    .send();
-            }
-        }
-        // #endregion
         if !managed_attachment_source(&self.profile_id, source_path)? {
             return Err("messaging attachment source is not Engine-managed".to_string());
         }
@@ -919,40 +817,6 @@ impl MessagingEngine {
             .send_intent_lock
             .lock()
             .map_err(|_| "messaging send intent lock poisoned".to_string())?;
-        // #region debug-point B,D,E:engine-send-transition
-        let report_debug = |hypothesis_id: &str,
-                            location: &str,
-                            msg: &str,
-                            data: serde_json::Value| {
-            if let Ok(client) = reqwest::blocking::Client::builder()
-                .timeout(Duration::from_millis(250))
-                .build()
-            {
-                let _ = client
-                    .post("http://127.0.0.1:7780/event")
-                    .json(&serde_json::json!({
-                        "sessionId": "attachment-send-draft",
-                        "runId": "post-fix",
-                        "hypothesisId": hypothesis_id,
-                        "location": location,
-                        "msg": msg,
-                        "data": data,
-                        "ts": now_unix_ms(),
-                    }))
-                    .send();
-            }
-        };
-        report_debug(
-            "B,D,E",
-            "messaging::engine:submit_message:entry",
-            "[DEBUG] Engine entered message submission",
-            serde_json::json!({
-                "conversationId": conversation_id,
-                "conversationKind": conversation_kind as i32,
-                "attachmentCount": attachment_intents.len(),
-            }),
-        );
-        // #endregion
         if conversation_id.trim().is_empty()
             || (plaintext.is_empty() && attachment_intents.is_empty())
             || conversation_kind == ConversationKind::Unspecified
@@ -1030,18 +894,6 @@ impl MessagingEngine {
             let worker = self.attachment_transfer_worker(token.to_string())?;
             for attachment_id in &attachment_ids {
                 let progress = worker.run_upload_once(attachment_id, now_unix_ms())?;
-                // #region debug-point D:attachment-transfer-progress
-                report_debug(
-                    "D",
-                    "messaging::engine:submit_message:attachment",
-                    "[DEBUG] Attachment transfer attempt completed",
-                    serde_json::json!({
-                        "messageId": message_id,
-                        "attachmentId": attachment_id,
-                        "progress": format!("{progress:?}"),
-                    }),
-                );
-                // #endregion
                 match progress {
                     AttachmentTransferProgress::Complete => {}
                     AttachmentTransferProgress::Deferred { .. }
@@ -1069,39 +921,13 @@ impl MessagingEngine {
             .message_draft(&message_id)?
             .ok_or_else(|| "messaging completed draft is unavailable".to_string())?;
         match self.prepare_message_draft(token, &ready_draft) {
-            Ok(command_id) => {
-                // #region debug-point B,C:message-prepare-result
-                report_debug(
-                    "B,C",
-                    "messaging::engine:submit_message:prepared",
-                    "[DEBUG] Engine prepared pending message command",
-                    serde_json::json!({
-                        "messageId": message_id,
-                        "commandId": command_id,
-                        "attachmentCount": attachment_ids.len(),
-                    }),
-                );
-                // #endregion
-                Ok(SubmitMessageOutcome {
-                    command_id: Some(command_id),
-                    message_id,
-                    attachment_ids,
-                    state: "pending",
-                })
-            }
-            Err(error) => {
-                // #region debug-point B,D:message-prepare-result
-                report_debug(
-                    "B,D",
-                    "messaging::engine:submit_message:prepare-failed",
-                    "[DEBUG] Engine failed to prepare message command",
-                    serde_json::json!({
-                        "messageId": message_id,
-                        "attachmentCount": attachment_ids.len(),
-                        "error": error,
-                    }),
-                );
-                // #endregion
+            Ok(command_id) => Ok(SubmitMessageOutcome {
+                command_id: Some(command_id),
+                message_id,
+                attachment_ids,
+                state: "pending",
+            }),
+            Err(_) => {
                 self.schedule_message_draft_retry(&ready_draft, now_unix_ms())?;
                 Ok(SubmitMessageOutcome {
                     command_id: None,

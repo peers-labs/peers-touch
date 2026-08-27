@@ -248,6 +248,14 @@ def gate_result_is_proven(
     traceability = result.get("traceability")
     if not isinstance(traceability, dict) or traceability.get("status") != "complete":
         return False
+    if gate.get("tier") == "env-evidence":
+        if (
+            result.get("sourceArtifactKind")
+            != "acceptance-gate-evidence-report"
+            or result.get("evidenceGateId") != gate.get("id")
+            or not isinstance(result.get("sourceArtifact"), dict)
+        ):
+            return False
     if not gate.get("provisioner"):
         return True
     manifest = result.get("manifest")

@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     BlockedError,
+    CredentialRef,
     EnvironmentContract,
     EnvironmentProvisioner,
     ProvisioningError,
@@ -54,6 +55,95 @@ class ProvisionerBaseClassTests(unittest.TestCase):
         completed = provisioner.cleanup()
         self.assertEqual(order, ["second", "first"])
         self.assertEqual(completed, ("second", "first"))
+
+    def test_auto_credential_value_is_retained_by_provisioner_instance(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(
+                id="home-station",
+                credentials=(
+                    CredentialRef(
+                        id="canary",
+                        source_ref="auto:canary",
+                    ),
+                ),
+            )
+        )
+
+        refs, values = provisioner._resolve_credentials()
+
+        self.assertEqual(refs, ("auto:canary",))
+        self.assertEqual(
+            provisioner.resolved_credential_values,
+            (values["canary"],),
+        )
+
+    def test_resolved_credentials_survive_later_resolution_failure(self):
+        first = CredentialRef(id="first", source_ref="env:FIRST")
+        second = CredentialRef(id="second", source_ref="env:SECOND")
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(
+                id="home-station",
+                credentials=(first, second),
+            )
+        )
+
+        with patch.object(
+            CredentialRef,
+            "resolve",
+            side_effect=("resolved-secret", RuntimeError("second failed")),
+        ), self.assertRaises(BlockedError):
+            provisioner._resolve_credentials()
+
+        self.assertEqual(
+            provisioner.resolved_credential_values,
+            ("resolved-secret",),
+        )
+
+    def test_short_credential_is_rejected_before_runtime_use(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(
+                id="home-station",
+                credentials=(
+                    CredentialRef(id="short", source_ref="env:SHORT"),
+                ),
+            )
+        )
+
+        with patch.object(
+            CredentialRef,
+            "resolve",
+            return_value="abc",
+        ), self.assertRaisesRegex(
+            BlockedError,
+            "too short for safe evidence redaction",
+        ):
+            provisioner._resolve_credentials()
+
+        self.assertEqual(provisioner.resolved_credential_values, ())
+        with self.assertRaisesRegex(
+            BlockedError,
+            "too short for safe evidence redaction",
+        ):
+            provisioner._remember_resolved_credentials(
+                ("fixture:short",),
+                {"short": "abc"},
+            )
+
+    def test_committed_fixture_password_is_not_treated_as_secret(self):
+        provisioner = NativeTauriEmbeddedWebDriverProvisioner(
+            EnvironmentContract(
+                id="native-tauri-embedded-webdriver",
+            )
+        )
+
+        refs, values = provisioner._resolve_credentials()
+
+        self.assertEqual(
+            refs,
+            ("fixture:apps/station/app/conf/actor.yml#preset_users",),
+        )
+        self.assertEqual(values, {"chat-password": "1"})
+        self.assertEqual(provisioner.resolved_credential_values, ())
 
 
 class ProfileResolutionTests(unittest.TestCase):
@@ -133,7 +223,11 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {"PT_DEV_SLOT": "2"},
             clear=True,
-        ):
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.socket.socket",
+        ) as socket_factory:
+            probe = socket_factory.return_value.__enter__.return_value
+            probe.connect_ex.return_value = 1
             clients = provisioner._clients(
                 "chat-native-two-client-e2e",
                 "run-webdriver-ports",
@@ -152,7 +246,11 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {"PT_DEV_SLOT": "0"},
             clear=True,
-        ):
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.socket.socket",
+        ) as socket_factory:
+            probe = socket_factory.return_value.__enter__.return_value
+            probe.connect_ex.return_value = 1
             clients = provisioner._clients(
                 "chat-native-product-closure-e2e",
                 "run-resolved-profile-slot",

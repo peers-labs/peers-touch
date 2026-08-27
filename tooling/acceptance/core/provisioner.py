@@ -56,6 +56,7 @@ class EnvironmentProvisioner(ABC):
         self.contract = contract
         self._manifest: RuntimeManifest | None = None
         self._cleanup_handlers: list[tuple[str, Callable[[], None]]] = []
+        self._resolved_credential_values: tuple[str, ...] = ()
 
     @abstractmethod
     def provision(self, gate_id: str) -> RuntimeManifest:
@@ -77,6 +78,72 @@ class EnvironmentProvisioner(ABC):
 
     def register_cleanup(self, name: str, handler: Callable[[], None]) -> None:
         self._cleanup_handlers.append((name, handler))
+
+    @property
+    def resolved_credential_values(self) -> tuple[str, ...]:
+        """Return in-memory values resolved by this provisioner instance."""
+        return self._resolved_credential_values
+
+    def _remember_resolved_credentials(
+        self,
+        refs: tuple[str, ...],
+        values: dict[str, str],
+        *,
+        sensitive: bool = True,
+    ) -> tuple[tuple[str, ...], dict[str, str]]:
+        if sensitive:
+            short_ids = sorted(
+                credential_id
+                for credential_id, value in values.items()
+                if len(value) < 4
+            )
+            if short_ids:
+                raise BlockedError(
+                    reason=(
+                        "Resolved credentials are too short for safe evidence "
+                        f"redaction: {', '.join(short_ids)}"
+                    ),
+                    resource="credential-values",
+                )
+            self._resolved_credential_values = tuple(
+                value for value in values.values() if value
+            )
+        else:
+            self._resolved_credential_values = ()
+        return refs, values
+
+    def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
+        refs: list[str] = []
+        values: dict[str, str] = {}
+        self._resolved_credential_values = ()
+        for credential in self.contract.credentials:
+            try:
+                value = credential.resolve()
+            except Exception as error:
+                raise BlockedError(
+                    reason=(
+                        f"Cannot resolve credential {credential.id} from "
+                        f"{credential.source_ref}: {error}"
+                    ),
+                    resource=f"credential-ref:{credential.source_ref}",
+                ) from error
+            if len(value) < 4:
+                raise BlockedError(
+                    reason=(
+                        f"Credential {credential.id} from "
+                        f"{credential.source_ref} is too short for safe "
+                        "evidence redaction"
+                    ),
+                    resource=f"credential-ref:{credential.source_ref}",
+                )
+            refs.append(credential.source_ref)
+            values[credential.id] = value
+            self._resolved_credential_values = tuple(
+                resolved
+                for resolved in values.values()
+                if resolved
+            )
+        return self._remember_resolved_credentials(tuple(refs), values)
 
     def acquire_profile_lease(self, resource: str, owner: str) -> None:
         lease = ProfileLease(resource, owner)

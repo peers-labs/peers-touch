@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import errno
 import importlib.util
 import json
+import shutil
 import subprocess
 import tempfile
+import time
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 from unittest.mock import patch
 
 
@@ -21,6 +26,22 @@ if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"failed to load {SCRIPT}")
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+
+
+@contextmanager
+def temporary_git_directory() -> Iterator[Path]:
+    root = Path(tempfile.mkdtemp())
+    try:
+        yield root
+    finally:
+        for attempt in range(20):
+            try:
+                shutil.rmtree(root)
+                break
+            except OSError as error:
+                if error.errno != errno.ENOTEMPTY or attempt == 19:
+                    raise
+                time.sleep(0.05)
 
 
 class ChangedPathsTests(unittest.TestCase):
@@ -225,7 +246,11 @@ class ReadinessTests(unittest.TestCase):
         )
 
     def test_current_provisioned_gate_result_closes_environment_gap(self) -> None:
-        gate = {"id": "native", "provisioner": "home-station"}
+        gate = {
+            "id": "native",
+            "tier": "env-evidence",
+            "provisioner": "home-station",
+        }
         result = {
             "id": "native",
             "status": "passed",
@@ -233,6 +258,9 @@ class ReadinessTests(unittest.TestCase):
             "proofStatus": "PROVEN",
             "timedOut": False,
             "traceability": {"status": "complete"},
+            "sourceArtifact": {"path": "reports/native.json"},
+            "sourceArtifactKind": "acceptance-gate-evidence-report",
+            "evidenceGateId": "native",
             "manifest": {
                 "state": "FIXTURE_READY",
                 "source": {
@@ -250,7 +278,11 @@ class ReadinessTests(unittest.TestCase):
         )
 
     def test_stale_or_failed_environment_result_remains_unproven(self) -> None:
-        gate = {"id": "native", "provisioner": "home-station"}
+        gate = {
+            "id": "native",
+            "tier": "env-evidence",
+            "provisioner": "home-station",
+        }
         result = {
             "id": "native",
             "status": "passed",
@@ -258,6 +290,9 @@ class ReadinessTests(unittest.TestCase):
             "proofStatus": "PROVEN",
             "timedOut": False,
             "traceability": {"status": "complete"},
+            "sourceArtifact": {"path": "reports/native.json"},
+            "sourceArtifactKind": "acceptance-gate-evidence-report",
+            "evidenceGateId": "native",
             "manifest": {
                 "state": "FIXTURE_READY",
                 "source": {
@@ -266,6 +301,35 @@ class ReadinessTests(unittest.TestCase):
                 },
             },
         }
+        self.assertFalse(
+            MODULE.gate_result_is_proven(
+                gate,
+                result,
+                "current-head",
+            )
+        )
+
+    def test_noncanonical_environment_evidence_kind_is_unproven(self) -> None:
+        gate = {"id": "native", "tier": "env-evidence"}
+        result = {
+            "id": "native",
+            "status": "passed",
+            "completionStatus": "DONE",
+            "proofStatus": "PROVEN",
+            "timedOut": False,
+            "traceability": {"status": "complete"},
+            "sourceArtifact": {"path": "reports/native.json"},
+            "sourceArtifactKind": "forged-kind",
+            "evidenceGateId": "native",
+            "manifest": {
+                "state": "FIXTURE_READY",
+                "source": {
+                    "commit": "current-head",
+                    "workspaceDigest": "clean",
+                },
+            },
+        }
+
         self.assertFalse(
             MODULE.gate_result_is_proven(
                 gate,
@@ -286,8 +350,7 @@ class ReadinessTests(unittest.TestCase):
 
 class RouteRangeTests(unittest.TestCase):
     def test_explicit_range_excludes_untracked_cross_scope_paths(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+        with temporary_git_directory() as root:
             subprocess.run(
                 ["git", "init"],
                 cwd=root,

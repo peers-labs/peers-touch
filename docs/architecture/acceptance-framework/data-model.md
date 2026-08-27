@@ -117,9 +117,15 @@ Manifest identity requirements:
 
 - `runId` 在同一 Acceptance run 内唯一。
 - `source.commit` 来自实际客户端 worktree。
+- `source.workspaceDigest` 覆盖所有可执行源码和手写契约，但不包含自动生成的
+  `docs/architecture/acceptance-framework/coverage-report.md`；生成覆盖报告不得使
+  刚验证的 source-bound evidence 自身失效。
 - `station.liveCommit` 来自 live endpoint，不由本地推断。
 - `station.attestationArtifact` 指向实际 deployment/runtime producer 的输出。
 - `profile.requestedName` 与 `resolvedName` 不一致时状态必须为 `BLOCKED`。
+- `env:`、`file:` 和 `auto:` credential references 必须对应已扫描的内存值；
+  `fixture:` references 指向仓库中已提交的 disposable 测试数据，不作为 secret
+  扫描输入，也不得用于生产运行时。
 
 ## 4. Station Attestation
 
