@@ -10,6 +10,12 @@ import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import { useMentionStore } from '../store/mentions';
 import { useAgentAttachmentDrafts } from './composer/useAgentAttachmentDrafts';
+import {
+  modelMenuIconStyle,
+  modelMenuItemStyle,
+  modelMenuLabelStyle,
+  modelMenuTextStyle,
+} from './composer/modelPickerLayout';
 import { useMentionTrigger } from './chat/composer/useMentionTrigger';
 import { MentionPopup } from './chat/MentionPopup';
 import { MentionTagBar } from './chat/MentionTag';
@@ -237,14 +243,17 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         ),
         children: items.map((model) => ({
           key: modelMenuKey(model),
+          style: modelMenuItemStyle,
           label: (
-            <Flexbox horizontal align="center" gap={8}>
-              <ProviderIcon
-                providerId={model.provider_id || ''}
-                providerName={model.provider_name}
-                size={18}
-              />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
+            <Flexbox horizontal align="center" gap={8} style={modelMenuLabelStyle}>
+              <span style={modelMenuIconStyle}>
+                <ProviderIcon
+                  providerId={model.provider_id || ''}
+                  providerName={model.provider_name}
+                  size={18}
+                />
+              </span>
+              <span title={model.display_name || model.id} style={modelMenuTextStyle}>
                 {model.display_name || model.id}
               </span>
             </Flexbox>
@@ -453,13 +462,15 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
               }}
             >
               {modelInfo && (
+              <span style={modelMenuIconStyle}>
                 <ProviderIcon
                   providerId={modelInfo.provider_id || ''}
                   providerName={modelInfo.provider_name}
                   size={16}
                 />
+              </span>
               )}
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1 }}>{modelLabel}</span>
+            <span title={modelLabel} style={{ ...modelMenuTextStyle, lineHeight: 1 }}>{modelLabel}</span>
               {modelDropdownOpen
                 ? <ChevronUp size={12} color={COMPOSER_COLORS.textTertiary} style={{ flexShrink: 0 }} />
                 : <ChevronDown size={12} color={COMPOSER_COLORS.textTertiary} style={{ flexShrink: 0 }} />
