@@ -1,6 +1,7 @@
 # Tauri Mobile 主线迁移实施计划
 
-> Status: active planning
+> Status: superseded by `docs/architecture/mobile/` for target architecture;
+> retained as historical migration context
 > Owner: Client Architecture
 > Created: 2026-05-31
 > Related proposal: `../../../context/mobile/tauri-mobile-capability-topology-proposal.md`

@@ -1,6 +1,10 @@
 # Station Access Gate Architecture
 
 > Architecture source for Station-driven access gates across Desktop and Mobile.
+>
+> The signed Station identity and OAuth-attempt binding additions in this
+> document were accepted with the Mobile Shell PRODUCT/DESIGN package on
+> 2026-08-27.
 
 ---
 
@@ -48,8 +52,8 @@ Define a Station-driven **Access Gate Chain** that is:
 | --- | --- |
 | Station | Gate policy, gate order, gate state, final access decision, audit |
 | Dashboard | Admin UI/API for invite-only, fixed-user, and future policy configuration |
-| Desktop | Gate host UI, credential collection, gate action submission, runtime gating |
-| Mobile | Gate host UI, credential collection, gate action submission, runtime gating |
+| Desktop | Gate host UI, credential coordinator, gate action submission, runtime gating |
+| Mobile | Gate host UI, credential coordinator, gate action submission, runtime gating |
 | Proto | Shared source of truth for gate model and API payloads |
 
 ---
@@ -61,7 +65,7 @@ Both Desktop and Mobile must follow the same top-level lifecycle:
 ```text
 client boot
   -> station selection / identity context
-  -> station handshake
+  -> signed station handshake (`station_peer_id`)
   -> access gate chain
       -> station capability gate
       -> auth/session gate
@@ -85,7 +89,8 @@ An access attempt represents one user's attempt to enter one Station from one cl
 Required fields:
 
 - `attempt_id`
-- `station_url`
+- `station_peer_id` from the signed handshake
+- `station_url` as a connection hint only
 - `client_platform`
 - `client_version`
 - `device_id`
@@ -137,6 +142,7 @@ The final decision is owned by Station:
 | --- | --- | --- |
 | `station.capability` | Check Station/client compatibility | Blocking status or upgrade prompt |
 | `auth.login` | Collect credentials and create/restore session | Login form |
+| `auth.oauth` | Complete provider authorization bound to this attempt/gate | Provider launch, callback progress, cancellation/retry |
 | `auth.session_restore` | Validate stored session | Progress/retry state |
 | `invite.allowlist` | Enforce invite-only or fixed-user policy after actor is known | Blocked/access pending state |
 | `invite.code` | Collect invite code when Station allows self-service invite redemption | Invite code form |
@@ -198,6 +204,13 @@ Suggested RPC-like operations:
 - `GetAccessDecision`
 - `CancelAccessAttempt`
 
+OAuth credential acquisition uses Model-owned start/complete/status/cancel
+contracts in the OAuth domain. Every OAuth attempt binds the
+`station_peer_id`, access `attempt_id`, and current `gate_id`. Completion
+returns a PTID-bearing session candidate plus a re-evaluated `AccessDecision`.
+The candidate cannot authorize business APIs until the final decision is
+`granted`.
+
 Transport can be HTTP/Tauri bridge during implementation, but payload models must come from proto.
 
 ---
@@ -230,7 +243,11 @@ Mobile integrates the gate chain into:
 ## 11. Security Rules
 
 - Gate bypass is a server-side vulnerability. Station APIs must check the final access decision, not trust client state.
+- URL is not Station identity. Access attempts and credentials bind the signed
+  `station_peer_id`; a pinned-ID mismatch fails before credential submission.
 - Stored sessions remain scoped to Station and actor.
+- OAuth state is consumed atomically by Station. Clients validate their local
+  callback binding but cannot declare one-time consumption.
 - Invite/allowlist decisions are audited.
 - Dashboard management requires dashboard authentication and role checks.
 - Gate action errors must not leak secrets or policy internals.
@@ -243,12 +260,22 @@ Mobile integrates the gate chain into:
 Implementation is complete only when all are true:
 
 - Proto contracts exist and generation succeeds.
+- Signed handshake pins the expected `station_peer_id`; URL identity mismatch
+  blocks access and cannot reuse credentials or cache.
 - Station rejects shell/business access when gates are incomplete.
 - Dashboard can manage invite/fixed-user policy.
 - Desktop renders the gate chain and blocks `ready` until granted.
 - Mobile renders the same gate chain and blocks `shell` until granted.
+- GitHub/Google OAuth remains bound to the originating Station/access gate;
+  cancel, expiry, replay, and mismatch fail closed.
 - Invite-only denial is shown consistently on Desktop and Mobile.
 - Switching Station clears the active access attempt and session-scoped projections.
+
+Mobile lifecycle and OAuth refinement:
+
+- `docs/architecture/mobile/design.md`
+- `docs/architecture/mobile/data-model.md`
+- `docs/client/mobile/lifecycle.md`
 
 ---
 

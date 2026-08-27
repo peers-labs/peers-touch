@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-24 | **Updated**: 2026-07-24
+> **Created**: 2026-07-24 | **Updated**: 2026-08-27
 > **Owner**: Architecture Team
 
 ---
@@ -97,8 +97,35 @@ Relay is **not** a separate product — it is a Station capability configured vi
 | Field | Source | Consumer |
 |-------|--------|----------|
 | `PT_STATION_URL` | Profile config | Desktop/Mobile gateway |
+| `station_peer_id` | Signed Station handshake | Desktop/Mobile identity scope |
 | Session token | Login flow (access gate → auth) | All subsequent API calls |
 | SSE cursor | Event stream connection | Realtime updates |
+
+### 4.4 Station Identity Handshake
+
+This target contract was accepted with the Mobile Shell PRODUCT/DESIGN package
+on 2026-08-27. Model/Station protocol work remains an implementation
+requirement.
+
+`PT_STATION_URL` and user-entered URLs are connection hints, not Station
+identity. Before auth, a client sends a fresh challenge and receives a signed
+handshake containing:
+
+- stable `station_peer_id`;
+- canonical origin;
+- protocol and capability set;
+- response expiry;
+- the original challenge.
+
+The explicit first-add action pins the verified peer ID to the local Station
+registry. OAuth attempts, sessions, caches, cursors, and durable commands are
+scoped by `station_peer_id`, never by URL alone. A known URL returning another
+peer ID fails closed and requires explicit Station replacement. Redirects may
+change the connection hint but cannot change the pinned identity.
+
+The handshake contract is Proto-first. Development-only HTTP profiles may use
+the same signature proof, but production credentials and OAuth callbacks require
+TLS. Relay identity does not substitute for Station identity.
 
 ---
 
@@ -179,3 +206,6 @@ Then recreate the Station container (`docker compose up -d station`).
 - Local dev environment: `docs/global/local-dev-environment.md`
 - Profile system: `tooling/scripts/local-dev/profile.sh`
 - Deploy system: `tooling/scripts/deploy/deploy.sh`
+- Mobile Station pinning and recovery:
+  `docs/architecture/mobile/design.md`,
+  `docs/architecture/mobile/data-model.md`

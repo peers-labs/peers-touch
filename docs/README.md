@@ -196,6 +196,7 @@
 - 服务协调（Relay/Station/Desktop/Mobile 依赖 DAG 与凭据契约）：`architecture/service-coordination.md`
 - 联邦 IM 架构：`architecture/federated-im/README.md`（draft；定义跨 Station 群/私聊 IM 的 group authority、事件日志、Sender Key、离线恢复与家庭 Station 压测边界）
 - 双端社交 Runtime 架构：`architecture/social-runtime/README.md`
+- Mobile Shell 产品与跨运行时架构：`architecture/mobile/README.md`（active；PRODUCT、Prototype、DESIGN 与 execution plan 已通过，当前执行 W-1）
 - 群生命周期业务真源：`architecture/social-runtime/group-lifecycle.md`（draft；定义建群、加人、发消息、撤回/编辑/删除、退群、踢人、解散、历史可见性、Realtime 事件与 Sender Key 轮换边界）
 - 双端社交/聊天产品闭环执行计划：`architecture/social-runtime/execution-plans/20260604-social-chat-product-closure.md`
 - Applet / 小程序运行时架构：`architecture/applet-runtime/README.md`
