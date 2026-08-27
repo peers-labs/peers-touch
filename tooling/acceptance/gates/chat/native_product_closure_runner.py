@@ -81,6 +81,7 @@ READBACK_COMMANDS = {
 REQUIRED_ASSERTIONS = {
     "native_dom_only",
     "source_build_runtime_identity",
+    "visible_ui_has_no_i18n_keys",
     "transcript_exact",
     "thread_exact",
     "toolbar_geometry",
@@ -495,6 +496,29 @@ class NativeProductClosureGate(AcceptanceGate):
     def restart_actor(self, actor: str) -> None:
         self.stop_actor_for_restart(actor)
         self.restore_actor_after_restart(actor)
+
+    def prove_visible_localization(self) -> dict[str, list[str]]:
+        leaked_keys: dict[str, list[str]] = {}
+        for actor, client in self.clients.items():
+            visible_text = str(
+                client.driver.execute_script(
+                    "return document.body?.innerText || '';"
+                )
+                or ""
+            )
+            leaked = sorted(set(re.findall(
+                r"\b(?:auth|chat|common)\.[A-Za-z0-9_.-]+\b",
+                visible_text,
+            )))
+            if leaked:
+                leaked_keys[actor] = leaked
+
+        self.assert_condition(
+            "visible_ui_has_no_i18n_keys",
+            not leaked_keys,
+            json.dumps(leaked_keys, sort_keys=True),
+        )
+        return leaked_keys
 
     def bind_recovered_device(self, actor: str) -> str:
         device = self.wait_for_realtime_device(
@@ -4688,6 +4712,7 @@ class NativeProductClosureGate(AcceptanceGate):
             )
             for actor in ("alice", "bob"):
                 self.step(f"{actor}.launch", lambda actor=actor: self.launch_actor(actor))
+            self.step("localization.visible", self.prove_visible_localization)
             group_id = self.step("group.create.ui", self.open_group_through_ui)
             _, action_message_id = self.step(
                 "transcript.thread.ui",

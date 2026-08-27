@@ -27,6 +27,7 @@ GATE_CATALOG = ROOT / "tooling/acceptance/gates.yaml"
 MACOS_ADAPTER = ROOT / "tooling/acceptance/drivers/native/macos.py"
 DESKTOP_MAIN = ROOT / "apps/desktop/src-tauri/src/main.rs"
 DESKTOP_CARGO = ROOT / "apps/desktop/src-tauri/Cargo.toml"
+DESKTOP_TAURI_CONFIG = ROOT / "apps/desktop/src-tauri/tauri.conf.json"
 MESSAGE_ACTION_OVERLAY = (
     ROOT
     / "apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx"
@@ -59,6 +60,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.macos_adapter = MACOS_ADAPTER.read_text(encoding="utf-8")
         self.desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
         self.desktop_cargo = DESKTOP_CARGO.read_text(encoding="utf-8")
+        self.desktop_tauri_config = json.loads(
+            DESKTOP_TAURI_CONFIG.read_text(encoding="utf-8")
+        )
         self.message_action_overlay = MESSAGE_ACTION_OVERLAY.read_text(
             encoding="utf-8"
         )
@@ -330,6 +334,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         expected_assertions = {
             "native_dom_only",
             "source_build_runtime_identity",
+            "visible_ui_has_no_i18n_keys",
             "transcript_exact",
             "thread_exact",
             "toolbar_geometry",
@@ -389,6 +394,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertEqual(
             [name for _, name in fixed_steps],
             [
+                "localization.visible",
                 "group.create.ui",
                 "transcript.thread.ui",
                 "toolbar.geometry.ui",
@@ -1595,6 +1601,42 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("minWidth: 180", self.chat_session_list)
         self.assertIn("minWidth: 0", self.chat_message_area)
         self.assertNotIn("minWidth: 380", self.chat_message_area)
+
+    def test_session_list_error_is_bounded_and_replaces_empty_state(self) -> None:
+        self.assertIn("data-chat-session-list-error", self.chat_session_list)
+        self.assertIn("data-chat-session-list-retry", self.chat_session_list)
+        self.assertIn(
+            "loadError && visibleConversations.length > 0",
+            self.chat_session_list,
+        )
+        self.assertIn(
+            "loadError && visibleConversations.length === 0",
+            self.chat_session_list,
+        )
+        self.assertIn("overflowWrap: 'break-word'", self.chat_session_list)
+        self.assertNotIn("<Alert", self.chat_session_list)
+
+    def test_native_product_gate_rejects_visible_i18n_keys(self) -> None:
+        localization_start = self.source.index(
+            "    def prove_visible_localization(",
+        )
+        localization_end = self.source.index(
+            "    def bind_recovered_device(",
+            localization_start,
+        )
+        localization_source = self.source[localization_start:localization_end]
+        self.assertIn("document.body?.innerText", localization_source)
+        self.assertIn("visible_ui_has_no_i18n_keys", localization_source)
+        self.assertIn(
+            'self.step("localization.visible", self.prove_visible_localization)',
+            self.source,
+        )
+        self.assertEqual(
+            self.desktop_tauri_config["bundle"]["resources"][
+                "../../../packages/locales/"
+            ],
+            "i18n/",
+        )
 
     def test_message_action_anchor_includes_reaction_and_metadata_rows(self) -> None:
         anchor_index = self.message_row.index("data-message-action-anchor")
