@@ -13,6 +13,7 @@ import { useAgentStore } from '../../store/agent';
 import { useChatStore } from '../../store/chat';
 import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
+import { AgentTurnStatus } from '../../gen/proto/domain/agent/agent_pb';
 import { registerAcceptanceHarness } from '../registry';
 
 interface LoginInput {
@@ -690,7 +691,7 @@ function evaluateF03(ctx: DirectCellAssertionContext): Record<string, boolean | 
         index === 0 || sequence > sequences[index - 1]),
     cancelledDuringTextAuthoritative:
       facts.sawTextBeforeCancel === true
-      && String(replay.status).toLowerCase().endsWith('cancelled'),
+      && replay.status === AgentTurnStatus.CANCELLED,
     exactlyOneAuthoritativeTerminal:
       terminalEvents.length === 1
       && terminalEvents[0]?.eventType === 'cancelled'

@@ -1539,6 +1539,12 @@ It exposed an Acceptance producer bug: `TurnDiagnosticReplay` carries
 authoritative `status` directly, but the AS-F03 evaluator attempted to read a
 nonexistent nested `turn.status` and failed as `turnDiagnosticTurnMissing`.
 The evaluator now reads the generated replay contract directly.
+The source-matched `10715d391` run
+`20260827T080148852745Z-6be2f7cf07f9b0013fedabcd5ca19ab4`
+confirmed the Station Turn itself was `cancelled`, but exposed a second wire
+normalization defect: generated Proto replay status is the numeric
+`AgentTurnStatus` enum, not a lowercase string. AS-F03 now compares against the
+generated `AgentTurnStatus.CANCELLED` value.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
