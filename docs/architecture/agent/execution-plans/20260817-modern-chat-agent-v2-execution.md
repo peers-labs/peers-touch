@@ -1545,6 +1545,13 @@ confirmed the Station Turn itself was `cancelled`, but exposed a second wire
 normalization defect: generated Proto replay status is the numeric
 `AgentTurnStatus` enum, not a lowercase string. AS-F03 now compares against the
 generated `AgentTurnStatus.CANCELLED` value.
+The source-matched `438d1e0db` run
+`20260827T080921585076Z-4f993c704528d0b742aa5d0ee6b39c5c`
+passed the AS-F03 direct-runtime oracle and advanced the first failing tuple to
+`foundation-browser-direct / AS-F04 / en / single / sample-001`, where the
+adapter failed closed because AS-F04 is not implemented. Cleanup passed. This
+proves the AS-F03 runtime closure but does not make the 419-cell Foundation Gate
+`PROVEN`; G-F remains `PARTIAL / UNPROVEN`.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
