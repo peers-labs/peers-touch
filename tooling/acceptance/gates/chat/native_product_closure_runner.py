@@ -2088,9 +2088,7 @@ class NativeProductClosureGate(AcceptanceGate):
         actor: str,
     ) -> dict[str, Any] | None:
         client = self.clients[actor]
-        panes = client.find_elements(
-            '[data-chat-conversation-pane][data-session-security="ready"]'
-        )
+        panes = client.find_elements("[data-chat-conversation-pane]")
         if len(panes) != 1:
             return None
         conversation_id = (
@@ -2107,6 +2105,9 @@ class NativeProductClosureGate(AcceptanceGate):
         return (
             {
                 "conversationId": conversation_id,
+                "securityState": (
+                    panes[0].get_attribute("data-session-security") or ""
+                ),
                 "sessionRows": len(session_rows),
                 "searchValue": (
                     searches[0].get_attribute("value") if searches else None

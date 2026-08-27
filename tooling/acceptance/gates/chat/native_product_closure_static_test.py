@@ -1683,6 +1683,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn('"alice-direct-search-first"', journey)
         self.assertIn('"alice-direct-search-second"', journey)
+        self.assertIn(
+            'client.find_elements("[data-chat-conversation-pane]")',
+            self.source,
+        )
+        self.assertNotIn(
+            '[data-chat-conversation-pane][data-session-security="ready"]',
+            self.source,
+        )
+        self.assertIn('"securityState": (', self.source)
         self.assertIn('"sessionRows": len(session_rows)', self.source)
         for forbidden in (
             "call_async_harness",
