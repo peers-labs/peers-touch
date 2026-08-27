@@ -75,6 +75,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         self,
         gate_id: str,
         run_id: str,
+        slot: int | None = None,
     ) -> tuple[ClientRuntime, ...]:
         roles = CLIENT_ROLES.get(gate_id)
         if roles is None:
@@ -84,10 +85,14 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             )
         worktrees = [REPO_ROOT] * len(roles)
 
-        slot = int(os.environ.get("PT_DEV_SLOT", "0"))
-        gateway_base = 3330 + slot * 100
-        renderer_base = 3510 + slot * 100
-        webdriver_base = 4445 + slot * 10
+        selected_slot = (
+            int(os.environ.get("PT_DEV_SLOT", "0"))
+            if slot is None
+            else slot
+        )
+        gateway_base = 3330 + selected_slot * 100
+        renderer_base = 3510 + selected_slot * 100
+        webdriver_base = 4445 + selected_slot * 10
         run_root = Path(f"/tmp/pt-chat-native-{run_id}-{gate_id}")
         clients = tuple(
             ClientRuntime(
@@ -286,7 +291,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 credential_ref=credential_refs[0] if credential_refs else "",
                 reset_authorized=reset_authorized,
             )
-            clients = self._clients(gate_id, manifest.run_id)
+            clients = self._clients(gate_id, manifest.run_id, slot)
             manifest = dataclasses.replace(
                 manifest,
                 actor_manifest_ref=actor_ref,
