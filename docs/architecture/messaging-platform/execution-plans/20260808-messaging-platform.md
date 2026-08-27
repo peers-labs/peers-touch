@@ -1004,6 +1004,11 @@ i18n keys and prove search-created Direct identity reuse. Acceptance must use an
 exclusive disposable Station reset target; a Station serving a persistent Desktop
 must fail preflight instead of being reset. Existing Linux evidence predates these
 changes and remains stale for this repair until the exact-source Native Gate is rerun.
+The first isolated-Station rerun also exposed that the `social` subserver consumed
+`friend_chat_friend_requests` and `friend_chat_friendships` without migrating those
+owned relationship tables on a fresh database. The subserver must own that migration,
+and the Chat Fixture must recreate the accepted Alice/Bob/Charlie contact baseline
+after every destructive reset while leaving the messaging conversation tables empty.
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 

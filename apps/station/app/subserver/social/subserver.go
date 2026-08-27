@@ -63,6 +63,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return err
 	}
+	if err := infrastructure.MigrateRelationshipSchema(rds); err != nil {
+		return fmt.Errorf("migrate social relationship schema: %w", err)
+	}
 
 	// Cross-subserver contracts. P1 wires the no-op default for both
 	// — the social subserver compiles and runs end-to-end without

@@ -26,6 +26,8 @@ CHAT_TABLES = (
     "device_queue_items",
     "device_queue_lanes",
     "federated_endpoint_manifests",
+    "friend_chat_friend_requests",
+    "friend_chat_friendships",
     "messaging_attachment_audit",
     "messaging_attachment_grants",
     "messaging_attachment_objects",
@@ -508,6 +510,10 @@ DO $acceptance$
 DECLARE
   preset_hash text;
   updated_count integer;
+  alice_actor_id bigint;
+  bob_actor_id bigint;
+  carol_actor_id bigint;
+  mutual_follow_count integer;
 BEGIN
   SELECT password_hash INTO STRICT preset_hash
   FROM touch_actor
@@ -520,6 +526,74 @@ BEGIN
   IF updated_count <> 3 THEN
     RAISE EXCEPTION 'native Chat preset actor set is incomplete';
   END IF;
+
+  SELECT id INTO STRICT alice_actor_id
+  FROM touch_actor
+  WHERE email = 'alice@p.t';
+  SELECT id INTO STRICT bob_actor_id
+  FROM touch_actor
+  WHERE email = 'bob@p.t';
+  SELECT id INTO STRICT carol_actor_id
+  FROM touch_actor
+  WHERE email = 'carol@p.t';
+
+  SELECT count(*) INTO mutual_follow_count
+  FROM follows
+  WHERE (follower_id, following_id) IN (
+    (alice_actor_id, bob_actor_id),
+    (bob_actor_id, alice_actor_id),
+    (alice_actor_id, carol_actor_id),
+    (carol_actor_id, alice_actor_id),
+    (bob_actor_id, carol_actor_id),
+    (carol_actor_id, bob_actor_id)
+  );
+  IF mutual_follow_count <> 6 THEN
+    RAISE EXCEPTION 'native Chat preset mutual follows are incomplete';
+  END IF;
+
+  INSERT INTO friend_chat_friend_requests (
+    request_id,
+    pair_key,
+    sender_did,
+    receiver_did,
+    status,
+    message,
+    created_at,
+    updated_at
+  ) VALUES
+    (
+      'acceptance-alice-bob',
+      LEAST(alice_actor_id::text, bob_actor_id::text) || '|' ||
+        GREATEST(alice_actor_id::text, bob_actor_id::text),
+      alice_actor_id::text,
+      bob_actor_id::text,
+      2,
+      '',
+      clock_timestamp(),
+      clock_timestamp()
+    ),
+    (
+      'acceptance-alice-carol',
+      LEAST(alice_actor_id::text, carol_actor_id::text) || '|' ||
+        GREATEST(alice_actor_id::text, carol_actor_id::text),
+      alice_actor_id::text,
+      carol_actor_id::text,
+      2,
+      '',
+      clock_timestamp(),
+      clock_timestamp()
+    ),
+    (
+      'acceptance-bob-carol',
+      LEAST(bob_actor_id::text, carol_actor_id::text) || '|' ||
+        GREATEST(bob_actor_id::text, carol_actor_id::text),
+      bob_actor_id::text,
+      carol_actor_id::text,
+      2,
+      '',
+      clock_timestamp(),
+      clock_timestamp()
+    );
 END
 $acceptance$;
 COMMIT;
