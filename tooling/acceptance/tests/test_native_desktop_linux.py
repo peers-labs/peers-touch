@@ -991,6 +991,52 @@ class LinuxCellProfileTests(unittest.TestCase):
         provisioner._stop_remote_actor.assert_called_once()
         self.assertEqual(provisioner._actors, {})
 
+    def test_remote_actor_stop_outlives_remote_port_release_wait(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner.contract = SimpleNamespace(
+            cell_id="desktop-linux-native",
+        )
+        provisioner.profile = SimpleNamespace(runtime_root=".cache/runtime")
+        provisioner.transport = Mock()
+        provisioner.transport.run_argv.return_value = (
+            subprocess.CompletedProcess(
+                (),
+                0,
+                '{"actor":"alice","stopped":true}\n',
+                "",
+            )
+        )
+
+        result = provisioner._stop_remote_actor(
+            remote_control=Path("/remote/control.py"),
+            run_id="run-1",
+            container_name="runtime-cell",
+            actor="alice",
+            preserve_state=True,
+        )
+
+        self.assertTrue(result["stopped"])
+        provisioner.transport.run_argv.assert_called_once_with(
+            (
+                "python3",
+                "/remote/control.py",
+                "actor-stop",
+                "--runtime-root",
+                ".cache/runtime",
+                "--cell-id",
+                "desktop-linux-native",
+                "--run-id",
+                "run-1",
+                "--container-name",
+                "runtime-cell",
+                "--actor",
+                "alice",
+                "--preserve-state",
+            ),
+            timeout=90,
+            check=False,
+        )
+
 
 class RemoteLinuxCellControlTests(unittest.TestCase):
     def _args(self, action: str, root: str, run_id: str = "run-1") -> argparse.Namespace:

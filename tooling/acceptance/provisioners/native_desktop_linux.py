@@ -59,6 +59,8 @@ _DEFAULT_PROFILE_ROOT = REPO_ROOT / ".local" / "acceptance" / "runtime-cells"
 _DEFAULT_DEPLOY_ROOT = REPO_ROOT / ".local" / "deploy" / "envs"
 _DEFAULT_RUNTIME_ROOT = ".cache/peers-touch/acceptance-cells"
 _DEFAULT_CACHE_ROOT = ".cache/peers-touch/build/desktop-linux-native"
+_REMOTE_CONTROL_TIMEOUT_SECONDS = 60
+_REMOTE_ACTOR_STOP_TIMEOUT_SECONDS = 90
 _BASE_IMAGE_DIGEST = (
     "33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517"
 )
@@ -1782,11 +1784,12 @@ class NativeDesktopLinuxProvisioner:
         self,
         path: Path,
         *arguments: str,
+        timeout: float = _REMOTE_CONTROL_TIMEOUT_SECONDS,
         check: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         return self.transport.run_argv(
             ("python3", str(path), *arguments),
-            timeout=60,
+            timeout=timeout,
             check=check,
         )
 
@@ -2262,6 +2265,7 @@ class NativeDesktopLinuxProvisioner:
         completed = self._remote_control(
             remote_control,
             *arguments,
+            timeout=_REMOTE_ACTOR_STOP_TIMEOUT_SECONDS,
         )
         return _json_output(completed, f"actor {actor} stop")
 
