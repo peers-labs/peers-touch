@@ -212,13 +212,10 @@ class FoundationRuntimeClient:
             )
             endpoint = f"http://127.0.0.1:{self.spec.webdriver_port}"
             RemoteConnection.set_timeout(min(self.startup_timeout, 120))
-            try:
-                self.driver = webdriver.Remote(
-                    command_executor=endpoint,
-                    options=ChromeOptions(),
-                )
-            finally:
-                RemoteConnection.reset_timeout()
+            self.driver = webdriver.Remote(
+                command_executor=endpoint,
+                options=ChromeOptions(),
+            )
             return
 
         wait_until(
