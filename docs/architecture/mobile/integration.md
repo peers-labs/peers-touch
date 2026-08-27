@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-29
+> **Created**: 2026-08-27 | **Updated**: 2026-08-27
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -13,10 +13,10 @@
 | Area | Current implementation | Prototype target | Disposition |
 |---|---|---|---|
 | Station selection | Real registry, add/remove/select, Rust probe, auto-check | Same flow | retain; move lifecycle ownership out of `App.tsx` |
-| Station handshake | MS-P07 signed host-key handshake and Mobile Rust verification are implemented | Stable identity and capability binding | retain; physical mismatch evidence remains pending |
-| Access gates | Real Station-driven login/invite/blocked flow plus Rust-owned OAuth/session transport | Email plus OAuth tabs | retain; complete W2-E2 physical proof |
-| Identity | Mobile-facing auth/OAuth contracts use PTID-bearing `ActorRef`; legacy bridge fields are reserved | PTID-only across every Mobile boundary | retain hard cut and reject missing PTID |
-| OAuth | MS-P02/MS-P03, MS-D12 and MS-D13 are implemented; physical proof still lacks trusted negative Fixture, Station proof, browser lease and build provenance contracts | GitHub/Google redirect/callback | review `native-oauth-proof/` before resuming W2-E2 execution |
+| Station handshake | Current probe proves URL reachability/label only | Stable identity and capability binding | add MS-P07 signed `station_peer_id` handshake; URL remains a connection hint |
+| Access gates | Real Station-driven login/invite/blocked flow and secure session port | Email plus OAuth tabs | retain gates; add OAuth session runtime |
+| Identity | `authSession.ts` accepts `id`, `actorId`, and `actor_id`, including numeric values | PTID-only across every Mobile boundary | remove numeric/alias identity after `ActorRef.ptid` compatibility ingress |
+| OAuth | Native deep-link event exists; `oauth.proto` has bridge records but no attempt/state/PKCE contract | GitHub/Google redirect/callback | new Model/Station/session/native closure |
 | Shell tabs | Chat/Moments/Contacts/Settings active-only switch | Chats/Moments/Contacts/Me plus details | refactor to navigation descriptors; rename product surface to Me |
 | Friend chat | Real list/thread, E2EE, receipts, typing, attachments, search, edit/recall/delete/settings | Rich thread | retain and split oversized page into boundaries |
 | Group chat | Real group projection, E2EE, membership/admin/settings | Rich group thread | retain; integrate descriptor navigation |
@@ -42,8 +42,8 @@
   `sessionRuntime` only after the access chain returns a PTID-bearing session.
 - Add `commandRuntime` over one Rust-owned encrypted command ledger; domain
   runtimes retain mutation semantics and authoritative readback.
-- `authSession.ts`: PTID-bearing generated session projection is landed; retain
-  the hard cut and zero-reference checks.
+- `authSession.ts`: from permissive numeric/alias actor normalization to a
+  PTID-bearing generated session projection.
 - `socialApi.ts`: quarantine JSON decoding inside gateways during per-domain
   generated-Proto cutover; remove the adapter after parity evidence.
 - `ChatPage.tsx`: split list, thread, composer, conversation sheet, message action,
@@ -54,17 +54,13 @@
 
 ## 3. Cross-Layer Work
 
-Station cooperation already landed:
+Station cooperation required:
 
-- signed Station identity/capability handshake with stable `station_peer_id`;
-- PTID-only Mobile-facing auth/session contracts;
-- OAuth start/status/complete/cancel/acknowledge, binding, PKCE, nonce, expiry,
-  replay protection and transactional session finalization.
-
-Station cooperation still required:
-
-- W2-E2 Station-internal negative Fixture adapter and authoritative proof
-  snapshot from `native-oauth-proof/`;
+- Signed Station identity/capability handshake with stable `station_peer_id`.
+- Identity/Model amendment that removes numeric actor IDs from Mobile-facing
+  auth/session wire contracts and guarantees non-empty PTID.
+- OAuth attempt start/status/callback exchange with Station binding, PKCE,
+  nonce, expiry, and replay protection.
 - Moments list/detail/reaction/comment/reply endpoints and events.
 - Any missing reaction/pin/forward/thread readback.
 - Profile and account preference mutations.
@@ -83,10 +79,7 @@ Pure client work:
 Native/Rust work:
 
 - Secure session and OAuth state/PKCE material.
-- Provider browser launch and deep-link callback. Mobile Rust validates and
-  completes the callback; raw callback data and secrets never cross into Web.
-- Device/generation-bound attempt recovery and encrypted credential-envelope
-  delivery/acknowledgement.
+- Provider browser launch and deep-link callback.
 - Push, resume, network, media and permission event ports.
 - Typed capability errors and native acceptance hooks.
 - Generation propagation and stale native-event rejection.
@@ -130,46 +123,6 @@ target state.
 
 No row above may gain a second semantic or persistence owner in Mobile.
 
-## 6. W2 Cutover
-
-> **Status**: accepted on 2026-08-28.
-
-Retain:
-
-- Station-owned provider exchange and Access Gate policy.
-- Mobile Rust secure storage.
-- Web `authRuntime` as a projection and intent surface.
-
-Replace:
-
-- Web-driven OAuth completion with one Rust-owned coordinator.
-- repeated activated-session token minting with one candidate-keyed encrypted
-  credential envelope and acknowledgement.
-- split Access Gate/session writes with one Station authorization finalizer.
-- caller-supplied actor identity on the Station authorization surface with
-  authenticated-subject plus explicit-consent derivation.
-- ad hoc iOS browser glue and Android unsupported fallback with official Tauri
-  opener/deep-link adapters.
-
-Delete in the same cutover:
-
-- Web-visible PKCE verifier, nonce, authorization code, raw callback, bearer
-  token, and refresh token fields;
-- status paths that mint a fresh credential;
-- any OAuth fallback to `auth.login` when `auth.oauth` is absent;
-- module-global-only attempt recovery;
-- Android unsupported browser and secure-storage branches.
-
-The native Acceptance environment adds Appium, XCUITest, UiAutomator2,
-acceptance-build injection, isolated iOS/Android client roles, approved OAuth
-credential references, and deterministic cleanup. Simulator/emulator evidence
-does not replace physical-device MS-AG03 proof.
-
-W2-E2 physical-proof ownership and evidence are refined by
-[`native-oauth-proof/`](./native-oauth-proof/README.md). MOP-D01..MOP-D04 were
-accepted on 2026-08-29; implementation remains gated by the focused execution
-plan.
-
 ## 6. Risks
 
 - Current social API still contains JSON compatibility envelopes alongside proto.
@@ -177,8 +130,8 @@ plan.
 - Background/resume and secure-storage behavior is not yet proven on both platforms.
 - Prototype includes capabilities beyond current authoritative Station wiring.
 - Existing dirty prototype changes must remain isolated from architecture edits.
-- Legacy OAuth bridge message names remain, but numeric actor fields are
-  reserved and Mobile hard-cut scans must prevent their reintroduction.
-- The Mobile Shell Acceptance plan and native Gates are registered. W2-E2
-  physical OAuth claims remain `UNPROVEN` until the accepted
-  `native-oauth-proof/` contracts are planned, implemented and exercised.
+- Current `auth.proto` and `oauth.proto` still expose legacy numeric actor fields;
+  Mobile must fail closed when canonical PTID is absent.
+- The current Mobile package has static/build checks but no registered native
+  Mobile Shell Acceptance plan; runtime claims remain `UNPROVEN` until PLAN
+  creates and runs that artifact.

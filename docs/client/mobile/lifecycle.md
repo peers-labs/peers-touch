@@ -161,13 +161,11 @@ Current Mobile code is still transitioning toward this lifecycle:
 - `App.tsx` must model at least `station-selection -> station-handshake -> access-gate-chain -> shell`.
 - Login must be promoted from Settings into an access gate renderer.
 - Invite-only and fixed-user gates must use the shared Station gate protocol, not Mobile-local checks.
-- Signed peer identity/capability handshake is implemented; physical
-  mismatch/replacement evidence remains pending.
-- Pre-session auth/OAuth runtime is implemented. Active session, command
-  admission, sync, and device runtimes are not yet all registered through the
-  target executable graph.
-- Keychain/Keystore and Rust OAuth secure storage pass simulator evidence;
-  physical-device cleanup and absence proof remain pending.
+- Station probe currently verifies reachability; signed peer identity/capability
+  handshake is not implemented.
+- Pre-session auth, active session, command admission, sync, and device runtimes
+  are not yet registered through the target executable graph.
+- Secure storage command exists as a port; native Keychain/Keystore closure must be verified before production token storage.
 
 ---
 

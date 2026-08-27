@@ -62,7 +62,7 @@ apps/mobile/src-tauri/src/
 | `features/*` | rendering and user intents | streams and periodic freshness |
 | `runtimes/registry.ts` | descriptor registration, dependency validation, readiness and teardown orchestration | domain commands or projection merge rules |
 | `runtimes/stationRuntime.ts` | Station registry and handshake projection | session credentials |
-| `runtimes/authRuntime.ts` | pre-session email/OAuth projection and typed user intents | OAuth secrets, provider callback exchange, active session lifecycle, or access policy |
+| `runtimes/authRuntime.ts` | pre-session email/OAuth attempts and typed credential results | active session lifecycle or access policy |
 | `runtimes/accessRuntime.ts` | Station gate attempt and access decision projection | gate policy or order |
 | `runtimes/sessionRuntime.ts` | active PTID session, refresh and revocation | credential collection or social projections |
 | `runtimes/commandRuntime.ts` | bounded admission, scheduling, and outcome convergence | domain mutation semantics or persistent storage implementation |
@@ -77,7 +77,7 @@ apps/mobile/src-tauri/src/
 | `services/platform/` | typed native capability ports | Android/iOS SDK calls |
 | `storage/projections/` | Station/PTID-scoped cache and invalidation | business authority |
 | `src-tauri/platform/` | OS capabilities | shared business protocol |
-| `src-tauri/runtime/oauth/` | secure PKCE/nonce/attempt/delivery-key material, callback validation, Station OAuth transport, restart recovery, and credential acknowledgement | provider UI, Web-visible secrets, or Station policy |
+| `src-tauri/runtime/oauth/` | secure PKCE/nonce material and callback validation | provider UI or Station policy |
 | `src-tauri/runtime/command_ledger/` | encrypted transactional command persistence | Station truth or domain readback rules |
 | `src-tauri/runtime/draft_store/` | Station/PTID-scoped draft persistence | command replay or shared business truth |
 
@@ -140,12 +140,6 @@ stores or opening another long-lived Station stream.
 
 ### Session credential contract
 
-- OAuth-created credentials enter `sessionRuntime` only through the Rust secure
-  session store. Mobile Web receives actor/session/expiry projection fields but
-  never bearer or refresh credentials.
-- One OAuth candidate identifies at most one Station session. Response loss
-  resumes the same encrypted credential envelope until secure-store
-  acknowledgement; status polling never mints a replacement credential.
 - `sessionRuntime` performs single-flight refresh two minutes before expiry or
   after one authenticated `401`; queued writes remain closed during refresh.
 - Station alone issues, rotates, and revokes credentials. Refreshed Station
@@ -192,28 +186,3 @@ app/lifecycle ---->    |
   export manual domain models.
 - Native plugins emit typed capability events tagged with lifecycle generation;
   they never import or mutate business projections.
-
-## Native Acceptance Harness
-
-```text
-Appium 2
-  +-- XCUITest driver ------> iOS app / WKWebView context
-  +-- UiAutomator2 driver --> Android app / WebView context
-                                |
-                                v
-             window.__PEERS_MOBILE_ACCEPTANCE__
-                                |
-                                v
-                 production runtime intents
-```
-
-| Component | Responsibility | Forbidden |
-|---|---|---|
-| Mobile native provisioner | Allocate devices, builds, app data, ports, profiles, credentials, and cleanup leases | Fabricate a passed Gate |
-| Appium driver adapters | Install/launch/restart/background apps, deliver OS deep links, capture native/WebView evidence | Direct store mutation |
-| Acceptance registry | Expose typed production intents and projection readback in acceptance builds only | Business truth or mock result injection |
-| Access scenario runner | Execute Station trust, gate, provider, cancellation, mismatch, replay, and cleanup journeys | Browser-only substitution |
-
-The registry is absent unless `VITE_ACCEPTANCE_HARNESS=1`. Physical iOS and
-Android cells are mandatory for real provider MS-AG03 evidence; simulator and
-emulator cells are preflight and deterministic failure evidence only.

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-29
+> **Created**: 2026-08-27 | **Updated**: 2026-08-27
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -61,125 +61,39 @@ Reuse is permitted only after endpoint, generated-binding, identity, idempotency
 and readback semantics are verified. The existence of a message in Proto does
 not prove that Station and Mobile currently expose the full product operation.
 
-### 3.2 Contract Status
+### 3.2 Required contract gaps
 
-| ID | Required semantic | Owner | Status | Current evidence / remaining target |
+| ID | Required semantic | Owner | Existing evidence | Required target contract |
 |---|---|---|---|---|
-| MS-P01 | PTID-only login/OAuth session identity | Model + Station auth | implemented | Mobile-facing auth/OAuth contracts use `ActorRef`; legacy numeric OAuth bridge fields are reserved and Mobile fails closed without PTID |
-| MS-P02 | OAuth provider attempt | Model + Station OAuth | implemented | `mobile_oauth.proto` and Station/Mobile Rust bind provider, Station, access attempt/gate, redirect, PKCE, nonce, attempt secret, device and generation |
-| MS-P03 | OAuth callback completion/status | Model + Station OAuth | implemented; physical proof pending | Station performs one-time callback claim, candidate/finalizer/status/cancel/ack; W2-E2 still requires the proposed physical proof contracts |
-| MS-P04 | Mutation outcome lookup | Owning Model/Station domain | gap | Query by stable command ID or authoritative entity/event readback is still required for every offline-retriable mutation |
-| MS-P05 | Complete account preferences | Model + Station actor/preferences | gap | Generated account preference read/write contract remains required for accepted cross-device fields |
-| MS-P06 | Durable Mobile command envelope | Model + Mobile reliability | gap | Typed command kind and `oneof` payload, Station/PTID scope, ordering, state and typed error remain required |
-| MS-P07 | Station identity/capability handshake | Model + Station core | implemented | Libp2p-host-key-signed statement and Mobile Rust verification bind peer ID, origin, capabilities, challenge and expiry |
-| MS-P08 | Device-local draft envelope | Model + Mobile storage | gap | Typed Station/PTID-scoped Chat/Moments draft persistence remains required |
+| MS-P01 | PTID-only login/OAuth session identity | Model + Station auth | Auth responses and current `ActorRef` expose legacy numeric identity | Mobile-facing auth contracts contain a PTID-only actor reference; numeric fields are removed from the target wire contract and discarded only during bounded migration |
+| MS-P02 | OAuth provider attempt | Model + Station OAuth | `OAuthBridgeRequest/Response` only model gateway bridge output | Start request/response binding provider, Station, access attempt/gate, redirect URI, PKCE challenge, nonce hash, opaque OAuth attempt/state, and expiry |
+| MS-P03 | OAuth callback completion/status | Model + Station OAuth | No one-time Mobile callback contract | Complete/status response atomically consumes the OAuth attempt and returns typed expiry/replay/mismatch result, PTID-bearing session candidate, and re-evaluated `AccessDecision` |
+| MS-P04 | Mutation outcome lookup | Owning Model/Station domain | Conversation command result exists; coverage is not universal | Query by stable command ID or authoritative entity/event readback for every offline-retriable mutation |
+| MS-P05 | Complete account preferences | Model + Station actor/preferences | Product fields exceed currently verified API coverage | Generated account preference read/write contract for accepted cross-device fields |
+| MS-P06 | Durable Mobile command envelope | Model + Mobile reliability | No canonical cross-Web/Rust ledger contract | Typed command kind and `oneof` payload, `station_peer_id`, actor PTID, command ID, ordering key, timestamps, state, typed error, and schema revision |
+| MS-P07 | Station identity/capability handshake | Model + Station core | Current probe proves only URL reachability/label | Signed response with stable `station_peer_id`, canonical origin, protocol/capability set, expiry, and challenge binding |
+| MS-P08 | Device-local draft envelope | Model + Mobile storage | Chat/Moments drafts are component-local | Typed surface/target, `station_peer_id`, actor PTID, text, encrypted attachment references, audience, and update time |
 
-These statuses describe the current architecture contract and implementation
-surface; they do not authorize a protocol version bump. Any future message,
-field-number, compatibility, or version change requires its own reviewed Model
-change.
-
-W2-E2 runtime-only Fixture, Station proof, provider/browser lease and physical
-build attestation schemas are proposed in
-[`native-oauth-proof/data-model.md`](./native-oauth-proof/data-model.md). They
-are Acceptance artifacts, not additions to the Mobile OAuth product Proto.
-
-### 3.2.1 MS-P02/MS-P03 Security Amendment
-
-> **Status**: accepted on 2026-08-28; field numbers remain an
-> implementation-plan concern.
-
-MS-P02 start additionally binds:
-
-- `action_type = AUTH_OAUTH`, selected from the current credential gate's
-  advertised alternatives;
-- `device_id`;
-- `lifecycle_generation`;
-- `attempt_secret_hash`, derived from random Mobile Rust material;
-- `credential_delivery_public_key`, an ephemeral X25519 public key whose private
-  key never leaves secure storage.
-
-MS-P03 complete/status/cancel/acknowledge requests present the device-held
-attempt secret. Station compares its hash in constant time and also requires the
-exact Station, device, lifecycle generation, Access Attempt, OAuth Attempt, and
-gate binding.
-
-`AccessGate` exposes typed alternative actions. The `auth.login` gate is the
-single credential stage and advertises email/password plus available
-`auth.oauth` provider actions. One successful action satisfies the stage and
-the remaining alternatives become skipped; OAuth is never appended as a second
-mandatory login gate.
-
-Successful finalization returns an encrypted session credential envelope to
-Mobile Rust:
-
-```text
-OAuthCredentialEnvelope {
-  candidate_id
-  session_id
-  actor_ref
-  station_peer_id
-  device_id
-  lifecycle_generation
-  server_ephemeral_public_key
-  nonce
-  ciphertext
-  expires_at
-}
-```
-
-The plaintext contains the Station access/refresh credentials and their expiry.
-The envelope uses X25519 + HKDF-SHA256 + AES-256-GCM, with the binding fields as
-authenticated associated data. Station persists one envelope per candidate and
-returns the identical bytes after an uncertain response; it never creates a new
-session during status polling.
-
-After Mobile Rust decrypts and durably stores the credential, it sends an
-acknowledgement authenticated by the attempt secret. Station then marks delivery
-complete and removes the recoverable envelope. Later status calls return only
-the terminal state and public session projection.
-
-Session persistence adds a unique `oauth_candidate_id` and stores
-`station_peer_id`, `access_attempt_id`, final gate-decision revision,
-`device_id`, and `lifecycle_generation`. The authorization finalizer creates
-the session row, candidate terminal state, attempt terminal state, and encrypted
-delivery envelope in one transaction.
+These are architecture requirements, not permission to bump a protocol version.
+Exact message names, field numbers, compatibility policy, and any version change
+require their own reviewed Model change.
 
 OAuth attempt state:
 
 ```text
 idle -> starting -> awaiting-provider -> callback-received -> exchanging
      -> session-candidate-issued -> access-gate-chain
-     -> finalizing -> credential-delivery -> active-session
-        (only after final access grant and native secure-store acknowledgement)
+     -> active-session (only after final access grant)
 
 starting|awaiting-provider|callback-received|exchanging
   -> cancelled|expired|failed
 ```
 
-Terminal and race rules:
-
-- callback claim is one conditional update from `awaiting-provider`;
-- authorization-code consumption is one conditional update before exchange;
-- one Access Attempt may have only one live OAuth attempt per device/generation;
-- finalization and cancellation lock rows in the same order;
-- an exact duplicate callback during uncertain completion resumes the same
-  claimed attempt; a different callback after claim or any post-terminal
-  resubmission is replay and fails closed;
-- stale generation, Station replacement, device mismatch, provider mismatch,
-  redirect mismatch, state mismatch, nonce mismatch, PKCE mismatch, and expiry
-  fail closed;
-- crash after finalization but before client acknowledgement resumes the same
-  encrypted envelope;
-- cancellation after finalization revokes the candidate-created session before
-  reporting completion.
-
 Station owns attempt identity, provider/Station/redirect binding, PKCE challenge,
 nonce hash, opaque state, access attempt/gate binding, expiry, and atomic
 one-time consumption. Mobile secure storage owns the PKCE verifier, nonce, and
-attempt secret, credential-delivery private key, and any attempt-scoped session
-candidate. The candidate cannot authorize business calls. The Web UI sees only
-projected state.
+any attempt-scoped session candidate. The candidate cannot authorize business
+calls. The Web UI sees only projected state.
 
 `station_peer_id` from the verified handshake is the canonical Station scope for
 OAuth, sessions, caches, and command records. URL is a mutable connection hint.
@@ -188,47 +102,7 @@ requires explicit Station replacement; it cannot inherit the old scope.
 The explicit first-add action pins the peer ID after challenge-signature
 verification; subsequent URL edits or redirects cannot silently replace it.
 
-### 3.3 MS-P07 Signed Station Identity Contract
-
-The request carries exactly one cryptographically random 32-byte challenge.
-The response contains:
-
-- deterministic protobuf bytes for `StationIdentityStatement`, containing the
-  exact challenge, `station_peer_id`, canonical origin, sorted capability IDs,
-  issue time, and expiry time;
-- the marshalled libp2p Ed25519 host public key;
-- the libp2p host-key signature.
-
-The signature input is:
-
-```text
-"peers-touch/station-identity/v1\0"
-  || deterministic_protobuf(StationIdentityStatement)
-```
-
-`StationIdentityStatement` contains no map fields. Capabilities are sorted by
-UTF-8 byte order before signing. The client must:
-
-1. reject a challenge whose length is not 32 bytes;
-2. verify the returned challenge byte-for-byte;
-3. unmarshal the Ed25519 public key and derive the libp2p PeerID from it;
-4. require the derived PeerID to equal `station_peer_id`;
-5. verify the signature over the domain-separated deterministic bytes;
-6. require `issued_at <= now + 30s`, `expires_at >= now - 30s`, and a signed
-   lifetime no longer than 60 seconds;
-7. require every requested capability to appear in the signed capability set;
-8. reject any HTTP redirect rather than carrying trust across origins.
-
-Unknown capabilities are retained but ignored. The required set uses stable
-capability IDs and subset matching; list order has no semantic meaning.
-`canonical_origin` contains normalized scheme, host, and effective port only,
-with no path, query, fragment, or credential.
-
-The current Station host key is Ed25519. Host-key rotation changes the derived
-PeerID and therefore requires explicit Station replacement. No continuity
-alias, URL-based migration, or silent state transfer is permitted.
-
-### 3.4 Contract wiring before schema extension
+### 3.3 Contract wiring before schema extension
 
 - Forwarding should be modeled as a new send command referencing source content
   only if current command APIs cannot express the accepted audit semantics.
@@ -237,7 +111,7 @@ alias, URL-based migration, or silent state transfer is permitted.
 - Moments reactions/comments must use existing `social/post.proto` and
   `social/comment.proto` unless endpoint verification proves a semantic gap.
 
-### 3.5 Explicit non-gaps
+### 3.4 Explicit non-gaps
 
 | Concept | Owner | Contract disposition |
 |---|---|---|

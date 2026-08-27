@@ -115,12 +115,6 @@ Required fields:
 - `blocking_reason`
 - `next_gate_id`
 
-Credential collection is one gate stage with alternative actions. The
-`auth.login` gate may advertise both an email/password action and one or more
-`auth.oauth` actions. Completing any one action establishes the actor candidate
-and satisfies the credential stage; clients must never execute both as
-sequential mandatory gates.
-
 Gate states:
 
 - `pending`: not evaluated yet.
@@ -216,32 +210,6 @@ contracts in the OAuth domain. Every OAuth attempt binds the
 returns a PTID-bearing session candidate plus a re-evaluated `AccessDecision`.
 The candidate cannot authorize business APIs until the final decision is
 `granted`.
-
-### 9.1 OAuth Finalization Amendment
-
-> **Status**: accepted on 2026-08-28.
-
-`auth.oauth` becomes a first-class `AccessGateType` for an alternative action
-advertised by the `auth.login` credential-stage gate; clients must not infer it
-from a missing type or silently substitute it. The OAuth attempt binds the
-exact parent gate ID and OAuth action type, plus device ID, lifecycle
-generation, an attempt-secret hash, and a native credential-delivery public key.
-
-The final Access Gate decision and OAuth session activation are committed by one
-Station authorization finalizer. It locks the Access Attempt, OAuth Attempt,
-and candidate, requires the current decision to be final `granted`, and creates
-at most one candidate-keyed session plus one encrypted credential envelope.
-Cancellation uses the same lock order and cannot race into a live session.
-
-Status is read/recovery, not credential minting. Before native
-acknowledgement it may return the same persisted encrypted envelope; after
-acknowledgement it returns only public state. All status, cancel, completion,
-and acknowledgement calls require the device-held attempt secret.
-
-The Station-owned authorization endpoint derives actor PTID from an
-authenticated subject and explicit consent. Caller-supplied actor identity is
-forbidden. Authorization codes are consumed by one conditional database update
-before token creation.
 
 Transport can be HTTP/Tauri bridge during implementation, but payload models must come from proto.
 

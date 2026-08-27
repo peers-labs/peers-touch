@@ -2,7 +2,7 @@
 
 > **目的**: 本文档是设计阶段到架构规划阶段的移交物料。请基于此完成的原型设计，结合项目现有架构规范，产出 Mobile 端架构设计与实施计划。
 
-***
+---
 
 ## 1. 已完成的原型设计概览
 
@@ -46,15 +46,15 @@ Shell 内 4 个 Tab：**Chats** / **Moments** / **Contacts** / **Me**
 
 ### 1.3 核心交互能力（已实现原型）
 
-| 功能模块           | 已设计能力                                                                                                                                                                                                                     |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Station 选择** | 多 Station 列表、活跃选中、新增、删除、在线状态检测                                                                                                                                                                                            |
-| **认证网关**       | OAuth 三方登录（GitHub/Google/WeChat）模拟完整 redirect 流程、Email+Password 登录、Tab 切换无跳变（Grid overlay）、记忆账户                                                                                                                           |
-| **聊天列表**       | 搜索过滤、未读 badge、置顶/免打扰标识、群组标识、在线状态、最新消息预览                                                                                                                                                                                   |
-| **聊天详情**       | 发送/接收消息、引用回复、图片消息、文件消息、消息状态(sent/delivered/read)、撤回、编辑、固定、标旗、Thread 回复、转发、Reaction（单条+扩展 emoji grid）、Action Sheet（飞书风格 Reaction 栏 + 四宫格快捷操作 + 列表操作）、Chat/Docs/Pinned 顶部 Tab、已读回执、正在输入指示器、消息搜索、媒体库、联系人详情面板（静音/置顶/举报/拉黑/清空） |
-| **联系人**        | 分组显示（频繁/所有）、搜索、在线状态、联系人详情、发起聊天、群组列表                                                                                                                                                                                       |
-| **朋友圈**        | 动态展示（文字+图片）、点赞/Reaction、评论（含回复）、时间展示                                                                                                                                                                                      |
-| **个人中心**       | 头像/昵称/签名展示、设置分组（账户/通知/隐私/存储/关于）、切换 Station、设置详情面板                                                                                                                                                                         |
+| 功能模块 | 已设计能力 |
+|---------|-----------|
+| **Station 选择** | 多 Station 列表、活跃选中、新增、删除、在线状态检测 |
+| **认证网关** | OAuth 三方登录（GitHub/Google/WeChat）模拟完整 redirect 流程、Email+Password 登录、Tab 切换无跳变（Grid overlay）、记忆账户 |
+| **聊天列表** | 搜索过滤、未读 badge、置顶/免打扰标识、群组标识、在线状态、最新消息预览 |
+| **聊天详情** | 发送/接收消息、引用回复、图片消息、文件消息、消息状态(sent/delivered/read)、撤回、编辑、固定、标旗、Thread 回复、转发、Reaction（单条+扩展 emoji grid）、Action Sheet（飞书风格 Reaction 栏 + 四宫格快捷操作 + 列表操作）、Chat/Docs/Pinned 顶部 Tab、已读回执、正在输入指示器、消息搜索、媒体库、联系人详情面板（静音/置顶/举报/拉黑/清空） |
+| **联系人** | 分组显示（频繁/所有）、搜索、在线状态、联系人详情、发起聊天、群组列表 |
+| **朋友圈** | 动态展示（文字+图片）、点赞/Reaction、评论（含回复）、时间展示 |
+| **个人中心** | 头像/昵称/签名展示、设置分组（账户/通知/隐私/存储/关于）、切换 Station、设置详情面板 |
 
 ### 1.4 设计 Token 体系
 
@@ -84,7 +84,7 @@ Shell 内 4 个 Tab：**Chats** / **Moments** / **Contacts** / **Me**
 5. **反馈**: Toast 自动消失、按压态(`:active`)、加载状态
 6. **手势暗示**: 长按消息触发 Action Sheet、滑动指示器
 
-***
+---
 
 ## 2. 你的任务
 
@@ -117,17 +117,13 @@ Shell 内 4 个 Tab：**Chats** / **Moments** / **Contacts** / **Me**
 
 ### 2.4 约束
 
-* 遵循项目 Iron Laws：Proto-First、No Mock、No Debug Statements、i18n、No Hardcoded UI Strings
+- 遵循项目 Iron Laws：Proto-First、No Mock、No Debug Statements、i18n、No Hardcoded UI Strings
+- Mobile 端使用 Tauri v2 Mobile 架构（非 Flutter、非 RN）
+- 所有业务模型从 proto 生成，原型 types.ts 仅作设计参考
+- 参照 `docs/client/common/ui-identity/` 的 UI Identity 规范
+- 状态管理、运行时投影等参照 Desktop 端已建立的模式（`docs/client/desktop/runtime-projections.md`），Mobile 做适配而非重新发明
 
-* Mobile 端使用 Tauri v2 Mobile 架构（非 Flutter、非 RN）
-
-* 所有业务模型从 proto 生成，原型 types.ts 仅作设计参考
-
-* 参照 `docs/client/common/ui-identity/` 的 UI Identity 规范
-
-* 状态管理、运行时投影等参照 Desktop 端已建立的模式（`docs/client/desktop/runtime-projections.md`），Mobile 做适配而非重新发明
-
-***
+---
 
 ## 3. Prototype Portal 验证
 
@@ -141,15 +137,15 @@ cd packages/prototypes/portal && pnpm dev
 
 流程路径：Station Selection → Auth Gate（点 GitHub/Google 有 OAuth 模拟流程） → Shell（Chats/Moments/Contacts/Me）→ 点击会话进入 ChatThread
 
-***
+---
 
 ## 4. Context Anchor
 
-| Field     | Value                                                        |
-| --------- | ------------------------------------------------------------ |
-| Branch    | (当前分支)                                                       |
-| Stage     | DESIGN → 准备进入 PLAN                                           |
-| Prototype | `packages/prototypes/mobile/chat/`                           |
-| Target    | `apps/mobile/`                                               |
-| Related   | `model/domain/`, `docs/architecture/`, `docs/client/common/` |
-| Status    | 原型设计完成，等待架构设计 + 实施计划                                         |
+| Field | Value |
+|-------|-------|
+| Branch | (当前分支) |
+| Stage | DESIGN → 准备进入 PLAN |
+| Prototype | `packages/prototypes/mobile/chat/` |
+| Target | `apps/mobile/` |
+| Related | `model/domain/`, `docs/architecture/`, `docs/client/common/` |
+| Status | 原型设计完成，等待架构设计 + 实施计划 |

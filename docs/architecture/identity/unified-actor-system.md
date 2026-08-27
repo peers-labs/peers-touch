@@ -165,13 +165,12 @@ For every Tauri command that touches user-domain data:
 
 ### C-2 · Resolution order
 
-`session_resolver` resolves only
-`state.sessions.get(window.label())`, the authoritative per-window
-`ActiveSession`. Missing binding is a typed unauthenticated error; it never
-falls back to process-global identity.
+`session_resolver` resolves in this order:
 
-Every command path that mutates identity (login / switch / unlock / OAuth
-bridge) MUST bind the window session before returning.
+1. `state.sessions.get(window.label())` — per-window `ActiveSession`. Authoritative.
+2. `state.session.lock()` — legacy global. Transitional fallback only; see C-7.
+
+Every command path that mutates identity (login / switch / unlock / OAuth bridge) MUST bind step 1 before returning. New code MUST NOT depend on step 2.
 
 ### C-3 · Per-Actor persistence
 
@@ -217,17 +216,13 @@ The originating window's frontend MUST set `LOCAL_IDENTITY_FLAG = '1'` in `sessi
 
 Both originator and listener windows MUST run `runIdentityPipeline(payload)` once per identity change. Handlers MUST be idempotent: an unintended second run on the same window MUST NOT corrupt state. The default handlers (clear stores, clear localStorage prefixes, refresh session) satisfy this property.
 
-### C-7 · No process-global session authority
+### C-7 · `AppState.session` is deprecated
 
-`AppState.session` is removed. Debug HTTP gateways must receive an explicit
-PTID-scoped session binding and cannot restore process-global identity.
+The legacy `Mutex<SessionState>` is retained only to feed the debug `http_gateway`. New code MUST NOT read or write it. A future PR removes it once `http_gateway` learns about windows.
 
-### C-8 · PTID-only wire hard cut
+### C-8 · Wire backwards compatibility
 
-Current clients and Station use `ActorRef.ptid` as the sole cross-process actor
-identity. Numeric actor fields and aliases are removed atomically, their former
-Proto tags are reserved, and numeric-subject JWTs fail closed. No compatibility
-adapter, dual-write, or legacy identity reader remains.
+All proto changes are additive. Servers MUST continue to populate legacy fields (`actor`, `account_type`) until at least one full release after `actor_ref` / `kind` adoption is verified across all clients.
 
 ---
 
@@ -363,9 +358,10 @@ target contract is:
 - `Actor`, `ActorProfile`, and every identity-bearing response embed `ActorRef` (directly or via `ref`).
 - Client-facing `ActorRef` contains PTID, `acct`, and kind; numeric identity is
   absent and its former tag is reserved.
-- Existing numeric fields are migration residue to delete in the W1 hard cut.
-  Station may translate PTID to numeric primary keys only inside persistence
-  adapters; it must never emit those keys to a client or another process.
+- Existing numeric fields are migration residue. A Station compatibility adapter
+  may emit them only to explicitly supported old clients; current clients must
+  discard them at ingress and the adapter is deleted when all supported clients
+  consume PTID-only identity.
 - New fields are appended; tags are never reused.
 
 Generated bindings:
@@ -398,12 +394,11 @@ $APP_SUPPORT/peers-touch/desktop/
 
 ## 10. Migration policy
 
-- **Desktop session files**: numeric-identity files are deleted and users
-  reauthenticate. URL or account-name inference must not migrate them into a
-  PTID scope.
+- **Desktop session files**: auto-migrated, idempotent, irreversible. Operators rolling back across this revision must restore from backup.
 - **Station `db.Actor.Kind`**: GORM `AutoMigrate` adds the column with default `'p'`. No destructive backfill.
-- **Proto**: the approved PTID-only hard cut reserves removed field numbers and
-  does not bump the project protocol version.
+- **Proto**: the PTID-only wire cutover requires a separately approved
+  compatibility/version decision; this document does not authorize a version
+  bump.
 - **JWT subject**: target subject identity is PTID. Numeric-subject JWTs are
   migration input only and cannot activate a target Mobile session.
 
