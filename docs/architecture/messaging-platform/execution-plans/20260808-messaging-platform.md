@@ -1007,6 +1007,17 @@ Closure enforcement (deterministic):
 | MP-W13 | in progress | W10-E/W12 + Social Runtime Phase 3 | W13-A through W13-E and the unchanged Linux Native product Gate are source-bound proven by run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` at `e5b3fd749`. MP-W13-F remains open only for the exact-range selected Gates, Acceptance Gap Detector, Completion Audit, and independent review. |
 | MP-W11 | reopened pending W13 | W02-W10/W12/W13 | The previous closure verdict is invalid for full product readiness because its Native evidence did not prove the receiver-visible paths exposed by W13. Rerun only after W13-F passes and stale reports are rejected by source/build/runtime identity. |
 
+The 2026-08-27 persistent Linux Desktop handoff exposed two additional MP-W13-F
+gaps: the installed runtime did not preserve the runtime-cell keyring boundary,
+and the Tauri bundle omitted built-in locale resources. The operational
+handoff now binds an internal DBus/keyring to the persistent runtime; the
+tracked product repair bundles
+`packages/locales` under `resource_dir/i18n`, replaces the stacked
+conversation-list error plus empty state with a bounded recovery surface, and
+adds a Native visible assertion that rejects raw `auth`, `chat`, or `common`
+i18n keys. Existing Linux evidence predates these changes and remains stale for
+this repair until the exact-source Native Gate is rerun.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

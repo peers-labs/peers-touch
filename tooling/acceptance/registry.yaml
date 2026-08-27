@@ -27,6 +27,7 @@
           "model/domain/chat/conversation_api.proto",
           "apps/station/app/subserver/conversation/**",
           "apps/desktop/src-tauri/src/main.rs",
+          "apps/desktop/src-tauri/tauri.conf.json",
           "apps/desktop/src-tauri/src/messaging/**",
           "apps/desktop/src/services/im-service*",
           "apps/desktop/src/store/socialChat.ts",
