@@ -19,6 +19,10 @@ from pathlib import Path
 _SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 _ENVIRONMENT_NAME = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}$")
+_TCP_FIN_TIMEOUT_PATH = Path("/proc/sys/net/ipv4/tcp_fin_timeout")
+_DEFAULT_TCP_FIN_TIMEOUT_SECONDS = 60.0
+_PORT_RELEASE_MARGIN_SECONDS = 5.0
+_PORT_RELEASE_TIMEOUT_CEILING_SECONDS = 120.0
 _ADAPTER_OPERATIONS = frozenset(
     {
         "activate_process",
@@ -384,11 +388,27 @@ def _docker_remove(container_name: str) -> None:
         )
 
 
+def _port_release_timeout(
+    tcp_fin_timeout_path: Path = _TCP_FIN_TIMEOUT_PATH,
+) -> float:
+    try:
+        tcp_fin_timeout = float(
+            tcp_fin_timeout_path.read_text(encoding="utf-8").strip()
+        )
+    except (OSError, ValueError):
+        tcp_fin_timeout = _DEFAULT_TCP_FIN_TIMEOUT_SECONDS
+    return min(
+        tcp_fin_timeout + _PORT_RELEASE_MARGIN_SECONDS,
+        _PORT_RELEASE_TIMEOUT_CEILING_SECONDS,
+    )
+
+
 def _assert_ports_released(
     ports: tuple[int, ...],
-    timeout: float = 5,
+    timeout: float | None = None,
 ) -> None:
-    deadline = time.monotonic() + timeout
+    release_timeout = _port_release_timeout() if timeout is None else timeout
+    deadline = time.monotonic() + release_timeout
     while True:
         unavailable: list[int] = []
         listeners: list[socket.socket] = []
