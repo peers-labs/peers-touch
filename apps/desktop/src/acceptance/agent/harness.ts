@@ -1720,8 +1720,7 @@ export function installAcceptanceHarness(): void {
         const draftBeforeHash = await sha256Hex(draftText);
 
         const sharedIdempotencyKey = crypto.randomUUID();
-        const activeTurnInput =
-          'Write exactly 20 concise numbered rules for reliable queues.';
+        const activeTurnInput = 'Reply with ready.';
         const activeStartedAt = performance.now();
         const active = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,

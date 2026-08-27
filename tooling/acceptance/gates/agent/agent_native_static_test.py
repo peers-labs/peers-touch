@@ -262,6 +262,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("queuedTurns.map((queued) => queued.result)", source)
         self.assertIn("completedObservedTurnId(activeResult)", source)
         self.assertNotIn("1200-word", source)
+        self.assertNotIn("20 concise numbered rules", source)
 
     def test_group_one_controller_uses_manifest_bound_client_modes(self) -> None:
         source = FOUNDATION_RUNTIME_CLIENT.read_text(encoding="utf-8")

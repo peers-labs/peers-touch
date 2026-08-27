@@ -1460,9 +1460,15 @@ queue, cancellation, active-dependency guard, rename, archive, restore, and
 delete actions completed, but the deliberately long active provider call hit
 the 120-second request deadline. The harness then attempted runtime-attestation
 readback for the failed Turn and received `turn trace not found`. The Gate
-remains `PARTIAL / UNPROVEN`; cleanup passed and W1 stays blocked while AS-F02
-is changed to fill the queue concurrently, use a bounded successful provider
-response, and reject any non-completed Turn before evidence construction.
+remains `PARTIAL / UNPROVEN`; cleanup passed. Commit `b9401a7e3` made queue
+submission concurrent and rejected non-completed Turns before evidence
+construction. Its source-matched rerun
+`20260827T034717562603Z-456b774434d6ad952826a03261baf6c0` proved that the
+20-item response request still consumed the full 120-second provider deadline
+and now failed honestly as `turnSubmissionTimeout`. W1 stays blocked while
+AS-F02 switches the active request to the already-proven bounded `ready`
+response; queue admission still begins after the persisted `turn_started`
+event and remains concurrent.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
