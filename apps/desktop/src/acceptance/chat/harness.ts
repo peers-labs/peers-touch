@@ -236,9 +236,21 @@ async function hydrateSocialForActiveActor(): Promise<void> {
   const actorId = activeActorId();
   if (actorId) {
     const social = useSocialChatStore.getState();
+    // #region debug-point A,C,D:hydrate-entry
+    fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'native-hydration-timeout', runId: 'pre-fix', hypothesisId: 'A,C,D', location: 'chatHarness:hydrate:entry', msg: '[DEBUG] Active actor hydration started', data: { actorId }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     await social.loadCurrentUserProfile();
+    // #region debug-point A,B,C:profile-complete
+    fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'native-hydration-timeout', runId: 'pre-fix', hypothesisId: 'A,B,C', location: 'chatHarness:hydrate:profile-complete', msg: '[DEBUG] Profile hydration completed', data: { actorId, currentUserDid: useSocialChatStore.getState().currentUserDid }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     await useSocialChatStore.getState().loadSessions();
+    // #region debug-point A,B,D:sessions-complete
+    fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'native-hydration-timeout', runId: 'pre-fix', hypothesisId: 'A,B,D', location: 'chatHarness:hydrate:sessions-complete', msg: '[DEBUG] Conversation hydration completed', data: { actorId, conversationCount: useSocialChatStore.getState().conversations.length }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
     await useSocialChatStore.getState().initEncryption();
+    // #region debug-point C,D:hydrate-complete
+    fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'native-hydration-timeout', runId: 'pre-fix', hypothesisId: 'C,D', location: 'chatHarness:hydrate:complete', msg: '[DEBUG] Active actor hydration completed', data: { actorId }, ts: Date.now() }) }).catch(() => {});
+    // #endregion
   }
 }
 
@@ -256,6 +268,9 @@ export function installAcceptanceHarness(): void {
         ({ lifecycle }) => lifecycle.state === 'ready' && lifecycle.authenticated,
         'authenticated identity lifecycle',
       );
+      // #region debug-point A,C:deferred-start
+      fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'native-hydration-timeout', runId: 'pre-fix', hypothesisId: 'A,C', location: 'chatHarness:login:deferred-start', msg: '[DEBUG] Deferred runtime installation scheduled', data: { account }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       void installDeferredAppRuntimeProjections();
       return {
         authenticated: true,
