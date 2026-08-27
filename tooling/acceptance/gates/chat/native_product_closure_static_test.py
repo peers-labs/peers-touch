@@ -1264,6 +1264,19 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("def selection_or_browser_ready(", self.source)
         self.assertIn("baseline_window_count", self.source)
         self.assertIn('control.kind == "application-dialog"', self.source)
+        selection_start = self.source.index(
+            "        def selection_or_browser_ready("
+        )
+        selection_end = self.source.index(
+            "        try:\n"
+            "            intermediate = WebDriverWait(",
+            selection_start,
+        )
+        selection_source = self.source[selection_start:selection_end]
+        self.assertIn("control.main_window", selection_source)
+        self.assertIn("control.frontmost", selection_source)
+        self.assertIn("control.focused_window", selection_source)
+        self.assertNotIn('control.kind == "unknown"', selection_source)
         self.assertIn(
             "core_graphics.CGEventSourceCreate(-1)",
             self.macos_adapter,
