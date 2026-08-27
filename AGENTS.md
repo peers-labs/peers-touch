@@ -344,7 +344,7 @@ Current project skills:
 | `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
 | `pt-architecture-execution-methodology` | Decompose architectural designs into actionable execution plans, domain ownership, and verification systems (referenced from §4.3) |
 | `pt-branch-conflict-guardian` | Guide semantic conflict resolution across parallel branches: separate mechanical conflicts from ownership/behavior divergence, escalate unclear intent, and verify integrated behavior |
-| `pt-context-anchor` | Maintain the plan-owned Context Anchor and synchronize verified worktree, branch, stage, progress, evidence, blockers, and next action |
+| `pt-context-anchor` | Synchronize verified tracked-work state from `active_work` + plan evidence into a fenced chat block; never write an Anchor into execution plans |
 | `pt-execution-plan-guardian` | Keep execution, continuation, merge, and readiness reports tied to plan sources, scope boundaries, gates, and evidence |
 | `pt-official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
 | `pt-desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
@@ -399,8 +399,8 @@ Any non-trivial development task (cross-module, new feature, architecture change
 | Stage | Entry condition | Skill(s) to invoke | Gate (exit condition) | Artifact |
 |-------|----------------|--------------------|-----------------------|----------|
 | **DESIGN** | New architecture / boundary / ownership decision needed | `pt-architecture-design-methodology` | Architecture review prompt generated → user initiates review → review passes | `docs/architecture/<module>/` |
-| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (analysis) → `pt-plan-and-document` (落盘 + Context Anchor + review prompt) | Plan review prompt generated → user initiates review → review passes | `execution-plans/<plan>.md` |
-| **EXECUTE** | Plan accepted | `pt-context-anchor` → `pt-execution-plan-guardian` | `pt-completion-auditor` passes OR completion criteria in plan all checked | Code + tests + evidence + synchronized Context Anchor |
+| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-architecture-execution-methodology` (analysis) → `pt-plan-and-document` (落盘 + `active_work` registration + review prompt) | Plan review prompt generated → user initiates review → review passes | `execution-plans/<plan>.md` |
+| **EXECUTE** | Plan accepted | `pt-execution-plan-guardian` | `pt-completion-auditor` passes OR completion criteria in plan all checked | Code + tests + evidence |
 | **DELIVER** | Code complete, tests pass | `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
 **Dispatch rules:**
@@ -414,6 +414,7 @@ Any non-trivial development task (cross-module, new feature, architecture change
    - Core/runtime/planner/validator/runner/Evidence Store/framework optimization → `pt-acceptance-infra-engineering`.
    - Domain/Feature/Capability/Registry rule/concrete Gate/Environment/Provisioner/Fixture/product proof → `pt-acceptance-engineering`.
    - Mixed requests MUST be split. Infra reports business gaps as `BUSINESS_INJECTION_REQUIRED`; it does not implement them.
+7. **Anchor creation boundary**: PRODUCT/DESIGN work without a formal execution plan is not tracked work and has no Context Anchor. After `pt-plan-and-document` creates the plan, register `active_work`; only then may `pt-context-anchor` emit a chat projection.
 
 ### 13.6 Session Continuity Protocol
 
@@ -447,12 +448,19 @@ When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状
 
 **Lifecycle rules:**
 
-- **New work** → append row with `stage` set to entry stage.
+- **New pre-plan work** → run PRODUCT/DESIGN without an Anchor; do not create a placeholder row or fabricate a plan path.
+- **Plan created** → append a row with the repository-relative plan path and `stage: PLAN`.
 - **Stage transition** → update `stage` + `current_step` in corresponding row.
 - **Session end** → update `last_session` date.
 - **Branch merged** → if all phases complete, set `stage: complete`; if subsequent phases remain, update `branch` to target branch (e.g. `main`).
 - **User explicitly closes** → set `stage: complete` regardless of plan status.
 - **Stale detection** → if `last_session` is >14 days old and user hasn't mentioned it, ask on next session: "This work has been idle for N days — still active or should I close it?"
+
+Context Anchor rules:
+
+- `active_work` is the durable current-state index; the plan and linked tracking artifacts own scope, detailed progress, and evidence.
+- Execution plans MUST NOT contain a `## Context Anchor` section.
+- Tracked-work status, resume, handoff, blocker, readiness, and close responses end with the single fenced chat projection required by `pt-context-anchor`.
 
 ---
 
