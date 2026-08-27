@@ -77,7 +77,27 @@ ROW_ADAPTERS = {
     "foundation-browser-external-absent": "non_advertisement",
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-SAFE_SCHEMA_KEYS = {"contextTokens", "fencingToken"}
+SAFE_SCHEMA_KEYS = {
+    "cacheTokens",
+    "cache_tokens",
+    "contextTokens",
+    "context_tokens",
+    "fencingToken",
+    "hasTokenAccounting",
+    "inputTokens",
+    "input_tokens",
+    "maxInputTokens",
+    "maxOutputTokens",
+    "outputTokens",
+    "output_tokens",
+    "reasoningTokens",
+    "reasoning_tokens",
+    "tokenAccountingPresent",
+    "tokenUsage",
+    "token_usage",
+    "toolDefinitionTokens",
+    "tool_definition_tokens",
+}
 
 
 class FoundationCandidateError(RuntimeError):

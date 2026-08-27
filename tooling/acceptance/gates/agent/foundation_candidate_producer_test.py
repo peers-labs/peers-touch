@@ -24,6 +24,7 @@ from tooling.acceptance.gates.agent.foundation_candidate_producer import (
     FoundationRuntimeAttestation,
     FoundationTuple,
     FoundationTupleObservation,
+    _ensure_evidence_safe,
     load_foundation_tuples,
 )
 
@@ -772,6 +773,22 @@ class FoundationCandidateProducerTest(unittest.TestCase):
             FoundationCandidateProducer(
                 _adapters(RecordingAdapter(inject_secret))
             ).collect()
+
+    def test_token_accounting_fields_are_not_treated_as_credentials(self) -> None:
+        _ensure_evidence_safe(
+            {
+                "limits": {
+                    "contextTokens": 128000,
+                    "outputTokens": 8192,
+                },
+                "tokenUsage": {
+                    "input_tokens": 8,
+                    "output_tokens": 3,
+                },
+                "tokenAccountingPresent": True,
+            },
+            "runtimeAttestation",
+        )
 
     def test_wrong_gate_or_source_identity_is_rejected_before_collection(self) -> None:
         adapter = RecordingAdapter()
