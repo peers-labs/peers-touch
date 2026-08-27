@@ -178,31 +178,11 @@ export function dispatchSocialRuntimeHostEvent(event: SocialHostEvent): void {
 async function bootstrapSocialProjection(actorId: string, sequence: number): Promise<void> {
   log.info('socialRealtime', 'social projection bootstrap started', { actorId });
 
-  const chat = useSocialChatStore.getState();
-  const notifications = useNotificationStore.getState();
-
-  await Promise.allSettled([chat.loadCurrentUserProfile()]);
-  if (sequence !== bootstrapSequence) return;
-
-  await Promise.allSettled([
-    chat.initEncryption(),
-    chat.loadSessions(),
-    chat.loadFriendRequests(),
-    notifications.refreshUnreadCounts(),
-  ]);
+  await refreshSocialProjection('authenticated bootstrap', true);
 
   if (sequence !== bootstrapSequence) return;
 
   const refreshed = useSocialChatStore.getState();
-  await Promise.allSettled([
-    refreshed.loadGroupUnreadCounts(),
-    refreshed.loadConversationPreviews(),
-    notifications.loadNotifications(),
-  ]);
-
-  if (sequence !== bootstrapSequence) return;
-
-  useNavigationBadgeStore.getState().reconcileChatBadge();
   useMediaRuntimeStore.getState().prewarmMessages(refreshed.messages);
 
   log.info('socialRealtime', 'social projection bootstrap completed', { actorId });
