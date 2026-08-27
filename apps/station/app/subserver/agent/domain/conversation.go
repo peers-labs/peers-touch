@@ -13,6 +13,7 @@ const (
 	ConversationStatusActive     ConversationStatus = "active"
 	ConversationStatusCompressed ConversationStatus = "compressed"
 	ConversationStatusArchived   ConversationStatus = "archived"
+	ConversationStatusDeleted    ConversationStatus = "deleted"
 )
 
 type Conversation struct {

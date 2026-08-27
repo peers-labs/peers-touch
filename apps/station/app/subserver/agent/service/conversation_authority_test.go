@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"gorm.io/driver/sqlite"
@@ -23,6 +24,7 @@ func openConversationAuthorityDB(t *testing.T, name string) *gorm.DB {
 		&persistence.AgentMessage{},
 		&persistence.AgentTurn{},
 		&persistence.TurnEvent{},
+		&persistence.TurnQueueEntry{},
 	); err != nil {
 		t.Fatalf("migrate conversation authority database: %v", err)
 	}
@@ -101,6 +103,128 @@ func requireBizCode(t *testing.T, err error, code errcode.Code) {
 	var biz *errcode.BizError
 	if !errors.As(err, &biz) || biz.Code != code {
 		t.Fatalf("expected %s, got %T: %v", code, err, err)
+	}
+}
+
+func TestConversationArchiveRestoreAndDeleteDependencyGuard(t *testing.T) {
+	db := openConversationAuthorityDB(t, "conversation_lifecycle")
+	ctx := context.Background()
+	service := NewConversationService()
+	owner := "ptid:person:owner"
+
+	conversation, err := service.CreateConversation(
+		ctx,
+		"agent-1",
+		owner,
+		"Lifecycle",
+		"",
+		"model-1",
+		"provider-1",
+	)
+	if err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	if err := service.ArchiveConversation(
+		ctx,
+		owner,
+		conversation.ConversationID,
+		false,
+		conversation.Version,
+	); err != nil {
+		t.Fatalf("archive conversation: %v", err)
+	}
+	archived, err := service.GetConversation(ctx, owner, conversation.ConversationID)
+	if err != nil {
+		t.Fatalf("read archived conversation: %v", err)
+	}
+	if archived.Status != domain.ConversationStatusArchived {
+		t.Fatalf("status=%q, want archived", archived.Status)
+	}
+	restored, err := service.RestoreConversation(
+		ctx,
+		owner,
+		conversation.ConversationID,
+		archived.Version,
+	)
+	if err != nil {
+		t.Fatalf("restore conversation: %v", err)
+	}
+	if restored.Status != domain.ConversationStatusActive ||
+		restored.Version <= archived.Version {
+		t.Fatalf("unexpected restored conversation: %+v", restored)
+	}
+
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             "active-turn",
+		ConversationID: conversation.ConversationID,
+		AgentID:        "agent-1",
+		Status:         string(domain.TurnStatusRunning),
+		StartedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed active turn: %v", err)
+	}
+	err = service.ArchiveConversation(
+		ctx,
+		owner,
+		conversation.ConversationID,
+		true,
+		restored.Version,
+	)
+	requireBizCode(t, err, errcode.AgentActiveDependency)
+
+	if err := db.Model(&persistence.AgentTurn{}).
+		Where("id = ?", "active-turn").
+		Updates(map[string]any{
+			"status":   string(domain.TurnStatusCompleted),
+			"ended_at": now.Add(time.Second),
+		}).Error; err != nil {
+		t.Fatalf("settle active turn: %v", err)
+	}
+	if err := db.Create(&persistence.TurnQueueEntry{
+		ID:                   "pending-turn",
+		ConversationID:       conversation.ConversationID,
+		AgentID:              "agent-1",
+		Ptid:                 owner,
+		ClientIdempotencyKey: "pending",
+		AdmissionPayloadHash: "hash",
+		RequestPayload:       []byte{1},
+		QueueSequence:        1,
+		Status:               queueStatusPending,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}).Error; err != nil {
+		t.Fatalf("seed pending turn: %v", err)
+	}
+	err = service.ArchiveConversation(
+		ctx,
+		owner,
+		conversation.ConversationID,
+		true,
+		restored.Version,
+	)
+	requireBizCode(t, err, errcode.AgentActiveDependency)
+
+	if err := db.Model(&persistence.TurnQueueEntry{}).
+		Where("id = ?", "pending-turn").
+		Update("status", queueStatusCancelled).Error; err != nil {
+		t.Fatalf("cancel pending turn: %v", err)
+	}
+	if err := service.ArchiveConversation(
+		ctx,
+		owner,
+		conversation.ConversationID,
+		true,
+		restored.Version,
+	); err != nil {
+		t.Fatalf("delete settled conversation: %v", err)
+	}
+	var deleted persistence.Conversation
+	if err := db.First(&deleted, "id = ?", conversation.ConversationID).Error; err != nil {
+		t.Fatalf("read deleted conversation row: %v", err)
+	}
+	if deleted.Status != string(domain.ConversationStatusDeleted) {
+		t.Fatalf("status=%q, want deleted", deleted.Status)
 	}
 }
 

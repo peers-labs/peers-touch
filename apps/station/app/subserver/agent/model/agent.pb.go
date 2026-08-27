@@ -5356,6 +5356,102 @@ func (x *ArchiveConversationResponse) GetSuccess() bool {
 	return false
 }
 
+type RestoreConversationRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ConversationId  string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	ExpectedVersion uint64                 `protobuf:"varint,2,opt,name=expected_version,json=expectedVersion,proto3" json:"expected_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *RestoreConversationRequest) Reset() {
+	*x = RestoreConversationRequest{}
+	mi := &file_domain_agent_agent_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestoreConversationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestoreConversationRequest) ProtoMessage() {}
+
+func (x *RestoreConversationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_agent_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestoreConversationRequest.ProtoReflect.Descriptor instead.
+func (*RestoreConversationRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *RestoreConversationRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *RestoreConversationRequest) GetExpectedVersion() uint64 {
+	if x != nil {
+		return x.ExpectedVersion
+	}
+	return 0
+}
+
+type RestoreConversationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Conversation  *Conversation          `protobuf:"bytes,1,opt,name=conversation,proto3" json:"conversation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RestoreConversationResponse) Reset() {
+	*x = RestoreConversationResponse{}
+	mi := &file_domain_agent_agent_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestoreConversationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestoreConversationResponse) ProtoMessage() {}
+
+func (x *RestoreConversationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_agent_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestoreConversationResponse.ProtoReflect.Descriptor instead.
+func (*RestoreConversationResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *RestoreConversationResponse) GetConversation() *Conversation {
+	if x != nil {
+		return x.Conversation
+	}
+	return nil
+}
+
 type ListMessagesRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId    string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
@@ -5369,7 +5465,7 @@ type ListMessagesRequest struct {
 
 func (x *ListMessagesRequest) Reset() {
 	*x = ListMessagesRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[49]
+	mi := &file_domain_agent_agent_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5381,7 +5477,7 @@ func (x *ListMessagesRequest) String() string {
 func (*ListMessagesRequest) ProtoMessage() {}
 
 func (x *ListMessagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[49]
+	mi := &file_domain_agent_agent_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5394,7 +5490,7 @@ func (x *ListMessagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMessagesRequest.ProtoReflect.Descriptor instead.
 func (*ListMessagesRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{49}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ListMessagesRequest) GetConversationId() string {
@@ -5443,7 +5539,7 @@ type ListMessagesResponse struct {
 
 func (x *ListMessagesResponse) Reset() {
 	*x = ListMessagesResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[50]
+	mi := &file_domain_agent_agent_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5455,7 +5551,7 @@ func (x *ListMessagesResponse) String() string {
 func (*ListMessagesResponse) ProtoMessage() {}
 
 func (x *ListMessagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[50]
+	mi := &file_domain_agent_agent_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5468,7 +5564,7 @@ func (x *ListMessagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMessagesResponse.ProtoReflect.Descriptor instead.
 func (*ListMessagesResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{50}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ListMessagesResponse) GetMessages() []*AgentMessage {
@@ -5511,7 +5607,7 @@ type AgentDefinition struct {
 
 func (x *AgentDefinition) Reset() {
 	*x = AgentDefinition{}
-	mi := &file_domain_agent_agent_proto_msgTypes[51]
+	mi := &file_domain_agent_agent_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5523,7 +5619,7 @@ func (x *AgentDefinition) String() string {
 func (*AgentDefinition) ProtoMessage() {}
 
 func (x *AgentDefinition) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[51]
+	mi := &file_domain_agent_agent_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5536,7 +5632,7 @@ func (x *AgentDefinition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentDefinition.ProtoReflect.Descriptor instead.
 func (*AgentDefinition) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{51}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *AgentDefinition) GetAgentId() string {
@@ -5634,7 +5730,7 @@ type ConversationRuntimeBinding struct {
 
 func (x *ConversationRuntimeBinding) Reset() {
 	*x = ConversationRuntimeBinding{}
-	mi := &file_domain_agent_agent_proto_msgTypes[52]
+	mi := &file_domain_agent_agent_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5646,7 +5742,7 @@ func (x *ConversationRuntimeBinding) String() string {
 func (*ConversationRuntimeBinding) ProtoMessage() {}
 
 func (x *ConversationRuntimeBinding) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[52]
+	mi := &file_domain_agent_agent_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5659,7 +5755,7 @@ func (x *ConversationRuntimeBinding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationRuntimeBinding.ProtoReflect.Descriptor instead.
 func (*ConversationRuntimeBinding) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{52}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ConversationRuntimeBinding) GetRuntimeKind() RuntimeKind {
@@ -5743,7 +5839,7 @@ type RuntimeCapability struct {
 
 func (x *RuntimeCapability) Reset() {
 	*x = RuntimeCapability{}
-	mi := &file_domain_agent_agent_proto_msgTypes[53]
+	mi := &file_domain_agent_agent_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5755,7 +5851,7 @@ func (x *RuntimeCapability) String() string {
 func (*RuntimeCapability) ProtoMessage() {}
 
 func (x *RuntimeCapability) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[53]
+	mi := &file_domain_agent_agent_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5768,7 +5864,7 @@ func (x *RuntimeCapability) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeCapability.ProtoReflect.Descriptor instead.
 func (*RuntimeCapability) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{53}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *RuntimeCapability) GetCapabilityId() string {
@@ -5804,7 +5900,7 @@ type RuntimeInputCapabilities struct {
 
 func (x *RuntimeInputCapabilities) Reset() {
 	*x = RuntimeInputCapabilities{}
-	mi := &file_domain_agent_agent_proto_msgTypes[54]
+	mi := &file_domain_agent_agent_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5816,7 +5912,7 @@ func (x *RuntimeInputCapabilities) String() string {
 func (*RuntimeInputCapabilities) ProtoMessage() {}
 
 func (x *RuntimeInputCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[54]
+	mi := &file_domain_agent_agent_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5829,7 +5925,7 @@ func (x *RuntimeInputCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeInputCapabilities.ProtoReflect.Descriptor instead.
 func (*RuntimeInputCapabilities) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{54}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *RuntimeInputCapabilities) GetText() bool {
@@ -5871,7 +5967,7 @@ type RuntimeOutputCapabilities struct {
 
 func (x *RuntimeOutputCapabilities) Reset() {
 	*x = RuntimeOutputCapabilities{}
-	mi := &file_domain_agent_agent_proto_msgTypes[55]
+	mi := &file_domain_agent_agent_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5883,7 +5979,7 @@ func (x *RuntimeOutputCapabilities) String() string {
 func (*RuntimeOutputCapabilities) ProtoMessage() {}
 
 func (x *RuntimeOutputCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[55]
+	mi := &file_domain_agent_agent_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5896,7 +5992,7 @@ func (x *RuntimeOutputCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeOutputCapabilities.ProtoReflect.Descriptor instead.
 func (*RuntimeOutputCapabilities) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{55}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *RuntimeOutputCapabilities) GetText() bool {
@@ -5932,7 +6028,7 @@ type RuntimeExecutionCapabilities struct {
 
 func (x *RuntimeExecutionCapabilities) Reset() {
 	*x = RuntimeExecutionCapabilities{}
-	mi := &file_domain_agent_agent_proto_msgTypes[56]
+	mi := &file_domain_agent_agent_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5944,7 +6040,7 @@ func (x *RuntimeExecutionCapabilities) String() string {
 func (*RuntimeExecutionCapabilities) ProtoMessage() {}
 
 func (x *RuntimeExecutionCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[56]
+	mi := &file_domain_agent_agent_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5957,7 +6053,7 @@ func (x *RuntimeExecutionCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeExecutionCapabilities.ProtoReflect.Descriptor instead.
 func (*RuntimeExecutionCapabilities) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{56}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *RuntimeExecutionCapabilities) GetStreaming() bool {
@@ -5999,7 +6095,7 @@ type RuntimeAgenticCapabilities struct {
 
 func (x *RuntimeAgenticCapabilities) Reset() {
 	*x = RuntimeAgenticCapabilities{}
-	mi := &file_domain_agent_agent_proto_msgTypes[57]
+	mi := &file_domain_agent_agent_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6011,7 +6107,7 @@ func (x *RuntimeAgenticCapabilities) String() string {
 func (*RuntimeAgenticCapabilities) ProtoMessage() {}
 
 func (x *RuntimeAgenticCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[57]
+	mi := &file_domain_agent_agent_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6024,7 +6120,7 @@ func (x *RuntimeAgenticCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeAgenticCapabilities.ProtoReflect.Descriptor instead.
 func (*RuntimeAgenticCapabilities) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{57}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *RuntimeAgenticCapabilities) GetNativeTools() bool {
@@ -6060,7 +6156,7 @@ type RuntimeCapabilityLimits struct {
 
 func (x *RuntimeCapabilityLimits) Reset() {
 	*x = RuntimeCapabilityLimits{}
-	mi := &file_domain_agent_agent_proto_msgTypes[58]
+	mi := &file_domain_agent_agent_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6072,7 +6168,7 @@ func (x *RuntimeCapabilityLimits) String() string {
 func (*RuntimeCapabilityLimits) ProtoMessage() {}
 
 func (x *RuntimeCapabilityLimits) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[58]
+	mi := &file_domain_agent_agent_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6085,7 +6181,7 @@ func (x *RuntimeCapabilityLimits) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeCapabilityLimits.ProtoReflect.Descriptor instead.
 func (*RuntimeCapabilityLimits) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{58}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *RuntimeCapabilityLimits) GetContextTokens() uint64 {
@@ -6127,7 +6223,7 @@ type RuntimeCapabilityProvenance struct {
 
 func (x *RuntimeCapabilityProvenance) Reset() {
 	*x = RuntimeCapabilityProvenance{}
-	mi := &file_domain_agent_agent_proto_msgTypes[59]
+	mi := &file_domain_agent_agent_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6139,7 +6235,7 @@ func (x *RuntimeCapabilityProvenance) String() string {
 func (*RuntimeCapabilityProvenance) ProtoMessage() {}
 
 func (x *RuntimeCapabilityProvenance) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[59]
+	mi := &file_domain_agent_agent_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6152,7 +6248,7 @@ func (x *RuntimeCapabilityProvenance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeCapabilityProvenance.ProtoReflect.Descriptor instead.
 func (*RuntimeCapabilityProvenance) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{59}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *RuntimeCapabilityProvenance) GetDiscoverySource() string {
@@ -6192,7 +6288,7 @@ type RuntimeCapabilitySnapshot struct {
 
 func (x *RuntimeCapabilitySnapshot) Reset() {
 	*x = RuntimeCapabilitySnapshot{}
-	mi := &file_domain_agent_agent_proto_msgTypes[60]
+	mi := &file_domain_agent_agent_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6204,7 +6300,7 @@ func (x *RuntimeCapabilitySnapshot) String() string {
 func (*RuntimeCapabilitySnapshot) ProtoMessage() {}
 
 func (x *RuntimeCapabilitySnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[60]
+	mi := &file_domain_agent_agent_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6217,7 +6313,7 @@ func (x *RuntimeCapabilitySnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeCapabilitySnapshot.ProtoReflect.Descriptor instead.
 func (*RuntimeCapabilitySnapshot) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{60}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *RuntimeCapabilitySnapshot) GetSnapshotId() string {
@@ -6293,7 +6389,7 @@ type RuntimeSnapshot struct {
 
 func (x *RuntimeSnapshot) Reset() {
 	*x = RuntimeSnapshot{}
-	mi := &file_domain_agent_agent_proto_msgTypes[61]
+	mi := &file_domain_agent_agent_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6305,7 +6401,7 @@ func (x *RuntimeSnapshot) String() string {
 func (*RuntimeSnapshot) ProtoMessage() {}
 
 func (x *RuntimeSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[61]
+	mi := &file_domain_agent_agent_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6318,7 +6414,7 @@ func (x *RuntimeSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeSnapshot.ProtoReflect.Descriptor instead.
 func (*RuntimeSnapshot) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{61}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *RuntimeSnapshot) GetRuntimeKind() RuntimeKind {
@@ -6402,7 +6498,7 @@ type RuntimeBudget struct {
 
 func (x *RuntimeBudget) Reset() {
 	*x = RuntimeBudget{}
-	mi := &file_domain_agent_agent_proto_msgTypes[62]
+	mi := &file_domain_agent_agent_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6414,7 +6510,7 @@ func (x *RuntimeBudget) String() string {
 func (*RuntimeBudget) ProtoMessage() {}
 
 func (x *RuntimeBudget) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[62]
+	mi := &file_domain_agent_agent_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6427,7 +6523,7 @@ func (x *RuntimeBudget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeBudget.ProtoReflect.Descriptor instead.
 func (*RuntimeBudget) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{62}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *RuntimeBudget) GetMaxAttempts() uint32 {
@@ -6517,7 +6613,7 @@ type AgentAttachmentRef struct {
 
 func (x *AgentAttachmentRef) Reset() {
 	*x = AgentAttachmentRef{}
-	mi := &file_domain_agent_agent_proto_msgTypes[63]
+	mi := &file_domain_agent_agent_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6529,7 +6625,7 @@ func (x *AgentAttachmentRef) String() string {
 func (*AgentAttachmentRef) ProtoMessage() {}
 
 func (x *AgentAttachmentRef) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[63]
+	mi := &file_domain_agent_agent_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6542,7 +6638,7 @@ func (x *AgentAttachmentRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentAttachmentRef.ProtoReflect.Descriptor instead.
 func (*AgentAttachmentRef) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{63}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *AgentAttachmentRef) GetAttachmentId() string {
@@ -6626,7 +6722,7 @@ type CanonicalAgentMessage struct {
 
 func (x *CanonicalAgentMessage) Reset() {
 	*x = CanonicalAgentMessage{}
-	mi := &file_domain_agent_agent_proto_msgTypes[64]
+	mi := &file_domain_agent_agent_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6638,7 +6734,7 @@ func (x *CanonicalAgentMessage) String() string {
 func (*CanonicalAgentMessage) ProtoMessage() {}
 
 func (x *CanonicalAgentMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[64]
+	mi := &file_domain_agent_agent_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6651,7 +6747,7 @@ func (x *CanonicalAgentMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CanonicalAgentMessage.ProtoReflect.Descriptor instead.
 func (*CanonicalAgentMessage) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{64}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *CanonicalAgentMessage) GetMessageId() string {
@@ -6747,7 +6843,7 @@ type AgentTurn struct {
 
 func (x *AgentTurn) Reset() {
 	*x = AgentTurn{}
-	mi := &file_domain_agent_agent_proto_msgTypes[65]
+	mi := &file_domain_agent_agent_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6759,7 +6855,7 @@ func (x *AgentTurn) String() string {
 func (*AgentTurn) ProtoMessage() {}
 
 func (x *AgentTurn) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[65]
+	mi := &file_domain_agent_agent_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6772,7 +6868,7 @@ func (x *AgentTurn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentTurn.ProtoReflect.Descriptor instead.
 func (*AgentTurn) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{65}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *AgentTurn) GetTurnId() string {
@@ -6899,7 +6995,7 @@ type TurnQueueEntry struct {
 
 func (x *TurnQueueEntry) Reset() {
 	*x = TurnQueueEntry{}
-	mi := &file_domain_agent_agent_proto_msgTypes[66]
+	mi := &file_domain_agent_agent_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6911,7 +7007,7 @@ func (x *TurnQueueEntry) String() string {
 func (*TurnQueueEntry) ProtoMessage() {}
 
 func (x *TurnQueueEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[66]
+	mi := &file_domain_agent_agent_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6924,7 +7020,7 @@ func (x *TurnQueueEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnQueueEntry.ProtoReflect.Descriptor instead.
 func (*TurnQueueEntry) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{66}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *TurnQueueEntry) GetQueueEntryId() string {
@@ -7017,7 +7113,7 @@ type TurnAdmission struct {
 
 func (x *TurnAdmission) Reset() {
 	*x = TurnAdmission{}
-	mi := &file_domain_agent_agent_proto_msgTypes[67]
+	mi := &file_domain_agent_agent_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7029,7 +7125,7 @@ func (x *TurnAdmission) String() string {
 func (*TurnAdmission) ProtoMessage() {}
 
 func (x *TurnAdmission) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[67]
+	mi := &file_domain_agent_agent_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7042,7 +7138,7 @@ func (x *TurnAdmission) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnAdmission.ProtoReflect.Descriptor instead.
 func (*TurnAdmission) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{67}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *TurnAdmission) GetStatus() TurnAdmissionStatus {
@@ -7100,7 +7196,7 @@ type TurnAttempt struct {
 
 func (x *TurnAttempt) Reset() {
 	*x = TurnAttempt{}
-	mi := &file_domain_agent_agent_proto_msgTypes[68]
+	mi := &file_domain_agent_agent_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7112,7 +7208,7 @@ func (x *TurnAttempt) String() string {
 func (*TurnAttempt) ProtoMessage() {}
 
 func (x *TurnAttempt) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[68]
+	mi := &file_domain_agent_agent_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7125,7 +7221,7 @@ func (x *TurnAttempt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnAttempt.ProtoReflect.Descriptor instead.
 func (*TurnAttempt) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{68}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *TurnAttempt) GetAttemptId() string {
@@ -7228,7 +7324,7 @@ type ContextSegment struct {
 
 func (x *ContextSegment) Reset() {
 	*x = ContextSegment{}
-	mi := &file_domain_agent_agent_proto_msgTypes[69]
+	mi := &file_domain_agent_agent_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7240,7 +7336,7 @@ func (x *ContextSegment) String() string {
 func (*ContextSegment) ProtoMessage() {}
 
 func (x *ContextSegment) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[69]
+	mi := &file_domain_agent_agent_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7253,7 +7349,7 @@ func (x *ContextSegment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContextSegment.ProtoReflect.Descriptor instead.
 func (*ContextSegment) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{69}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *ContextSegment) GetSegmentId() string {
@@ -7329,7 +7425,7 @@ type ContextLedger struct {
 
 func (x *ContextLedger) Reset() {
 	*x = ContextLedger{}
-	mi := &file_domain_agent_agent_proto_msgTypes[70]
+	mi := &file_domain_agent_agent_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7341,7 +7437,7 @@ func (x *ContextLedger) String() string {
 func (*ContextLedger) ProtoMessage() {}
 
 func (x *ContextLedger) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[70]
+	mi := &file_domain_agent_agent_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7354,7 +7450,7 @@ func (x *ContextLedger) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContextLedger.ProtoReflect.Descriptor instead.
 func (*ContextLedger) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{70}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *ContextLedger) GetContextLedgerId() string {
@@ -7431,7 +7527,7 @@ type CapabilityConstraints struct {
 
 func (x *CapabilityConstraints) Reset() {
 	*x = CapabilityConstraints{}
-	mi := &file_domain_agent_agent_proto_msgTypes[71]
+	mi := &file_domain_agent_agent_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7443,7 +7539,7 @@ func (x *CapabilityConstraints) String() string {
 func (*CapabilityConstraints) ProtoMessage() {}
 
 func (x *CapabilityConstraints) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[71]
+	mi := &file_domain_agent_agent_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7456,7 +7552,7 @@ func (x *CapabilityConstraints) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapabilityConstraints.ProtoReflect.Descriptor instead.
 func (*CapabilityConstraints) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{71}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *CapabilityConstraints) GetMaxRequestBytes() uint64 {
@@ -7492,7 +7588,7 @@ type ClientCapability struct {
 
 func (x *ClientCapability) Reset() {
 	*x = ClientCapability{}
-	mi := &file_domain_agent_agent_proto_msgTypes[72]
+	mi := &file_domain_agent_agent_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7504,7 +7600,7 @@ func (x *ClientCapability) String() string {
 func (*ClientCapability) ProtoMessage() {}
 
 func (x *ClientCapability) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[72]
+	mi := &file_domain_agent_agent_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7517,7 +7613,7 @@ func (x *ClientCapability) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientCapability.ProtoReflect.Descriptor instead.
 func (*ClientCapability) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{72}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *ClientCapability) GetCapabilityId() string {
@@ -7567,7 +7663,7 @@ type ClientCapabilityLease struct {
 
 func (x *ClientCapabilityLease) Reset() {
 	*x = ClientCapabilityLease{}
-	mi := &file_domain_agent_agent_proto_msgTypes[73]
+	mi := &file_domain_agent_agent_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7579,7 +7675,7 @@ func (x *ClientCapabilityLease) String() string {
 func (*ClientCapabilityLease) ProtoMessage() {}
 
 func (x *ClientCapabilityLease) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[73]
+	mi := &file_domain_agent_agent_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7592,7 +7688,7 @@ func (x *ClientCapabilityLease) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientCapabilityLease.ProtoReflect.Descriptor instead.
 func (*ClientCapabilityLease) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{73}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *ClientCapabilityLease) GetCapabilitySessionId() string {
@@ -7688,7 +7784,7 @@ type ClientResourceRef struct {
 
 func (x *ClientResourceRef) Reset() {
 	*x = ClientResourceRef{}
-	mi := &file_domain_agent_agent_proto_msgTypes[74]
+	mi := &file_domain_agent_agent_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7700,7 +7796,7 @@ func (x *ClientResourceRef) String() string {
 func (*ClientResourceRef) ProtoMessage() {}
 
 func (x *ClientResourceRef) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[74]
+	mi := &file_domain_agent_agent_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7713,7 +7809,7 @@ func (x *ClientResourceRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientResourceRef.ProtoReflect.Descriptor instead.
 func (*ClientResourceRef) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{74}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *ClientResourceRef) GetResourceRef() string {
@@ -7785,7 +7881,7 @@ type ReceiptRecoveryCredential struct {
 
 func (x *ReceiptRecoveryCredential) Reset() {
 	*x = ReceiptRecoveryCredential{}
-	mi := &file_domain_agent_agent_proto_msgTypes[75]
+	mi := &file_domain_agent_agent_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7797,7 +7893,7 @@ func (x *ReceiptRecoveryCredential) String() string {
 func (*ReceiptRecoveryCredential) ProtoMessage() {}
 
 func (x *ReceiptRecoveryCredential) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[75]
+	mi := &file_domain_agent_agent_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7810,7 +7906,7 @@ func (x *ReceiptRecoveryCredential) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiptRecoveryCredential.ProtoReflect.Descriptor instead.
 func (*ReceiptRecoveryCredential) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{75}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *ReceiptRecoveryCredential) GetCredentialId() string {
@@ -7870,7 +7966,7 @@ type ReceiptRecoveryScopePayload struct {
 
 func (x *ReceiptRecoveryScopePayload) Reset() {
 	*x = ReceiptRecoveryScopePayload{}
-	mi := &file_domain_agent_agent_proto_msgTypes[76]
+	mi := &file_domain_agent_agent_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7882,7 +7978,7 @@ func (x *ReceiptRecoveryScopePayload) String() string {
 func (*ReceiptRecoveryScopePayload) ProtoMessage() {}
 
 func (x *ReceiptRecoveryScopePayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[76]
+	mi := &file_domain_agent_agent_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7895,7 +7991,7 @@ func (x *ReceiptRecoveryScopePayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiptRecoveryScopePayload.ProtoReflect.Descriptor instead.
 func (*ReceiptRecoveryScopePayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{76}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *ReceiptRecoveryScopePayload) GetActorPtid() string {
@@ -8030,7 +8126,7 @@ type ClientCapabilityRequest struct {
 
 func (x *ClientCapabilityRequest) Reset() {
 	*x = ClientCapabilityRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[77]
+	mi := &file_domain_agent_agent_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8042,7 +8138,7 @@ func (x *ClientCapabilityRequest) String() string {
 func (*ClientCapabilityRequest) ProtoMessage() {}
 
 func (x *ClientCapabilityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[77]
+	mi := &file_domain_agent_agent_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8055,7 +8151,7 @@ func (x *ClientCapabilityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientCapabilityRequest.ProtoReflect.Descriptor instead.
 func (*ClientCapabilityRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{77}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *ClientCapabilityRequest) GetRequestId() string {
@@ -8252,7 +8348,7 @@ type ReceiptRecoveryProof struct {
 
 func (x *ReceiptRecoveryProof) Reset() {
 	*x = ReceiptRecoveryProof{}
-	mi := &file_domain_agent_agent_proto_msgTypes[78]
+	mi := &file_domain_agent_agent_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8264,7 +8360,7 @@ func (x *ReceiptRecoveryProof) String() string {
 func (*ReceiptRecoveryProof) ProtoMessage() {}
 
 func (x *ReceiptRecoveryProof) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[78]
+	mi := &file_domain_agent_agent_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8277,7 +8373,7 @@ func (x *ReceiptRecoveryProof) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiptRecoveryProof.ProtoReflect.Descriptor instead.
 func (*ReceiptRecoveryProof) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{78}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *ReceiptRecoveryProof) GetCredentialId() string {
@@ -8322,7 +8418,7 @@ type ReceiptRecoverySigningPayload struct {
 
 func (x *ReceiptRecoverySigningPayload) Reset() {
 	*x = ReceiptRecoverySigningPayload{}
-	mi := &file_domain_agent_agent_proto_msgTypes[79]
+	mi := &file_domain_agent_agent_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8334,7 +8430,7 @@ func (x *ReceiptRecoverySigningPayload) String() string {
 func (*ReceiptRecoverySigningPayload) ProtoMessage() {}
 
 func (x *ReceiptRecoverySigningPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[79]
+	mi := &file_domain_agent_agent_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8347,7 +8443,7 @@ func (x *ReceiptRecoverySigningPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiptRecoverySigningPayload.ProtoReflect.Descriptor instead.
 func (*ReceiptRecoverySigningPayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{79}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *ReceiptRecoverySigningPayload) GetDomain() string {
@@ -8421,7 +8517,7 @@ type ClientCapabilityReceipt struct {
 
 func (x *ClientCapabilityReceipt) Reset() {
 	*x = ClientCapabilityReceipt{}
-	mi := &file_domain_agent_agent_proto_msgTypes[80]
+	mi := &file_domain_agent_agent_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8433,7 +8529,7 @@ func (x *ClientCapabilityReceipt) String() string {
 func (*ClientCapabilityReceipt) ProtoMessage() {}
 
 func (x *ClientCapabilityReceipt) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[80]
+	mi := &file_domain_agent_agent_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8446,7 +8542,7 @@ func (x *ClientCapabilityReceipt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientCapabilityReceipt.ProtoReflect.Descriptor instead.
 func (*ClientCapabilityReceipt) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{80}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *ClientCapabilityReceipt) GetRequestId() string {
@@ -8609,7 +8705,7 @@ type ClientCapabilityCommandProof struct {
 
 func (x *ClientCapabilityCommandProof) Reset() {
 	*x = ClientCapabilityCommandProof{}
-	mi := &file_domain_agent_agent_proto_msgTypes[81]
+	mi := &file_domain_agent_agent_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8621,7 +8717,7 @@ func (x *ClientCapabilityCommandProof) String() string {
 func (*ClientCapabilityCommandProof) ProtoMessage() {}
 
 func (x *ClientCapabilityCommandProof) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[81]
+	mi := &file_domain_agent_agent_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8634,7 +8730,7 @@ func (x *ClientCapabilityCommandProof) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientCapabilityCommandProof.ProtoReflect.Descriptor instead.
 func (*ClientCapabilityCommandProof) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{81}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *ClientCapabilityCommandProof) GetCommandId() string {
@@ -8687,7 +8783,7 @@ type ClientCapabilityCommandSigningPayload struct {
 
 func (x *ClientCapabilityCommandSigningPayload) Reset() {
 	*x = ClientCapabilityCommandSigningPayload{}
-	mi := &file_domain_agent_agent_proto_msgTypes[82]
+	mi := &file_domain_agent_agent_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8699,7 +8795,7 @@ func (x *ClientCapabilityCommandSigningPayload) String() string {
 func (*ClientCapabilityCommandSigningPayload) ProtoMessage() {}
 
 func (x *ClientCapabilityCommandSigningPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[82]
+	mi := &file_domain_agent_agent_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8712,7 +8808,7 @@ func (x *ClientCapabilityCommandSigningPayload) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use ClientCapabilityCommandSigningPayload.ProtoReflect.Descriptor instead.
 func (*ClientCapabilityCommandSigningPayload) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{82}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *ClientCapabilityCommandSigningPayload) GetDomain() ClientCapabilityCommandDomain {
@@ -8778,7 +8874,7 @@ type ClientCapabilityAdvertisement struct {
 
 func (x *ClientCapabilityAdvertisement) Reset() {
 	*x = ClientCapabilityAdvertisement{}
-	mi := &file_domain_agent_agent_proto_msgTypes[83]
+	mi := &file_domain_agent_agent_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8790,7 +8886,7 @@ func (x *ClientCapabilityAdvertisement) String() string {
 func (*ClientCapabilityAdvertisement) ProtoMessage() {}
 
 func (x *ClientCapabilityAdvertisement) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[83]
+	mi := &file_domain_agent_agent_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8803,7 +8899,7 @@ func (x *ClientCapabilityAdvertisement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientCapabilityAdvertisement.ProtoReflect.Descriptor instead.
 func (*ClientCapabilityAdvertisement) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{83}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *ClientCapabilityAdvertisement) GetAdvertisementId() string {
@@ -8858,7 +8954,7 @@ type RegisterClientCapabilityLeaseRequest struct {
 
 func (x *RegisterClientCapabilityLeaseRequest) Reset() {
 	*x = RegisterClientCapabilityLeaseRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[84]
+	mi := &file_domain_agent_agent_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8870,7 +8966,7 @@ func (x *RegisterClientCapabilityLeaseRequest) String() string {
 func (*RegisterClientCapabilityLeaseRequest) ProtoMessage() {}
 
 func (x *RegisterClientCapabilityLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[84]
+	mi := &file_domain_agent_agent_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8883,7 +8979,7 @@ func (x *RegisterClientCapabilityLeaseRequest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use RegisterClientCapabilityLeaseRequest.ProtoReflect.Descriptor instead.
 func (*RegisterClientCapabilityLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{84}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *RegisterClientCapabilityLeaseRequest) GetAdvertisement() *ClientCapabilityAdvertisement {
@@ -8910,7 +9006,7 @@ type RegisterClientCapabilityLeaseResponse struct {
 
 func (x *RegisterClientCapabilityLeaseResponse) Reset() {
 	*x = RegisterClientCapabilityLeaseResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[85]
+	mi := &file_domain_agent_agent_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8922,7 +9018,7 @@ func (x *RegisterClientCapabilityLeaseResponse) String() string {
 func (*RegisterClientCapabilityLeaseResponse) ProtoMessage() {}
 
 func (x *RegisterClientCapabilityLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[85]
+	mi := &file_domain_agent_agent_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8935,7 +9031,7 @@ func (x *RegisterClientCapabilityLeaseResponse) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use RegisterClientCapabilityLeaseResponse.ProtoReflect.Descriptor instead.
 func (*RegisterClientCapabilityLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{85}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *RegisterClientCapabilityLeaseResponse) GetLease() *ClientCapabilityLease {
@@ -8966,7 +9062,7 @@ type RenewClientCapabilityLeaseRequest struct {
 
 func (x *RenewClientCapabilityLeaseRequest) Reset() {
 	*x = RenewClientCapabilityLeaseRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[86]
+	mi := &file_domain_agent_agent_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8978,7 +9074,7 @@ func (x *RenewClientCapabilityLeaseRequest) String() string {
 func (*RenewClientCapabilityLeaseRequest) ProtoMessage() {}
 
 func (x *RenewClientCapabilityLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[86]
+	mi := &file_domain_agent_agent_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8991,7 +9087,7 @@ func (x *RenewClientCapabilityLeaseRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use RenewClientCapabilityLeaseRequest.ProtoReflect.Descriptor instead.
 func (*RenewClientCapabilityLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{86}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *RenewClientCapabilityLeaseRequest) GetCapabilitySessionId() string {
@@ -9046,7 +9142,7 @@ type RenewClientCapabilityLeaseResponse struct {
 
 func (x *RenewClientCapabilityLeaseResponse) Reset() {
 	*x = RenewClientCapabilityLeaseResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[87]
+	mi := &file_domain_agent_agent_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9058,7 +9154,7 @@ func (x *RenewClientCapabilityLeaseResponse) String() string {
 func (*RenewClientCapabilityLeaseResponse) ProtoMessage() {}
 
 func (x *RenewClientCapabilityLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[87]
+	mi := &file_domain_agent_agent_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9071,7 +9167,7 @@ func (x *RenewClientCapabilityLeaseResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use RenewClientCapabilityLeaseResponse.ProtoReflect.Descriptor instead.
 func (*RenewClientCapabilityLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{87}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *RenewClientCapabilityLeaseResponse) GetLease() *ClientCapabilityLease {
@@ -9101,7 +9197,7 @@ type RevokeClientCapabilityLeaseRequest struct {
 
 func (x *RevokeClientCapabilityLeaseRequest) Reset() {
 	*x = RevokeClientCapabilityLeaseRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[88]
+	mi := &file_domain_agent_agent_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9113,7 +9209,7 @@ func (x *RevokeClientCapabilityLeaseRequest) String() string {
 func (*RevokeClientCapabilityLeaseRequest) ProtoMessage() {}
 
 func (x *RevokeClientCapabilityLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[88]
+	mi := &file_domain_agent_agent_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9126,7 +9222,7 @@ func (x *RevokeClientCapabilityLeaseRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use RevokeClientCapabilityLeaseRequest.ProtoReflect.Descriptor instead.
 func (*RevokeClientCapabilityLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{88}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *RevokeClientCapabilityLeaseRequest) GetCapabilitySessionId() string {
@@ -9178,7 +9274,7 @@ type RevokeClientCapabilityLeaseResponse struct {
 
 func (x *RevokeClientCapabilityLeaseResponse) Reset() {
 	*x = RevokeClientCapabilityLeaseResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[89]
+	mi := &file_domain_agent_agent_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9190,7 +9286,7 @@ func (x *RevokeClientCapabilityLeaseResponse) String() string {
 func (*RevokeClientCapabilityLeaseResponse) ProtoMessage() {}
 
 func (x *RevokeClientCapabilityLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[89]
+	mi := &file_domain_agent_agent_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9203,7 +9299,7 @@ func (x *RevokeClientCapabilityLeaseResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use RevokeClientCapabilityLeaseResponse.ProtoReflect.Descriptor instead.
 func (*RevokeClientCapabilityLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{89}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *RevokeClientCapabilityLeaseResponse) GetCapabilitySessionId() string {
@@ -9261,7 +9357,7 @@ type PullClientCapabilityRequestsRequest struct {
 
 func (x *PullClientCapabilityRequestsRequest) Reset() {
 	*x = PullClientCapabilityRequestsRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[90]
+	mi := &file_domain_agent_agent_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9273,7 +9369,7 @@ func (x *PullClientCapabilityRequestsRequest) String() string {
 func (*PullClientCapabilityRequestsRequest) ProtoMessage() {}
 
 func (x *PullClientCapabilityRequestsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[90]
+	mi := &file_domain_agent_agent_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9286,7 +9382,7 @@ func (x *PullClientCapabilityRequestsRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use PullClientCapabilityRequestsRequest.ProtoReflect.Descriptor instead.
 func (*PullClientCapabilityRequestsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{90}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *PullClientCapabilityRequestsRequest) GetCapabilitySessionId() string {
@@ -9335,7 +9431,7 @@ type PullClientCapabilityRequestsResponse struct {
 
 func (x *PullClientCapabilityRequestsResponse) Reset() {
 	*x = PullClientCapabilityRequestsResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[91]
+	mi := &file_domain_agent_agent_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9347,7 +9443,7 @@ func (x *PullClientCapabilityRequestsResponse) String() string {
 func (*PullClientCapabilityRequestsResponse) ProtoMessage() {}
 
 func (x *PullClientCapabilityRequestsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[91]
+	mi := &file_domain_agent_agent_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9360,7 +9456,7 @@ func (x *PullClientCapabilityRequestsResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use PullClientCapabilityRequestsResponse.ProtoReflect.Descriptor instead.
 func (*PullClientCapabilityRequestsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{91}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *PullClientCapabilityRequestsResponse) GetRequests() []*ClientCapabilityRequest {
@@ -9394,7 +9490,7 @@ type SubmitClientCapabilityReceiptRequest struct {
 
 func (x *SubmitClientCapabilityReceiptRequest) Reset() {
 	*x = SubmitClientCapabilityReceiptRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[92]
+	mi := &file_domain_agent_agent_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9406,7 +9502,7 @@ func (x *SubmitClientCapabilityReceiptRequest) String() string {
 func (*SubmitClientCapabilityReceiptRequest) ProtoMessage() {}
 
 func (x *SubmitClientCapabilityReceiptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[92]
+	mi := &file_domain_agent_agent_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9419,7 +9515,7 @@ func (x *SubmitClientCapabilityReceiptRequest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use SubmitClientCapabilityReceiptRequest.ProtoReflect.Descriptor instead.
 func (*SubmitClientCapabilityReceiptRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{92}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *SubmitClientCapabilityReceiptRequest) GetReceipt() *ClientCapabilityReceipt {
@@ -9450,7 +9546,7 @@ type SubmitClientCapabilityReceiptResponse struct {
 
 func (x *SubmitClientCapabilityReceiptResponse) Reset() {
 	*x = SubmitClientCapabilityReceiptResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[93]
+	mi := &file_domain_agent_agent_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9462,7 +9558,7 @@ func (x *SubmitClientCapabilityReceiptResponse) String() string {
 func (*SubmitClientCapabilityReceiptResponse) ProtoMessage() {}
 
 func (x *SubmitClientCapabilityReceiptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[93]
+	mi := &file_domain_agent_agent_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9475,7 +9571,7 @@ func (x *SubmitClientCapabilityReceiptResponse) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use SubmitClientCapabilityReceiptResponse.ProtoReflect.Descriptor instead.
 func (*SubmitClientCapabilityReceiptResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{93}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *SubmitClientCapabilityReceiptResponse) GetAccepted() bool {
@@ -9529,7 +9625,7 @@ type SubmitClientCapabilityRecoveryReceiptRequest struct {
 
 func (x *SubmitClientCapabilityRecoveryReceiptRequest) Reset() {
 	*x = SubmitClientCapabilityRecoveryReceiptRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[94]
+	mi := &file_domain_agent_agent_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9541,7 +9637,7 @@ func (x *SubmitClientCapabilityRecoveryReceiptRequest) String() string {
 func (*SubmitClientCapabilityRecoveryReceiptRequest) ProtoMessage() {}
 
 func (x *SubmitClientCapabilityRecoveryReceiptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[94]
+	mi := &file_domain_agent_agent_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9554,7 +9650,7 @@ func (x *SubmitClientCapabilityRecoveryReceiptRequest) ProtoReflect() protorefle
 
 // Deprecated: Use SubmitClientCapabilityRecoveryReceiptRequest.ProtoReflect.Descriptor instead.
 func (*SubmitClientCapabilityRecoveryReceiptRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{94}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *SubmitClientCapabilityRecoveryReceiptRequest) GetReceipt() *ClientCapabilityReceipt {
@@ -9573,7 +9669,7 @@ type SubmitClientCapabilityRecoveryReceiptResponse struct {
 
 func (x *SubmitClientCapabilityRecoveryReceiptResponse) Reset() {
 	*x = SubmitClientCapabilityRecoveryReceiptResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[95]
+	mi := &file_domain_agent_agent_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9585,7 +9681,7 @@ func (x *SubmitClientCapabilityRecoveryReceiptResponse) String() string {
 func (*SubmitClientCapabilityRecoveryReceiptResponse) ProtoMessage() {}
 
 func (x *SubmitClientCapabilityRecoveryReceiptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[95]
+	mi := &file_domain_agent_agent_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9598,7 +9694,7 @@ func (x *SubmitClientCapabilityRecoveryReceiptResponse) ProtoReflect() protorefl
 
 // Deprecated: Use SubmitClientCapabilityRecoveryReceiptResponse.ProtoReflect.Descriptor instead.
 func (*SubmitClientCapabilityRecoveryReceiptResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{95}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *SubmitClientCapabilityRecoveryReceiptResponse) GetResult() *SubmitClientCapabilityReceiptResponse {
@@ -9660,7 +9756,7 @@ type ToolCall struct {
 
 func (x *ToolCall) Reset() {
 	*x = ToolCall{}
-	mi := &file_domain_agent_agent_proto_msgTypes[96]
+	mi := &file_domain_agent_agent_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9672,7 +9768,7 @@ func (x *ToolCall) String() string {
 func (*ToolCall) ProtoMessage() {}
 
 func (x *ToolCall) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[96]
+	mi := &file_domain_agent_agent_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9685,7 +9781,7 @@ func (x *ToolCall) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolCall.ProtoReflect.Descriptor instead.
 func (*ToolCall) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{96}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *ToolCall) GetToolCallId() string {
@@ -10020,7 +10116,7 @@ type TurnUsage struct {
 
 func (x *TurnUsage) Reset() {
 	*x = TurnUsage{}
-	mi := &file_domain_agent_agent_proto_msgTypes[97]
+	mi := &file_domain_agent_agent_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10032,7 +10128,7 @@ func (x *TurnUsage) String() string {
 func (*TurnUsage) ProtoMessage() {}
 
 func (x *TurnUsage) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[97]
+	mi := &file_domain_agent_agent_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10045,7 +10141,7 @@ func (x *TurnUsage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnUsage.ProtoReflect.Descriptor instead.
 func (*TurnUsage) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{97}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *TurnUsage) GetTurnId() string {
@@ -10179,7 +10275,7 @@ type TurnFeedback struct {
 
 func (x *TurnFeedback) Reset() {
 	*x = TurnFeedback{}
-	mi := &file_domain_agent_agent_proto_msgTypes[98]
+	mi := &file_domain_agent_agent_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10191,7 +10287,7 @@ func (x *TurnFeedback) String() string {
 func (*TurnFeedback) ProtoMessage() {}
 
 func (x *TurnFeedback) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[98]
+	mi := &file_domain_agent_agent_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10204,7 +10300,7 @@ func (x *TurnFeedback) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnFeedback.ProtoReflect.Descriptor instead.
 func (*TurnFeedback) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{98}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *TurnFeedback) GetFeedbackId() string {
@@ -10299,7 +10395,7 @@ type TurnDiagnosticMessageFact struct {
 
 func (x *TurnDiagnosticMessageFact) Reset() {
 	*x = TurnDiagnosticMessageFact{}
-	mi := &file_domain_agent_agent_proto_msgTypes[99]
+	mi := &file_domain_agent_agent_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10311,7 +10407,7 @@ func (x *TurnDiagnosticMessageFact) String() string {
 func (*TurnDiagnosticMessageFact) ProtoMessage() {}
 
 func (x *TurnDiagnosticMessageFact) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[99]
+	mi := &file_domain_agent_agent_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10324,7 +10420,7 @@ func (x *TurnDiagnosticMessageFact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnDiagnosticMessageFact.ProtoReflect.Descriptor instead.
 func (*TurnDiagnosticMessageFact) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{99}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *TurnDiagnosticMessageFact) GetMessageId() string {
@@ -10396,7 +10492,7 @@ type TurnDiagnosticToolFact struct {
 
 func (x *TurnDiagnosticToolFact) Reset() {
 	*x = TurnDiagnosticToolFact{}
-	mi := &file_domain_agent_agent_proto_msgTypes[100]
+	mi := &file_domain_agent_agent_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10408,7 +10504,7 @@ func (x *TurnDiagnosticToolFact) String() string {
 func (*TurnDiagnosticToolFact) ProtoMessage() {}
 
 func (x *TurnDiagnosticToolFact) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[100]
+	mi := &file_domain_agent_agent_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10421,7 +10517,7 @@ func (x *TurnDiagnosticToolFact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnDiagnosticToolFact.ProtoReflect.Descriptor instead.
 func (*TurnDiagnosticToolFact) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{100}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *TurnDiagnosticToolFact) GetToolCallId() string {
@@ -10530,7 +10626,7 @@ type TurnDiagnosticReplay struct {
 
 func (x *TurnDiagnosticReplay) Reset() {
 	*x = TurnDiagnosticReplay{}
-	mi := &file_domain_agent_agent_proto_msgTypes[101]
+	mi := &file_domain_agent_agent_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10542,7 +10638,7 @@ func (x *TurnDiagnosticReplay) String() string {
 func (*TurnDiagnosticReplay) ProtoMessage() {}
 
 func (x *TurnDiagnosticReplay) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[101]
+	mi := &file_domain_agent_agent_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10555,7 +10651,7 @@ func (x *TurnDiagnosticReplay) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnDiagnosticReplay.ProtoReflect.Descriptor instead.
 func (*TurnDiagnosticReplay) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{101}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *TurnDiagnosticReplay) GetTurnId() string {
@@ -10665,7 +10761,7 @@ type ListTurnFeedbackRequest struct {
 
 func (x *ListTurnFeedbackRequest) Reset() {
 	*x = ListTurnFeedbackRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[102]
+	mi := &file_domain_agent_agent_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10677,7 +10773,7 @@ func (x *ListTurnFeedbackRequest) String() string {
 func (*ListTurnFeedbackRequest) ProtoMessage() {}
 
 func (x *ListTurnFeedbackRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[102]
+	mi := &file_domain_agent_agent_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10690,7 +10786,7 @@ func (x *ListTurnFeedbackRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTurnFeedbackRequest.ProtoReflect.Descriptor instead.
 func (*ListTurnFeedbackRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{102}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *ListTurnFeedbackRequest) GetTurnId() string {
@@ -10709,7 +10805,7 @@ type ListTurnFeedbackResponse struct {
 
 func (x *ListTurnFeedbackResponse) Reset() {
 	*x = ListTurnFeedbackResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[103]
+	mi := &file_domain_agent_agent_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10721,7 +10817,7 @@ func (x *ListTurnFeedbackResponse) String() string {
 func (*ListTurnFeedbackResponse) ProtoMessage() {}
 
 func (x *ListTurnFeedbackResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[103]
+	mi := &file_domain_agent_agent_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10734,7 +10830,7 @@ func (x *ListTurnFeedbackResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTurnFeedbackResponse.ProtoReflect.Descriptor instead.
 func (*ListTurnFeedbackResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{103}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *ListTurnFeedbackResponse) GetFeedback() []*TurnFeedback {
@@ -10753,7 +10849,7 @@ type ExportTurnDiagnosticsRequest struct {
 
 func (x *ExportTurnDiagnosticsRequest) Reset() {
 	*x = ExportTurnDiagnosticsRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[104]
+	mi := &file_domain_agent_agent_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10765,7 +10861,7 @@ func (x *ExportTurnDiagnosticsRequest) String() string {
 func (*ExportTurnDiagnosticsRequest) ProtoMessage() {}
 
 func (x *ExportTurnDiagnosticsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[104]
+	mi := &file_domain_agent_agent_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10778,7 +10874,7 @@ func (x *ExportTurnDiagnosticsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportTurnDiagnosticsRequest.ProtoReflect.Descriptor instead.
 func (*ExportTurnDiagnosticsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{104}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *ExportTurnDiagnosticsRequest) GetTurnId() string {
@@ -10797,7 +10893,7 @@ type ExportTurnDiagnosticsResponse struct {
 
 func (x *ExportTurnDiagnosticsResponse) Reset() {
 	*x = ExportTurnDiagnosticsResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[105]
+	mi := &file_domain_agent_agent_proto_msgTypes[107]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10809,7 +10905,7 @@ func (x *ExportTurnDiagnosticsResponse) String() string {
 func (*ExportTurnDiagnosticsResponse) ProtoMessage() {}
 
 func (x *ExportTurnDiagnosticsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[105]
+	mi := &file_domain_agent_agent_proto_msgTypes[107]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10822,7 +10918,7 @@ func (x *ExportTurnDiagnosticsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportTurnDiagnosticsResponse.ProtoReflect.Descriptor instead.
 func (*ExportTurnDiagnosticsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{105}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{107}
 }
 
 func (x *ExportTurnDiagnosticsResponse) GetReplay() *TurnDiagnosticReplay {
@@ -10848,7 +10944,7 @@ type SubmitTurnRequest struct {
 
 func (x *SubmitTurnRequest) Reset() {
 	*x = SubmitTurnRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[106]
+	mi := &file_domain_agent_agent_proto_msgTypes[108]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10860,7 +10956,7 @@ func (x *SubmitTurnRequest) String() string {
 func (*SubmitTurnRequest) ProtoMessage() {}
 
 func (x *SubmitTurnRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[106]
+	mi := &file_domain_agent_agent_proto_msgTypes[108]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10873,7 +10969,7 @@ func (x *SubmitTurnRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitTurnRequest.ProtoReflect.Descriptor instead.
 func (*SubmitTurnRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{106}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{108}
 }
 
 func (x *SubmitTurnRequest) GetConversationId() string {
@@ -10942,7 +11038,7 @@ type SubmitTurnResponse struct {
 
 func (x *SubmitTurnResponse) Reset() {
 	*x = SubmitTurnResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[107]
+	mi := &file_domain_agent_agent_proto_msgTypes[109]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10954,7 +11050,7 @@ func (x *SubmitTurnResponse) String() string {
 func (*SubmitTurnResponse) ProtoMessage() {}
 
 func (x *SubmitTurnResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[107]
+	mi := &file_domain_agent_agent_proto_msgTypes[109]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10967,7 +11063,7 @@ func (x *SubmitTurnResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitTurnResponse.ProtoReflect.Descriptor instead.
 func (*SubmitTurnResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{107}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{109}
 }
 
 func (x *SubmitTurnResponse) GetTurn() *AgentTurn {
@@ -10993,7 +11089,7 @@ type ListQueuedTurnsRequest struct {
 
 func (x *ListQueuedTurnsRequest) Reset() {
 	*x = ListQueuedTurnsRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[108]
+	mi := &file_domain_agent_agent_proto_msgTypes[110]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11005,7 +11101,7 @@ func (x *ListQueuedTurnsRequest) String() string {
 func (*ListQueuedTurnsRequest) ProtoMessage() {}
 
 func (x *ListQueuedTurnsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[108]
+	mi := &file_domain_agent_agent_proto_msgTypes[110]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11018,7 +11114,7 @@ func (x *ListQueuedTurnsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListQueuedTurnsRequest.ProtoReflect.Descriptor instead.
 func (*ListQueuedTurnsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{108}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{110}
 }
 
 func (x *ListQueuedTurnsRequest) GetConversationId() string {
@@ -11039,7 +11135,7 @@ type ListQueuedTurnsResponse struct {
 
 func (x *ListQueuedTurnsResponse) Reset() {
 	*x = ListQueuedTurnsResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[109]
+	mi := &file_domain_agent_agent_proto_msgTypes[111]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11051,7 +11147,7 @@ func (x *ListQueuedTurnsResponse) String() string {
 func (*ListQueuedTurnsResponse) ProtoMessage() {}
 
 func (x *ListQueuedTurnsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[109]
+	mi := &file_domain_agent_agent_proto_msgTypes[111]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11064,7 +11160,7 @@ func (x *ListQueuedTurnsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListQueuedTurnsResponse.ProtoReflect.Descriptor instead.
 func (*ListQueuedTurnsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{109}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{111}
 }
 
 func (x *ListQueuedTurnsResponse) GetEntries() []*TurnQueueEntry {
@@ -11100,7 +11196,7 @@ type CancelQueuedTurnRequest struct {
 
 func (x *CancelQueuedTurnRequest) Reset() {
 	*x = CancelQueuedTurnRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[110]
+	mi := &file_domain_agent_agent_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11112,7 +11208,7 @@ func (x *CancelQueuedTurnRequest) String() string {
 func (*CancelQueuedTurnRequest) ProtoMessage() {}
 
 func (x *CancelQueuedTurnRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[110]
+	mi := &file_domain_agent_agent_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11125,7 +11221,7 @@ func (x *CancelQueuedTurnRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelQueuedTurnRequest.ProtoReflect.Descriptor instead.
 func (*CancelQueuedTurnRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{110}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *CancelQueuedTurnRequest) GetConversationId() string {
@@ -11167,7 +11263,7 @@ type CancelQueuedTurnResponse struct {
 
 func (x *CancelQueuedTurnResponse) Reset() {
 	*x = CancelQueuedTurnResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[111]
+	mi := &file_domain_agent_agent_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11179,7 +11275,7 @@ func (x *CancelQueuedTurnResponse) String() string {
 func (*CancelQueuedTurnResponse) ProtoMessage() {}
 
 func (x *CancelQueuedTurnResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[111]
+	mi := &file_domain_agent_agent_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11192,7 +11288,7 @@ func (x *CancelQueuedTurnResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelQueuedTurnResponse.ProtoReflect.Descriptor instead.
 func (*CancelQueuedTurnResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{111}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *CancelQueuedTurnResponse) GetEntry() *TurnQueueEntry {
@@ -11226,7 +11322,7 @@ type CancelTurnRequest struct {
 
 func (x *CancelTurnRequest) Reset() {
 	*x = CancelTurnRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[112]
+	mi := &file_domain_agent_agent_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11238,7 +11334,7 @@ func (x *CancelTurnRequest) String() string {
 func (*CancelTurnRequest) ProtoMessage() {}
 
 func (x *CancelTurnRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[112]
+	mi := &file_domain_agent_agent_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11251,7 +11347,7 @@ func (x *CancelTurnRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelTurnRequest.ProtoReflect.Descriptor instead.
 func (*CancelTurnRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{112}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *CancelTurnRequest) GetTurnId() string {
@@ -11277,7 +11373,7 @@ type CancelTurnResponse struct {
 
 func (x *CancelTurnResponse) Reset() {
 	*x = CancelTurnResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[113]
+	mi := &file_domain_agent_agent_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11289,7 +11385,7 @@ func (x *CancelTurnResponse) String() string {
 func (*CancelTurnResponse) ProtoMessage() {}
 
 func (x *CancelTurnResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[113]
+	mi := &file_domain_agent_agent_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11302,7 +11398,7 @@ func (x *CancelTurnResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelTurnResponse.ProtoReflect.Descriptor instead.
 func (*CancelTurnResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{113}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *CancelTurnResponse) GetTurn() *AgentTurn {
@@ -11325,7 +11421,7 @@ type RetryTurnRequest struct {
 
 func (x *RetryTurnRequest) Reset() {
 	*x = RetryTurnRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[114]
+	mi := &file_domain_agent_agent_proto_msgTypes[116]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11337,7 +11433,7 @@ func (x *RetryTurnRequest) String() string {
 func (*RetryTurnRequest) ProtoMessage() {}
 
 func (x *RetryTurnRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[114]
+	mi := &file_domain_agent_agent_proto_msgTypes[116]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11350,7 +11446,7 @@ func (x *RetryTurnRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryTurnRequest.ProtoReflect.Descriptor instead.
 func (*RetryTurnRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{114}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{116}
 }
 
 func (x *RetryTurnRequest) GetConversationId() string {
@@ -11399,7 +11495,7 @@ type RetryTurnResponse struct {
 
 func (x *RetryTurnResponse) Reset() {
 	*x = RetryTurnResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[115]
+	mi := &file_domain_agent_agent_proto_msgTypes[117]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11411,7 +11507,7 @@ func (x *RetryTurnResponse) String() string {
 func (*RetryTurnResponse) ProtoMessage() {}
 
 func (x *RetryTurnResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[115]
+	mi := &file_domain_agent_agent_proto_msgTypes[117]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11424,7 +11520,7 @@ func (x *RetryTurnResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryTurnResponse.ProtoReflect.Descriptor instead.
 func (*RetryTurnResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{115}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{117}
 }
 
 func (x *RetryTurnResponse) GetTurn() *AgentTurn {
@@ -11461,7 +11557,7 @@ type RegenerateTurnRequest struct {
 
 func (x *RegenerateTurnRequest) Reset() {
 	*x = RegenerateTurnRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[116]
+	mi := &file_domain_agent_agent_proto_msgTypes[118]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11473,7 +11569,7 @@ func (x *RegenerateTurnRequest) String() string {
 func (*RegenerateTurnRequest) ProtoMessage() {}
 
 func (x *RegenerateTurnRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[116]
+	mi := &file_domain_agent_agent_proto_msgTypes[118]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11486,7 +11582,7 @@ func (x *RegenerateTurnRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegenerateTurnRequest.ProtoReflect.Descriptor instead.
 func (*RegenerateTurnRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{116}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{118}
 }
 
 func (x *RegenerateTurnRequest) GetConversationId() string {
@@ -11535,7 +11631,7 @@ type RegenerateTurnResponse struct {
 
 func (x *RegenerateTurnResponse) Reset() {
 	*x = RegenerateTurnResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[117]
+	mi := &file_domain_agent_agent_proto_msgTypes[119]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11547,7 +11643,7 @@ func (x *RegenerateTurnResponse) String() string {
 func (*RegenerateTurnResponse) ProtoMessage() {}
 
 func (x *RegenerateTurnResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[117]
+	mi := &file_domain_agent_agent_proto_msgTypes[119]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11560,7 +11656,7 @@ func (x *RegenerateTurnResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegenerateTurnResponse.ProtoReflect.Descriptor instead.
 func (*RegenerateTurnResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{117}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{119}
 }
 
 func (x *RegenerateTurnResponse) GetTurn() *AgentTurn {
@@ -11599,7 +11695,7 @@ type EditAndResendRequest struct {
 
 func (x *EditAndResendRequest) Reset() {
 	*x = EditAndResendRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[118]
+	mi := &file_domain_agent_agent_proto_msgTypes[120]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11611,7 +11707,7 @@ func (x *EditAndResendRequest) String() string {
 func (*EditAndResendRequest) ProtoMessage() {}
 
 func (x *EditAndResendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[118]
+	mi := &file_domain_agent_agent_proto_msgTypes[120]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11624,7 +11720,7 @@ func (x *EditAndResendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditAndResendRequest.ProtoReflect.Descriptor instead.
 func (*EditAndResendRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{118}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{120}
 }
 
 func (x *EditAndResendRequest) GetConversationId() string {
@@ -11687,7 +11783,7 @@ type EditAndResendResponse struct {
 
 func (x *EditAndResendResponse) Reset() {
 	*x = EditAndResendResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[119]
+	mi := &file_domain_agent_agent_proto_msgTypes[121]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11699,7 +11795,7 @@ func (x *EditAndResendResponse) String() string {
 func (*EditAndResendResponse) ProtoMessage() {}
 
 func (x *EditAndResendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[119]
+	mi := &file_domain_agent_agent_proto_msgTypes[121]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11712,7 +11808,7 @@ func (x *EditAndResendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditAndResendResponse.ProtoReflect.Descriptor instead.
 func (*EditAndResendResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{119}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{121}
 }
 
 func (x *EditAndResendResponse) GetTurn() *AgentTurn {
@@ -11748,7 +11844,7 @@ type SelectActiveBranchRequest struct {
 
 func (x *SelectActiveBranchRequest) Reset() {
 	*x = SelectActiveBranchRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[120]
+	mi := &file_domain_agent_agent_proto_msgTypes[122]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11760,7 +11856,7 @@ func (x *SelectActiveBranchRequest) String() string {
 func (*SelectActiveBranchRequest) ProtoMessage() {}
 
 func (x *SelectActiveBranchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[120]
+	mi := &file_domain_agent_agent_proto_msgTypes[122]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11773,7 +11869,7 @@ func (x *SelectActiveBranchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SelectActiveBranchRequest.ProtoReflect.Descriptor instead.
 func (*SelectActiveBranchRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{120}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{122}
 }
 
 func (x *SelectActiveBranchRequest) GetConversationId() string {
@@ -11813,7 +11909,7 @@ type SelectActiveBranchResponse struct {
 
 func (x *SelectActiveBranchResponse) Reset() {
 	*x = SelectActiveBranchResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[121]
+	mi := &file_domain_agent_agent_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11825,7 +11921,7 @@ func (x *SelectActiveBranchResponse) String() string {
 func (*SelectActiveBranchResponse) ProtoMessage() {}
 
 func (x *SelectActiveBranchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[121]
+	mi := &file_domain_agent_agent_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11838,7 +11934,7 @@ func (x *SelectActiveBranchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SelectActiveBranchResponse.ProtoReflect.Descriptor instead.
 func (*SelectActiveBranchResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{121}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{123}
 }
 
 func (x *SelectActiveBranchResponse) GetConversation() *Conversation {
@@ -11862,7 +11958,7 @@ type TombstoneMessageRequest struct {
 
 func (x *TombstoneMessageRequest) Reset() {
 	*x = TombstoneMessageRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[122]
+	mi := &file_domain_agent_agent_proto_msgTypes[124]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11874,7 +11970,7 @@ func (x *TombstoneMessageRequest) String() string {
 func (*TombstoneMessageRequest) ProtoMessage() {}
 
 func (x *TombstoneMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[122]
+	mi := &file_domain_agent_agent_proto_msgTypes[124]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11887,7 +11983,7 @@ func (x *TombstoneMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TombstoneMessageRequest.ProtoReflect.Descriptor instead.
 func (*TombstoneMessageRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{122}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{124}
 }
 
 func (x *TombstoneMessageRequest) GetConversationId() string {
@@ -11942,7 +12038,7 @@ type TombstoneMessageResponse struct {
 
 func (x *TombstoneMessageResponse) Reset() {
 	*x = TombstoneMessageResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[123]
+	mi := &file_domain_agent_agent_proto_msgTypes[125]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -11954,7 +12050,7 @@ func (x *TombstoneMessageResponse) String() string {
 func (*TombstoneMessageResponse) ProtoMessage() {}
 
 func (x *TombstoneMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[123]
+	mi := &file_domain_agent_agent_proto_msgTypes[125]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -11967,7 +12063,7 @@ func (x *TombstoneMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TombstoneMessageResponse.ProtoReflect.Descriptor instead.
 func (*TombstoneMessageResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{123}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{125}
 }
 
 func (x *TombstoneMessageResponse) GetConversation() *Conversation {
@@ -11995,7 +12091,7 @@ type SchedulerStartRequest struct {
 
 func (x *SchedulerStartRequest) Reset() {
 	*x = SchedulerStartRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[124]
+	mi := &file_domain_agent_agent_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12007,7 +12103,7 @@ func (x *SchedulerStartRequest) String() string {
 func (*SchedulerStartRequest) ProtoMessage() {}
 
 func (x *SchedulerStartRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[124]
+	mi := &file_domain_agent_agent_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12020,7 +12116,7 @@ func (x *SchedulerStartRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStartRequest.ProtoReflect.Descriptor instead.
 func (*SchedulerStartRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{124}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *SchedulerStartRequest) GetAgentId() string {
@@ -12054,7 +12150,7 @@ type SchedulerStartResponse struct {
 
 func (x *SchedulerStartResponse) Reset() {
 	*x = SchedulerStartResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[125]
+	mi := &file_domain_agent_agent_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12066,7 +12162,7 @@ func (x *SchedulerStartResponse) String() string {
 func (*SchedulerStartResponse) ProtoMessage() {}
 
 func (x *SchedulerStartResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[125]
+	mi := &file_domain_agent_agent_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12079,7 +12175,7 @@ func (x *SchedulerStartResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStartResponse.ProtoReflect.Descriptor instead.
 func (*SchedulerStartResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{125}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{127}
 }
 
 func (x *SchedulerStartResponse) GetOk() bool {
@@ -12104,7 +12200,7 @@ type SchedulerStopRequest struct {
 
 func (x *SchedulerStopRequest) Reset() {
 	*x = SchedulerStopRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[126]
+	mi := &file_domain_agent_agent_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12116,7 +12212,7 @@ func (x *SchedulerStopRequest) String() string {
 func (*SchedulerStopRequest) ProtoMessage() {}
 
 func (x *SchedulerStopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[126]
+	mi := &file_domain_agent_agent_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12129,7 +12225,7 @@ func (x *SchedulerStopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStopRequest.ProtoReflect.Descriptor instead.
 func (*SchedulerStopRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{126}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{128}
 }
 
 type SchedulerStopResponse struct {
@@ -12142,7 +12238,7 @@ type SchedulerStopResponse struct {
 
 func (x *SchedulerStopResponse) Reset() {
 	*x = SchedulerStopResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[127]
+	mi := &file_domain_agent_agent_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12154,7 +12250,7 @@ func (x *SchedulerStopResponse) String() string {
 func (*SchedulerStopResponse) ProtoMessage() {}
 
 func (x *SchedulerStopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[127]
+	mi := &file_domain_agent_agent_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12167,7 +12263,7 @@ func (x *SchedulerStopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStopResponse.ProtoReflect.Descriptor instead.
 func (*SchedulerStopResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{127}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *SchedulerStopResponse) GetOk() bool {
@@ -12192,7 +12288,7 @@ type SchedulerStatusRequest struct {
 
 func (x *SchedulerStatusRequest) Reset() {
 	*x = SchedulerStatusRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[128]
+	mi := &file_domain_agent_agent_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12204,7 +12300,7 @@ func (x *SchedulerStatusRequest) String() string {
 func (*SchedulerStatusRequest) ProtoMessage() {}
 
 func (x *SchedulerStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[128]
+	mi := &file_domain_agent_agent_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12217,7 +12313,7 @@ func (x *SchedulerStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStatusRequest.ProtoReflect.Descriptor instead.
 func (*SchedulerStatusRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{128}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{130}
 }
 
 type SchedulerStatusResponse struct {
@@ -12233,7 +12329,7 @@ type SchedulerStatusResponse struct {
 
 func (x *SchedulerStatusResponse) Reset() {
 	*x = SchedulerStatusResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[129]
+	mi := &file_domain_agent_agent_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12245,7 +12341,7 @@ func (x *SchedulerStatusResponse) String() string {
 func (*SchedulerStatusResponse) ProtoMessage() {}
 
 func (x *SchedulerStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[129]
+	mi := &file_domain_agent_agent_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12258,7 +12354,7 @@ func (x *SchedulerStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerStatusResponse.ProtoReflect.Descriptor instead.
 func (*SchedulerStatusResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{129}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{131}
 }
 
 func (x *SchedulerStatusResponse) GetRunning() bool {
@@ -12307,7 +12403,7 @@ type SchedulerAddJobRequest struct {
 
 func (x *SchedulerAddJobRequest) Reset() {
 	*x = SchedulerAddJobRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[130]
+	mi := &file_domain_agent_agent_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12319,7 +12415,7 @@ func (x *SchedulerAddJobRequest) String() string {
 func (*SchedulerAddJobRequest) ProtoMessage() {}
 
 func (x *SchedulerAddJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[130]
+	mi := &file_domain_agent_agent_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12332,7 +12428,7 @@ func (x *SchedulerAddJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerAddJobRequest.ProtoReflect.Descriptor instead.
 func (*SchedulerAddJobRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{130}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *SchedulerAddJobRequest) GetKind() string {
@@ -12365,7 +12461,7 @@ type SchedulerAddJobResponse struct {
 
 func (x *SchedulerAddJobResponse) Reset() {
 	*x = SchedulerAddJobResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[131]
+	mi := &file_domain_agent_agent_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12377,7 +12473,7 @@ func (x *SchedulerAddJobResponse) String() string {
 func (*SchedulerAddJobResponse) ProtoMessage() {}
 
 func (x *SchedulerAddJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[131]
+	mi := &file_domain_agent_agent_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12390,7 +12486,7 @@ func (x *SchedulerAddJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulerAddJobResponse.ProtoReflect.Descriptor instead.
 func (*SchedulerAddJobResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{131}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *SchedulerAddJobResponse) GetOk() bool {
@@ -12409,7 +12505,7 @@ type GetGrowthSnapshotRequest struct {
 
 func (x *GetGrowthSnapshotRequest) Reset() {
 	*x = GetGrowthSnapshotRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[132]
+	mi := &file_domain_agent_agent_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12421,7 +12517,7 @@ func (x *GetGrowthSnapshotRequest) String() string {
 func (*GetGrowthSnapshotRequest) ProtoMessage() {}
 
 func (x *GetGrowthSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[132]
+	mi := &file_domain_agent_agent_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12434,7 +12530,7 @@ func (x *GetGrowthSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGrowthSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*GetGrowthSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{132}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *GetGrowthSnapshotRequest) GetAgentId() string {
@@ -12470,7 +12566,7 @@ type GetGrowthSnapshotResponse struct {
 
 func (x *GetGrowthSnapshotResponse) Reset() {
 	*x = GetGrowthSnapshotResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[133]
+	mi := &file_domain_agent_agent_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12482,7 +12578,7 @@ func (x *GetGrowthSnapshotResponse) String() string {
 func (*GetGrowthSnapshotResponse) ProtoMessage() {}
 
 func (x *GetGrowthSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[133]
+	mi := &file_domain_agent_agent_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12495,7 +12591,7 @@ func (x *GetGrowthSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGrowthSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*GetGrowthSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{133}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{135}
 }
 
 func (x *GetGrowthSnapshotResponse) GetAgentId() string {
@@ -12642,7 +12738,7 @@ type RecordFeedbackRequest struct {
 
 func (x *RecordFeedbackRequest) Reset() {
 	*x = RecordFeedbackRequest{}
-	mi := &file_domain_agent_agent_proto_msgTypes[134]
+	mi := &file_domain_agent_agent_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12654,7 +12750,7 @@ func (x *RecordFeedbackRequest) String() string {
 func (*RecordFeedbackRequest) ProtoMessage() {}
 
 func (x *RecordFeedbackRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[134]
+	mi := &file_domain_agent_agent_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12667,7 +12763,7 @@ func (x *RecordFeedbackRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordFeedbackRequest.ProtoReflect.Descriptor instead.
 func (*RecordFeedbackRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{134}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{136}
 }
 
 func (x *RecordFeedbackRequest) GetAgentId() string {
@@ -12751,7 +12847,7 @@ type RecordFeedbackResponse struct {
 
 func (x *RecordFeedbackResponse) Reset() {
 	*x = RecordFeedbackResponse{}
-	mi := &file_domain_agent_agent_proto_msgTypes[135]
+	mi := &file_domain_agent_agent_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12763,7 +12859,7 @@ func (x *RecordFeedbackResponse) String() string {
 func (*RecordFeedbackResponse) ProtoMessage() {}
 
 func (x *RecordFeedbackResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_proto_msgTypes[135]
+	mi := &file_domain_agent_agent_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12776,7 +12872,7 @@ func (x *RecordFeedbackResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordFeedbackResponse.ProtoReflect.Descriptor instead.
 func (*RecordFeedbackResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_proto_rawDescGZIP(), []int{135}
+	return file_domain_agent_agent_proto_rawDescGZIP(), []int{137}
 }
 
 func (x *RecordFeedbackResponse) GetId() string {
@@ -13189,7 +13285,12 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\tpermanent\x18\x02 \x01(\bR\tpermanent\x12)\n" +
 	"\x10expected_version\x18\x03 \x01(\x04R\x0fexpectedVersion\"7\n" +
 	"\x1bArchiveConversationResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xe7\x01\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"p\n" +
+	"\x1aRestoreConversationRequest\x12'\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12)\n" +
+	"\x10expected_version\x18\x02 \x01(\x04R\x0fexpectedVersion\"k\n" +
+	"\x1bRestoreConversationResponse\x12L\n" +
+	"\fconversation\x18\x01 \x01(\v2(.peers_touch.model.agent.v1.ConversationR\fconversation\"\xe7\x01\n" +
 	"\x13ListMessagesRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12 \n" +
 	"\tafter_seq\x18\x02 \x01(\x03H\x00R\bafterSeq\x88\x01\x01\x12\"\n" +
@@ -14169,7 +14270,7 @@ func file_domain_agent_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_agent_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 27)
-var file_domain_agent_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 138)
+var file_domain_agent_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 140)
 var file_domain_agent_agent_proto_goTypes = []any{
 	(TurnStatus)(0),                                       // 0: peers_touch.model.agent.v1.TurnStatus
 	(FailoverReason)(0),                                   // 1: peers_touch.model.agent.v1.FailoverReason
@@ -14247,101 +14348,103 @@ var file_domain_agent_agent_proto_goTypes = []any{
 	(*UpdateConversationResponse)(nil),                    // 73: peers_touch.model.agent.v1.UpdateConversationResponse
 	(*ArchiveConversationRequest)(nil),                    // 74: peers_touch.model.agent.v1.ArchiveConversationRequest
 	(*ArchiveConversationResponse)(nil),                   // 75: peers_touch.model.agent.v1.ArchiveConversationResponse
-	(*ListMessagesRequest)(nil),                           // 76: peers_touch.model.agent.v1.ListMessagesRequest
-	(*ListMessagesResponse)(nil),                          // 77: peers_touch.model.agent.v1.ListMessagesResponse
-	(*AgentDefinition)(nil),                               // 78: peers_touch.model.agent.v1.AgentDefinition
-	(*ConversationRuntimeBinding)(nil),                    // 79: peers_touch.model.agent.v1.ConversationRuntimeBinding
-	(*RuntimeCapability)(nil),                             // 80: peers_touch.model.agent.v1.RuntimeCapability
-	(*RuntimeInputCapabilities)(nil),                      // 81: peers_touch.model.agent.v1.RuntimeInputCapabilities
-	(*RuntimeOutputCapabilities)(nil),                     // 82: peers_touch.model.agent.v1.RuntimeOutputCapabilities
-	(*RuntimeExecutionCapabilities)(nil),                  // 83: peers_touch.model.agent.v1.RuntimeExecutionCapabilities
-	(*RuntimeAgenticCapabilities)(nil),                    // 84: peers_touch.model.agent.v1.RuntimeAgenticCapabilities
-	(*RuntimeCapabilityLimits)(nil),                       // 85: peers_touch.model.agent.v1.RuntimeCapabilityLimits
-	(*RuntimeCapabilityProvenance)(nil),                   // 86: peers_touch.model.agent.v1.RuntimeCapabilityProvenance
-	(*RuntimeCapabilitySnapshot)(nil),                     // 87: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
-	(*RuntimeSnapshot)(nil),                               // 88: peers_touch.model.agent.v1.RuntimeSnapshot
-	(*RuntimeBudget)(nil),                                 // 89: peers_touch.model.agent.v1.RuntimeBudget
-	(*AgentAttachmentRef)(nil),                            // 90: peers_touch.model.agent.v1.AgentAttachmentRef
-	(*CanonicalAgentMessage)(nil),                         // 91: peers_touch.model.agent.v1.CanonicalAgentMessage
-	(*AgentTurn)(nil),                                     // 92: peers_touch.model.agent.v1.AgentTurn
-	(*TurnQueueEntry)(nil),                                // 93: peers_touch.model.agent.v1.TurnQueueEntry
-	(*TurnAdmission)(nil),                                 // 94: peers_touch.model.agent.v1.TurnAdmission
-	(*TurnAttempt)(nil),                                   // 95: peers_touch.model.agent.v1.TurnAttempt
-	(*ContextSegment)(nil),                                // 96: peers_touch.model.agent.v1.ContextSegment
-	(*ContextLedger)(nil),                                 // 97: peers_touch.model.agent.v1.ContextLedger
-	(*CapabilityConstraints)(nil),                         // 98: peers_touch.model.agent.v1.CapabilityConstraints
-	(*ClientCapability)(nil),                              // 99: peers_touch.model.agent.v1.ClientCapability
-	(*ClientCapabilityLease)(nil),                         // 100: peers_touch.model.agent.v1.ClientCapabilityLease
-	(*ClientResourceRef)(nil),                             // 101: peers_touch.model.agent.v1.ClientResourceRef
-	(*ReceiptRecoveryCredential)(nil),                     // 102: peers_touch.model.agent.v1.ReceiptRecoveryCredential
-	(*ReceiptRecoveryScopePayload)(nil),                   // 103: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload
-	(*ClientCapabilityRequest)(nil),                       // 104: peers_touch.model.agent.v1.ClientCapabilityRequest
-	(*ReceiptRecoveryProof)(nil),                          // 105: peers_touch.model.agent.v1.ReceiptRecoveryProof
-	(*ReceiptRecoverySigningPayload)(nil),                 // 106: peers_touch.model.agent.v1.ReceiptRecoverySigningPayload
-	(*ClientCapabilityReceipt)(nil),                       // 107: peers_touch.model.agent.v1.ClientCapabilityReceipt
-	(*ClientCapabilityCommandProof)(nil),                  // 108: peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	(*ClientCapabilityCommandSigningPayload)(nil),         // 109: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload
-	(*ClientCapabilityAdvertisement)(nil),                 // 110: peers_touch.model.agent.v1.ClientCapabilityAdvertisement
-	(*RegisterClientCapabilityLeaseRequest)(nil),          // 111: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest
-	(*RegisterClientCapabilityLeaseResponse)(nil),         // 112: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse
-	(*RenewClientCapabilityLeaseRequest)(nil),             // 113: peers_touch.model.agent.v1.RenewClientCapabilityLeaseRequest
-	(*RenewClientCapabilityLeaseResponse)(nil),            // 114: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse
-	(*RevokeClientCapabilityLeaseRequest)(nil),            // 115: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest
-	(*RevokeClientCapabilityLeaseResponse)(nil),           // 116: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse
-	(*PullClientCapabilityRequestsRequest)(nil),           // 117: peers_touch.model.agent.v1.PullClientCapabilityRequestsRequest
-	(*PullClientCapabilityRequestsResponse)(nil),          // 118: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse
-	(*SubmitClientCapabilityReceiptRequest)(nil),          // 119: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest
-	(*SubmitClientCapabilityReceiptResponse)(nil),         // 120: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse
-	(*SubmitClientCapabilityRecoveryReceiptRequest)(nil),  // 121: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptRequest
-	(*SubmitClientCapabilityRecoveryReceiptResponse)(nil), // 122: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptResponse
-	(*ToolCall)(nil),                                      // 123: peers_touch.model.agent.v1.ToolCall
-	(*TurnUsage)(nil),                                     // 124: peers_touch.model.agent.v1.TurnUsage
-	(*TurnFeedback)(nil),                                  // 125: peers_touch.model.agent.v1.TurnFeedback
-	(*TurnDiagnosticMessageFact)(nil),                     // 126: peers_touch.model.agent.v1.TurnDiagnosticMessageFact
-	(*TurnDiagnosticToolFact)(nil),                        // 127: peers_touch.model.agent.v1.TurnDiagnosticToolFact
-	(*TurnDiagnosticReplay)(nil),                          // 128: peers_touch.model.agent.v1.TurnDiagnosticReplay
-	(*ListTurnFeedbackRequest)(nil),                       // 129: peers_touch.model.agent.v1.ListTurnFeedbackRequest
-	(*ListTurnFeedbackResponse)(nil),                      // 130: peers_touch.model.agent.v1.ListTurnFeedbackResponse
-	(*ExportTurnDiagnosticsRequest)(nil),                  // 131: peers_touch.model.agent.v1.ExportTurnDiagnosticsRequest
-	(*ExportTurnDiagnosticsResponse)(nil),                 // 132: peers_touch.model.agent.v1.ExportTurnDiagnosticsResponse
-	(*SubmitTurnRequest)(nil),                             // 133: peers_touch.model.agent.v1.SubmitTurnRequest
-	(*SubmitTurnResponse)(nil),                            // 134: peers_touch.model.agent.v1.SubmitTurnResponse
-	(*ListQueuedTurnsRequest)(nil),                        // 135: peers_touch.model.agent.v1.ListQueuedTurnsRequest
-	(*ListQueuedTurnsResponse)(nil),                       // 136: peers_touch.model.agent.v1.ListQueuedTurnsResponse
-	(*CancelQueuedTurnRequest)(nil),                       // 137: peers_touch.model.agent.v1.CancelQueuedTurnRequest
-	(*CancelQueuedTurnResponse)(nil),                      // 138: peers_touch.model.agent.v1.CancelQueuedTurnResponse
-	(*CancelTurnRequest)(nil),                             // 139: peers_touch.model.agent.v1.CancelTurnRequest
-	(*CancelTurnResponse)(nil),                            // 140: peers_touch.model.agent.v1.CancelTurnResponse
-	(*RetryTurnRequest)(nil),                              // 141: peers_touch.model.agent.v1.RetryTurnRequest
-	(*RetryTurnResponse)(nil),                             // 142: peers_touch.model.agent.v1.RetryTurnResponse
-	(*RegenerateTurnRequest)(nil),                         // 143: peers_touch.model.agent.v1.RegenerateTurnRequest
-	(*RegenerateTurnResponse)(nil),                        // 144: peers_touch.model.agent.v1.RegenerateTurnResponse
-	(*EditAndResendRequest)(nil),                          // 145: peers_touch.model.agent.v1.EditAndResendRequest
-	(*EditAndResendResponse)(nil),                         // 146: peers_touch.model.agent.v1.EditAndResendResponse
-	(*SelectActiveBranchRequest)(nil),                     // 147: peers_touch.model.agent.v1.SelectActiveBranchRequest
-	(*SelectActiveBranchResponse)(nil),                    // 148: peers_touch.model.agent.v1.SelectActiveBranchResponse
-	(*TombstoneMessageRequest)(nil),                       // 149: peers_touch.model.agent.v1.TombstoneMessageRequest
-	(*TombstoneMessageResponse)(nil),                      // 150: peers_touch.model.agent.v1.TombstoneMessageResponse
-	(*SchedulerStartRequest)(nil),                         // 151: peers_touch.model.agent.v1.SchedulerStartRequest
-	(*SchedulerStartResponse)(nil),                        // 152: peers_touch.model.agent.v1.SchedulerStartResponse
-	(*SchedulerStopRequest)(nil),                          // 153: peers_touch.model.agent.v1.SchedulerStopRequest
-	(*SchedulerStopResponse)(nil),                         // 154: peers_touch.model.agent.v1.SchedulerStopResponse
-	(*SchedulerStatusRequest)(nil),                        // 155: peers_touch.model.agent.v1.SchedulerStatusRequest
-	(*SchedulerStatusResponse)(nil),                       // 156: peers_touch.model.agent.v1.SchedulerStatusResponse
-	(*SchedulerAddJobRequest)(nil),                        // 157: peers_touch.model.agent.v1.SchedulerAddJobRequest
-	(*SchedulerAddJobResponse)(nil),                       // 158: peers_touch.model.agent.v1.SchedulerAddJobResponse
-	(*GetGrowthSnapshotRequest)(nil),                      // 159: peers_touch.model.agent.v1.GetGrowthSnapshotRequest
-	(*GetGrowthSnapshotResponse)(nil),                     // 160: peers_touch.model.agent.v1.GetGrowthSnapshotResponse
-	(*RecordFeedbackRequest)(nil),                         // 161: peers_touch.model.agent.v1.RecordFeedbackRequest
-	(*RecordFeedbackResponse)(nil),                        // 162: peers_touch.model.agent.v1.RecordFeedbackResponse
-	nil,                                                   // 163: peers_touch.model.agent.v1.Conversation.MetaEntry
-	nil,                                                   // 164: peers_touch.model.agent.v1.UpdateConversationRequest.MetaEntry
-	(*timestamppb.Timestamp)(nil),                         // 165: google.protobuf.Timestamp
+	(*RestoreConversationRequest)(nil),                    // 76: peers_touch.model.agent.v1.RestoreConversationRequest
+	(*RestoreConversationResponse)(nil),                   // 77: peers_touch.model.agent.v1.RestoreConversationResponse
+	(*ListMessagesRequest)(nil),                           // 78: peers_touch.model.agent.v1.ListMessagesRequest
+	(*ListMessagesResponse)(nil),                          // 79: peers_touch.model.agent.v1.ListMessagesResponse
+	(*AgentDefinition)(nil),                               // 80: peers_touch.model.agent.v1.AgentDefinition
+	(*ConversationRuntimeBinding)(nil),                    // 81: peers_touch.model.agent.v1.ConversationRuntimeBinding
+	(*RuntimeCapability)(nil),                             // 82: peers_touch.model.agent.v1.RuntimeCapability
+	(*RuntimeInputCapabilities)(nil),                      // 83: peers_touch.model.agent.v1.RuntimeInputCapabilities
+	(*RuntimeOutputCapabilities)(nil),                     // 84: peers_touch.model.agent.v1.RuntimeOutputCapabilities
+	(*RuntimeExecutionCapabilities)(nil),                  // 85: peers_touch.model.agent.v1.RuntimeExecutionCapabilities
+	(*RuntimeAgenticCapabilities)(nil),                    // 86: peers_touch.model.agent.v1.RuntimeAgenticCapabilities
+	(*RuntimeCapabilityLimits)(nil),                       // 87: peers_touch.model.agent.v1.RuntimeCapabilityLimits
+	(*RuntimeCapabilityProvenance)(nil),                   // 88: peers_touch.model.agent.v1.RuntimeCapabilityProvenance
+	(*RuntimeCapabilitySnapshot)(nil),                     // 89: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
+	(*RuntimeSnapshot)(nil),                               // 90: peers_touch.model.agent.v1.RuntimeSnapshot
+	(*RuntimeBudget)(nil),                                 // 91: peers_touch.model.agent.v1.RuntimeBudget
+	(*AgentAttachmentRef)(nil),                            // 92: peers_touch.model.agent.v1.AgentAttachmentRef
+	(*CanonicalAgentMessage)(nil),                         // 93: peers_touch.model.agent.v1.CanonicalAgentMessage
+	(*AgentTurn)(nil),                                     // 94: peers_touch.model.agent.v1.AgentTurn
+	(*TurnQueueEntry)(nil),                                // 95: peers_touch.model.agent.v1.TurnQueueEntry
+	(*TurnAdmission)(nil),                                 // 96: peers_touch.model.agent.v1.TurnAdmission
+	(*TurnAttempt)(nil),                                   // 97: peers_touch.model.agent.v1.TurnAttempt
+	(*ContextSegment)(nil),                                // 98: peers_touch.model.agent.v1.ContextSegment
+	(*ContextLedger)(nil),                                 // 99: peers_touch.model.agent.v1.ContextLedger
+	(*CapabilityConstraints)(nil),                         // 100: peers_touch.model.agent.v1.CapabilityConstraints
+	(*ClientCapability)(nil),                              // 101: peers_touch.model.agent.v1.ClientCapability
+	(*ClientCapabilityLease)(nil),                         // 102: peers_touch.model.agent.v1.ClientCapabilityLease
+	(*ClientResourceRef)(nil),                             // 103: peers_touch.model.agent.v1.ClientResourceRef
+	(*ReceiptRecoveryCredential)(nil),                     // 104: peers_touch.model.agent.v1.ReceiptRecoveryCredential
+	(*ReceiptRecoveryScopePayload)(nil),                   // 105: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload
+	(*ClientCapabilityRequest)(nil),                       // 106: peers_touch.model.agent.v1.ClientCapabilityRequest
+	(*ReceiptRecoveryProof)(nil),                          // 107: peers_touch.model.agent.v1.ReceiptRecoveryProof
+	(*ReceiptRecoverySigningPayload)(nil),                 // 108: peers_touch.model.agent.v1.ReceiptRecoverySigningPayload
+	(*ClientCapabilityReceipt)(nil),                       // 109: peers_touch.model.agent.v1.ClientCapabilityReceipt
+	(*ClientCapabilityCommandProof)(nil),                  // 110: peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	(*ClientCapabilityCommandSigningPayload)(nil),         // 111: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload
+	(*ClientCapabilityAdvertisement)(nil),                 // 112: peers_touch.model.agent.v1.ClientCapabilityAdvertisement
+	(*RegisterClientCapabilityLeaseRequest)(nil),          // 113: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest
+	(*RegisterClientCapabilityLeaseResponse)(nil),         // 114: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse
+	(*RenewClientCapabilityLeaseRequest)(nil),             // 115: peers_touch.model.agent.v1.RenewClientCapabilityLeaseRequest
+	(*RenewClientCapabilityLeaseResponse)(nil),            // 116: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse
+	(*RevokeClientCapabilityLeaseRequest)(nil),            // 117: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest
+	(*RevokeClientCapabilityLeaseResponse)(nil),           // 118: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse
+	(*PullClientCapabilityRequestsRequest)(nil),           // 119: peers_touch.model.agent.v1.PullClientCapabilityRequestsRequest
+	(*PullClientCapabilityRequestsResponse)(nil),          // 120: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse
+	(*SubmitClientCapabilityReceiptRequest)(nil),          // 121: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest
+	(*SubmitClientCapabilityReceiptResponse)(nil),         // 122: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse
+	(*SubmitClientCapabilityRecoveryReceiptRequest)(nil),  // 123: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptRequest
+	(*SubmitClientCapabilityRecoveryReceiptResponse)(nil), // 124: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptResponse
+	(*ToolCall)(nil),                                      // 125: peers_touch.model.agent.v1.ToolCall
+	(*TurnUsage)(nil),                                     // 126: peers_touch.model.agent.v1.TurnUsage
+	(*TurnFeedback)(nil),                                  // 127: peers_touch.model.agent.v1.TurnFeedback
+	(*TurnDiagnosticMessageFact)(nil),                     // 128: peers_touch.model.agent.v1.TurnDiagnosticMessageFact
+	(*TurnDiagnosticToolFact)(nil),                        // 129: peers_touch.model.agent.v1.TurnDiagnosticToolFact
+	(*TurnDiagnosticReplay)(nil),                          // 130: peers_touch.model.agent.v1.TurnDiagnosticReplay
+	(*ListTurnFeedbackRequest)(nil),                       // 131: peers_touch.model.agent.v1.ListTurnFeedbackRequest
+	(*ListTurnFeedbackResponse)(nil),                      // 132: peers_touch.model.agent.v1.ListTurnFeedbackResponse
+	(*ExportTurnDiagnosticsRequest)(nil),                  // 133: peers_touch.model.agent.v1.ExportTurnDiagnosticsRequest
+	(*ExportTurnDiagnosticsResponse)(nil),                 // 134: peers_touch.model.agent.v1.ExportTurnDiagnosticsResponse
+	(*SubmitTurnRequest)(nil),                             // 135: peers_touch.model.agent.v1.SubmitTurnRequest
+	(*SubmitTurnResponse)(nil),                            // 136: peers_touch.model.agent.v1.SubmitTurnResponse
+	(*ListQueuedTurnsRequest)(nil),                        // 137: peers_touch.model.agent.v1.ListQueuedTurnsRequest
+	(*ListQueuedTurnsResponse)(nil),                       // 138: peers_touch.model.agent.v1.ListQueuedTurnsResponse
+	(*CancelQueuedTurnRequest)(nil),                       // 139: peers_touch.model.agent.v1.CancelQueuedTurnRequest
+	(*CancelQueuedTurnResponse)(nil),                      // 140: peers_touch.model.agent.v1.CancelQueuedTurnResponse
+	(*CancelTurnRequest)(nil),                             // 141: peers_touch.model.agent.v1.CancelTurnRequest
+	(*CancelTurnResponse)(nil),                            // 142: peers_touch.model.agent.v1.CancelTurnResponse
+	(*RetryTurnRequest)(nil),                              // 143: peers_touch.model.agent.v1.RetryTurnRequest
+	(*RetryTurnResponse)(nil),                             // 144: peers_touch.model.agent.v1.RetryTurnResponse
+	(*RegenerateTurnRequest)(nil),                         // 145: peers_touch.model.agent.v1.RegenerateTurnRequest
+	(*RegenerateTurnResponse)(nil),                        // 146: peers_touch.model.agent.v1.RegenerateTurnResponse
+	(*EditAndResendRequest)(nil),                          // 147: peers_touch.model.agent.v1.EditAndResendRequest
+	(*EditAndResendResponse)(nil),                         // 148: peers_touch.model.agent.v1.EditAndResendResponse
+	(*SelectActiveBranchRequest)(nil),                     // 149: peers_touch.model.agent.v1.SelectActiveBranchRequest
+	(*SelectActiveBranchResponse)(nil),                    // 150: peers_touch.model.agent.v1.SelectActiveBranchResponse
+	(*TombstoneMessageRequest)(nil),                       // 151: peers_touch.model.agent.v1.TombstoneMessageRequest
+	(*TombstoneMessageResponse)(nil),                      // 152: peers_touch.model.agent.v1.TombstoneMessageResponse
+	(*SchedulerStartRequest)(nil),                         // 153: peers_touch.model.agent.v1.SchedulerStartRequest
+	(*SchedulerStartResponse)(nil),                        // 154: peers_touch.model.agent.v1.SchedulerStartResponse
+	(*SchedulerStopRequest)(nil),                          // 155: peers_touch.model.agent.v1.SchedulerStopRequest
+	(*SchedulerStopResponse)(nil),                         // 156: peers_touch.model.agent.v1.SchedulerStopResponse
+	(*SchedulerStatusRequest)(nil),                        // 157: peers_touch.model.agent.v1.SchedulerStatusRequest
+	(*SchedulerStatusResponse)(nil),                       // 158: peers_touch.model.agent.v1.SchedulerStatusResponse
+	(*SchedulerAddJobRequest)(nil),                        // 159: peers_touch.model.agent.v1.SchedulerAddJobRequest
+	(*SchedulerAddJobResponse)(nil),                       // 160: peers_touch.model.agent.v1.SchedulerAddJobResponse
+	(*GetGrowthSnapshotRequest)(nil),                      // 161: peers_touch.model.agent.v1.GetGrowthSnapshotRequest
+	(*GetGrowthSnapshotResponse)(nil),                     // 162: peers_touch.model.agent.v1.GetGrowthSnapshotResponse
+	(*RecordFeedbackRequest)(nil),                         // 163: peers_touch.model.agent.v1.RecordFeedbackRequest
+	(*RecordFeedbackResponse)(nil),                        // 164: peers_touch.model.agent.v1.RecordFeedbackResponse
+	nil,                                                   // 165: peers_touch.model.agent.v1.Conversation.MetaEntry
+	nil,                                                   // 166: peers_touch.model.agent.v1.UpdateConversationRequest.MetaEntry
+	(*timestamppb.Timestamp)(nil),                         // 167: google.protobuf.Timestamp
 }
 var file_domain_agent_agent_proto_depIdxs = []int32{
 	0,   // 0: peers_touch.model.agent.v1.Turn.status:type_name -> peers_touch.model.agent.v1.TurnStatus
-	165, // 1: peers_touch.model.agent.v1.Turn.started_at:type_name -> google.protobuf.Timestamp
-	165, // 2: peers_touch.model.agent.v1.Turn.ended_at:type_name -> google.protobuf.Timestamp
+	167, // 1: peers_touch.model.agent.v1.Turn.started_at:type_name -> google.protobuf.Timestamp
+	167, // 2: peers_touch.model.agent.v1.Turn.ended_at:type_name -> google.protobuf.Timestamp
 	28,  // 3: peers_touch.model.agent.v1.TurnTrace.tool_calls:type_name -> peers_touch.model.agent.v1.ToolCallRecord
 	29,  // 4: peers_touch.model.agent.v1.TurnTrace.provider_calls:type_name -> peers_touch.model.agent.v1.ProviderCallRecord
 	31,  // 5: peers_touch.model.agent.v1.TurnTrace.errors_classified:type_name -> peers_touch.model.agent.v1.ClassifiedErrorEvent
@@ -14349,22 +14452,22 @@ var file_domain_agent_agent_proto_depIdxs = []int32{
 	33,  // 7: peers_touch.model.agent.v1.TurnTrace.delegation_results:type_name -> peers_touch.model.agent.v1.DelegationResult
 	54,  // 8: peers_touch.model.agent.v1.TurnTrace.knowledge_chunks:type_name -> peers_touch.model.agent.v1.KnowledgeChunkReference
 	1,   // 9: peers_touch.model.agent.v1.ClassifiedErrorEvent.reason:type_name -> peers_touch.model.agent.v1.FailoverReason
-	165, // 10: peers_touch.model.agent.v1.ClassifiedErrorEvent.classified_at:type_name -> google.protobuf.Timestamp
+	167, // 10: peers_touch.model.agent.v1.ClassifiedErrorEvent.classified_at:type_name -> google.protobuf.Timestamp
 	2,   // 11: peers_touch.model.agent.v1.DelegationResult.status:type_name -> peers_touch.model.agent.v1.DelegationStatus
-	165, // 12: peers_touch.model.agent.v1.DelegationResult.started_at:type_name -> google.protobuf.Timestamp
-	165, // 13: peers_touch.model.agent.v1.DelegationResult.ended_at:type_name -> google.protobuf.Timestamp
-	163, // 14: peers_touch.model.agent.v1.Conversation.meta:type_name -> peers_touch.model.agent.v1.Conversation.MetaEntry
-	165, // 15: peers_touch.model.agent.v1.Conversation.created_at:type_name -> google.protobuf.Timestamp
-	165, // 16: peers_touch.model.agent.v1.Conversation.updated_at:type_name -> google.protobuf.Timestamp
-	79,  // 17: peers_touch.model.agent.v1.Conversation.runtime_binding:type_name -> peers_touch.model.agent.v1.ConversationRuntimeBinding
-	165, // 18: peers_touch.model.agent.v1.AgentThread.created_at:type_name -> google.protobuf.Timestamp
-	165, // 19: peers_touch.model.agent.v1.AgentThread.updated_at:type_name -> google.protobuf.Timestamp
+	167, // 12: peers_touch.model.agent.v1.DelegationResult.started_at:type_name -> google.protobuf.Timestamp
+	167, // 13: peers_touch.model.agent.v1.DelegationResult.ended_at:type_name -> google.protobuf.Timestamp
+	165, // 14: peers_touch.model.agent.v1.Conversation.meta:type_name -> peers_touch.model.agent.v1.Conversation.MetaEntry
+	167, // 15: peers_touch.model.agent.v1.Conversation.created_at:type_name -> google.protobuf.Timestamp
+	167, // 16: peers_touch.model.agent.v1.Conversation.updated_at:type_name -> google.protobuf.Timestamp
+	81,  // 17: peers_touch.model.agent.v1.Conversation.runtime_binding:type_name -> peers_touch.model.agent.v1.ConversationRuntimeBinding
+	167, // 18: peers_touch.model.agent.v1.AgentThread.created_at:type_name -> google.protobuf.Timestamp
+	167, // 19: peers_touch.model.agent.v1.AgentThread.updated_at:type_name -> google.protobuf.Timestamp
 	35,  // 20: peers_touch.model.agent.v1.CreateThreadResponse.thread:type_name -> peers_touch.model.agent.v1.AgentThread
 	35,  // 21: peers_touch.model.agent.v1.ListThreadsResponse.threads:type_name -> peers_touch.model.agent.v1.AgentThread
 	55,  // 22: peers_touch.model.agent.v1.ListThreadMessagesResponse.messages:type_name -> peers_touch.model.agent.v1.AgentMessage
 	3,   // 23: peers_touch.model.agent.v1.Agent.visibility:type_name -> peers_touch.model.agent.v1.AgentVisibility
-	165, // 24: peers_touch.model.agent.v1.Agent.created_at:type_name -> google.protobuf.Timestamp
-	165, // 25: peers_touch.model.agent.v1.Agent.updated_at:type_name -> google.protobuf.Timestamp
+	167, // 24: peers_touch.model.agent.v1.Agent.created_at:type_name -> google.protobuf.Timestamp
+	167, // 25: peers_touch.model.agent.v1.Agent.updated_at:type_name -> google.protobuf.Timestamp
 	3,   // 26: peers_touch.model.agent.v1.ListAgentsRequest.visibility:type_name -> peers_touch.model.agent.v1.AgentVisibility
 	42,  // 27: peers_touch.model.agent.v1.ListAgentsResponse.agents:type_name -> peers_touch.model.agent.v1.Agent
 	42,  // 28: peers_touch.model.agent.v1.GetAgentResponse.agent:type_name -> peers_touch.model.agent.v1.Agent
@@ -14375,176 +14478,177 @@ var file_domain_agent_agent_proto_depIdxs = []int32{
 	4,   // 33: peers_touch.model.agent.v1.KnowledgeResource.type:type_name -> peers_touch.model.agent.v1.KnowledgeResourceType
 	5,   // 34: peers_touch.model.agent.v1.KnowledgeResource.policy:type_name -> peers_touch.model.agent.v1.KnowledgeResourcePolicy
 	6,   // 35: peers_touch.model.agent.v1.KnowledgeResource.status:type_name -> peers_touch.model.agent.v1.KnowledgeResourceStatus
-	165, // 36: peers_touch.model.agent.v1.KnowledgeResource.created_at:type_name -> google.protobuf.Timestamp
-	165, // 37: peers_touch.model.agent.v1.KnowledgeResource.updated_at:type_name -> google.protobuf.Timestamp
+	167, // 36: peers_touch.model.agent.v1.KnowledgeResource.created_at:type_name -> google.protobuf.Timestamp
+	167, // 37: peers_touch.model.agent.v1.KnowledgeResource.updated_at:type_name -> google.protobuf.Timestamp
 	7,   // 38: peers_touch.model.agent.v1.AgentMessage.role:type_name -> peers_touch.model.agent.v1.MessageRole
-	165, // 39: peers_touch.model.agent.v1.AgentMessage.created_at:type_name -> google.protobuf.Timestamp
-	165, // 40: peers_touch.model.agent.v1.AgentMessage.updated_at:type_name -> google.protobuf.Timestamp
+	167, // 39: peers_touch.model.agent.v1.AgentMessage.created_at:type_name -> google.protobuf.Timestamp
+	167, // 40: peers_touch.model.agent.v1.AgentMessage.updated_at:type_name -> google.protobuf.Timestamp
 	13,  // 41: peers_touch.model.agent.v1.AgentMessage.message_status:type_name -> peers_touch.model.agent.v1.AgentMessageStatus
-	90,  // 42: peers_touch.model.agent.v1.AgentMessage.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
-	165, // 43: peers_touch.model.agent.v1.AgentMessage.tombstoned_at:type_name -> google.protobuf.Timestamp
+	92,  // 42: peers_touch.model.agent.v1.AgentMessage.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
+	167, // 43: peers_touch.model.agent.v1.AgentMessage.tombstoned_at:type_name -> google.protobuf.Timestamp
 	53,  // 44: peers_touch.model.agent.v1.ExecuteTurnRequest.knowledge_resources:type_name -> peers_touch.model.agent.v1.KnowledgeResource
 	27,  // 45: peers_touch.model.agent.v1.ExecuteTurnResponse.turn:type_name -> peers_touch.model.agent.v1.Turn
 	30,  // 46: peers_touch.model.agent.v1.ExecuteTurnResponse.trace:type_name -> peers_touch.model.agent.v1.TurnTrace
 	55,  // 47: peers_touch.model.agent.v1.ExecuteTurnResponse.response_message:type_name -> peers_touch.model.agent.v1.AgentMessage
-	94,  // 48: peers_touch.model.agent.v1.ExecuteTurnResponse.admission:type_name -> peers_touch.model.agent.v1.TurnAdmission
+	96,  // 48: peers_touch.model.agent.v1.ExecuteTurnResponse.admission:type_name -> peers_touch.model.agent.v1.TurnAdmission
 	27,  // 49: peers_touch.model.agent.v1.TurnTraceEntry.turn:type_name -> peers_touch.model.agent.v1.Turn
 	30,  // 50: peers_touch.model.agent.v1.TurnTraceEntry.trace:type_name -> peers_touch.model.agent.v1.TurnTrace
 	58,  // 51: peers_touch.model.agent.v1.ListTurnTracesResponse.entries:type_name -> peers_touch.model.agent.v1.TurnTraceEntry
 	58,  // 52: peers_touch.model.agent.v1.GetTurnTraceResponse.entry:type_name -> peers_touch.model.agent.v1.TurnTraceEntry
 	19,  // 53: peers_touch.model.agent.v1.ClientCapabilitySession.platform_kind:type_name -> peers_touch.model.agent.v1.ClientPlatform
-	99,  // 54: peers_touch.model.agent.v1.ClientCapabilitySession.typed_capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
-	165, // 55: peers_touch.model.agent.v1.ClientCapabilitySession.expires_at:type_name -> google.protobuf.Timestamp
+	101, // 54: peers_touch.model.agent.v1.ClientCapabilitySession.typed_capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
+	167, // 55: peers_touch.model.agent.v1.ClientCapabilitySession.expires_at:type_name -> google.protobuf.Timestamp
 	63,  // 56: peers_touch.model.agent.v1.ListClientCapabilitySessionsResponse.sessions:type_name -> peers_touch.model.agent.v1.ClientCapabilitySession
 	8,   // 57: peers_touch.model.agent.v1.ListConversationsRequest.status:type_name -> peers_touch.model.agent.v1.ConversationStatus
 	34,  // 58: peers_touch.model.agent.v1.ListConversationsResponse.conversations:type_name -> peers_touch.model.agent.v1.Conversation
 	34,  // 59: peers_touch.model.agent.v1.GetConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
 	34,  // 60: peers_touch.model.agent.v1.CreateConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	164, // 61: peers_touch.model.agent.v1.UpdateConversationRequest.meta:type_name -> peers_touch.model.agent.v1.UpdateConversationRequest.MetaEntry
+	166, // 61: peers_touch.model.agent.v1.UpdateConversationRequest.meta:type_name -> peers_touch.model.agent.v1.UpdateConversationRequest.MetaEntry
 	34,  // 62: peers_touch.model.agent.v1.UpdateConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	55,  // 63: peers_touch.model.agent.v1.ListMessagesResponse.messages:type_name -> peers_touch.model.agent.v1.AgentMessage
-	89,  // 64: peers_touch.model.agent.v1.AgentDefinition.runtime_budget_policy:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	9,   // 65: peers_touch.model.agent.v1.ConversationRuntimeBinding.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
-	165, // 66: peers_touch.model.agent.v1.ConversationRuntimeBinding.bound_at:type_name -> google.protobuf.Timestamp
-	14,  // 67: peers_touch.model.agent.v1.RuntimeCapability.resolution:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityResolution
-	165, // 68: peers_touch.model.agent.v1.RuntimeCapabilityProvenance.observed_at:type_name -> google.protobuf.Timestamp
-	81,  // 69: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.input:type_name -> peers_touch.model.agent.v1.RuntimeInputCapabilities
-	82,  // 70: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.output:type_name -> peers_touch.model.agent.v1.RuntimeOutputCapabilities
-	83,  // 71: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.runtime:type_name -> peers_touch.model.agent.v1.RuntimeExecutionCapabilities
-	84,  // 72: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.agentic:type_name -> peers_touch.model.agent.v1.RuntimeAgenticCapabilities
-	85,  // 73: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.limits:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityLimits
-	80,  // 74: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.resolution:type_name -> peers_touch.model.agent.v1.RuntimeCapability
-	86,  // 75: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.provenance:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityProvenance
-	9,   // 76: peers_touch.model.agent.v1.RuntimeSnapshot.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
-	87,  // 77: peers_touch.model.agent.v1.RuntimeSnapshot.capabilities:type_name -> peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
-	165, // 78: peers_touch.model.agent.v1.AgentAttachmentRef.expires_at:type_name -> google.protobuf.Timestamp
-	7,   // 79: peers_touch.model.agent.v1.CanonicalAgentMessage.role:type_name -> peers_touch.model.agent.v1.MessageRole
-	13,  // 80: peers_touch.model.agent.v1.CanonicalAgentMessage.status:type_name -> peers_touch.model.agent.v1.AgentMessageStatus
-	90,  // 81: peers_touch.model.agent.v1.CanonicalAgentMessage.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
-	165, // 82: peers_touch.model.agent.v1.CanonicalAgentMessage.created_at:type_name -> google.protobuf.Timestamp
-	10,  // 83: peers_touch.model.agent.v1.AgentTurn.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
-	88,  // 84: peers_touch.model.agent.v1.AgentTurn.runtime_snapshot:type_name -> peers_touch.model.agent.v1.RuntimeSnapshot
-	89,  // 85: peers_touch.model.agent.v1.AgentTurn.budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	165, // 86: peers_touch.model.agent.v1.AgentTurn.submitted_at:type_name -> google.protobuf.Timestamp
-	165, // 87: peers_touch.model.agent.v1.AgentTurn.started_at:type_name -> google.protobuf.Timestamp
-	165, // 88: peers_touch.model.agent.v1.AgentTurn.ended_at:type_name -> google.protobuf.Timestamp
-	12,  // 89: peers_touch.model.agent.v1.TurnQueueEntry.status:type_name -> peers_touch.model.agent.v1.TurnQueueStatus
-	165, // 90: peers_touch.model.agent.v1.TurnQueueEntry.created_at:type_name -> google.protobuf.Timestamp
-	165, // 91: peers_touch.model.agent.v1.TurnQueueEntry.updated_at:type_name -> google.protobuf.Timestamp
-	11,  // 92: peers_touch.model.agent.v1.TurnAdmission.status:type_name -> peers_touch.model.agent.v1.TurnAdmissionStatus
-	93,  // 93: peers_touch.model.agent.v1.TurnAdmission.queue_entry:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
-	88,  // 94: peers_touch.model.agent.v1.TurnAttempt.runtime_snapshot:type_name -> peers_touch.model.agent.v1.RuntimeSnapshot
-	10,  // 95: peers_touch.model.agent.v1.TurnAttempt.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
-	124, // 96: peers_touch.model.agent.v1.TurnAttempt.usage:type_name -> peers_touch.model.agent.v1.TurnUsage
-	165, // 97: peers_touch.model.agent.v1.TurnAttempt.started_at:type_name -> google.protobuf.Timestamp
-	165, // 98: peers_touch.model.agent.v1.TurnAttempt.ended_at:type_name -> google.protobuf.Timestamp
-	15,  // 99: peers_touch.model.agent.v1.ContextSegment.type:type_name -> peers_touch.model.agent.v1.ContextSegmentType
-	16,  // 100: peers_touch.model.agent.v1.ContextSegment.decision:type_name -> peers_touch.model.agent.v1.ContextSegmentDecision
-	96,  // 101: peers_touch.model.agent.v1.ContextLedger.segments:type_name -> peers_touch.model.agent.v1.ContextSegment
-	20,  // 102: peers_touch.model.agent.v1.ClientCapability.permission:type_name -> peers_touch.model.agent.v1.CapabilityPermissionState
-	98,  // 103: peers_touch.model.agent.v1.ClientCapability.constraints:type_name -> peers_touch.model.agent.v1.CapabilityConstraints
-	19,  // 104: peers_touch.model.agent.v1.ClientCapabilityLease.platform:type_name -> peers_touch.model.agent.v1.ClientPlatform
-	99,  // 105: peers_touch.model.agent.v1.ClientCapabilityLease.capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
-	165, // 106: peers_touch.model.agent.v1.ClientCapabilityLease.expires_at:type_name -> google.protobuf.Timestamp
-	165, // 107: peers_touch.model.agent.v1.ClientResourceRef.expires_at:type_name -> google.protobuf.Timestamp
-	165, // 108: peers_touch.model.agent.v1.ReceiptRecoveryCredential.expires_at:type_name -> google.protobuf.Timestamp
-	21,  // 109: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
-	165, // 110: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.execution_deadline:type_name -> google.protobuf.Timestamp
-	165, // 111: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.reconciliation_deadline:type_name -> google.protobuf.Timestamp
-	101, // 112: peers_touch.model.agent.v1.ClientCapabilityRequest.resource_refs:type_name -> peers_touch.model.agent.v1.ClientResourceRef
-	165, // 113: peers_touch.model.agent.v1.ClientCapabilityRequest.execution_deadline:type_name -> google.protobuf.Timestamp
-	21,  // 114: peers_touch.model.agent.v1.ClientCapabilityRequest.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
-	102, // 115: peers_touch.model.agent.v1.ClientCapabilityRequest.recovery_credential:type_name -> peers_touch.model.agent.v1.ReceiptRecoveryCredential
-	165, // 116: peers_touch.model.agent.v1.ClientCapabilityRequest.reconciliation_deadline:type_name -> google.protobuf.Timestamp
-	22,  // 117: peers_touch.model.agent.v1.ClientCapabilityReceipt.status:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceiptStatus
-	165, // 118: peers_touch.model.agent.v1.ClientCapabilityReceipt.occurred_at:type_name -> google.protobuf.Timestamp
-	105, // 119: peers_touch.model.agent.v1.ClientCapabilityReceipt.recovery_proof:type_name -> peers_touch.model.agent.v1.ReceiptRecoveryProof
-	165, // 120: peers_touch.model.agent.v1.ClientCapabilityCommandProof.issued_at:type_name -> google.protobuf.Timestamp
-	23,  // 121: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload.domain:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandDomain
-	165, // 122: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload.issued_at:type_name -> google.protobuf.Timestamp
-	19,  // 123: peers_touch.model.agent.v1.ClientCapabilityAdvertisement.platform:type_name -> peers_touch.model.agent.v1.ClientPlatform
-	99,  // 124: peers_touch.model.agent.v1.ClientCapabilityAdvertisement.capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
-	110, // 125: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest.advertisement:type_name -> peers_touch.model.agent.v1.ClientCapabilityAdvertisement
-	108, // 126: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	100, // 127: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ClientCapabilityLease
-	24,  // 128: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
-	108, // 129: peers_touch.model.agent.v1.RenewClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	100, // 130: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ClientCapabilityLease
-	24,  // 131: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
-	25,  // 132: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest.reason:type_name -> peers_touch.model.agent.v1.ClientCapabilityLeaseRevokeReason
-	108, // 133: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	165, // 134: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.revoked_at:type_name -> google.protobuf.Timestamp
-	25,  // 135: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.reason:type_name -> peers_touch.model.agent.v1.ClientCapabilityLeaseRevokeReason
-	24,  // 136: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
-	108, // 137: peers_touch.model.agent.v1.PullClientCapabilityRequestsRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	104, // 138: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse.requests:type_name -> peers_touch.model.agent.v1.ClientCapabilityRequest
-	24,  // 139: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
-	107, // 140: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest.receipt:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceipt
-	108, // 141: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
-	26,  // 142: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceiptErrorCode
-	24,  // 143: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse.command_error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
-	107, // 144: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptRequest.receipt:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceipt
-	120, // 145: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptResponse.result:type_name -> peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse
-	17,  // 146: peers_touch.model.agent.v1.ToolCall.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
-	165, // 147: peers_touch.model.agent.v1.ToolCall.dispatch_committed_at:type_name -> google.protobuf.Timestamp
-	165, // 148: peers_touch.model.agent.v1.ToolCall.execution_deadline:type_name -> google.protobuf.Timestamp
-	18,  // 149: peers_touch.model.agent.v1.ToolCall.status:type_name -> peers_touch.model.agent.v1.ToolCallStatus
-	165, // 150: peers_touch.model.agent.v1.ToolCall.cancel_requested_at:type_name -> google.protobuf.Timestamp
-	165, // 151: peers_touch.model.agent.v1.ToolCall.cancel_ack_at:type_name -> google.protobuf.Timestamp
-	165, // 152: peers_touch.model.agent.v1.ToolCall.started_at:type_name -> google.protobuf.Timestamp
-	165, // 153: peers_touch.model.agent.v1.ToolCall.ended_at:type_name -> google.protobuf.Timestamp
-	21,  // 154: peers_touch.model.agent.v1.ToolCall.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
-	165, // 155: peers_touch.model.agent.v1.ToolCall.reconciliation_deadline:type_name -> google.protobuf.Timestamp
-	165, // 156: peers_touch.model.agent.v1.TurnFeedback.created_at:type_name -> google.protobuf.Timestamp
-	165, // 157: peers_touch.model.agent.v1.TurnFeedback.updated_at:type_name -> google.protobuf.Timestamp
-	7,   // 158: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.role:type_name -> peers_touch.model.agent.v1.MessageRole
-	13,  // 159: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.status:type_name -> peers_touch.model.agent.v1.AgentMessageStatus
-	165, // 160: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.created_at:type_name -> google.protobuf.Timestamp
-	18,  // 161: peers_touch.model.agent.v1.TurnDiagnosticToolFact.status:type_name -> peers_touch.model.agent.v1.ToolCallStatus
-	17,  // 162: peers_touch.model.agent.v1.TurnDiagnosticToolFact.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
-	165, // 163: peers_touch.model.agent.v1.TurnDiagnosticToolFact.started_at:type_name -> google.protobuf.Timestamp
-	165, // 164: peers_touch.model.agent.v1.TurnDiagnosticToolFact.ended_at:type_name -> google.protobuf.Timestamp
-	10,  // 165: peers_touch.model.agent.v1.TurnDiagnosticReplay.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
-	95,  // 166: peers_touch.model.agent.v1.TurnDiagnosticReplay.attempts:type_name -> peers_touch.model.agent.v1.TurnAttempt
-	97,  // 167: peers_touch.model.agent.v1.TurnDiagnosticReplay.context_ledgers:type_name -> peers_touch.model.agent.v1.ContextLedger
-	127, // 168: peers_touch.model.agent.v1.TurnDiagnosticReplay.tool_calls:type_name -> peers_touch.model.agent.v1.TurnDiagnosticToolFact
-	125, // 169: peers_touch.model.agent.v1.TurnDiagnosticReplay.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
-	126, // 170: peers_touch.model.agent.v1.TurnDiagnosticReplay.messages:type_name -> peers_touch.model.agent.v1.TurnDiagnosticMessageFact
-	165, // 171: peers_touch.model.agent.v1.TurnDiagnosticReplay.started_at:type_name -> google.protobuf.Timestamp
-	165, // 172: peers_touch.model.agent.v1.TurnDiagnosticReplay.ended_at:type_name -> google.protobuf.Timestamp
-	165, // 173: peers_touch.model.agent.v1.TurnDiagnosticReplay.generated_at:type_name -> google.protobuf.Timestamp
-	30,  // 174: peers_touch.model.agent.v1.TurnDiagnosticReplay.trace:type_name -> peers_touch.model.agent.v1.TurnTrace
-	125, // 175: peers_touch.model.agent.v1.ListTurnFeedbackResponse.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
-	128, // 176: peers_touch.model.agent.v1.ExportTurnDiagnosticsResponse.replay:type_name -> peers_touch.model.agent.v1.TurnDiagnosticReplay
-	90,  // 177: peers_touch.model.agent.v1.SubmitTurnRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
-	89,  // 178: peers_touch.model.agent.v1.SubmitTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	92,  // 179: peers_touch.model.agent.v1.SubmitTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
-	94,  // 180: peers_touch.model.agent.v1.SubmitTurnResponse.admission:type_name -> peers_touch.model.agent.v1.TurnAdmission
-	93,  // 181: peers_touch.model.agent.v1.ListQueuedTurnsResponse.entries:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
-	93,  // 182: peers_touch.model.agent.v1.CancelQueuedTurnResponse.entry:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
-	92,  // 183: peers_touch.model.agent.v1.CancelTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
-	89,  // 184: peers_touch.model.agent.v1.RetryTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	92,  // 185: peers_touch.model.agent.v1.RetryTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
-	95,  // 186: peers_touch.model.agent.v1.RetryTurnResponse.attempt:type_name -> peers_touch.model.agent.v1.TurnAttempt
-	34,  // 187: peers_touch.model.agent.v1.RetryTurnResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	89,  // 188: peers_touch.model.agent.v1.RegenerateTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	92,  // 189: peers_touch.model.agent.v1.RegenerateTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
-	55,  // 190: peers_touch.model.agent.v1.RegenerateTurnResponse.assistant_message:type_name -> peers_touch.model.agent.v1.AgentMessage
-	34,  // 191: peers_touch.model.agent.v1.RegenerateTurnResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	90,  // 192: peers_touch.model.agent.v1.EditAndResendRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
-	89,  // 193: peers_touch.model.agent.v1.EditAndResendRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
-	92,  // 194: peers_touch.model.agent.v1.EditAndResendResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
-	55,  // 195: peers_touch.model.agent.v1.EditAndResendResponse.user_message:type_name -> peers_touch.model.agent.v1.AgentMessage
-	34,  // 196: peers_touch.model.agent.v1.EditAndResendResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	34,  // 197: peers_touch.model.agent.v1.SelectActiveBranchResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	34,  // 198: peers_touch.model.agent.v1.TombstoneMessageResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
-	55,  // 199: peers_touch.model.agent.v1.TombstoneMessageResponse.message:type_name -> peers_touch.model.agent.v1.AgentMessage
-	125, // 200: peers_touch.model.agent.v1.RecordFeedbackResponse.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
-	201, // [201:201] is the sub-list for method output_type
-	201, // [201:201] is the sub-list for method input_type
-	201, // [201:201] is the sub-list for extension type_name
-	201, // [201:201] is the sub-list for extension extendee
-	0,   // [0:201] is the sub-list for field type_name
+	34,  // 63: peers_touch.model.agent.v1.RestoreConversationResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	55,  // 64: peers_touch.model.agent.v1.ListMessagesResponse.messages:type_name -> peers_touch.model.agent.v1.AgentMessage
+	91,  // 65: peers_touch.model.agent.v1.AgentDefinition.runtime_budget_policy:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	9,   // 66: peers_touch.model.agent.v1.ConversationRuntimeBinding.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
+	167, // 67: peers_touch.model.agent.v1.ConversationRuntimeBinding.bound_at:type_name -> google.protobuf.Timestamp
+	14,  // 68: peers_touch.model.agent.v1.RuntimeCapability.resolution:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityResolution
+	167, // 69: peers_touch.model.agent.v1.RuntimeCapabilityProvenance.observed_at:type_name -> google.protobuf.Timestamp
+	83,  // 70: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.input:type_name -> peers_touch.model.agent.v1.RuntimeInputCapabilities
+	84,  // 71: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.output:type_name -> peers_touch.model.agent.v1.RuntimeOutputCapabilities
+	85,  // 72: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.runtime:type_name -> peers_touch.model.agent.v1.RuntimeExecutionCapabilities
+	86,  // 73: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.agentic:type_name -> peers_touch.model.agent.v1.RuntimeAgenticCapabilities
+	87,  // 74: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.limits:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityLimits
+	82,  // 75: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.resolution:type_name -> peers_touch.model.agent.v1.RuntimeCapability
+	88,  // 76: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot.provenance:type_name -> peers_touch.model.agent.v1.RuntimeCapabilityProvenance
+	9,   // 77: peers_touch.model.agent.v1.RuntimeSnapshot.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
+	89,  // 78: peers_touch.model.agent.v1.RuntimeSnapshot.capabilities:type_name -> peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
+	167, // 79: peers_touch.model.agent.v1.AgentAttachmentRef.expires_at:type_name -> google.protobuf.Timestamp
+	7,   // 80: peers_touch.model.agent.v1.CanonicalAgentMessage.role:type_name -> peers_touch.model.agent.v1.MessageRole
+	13,  // 81: peers_touch.model.agent.v1.CanonicalAgentMessage.status:type_name -> peers_touch.model.agent.v1.AgentMessageStatus
+	92,  // 82: peers_touch.model.agent.v1.CanonicalAgentMessage.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
+	167, // 83: peers_touch.model.agent.v1.CanonicalAgentMessage.created_at:type_name -> google.protobuf.Timestamp
+	10,  // 84: peers_touch.model.agent.v1.AgentTurn.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
+	90,  // 85: peers_touch.model.agent.v1.AgentTurn.runtime_snapshot:type_name -> peers_touch.model.agent.v1.RuntimeSnapshot
+	91,  // 86: peers_touch.model.agent.v1.AgentTurn.budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	167, // 87: peers_touch.model.agent.v1.AgentTurn.submitted_at:type_name -> google.protobuf.Timestamp
+	167, // 88: peers_touch.model.agent.v1.AgentTurn.started_at:type_name -> google.protobuf.Timestamp
+	167, // 89: peers_touch.model.agent.v1.AgentTurn.ended_at:type_name -> google.protobuf.Timestamp
+	12,  // 90: peers_touch.model.agent.v1.TurnQueueEntry.status:type_name -> peers_touch.model.agent.v1.TurnQueueStatus
+	167, // 91: peers_touch.model.agent.v1.TurnQueueEntry.created_at:type_name -> google.protobuf.Timestamp
+	167, // 92: peers_touch.model.agent.v1.TurnQueueEntry.updated_at:type_name -> google.protobuf.Timestamp
+	11,  // 93: peers_touch.model.agent.v1.TurnAdmission.status:type_name -> peers_touch.model.agent.v1.TurnAdmissionStatus
+	95,  // 94: peers_touch.model.agent.v1.TurnAdmission.queue_entry:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
+	90,  // 95: peers_touch.model.agent.v1.TurnAttempt.runtime_snapshot:type_name -> peers_touch.model.agent.v1.RuntimeSnapshot
+	10,  // 96: peers_touch.model.agent.v1.TurnAttempt.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
+	126, // 97: peers_touch.model.agent.v1.TurnAttempt.usage:type_name -> peers_touch.model.agent.v1.TurnUsage
+	167, // 98: peers_touch.model.agent.v1.TurnAttempt.started_at:type_name -> google.protobuf.Timestamp
+	167, // 99: peers_touch.model.agent.v1.TurnAttempt.ended_at:type_name -> google.protobuf.Timestamp
+	15,  // 100: peers_touch.model.agent.v1.ContextSegment.type:type_name -> peers_touch.model.agent.v1.ContextSegmentType
+	16,  // 101: peers_touch.model.agent.v1.ContextSegment.decision:type_name -> peers_touch.model.agent.v1.ContextSegmentDecision
+	98,  // 102: peers_touch.model.agent.v1.ContextLedger.segments:type_name -> peers_touch.model.agent.v1.ContextSegment
+	20,  // 103: peers_touch.model.agent.v1.ClientCapability.permission:type_name -> peers_touch.model.agent.v1.CapabilityPermissionState
+	100, // 104: peers_touch.model.agent.v1.ClientCapability.constraints:type_name -> peers_touch.model.agent.v1.CapabilityConstraints
+	19,  // 105: peers_touch.model.agent.v1.ClientCapabilityLease.platform:type_name -> peers_touch.model.agent.v1.ClientPlatform
+	101, // 106: peers_touch.model.agent.v1.ClientCapabilityLease.capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
+	167, // 107: peers_touch.model.agent.v1.ClientCapabilityLease.expires_at:type_name -> google.protobuf.Timestamp
+	167, // 108: peers_touch.model.agent.v1.ClientResourceRef.expires_at:type_name -> google.protobuf.Timestamp
+	167, // 109: peers_touch.model.agent.v1.ReceiptRecoveryCredential.expires_at:type_name -> google.protobuf.Timestamp
+	21,  // 110: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
+	167, // 111: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.execution_deadline:type_name -> google.protobuf.Timestamp
+	167, // 112: peers_touch.model.agent.v1.ReceiptRecoveryScopePayload.reconciliation_deadline:type_name -> google.protobuf.Timestamp
+	103, // 113: peers_touch.model.agent.v1.ClientCapabilityRequest.resource_refs:type_name -> peers_touch.model.agent.v1.ClientResourceRef
+	167, // 114: peers_touch.model.agent.v1.ClientCapabilityRequest.execution_deadline:type_name -> google.protobuf.Timestamp
+	21,  // 115: peers_touch.model.agent.v1.ClientCapabilityRequest.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
+	104, // 116: peers_touch.model.agent.v1.ClientCapabilityRequest.recovery_credential:type_name -> peers_touch.model.agent.v1.ReceiptRecoveryCredential
+	167, // 117: peers_touch.model.agent.v1.ClientCapabilityRequest.reconciliation_deadline:type_name -> google.protobuf.Timestamp
+	22,  // 118: peers_touch.model.agent.v1.ClientCapabilityReceipt.status:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceiptStatus
+	167, // 119: peers_touch.model.agent.v1.ClientCapabilityReceipt.occurred_at:type_name -> google.protobuf.Timestamp
+	107, // 120: peers_touch.model.agent.v1.ClientCapabilityReceipt.recovery_proof:type_name -> peers_touch.model.agent.v1.ReceiptRecoveryProof
+	167, // 121: peers_touch.model.agent.v1.ClientCapabilityCommandProof.issued_at:type_name -> google.protobuf.Timestamp
+	23,  // 122: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload.domain:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandDomain
+	167, // 123: peers_touch.model.agent.v1.ClientCapabilityCommandSigningPayload.issued_at:type_name -> google.protobuf.Timestamp
+	19,  // 124: peers_touch.model.agent.v1.ClientCapabilityAdvertisement.platform:type_name -> peers_touch.model.agent.v1.ClientPlatform
+	101, // 125: peers_touch.model.agent.v1.ClientCapabilityAdvertisement.capabilities:type_name -> peers_touch.model.agent.v1.ClientCapability
+	112, // 126: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest.advertisement:type_name -> peers_touch.model.agent.v1.ClientCapabilityAdvertisement
+	110, // 127: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	102, // 128: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ClientCapabilityLease
+	24,  // 129: peers_touch.model.agent.v1.RegisterClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	110, // 130: peers_touch.model.agent.v1.RenewClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	102, // 131: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse.lease:type_name -> peers_touch.model.agent.v1.ClientCapabilityLease
+	24,  // 132: peers_touch.model.agent.v1.RenewClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	25,  // 133: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest.reason:type_name -> peers_touch.model.agent.v1.ClientCapabilityLeaseRevokeReason
+	110, // 134: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	167, // 135: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.revoked_at:type_name -> google.protobuf.Timestamp
+	25,  // 136: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.reason:type_name -> peers_touch.model.agent.v1.ClientCapabilityLeaseRevokeReason
+	24,  // 137: peers_touch.model.agent.v1.RevokeClientCapabilityLeaseResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	110, // 138: peers_touch.model.agent.v1.PullClientCapabilityRequestsRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	106, // 139: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse.requests:type_name -> peers_touch.model.agent.v1.ClientCapabilityRequest
+	24,  // 140: peers_touch.model.agent.v1.PullClientCapabilityRequestsResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	109, // 141: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest.receipt:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceipt
+	110, // 142: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	26,  // 143: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceiptErrorCode
+	24,  // 144: peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse.command_error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	109, // 145: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptRequest.receipt:type_name -> peers_touch.model.agent.v1.ClientCapabilityReceipt
+	122, // 146: peers_touch.model.agent.v1.SubmitClientCapabilityRecoveryReceiptResponse.result:type_name -> peers_touch.model.agent.v1.SubmitClientCapabilityReceiptResponse
+	17,  // 147: peers_touch.model.agent.v1.ToolCall.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
+	167, // 148: peers_touch.model.agent.v1.ToolCall.dispatch_committed_at:type_name -> google.protobuf.Timestamp
+	167, // 149: peers_touch.model.agent.v1.ToolCall.execution_deadline:type_name -> google.protobuf.Timestamp
+	18,  // 150: peers_touch.model.agent.v1.ToolCall.status:type_name -> peers_touch.model.agent.v1.ToolCallStatus
+	167, // 151: peers_touch.model.agent.v1.ToolCall.cancel_requested_at:type_name -> google.protobuf.Timestamp
+	167, // 152: peers_touch.model.agent.v1.ToolCall.cancel_ack_at:type_name -> google.protobuf.Timestamp
+	167, // 153: peers_touch.model.agent.v1.ToolCall.started_at:type_name -> google.protobuf.Timestamp
+	167, // 154: peers_touch.model.agent.v1.ToolCall.ended_at:type_name -> google.protobuf.Timestamp
+	21,  // 155: peers_touch.model.agent.v1.ToolCall.replay_policy:type_name -> peers_touch.model.agent.v1.ClientExecutionReplayPolicy
+	167, // 156: peers_touch.model.agent.v1.ToolCall.reconciliation_deadline:type_name -> google.protobuf.Timestamp
+	167, // 157: peers_touch.model.agent.v1.TurnFeedback.created_at:type_name -> google.protobuf.Timestamp
+	167, // 158: peers_touch.model.agent.v1.TurnFeedback.updated_at:type_name -> google.protobuf.Timestamp
+	7,   // 159: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.role:type_name -> peers_touch.model.agent.v1.MessageRole
+	13,  // 160: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.status:type_name -> peers_touch.model.agent.v1.AgentMessageStatus
+	167, // 161: peers_touch.model.agent.v1.TurnDiagnosticMessageFact.created_at:type_name -> google.protobuf.Timestamp
+	18,  // 162: peers_touch.model.agent.v1.TurnDiagnosticToolFact.status:type_name -> peers_touch.model.agent.v1.ToolCallStatus
+	17,  // 163: peers_touch.model.agent.v1.TurnDiagnosticToolFact.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
+	167, // 164: peers_touch.model.agent.v1.TurnDiagnosticToolFact.started_at:type_name -> google.protobuf.Timestamp
+	167, // 165: peers_touch.model.agent.v1.TurnDiagnosticToolFact.ended_at:type_name -> google.protobuf.Timestamp
+	10,  // 166: peers_touch.model.agent.v1.TurnDiagnosticReplay.status:type_name -> peers_touch.model.agent.v1.AgentTurnStatus
+	97,  // 167: peers_touch.model.agent.v1.TurnDiagnosticReplay.attempts:type_name -> peers_touch.model.agent.v1.TurnAttempt
+	99,  // 168: peers_touch.model.agent.v1.TurnDiagnosticReplay.context_ledgers:type_name -> peers_touch.model.agent.v1.ContextLedger
+	129, // 169: peers_touch.model.agent.v1.TurnDiagnosticReplay.tool_calls:type_name -> peers_touch.model.agent.v1.TurnDiagnosticToolFact
+	127, // 170: peers_touch.model.agent.v1.TurnDiagnosticReplay.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
+	128, // 171: peers_touch.model.agent.v1.TurnDiagnosticReplay.messages:type_name -> peers_touch.model.agent.v1.TurnDiagnosticMessageFact
+	167, // 172: peers_touch.model.agent.v1.TurnDiagnosticReplay.started_at:type_name -> google.protobuf.Timestamp
+	167, // 173: peers_touch.model.agent.v1.TurnDiagnosticReplay.ended_at:type_name -> google.protobuf.Timestamp
+	167, // 174: peers_touch.model.agent.v1.TurnDiagnosticReplay.generated_at:type_name -> google.protobuf.Timestamp
+	30,  // 175: peers_touch.model.agent.v1.TurnDiagnosticReplay.trace:type_name -> peers_touch.model.agent.v1.TurnTrace
+	127, // 176: peers_touch.model.agent.v1.ListTurnFeedbackResponse.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
+	130, // 177: peers_touch.model.agent.v1.ExportTurnDiagnosticsResponse.replay:type_name -> peers_touch.model.agent.v1.TurnDiagnosticReplay
+	92,  // 178: peers_touch.model.agent.v1.SubmitTurnRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
+	91,  // 179: peers_touch.model.agent.v1.SubmitTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	94,  // 180: peers_touch.model.agent.v1.SubmitTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
+	96,  // 181: peers_touch.model.agent.v1.SubmitTurnResponse.admission:type_name -> peers_touch.model.agent.v1.TurnAdmission
+	95,  // 182: peers_touch.model.agent.v1.ListQueuedTurnsResponse.entries:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
+	95,  // 183: peers_touch.model.agent.v1.CancelQueuedTurnResponse.entry:type_name -> peers_touch.model.agent.v1.TurnQueueEntry
+	94,  // 184: peers_touch.model.agent.v1.CancelTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
+	91,  // 185: peers_touch.model.agent.v1.RetryTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	94,  // 186: peers_touch.model.agent.v1.RetryTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
+	97,  // 187: peers_touch.model.agent.v1.RetryTurnResponse.attempt:type_name -> peers_touch.model.agent.v1.TurnAttempt
+	34,  // 188: peers_touch.model.agent.v1.RetryTurnResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	91,  // 189: peers_touch.model.agent.v1.RegenerateTurnRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	94,  // 190: peers_touch.model.agent.v1.RegenerateTurnResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
+	55,  // 191: peers_touch.model.agent.v1.RegenerateTurnResponse.assistant_message:type_name -> peers_touch.model.agent.v1.AgentMessage
+	34,  // 192: peers_touch.model.agent.v1.RegenerateTurnResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	92,  // 193: peers_touch.model.agent.v1.EditAndResendRequest.attachments:type_name -> peers_touch.model.agent.v1.AgentAttachmentRef
+	91,  // 194: peers_touch.model.agent.v1.EditAndResendRequest.requested_budget:type_name -> peers_touch.model.agent.v1.RuntimeBudget
+	94,  // 195: peers_touch.model.agent.v1.EditAndResendResponse.turn:type_name -> peers_touch.model.agent.v1.AgentTurn
+	55,  // 196: peers_touch.model.agent.v1.EditAndResendResponse.user_message:type_name -> peers_touch.model.agent.v1.AgentMessage
+	34,  // 197: peers_touch.model.agent.v1.EditAndResendResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	34,  // 198: peers_touch.model.agent.v1.SelectActiveBranchResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	34,  // 199: peers_touch.model.agent.v1.TombstoneMessageResponse.conversation:type_name -> peers_touch.model.agent.v1.Conversation
+	55,  // 200: peers_touch.model.agent.v1.TombstoneMessageResponse.message:type_name -> peers_touch.model.agent.v1.AgentMessage
+	127, // 201: peers_touch.model.agent.v1.RecordFeedbackResponse.feedback:type_name -> peers_touch.model.agent.v1.TurnFeedback
+	202, // [202:202] is the sub-list for method output_type
+	202, // [202:202] is the sub-list for method input_type
+	202, // [202:202] is the sub-list for extension type_name
+	202, // [202:202] is the sub-list for extension extendee
+	0,   // [0:202] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_agent_proto_init() }
@@ -14556,19 +14660,19 @@ func file_domain_agent_agent_proto_init() {
 	file_domain_agent_agent_proto_msgTypes[29].OneofWrappers = []any{}
 	file_domain_agent_agent_proto_msgTypes[43].OneofWrappers = []any{}
 	file_domain_agent_agent_proto_msgTypes[45].OneofWrappers = []any{}
-	file_domain_agent_agent_proto_msgTypes[49].OneofWrappers = []any{}
-	file_domain_agent_agent_proto_msgTypes[62].OneofWrappers = []any{}
-	file_domain_agent_agent_proto_msgTypes[97].OneofWrappers = []any{}
-	file_domain_agent_agent_proto_msgTypes[106].OneofWrappers = []any{}
-	file_domain_agent_agent_proto_msgTypes[122].OneofWrappers = []any{}
-	file_domain_agent_agent_proto_msgTypes[134].OneofWrappers = []any{}
+	file_domain_agent_agent_proto_msgTypes[51].OneofWrappers = []any{}
+	file_domain_agent_agent_proto_msgTypes[64].OneofWrappers = []any{}
+	file_domain_agent_agent_proto_msgTypes[99].OneofWrappers = []any{}
+	file_domain_agent_agent_proto_msgTypes[108].OneofWrappers = []any{}
+	file_domain_agent_agent_proto_msgTypes[124].OneofWrappers = []any{}
+	file_domain_agent_agent_proto_msgTypes[136].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_agent_proto_rawDesc), len(file_domain_agent_agent_proto_rawDesc)),
 			NumEnums:      27,
-			NumMessages:   138,
+			NumMessages:   140,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

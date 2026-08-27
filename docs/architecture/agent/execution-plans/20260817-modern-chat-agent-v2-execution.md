@@ -1449,16 +1449,16 @@ Only then may G-F preflight begin.
 
 **Depends on**: F1, F2, F3, F4.
 **Owns**: the C01-C10/A01-A14 advancement decision, not implementation.
-**Status**: in progress. Commits through `76b873098` repaired the profile-owned
-provider/model fixture, durable Station runtime authority, evidence token-field
-classification, and portable binding/capability/session normalization. The
-source-matched 2026-08-27 rerun passed the complete AS-F01 runtime attestation,
-then failed closed at `foundation-browser-direct / AS-F01 / en / single /
-sample-001` because early role payloads lacked required source-backed
-`runtime-events`, `measurement-report`, `side-effect-count`, and `replay`
-fields. The Gate remains `PARTIAL / UNPROVEN`; cleanup passed and W1 is blocked
-while those roles are populated from the actual stream, elapsed time, queue
-readback, and repeated Station readback.
+**Status**: in progress. Commits through `040e92f14` repaired the profile-owned
+provider/model fixture, durable Station runtime authority, portable
+attestation normalization, and AS-F01 source-backed evidence roles. The
+source-matched 2026-08-27 rerun completed the first Browser AS-F01 tuple and
+advanced to `foundation-browser-direct / AS-F02 / en / single / sample-001`,
+where it failed closed because AS-F02 has no completed production
+conversation/Turn capture for runtime attestation. The Gate remains
+`PARTIAL / UNPROVEN`; cleanup passed and W1 is blocked while the reviewed
+topic/composer/queue/idempotency lifecycle is wired to production actions and
+readbacks.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"

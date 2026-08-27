@@ -2,7 +2,8 @@ use crate::application::agent_turn as application_agent_turn;
 use crate::application::session_resolver;
 use crate::contracts::{
     AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
-    AgentConversationListInput, AgentConversationMessagesInput, AgentConversationUpdateInput,
+    AgentConversationListInput, AgentConversationMessagesInput, AgentConversationRestoreInput,
+    AgentConversationUpdateInput,
     AgentEditAndResendInput, AgentExecuteTurnInput, AgentGroupCreateInput, AgentGroupDeleteInput,
     AgentGroupUpdateInput, AgentKnowledgeBindingCreateInput, AgentKnowledgeBindingDeleteInput,
     AgentKnowledgeBindingListInput, AgentKnowledgeBindingUpdateInput, AgentMessageTranslateInput,
@@ -234,6 +235,19 @@ pub fn agent_conversation_archive(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     application_agent_turn::agent_conversation_archive(input, &token)
+}
+
+#[tauri::command]
+pub fn agent_conversation_restore(
+    input: AgentConversationRestoreInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_conversation_restore(input, &token)
 }
 
 #[tauri::command]

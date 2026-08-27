@@ -53,6 +53,11 @@ type conversationArchiveRequest struct {
 	ExpectedVersion uint64 `json:"expected_version"`
 }
 
+type conversationRestoreRequest struct {
+	ConversationID  string `json:"conversation_id"`
+	ExpectedVersion uint64 `json:"expected_version"`
+}
+
 type messageListRequest struct {
 	ConversationID string `json:"conversation_id"`
 	AfterSeq       int64  `json:"after_seq"`
@@ -205,6 +210,37 @@ func (h *ConversationHandlers) HandleArchiveConversation(ctx context.Context, re
 		return nil
 	}
 	writeJSON(resp, http.StatusOK, map[string]any{"ok": true})
+	return nil
+}
+
+func (h *ConversationHandlers) HandleRestoreConversation(ctx context.Context, req server.Request, resp server.Response) error {
+	var input conversationRestoreRequest
+	if err := json.Unmarshal(req.Body(), &input); err != nil {
+		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+		return nil
+	}
+	if input.ConversationID == "" || input.ExpectedVersion == 0 {
+		writeJSON(
+			resp,
+			http.StatusBadRequest,
+			map[string]any{"ok": false, "error": "conversation_id and expected_version are required"},
+		)
+		return nil
+	}
+	conversation, err := h.convService.RestoreConversation(
+		ctx,
+		subjectActorID(ctx),
+		input.ConversationID,
+		input.ExpectedVersion,
+	)
+	if err != nil {
+		writeJSON(resp, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
+		return nil
+	}
+	writeJSON(resp, http.StatusOK, map[string]any{
+		"ok":           true,
+		"conversation": conversationToJSON(conversation),
+	})
 	return nil
 }
 

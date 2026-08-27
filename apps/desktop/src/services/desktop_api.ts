@@ -2775,6 +2775,11 @@ export interface AgentConversationArchiveInput {
   expected_version: number;
 }
 
+export interface AgentConversationRestoreInput {
+  conversation_id: string;
+  expected_version: number;
+}
+
 export interface AgentRetryTurnInput {
   conversation_id: string;
   source_turn_id: string;
@@ -4615,6 +4620,18 @@ export const api = {
         permanent,
       },
     ),
+
+  restoreAgentConversation: (conversationId: string, expectedVersion: number) =>
+    invokeRustDataFromStatus<
+      AgentConversationRestoreInput,
+      { ok: boolean; conversation: AgentConversation }
+    >(
+      'agent_conversation_restore',
+      {
+        conversation_id: conversationId,
+        expected_version: expectedVersion,
+      },
+    ).then((result) => result.conversation),
 
   retryAgentTurn: (input: AgentRetryTurnInput) =>
     invokeRustDataFromStatus<AgentRetryTurnInput, Record<string, unknown>>('agent_retry_turn', input),

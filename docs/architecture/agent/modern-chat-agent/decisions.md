@@ -263,6 +263,10 @@ One conversation has one active turn. Additional submissions enter a bounded
 FIFO queue with explicit position, cancellation, and admission status. Capacity
 is Station policy and overflow returns `TURN_QUEUE_FULL`.
 
+Conversation lifecycle mutations use the same authority:
+`ACTIVE <-> ARCHIVED` is versioned and recoverable, while permanent deletion
+returns `ACTIVE_DEPENDENCY` until the active Turn and pending queue are settled.
+
 ### Rationale
 
 This preserves natural conversation order without an unbounded queue.

@@ -509,6 +509,15 @@ message ArchiveConversationResponse {
   bool success = 1;
 }
 
+message RestoreConversationRequest {
+  string conversation_id = 1;
+  uint64 expected_version = 2;
+}
+
+message RestoreConversationResponse {
+  Conversation conversation = 1;
+}
+
 // ============================================================================
 // Message listing + event streaming (cursor replay)
 // ============================================================================

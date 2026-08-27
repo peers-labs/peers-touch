@@ -1101,6 +1101,12 @@ pub struct AgentConversationArchiveInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationRestoreInput {
+    pub conversation_id: String,
+    pub expected_version: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRetryTurnInput {
     pub conversation_id: String,
     pub source_turn_id: String,

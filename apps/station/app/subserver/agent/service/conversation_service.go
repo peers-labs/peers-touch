@@ -323,24 +323,139 @@ func (s *ConversationService) ArchiveConversation(ctx context.Context, ptid, con
 	if ptid == "" || conversationID == "" || expectedVersion == 0 {
 		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "ptid, conversation_id and expected_version are required", nil)
 	}
-	status := string(domain.ConversationStatusArchived)
-	if permanent {
-		status = "deleted"
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var conversation persistence.Conversation
+		if queryErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND ptid = ? AND version = ?", conversationID, ptid, expectedVersion).
+			First(&conversation).Error; queryErr != nil {
+			return errcode.New(
+				errcode.AgentVersionConflict,
+				http.StatusConflict,
+				"conversation missing, not owned, or version changed",
+				queryErr,
+			)
+		}
+		if conversation.Status == string(domain.ConversationStatusDeleted) {
+			return errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"deleted conversation cannot be mutated",
+				nil,
+			)
+		}
+		status := string(domain.ConversationStatusArchived)
+		if permanent {
+			if dependencyErr := rejectConversationDeletionDependencies(tx, conversation.ID); dependencyErr != nil {
+				return dependencyErr
+			}
+			status = string(domain.ConversationStatusDeleted)
+		}
+		if updateErr := tx.Model(&conversation).Updates(map[string]interface{}{
+			"status":     status,
+			"updated_at": time.Now(),
+			"version":    gorm.Expr("version + 1"),
+		}).Error; updateErr != nil {
+			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to archive conversation", updateErr)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	logger.Infof(ctx, "conversation archived: conv_id=%s permanent=%v", conversationID, permanent)
+	return nil
+}
+
+func (s *ConversationService) RestoreConversation(
+	ctx context.Context,
+	ptid string,
+	conversationID string,
+	expectedVersion uint64,
+) (*domain.Conversation, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ptid = strings.TrimSpace(ptid)
+	conversationID = strings.TrimSpace(conversationID)
+	if ptid == "" || conversationID == "" || expectedVersion == 0 {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"ptid, conversation_id and expected_version are required",
+			nil,
+		)
 	}
 	result := db.WithContext(ctx).Model(&persistence.Conversation{}).
-		Where("id = ? AND ptid = ? AND version = ?", conversationID, ptid, expectedVersion).
+		Where(
+			"id = ? AND ptid = ? AND version = ? AND status = ?",
+			conversationID,
+			ptid,
+			expectedVersion,
+			string(domain.ConversationStatusArchived),
+		).
 		Updates(map[string]interface{}{
-			"status":     status,
+			"status":     string(domain.ConversationStatusActive),
 			"updated_at": time.Now(),
 			"version":    gorm.Expr("version + 1"),
 		})
 	if result.Error != nil {
-		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to archive conversation", result.Error)
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to restore conversation",
+			result.Error,
+		)
 	}
 	if result.RowsAffected != 1 {
-		return errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "conversation missing, not owned, or version changed", nil)
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"conversation is not archived or version changed",
+			nil,
+		)
 	}
-	logger.Infof(ctx, "conversation archived: conv_id=%s permanent=%v", conversationID, permanent)
+	return s.GetConversation(ctx, ptid, conversationID)
+}
+
+func rejectConversationDeletionDependencies(tx *gorm.DB, conversationID string) error {
+	var activeTurns int64
+	if err := tx.Model(&persistence.AgentTurn{}).
+		Where(
+			"conversation_id = ? AND status IN ?",
+			conversationID,
+			[]string{
+				string(domain.TurnStatusRunning),
+				string(domain.TurnStatusWaitingLocalTool),
+			},
+		).
+		Count(&activeTurns).Error; err != nil {
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"count active conversation turns",
+			err,
+		)
+	}
+	var pendingTurns int64
+	if err := tx.Model(&persistence.TurnQueueEntry{}).
+		Where("conversation_id = ? AND status = ?", conversationID, queueStatusPending).
+		Count(&pendingTurns).Error; err != nil {
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"count pending conversation turns",
+			err,
+		)
+	}
+	if activeTurns > 0 || pendingTurns > 0 {
+		return errcode.New(
+			errcode.AgentActiveDependency,
+			http.StatusConflict,
+			"conversation has active or queued turns",
+			nil,
+		)
+	}
 	return nil
 }
 

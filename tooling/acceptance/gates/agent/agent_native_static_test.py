@@ -194,6 +194,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "submitFoundationTurns",
             "updateFoundationConversation",
             "archiveFoundationConversation",
+            "restoreFoundationConversation",
             "retryFoundationTurn",
             "regenerateFoundationTurn",
             "editAndResendFoundationMessage",

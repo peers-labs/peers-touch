@@ -8,7 +8,8 @@ use crate::application::error_resolver::ProviderKind;
 use crate::application::{agent_workspace, error_resolver, tools};
 use crate::contracts::{
     AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
-    AgentConversationListInput, AgentConversationMessagesInput, AgentConversationUpdateInput,
+    AgentConversationListInput, AgentConversationMessagesInput, AgentConversationRestoreInput,
+    AgentConversationUpdateInput,
     AgentEditAndResendInput, AgentExecuteTurnInput, AgentGroupCreateInput, AgentGroupDeleteInput,
     AgentGroupUpdateInput, AgentKnowledgeBindingCreateInput, AgentKnowledgeBindingDeleteInput,
     AgentKnowledgeBindingListInput, AgentKnowledgeBindingUpdateInput, AgentMessageTranslateInput,
@@ -1773,6 +1774,37 @@ pub fn agent_conversation_archive(
         Err(err) => {
             tracing::error!(command = "agent_conversation_archive", error = %err, "Conversation archive failed");
             err.into_app_result("Failed to archive agent conversation")
+        }
+    }
+}
+
+pub fn agent_conversation_restore(
+    input: AgentConversationRestoreInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let conversation_id = input.conversation_id.trim().to_string();
+    if conversation_id.is_empty() || input.expected_version == 0 {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id and expected_version are required",
+            None,
+        );
+    }
+    let body = json!({
+        "conversation_id": conversation_id,
+        "expected_version": input.expected_version,
+    });
+    match station_client::request_json(
+        Method::POST,
+        "/sub-agent/agent/conversation/restore",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(result) => success_payload("agent_conversation_restore", result),
+        Err(err) => {
+            tracing::error!(command = "agent_conversation_restore", error = %err, "Conversation restore failed");
+            err.into_app_result("Failed to restore agent conversation")
         }
     }
 }

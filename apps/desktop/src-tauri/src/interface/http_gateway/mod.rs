@@ -2968,6 +2968,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agent_turn::agent_conversation_archive(input, &token))
         }
+        "agent_conversation_restore" => {
+            let input = match parse_args::<AgentConversationRestoreInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_conversation_restore(input, &token))
+        }
         "agent_retry_turn" => {
             let input = match parse_args::<AgentRetryTurnInput>(args) {
                 Ok(v) => v,

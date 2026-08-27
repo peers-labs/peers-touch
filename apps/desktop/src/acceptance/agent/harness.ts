@@ -1066,6 +1066,16 @@ export function installAcceptanceHarness(): void {
       );
     },
 
+    async restoreFoundationConversation({
+      conversationId,
+      expectedVersion,
+    }: {
+      conversationId: string;
+      expectedVersion: number;
+    }) {
+      return api.restoreAgentConversation(conversationId, expectedVersion);
+    },
+
     async listFoundationTurnQueue({
       conversationId,
     }: {

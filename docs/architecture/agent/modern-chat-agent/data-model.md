@@ -59,13 +59,15 @@ Local selected-Agent and layout preferences are not fields of this entity.
 Conversation status:
 
 ```text
-ACTIVE -> ARCHIVED -> DELETED
+ACTIVE <-> ARCHIVED -> DELETED
 ```
 
-`DELETED` first creates an actor-inaccessible tombstone and fences new
-admission. Hard deletion occurs only after active turns/operations are terminal
-and runtime cleanup is acknowledged. Trace/evidence snapshots follow the
-explicit rules in §6.
+Archive and restore are versioned, actor-scoped mutations. `DELETED` first
+creates an actor-inaccessible tombstone and fences new admission. Deletion
+rejects with `ACTIVE_DEPENDENCY` while a Turn is running/waiting or a queue
+entry is pending; hard deletion occurs only after active turns/operations are
+terminal and runtime cleanup is acknowledged. Trace/evidence snapshots follow
+the explicit rules in §6.
 
 ### 2.3 ConversationRuntimeBinding
 
