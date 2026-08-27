@@ -649,6 +649,18 @@ no acceptance cell container or retained run checkout, and every allocated
 local forward was released. This closes NDR-W7 for Linux only; NDR-W8 macOS and
 NDR-W9 Windows remain separate platform proofs.
 
+The later MP-W13-F rerun at source commit `708266d4bb61` exposed a runtime
+isolation defect when a persistent Desktop on the Linux host already owned the
+business runner's logical WebDriver port. The failed actor connected to that
+unrelated process and cleanup then treated the persistent listener as leaked
+cell state. Runtime-cell actor WebDriver and gateway ports must therefore be
+allocated from the cell profile range, while local forwards preserve the
+business runner's logical ports. Remote actor launch must fail before process
+creation when an allocated port is already owned and must verify actor-process
+liveness before accepting port readiness. This is an NDR-W5 lifecycle
+correction under D-14; it does not change MP-W13 actors, product assertions, or
+timeout budgets.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
