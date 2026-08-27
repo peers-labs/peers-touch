@@ -218,6 +218,8 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         reset_station_messaging_state("chat-native-acceptance")
         sql = run.call_args.kwargs["input"]
         self.assertIn("actor_sessions", CHAT_TABLES)
+        self.assertIn("friend_chat_friend_requests", CHAT_TABLES)
+        self.assertIn("friend_chat_friendships", CHAT_TABLES)
         self.assertIn("TRUNCATE TABLE", sql)
         self.assertIn("SELECT password_hash INTO STRICT preset_hash", sql)
         self.assertIn(
@@ -225,6 +227,11 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             sql,
         )
         self.assertIn("updated_count <> 3", sql)
+        self.assertIn("mutual_follow_count <> 6", sql)
+        self.assertIn("INSERT INTO friend_chat_friend_requests", sql)
+        self.assertIn("'acceptance-alice-bob'", sql)
+        self.assertIn("'acceptance-alice-carol'", sql)
+        self.assertIn("'acceptance-bob-carol'", sql)
 
 if __name__ == "__main__":
     unittest.main()
