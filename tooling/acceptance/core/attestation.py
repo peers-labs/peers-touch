@@ -18,6 +18,11 @@ from .evidence_store import (
 from .provisioning import StationAttestation, utc_now
 
 
+WORKSPACE_DIGEST_EXCLUDED_PATHS = frozenset(
+    {"docs/architecture/acceptance-framework/coverage-report.md"}
+)
+
+
 def commits_match(actual: str, expected: str) -> bool:
     return (
         len(actual) >= 7
@@ -43,8 +48,12 @@ def source_proto_digest(root: Path) -> str:
 
 
 def source_workspace_digest(root: Path) -> str:
+    excluded_pathspecs = [
+        f":(exclude){path}"
+        for path in sorted(WORKSPACE_DIGEST_EXCLUDED_PATHS)
+    ]
     diff = subprocess.run(
-        ["git", "diff", "--binary", "HEAD"],
+        ["git", "diff", "--binary", "HEAD", "--", ".", *excluded_pathspecs],
         cwd=root,
         capture_output=True,
         check=True,
@@ -55,7 +64,11 @@ def source_workspace_digest(root: Path) -> str:
         capture_output=True,
         check=True,
     ).stdout.split(b"\0")
-    paths = sorted(path for path in untracked if path)
+    paths = sorted(
+        path
+        for path in untracked
+        if path and path.decode() not in WORKSPACE_DIGEST_EXCLUDED_PATHS
+    )
     if not diff and not paths:
         return "clean"
 
