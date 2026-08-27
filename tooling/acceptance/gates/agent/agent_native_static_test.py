@@ -262,8 +262,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("queuedTurns.map((queued) => queued.result)", source)
         self.assertIn("await api.cancelAgentTurn(activeTurnId)", source)
         self.assertIn("event.event === 'cancelled'", source)
-        self.assertIn("completedObservedTurnId(evidenceResult)", source)
-        self.assertIn("content: 'Reply with ready.'", source)
+        self.assertIn("preparedTurnId = activeTurnId", source)
 
     def test_group_one_controller_uses_manifest_bound_client_modes(self) -> None:
         source = FOUNDATION_RUNTIME_CLIENT.read_text(encoding="utf-8")

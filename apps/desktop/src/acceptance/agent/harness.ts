@@ -118,22 +118,6 @@ function observedTurnId(
   return '';
 }
 
-function completedObservedTurnId(result: ObservedFoundationTurnResult): string {
-  if (!result.ok) {
-    throw new Error(
-      result.error ?? 'agent.acceptance.foundationTurnFailed',
-    );
-  }
-  if (!result.events.some((event) => event.event === 'done')) {
-    throw new Error('agent.acceptance.foundationTurnNotCompleted');
-  }
-  const turnId = observedTurnId(result.events);
-  if (!turnId) {
-    throw new Error('agent.acceptance.foundationTurnIdMissing');
-  }
-  return turnId;
-}
-
 function observedErrorCode(error: unknown): string {
   if (error && typeof error === 'object') {
     const details = (error as { details?: Record<string, unknown> }).details;
@@ -1722,6 +1706,7 @@ export function installAcceptanceHarness(): void {
         const sharedIdempotencyKey = crypto.randomUUID();
         const activeTurnInput =
           'Write a detailed 1200-word numbered response about reliable queues.';
+        const activeStartedAt = performance.now();
         const active = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
           agentId,
@@ -1839,27 +1824,8 @@ export function installAcceptanceHarness(): void {
         if (!activeResult.events.some((event) => event.event === 'cancelled')) {
           throw new Error('agent.acceptance.foundationActiveTurnCancelMissing');
         }
-
-        const evidenceStartedAt = performance.now();
-        const evidenceTurn = startObservedFoundationTurn({
-          conversationId: conversation.conversation_id,
-          agentId,
-          content: 'Reply with ready.',
-          idempotencyKey: crypto.randomUUID(),
-          provider: agent.provider || undefined,
-          model: agent.model || undefined,
-          clientCapabilitySessionId:
-            capabilitySessions.selectedStationSession?.session_id,
-        });
-        const evidenceFirstEvent = await evidenceTurn.firstEvent;
-        const evidenceResult = await evidenceTurn.result;
-        turnDurationMs = performance.now() - evidenceStartedAt;
-        preparedTurnId = completedObservedTurnId(evidenceResult);
-        preparedRuntimeEvent.current = {
-          eventType: evidenceFirstEvent.event,
-          sequence: Number(evidenceFirstEvent.data.seq ?? 0),
-          observedAt: new Date().toISOString(),
-        };
+        turnDurationMs = performance.now() - activeStartedAt;
+        preparedTurnId = activeTurnId;
 
         const afterQueue = await api.getAgentConversation(
           conversation.conversation_id,

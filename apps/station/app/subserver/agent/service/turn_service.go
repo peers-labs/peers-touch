@@ -896,12 +896,16 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	)
 	trace.ProviderCalls = providerCalls
 	if err != nil {
-		if usageErr := s.persistAttemptUsage(context.WithoutCancel(ctx), turnID, config.AttemptID, trace); usageErr != nil {
+		terminalCtx := context.WithoutCancel(ctx)
+		if usageErr := s.persistAttemptUsage(terminalCtx, turnID, config.AttemptID, trace); usageErr != nil {
 			return nil, fmt.Errorf("persist failed-attempt usage: %w", usageErr)
+		}
+		if traceErr := s.saveTurnTrace(terminalCtx, trace); traceErr != nil {
+			return nil, fmt.Errorf("persist failed-attempt trace: %w", traceErr)
 		}
 		if errors.Is(err, context.Canceled) {
 			_ = s.cancelTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID)
-			s.emitTurnEvent(context.WithoutCancel(ctx), config, turnID, TurnEvent{
+			s.emitTurnEvent(terminalCtx, config, turnID, TurnEvent{
 				Type:  "cancelled",
 				Stage: "turn_cancelled",
 			})

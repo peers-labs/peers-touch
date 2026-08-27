@@ -1479,7 +1479,15 @@ drain before the capacity snapshot and failed as
 capacity snapshot and production cancel command; it exposed that Desktop
 classifies the persisted `cancelled` stream event as a successful terminal
 callback. AS-F02 therefore verifies the typed `cancelled` event rather than
-incorrectly requiring the transport result to be an error.
+incorrectly requiring the transport result to be an error. Its source-matched
+`d39533d5d` rerun
+`20260827T041813209061Z-d0377f0a2c9dbda1c9692849656d0f91` passed that check,
+then exposed two coupled defects: provider completion remains nondeterministic
+for the extra attestation Turn, and Station did not persist `TurnTrace` on the
+cancel/error terminal path even though its attempt/runtime snapshot was
+durable. The current fix persists terminal traces with a non-cancelled context
+and uses the already-proven cancelled Turn for AS-F02 attestation, removing the
+unnecessary second provider call.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
