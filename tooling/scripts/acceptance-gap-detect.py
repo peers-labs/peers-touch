@@ -388,6 +388,15 @@ def detect(
             status != "passed"
             or completion != "DONE"
             or proof != "PROVEN"
+            or (
+                tier == "env-evidence"
+                and (
+                    result.get("sourceArtifactKind")
+                    != "acceptance-gate-evidence-report"
+                    or result.get("evidenceGateId") != gate_id
+                    or not isinstance(result.get("sourceArtifact"), dict)
+                )
+            )
         ):
             gaps.append(
                 gap(
