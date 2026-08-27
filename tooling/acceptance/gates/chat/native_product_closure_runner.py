@@ -140,7 +140,8 @@ REQUIRED_EVIDENCE = {
     "cleanup",
 }
 REQUIRED_LOCALIZATION_CHECKPOINTS = {
-    "search-result": {"alice"},
+    "search-result-create": {"alice"},
+    "search-result-reuse": {"alice"},
     "direct-open": {"alice"},
     "group-create": {"alice"},
     "group-open": {"alice", "bob"},
@@ -1763,6 +1764,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self,
         actor: str,
         peer_ptid: str,
+        localization_checkpoint: str,
     ) -> dict[str, str]:
         client = self.clients[actor]
         search = client.find_element("[data-chat-session-search]", 30)
@@ -1800,7 +1802,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 result.get_attribute("data-chat-search-result-peer-did") or ""
             ),
         }
-        self.capture_visible_localization("search-result", (actor,))
+        self.capture_visible_localization(localization_checkpoint, (actor,))
         self.arm_conversation_search_feedback_probe(actor)
         self.click(actor, selector)
         return snapshot
@@ -1851,7 +1853,11 @@ class NativeProductClosureGate(AcceptanceGate):
         self.enter_chat_page(actor)
         self.click(actor, '[data-chat-subpage="chats"]')
 
-        first_result = self.search_contact_result(actor, peer_ptid)
+        first_result = self.search_contact_result(
+            actor,
+            peer_ptid,
+            "search-result-create",
+        )
         first_open = wait_until(
             lambda: self.active_direct_conversation(actor),
             "Alice Direct conversation from first search result",
@@ -1864,7 +1870,11 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         self.save_dom(self.clients[actor], "alice-direct-search-first")
 
-        second_result = self.search_contact_result(actor, peer_ptid)
+        second_result = self.search_contact_result(
+            actor,
+            peer_ptid,
+            "search-result-reuse",
+        )
         second_open = wait_until(
             lambda: self.active_direct_conversation(actor),
             "Alice Direct conversation from repeated search result",

@@ -23,7 +23,32 @@
 - Pre-fix run `20260827T123357675988Z-95ea336a20ea6cc75215f66f6839e45d` timed out in `hydrateActiveActor`.
 - Pre-fix run `20260827T123727350082Z-602f6f52feb9f618019c5d3c44743f9b` reproduced the same boundary.
 - Both runs completed actor, endpoint, port, process, and storage cleanup.
+- Instrumented run `20260827T125926729019Z-10933ceaa74ef35ce03bde3520f33e21`
+  showed the runtime bootstrap conversation read completing before the harness
+  issued a second conversation read. The second read also completed, and the
+  Gate advanced to the Direct search journey.
+- The same run then failed because both create and reuse passes attempted to
+  register the same `search-result` localization checkpoint.
 
 ## Verification Conclusion
 
-Pending instrumented reproduction.
+- A: Confirmed as duplicate projection hydration across the runtime and harness,
+  with highly variable command latency rather than a permanent store deadlock.
+- B: Rejected. The first and second conversation reads completed through the
+  active endpoint, and cleanup reported no tunnel failures.
+- C: Inconclusive as a latency contributor, but the renderer continued emitting
+  events while hydration was pending.
+- D: Rejected. The completion events preceded successful WebDriver continuation.
+- Independent Gate defect: the two required Direct search passes need distinct
+  localization checkpoint identities.
+
+## Fix
+
+- Route explicit Acceptance hydration through the runtime-owned,
+  single-flight `refreshSocialProjection` path.
+- Route authenticated Social bootstrap through that same refresh owner so the
+  harness joins in-flight work instead of issuing a competing projection read.
+- Give Direct create and Direct reuse localization captures distinct checkpoint
+  identities.
+
+Post-fix verification pending.
