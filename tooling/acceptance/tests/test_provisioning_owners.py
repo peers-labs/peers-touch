@@ -243,8 +243,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 station_url="http://station.example",
                 deployment_environment="station-three",
                 roles=("alice", "bob"),
-                password="not-persisted",
-                credential_ref="env:CHAT_NATIVE_DEMO_PASSWORD",
+                credential_ref="auto:uuid",
                 reset_authorized=False,
             )
 
@@ -281,14 +280,13 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                     station_url="http://station.example",
                     deployment_environment="station-three",
                     roles=("alice", "bob"),
-                    password="not-persisted",
-                    credential_ref="env:CHAT_NATIVE_DEMO_PASSWORD",
+                    credential_ref="auto:uuid",
                     reset_authorized=True,
                 )
 
             serialized = path.read_text(encoding="utf-8")
             self.assertNotIn("not-persisted", serialized)
-            self.assertIn("env:CHAT_NATIVE_DEMO_PASSWORD", serialized)
+            self.assertIn("auto:uuid", serialized)
             self.assertEqual(len(manifest.actors), 2)
             self.assertTrue(all(actor.ptid.startswith("ptid:") for actor in manifest.actors))
             self.assertEqual(

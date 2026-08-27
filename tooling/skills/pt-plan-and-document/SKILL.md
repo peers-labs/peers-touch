@@ -3,7 +3,7 @@ name: "pt-plan-and-document"
 description: "规划落盘与计划追踪。当用户要求把讨论结果转为正式设计文档/执行计划/任务清单并落盘追踪时调用。教 agent 找到项目文档规范、选对落盘位置、按标准结构输出。"
 stage: "PLAN"
 requires: ["analysis output from pt-architecture-execution-methodology OR standalone planning request"]
-produces: ["execution plan file in correct location", "plan-owned Context Anchor", "plan review prompt"]
+produces: ["execution plan file in correct location", "active_work registration", "plan review prompt"]
 next: "pt-context-anchor → pt-execution-plan-guardian"
 ---
 
@@ -129,6 +129,16 @@ plan status table:
 
 参照 `docs/global/architecture-document-standard.md` §5 各文件编写规范。
 
+### 4.4 Context Anchor 边界
+
+- 执行计划正文 **不得**包含 `## Context Anchor`。
+- PRODUCT / DESIGN 阶段尚无正式执行计划时，不创建占位 `active_work` 行。
+- 执行计划文件创建完成后，才在 `project_memory.md` 的 `active_work`
+  登记 repo-relative `plan` 路径、`stage: PLAN`、当前 step、已验证 branch、
+  blocker 与 session 日期。
+- `pt-context-anchor` 从 `active_work`、计划状态表和证据生成聊天投影；
+  不把聊天状态回写为计划中的第二套真源。
+
 ---
 
 ## 5. 第四步：计划追踪
@@ -163,7 +173,8 @@ plan status table:
 
 1. **更新最近的 README.md** — 确保目录内有链接指向新文件
 2. **更新 `docs/README.md`**（如果是新的真源文档）— 加入 §4 对应层级
-3. **告知用户正式文档路径** — 在实施前明确列出落盘位置
+3. **登记 `active_work`** — 仅在正式执行计划已存在后登记
+4. **告知用户正式文档路径** — 在实施前明确列出落盘位置
 
 ---
 
@@ -236,7 +247,8 @@ plan status table:
 - [ ] 文件命名遵循固定命名规则（不加模块前缀）
 - [ ] 顶部有完整元数据块
 - [ ] 结构清晰（背景/目标/方案/阶段/验收）
-- [ ] 执行计划包含一个与状态表一致的 `Context Anchor`
+- [ ] 执行计划中没有 `## Context Anchor`
+- [ ] 正式计划创建后才登记 `active_work`，且 plan 路径和 branch 已验证
 - [ ] 最近 README.md 已更新链接
 - [ ] 已告知用户文档路径
 - [ ] 如有实施阶段，已标注当前状态
