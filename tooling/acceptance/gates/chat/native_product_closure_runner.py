@@ -224,50 +224,6 @@ def native_input_event_cursor(
     return None
 
 
-# #region debug-point A,B,C,D,E:native-mousedown-reporting
-def native_mousedown_debug_enabled() -> bool:
-    return (
-        bool(os.environ.get("DEBUG_SERVER_URL", "").strip())
-        and os.environ.get("DEBUG_SESSION_ID", "").strip()
-        == "native-mousedown-ack"
-    )
-
-
-def report_native_mousedown_debug(
-    hypothesis_id: str,
-    location: str,
-    message: str,
-    data: dict[str, Any],
-) -> None:
-    url = os.environ.get("DEBUG_SERVER_URL", "").strip()
-    if not url:
-        return
-    payload = {
-        "sessionId": os.environ.get(
-            "DEBUG_SESSION_ID",
-            "native-mousedown-ack",
-        ),
-        "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "msg": f"[DEBUG] {message}",
-        "data": data,
-        "ts": int(time.time() * 1000),
-    }
-    try:
-        request = urllib.request.Request(
-            url,
-            data=json.dumps(payload, default=str).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=2):
-            pass
-    except Exception:
-        pass
-# #endregion
-
-
 class NativeProductClosureGate(AcceptanceGate):
     gate_id = GATE_ID
 
@@ -572,23 +528,6 @@ class NativeProductClosureGate(AcceptanceGate):
             actor,
             source_path,
         )
-        # #region debug-point H4:staged-file
-        report_native_mousedown_debug(
-            "H4",
-            "native_product_closure_runner.py:choose_native_file:staged-file",
-            "Native file chooser staged file",
-            {
-                "actor": actor,
-                "sourcePath": str(source_path),
-                "sourceSize": source_path.stat().st_size,
-                "selectedPath": str(selected_path),
-                "selectedSha256": self.runtime_binding.native_file_sha256(
-                    actor,
-                    selected_path,
-                ),
-            },
-        )
-        # #endregion
 
         def native_app_baseline_ready(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
@@ -607,18 +546,6 @@ class NativeProductClosureGate(AcceptanceGate):
             NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(native_app_baseline_ready)
-        # #region debug-point A,B,C,D:file-chooser-baseline
-        report_native_mousedown_debug(
-            "A,B,C,D",
-            "native_product_closure_runner.py:choose_native_file:baseline",
-            "Native file chooser baseline",
-            {
-                "actor": actor,
-                "processId": client.process_id,
-                "control": baseline_control.to_dict(),
-            },
-        )
-        # #endregion
         self.click(actor, trigger_selector)
 
         def panel_open(control: NativeControlSnapshot) -> bool:
@@ -631,25 +558,8 @@ class NativeProductClosureGate(AcceptanceGate):
                 )
             )
 
-        observed_panel_states: set[str] = set()
-
         def native_panel_ready(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
-            # #region debug-point A,B,C,D:file-chooser-poll
-            state = json.dumps(control.to_dict(), sort_keys=True)
-            if state not in observed_panel_states:
-                observed_panel_states.add(state)
-                report_native_mousedown_debug(
-                    "A,B,C,D",
-                    "native_product_closure_runner.py:choose_native_file:panel",
-                    "Native file chooser panel state",
-                    {
-                        "actor": actor,
-                        "processId": client.process_id,
-                        "control": control.to_dict(),
-                    },
-                )
-            # #endregion
             return control if panel_open(control) else None
 
         WebDriverWait(
@@ -658,25 +568,8 @@ class NativeProductClosureGate(AcceptanceGate):
             poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
         ).until(native_panel_ready)
 
-        observed_location_states: set[str] = set()
-
         def go_to_field_ready(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
-            # #region debug-point F,G:file-chooser-location
-            state = json.dumps(control.to_dict(), sort_keys=True)
-            if state not in observed_location_states:
-                observed_location_states.add(state)
-                report_native_mousedown_debug(
-                    "F,G",
-                    "native_product_closure_runner.py:choose_native_file:location",
-                    "Native file chooser location state",
-                    {
-                        "actor": actor,
-                        "processId": client.process_id,
-                        "control": control.to_dict(),
-                    },
-                )
-            # #endregion
             return control if control.kind == "text-field" else None
 
         self.native_adapter.reveal_file_chooser_location()
@@ -692,25 +585,8 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
 
-        observed_clear_states: set[str] = set()
-
         def location_field_cleared(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
-            # #region debug-point F,G,H:file-chooser-clear
-            state = json.dumps(control.to_dict(), sort_keys=True)
-            if state not in observed_clear_states:
-                observed_clear_states.add(state)
-                report_native_mousedown_debug(
-                    "F,G,H",
-                    "native_product_closure_runner.py:choose_native_file:clear",
-                    "Native file chooser cleared location state",
-                    {
-                        "actor": actor,
-                        "processId": client.process_id,
-                        "control": control.to_dict(),
-                    },
-                )
-            # #endregion
             return (
                 control
                 if control.kind == "text-field" and control.value == ""
@@ -750,44 +626,12 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         finally:
             self.native_adapter.write_clipboard(original_clipboard)
-        # #region debug-point H2,H3:before-selection-enter
-        report_native_mousedown_debug(
-            "H2,H3",
-            "native_product_closure_runner.py:"
-            "choose_native_file:before-selection-enter",
-            "Native file chooser before selection enter",
-            {
-                "actor": actor,
-                "processId": client.process_id,
-                "control": self.native_adapter.focused_control(
-                    client.process_id or 0
-                ).to_dict(),
-            },
-        )
-        # #endregion
         self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
 
         baseline_window_count = baseline_control.window_count
-        observed_selection_states: set[str] = set()
 
         def selection_or_browser_ready(_: Any) -> dict[str, object] | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
-            # #region debug-point M,N,O:file-chooser-selection-transition
-            state = json.dumps(control.to_dict(), sort_keys=True)
-            if state not in observed_selection_states:
-                observed_selection_states.add(state)
-                report_native_mousedown_debug(
-                    "M,N,O",
-                    "native_product_closure_runner.py:"
-                    "choose_native_file:selection-transition",
-                    "Native file chooser selection transition",
-                    {
-                        "actor": actor,
-                        "processId": client.process_id,
-                        "control": control.to_dict(),
-                    },
-                )
-            # #endregion
             if control.window_count < baseline_window_count:
                 return None
             if control.kind == "application-dialog":
@@ -803,31 +647,11 @@ class NativeProductClosureGate(AcceptanceGate):
                 return {"selected": True, "control": control}
             return None
 
-        try:
-            intermediate = WebDriverWait(
-                client.driver,
-                NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
-                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-            ).until(selection_or_browser_ready)
-        except TimeoutException:
-            # #region debug-point H1,H2,H3:selection-timeout
-            report_native_mousedown_debug(
-                "H1,H2,H3",
-                "native_product_closure_runner.py:"
-                "choose_native_file:selection-timeout",
-                "Native file chooser selection transition timed out",
-                {
-                    "actor": actor,
-                    "processId": client.process_id,
-                    "control": self.native_adapter.focused_control(
-                        client.process_id or 0
-                    ).to_dict(),
-                    "baseline": baseline_control.to_dict(),
-                    "observedStates": sorted(observed_selection_states),
-                },
-            )
-            # #endregion
-            raise
+        intermediate = WebDriverWait(
+            client.driver,
+            NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
+            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+        ).until(selection_or_browser_ready)
 
         if not intermediate["selected"]:
             self.native_adapter.post_key(
@@ -835,26 +659,8 @@ class NativeProductClosureGate(AcceptanceGate):
                 private_source=True,
             )
 
-        observed_restored_states: set[str] = set()
-
         def native_window_restored(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
-            # #region debug-point M,N,O:file-chooser-window-restored
-            state = json.dumps(control.to_dict(), sort_keys=True)
-            if state not in observed_restored_states:
-                observed_restored_states.add(state)
-                report_native_mousedown_debug(
-                    "M,N,O",
-                    "native_product_closure_runner.py:"
-                    "choose_native_file:window-restored",
-                    "Native file chooser restored window state",
-                    {
-                        "actor": actor,
-                        "processId": client.process_id,
-                        "control": control.to_dict(),
-                    },
-                )
-            # #endregion
             return (
                 control
                 if control.window_count >= baseline_window_count
@@ -1077,7 +883,6 @@ class NativeProductClosureGate(AcceptanceGate):
                 ).until(observed)
             )
         except Exception as error:
-            # #region debug-point C,D:native-input-timeout
             snapshot = client.driver.execute_script(
                 """
                 const probe = window.__PT_NATIVE_INPUT_PROBES__?.[arguments[0]];
@@ -1116,13 +921,6 @@ class NativeProductClosureGate(AcceptanceGate):
                 )
                 if final_cursor is not None:
                     return final_cursor
-            report_native_mousedown_debug(
-                "C,D",
-                "native_product_closure_runner:wait_native_input_event",
-                f"Native {event_type} acknowledgement timed out",
-                snapshot if isinstance(snapshot, dict) else {"snapshot": snapshot},
-            )
-            # #endregion
             raise GateError(
                 f"Native {event_type} was not acknowledged by the target DOM"
                 ": "
@@ -1401,84 +1199,6 @@ class NativeProductClosureGate(AcceptanceGate):
                     surfaces.append((float(area), candidate))
             resolved = max(surfaces, default=(0, None), key=lambda item: item[0])[1]
         if resolved is None:
-            # #region debug-point A,B,C,D:native-click-surface-resolution
-            if (
-                os.environ.get("DEBUG_SESSION_ID", "").strip()
-                == "clear-cursor-visibility"
-            ):
-                diagnostics = client.driver.execute_script(
-                    """
-                    const root = arguments[0];
-                    const interactiveSelector = (
-                      'button, [role="button"], a[href], input, select, textarea'
-                    );
-                    const describe = (candidate) => {
-                      const rect = candidate.getBoundingClientRect();
-                      const style = getComputedStyle(candidate);
-                      const x = rect.left + rect.width / 2;
-                      const y = rect.top + rect.height / 2;
-                      const hit = rect.width > 0 && rect.height > 0
-                        ? document.elementFromPoint(x, y)
-                        : null;
-                      const className = candidate.className?.baseVal
-                        || candidate.className
-                        || '';
-                      return {
-                        tag: candidate.tagName,
-                        id: candidate.id || '',
-                        classes: String(className),
-                        role: candidate.getAttribute('role') || '',
-                        tabIndex: candidate.tabIndex,
-                        disabled: Boolean(candidate.disabled),
-                        display: style.display,
-                        visibility: style.visibility,
-                        opacity: style.opacity,
-                        pointerEvents: style.pointerEvents,
-                        matchesInteractive: candidate.matches(interactiveSelector),
-                        childCount: candidate.children.length,
-                        rect: {
-                          left: rect.left,
-                          top: rect.top,
-                          width: rect.width,
-                          height: rect.height,
-                        },
-                        centerHit: hit ? {
-                          tag: hit.tagName,
-                          id: hit.id || '',
-                          classes: String(
-                            hit.className?.baseVal || hit.className || '',
-                          ),
-                          role: hit.getAttribute?.('role') || '',
-                        } : null,
-                        centerHitOwnedByRoot: Boolean(hit && root.contains(hit)),
-                      };
-                    };
-                    return {
-                      documentFocused: document.hasFocus(),
-                      root: describe(root),
-                      interactiveDescendants: Array.from(
-                        root.querySelectorAll(interactiveSelector),
-                      ).map(describe),
-                      descendants: Array.from(root.querySelectorAll('*'))
-                        .slice(0, 40)
-                        .map(describe),
-                      animations: root.getAnimations({ subtree: true }).map(
-                        (animation) => ({
-                          playState: animation.playState,
-                          currentTime: animation.currentTime,
-                        }),
-                      ),
-                    };
-                    """,
-                    element,
-                )
-                report_native_mousedown_debug(
-                    "A,B,C,D",
-                    "native_product_closure_runner:_resolve_native_click_surface",
-                    "Native click surface resolution failed",
-                    diagnostics,
-                )
-            # #endregion
             raise GateError(
                 "Native click target has no unique interactive surface"
             )
@@ -1667,62 +1387,6 @@ class NativeProductClosureGate(AcceptanceGate):
             )
             + float(target["y"]),
         )
-        if native_mousedown_debug_enabled():
-            # #region debug-point A,B,E:computed-native-point
-            initial_stack = self.native_adapter.window_stack_at_point(point)
-            initial_focus = self.native_adapter.focused_control(
-                client.process_id or 0
-            )
-            live_dom = client.driver.execute_script(
-                """
-                const selector = arguments[0];
-                return {
-                  selectorMatches: selector
-                    ? Array.from(document.querySelectorAll(selector)).map((match) => {
-                        const rect = match.getBoundingClientRect();
-                        return {
-                          connected: match.isConnected,
-                          rect: {
-                            left: rect.left,
-                            top: rect.top,
-                            width: rect.width,
-                            height: rect.height,
-                          },
-                        };
-                      })
-                    : [],
-                  reactionStates: Array.from(
-                    document.querySelectorAll('[data-message-reaction-state]'),
-                  ).map((state) => ({
-                    phase: state.getAttribute('data-message-reaction-state') || '',
-                    emoji: state.getAttribute('data-message-reaction-emoji') || '',
-                    retryCount: state.querySelectorAll(
-                      '[data-message-reaction-retry]',
-                    ).length,
-                  })),
-                };
-                """,
-                selector,
-            )
-            report_native_mousedown_debug(
-                "A,B,E,F,G,H",
-                "native_product_closure_runner:_click_focused_element:computed",
-                "Computed native click point",
-                {
-                    "processId": client.process_id,
-                    "target": target,
-                    "window": window,
-                    "contentOffset": {
-                        "x": content_offset_x,
-                        "y": content_offset_y,
-                    },
-                    "point": point,
-                    "windowStack": initial_stack.to_dict(),
-                    "focusedControl": initial_focus.to_dict(),
-                    "liveDom": live_dom,
-                },
-            )
-            # #endregion
         probe_id = self.install_native_input_probe(
             client,
             element,
@@ -1732,25 +1396,6 @@ class NativeProductClosureGate(AcceptanceGate):
         mouse_down_posted = False
         try:
             cursor = 0
-            if native_mousedown_debug_enabled():
-                # #region debug-point A,C,E:before-native-mousedown
-                report_native_mousedown_debug(
-                    "A,C,E",
-                    "native_product_closure_runner:_click_focused_element:before-down",
-                    "Native mouse-down is about to be posted",
-                    {
-                        "processId": client.process_id,
-                        "target": target,
-                        "point": point,
-                        "windowStack": self.native_adapter.window_stack_at_point(
-                            point
-                        ).to_dict(),
-                        "focusedControl": self.native_adapter.focused_control(
-                            client.process_id or 0
-                        ).to_dict(),
-                    },
-                )
-                # #endregion
             mouse_down_posted = True
             self.native_adapter.post_mouse(
                 (
@@ -1761,49 +1406,6 @@ class NativeProductClosureGate(AcceptanceGate):
                 point,
             )
             mouse_down_posted = False
-            if native_mousedown_debug_enabled():
-                # #region debug-point B,C,D,E:after-native-pointer-press
-                post_down = client.driver.execute_script(
-                    """
-                    const probe = window.__PT_NATIVE_INPUT_PROBES__?.[arguments[0]];
-                    const element = arguments[1];
-                    const rect = element.getBoundingClientRect();
-                    const x = rect.left + rect.width / 2;
-                    const y = rect.top + rect.height / 2;
-                    const hit = document.elementFromPoint(x, y);
-                    return {
-                      documentEvents: probe?.documentEvents || [],
-                      events: probe?.events || [],
-                      hasFocus: document.hasFocus(),
-                      hitOwned: hit === element || element.contains(hit),
-                      hitTarget: {
-                        tag: hit?.tagName || '',
-                        id: hit?.id || '',
-                        classes: hit?.className || '',
-                      },
-                    };
-                    """,
-                    probe_id,
-                    element,
-                )
-                report_native_mousedown_debug(
-                    "B,C,D,E",
-                    "native_product_closure_runner:_click_focused_element:after-press",
-                    "Complete native pointer press was posted",
-                    {
-                        "processId": client.process_id,
-                        "point": point,
-                        "dom": post_down,
-                        "mouseButtonDown": self.native_adapter.mouse_button_down(),
-                        "windowStack": self.native_adapter.window_stack_at_point(
-                            point
-                        ).to_dict(),
-                        "focusedControl": self.native_adapter.focused_control(
-                            client.process_id or 0
-                        ).to_dict(),
-                    },
-                )
-                # #endregion
             cursor = self.wait_native_input_event(
                 client,
                 probe_id,
@@ -3169,37 +2771,6 @@ class NativeProductClosureGate(AcceptanceGate):
             """,
             panel,
         )
-        if (
-            actor == "alice2"
-            and os.environ.get("DEBUG_SESSION_ID", "").strip()
-            == "alice2-settings-recovery"
-            and time.monotonic()
-            - float(getattr(self, "_alice2_settings_debug_at", 0.0))
-            >= 30
-        ):
-            self._alice2_settings_debug_at = time.monotonic()
-            group_id = str(panel.get_attribute("data-chat-detail-conversation") or "")
-            station = (
-                gateway_read(
-                    self.clients[actor],
-                    "conversation_get_member_settings",
-                    {"conversation_id": group_id},
-                )
-                if group_id
-                else {}
-            )
-            # #region debug-point A,B,C,D,E:alice2-settings-recovery
-            report_native_mousedown_debug(
-                "A,B,C,D,E",
-                "native_product_closure_runner:setting_state",
-                "Alice2 settings recovery snapshot",
-                {
-                    "groupId": group_id,
-                    "ui": value,
-                    "station": station,
-                },
-            )
-            # #endregion
         return value
 
     def background_resource_snapshot(self, actor: str) -> dict[str, Any]:
@@ -3630,31 +3201,6 @@ class NativeProductClosureGate(AcceptanceGate):
         self.click_element("alice", buttons[-1])
         self.assert_condition("attachment_failure_draft_retained", True)
         self.wait_for_dialogs_to_stop_intercepting("alice")
-        # #region debug-point E:failure-journey-released
-        self.clients["alice"].execute_script(
-            """
-            fetch('http://127.0.0.1:7780/event', {
-              method: 'POST',
-              body: JSON.stringify({
-                sessionId: 'attachment-send-draft',
-                runId: 'post-fix',
-                hypothesisId: 'E',
-                location: 'native_product_closure_runner:prove_attachment_failure',
-                msg: '[DEBUG] Failed attachment journey released its dialog',
-                data: {
-                  failedDraftCount: document.querySelectorAll(
-                    '[data-chat-attachment-draft][data-chat-attachment-status="failed"]'
-                  ).length,
-                  hitTestableDialogCount: Array.from(
-                    document.querySelectorAll('[role="dialog"]')
-                  ).filter((dialog) => getComputedStyle(dialog).pointerEvents !== 'none').length,
-                },
-                ts: Date.now(),
-              }),
-            }).catch(() => {});
-            """
-        )
-        # #endregion
 
     def attachment_message(
         self,
@@ -3750,25 +3296,6 @@ class NativeProductClosureGate(AcceptanceGate):
             """,
             preview,
         )
-        # #region debug-point J,K,L:composer-image-preview
-        self.clients["alice"].execute_script(
-            """
-            fetch('http://127.0.0.1:7780/event', {
-              method: 'POST',
-              body: JSON.stringify({
-                sessionId: 'attachment-send-draft',
-                runId: 'pre-fix-linux',
-                hypothesisId: 'J,K,L',
-                location: 'native_product_closure_runner:prove_attachments',
-                msg: '[DEBUG] Native Gate observed Composer image preview',
-                data: arguments[0],
-                ts: Date.now(),
-              }),
-            }).catch(() => {});
-            """,
-            preview_snapshot,
-        )
-        # #endregion
         if not (
             isinstance(preview_snapshot, dict)
             and preview_snapshot.get("complete") is True
@@ -3797,29 +3324,6 @@ class NativeProductClosureGate(AcceptanceGate):
                 """,
                 str(preview_snapshot.get("currentSrc") or ""),
             )
-            # #region debug-point M,N:composer-image-resource
-            self.clients["alice"].execute_script(
-                """
-                fetch('http://127.0.0.1:7780/event', {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    sessionId: 'attachment-send-draft',
-                    runId: 'pre-fix-linux',
-                    hypothesisId: 'M,N',
-                    location: 'native_product_closure_runner:prove_attachments',
-                    msg: '[DEBUG] Native Gate fetched failed Composer image resource',
-                    data: {
-                      image: arguments[0],
-                      resource: arguments[1],
-                    },
-                    ts: Date.now(),
-                  }),
-                }).catch(() => {});
-                """,
-                preview_snapshot,
-                resource_snapshot,
-            )
-            # #endregion
             raise GateError(
                 "Composer image preview did not load: "
                 f"{json.dumps({'image': preview_snapshot, 'resource': resource_snapshot}, sort_keys=True)}"
@@ -3872,25 +3376,6 @@ class NativeProductClosureGate(AcceptanceGate):
             "queued two-attachment send outcome",
             timeout=180,
         )
-        # #region debug-point B,C,D:gate-observed-outcome
-        self.clients["alice"].execute_script(
-            """
-            fetch('http://127.0.0.1:7780/event', {
-              method: 'POST',
-              body: JSON.stringify({
-                sessionId: 'attachment-send-draft',
-                runId: 'post-fix',
-                hypothesisId: 'B,C,D',
-                location: 'native_product_closure_runner:prove_attachments',
-                msg: '[DEBUG] Native Gate observed composer send outcome',
-                data: arguments[0],
-                ts: Date.now(),
-              }),
-            }).catch(() => {});
-            """,
-            outcome,
-        )
-        # #endregion
         if outcome["state"] != "pending":
             raise GateError(f"Composer send outcome was not queued: {outcome}")
         if (
@@ -4621,49 +4106,12 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         if len(phrase.split()) != 24:
             raise GateError("recovery phrase does not contain exactly 24 words")
-        recovery_feedback_debug = (
-            os.environ.get("DEBUG_SESSION_ID", "").strip()
-            == "recovery-success-feedback"
-        )
         self.arm_recovery_feedback_probe(actor)
         try:
             self.click(actor, RECOVERY_SELECTORS["backup"])
             WebDriverWait(client.driver, 120).until(
                 lambda _driver: self.recovery_feedback_observed(actor)
             )
-            # #region debug-point A,B,C,D:recovery-success-observed
-            if recovery_feedback_debug:
-                report_native_mousedown_debug(
-                    "A,B,C,D",
-                    "native_product_closure_runner:create_recovery_revision",
-                    "Recovery success feedback observed",
-                    {"observed": self.recovery_feedback_snapshot(actor)},
-                )
-            # #endregion
-        except TimeoutException:
-            # #region debug-point A,B,C,D:recovery-success-timeout
-            if recovery_feedback_debug:
-                report_native_mousedown_debug(
-                    "A,B,C,D",
-                    "native_product_closure_runner:create_recovery_revision",
-                    "Recovery success feedback wait timed out",
-                    {
-                        "observed": self.recovery_feedback_snapshot(actor),
-                        "backupButton": client.execute_script(
-                            """
-                            const button = document.querySelector(
-                              '[data-recovery-backup-create]'
-                            );
-                            return button ? {
-                              disabled: Boolean(button.disabled),
-                              text: (button.textContent || '').trim().slice(0, 160),
-                            } : null;
-                            """
-                        ),
-                    },
-                )
-            # #endregion
-            raise
         finally:
             self.stop_recovery_feedback_probe(actor)
         return phrase

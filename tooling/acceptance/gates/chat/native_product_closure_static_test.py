@@ -548,7 +548,6 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("libc.usleep", self.source)
         self.assertIn("install_native_input_probe", self.source)
         self.assertIn("wait_native_input_event", self.source)
-        self.assertIn("if native_mousedown_debug_enabled():", self.source)
         self.assertIn('event.get("owned") is True', self.source)
         self.assertIn("NATIVE_INPUT_ACK_POLL_SECONDS", self.source)
         self.assertIn("poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS", self.source)
@@ -1268,8 +1267,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "        def selection_or_browser_ready("
         )
         selection_end = self.source.index(
-            "        try:\n"
-            "            intermediate = WebDriverWait(",
+            "        intermediate = WebDriverWait(",
             selection_start,
         )
         selection_source = self.source[selection_start:selection_end]
