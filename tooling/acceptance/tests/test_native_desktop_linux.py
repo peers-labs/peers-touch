@@ -1221,6 +1221,26 @@ class RemoteLinuxCellControlTests(unittest.TestCase):
                 ):
                     remote_control.actor_start(actor)
 
+    def test_port_release_timeout_tracks_the_kernel_fin_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            timeout_path = Path(tmp) / "tcp_fin_timeout"
+            timeout_path.write_text("45\n", encoding="utf-8")
+
+            self.assertEqual(
+                remote_control._port_release_timeout(timeout_path),
+                50,
+            )
+
+    def test_port_release_timeout_falls_back_for_invalid_sysctl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            timeout_path = Path(tmp) / "tcp_fin_timeout"
+            timeout_path.write_text("invalid\n", encoding="utf-8")
+
+            self.assertEqual(
+                remote_control._port_release_timeout(timeout_path),
+                65,
+            )
+
     def test_port_release_waits_until_the_port_can_be_rebound(self) -> None:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.bind(("127.0.0.1", 0))
