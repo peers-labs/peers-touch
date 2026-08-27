@@ -572,6 +572,23 @@ class NativeProductClosureGate(AcceptanceGate):
             actor,
             source_path,
         )
+        # #region debug-point H4:staged-file
+        report_native_mousedown_debug(
+            "H4",
+            "native_product_closure_runner.py:choose_native_file:staged-file",
+            "Native file chooser staged file",
+            {
+                "actor": actor,
+                "sourcePath": str(source_path),
+                "sourceSize": source_path.stat().st_size,
+                "selectedPath": str(selected_path),
+                "selectedSha256": self.runtime_binding.native_file_sha256(
+                    actor,
+                    selected_path,
+                ),
+            },
+        )
+        # #endregion
 
         def native_app_baseline_ready(_: Any) -> NativeControlSnapshot | None:
             control = self.native_adapter.focused_control(client.process_id or 0)
@@ -733,6 +750,21 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         finally:
             self.native_adapter.write_clipboard(original_clipboard)
+        # #region debug-point H2,H3:before-selection-enter
+        report_native_mousedown_debug(
+            "H2,H3",
+            "native_product_closure_runner.py:"
+            "choose_native_file:before-selection-enter",
+            "Native file chooser before selection enter",
+            {
+                "actor": actor,
+                "processId": client.process_id,
+                "control": self.native_adapter.focused_control(
+                    client.process_id or 0
+                ).to_dict(),
+            },
+        )
+        # #endregion
         self.native_adapter.post_key(NativeKey.ENTER, private_source=True)
 
         baseline_window_count = baseline_control.window_count
@@ -769,11 +801,31 @@ class NativeProductClosureGate(AcceptanceGate):
                 return {"selected": True, "control": control}
             return None
 
-        intermediate = WebDriverWait(
-            client.driver,
-            NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
-            poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
-        ).until(selection_or_browser_ready)
+        try:
+            intermediate = WebDriverWait(
+                client.driver,
+                NATIVE_FILE_TRANSITION_TIMEOUT_SECONDS,
+                poll_frequency=NATIVE_INPUT_ACK_POLL_SECONDS,
+            ).until(selection_or_browser_ready)
+        except TimeoutException:
+            # #region debug-point H1,H2,H3:selection-timeout
+            report_native_mousedown_debug(
+                "H1,H2,H3",
+                "native_product_closure_runner.py:"
+                "choose_native_file:selection-timeout",
+                "Native file chooser selection transition timed out",
+                {
+                    "actor": actor,
+                    "processId": client.process_id,
+                    "control": self.native_adapter.focused_control(
+                        client.process_id or 0
+                    ).to_dict(),
+                    "baseline": baseline_control.to_dict(),
+                    "observedStates": sorted(observed_selection_states),
+                },
+            )
+            # #endregion
+            raise
 
         if not intermediate["selected"]:
             self.native_adapter.post_key(
