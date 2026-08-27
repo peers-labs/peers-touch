@@ -57,6 +57,7 @@ function startObservedFoundationTurn(input: {
   idempotencyKey: string;
   provider?: string;
   model?: string;
+  effort?: 'low' | 'medium' | 'high';
   clientCapabilitySessionId?: string;
 }): ObservedFoundationTurn {
   const events: ObservedFoundationTurnResult['events'] = [];
@@ -88,6 +89,7 @@ function startObservedFoundationTurn(input: {
     client_idempotency_key: input.idempotencyKey,
     provider: input.provider,
     model: input.model,
+    effort: input.effort,
     client_capability_session_id: input.clientCapabilitySessionId,
   }, (event) => {
     const observed = {
@@ -1975,10 +1977,11 @@ export function installAcceptanceHarness(): void {
         const observed = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
           agentId,
-          content: 'Write a detailed numbered explanation of reliable queues.',
+          content: 'Reply immediately with 100 numbered queue rules. Do not explain.',
           idempotencyKey: crypto.randomUUID(),
           provider: agent.provider || undefined,
           model: agent.model || undefined,
+          effort: 'low',
           clientCapabilitySessionId:
             capabilitySessions.selectedStationSession?.session_id,
         });

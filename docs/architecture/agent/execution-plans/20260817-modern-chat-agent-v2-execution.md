@@ -1492,6 +1492,13 @@ unnecessary second provider call. The source-matched `04dfd5084` run
 and advanced to `foundation-browser-direct / AS-F03 / en / single /
 sample-001`, where the direct-runtime adapter failed closed because AS-F03 is
 not yet implemented. Cleanup passed; G-F remains `PARTIAL / UNPROVEN`.
+Commit `5df06d8da` added the pre-W1 AS-F03 producer and oracle. Its
+source-matched run
+`20260827T044520664861Z-76d885df1d5db7d853df6997f4119d2c` reached the real
+provider stream but observed reasoning/progress without a text delta inside the
+60-second cancellation window, so it failed as `progressiveTextMissing`.
+The next run uses the existing production `effort=low` request contract and an
+immediate-text prompt; cancellation still waits for an actual text delta.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
