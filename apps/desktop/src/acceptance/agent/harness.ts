@@ -1836,8 +1836,8 @@ export function installAcceptanceHarness(): void {
 
         await api.cancelAgentTurn(activeTurnId);
         const activeResult = await active.result;
-        if (activeResult.ok) {
-          throw new Error('agent.acceptance.foundationActiveTurnNotCancelled');
+        if (!activeResult.events.some((event) => event.event === 'cancelled')) {
+          throw new Error('agent.acceptance.foundationActiveTurnCancelMissing');
         }
 
         const evidenceStartedAt = performance.now();

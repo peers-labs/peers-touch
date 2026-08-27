@@ -261,6 +261,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("const queuedTurns = Array.from({ length: 8 }", source)
         self.assertIn("queuedTurns.map((queued) => queued.result)", source)
         self.assertIn("await api.cancelAgentTurn(activeTurnId)", source)
+        self.assertIn("event.event === 'cancelled'", source)
         self.assertIn("completedObservedTurnId(evidenceResult)", source)
         self.assertIn("content: 'Reply with ready.'", source)
 

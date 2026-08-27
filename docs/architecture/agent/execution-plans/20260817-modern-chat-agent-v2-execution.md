@@ -1474,7 +1474,12 @@ runtime attestation. The source-matched `eafa75571` rerun
 `20260827T035716041867Z-a6d1e4cce1aa822c6c8434df73daa8ac`
 confirmed that using the bounded Turn for both duties instead let queued work
 drain before the capacity snapshot and failed as
-`queueCapacitySnapshotMismatch`.
+`queueCapacitySnapshotMismatch`. The source-matched `2801648ac` rerun
+`20260827T040501845625Z-bd426c146ada6031b6d46676ae2a9285` then passed the
+capacity snapshot and production cancel command; it exposed that Desktop
+classifies the persisted `cancelled` stream event as a successful terminal
+callback. AS-F02 therefore verifies the typed `cancelled` event rather than
+incorrectly requiring the transport result to be an error.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
