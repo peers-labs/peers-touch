@@ -126,8 +126,12 @@ func TestConversationReadbackProjectsRuntimeBinding(t *testing.T) {
 	}
 
 	jsonProjection := conversationToJSON(conversation)
-	if jsonProjection["runtime_binding"] != binding {
-		t.Fatalf("JSON conversation readback lost runtime binding: %+v", jsonProjection)
+	jsonBinding, ok := jsonProjection["runtime_binding"].(map[string]any)
+	if !ok ||
+		jsonBinding["provider_id"] != binding.ProviderId ||
+		jsonBinding["external_session_id"] != "" ||
+		jsonBinding["external_session_epoch"] != uint64(0) {
+		t.Fatalf("JSON conversation readback lost runtime binding fields: %+v", jsonProjection)
 	}
 	protoProjection := revisionConversationToProto(conversation)
 	if protoProjection.GetRuntimeBinding().GetCapabilitySnapshotHash() != binding.CapabilitySnapshotHash {

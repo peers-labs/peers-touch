@@ -1449,16 +1449,15 @@ Only then may G-F preflight begin.
 
 **Depends on**: F1, F2, F3, F4.
 **Owns**: the C01-C10/A01-A14 advancement decision, not implementation.
-**Status**: in progress. Commit `2271f1604` repaired the profile-owned
-provider/model fixture and added durable Station-owned conversation runtime
-bindings plus TurnAttempt runtime snapshots. The source-matched 2026-08-27
-rerun passed provisioning, capability-session establishment, provider/model
-admission, production Turn execution, and runtime-authority readback. It then
-failed closed at `foundation-browser-direct / AS-F01 / en / single /
-sample-001` because the evidence safety scanner classified the schema-defined
-numeric `outputTokens` field as a credential-bearing token. The Gate remains
-`PARTIAL / UNPROVEN`; cleanup passed and W1 is blocked while that Acceptance
-Infra field classification is corrected.
+**Status**: in progress. Commits `2271f1604` and `82c603a1d` repaired the
+profile-owned provider/model fixture, added durable Station-owned conversation
+runtime bindings plus TurnAttempt runtime snapshots, and corrected token-usage
+field classification. The source-matched 2026-08-27 rerun passed those layers,
+then failed closed at `foundation-browser-direct / AS-F01 / en / single /
+sample-001` because the handwritten conversation JSON projection omitted valid
+zero-valued Direct Model binding fields, causing the binding/snapshot tuple
+comparison to fail. The Gate remains `PARTIAL / UNPROVEN`; cleanup passed and
+W1 is blocked while the Station readback projection is made contract-complete.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"

@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
@@ -327,11 +328,31 @@ func conversationToJSON(c *domain.Conversation) map[string]any {
 		"status":                   string(c.Status),
 		"parent_id":                c.ParentID,
 		"active_branch_message_id": c.ActiveBranchMessageID,
-		"runtime_binding":          c.RuntimeBinding,
+		"runtime_binding":          conversationRuntimeBindingToJSON(c.RuntimeBinding),
 		"queued_turn_count":        c.QueuedTurnCount,
 		"version":                  c.Version,
 		"created_at":               c.CreatedAt,
 		"updated_at":               c.UpdatedAt,
+	}
+}
+
+func conversationRuntimeBindingToJSON(
+	binding *model.ConversationRuntimeBinding,
+) map[string]any {
+	if binding == nil {
+		return nil
+	}
+	return map[string]any{
+		"runtime_kind":             binding.GetRuntimeKind(),
+		"provider_id":              binding.GetProviderId(),
+		"model_id":                 binding.GetModelId(),
+		"runtime_profile_id":       binding.GetRuntimeProfileId(),
+		"external_session_id":      binding.GetExternalSessionId(),
+		"external_session_epoch":   binding.GetExternalSessionEpoch(),
+		"runtime_home_ref":         binding.GetRuntimeHomeRef(),
+		"capability_snapshot_hash": binding.GetCapabilitySnapshotHash(),
+		"config_snapshot_hash":     binding.GetConfigSnapshotHash(),
+		"bound_at":                 binding.GetBoundAt(),
 	}
 }
 
