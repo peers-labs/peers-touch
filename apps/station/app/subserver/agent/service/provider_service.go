@@ -38,6 +38,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
@@ -81,6 +82,7 @@ type ProviderCallRequest struct {
 	UserID          string
 	ProviderType    string // "ollama", "openai", "anthropic", or empty for auto-detect
 	Effort          string // reasoning effort: "low" | "medium" | "high"
+	ThinkingMode    domain.ThinkingMode
 	MaxOutputTokens int
 	DeltaSink       ProviderDeltaSink
 }
@@ -215,6 +217,21 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	if model == "" {
 		model = provider.CheckModel
 	}
+	thinkingMode, modeErr := normalizeThinkingMode(req.ThinkingMode)
+	if modeErr != nil {
+		return nil, modeErr
+	}
+	thinkingControl := providerThinkingControl(provider.Name, model)
+	if thinkingMode != domain.ThinkingModeAuto &&
+		(providerType != providerTypeOpenAI || thinkingControl == "") {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"explicit thinking mode is unsupported by the selected provider",
+			nil,
+		)
+	}
+
 	maxOutputTokens := req.MaxOutputTokens
 	if maxOutputTokens <= 0 {
 		maxOutputTokens = defaultMaxTokens
@@ -252,7 +269,18 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 			return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 				"provider base_url is empty for openai-compatible provider", nil)
 		}
-		resp, err = s.callOpenAI(ctx, baseURL, apiKey, model, req.SystemPrompt, req.Messages, req.Effort, maxOutputTokens, req.DeltaSink)
+		resp, err = s.callOpenAI(
+			ctx,
+			baseURL,
+			apiKey,
+			model,
+			req.SystemPrompt,
+			req.Messages,
+			req.Effort,
+			thinkingMode,
+			maxOutputTokens,
+			req.DeltaSink,
+		)
 	}
 
 	if err != nil {
@@ -272,6 +300,19 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		req.ProviderID, resp.Model, resp.InputTokens, resp.OutputTokens, resp.CacheHit)
 
 	return resp, nil
+}
+
+func providerThinkingControl(providerID string, modelID string) string {
+	catalogProvider := catalog.Find(strings.TrimSpace(providerID))
+	if catalogProvider == nil {
+		return ""
+	}
+	for _, catalogModel := range catalogProvider.Models {
+		if catalogModel.ID == strings.TrimSpace(modelID) {
+			return strings.TrimSpace(catalogModel.ThinkingControl)
+		}
+	}
+	return ""
 }
 
 func explicitProviderType(protocol string) (string, error) {
@@ -537,6 +578,7 @@ func (s *ProviderService) callOpenAI(
 	systemPrompt string,
 	messages []domain.Message,
 	effort string,
+	thinkingMode domain.ThinkingMode,
 	maxOutputTokens int,
 	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
@@ -572,6 +614,11 @@ func (s *ProviderService) callOpenAI(
 	}
 	if effort != "" && effort != "medium" {
 		payload["reasoning_effort"] = effort
+	}
+	if thinkingMode != domain.ThinkingModeAuto {
+		payload["thinking"] = map[string]string{
+			"type": string(thinkingMode),
+		}
 	}
 	if deltaSink != nil {
 		payload["stream"] = true

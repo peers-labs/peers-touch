@@ -9,9 +9,9 @@ use crate::application::{agent_workspace, error_resolver, tools};
 use crate::contracts::{
     AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
     AgentConversationListInput, AgentConversationMessagesInput, AgentConversationRestoreInput,
-    AgentConversationUpdateInput,
-    AgentEditAndResendInput, AgentExecuteTurnInput, AgentGroupCreateInput, AgentGroupDeleteInput,
-    AgentGroupUpdateInput, AgentKnowledgeBindingCreateInput, AgentKnowledgeBindingDeleteInput,
+    AgentConversationUpdateInput, AgentEditAndResendInput, AgentExecuteTurnInput,
+    AgentGroupCreateInput, AgentGroupDeleteInput, AgentGroupUpdateInput,
+    AgentKnowledgeBindingCreateInput, AgentKnowledgeBindingDeleteInput,
     AgentKnowledgeBindingListInput, AgentKnowledgeBindingUpdateInput, AgentMessageTranslateInput,
     AgentRegenerateTurnInput, AgentRetryTurnInput, AgentSelectActiveBranchInput,
     AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput, AgentTaskStatusInput,
@@ -541,6 +541,9 @@ fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value 
         .filter(|value| !value.trim().is_empty())
     {
         body["agent_config_prompt"] = json!(prompt);
+    }
+    if let Some(thinking_mode) = input.thinking_mode.filter(|value| !value.trim().is_empty()) {
+        body["thinking_mode"] = json!(thinking_mode);
     }
     if let Some(session_id) = input
         .client_capability_session_id
@@ -1976,6 +1979,25 @@ mod tests {
             body.get("client_capability_session_id")
                 .and_then(Value::as_str),
             Some("capability-session-1"),
+        );
+    }
+
+    #[test]
+    fn turn_request_preserves_explicit_thinking_mode() {
+        let input: AgentExecuteTurnInput = serde_json::from_value(json!({
+            "client_idempotency_key": "request-1",
+            "conversation_id": "conversation-1",
+            "agent_id": "agent-1",
+            "user_input": "answer directly",
+            "thinking_mode": "disabled"
+        }))
+        .expect("turn input should deserialize");
+
+        let body = build_turn_request_body(input, true);
+
+        assert_eq!(
+            body.get("thinking_mode").and_then(Value::as_str),
+            Some("disabled"),
         );
     }
 

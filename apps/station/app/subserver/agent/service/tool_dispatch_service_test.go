@@ -187,6 +187,7 @@ func (f toolDispatchFixture) propose(t *testing.T, callIDs ...string) {
 		AgentID:                   "agent-1",
 		Provider:                  "provider-1",
 		Model:                     "model-1",
+		ThinkingMode:              string(domain.ThinkingModeDisabled),
 		MaxRetries:                3,
 		ContextWindowSize:         128000,
 		ClientCapabilitySessionID: f.session.GetCapabilitySessionId(),
@@ -1315,18 +1316,20 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 	}
 
 	providerCalls := 0
+	resumedThinkingMode := domain.ThinkingMode("")
 	service := &TurnService{
 		toolDispatch: fixture.service,
 		nudgeState:   domain.NewNudgeState(),
 		resumeProviderCall: func(
-			context.Context,
-			*TurnConfig,
-			string,
-			*domain.TurnTrace,
-			string,
-			[]domain.Message,
+			_ context.Context,
+			config *TurnConfig,
+			_ string,
+			_ *domain.TurnTrace,
+			_ string,
+			_ []domain.Message,
 		) (string, []domain.ProviderCallRecord, bool, error) {
 			providerCalls++
+			resumedThinkingMode = config.ThinkingMode
 			return `<tool_call>{"name":"local_file_read","arguments":{"resource_ref":"resource-2"}}</tool_call>`,
 				[]domain.ProviderCallRecord{{Provider: "provider-1", Model: "model-1"}},
 				false,
@@ -1340,6 +1343,9 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 	}
 	if !resumed || providerCalls != 1 {
 		t.Fatalf("expected one resumed provider call, resumed=%v calls=%d", resumed, providerCalls)
+	}
+	if resumedThinkingMode != domain.ThinkingModeDisabled {
+		t.Fatalf("resumed thinking mode = %q, want disabled", resumedThinkingMode)
 	}
 
 	var completed persistence.ToolContinuation

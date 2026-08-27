@@ -17,6 +17,7 @@ providers:
         type: chat
         enabled: true
         context_window: 256000
+        thinking_control: ark
       - id: doubao-pro-256k
         display_name: Doubao Pro
         type: chat

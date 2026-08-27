@@ -6,9 +6,11 @@
   "owners": [
     "model/domain/agent/**",
     "apps/station/app/subserver/agent/**",
+    "apps/desktop/src/acceptance/agent/**",
     "apps/desktop/src/runtimes/agentTopicRuntime.ts",
     "apps/desktop/src/services/chat-service.ts",
-    "apps/desktop/src/store/streaming/**"
+    "apps/desktop/src/store/streaming/**",
+    "tooling/acceptance/gates/agent/foundation_*.py"
   ],
   "truth_sources": [
     "Station Agent configuration, conversation, message, turn, context, resource, policy, usage, and feedback authorities",
@@ -23,7 +25,8 @@
   "acceptance": {
     "service": [
       "C01-C10 use one Station-backed authority and versioned portable contracts",
-      "runtime matrix cells preserve source identity, isolation, replay, cleanup, and bounded measurement"
+      "runtime matrix cells preserve source identity, isolation, replay, cleanup, and bounded measurement",
+      "thinking mode is explicit and independent from reasoning effort; AS-F03 disables thinking through the production Turn contract before proving progressive answer text"
     ],
     "visible": [
       "required Desktop and Browser receiver outcomes are observable in English and Simplified Chinese",
@@ -33,6 +36,7 @@
   "negative": [
     "prototype, static, generated-contract, or historical evidence must not prove the foundation Gate",
     "missing matrix cells or mandatory artifact roles keep the Gate UNPROVEN",
-    "client cache, local durable state, or unadvertised runtime registration must not become product truth"
+    "client cache, local durable state, or unadvertised runtime registration must not become product truth",
+    "reasoning effort or thinking deltas must not be reinterpreted as an explicit thinking-mode choice"
   ]
 }

@@ -206,6 +206,16 @@ external resume, and limits. Each requested capability resolves to `native`,
 Clients cannot infer capability from provider names. Degradation is disclosed
 before execution and the per-turn snapshot is authoritative.
 
+Thinking mode and reasoning effort are separate inputs. Agent configuration
+owns the default thinking mode; a Turn may explicitly override it. Station
+normalizes an unspecified value to `auto`, validates an explicit
+`enabled`/`disabled` request against the selected provider/model catalog
+capability before execution, and pins the effective mode in the Turn runtime
+snapshot. Provider adapters map the portable mode to provider-specific
+payloads. They must not infer mode from reasoning effort, provider display
+names, URL patterns, or response deltas. A client must not advertise this
+control until the resolved model capability declares it.
+
 ## 10. Tool Policy And Runtime Budgets
 
 Every turn has an immutable budget for attempts, Agent steps, tool calls,

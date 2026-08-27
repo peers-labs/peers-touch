@@ -77,6 +77,10 @@ func (s *AgentService) CreateAgent(ctx context.Context, options domain.AgentUpse
 	if name == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "name is required", nil)
 	}
+	thinkingMode, err := normalizeThinkingMode(options.ThinkingMode)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	record := persistence.Agent{
 		ID:           generateID("agent"),
@@ -86,6 +90,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, options domain.AgentUpse
 		ProviderID:   strings.TrimSpace(options.ProviderID),
 		ModelName:    strings.TrimSpace(options.ModelName),
 		Effort:       strings.TrimSpace(options.Effort),
+		ThinkingMode: string(thinkingMode),
 		Visibility:   string(normalizeAgentVisibility(options.Visibility)),
 		OwnerActorID: actorID,
 		ConfigJSON:   options.ConfigJSON,
@@ -118,6 +123,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 			nil,
 		)
 	}
+	requestedThinkingMode := options.ThinkingMode
+	if strings.TrimSpace(string(requestedThinkingMode)) == "" {
+		requestedThinkingMode = domain.ThinkingMode(record.ThinkingMode)
+	}
+	thinkingMode, err := normalizeThinkingMode(requestedThinkingMode)
+	if err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(options.Name) != "" {
 		record.Name = strings.TrimSpace(options.Name)
 	}
@@ -126,20 +139,22 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 	record.ProviderID = strings.TrimSpace(options.ProviderID)
 	record.ModelName = strings.TrimSpace(options.ModelName)
 	record.Effort = strings.TrimSpace(options.Effort)
+	record.ThinkingMode = string(thinkingMode)
 	record.Visibility = string(normalizeAgentVisibility(options.Visibility))
 	record.ConfigJSON = options.ConfigJSON
 	nextVersion := record.Version + 1
 	updates := map[string]interface{}{
-		"name":        record.Name,
-		"title":       record.Title,
-		"description": record.Description,
-		"provider_id": record.ProviderID,
-		"model_name":  record.ModelName,
-		"effort":      record.Effort,
-		"visibility":  record.Visibility,
-		"config_json": record.ConfigJSON,
-		"version":     nextVersion,
-		"updated_at":  time.Now(),
+		"name":          record.Name,
+		"title":         record.Title,
+		"description":   record.Description,
+		"provider_id":   record.ProviderID,
+		"model_name":    record.ModelName,
+		"effort":        record.Effort,
+		"thinking_mode": record.ThinkingMode,
+		"visibility":    record.Visibility,
+		"config_json":   record.ConfigJSON,
+		"version":       nextVersion,
+		"updated_at":    time.Now(),
 	}
 	result := db.WithContext(ctx).
 		Model(&persistence.Agent{}).
@@ -254,7 +269,29 @@ func normalizeAgentVisibility(visibility domain.AgentVisibility) domain.AgentVis
 	return domain.AgentVisibilityPrivate
 }
 
+func normalizeThinkingMode(mode domain.ThinkingMode) (domain.ThinkingMode, error) {
+	switch domain.ThinkingMode(strings.ToLower(strings.TrimSpace(string(mode)))) {
+	case "", domain.ThinkingModeAuto:
+		return domain.ThinkingModeAuto, nil
+	case domain.ThinkingModeEnabled:
+		return domain.ThinkingModeEnabled, nil
+	case domain.ThinkingModeDisabled:
+		return domain.ThinkingModeDisabled, nil
+	default:
+		return "", errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"thinking_mode must be auto, enabled, or disabled",
+			nil,
+		)
+	}
+}
+
 func persistenceAgentToDomain(record *persistence.Agent) domain.Agent {
+	thinkingMode := domain.ThinkingMode(strings.ToLower(strings.TrimSpace(record.ThinkingMode)))
+	if thinkingMode == "" {
+		thinkingMode = domain.ThinkingModeAuto
+	}
 	return domain.Agent{
 		AgentID:      record.ID,
 		Name:         record.Name,
@@ -263,6 +300,7 @@ func persistenceAgentToDomain(record *persistence.Agent) domain.Agent {
 		ProviderID:   record.ProviderID,
 		ModelName:    record.ModelName,
 		Effort:       record.Effort,
+		ThinkingMode: thinkingMode,
 		Visibility:   domain.AgentVisibility(record.Visibility),
 		OwnerActorID: record.OwnerActorID,
 		ConfigJSON:   record.ConfigJSON,

@@ -105,10 +105,15 @@ def evaluate_as_f03(capture: Mapping[str, Any]) -> dict[str, bool | None]:
         "progressiveEventsSequenced": (
             any(event.get("eventType") == "progress" for event in events)
             and any(event.get("eventType") == "text" for event in events)
+            and not any(
+                event.get("eventType") == "thinking"
+                for event in events
+            )
             and sequences == sorted(set(sequences))
         ),
         "cancelledDuringTextAuthoritative": (
             capture.get("sawTextBeforeCancel") is True
+            and capture.get("thinkingMode") == "disabled"
         ),
         "exactlyOneAuthoritativeTerminal": (
             len(terminal_events) == 1

@@ -45,6 +45,7 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
                 {"eventType": "cancelled", "sequence": 3},
             ],
             "sawTextBeforeCancel": True,
+            "thinkingMode": "disabled",
             "terminalTracePersisted": True,
         }
         result["scenarioFacts"] = facts

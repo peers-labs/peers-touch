@@ -9,6 +9,14 @@ const (
 	AgentVisibilityWorkspace AgentVisibility = "workspace"
 )
 
+type ThinkingMode string
+
+const (
+	ThinkingModeAuto     ThinkingMode = "auto"
+	ThinkingModeEnabled  ThinkingMode = "enabled"
+	ThinkingModeDisabled ThinkingMode = "disabled"
+)
+
 type Agent struct {
 	AgentID      string
 	Name         string
@@ -17,6 +25,7 @@ type Agent struct {
 	ProviderID   string
 	ModelName    string
 	Effort       string
+	ThinkingMode ThinkingMode
 	Visibility   AgentVisibility
 	OwnerActorID string
 	ConfigJSON   string
@@ -33,15 +42,16 @@ type AgentListOptions struct {
 }
 
 type AgentUpsertOptions struct {
-	ActorID     string
-	AgentID     string
-	Name        string
-	Title       string
-	Description string
-	ProviderID  string
-	ModelName   string
-	Effort      string
-	Visibility  AgentVisibility
-	ConfigJSON  string
-	Version     int64
+	ActorID      string
+	AgentID      string
+	Name         string
+	Title        string
+	Description  string
+	ProviderID   string
+	ModelName    string
+	Effort       string
+	ThinkingMode ThinkingMode
+	Visibility   AgentVisibility
+	ConfigJSON   string
+	Version      int64
 }

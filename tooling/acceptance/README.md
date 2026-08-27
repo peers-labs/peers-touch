@@ -118,11 +118,12 @@ Store.
 
 ### Agent V2 Foundation Runtime
 
-`agent-v2-kernel-foundation-e2e` consumes a provisioned `one` profile manifest
-with exactly one Native Tauri client and one isolated Browser client.
+`agent-v2-kernel-foundation-e2e` consumes the provisioned profile selected by
+`PT_ACCEPTANCE_APPROVED_PROFILE`, with exactly one Native Tauri client and one
+isolated Browser client.
 `foundation_runtime_client.py` owns their launch, Harness connection, reverse
 shutdown, port checks, and storage cleanup. `foundation_group_one_probe.py`
-expands the reviewed matrix and dispatches the 28 Group 1 tuples by platform,
+expands the reviewed matrix and dispatches the 32 Group 1 tuples by platform,
 locale, and scenario before `foundation_direct_adapter.py` applies its
 fail-closed oracle. Runtime controllers and Harnesses only capture production
 facts; they cannot synthesize assertion outcomes or promote proof status.

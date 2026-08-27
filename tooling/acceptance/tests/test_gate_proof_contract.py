@@ -254,6 +254,7 @@ class GateProofContractTest(unittest.TestCase):
                 "agentConfigVersion": "1",
                 "externalSessionId": "",
                 "externalSessionEpoch": 0,
+                "thinkingMode": "auto",
             }
             runtime_snapshot_hash = hashlib.sha256(
                 json.dumps(
@@ -949,6 +950,7 @@ class GateProofContractTest(unittest.TestCase):
                     "agentConfigVersion",
                     "externalSessionId",
                     "externalSessionEpoch",
+                    "thinkingMode",
                 )
             ],
             *[
@@ -1100,7 +1102,11 @@ class GateProofContractTest(unittest.TestCase):
                 REPO_ROOT / "tooling/acceptance/gates.yaml"
             ).read_text(encoding="utf-8")
         )["gates"]
-        self.validator.validate_gate_catalog(catalog)
+        required_gate_ids = {
+            gate_id for gate_id in catalog
+            if gate_id.startswith("agent-v2-")
+        }
+        self.validator.validate_gate_catalog(catalog, required_gate_ids)
 
         gate_id = "agent-v2-capability-binding-e2e"
         mutated = copy.deepcopy(catalog)
@@ -1108,17 +1114,17 @@ class GateProofContractTest(unittest.TestCase):
         with self.assertRaisesRegex(
             RuntimeError, "initial_proof_status must be UNPROVEN"
         ):
-            self.validator.validate_gate_catalog(mutated)
+            self.validator.validate_gate_catalog(mutated, required_gate_ids)
 
         mutated = copy.deepcopy(catalog)
         mutated[gate_id]["required_artifact_roles"] = ["receiver-dom"]
         with self.assertRaisesRegex(RuntimeError, "required_artifact_roles"):
-            self.validator.validate_gate_catalog(mutated)
+            self.validator.validate_gate_catalog(mutated, required_gate_ids)
 
         mutated = copy.deepcopy(catalog)
         mutated[gate_id]["runtime_matrix"]["sha256"] = "0" * 64
         with self.assertRaisesRegex(RuntimeError, "runtime_matrix"):
-            self.validator.validate_gate_catalog(mutated)
+            self.validator.validate_gate_catalog(mutated, required_gate_ids)
 
     def test_v2_uses_dedicated_proof_without_invalidating_legacy_domain(self) -> None:
         acceptance_root = REPO_ROOT / "tooling/acceptance"

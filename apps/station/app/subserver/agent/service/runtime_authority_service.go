@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -18,6 +19,71 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+func MigrateRuntimeSnapshotThinkingModes(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("runtime snapshot thinking-mode migration requires database")
+	}
+	if !db.Migrator().HasTable(&persistence.TurnAttempt{}) {
+		return nil
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		var attempts []persistence.TurnAttempt
+		if err := tx.Where("runtime_snapshot IS NOT NULL").
+			Find(&attempts).Error; err != nil {
+			return fmt.Errorf("load runtime snapshots for thinking-mode migration: %w", err)
+		}
+		for index := range attempts {
+			if len(attempts[index].RuntimeSnapshot) == 0 {
+				continue
+			}
+			snapshot, err := persistence.UnmarshalRuntimeSnapshot(
+				attempts[index].RuntimeSnapshot,
+			)
+			if err != nil {
+				return fmt.Errorf(
+					"decode runtime snapshot %s for thinking-mode migration: %w",
+					attempts[index].ID,
+					err,
+				)
+			}
+			if strings.TrimSpace(snapshot.GetThinkingMode()) != "" {
+				continue
+			}
+			snapshot.ThinkingMode = string(domain.ThinkingModeAuto)
+			encoded, err := persistence.MarshalRuntimeSnapshot(snapshot)
+			if err != nil {
+				return fmt.Errorf(
+					"encode runtime snapshot %s for thinking-mode migration: %w",
+					attempts[index].ID,
+					err,
+				)
+			}
+			hash, err := runtimeSnapshotHash(snapshot)
+			if err != nil {
+				return fmt.Errorf(
+					"hash runtime snapshot %s for thinking-mode migration: %w",
+					attempts[index].ID,
+					err,
+				)
+			}
+			if err := tx.Model(&persistence.TurnAttempt{}).
+				Where("id = ?", attempts[index].ID).
+				Updates(map[string]interface{}{
+					"runtime_snapshot":      encoded,
+					"runtime_snapshot_hash": hash,
+				}).Error; err != nil {
+				return fmt.Errorf(
+					"persist runtime snapshot %s thinking-mode migration: %w",
+					attempts[index].ID,
+					err,
+				)
+			}
+		}
+		return nil
+	})
+}
 
 func (s *TurnService) persistRuntimeAuthority(
 	ctx context.Context,
@@ -71,7 +137,11 @@ func (s *TurnService) persistRuntimeAuthority(
 		if err != nil {
 			return err
 		}
-		snapshot := newDirectRuntimeSnapshot(admission, agentConfigVersion)
+		snapshot := newDirectRuntimeSnapshot(
+			admission,
+			agentConfigVersion,
+			config.ThinkingMode,
+		)
 
 		var binding *model.ConversationRuntimeBinding
 		if len(conversation.RuntimeBinding) == 0 {
@@ -172,6 +242,7 @@ func loadAgentConfigVersionTx(tx *gorm.DB, ptid string, agentID string) (string,
 func newDirectRuntimeSnapshot(
 	admission *AdmissionSnapshot,
 	agentConfigVersion string,
+	thinkingMode domain.ThinkingMode,
 ) *model.RuntimeSnapshot {
 	capabilities := proto.Clone(admission.Capabilities).(*model.RuntimeCapabilitySnapshot)
 	return &model.RuntimeSnapshot{
@@ -184,6 +255,7 @@ func newDirectRuntimeSnapshot(
 		AgentConfigVersion:    agentConfigVersion,
 		ExternalSessionId:     "",
 		ExternalSessionEpoch:  0,
+		ThinkingMode:          string(thinkingMode),
 	}
 }
 
@@ -359,6 +431,7 @@ func portableRuntimeSnapshot(snapshot *model.RuntimeSnapshot) map[string]interfa
 		"agentConfigVersion":    snapshot.GetAgentConfigVersion(),
 		"externalSessionId":     snapshot.GetExternalSessionId(),
 		"externalSessionEpoch":  snapshot.GetExternalSessionEpoch(),
+		"thinkingMode":          snapshot.GetThinkingMode(),
 	}
 }
 

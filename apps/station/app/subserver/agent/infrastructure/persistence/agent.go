@@ -10,6 +10,7 @@ type Agent struct {
 	ProviderID   string    `gorm:"type:text"`
 	ModelName    string    `gorm:"type:text"`
 	Effort       string    `gorm:"type:varchar(20)"`
+	ThinkingMode string    `gorm:"not null;type:varchar(20);default:'auto'"`
 	Visibility   string    `gorm:"not null;type:varchar(20);default:'private';index:idx_agents_visibility"`
 	OwnerActorID string    `gorm:"not null;type:text;index:idx_agents_owner_actor_id"`
 	ConfigJSON   string    `gorm:"type:text"`

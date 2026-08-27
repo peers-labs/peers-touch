@@ -46,9 +46,12 @@
             "required": [
               "runtimeKind", "providerId", "modelId", "runtimeProfileId",
               "capabilities", "providerConfigVersion", "agentConfigVersion",
-              "externalSessionId", "externalSessionEpoch"
+              "externalSessionId", "externalSessionEpoch", "thinkingMode"
             ],
             "properties": {
+              "thinkingMode": {
+                "enum": ["auto", "enabled", "disabled"]
+              },
               "capabilities": {
                 "type": "object",
                 "required": [

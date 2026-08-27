@@ -198,6 +198,7 @@ type ToolBatch struct {
 	Provider            string     `gorm:"not null;type:varchar(100)"`
 	Model               string     `gorm:"not null;type:varchar(200)"`
 	Effort              string     `gorm:"not null;type:varchar(20);default:''"`
+	ThinkingMode        string     `gorm:"not null;type:varchar(20);default:'auto'"`
 	SystemPrompt        string     `gorm:"not null;type:text"`
 	Iteration           uint32     `gorm:"not null;uniqueIndex:idx_tool_batch_identity,priority:3"`
 	MaxRetries          uint32     `gorm:"not null"`

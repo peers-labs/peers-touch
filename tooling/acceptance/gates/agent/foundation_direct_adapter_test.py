@@ -77,6 +77,7 @@ def capture(probe: DirectRuntimeProbeInput) -> dict[str, object]:
         "agentConfigVersion": "1",
         "externalSessionId": "none",
         "externalSessionEpoch": 1,
+        "thinkingMode": "auto",
     }
     capability_hash = hashlib.sha256(
         json.dumps(

@@ -197,6 +197,7 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 	runtimeSnapshot := newDirectRuntimeSnapshot(
 		runtimeAuthorityAdmission("ark", "seed", 27),
 		"11",
+		domain.ThinkingModeDisabled,
 	)
 	encodedRuntimeSnapshot, err := persistence.MarshalRuntimeSnapshot(runtimeSnapshot)
 	if err != nil {

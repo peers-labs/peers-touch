@@ -2904,20 +2904,22 @@ func (x *ListThreadMessagesResponse) GetMessages() []*AgentMessage {
 }
 
 type Agent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
-	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	ProviderId    string                 `protobuf:"bytes,5,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
-	ModelName     string                 `protobuf:"bytes,6,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
-	Effort        string                 `protobuf:"bytes,7,opt,name=effort,proto3" json:"effort,omitempty"`
-	Visibility    AgentVisibility        `protobuf:"varint,8,opt,name=visibility,proto3,enum=peers_touch.model.agent.v1.AgentVisibility" json:"visibility,omitempty"`
-	OwnerActorId  string                 `protobuf:"bytes,9,opt,name=owner_actor_id,json=ownerActorId,proto3" json:"owner_actor_id,omitempty"`
-	ConfigJson    string                 `protobuf:"bytes,10,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	Version       int64                  `protobuf:"varint,13,opt,name=version,proto3" json:"version,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	AgentId      string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Name         string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Title        string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	Description  string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	ProviderId   string                 `protobuf:"bytes,5,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ModelName    string                 `protobuf:"bytes,6,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
+	Effort       string                 `protobuf:"bytes,7,opt,name=effort,proto3" json:"effort,omitempty"`
+	Visibility   AgentVisibility        `protobuf:"varint,8,opt,name=visibility,proto3,enum=peers_touch.model.agent.v1.AgentVisibility" json:"visibility,omitempty"`
+	OwnerActorId string                 `protobuf:"bytes,9,opt,name=owner_actor_id,json=ownerActorId,proto3" json:"owner_actor_id,omitempty"`
+	ConfigJson   string                 `protobuf:"bytes,10,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
+	CreatedAt    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt    *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Version      int64                  `protobuf:"varint,13,opt,name=version,proto3" json:"version,omitempty"`
+	// Provider-portable thinking control: "auto" | "enabled" | "disabled".
+	ThinkingMode  string `protobuf:"bytes,14,opt,name=thinking_mode,json=thinkingMode,proto3" json:"thinking_mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3041,6 +3043,13 @@ func (x *Agent) GetVersion() int64 {
 		return x.Version
 	}
 	return 0
+}
+
+func (x *Agent) GetThinkingMode() string {
+	if x != nil {
+		return x.ThinkingMode
+	}
+	return ""
 }
 
 type ListAgentsRequest struct {
@@ -3253,6 +3262,7 @@ type CreateAgentRequest struct {
 	Effort        string                 `protobuf:"bytes,6,opt,name=effort,proto3" json:"effort,omitempty"`
 	Visibility    AgentVisibility        `protobuf:"varint,7,opt,name=visibility,proto3,enum=peers_touch.model.agent.v1.AgentVisibility" json:"visibility,omitempty"`
 	ConfigJson    string                 `protobuf:"bytes,8,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
+	ThinkingMode  string                 `protobuf:"bytes,9,opt,name=thinking_mode,json=thinkingMode,proto3" json:"thinking_mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3343,6 +3353,13 @@ func (x *CreateAgentRequest) GetConfigJson() string {
 	return ""
 }
 
+func (x *CreateAgentRequest) GetThinkingMode() string {
+	if x != nil {
+		return x.ThinkingMode
+	}
+	return ""
+}
+
 type CreateAgentResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Agent         *Agent                 `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
@@ -3399,6 +3416,7 @@ type UpdateAgentRequest struct {
 	Visibility    AgentVisibility        `protobuf:"varint,8,opt,name=visibility,proto3,enum=peers_touch.model.agent.v1.AgentVisibility" json:"visibility,omitempty"`
 	ConfigJson    string                 `protobuf:"bytes,9,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
 	Version       int64                  `protobuf:"varint,10,opt,name=version,proto3" json:"version,omitempty"`
+	ThinkingMode  string                 `protobuf:"bytes,11,opt,name=thinking_mode,json=thinkingMode,proto3" json:"thinking_mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3501,6 +3519,13 @@ func (x *UpdateAgentRequest) GetVersion() int64 {
 		return x.Version
 	}
 	return 0
+}
+
+func (x *UpdateAgentRequest) GetThinkingMode() string {
+	if x != nil {
+		return x.ThinkingMode
+	}
+	return ""
 }
 
 type UpdateAgentResponse struct {
@@ -4092,8 +4117,11 @@ type ExecuteTurnRequest struct {
 	// Station validates and pins this lease before admitting device-local work.
 	ClientCapabilitySessionId *string `protobuf:"bytes,20,opt,name=client_capability_session_id,json=clientCapabilitySessionId,proto3,oneof" json:"client_capability_session_id,omitempty"`
 	ClientIdempotencyKey      string  `protobuf:"bytes,21,opt,name=client_idempotency_key,json=clientIdempotencyKey,proto3" json:"client_idempotency_key,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// Controls whether the provider should emit private thinking before answer text.
+	// Independent from effort; unspecified normalizes to the Agent default, then AUTO.
+	ThinkingMode  string `protobuf:"bytes,22,opt,name=thinking_mode,json=thinkingMode,proto3" json:"thinking_mode,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ExecuteTurnRequest) Reset() {
@@ -4234,6 +4262,13 @@ func (x *ExecuteTurnRequest) GetClientCapabilitySessionId() string {
 func (x *ExecuteTurnRequest) GetClientIdempotencyKey() string {
 	if x != nil {
 		return x.ClientIdempotencyKey
+	}
+	return ""
+}
+
+func (x *ExecuteTurnRequest) GetThinkingMode() string {
+	if x != nil {
+		return x.ThinkingMode
 	}
 	return ""
 }
@@ -6383,6 +6418,7 @@ type RuntimeSnapshot struct {
 	AgentConfigVersion    string                     `protobuf:"bytes,7,opt,name=agent_config_version,json=agentConfigVersion,proto3" json:"agent_config_version,omitempty"`
 	ExternalSessionId     string                     `protobuf:"bytes,8,opt,name=external_session_id,json=externalSessionId,proto3" json:"external_session_id,omitempty"`
 	ExternalSessionEpoch  uint64                     `protobuf:"varint,9,opt,name=external_session_epoch,json=externalSessionEpoch,proto3" json:"external_session_epoch,omitempty"`
+	ThinkingMode          string                     `protobuf:"bytes,10,opt,name=thinking_mode,json=thinkingMode,proto3" json:"thinking_mode,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -6478,6 +6514,13 @@ func (x *RuntimeSnapshot) GetExternalSessionEpoch() uint64 {
 		return x.ExternalSessionEpoch
 	}
 	return 0
+}
+
+func (x *RuntimeSnapshot) GetThinkingMode() string {
+	if x != nil {
+		return x.ThinkingMode
+	}
+	return ""
 }
 
 type RuntimeBudget struct {
@@ -10938,6 +10981,7 @@ type SubmitTurnRequest struct {
 	ModelId                   *string                `protobuf:"bytes,6,opt,name=model_id,json=modelId,proto3,oneof" json:"model_id,omitempty"`
 	RequestedBudget           *RuntimeBudget         `protobuf:"bytes,7,opt,name=requested_budget,json=requestedBudget,proto3" json:"requested_budget,omitempty"`
 	ClientCapabilitySessionId *string                `protobuf:"bytes,8,opt,name=client_capability_session_id,json=clientCapabilitySessionId,proto3,oneof" json:"client_capability_session_id,omitempty"`
+	ThinkingMode              string                 `protobuf:"bytes,9,opt,name=thinking_mode,json=thinkingMode,proto3" json:"thinking_mode,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -11024,6 +11068,13 @@ func (x *SubmitTurnRequest) GetRequestedBudget() *RuntimeBudget {
 func (x *SubmitTurnRequest) GetClientCapabilitySessionId() string {
 	if x != nil && x.ClientCapabilitySessionId != nil {
 		return *x.ClientCapabilitySessionId
+	}
+	return ""
+}
+
+func (x *SubmitTurnRequest) GetThinkingMode() string {
+	if x != nil {
+		return x.ThinkingMode
 	}
 	return ""
 }
@@ -13027,7 +13078,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\tthread_id\x18\x01 \x01(\tR\bthreadId\x12\x1b\n" +
 	"\tafter_seq\x18\x02 \x01(\x03R\bafterSeq\"b\n" +
 	"\x1aListThreadMessagesResponse\x12D\n" +
-	"\bmessages\x18\x01 \x03(\v2(.peers_touch.model.agent.v1.AgentMessageR\bmessages\"\xea\x03\n" +
+	"\bmessages\x18\x01 \x03(\v2(.peers_touch.model.agent.v1.AgentMessageR\bmessages\"\x8f\x04\n" +
 	"\x05Agent\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -13049,7 +13100,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
-	"\aversion\x18\r \x01(\x03R\aversion\"\x91\x01\n" +
+	"\aversion\x18\r \x01(\x03R\aversion\x12#\n" +
+	"\rthinking_mode\x18\x0e \x01(\tR\fthinkingMode\"\x91\x01\n" +
 	"\x11ListAgentsRequest\x12K\n" +
 	"\n" +
 	"visibility\x18\x01 \x01(\x0e2+.peers_touch.model.agent.v1.AgentVisibilityR\n" +
@@ -13062,7 +13114,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x0fGetAgentRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\"K\n" +
 	"\x10GetAgentResponse\x127\n" +
-	"\x05agent\x18\x01 \x01(\v2!.peers_touch.model.agent.v1.AgentR\x05agent\"\xa6\x02\n" +
+	"\x05agent\x18\x01 \x01(\v2!.peers_touch.model.agent.v1.AgentR\x05agent\"\xcb\x02\n" +
 	"\x12CreateAgentRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -13076,9 +13128,10 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"visibility\x18\a \x01(\x0e2+.peers_touch.model.agent.v1.AgentVisibilityR\n" +
 	"visibility\x12\x1f\n" +
 	"\vconfig_json\x18\b \x01(\tR\n" +
-	"configJson\"N\n" +
+	"configJson\x12#\n" +
+	"\rthinking_mode\x18\t \x01(\tR\fthinkingMode\"N\n" +
 	"\x13CreateAgentResponse\x127\n" +
-	"\x05agent\x18\x01 \x01(\v2!.peers_touch.model.agent.v1.AgentR\x05agent\"\xdb\x02\n" +
+	"\x05agent\x18\x01 \x01(\v2!.peers_touch.model.agent.v1.AgentR\x05agent\"\x80\x03\n" +
 	"\x12UpdateAgentRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -13095,7 +13148,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\vconfig_json\x18\t \x01(\tR\n" +
 	"configJson\x12\x18\n" +
 	"\aversion\x18\n" +
-	" \x01(\x03R\aversion\"N\n" +
+	" \x01(\x03R\aversion\x12#\n" +
+	"\rthinking_mode\x18\v \x01(\tR\fthinkingMode\"N\n" +
 	"\x13UpdateAgentResponse\x127\n" +
 	"\x05agent\x18\x01 \x01(\v2!.peers_touch.model.agent.v1.AgentR\x05agent\"/\n" +
 	"\x12DeleteAgentRequest\x12\x19\n" +
@@ -13164,7 +13218,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"_thread_idB\x10\n" +
 	"\x0e_tombstoned_atB\x15\n" +
 	"\x13_tombstoned_by_ptidB\x13\n" +
-	"\x11_tombstone_reason\"\x95\a\n" +
+	"\x11_tombstone_reason\"\xba\a\n" +
 	"\x12ExecuteTurnRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1d\n" +
@@ -13183,7 +13237,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x0fmemory_disabled\x18\x12 \x01(\bH\aR\x0ememoryDisabled\x88\x01\x01\x12 \n" +
 	"\tthread_id\x18\x13 \x01(\tH\bR\bthreadId\x88\x01\x01\x12D\n" +
 	"\x1cclient_capability_session_id\x18\x14 \x01(\tH\tR\x19clientCapabilitySessionId\x88\x01\x01\x124\n" +
-	"\x16client_idempotency_key\x18\x15 \x01(\tR\x14clientIdempotencyKeyB\b\n" +
+	"\x16client_idempotency_key\x18\x15 \x01(\tR\x14clientIdempotencyKey\x12#\n" +
+	"\rthinking_mode\x18\x16 \x01(\tR\fthinkingModeB\b\n" +
 	"\x06_modelB\v\n" +
 	"\t_providerB\v\n" +
 	"\t_identityB\x16\n" +
@@ -13383,7 +13438,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"resolution\x12W\n" +
 	"\n" +
 	"provenance\x18\b \x01(\v27.peers_touch.model.agent.v1.RuntimeCapabilityProvenanceR\n" +
-	"provenance\"\xf2\x03\n" +
+	"provenance\"\x97\x04\n" +
 	"\x0fRuntimeSnapshot\x12J\n" +
 	"\fruntime_kind\x18\x01 \x01(\x0e2'.peers_touch.model.agent.v1.RuntimeKindR\vruntimeKind\x12\x1f\n" +
 	"\vprovider_id\x18\x02 \x01(\tR\n" +
@@ -13394,7 +13449,9 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x17provider_config_version\x18\x06 \x01(\tR\x15providerConfigVersion\x120\n" +
 	"\x14agent_config_version\x18\a \x01(\tR\x12agentConfigVersion\x12.\n" +
 	"\x13external_session_id\x18\b \x01(\tR\x11externalSessionId\x124\n" +
-	"\x16external_session_epoch\x18\t \x01(\x04R\x14externalSessionEpoch\"\xc2\x03\n" +
+	"\x16external_session_epoch\x18\t \x01(\x04R\x14externalSessionEpoch\x12#\n" +
+	"\rthinking_mode\x18\n" +
+	" \x01(\tR\fthinkingMode\"\xc2\x03\n" +
 	"\rRuntimeBudget\x12!\n" +
 	"\fmax_attempts\x18\x01 \x01(\rR\vmaxAttempts\x12&\n" +
 	"\x0fmax_agent_steps\x18\x02 \x01(\rR\rmaxAgentSteps\x12$\n" +
@@ -13885,7 +13942,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x1cExportTurnDiagnosticsRequest\x12\x17\n" +
 	"\aturn_id\x18\x01 \x01(\tR\x06turnId\"i\n" +
 	"\x1dExportTurnDiagnosticsResponse\x12H\n" +
-	"\x06replay\x18\x01 \x01(\v20.peers_touch.model.agent.v1.TurnDiagnosticReplayR\x06replay\"\x97\x04\n" +
+	"\x06replay\x18\x01 \x01(\v20.peers_touch.model.agent.v1.TurnDiagnosticReplayR\x06replay\"\xbc\x04\n" +
 	"\x11SubmitTurnRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x124\n" +
 	"\x16client_idempotency_key\x18\x02 \x01(\tR\x14clientIdempotencyKey\x12\x1d\n" +
@@ -13895,7 +13952,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x12runtime_profile_id\x18\x05 \x01(\tH\x00R\x10runtimeProfileId\x88\x01\x01\x12\x1e\n" +
 	"\bmodel_id\x18\x06 \x01(\tH\x01R\amodelId\x88\x01\x01\x12T\n" +
 	"\x10requested_budget\x18\a \x01(\v2).peers_touch.model.agent.v1.RuntimeBudgetR\x0frequestedBudget\x12D\n" +
-	"\x1cclient_capability_session_id\x18\b \x01(\tH\x02R\x19clientCapabilitySessionId\x88\x01\x01B\x15\n" +
+	"\x1cclient_capability_session_id\x18\b \x01(\tH\x02R\x19clientCapabilitySessionId\x88\x01\x01\x12#\n" +
+	"\rthinking_mode\x18\t \x01(\tR\fthinkingModeB\x15\n" +
 	"\x13_runtime_profile_idB\v\n" +
 	"\t_model_idB\x1f\n" +
 	"\x1d_client_capability_session_id\"\x98\x01\n" +

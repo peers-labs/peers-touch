@@ -251,6 +251,10 @@ fn station_agent_to_desktop(agent: Value) -> Value {
     desktop.insert("model".to_string(), field("model_name", "modelName"));
     desktop.insert("effort".to_string(), field("effort", "effort"));
     desktop.insert(
+        "thinkingMode".to_string(),
+        field("thinking_mode", "thinkingMode"),
+    );
+    desktop.insert(
         "visibility".to_string(),
         normalize_station_visibility(field("visibility", "visibility")),
     );
@@ -273,6 +277,7 @@ fn desktop_agent_config(data: &Value) -> String {
         "provider",
         "model",
         "effort",
+        "thinkingMode",
         "visibility",
         "version",
         "createdAt",
@@ -299,6 +304,7 @@ fn station_agent_body(data: &Value, agent_id: Option<&str>) -> Value {
         "provider_id": string_value("provider"),
         "model_name": string_value("model"),
         "effort": string_value("effort"),
+        "thinking_mode": string_value("thinkingMode"),
         "visibility": visibility,
         "config_json": desktop_agent_config(data),
         "version": data.get("version").and_then(Value::as_i64).unwrap_or(0),
@@ -489,6 +495,8 @@ fn normalize_agent_value(mut data: Value) -> Value {
         .or_insert_with(|| json!(""));
     obj.entry("effort".to_string())
         .or_insert_with(|| json!("medium"));
+    obj.entry("thinkingMode".to_string())
+        .or_insert_with(|| json!("auto"));
     obj.entry("visibility".to_string())
         .or_insert_with(|| json!("private"));
     obj.entry("isolationEnabled".to_string())
@@ -1074,6 +1082,7 @@ mod tests {
             "provider_id": "ark",
             "model_name": "ep-model",
             "effort": "medium",
+            "thinking_mode": "disabled",
             "visibility": "AGENT_VISIBILITY_PRIVATE",
             "version": "2",
             "config_json": "{\"openingMessage\":\"Ready\"}"
@@ -1083,6 +1092,7 @@ mod tests {
         assert_eq!(mapped["provider"], "ark");
         assert_eq!(mapped["model"], "ep-model");
         assert_eq!(mapped["effort"], "medium");
+        assert_eq!(mapped["thinkingMode"], "disabled");
         assert_eq!(mapped["visibility"], "private");
         assert_eq!(mapped["version"], 2);
         assert_eq!(mapped["openingMessage"], "Ready");
@@ -1091,6 +1101,7 @@ mod tests {
         assert_eq!(body["agent_id"], "agent-1");
         assert_eq!(body["visibility"], "private");
         assert_eq!(body["version"], 2);
+        assert_eq!(body["thinking_mode"], "disabled");
     }
 
     #[test]

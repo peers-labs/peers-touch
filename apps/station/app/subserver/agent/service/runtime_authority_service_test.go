@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -62,6 +63,7 @@ func TestPersistRuntimeAuthorityStoresBindingAndAttemptSnapshot(t *testing.T) {
 	}
 	if snapshot.GetProviderId() != admission.ProviderID ||
 		snapshot.GetModelId() != admission.ModelID ||
+		snapshot.GetThinkingMode() != string(domain.ThinkingModeDisabled) ||
 		snapshot.GetProviderConfigVersion() != "7" ||
 		snapshot.GetAgentConfigVersion() != "11" ||
 		snapshot.GetExternalSessionId() != "" ||
@@ -170,6 +172,88 @@ func TestCanonicalJSONHashMatchesAcceptanceValidator(t *testing.T) {
 	}
 }
 
+func TestResolveAgentDefaultsLoadsThinkingModeWithoutConfigJSON(t *testing.T) {
+	db := openRuntimeAuthorityDB(t, "thinking_mode_defaults")
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Agent{
+		ID:           "agent-thinking",
+		Name:         "Thinking",
+		ProviderID:   "ark",
+		ModelName:    "seed",
+		Effort:       "high",
+		ThinkingMode: string(domain.ThinkingModeDisabled),
+		Visibility:   string(domain.AgentVisibilityPrivate),
+		OwnerActorID: "ptid:person:owner",
+		Version:      1,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+
+	config := &TurnConfig{AgentID: "agent-thinking"}
+	(&TurnService{}).resolveAgentDefaults(context.Background(), config)
+
+	if config.ThinkingMode != domain.ThinkingModeDisabled {
+		t.Fatalf("thinking mode = %q, want disabled", config.ThinkingMode)
+	}
+	if config.Provider != "ark" || config.Model != "seed" || config.Effort != "high" {
+		t.Fatalf("structured Agent defaults were not loaded: %+v", config)
+	}
+}
+
+func TestMigrateRuntimeSnapshotThinkingModesBackfillsAutoAndHash(t *testing.T) {
+	db := openRuntimeAuthorityDB(t, "thinking_mode_snapshot_migration")
+	seedRuntimeAuthorityRows(t, db, "turn-migration", "attempt-migration")
+	legacySnapshot := newDirectRuntimeSnapshot(
+		runtimeAuthorityAdmission("provider-1", "model-1", 1),
+		"11",
+		"",
+	)
+	encoded, err := persistence.MarshalRuntimeSnapshot(legacySnapshot)
+	if err != nil {
+		t.Fatalf("encode legacy runtime snapshot: %v", err)
+	}
+	if err := db.Model(&persistence.TurnAttempt{}).
+		Where("id = ?", "attempt-migration").
+		Updates(map[string]interface{}{
+			"runtime_snapshot":      encoded,
+			"runtime_snapshot_hash": "legacy-hash",
+		}).Error; err != nil {
+		t.Fatalf("seed legacy runtime snapshot: %v", err)
+	}
+
+	if err := MigrateRuntimeSnapshotThinkingModes(db); err != nil {
+		t.Fatalf("migrate runtime snapshot thinking modes: %v", err)
+	}
+
+	var attempt persistence.TurnAttempt
+	if err := db.First(&attempt, "id = ?", "attempt-migration").Error; err != nil {
+		t.Fatalf("load migrated attempt: %v", err)
+	}
+	snapshot, err := persistence.UnmarshalRuntimeSnapshot(attempt.RuntimeSnapshot)
+	if err != nil {
+		t.Fatalf("decode migrated runtime snapshot: %v", err)
+	}
+	if snapshot.GetThinkingMode() != string(domain.ThinkingModeAuto) {
+		t.Fatalf("thinking mode = %q, want auto", snapshot.GetThinkingMode())
+	}
+	expectedHash, err := runtimeSnapshotHash(snapshot)
+	if err != nil {
+		t.Fatalf("hash migrated runtime snapshot: %v", err)
+	}
+	if attempt.RuntimeSnapshotHash != expectedHash {
+		t.Fatalf(
+			"runtime snapshot hash = %q, want %q",
+			attempt.RuntimeSnapshotHash,
+			expectedHash,
+		)
+	}
+	if err := MigrateRuntimeSnapshotThinkingModes(db); err != nil {
+		t.Fatalf("repeat thinking-mode migration: %v", err)
+	}
+}
+
 func openRuntimeAuthorityDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
 	db := openConversationAuthorityDB(t, name)
@@ -243,6 +327,7 @@ func runtimeAuthorityConfig(turnID string, attemptID string) *TurnConfig {
 		ActorID:        "ptid:person:owner",
 		Provider:       "provider-1",
 		Model:          "model-1",
+		ThinkingMode:   domain.ThinkingModeDisabled,
 	}
 }
 

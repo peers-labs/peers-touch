@@ -110,6 +110,7 @@ def _runtime_attestation(
         "agentConfigVersion": "1",
         "externalSessionId": "none",
         "externalSessionEpoch": 1,
+        "thinkingMode": "auto",
     }
     capability_hash = hashlib.sha256(
         json.dumps(

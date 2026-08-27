@@ -851,6 +851,8 @@ export interface AgentMemoryConfig {
   effort?: 'low' | 'medium' | 'high';
 }
 
+export type AgentThinkingMode = 'auto' | 'enabled' | 'disabled';
+
 export interface AgentWorkspaceConfig {
   root?: string;
   policy?: 'workspace-only';
@@ -922,6 +924,7 @@ export interface Agent {
   model: string;
   provider: string;
   effort: string;
+  thinkingMode?: AgentThinkingMode;
   visibility: string;
   isolationEnabled: boolean;
   isolationMode: string;
@@ -954,6 +957,7 @@ export interface AgentCreate {
   model?: string;
   provider?: string;
   effort?: string;
+  thinkingMode?: AgentThinkingMode;
   visibility?: string;
   isolationEnabled?: boolean;
   isolationMode?: string;
@@ -2471,6 +2475,7 @@ export interface AgentExecuteTurnInput {
   identity?: string;
   agent_config_prompt?: string;
   effort?: string;
+  thinking_mode?: AgentThinkingMode;
   context_window_size?: number;
   max_retries?: number;
   client_capability_session_id?: string;

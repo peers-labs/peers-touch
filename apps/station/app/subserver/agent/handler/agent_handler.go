@@ -54,15 +54,16 @@ func (h *AgentHandlers) HandleGetAgent(ctx context.Context, req *model.GetAgentR
 func (h *AgentHandlers) HandleCreateAgent(ctx context.Context, req *model.CreateAgentRequest) (*model.CreateAgentResponse, error) {
 	configJSON := mergeConfigExtras(req.GetConfigJson(), "", "")
 	agent, err := h.agentService.CreateAgent(ctx, domain.AgentUpsertOptions{
-		ActorID:     subjectActorID(ctx),
-		Name:        req.GetName(),
-		Title:       req.GetTitle(),
-		Description: req.GetDescription(),
-		ProviderID:  req.GetProviderId(),
-		ModelName:   req.GetModelName(),
-		Effort:      req.GetEffort(),
-		Visibility:  protoAgentVisibilityToDomain(req.GetVisibility()),
-		ConfigJSON:  configJSON,
+		ActorID:      subjectActorID(ctx),
+		Name:         req.GetName(),
+		Title:        req.GetTitle(),
+		Description:  req.GetDescription(),
+		ProviderID:   req.GetProviderId(),
+		ModelName:    req.GetModelName(),
+		Effort:       req.GetEffort(),
+		ThinkingMode: domain.ThinkingMode(req.GetThinkingMode()),
+		Visibility:   protoAgentVisibilityToDomain(req.GetVisibility()),
+		ConfigJSON:   configJSON,
 	})
 	if err != nil {
 		return nil, toHandlerError(err)
@@ -82,6 +83,7 @@ func (h *AgentHandlers) HandleCreateAgentRaw(ctx context.Context, req server.Req
 		Model             string `json:"model"`
 		ModelName         string `json:"model_name"`
 		Effort            string `json:"effort"`
+		ThinkingMode      string `json:"thinking_mode"`
 		Visibility        string `json:"visibility"`
 		Identity          string `json:"identity"`
 		SoulMd            string `json:"soul_md"`
@@ -132,15 +134,16 @@ func (h *AgentHandlers) HandleCreateAgentRaw(ctx context.Context, req server.Req
 		visibility = domain.AgentVisibilityWorkspace
 	}
 	agent, err := h.agentService.CreateAgent(ctx, domain.AgentUpsertOptions{
-		ActorID:     subjectActorID(ctx),
-		Name:        body.Name,
-		Title:       body.Title,
-		Description: body.Description,
-		ProviderID:  provider,
-		ModelName:   modelName,
-		Effort:      body.Effort,
-		Visibility:  visibility,
-		ConfigJSON:  cfgJSON,
+		ActorID:      subjectActorID(ctx),
+		Name:         body.Name,
+		Title:        body.Title,
+		Description:  body.Description,
+		ProviderID:   provider,
+		ModelName:    modelName,
+		Effort:       body.Effort,
+		ThinkingMode: domain.ThinkingMode(body.ThinkingMode),
+		Visibility:   visibility,
+		ConfigJSON:   cfgJSON,
 	})
 	if err != nil {
 		resp.WriteHeader(500)
@@ -184,6 +187,7 @@ func domainAgentToMap(agent *domain.Agent) map[string]interface{} {
 		"provider_id":    agent.ProviderID,
 		"model_name":     agent.ModelName,
 		"effort":         agent.Effort,
+		"thinking_mode":  agent.ThinkingMode,
 		"visibility":     agent.Visibility,
 		"owner_actor_id": agent.OwnerActorID,
 		"config_json":    agent.ConfigJSON,
@@ -195,17 +199,18 @@ func domainAgentToMap(agent *domain.Agent) map[string]interface{} {
 
 func (h *AgentHandlers) HandleUpdateAgent(ctx context.Context, req *model.UpdateAgentRequest) (*model.UpdateAgentResponse, error) {
 	agent, err := h.agentService.UpdateAgent(ctx, domain.AgentUpsertOptions{
-		ActorID:     subjectActorID(ctx),
-		AgentID:     req.GetAgentId(),
-		Name:        req.GetName(),
-		Title:       req.GetTitle(),
-		Description: req.GetDescription(),
-		ProviderID:  req.GetProviderId(),
-		ModelName:   req.GetModelName(),
-		Effort:      req.GetEffort(),
-		Visibility:  protoAgentVisibilityToDomain(req.GetVisibility()),
-		ConfigJSON:  req.GetConfigJson(),
-		Version:     req.GetVersion(),
+		ActorID:      subjectActorID(ctx),
+		AgentID:      req.GetAgentId(),
+		Name:         req.GetName(),
+		Title:        req.GetTitle(),
+		Description:  req.GetDescription(),
+		ProviderID:   req.GetProviderId(),
+		ModelName:    req.GetModelName(),
+		Effort:       req.GetEffort(),
+		ThinkingMode: domain.ThinkingMode(req.GetThinkingMode()),
+		Visibility:   protoAgentVisibilityToDomain(req.GetVisibility()),
+		ConfigJSON:   req.GetConfigJson(),
+		Version:      req.GetVersion(),
 	})
 	if err != nil {
 		return nil, toHandlerError(err)
@@ -272,6 +277,7 @@ func domainAgentToProto(agent *domain.Agent) *model.Agent {
 		ProviderId:   agent.ProviderID,
 		ModelName:    agent.ModelName,
 		Effort:       agent.Effort,
+		ThinkingMode: string(agent.ThinkingMode),
 		Visibility:   domainAgentVisibilityToProto(agent.Visibility),
 		OwnerActorId: agent.OwnerActorID,
 		ConfigJson:   agent.ConfigJSON,

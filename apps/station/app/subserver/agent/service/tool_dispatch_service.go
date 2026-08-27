@@ -66,6 +66,7 @@ type ToolBatchProposal struct {
 	Provider                  string
 	Model                     string
 	Effort                    string
+	ThinkingMode              string
 	SystemPrompt              string
 	Iteration                 uint32
 	MaxRetries                uint32
@@ -534,6 +535,7 @@ func (s *ToolDispatchService) ProposeBatch(
 			Provider:            proposal.Provider,
 			Model:               proposal.Model,
 			Effort:              proposal.Effort,
+			ThinkingMode:        proposal.ThinkingMode,
 			SystemPrompt:        proposal.SystemPrompt,
 			Iteration:           proposal.Iteration,
 			MaxRetries:          proposal.MaxRetries,
@@ -561,6 +563,7 @@ func (s *ToolDispatchService) ProposeBatch(
 				existing.Provider != batch.Provider ||
 				existing.Model != batch.Model ||
 				existing.Effort != batch.Effort ||
+				existing.ThinkingMode != batch.ThinkingMode ||
 				existing.SystemPrompt != batch.SystemPrompt ||
 				existing.Iteration != batch.Iteration ||
 				existing.MaxRetries != batch.MaxRetries ||

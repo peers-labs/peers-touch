@@ -460,7 +460,10 @@
       ],
       "when": {
         "paths": [
-          "model/domain/agent/**"
+          "model/domain/agent/**",
+          "apps/station/app/subserver/agent/**",
+          "apps/desktop/src/acceptance/agent/**",
+          "tooling/acceptance/gates/agent/foundation_*.py"
         ]
       },
       "require": [

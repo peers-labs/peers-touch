@@ -201,6 +201,8 @@ message Agent {
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp updated_at = 12;
   int64 version = 13;
+  // Provider-portable thinking control: "auto" | "enabled" | "disabled".
+  string thinking_mode = 14;
 }
 
 message ListAgentsRequest {
@@ -231,6 +233,7 @@ message CreateAgentRequest {
   string effort = 6;
   AgentVisibility visibility = 7;
   string config_json = 8;
+  string thinking_mode = 9;
 }
 
 message CreateAgentResponse {
@@ -248,6 +251,7 @@ message UpdateAgentRequest {
   AgentVisibility visibility = 8;
   string config_json = 9;
   int64 version = 10;
+  string thinking_mode = 11;
 }
 
 message UpdateAgentResponse {
@@ -376,6 +380,9 @@ message ExecuteTurnRequest {
   // Station validates and pins this lease before admitting device-local work.
   optional string client_capability_session_id = 20;
   string client_idempotency_key = 21;
+  // Controls whether the provider should emit private thinking before answer text.
+  // Independent from effort; unspecified normalizes to the Agent default, then AUTO.
+  string thinking_mode = 22;
 }
 
 message ExecuteTurnResponse {
@@ -753,6 +760,7 @@ message RuntimeSnapshot {
   string agent_config_version = 7;
   string external_session_id = 8;
   uint64 external_session_epoch = 9;
+  string thinking_mode = 10;
 }
 
 message RuntimeBudget {
@@ -1316,6 +1324,7 @@ message SubmitTurnRequest {
   optional string model_id = 6;
   RuntimeBudget requested_budget = 7;
   optional string client_capability_session_id = 8;
+  string thinking_mode = 9;
 }
 
 message SubmitTurnResponse {

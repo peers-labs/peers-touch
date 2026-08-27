@@ -81,6 +81,7 @@ type TurnConfig struct {
 	Provider                  string
 	Model                     string
 	Effort                    string // reasoning effort: "low" | "medium" | "high"
+	ThinkingMode              domain.ThinkingMode
 	FallbackModel             string // Alternate model for billing/model_not_found fallback recovery.
 	WorkspaceRoot             string
 	KnowledgeResources        []domain.KnowledgeResource
@@ -386,6 +387,7 @@ func (s *TurnService) queuedTurnConfig(
 		Provider:                  request.GetProvider(),
 		Model:                     request.GetModel(),
 		Effort:                    request.GetEffort(),
+		ThinkingMode:              domain.ThinkingMode(request.GetThinkingMode()),
 		ClientCapabilitySessionID: request.GetClientCapabilitySessionId(),
 		KnowledgeResources:        queuedKnowledgeResources(request),
 		MemoryDisabled:            request.GetMemoryDisabled(),
@@ -743,9 +745,19 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	// Resolve agent identity/config defaults from DB when not provided per-turn.
-	if config.Identity == "" || config.AgentConfigPrompt == "" || config.Provider == "" || config.Model == "" {
+	if config.Identity == "" ||
+		config.AgentConfigPrompt == "" ||
+		config.Provider == "" ||
+		config.Model == "" ||
+		config.ThinkingMode == "" {
 		s.resolveAgentDefaults(ctx, config)
 	}
+	thinkingMode, err := normalizeThinkingMode(config.ThinkingMode)
+	if err != nil {
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "invalid thinking mode")
+		return nil, err
+	}
+	config.ThinkingMode = thinkingMode
 
 	logger.Infof(ctx, "turn started: turn_id=%s agent_id=%s conversation_id=%s provider=%s",
 		turnID, config.AgentID, config.ConversationID, config.Provider)
@@ -1256,6 +1268,8 @@ func (s *TurnService) executeSummaryLLM(ctx context.Context, config *TurnConfig,
 			Content: summaryPrompt,
 		}},
 		ProviderType: config.Provider,
+		Effort:       config.Effort,
+		ThinkingMode: config.ThinkingMode,
 	})
 	if err != nil {
 		return "", err
@@ -1395,6 +1409,7 @@ func (s *TurnService) providerCallWithRetry(
 			Messages:     messages,
 			ProviderType: config.Provider,
 			Effort:       config.Effort,
+			ThinkingMode: config.ThinkingMode,
 			DeltaSink: func(deltaCtx context.Context, delta ProviderDelta) {
 				s.emitTurnEvent(deltaCtx, config, turnID, TurnEvent{
 					Type:  delta.Type,
@@ -1649,6 +1664,7 @@ func (s *TurnService) processToolCalls(
 				Provider:                  config.Provider,
 				Model:                     config.Model,
 				Effort:                    config.Effort,
+				ThinkingMode:              string(config.ThinkingMode),
 				SystemPrompt:              systemPrompt,
 				Iteration:                 uint32(iterations),
 				MaxRetries:                uint32(config.MaxRetries),
@@ -1972,6 +1988,7 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		Provider:                  batch.Provider,
 		Model:                     batch.Model,
 		Effort:                    batch.Effort,
+		ThinkingMode:              domain.ThinkingMode(batch.ThinkingMode),
 		ClientCapabilitySessionID: batch.CapabilitySessionID,
 		TaskID:                    batch.TaskID,
 		StepID:                    batch.StepID,
@@ -2372,6 +2389,7 @@ func (s *TurnService) executeDelegation(
 			Provider:          config.Provider,
 			Model:             config.Model,
 			Effort:            config.Effort,
+			ThinkingMode:      config.ThinkingMode,
 			FallbackModel:     config.FallbackModel,
 			RotationStrategy:  config.RotationStrategy,
 			Depth:             config.Depth + 1,
@@ -3490,6 +3508,18 @@ func (s *TurnService) resolveAgentDefaults(ctx context.Context, config *TurnConf
 	if err := db.WithContext(ctx).Where("id = ?", config.AgentID).First(&agent).Error; err != nil {
 		return
 	}
+	if config.Provider == "" {
+		config.Provider = strings.TrimSpace(agent.ProviderID)
+	}
+	if config.Model == "" {
+		config.Model = strings.TrimSpace(agent.ModelName)
+	}
+	if config.Effort == "" {
+		config.Effort = strings.TrimSpace(agent.Effort)
+	}
+	if config.ThinkingMode == "" {
+		config.ThinkingMode = domain.ThinkingMode(agent.ThinkingMode)
+	}
 	var cfg map[string]interface{}
 	_ = json.Unmarshal([]byte(agent.ConfigJSON), &cfg)
 	if cfg == nil {
@@ -3510,12 +3540,6 @@ func (s *TurnService) resolveAgentDefaults(ctx context.Context, config *TurnConf
 	}
 	if config.AgentConfigPrompt == "" {
 		config.AgentConfigPrompt = extractStr("agentConfigPrompt", "agent_config_prompt", "agentsMd", "agents_md", "agents")
-	}
-	if config.Provider == "" {
-		config.Provider = strings.TrimSpace(agent.ProviderID)
-	}
-	if config.Model == "" {
-		config.Model = strings.TrimSpace(agent.ModelName)
 	}
 }
 

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-08-25
+> **Created**: 2026-08-17 | **Updated**: 2026-08-27
 > **Owner**: Peers-Touch Agent Team
 > **Plan gate**: `OWNER_APPROVED_EXECUTION`
 > **Entry gate**: Owner accepted MCA-D19A/D19B/D19C into the main Goal G1 task on 2026-08-22
@@ -1509,6 +1509,22 @@ therefore paused at `PRODUCT_AMENDMENT_REQUIRED`: decide whether Agent/Turn
 configuration exposes an explicit provider-portable thinking mode
 (`auto|enabled|disabled`). Mapping `low` to disabled or treating thinking as
 answer text is forbidden because either silently changes product semantics.
+On 2026-08-27 the Owner approved that contract: Agent configuration owns the
+durable default, a Turn may explicitly override it, `auto` is the default, and
+reasoning effort remains independent. AS-F03 requests `disabled` so it can
+prove progressive answer text and cancellation without reinterpreting private
+thinking as answer content. Implementation and source-matched rerun are in
+progress; G-F remains `PARTIAL / UNPROVEN` until the rerun passes.
+The implementation now carries the independent mode through Agent persistence,
+Turn override, queue replay, compression, delegation, Tool continuation,
+provider/model capability validation, and the immutable RuntimeSnapshot.
+Historical snapshots migrate to effective `auto` with a recalculated canonical
+hash. AS-F03 reads the persisted mode back from Station and rejects thinking
+deltas while `disabled`; harness and Foundation producer paths now map back to
+the G-F Gate. Focused Station Agent packages, Desktop checks/tests/build,
+Mobile checks, 49 Foundation/proof-contract tests, Agent Domain validation, and
+Acceptance Infra self-validation pass. The source-matched runtime rerun remains
+pending.
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"

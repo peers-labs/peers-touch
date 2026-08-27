@@ -2,7 +2,7 @@
 
 > **Status**: accepted
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-17
+> **Created**: 2026-07-30 | **Updated**: 2026-08-27
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -179,6 +179,11 @@ V2 scope dispositions:
   Mobile capability exists.
 - Private model reasoning is not promised. The product exposes model-provided
   reasoning summaries/status only when policy and provider capability allow it.
+- Thinking mode is independent from reasoning effort. `auto` is the default and
+  leaves the provider's mode unchanged; `enabled` explicitly requests thinking;
+  `disabled` explicitly requests direct answer text. An explicit unsupported
+  mode rejects before provider execution instead of being silently ignored or
+  remapped to an effort level.
 
 ## 7. Non-Goals
 
@@ -201,6 +206,7 @@ V2 scope dispositions:
 | V2 Evaluation | User-visible Evaluation Lab is required; Station owns benchmark, dataset, test-case, run, result, and metrics truth | 2026-08-17 | APPROVED |
 | V2 generation scope | Image generation is unsupported; video and server-side audio generation are deferred | 2026-08-17 | APPROVED |
 | V2 platform claim | Desktop is the complete delivery; Browser preserves Station-backed outcomes with explicit device-capability degradation; Mobile contract compatibility is required while Mobile UI remains deferred | 2026-08-17 | APPROVED |
+| Direct Model thinking mode | Agent default and per-Turn override use `auto / enabled / disabled`; default is `auto`; reasoning effort remains an independent control | 2026-08-27 | APPROVED |
 
 All owner-level scope decisions are approved. The Home/Tool/Evaluation
 prototype is Owner-confirmed, and the independent PRODUCT review passed on

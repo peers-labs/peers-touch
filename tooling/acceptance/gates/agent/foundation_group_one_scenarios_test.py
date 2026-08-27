@@ -128,6 +128,7 @@ def valid_as_f03_capture() -> dict[str, object]:
             {"eventType": "cancelled", "sequence": 3},
         ],
         "sawTextBeforeCancel": True,
+        "thinkingMode": "disabled",
         "terminalTracePersisted": True,
     }
 
@@ -150,6 +151,30 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneScenarioError,
             "exactlyOneAuthoritativeTerminal",
+        ):
+            evaluate_as_f03(capture)
+
+    def test_as_f03_rejects_implicit_thinking_mode(self) -> None:
+        capture = valid_as_f03_capture()
+        capture["thinkingMode"] = "auto"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cancelledDuringTextAuthoritative",
+        ):
+            evaluate_as_f03(capture)
+
+    def test_as_f03_rejects_thinking_delta_when_disabled(self) -> None:
+        capture = valid_as_f03_capture()
+        events = capture["events"]
+        assert isinstance(events, list)
+        events.insert(1, {"eventType": "thinking", "sequence": 2})
+        events[2]["sequence"] = 3
+        events[3]["sequence"] = 4
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "progressiveEventsSequenced",
         ):
             evaluate_as_f03(capture)
 

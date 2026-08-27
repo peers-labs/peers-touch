@@ -479,6 +479,7 @@ func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.Exe
 		Provider:                  req.GetProvider(),
 		Model:                     req.GetModel(),
 		Effort:                    req.GetEffort(),
+		ThinkingMode:              domain.ThinkingMode(req.GetThinkingMode()),
 		ClientCapabilitySessionID: req.GetClientCapabilitySessionId(),
 		KnowledgeResources:        knowledgeResourcesFromRequest(req),
 		EventSink:                 sink,

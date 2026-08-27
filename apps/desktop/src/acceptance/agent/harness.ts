@@ -58,6 +58,7 @@ function startObservedFoundationTurn(input: {
   provider?: string;
   model?: string;
   effort?: 'low' | 'medium' | 'high';
+  thinkingMode?: 'auto' | 'enabled' | 'disabled';
   clientCapabilitySessionId?: string;
 }): ObservedFoundationTurn {
   const events: ObservedFoundationTurnResult['events'] = [];
@@ -90,6 +91,7 @@ function startObservedFoundationTurn(input: {
     provider: input.provider,
     model: input.model,
     effort: input.effort,
+    thinking_mode: input.thinkingMode,
     client_capability_session_id: input.clientCapabilitySessionId,
   }, (event) => {
     const observed = {
@@ -569,6 +571,11 @@ async function buildDirectRuntimeAttestation(
         'externalSessionEpoch',
         'external_session_epoch',
       )),
+    thinkingMode: evidenceField(
+      snapshot,
+      'thinkingMode',
+      'thinking_mode',
+    ),
   };
 
   return {
@@ -678,6 +685,7 @@ function evaluateF03(ctx: DirectCellAssertionContext): Record<string, boolean | 
     progressiveEventsSequenced:
       events.some((event) => event.eventType === 'progress')
       && events.some((event) => event.eventType === 'text')
+      && !events.some((event) => event.eventType === 'thinking')
       && sequences.every((sequence) => Number.isInteger(sequence) && sequence > 0)
       && sequences.every((sequence, index) =>
         index === 0 || sequence > sequences[index - 1]),
@@ -1982,6 +1990,7 @@ export function installAcceptanceHarness(): void {
           provider: agent.provider || undefined,
           model: agent.model || undefined,
           effort: 'low',
+          thinkingMode: 'disabled',
           clientCapabilitySessionId:
             capabilitySessions.selectedStationSession?.session_id,
         });
@@ -2052,6 +2061,31 @@ export function installAcceptanceHarness(): void {
         : null;
       if (cell === 'AS-F03' && scenarioFacts) {
         scenarioFacts.terminalTracePersisted = Boolean(turnEvidence);
+        if (turnEvidence) {
+          const evidence = evidenceRecord(turnEvidence, 'turnEvidence');
+          const diagnostics = evidenceRecord(
+            evidence.diagnostics,
+            'turnDiagnostics',
+          );
+          const replay = evidenceRecord(
+            diagnostics.replay,
+            'turnDiagnosticReplay',
+          );
+          const attempts = evidenceArray(replay.attempts, 'turnAttempts');
+          const attempt = evidenceRecord(
+            attempts[attempts.length - 1],
+            'turnAttempt',
+          );
+          const snapshot = evidenceRecord(
+            evidenceField(attempt, 'runtimeSnapshot', 'runtime_snapshot'),
+            'runtimeSnapshot',
+          );
+          scenarioFacts.thinkingMode = evidenceField(
+            snapshot,
+            'thinkingMode',
+            'thinking_mode',
+          );
+        }
       }
 
       const sessionState = useSessionStore.getState();

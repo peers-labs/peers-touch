@@ -86,6 +86,7 @@ func TestTurnConfigFromRequestCarriesKnowledgeResources(t *testing.T) {
 		ConversationId: "conv_1",
 		AgentId:        "agent_1",
 		UserInput:      "How do traces work?",
+		ThinkingMode:   "disabled",
 		KnowledgeResources: []*model.KnowledgeResource{{
 			ResourceId: "kr_1",
 			AgentId:    "agent_1",
@@ -102,6 +103,9 @@ func TestTurnConfigFromRequestCarriesKnowledgeResources(t *testing.T) {
 	}
 	if config.KnowledgeResources[0].ResourceID != "kr_1" {
 		t.Fatalf("expected resource id kr_1, got %q", config.KnowledgeResources[0].ResourceID)
+	}
+	if config.ThinkingMode != domain.ThinkingModeDisabled {
+		t.Fatalf("expected disabled thinking mode, got %q", config.ThinkingMode)
 	}
 	if config.KnowledgeResources[0].Source != "trace content" {
 		t.Fatalf("expected resource source to be preserved, got %q", config.KnowledgeResources[0].Source)

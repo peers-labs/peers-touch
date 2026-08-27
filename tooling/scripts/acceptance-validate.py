@@ -505,11 +505,16 @@ def validate_runtime_attestation(
         "agentConfigVersion",
         "externalSessionId",
         "externalSessionEpoch",
+        "thinkingMode",
     }
     snapshot = item.get("runtimeSnapshot")
     require(
         isinstance(snapshot, dict) and set(snapshot) == snapshot_fields,
         f"{label} runtime snapshot fields mismatch",
+    )
+    require(
+        snapshot.get("thinkingMode") in {"auto", "enabled", "disabled"},
+        f"{label} runtime snapshot thinking mode invalid",
     )
     capability_fields = {
         "input",

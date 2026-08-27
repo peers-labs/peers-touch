@@ -1,4 +1,5 @@
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
+import type { DescMessage, MessageShape } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -74,10 +75,10 @@ import {
   TurnStreamEventType,
 } from '../gen/proto/domain/agent/turn_stream_pb';
 
-const roundTrip = <T>(
-  schema: Parameters<typeof toBinary<T>>[0],
-  value: Parameters<typeof toBinary<T>>[1],
-): T => fromBinary(schema, toBinary(schema, value));
+const roundTrip = <Desc extends DescMessage>(
+  schema: Desc,
+  value: MessageShape<Desc>,
+): MessageShape<Desc> => fromBinary(schema, toBinary(schema, value));
 
 describe('Modern Chat Agent V2 Mobile Foundation contracts', () => {
   it('[foundation-mobile-cell:AS-15-P01] round-trips config and readiness and blocks send while unavailable', () => {
@@ -89,7 +90,7 @@ describe('Modern Chat Agent V2 Mobile Foundation contracts', () => {
     });
     const readinessRequest = create(GetCapabilityReadinessRequestSchema, {
       agentId: 'agent-1',
-      runtimeProfileId: 'mobile-runtime',
+      runtimeSnapshotId: 'mobile-runtime',
       clientCapabilitySessionId: 'mobile-session-1',
     });
     const readiness = create(CapabilityReadinessSnapshotSchema, {
@@ -564,6 +565,7 @@ describe('Modern Chat Agent V2 Mobile Foundation contracts', () => {
       runtimeKind: RuntimeKind.DIRECT_MODEL,
       providerId: 'provider-1',
       modelId: 'model-1',
+      thinkingMode: 'disabled',
     });
     const lease = create(ClientCapabilityLeaseSchema, {
       capabilitySessionId: 'mobile-session-1',
@@ -583,8 +585,9 @@ describe('Modern Chat Agent V2 Mobile Foundation contracts', () => {
     });
     const decodedLease = roundTrip(ClientCapabilityLeaseSchema, lease);
 
-    expect(roundTrip(RuntimeSnapshotSchema, runtime).runtimeKind)
-      .toBe(RuntimeKind.DIRECT_MODEL);
+    const decodedRuntime = roundTrip(RuntimeSnapshotSchema, runtime);
+    expect(decodedRuntime.runtimeKind).toBe(RuntimeKind.DIRECT_MODEL);
+    expect(decodedRuntime.thinkingMode).toBe('disabled');
     expect(decodedLease.platform).toBe(ClientPlatform.MOBILE);
     expect(decodedLease.deviceId).toBe('mobile-device-1');
     expect(decodedLease.capabilities).toHaveLength(1);

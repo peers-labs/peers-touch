@@ -196,6 +196,7 @@ message RuntimeSnapshot {
   string agent_config_version = 7;
   string external_session_id = 8;
   uint64 external_session_epoch = 9;
+  string thinking_mode = 10;
 }
 ```
 
@@ -206,6 +207,22 @@ current Agent configuration.
 
 This snapshot preserves what actually executed even if configuration changes
 later.
+
+`ThinkingMode` is provider-portable and independent from reasoning effort:
+
+```text
+THINKING_MODE_AUTO
+THINKING_MODE_ENABLED
+THINKING_MODE_DISABLED
+```
+
+Agent configuration owns the durable default. A Turn may override it. Missing
+or unspecified values normalize to `AUTO`; an explicit mode unsupported by the
+selected provider/model catalog capability rejects before provider execution.
+Provider adapters translate the effective mode to their wire format and must
+not infer it from effort, display names, URL patterns, or observed thinking
+deltas. Historical snapshots without the field migrate to `AUTO` and receive a
+new canonical runtime snapshot hash.
 
 Station persists `ConversationRuntimeBinding` and `RuntimeSnapshot` as the
 generated protobuf contracts. The first successfully resolved attempt installs
@@ -514,6 +531,7 @@ Required:
 - Client idempotency key.
 - User input or attachments.
 - Optional explicit runtime/model selection intent.
+- Optional explicit thinking-mode override.
 - Optional lower runtime budget.
 - Optional client capability session selected for device-local work.
 

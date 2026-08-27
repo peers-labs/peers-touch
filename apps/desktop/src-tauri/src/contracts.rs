@@ -988,6 +988,7 @@ pub struct AgentExecuteTurnInput {
     pub identity: Option<String>,
     pub agent_config_prompt: Option<String>,
     pub effort: Option<String>,
+    pub thinking_mode: Option<String>,
     pub workspace_root: Option<String>,
     pub context_window_size: Option<u32>,
     pub max_retries: Option<u32>,
