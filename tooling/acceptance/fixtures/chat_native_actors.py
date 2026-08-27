@@ -4,7 +4,6 @@ import json
 import subprocess
 import sys
 import urllib.error
-import urllib.parse
 import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
@@ -21,6 +20,10 @@ from tooling.acceptance.core.provisioning import (
     ActorManifest,
     utc_now,
 )
+from tooling.acceptance.fixtures.chat_native_reset import (
+    acceptance_station_environment,
+    verify_disposable_station_runtime,
+)
 
 
 ACTOR_ACCOUNTS = {
@@ -32,44 +35,24 @@ ACTOR_ACCOUNTS = {
 ACTOR_PASSWORD = "1"
 
 
-def _load_env(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("'\"")
-    return values
-
-
 def verify_reset_target(
     station_url: str,
     deployment_environment: str,
 ) -> None:
-    environment_path = (
-        REPO_ROOT
-        / ".local"
-        / "deploy"
-        / "envs"
-        / f"{deployment_environment}.env"
-    )
-    if not environment_path.is_file():
-        raise BlockedError(
-            reason=f"Reset target environment is missing: {environment_path}",
-            resource=f"fixture-target:{deployment_environment}",
+    try:
+        environment = acceptance_station_environment(
+            station_url,
+            deployment_environment,
         )
-    environment = _load_env(environment_path)
-    target_host = str(environment.get("PT_DEPLOY_HOST") or "").strip()
-    station_host = urllib.parse.urlparse(station_url).hostname or ""
-    if not target_host or target_host != station_host:
+        verify_disposable_station_runtime(environment)
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         raise BlockedError(
             reason=(
-                f"Fixture reset target mismatch: Station host {station_host!r} "
-                f"does not match deployment host {target_host!r}"
+                "Fixture reset target is not an isolated disposable Station: "
+                f"{error}"
             ),
             resource=f"fixture-target:{deployment_environment}",
-        )
+        ) from error
 
 
 def reset_fixture(deployment_environment: str, actors: Iterable[str]) -> None:

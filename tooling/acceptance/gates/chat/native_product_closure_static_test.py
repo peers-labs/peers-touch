@@ -45,6 +45,9 @@ CHAT_DETAIL_PANEL = (
 CHAT_COMPOSER = ROOT / "apps/desktop/src/components/chat/ChatComposer.tsx"
 CHAT_MESSAGE_AREA = ROOT / "apps/desktop/src/components/chat/ChatMessageArea.tsx"
 CHAT_SESSION_LIST = ROOT / "apps/desktop/src/components/chat/ChatSessionList.tsx"
+CHAT_SEARCH_DROPDOWN = (
+    ROOT / "apps/desktop/src/components/chat/ChatSearchDropdown.tsx"
+)
 CREATE_GROUP_MODAL = (
     ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
 )
@@ -75,6 +78,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.chat_composer = CHAT_COMPOSER.read_text(encoding="utf-8")
         self.chat_message_area = CHAT_MESSAGE_AREA.read_text(encoding="utf-8")
         self.chat_session_list = CHAT_SESSION_LIST.read_text(encoding="utf-8")
+        self.chat_search_dropdown = CHAT_SEARCH_DROPDOWN.read_text(
+            encoding="utf-8"
+        )
         self.create_group_modal = CREATE_GROUP_MODAL.read_text(encoding="utf-8")
         self.http_gateway = HTTP_GATEWAY.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
@@ -335,6 +341,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "native_dom_only",
             "source_build_runtime_identity",
             "visible_ui_has_no_i18n_keys",
+            "conversation_search_open_exact",
             "transcript_exact",
             "thread_exact",
             "toolbar_geometry",
@@ -395,6 +402,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             [name for _, name in fixed_steps],
             [
                 "localization.visible",
+                "conversation.search.ui",
                 "group.create.ui",
                 "transcript.thread.ui",
                 "toolbar.geometry.ui",
@@ -1637,6 +1645,54 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             ],
             "i18n/",
         )
+
+    def test_conversation_search_opens_and_reuses_one_direct(self) -> None:
+        self.assertIn("data-chat-session-search", self.chat_session_list)
+        self.assertIn("data-chat-search-result", self.chat_search_dropdown)
+        self.assertIn(
+            "data-chat-search-result-id={conversation.id}",
+            self.chat_search_dropdown,
+        )
+        self.assertIn(
+            "data-chat-search-result-peer-did={conversation.peerDid || ''}",
+            self.chat_search_dropdown,
+        )
+        journey_start = self.source.index(
+            "    def prove_conversation_search_open("
+        )
+        journey_end = self.source.index(
+            "    def open_group_through_ui(",
+            journey_start,
+        )
+        journey = self.source[journey_start:journey_end]
+        self.assertEqual(journey.count("self.search_contact_result("), 2)
+        self.assertIn(
+            "second_conversation_id == first_conversation_id",
+            journey,
+        )
+        self.assertIn('"conversation_search_open_exact"', journey)
+        self.assertIn('"error.unknown"', journey)
+        self.assertIn('"conversation action failed"', journey)
+        self.assertIn(
+            r"\b(?:auth|chat|common)\.[A-Za-z0-9_.-]+\b",
+            journey,
+        )
+        self.assertIn(
+            'self.write_json_evidence("direct-search-reuse", direct_search)',
+            self.source,
+        )
+        self.assertIn('"alice-direct-search-first"', journey)
+        self.assertIn('"alice-direct-search-second"', journey)
+        self.assertIn('"sessionRows": len(session_rows)', self.source)
+        for forbidden in (
+            "call_async_harness",
+            "gateway_read(",
+            "__PT_ACCEPTANCE_STORE__",
+            ".getState(",
+            ".setState(",
+            ".click()",
+        ):
+            self.assertNotIn(forbidden, journey)
 
     def test_message_action_anchor_includes_reaction_and_metadata_rows(self) -> None:
         anchor_index = self.message_row.index("data-message-action-anchor")

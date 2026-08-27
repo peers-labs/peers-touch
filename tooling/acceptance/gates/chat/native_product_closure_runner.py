@@ -43,7 +43,7 @@ from tooling.acceptance.drivers.native import (
 from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
-    ProfileThreeSubmitFaultProxy,
+    AcceptanceStationSubmitFaultProxy,
 )
 from tooling.acceptance.gates.chat.native_support import commits_match, wait_until
 
@@ -82,6 +82,7 @@ REQUIRED_ASSERTIONS = {
     "native_dom_only",
     "source_build_runtime_identity",
     "visible_ui_has_no_i18n_keys",
+    "conversation_search_open_exact",
     "transcript_exact",
     "thread_exact",
     "toolbar_geometry",
@@ -126,6 +127,11 @@ REQUIRED_EVIDENCE = {
     "native-activation-diagnostics",
     "runtime-launch-ledger",
     "runtime-log-audit",
+    "direct-search-reuse",
+    "alice-direct-search-first-screenshot",
+    "alice-direct-search-first-dom",
+    "alice-direct-search-second-screenshot",
+    "alice-direct-search-second-dom",
     "cleanup",
 }
 
@@ -310,7 +316,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.steps: list[dict[str, Any]] = []
         self.structured_evidence: dict[str, Any] = {}
         self.native_activation_diagnostics: list[dict[str, Any]] = []
-        self.reaction_proxy: ProfileThreeSubmitFaultProxy | None = None
+        self.reaction_proxy: AcceptanceStationSubmitFaultProxy | None = None
         self.reaction_endpoint_url: str | None = None
         self.fixture_root = Path(tempfile.mkdtemp(prefix="pt-chat-product-closure-"))
         self.report.station_url = self.station_url
@@ -1942,6 +1948,255 @@ class NativeProductClosureGate(AcceptanceGate):
         WebDriverWait(client.driver, 20).until(
             lambda driver: driver.current_url.endswith("#/chat")
         )
+
+    def arm_conversation_search_feedback_probe(self, actor: str) -> None:
+        self.clients[actor].execute_script(
+            """
+            window.__PT_CHAT_SEARCH_FEEDBACK_PROBE__?.cleanup?.();
+            const selector = '[role="alert"], [role="alertdialog"], [role="status"]';
+            const preexisting = new WeakSet(document.querySelectorAll(selector));
+            const messages = [];
+            const record = (candidate, requireVisible) => {
+              if (!(candidate instanceof Element) || preexisting.has(candidate)) {
+                return;
+              }
+              const bounds = candidate.getBoundingClientRect();
+              const style = getComputedStyle(candidate);
+              const text = (candidate.innerText || '').trim();
+              const entry = {
+                role: candidate.getAttribute('role') || '',
+                text,
+              };
+              if (
+                text
+                && (
+                  !requireVisible
+                  || (
+                    bounds.width > 0
+                    && bounds.height > 0
+                    && style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                  )
+                )
+                && !messages.some(
+                  (item) => item.role === entry.role && item.text === entry.text
+                )
+              ) {
+                messages.push(entry);
+              }
+            };
+            const capture = (records = []) => {
+              for (const mutation of records) {
+                for (const node of mutation.addedNodes || []) {
+                  if (!(node instanceof Element)) continue;
+                  if (node.matches(selector)) record(node, false);
+                  for (const candidate of node.querySelectorAll(selector)) {
+                    record(candidate, false);
+                  }
+                }
+              }
+              for (const candidate of document.querySelectorAll(selector)) {
+                record(candidate, true);
+              }
+            };
+            const observer = new MutationObserver(capture);
+            observer.observe(document.body, {
+              attributes: true,
+              childList: true,
+              subtree: true,
+            });
+            window.__PT_CHAT_SEARCH_FEEDBACK_PROBE__ = {
+              messages,
+              cleanup: () => observer.disconnect(),
+            };
+            """
+        )
+
+    def conversation_search_feedback(
+        self,
+        actor: str,
+    ) -> list[dict[str, str]]:
+        value = self.clients[actor].execute_script(
+            """
+            const probe = window.__PT_CHAT_SEARCH_FEEDBACK_PROBE__;
+            const messages = Array.from(probe?.messages || []);
+            probe?.cleanup?.();
+            delete window.__PT_CHAT_SEARCH_FEEDBACK_PROBE__;
+            return messages;
+            """
+        )
+        return (
+            [
+                {
+                    "role": str(item.get("role") or ""),
+                    "text": str(item.get("text") or ""),
+                }
+                for item in value
+                if isinstance(item, dict)
+            ]
+            if isinstance(value, list)
+            else []
+        )
+
+    def search_contact_result(
+        self,
+        actor: str,
+        peer_ptid: str,
+    ) -> dict[str, str]:
+        client = self.clients[actor]
+        search = client.find_element("[data-chat-session-search]", 30)
+        self.click_element(actor, search)
+        self.native_adapter.post_key(
+            NativeKey.A,
+            modifiers=(NativeModifier.PRIMARY,),
+        )
+        self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
+        WebDriverWait(client.driver, 5).until(
+            lambda _: (search.get_attribute("value") or "") == ""
+        )
+        search.send_keys("bob")
+        WebDriverWait(client.driver, 5).until(
+            lambda _: (search.get_attribute("value") or "").lower() == "bob"
+        )
+        selector = (
+            '[data-chat-search-result-kind="friend"]'
+            f'[data-chat-search-result-peer-did="{peer_ptid}"]'
+        )
+
+        def exact_result() -> Any | None:
+            matches = client.find_elements(selector)
+            return matches[0] if len(matches) == 1 else None
+
+        result = wait_until(
+            exact_result,
+            f"{actor} exact search result for {peer_ptid}",
+            timeout=30,
+        )
+        snapshot = {
+            "id": result.get_attribute("data-chat-search-result-id") or "",
+            "kind": result.get_attribute("data-chat-search-result-kind") or "",
+            "peerPtid": (
+                result.get_attribute("data-chat-search-result-peer-did") or ""
+            ),
+        }
+        self.arm_conversation_search_feedback_probe(actor)
+        self.click(actor, selector)
+        return snapshot
+
+    def active_direct_conversation(
+        self,
+        actor: str,
+    ) -> dict[str, Any] | None:
+        client = self.clients[actor]
+        panes = client.find_elements(
+            '[data-chat-conversation-pane][data-session-security="ready"]'
+        )
+        if len(panes) != 1:
+            return None
+        conversation_id = (
+            panes[0].get_attribute("data-chat-conversation-pane") or ""
+        )
+        composers = client.find_elements(
+            f'[data-chat-composer="{conversation_id}"] '
+            '[data-pt-text-input="chat-composer"]'
+        )
+        session_rows = client.find_elements(
+            f'[data-chat-session-ulid="{conversation_id}"]'
+        )
+        searches = client.find_elements("[data-chat-session-search]")
+        return (
+            {
+                "conversationId": conversation_id,
+                "sessionRows": len(session_rows),
+                "searchValue": (
+                    searches[0].get_attribute("value") if searches else None
+                ),
+            }
+            if (
+                conversation_id
+                and len(composers) == 1
+                and len(session_rows) == 1
+                and len(searches) == 1
+                and (searches[0].get_attribute("value") or "") == ""
+            )
+            else None
+        )
+
+    def prove_conversation_search_open(self) -> dict[str, Any]:
+        actor = "alice"
+        peer_ptid = self.ptids["bob"]
+        self.enter_chat_page(actor)
+        self.click(actor, '[data-chat-subpage="chats"]')
+
+        first_result = self.search_contact_result(actor, peer_ptid)
+        first_open = wait_until(
+            lambda: self.active_direct_conversation(actor),
+            "Alice Direct conversation from first search result",
+            timeout=120,
+        )
+        first_feedback = self.conversation_search_feedback(actor)
+        self.save_screenshot(
+            self.clients[actor],
+            "alice-direct-search-first",
+        )
+        self.save_dom(self.clients[actor], "alice-direct-search-first")
+
+        second_result = self.search_contact_result(actor, peer_ptid)
+        second_open = wait_until(
+            lambda: self.active_direct_conversation(actor),
+            "Alice Direct conversation from repeated search result",
+            timeout=30,
+        )
+        second_feedback = self.conversation_search_feedback(actor)
+        self.save_screenshot(
+            self.clients[actor],
+            "alice-direct-search-second",
+        )
+        self.save_dom(self.clients[actor], "alice-direct-search-second")
+
+        feedback = first_feedback + second_feedback
+        forbidden_feedback = [
+            item
+            for item in feedback
+            if (
+                item["role"] in {"alert", "alertdialog"}
+                or "error.unknown" in item["text"].lower()
+                or "conversation action failed" in item["text"].lower()
+                or re.search(
+                    r"\b(?:auth|chat|common)\.[A-Za-z0-9_.-]+\b",
+                    item["text"],
+                )
+            )
+        ]
+        evidence = {
+            "peerPtid": peer_ptid,
+            "firstResult": first_result,
+            "firstOpen": first_open,
+            "secondResult": second_result,
+            "secondOpen": second_open,
+            "feedback": feedback,
+            "forbiddenFeedback": forbidden_feedback,
+        }
+        first_conversation_id = str(first_open["conversationId"])
+        second_conversation_id = str(second_open["conversationId"])
+        self.assert_condition(
+            "conversation_search_open_exact",
+            first_result == {
+                "id": peer_ptid,
+                "kind": "friend",
+                "peerPtid": peer_ptid,
+            }
+            and first_conversation_id != peer_ptid
+            and second_result == {
+                "id": first_conversation_id,
+                "kind": "friend",
+                "peerPtid": peer_ptid,
+            }
+            and second_conversation_id == first_conversation_id
+            and not forbidden_feedback,
+            json.dumps(evidence, sort_keys=True),
+        )
+        return evidence
 
     def open_group_through_ui(self) -> str:
         for actor in ("alice", "bob"):
@@ -4703,7 +4958,9 @@ class NativeProductClosureGate(AcceptanceGate):
 
         cleanup: dict[str, Any] = {}
         try:
-            self.reaction_proxy = ProfileThreeSubmitFaultProxy(self.station_url)
+            self.reaction_proxy = AcceptanceStationSubmitFaultProxy(
+                self.station_url
+            )
             self.reaction_proxy.start()
             self.reaction_endpoint_url = (
                 self.runtime_binding.expose_orchestrator_endpoint(
@@ -4713,6 +4970,10 @@ class NativeProductClosureGate(AcceptanceGate):
             for actor in ("alice", "bob"):
                 self.step(f"{actor}.launch", lambda actor=actor: self.launch_actor(actor))
             self.step("localization.visible", self.prove_visible_localization)
+            direct_search = self.step(
+                "conversation.search.ui",
+                self.prove_conversation_search_open,
+            )
             group_id = self.step("group.create.ui", self.open_group_through_ui)
             _, action_message_id = self.step(
                 "transcript.thread.ui",
@@ -4782,6 +5043,7 @@ class NativeProductClosureGate(AcceptanceGate):
             self.collect_final_evidence()
 
             self.write_json_evidence("source-build-runtime", source_identity)
+            self.write_json_evidence("direct-search-reuse", direct_search)
             self.write_json_evidence(
                 "transcript-thread",
                 self.structured_evidence["transcriptThread"],
@@ -4826,6 +5088,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "runtimeCell": self.runtime_binding.cell_id,
             "journey": "mp-w13-chat-product-closure",
             "conversationId": group_id,
+            "directConversationId": direct_search["firstOpen"]["conversationId"],
             "steps": self.steps,
             "sourceIdentity": source_identity,
             "cleanup": cleanup,

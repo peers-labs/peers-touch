@@ -181,6 +181,10 @@ Manifest identity requirements:
 - `accountRef` 是逻辑引用，不要求暴露邮箱。
 - Manifest 禁止包含 password、PIN、token、private key 或 recovery phrase。
 - Gate 不允许覆盖 Actor Manifest 中的 PTID。
+- destructive Chat Fixture 的 `targetVerified=true` 仅在 deployment env 显式声明
+  disposable，且 live Station URL、Compose project、Station/PostgreSQL container
+  labels 与独立 PostgreSQL volume 全部精确匹配后成立；服务持久 Desktop 的 Station
+  不得作为 reset target。
 
 ## 6. Gap Artifact
 

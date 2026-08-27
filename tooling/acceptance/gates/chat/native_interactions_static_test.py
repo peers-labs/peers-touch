@@ -119,7 +119,10 @@ class NativeInteractionContractsTest(unittest.TestCase):
             self.assertIn("wait_until(", source)
             self.assertIn("station_readback", source)
             self.assertIn("messaging_acceptance_interaction_snapshot", source)
-            self.assertIn("profile_three_environment(self.station_url)", source)
+            self.assertIn(
+                "acceptance_station_environment(self.station_url)",
+                source,
+            )
             self.assertNotIn("time.sleep(", source)
             self.assertNotIn("localhost:18080", source)
 
@@ -197,39 +200,43 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertNotIn("CancelPendingMessagingCommand", source)
         self.assertNotIn("cancel_pending", source)
 
-    def test_timeout_retry_uses_profile_three_fault_proxy(self) -> None:
+    def test_timeout_retry_uses_disposable_station_fault_proxy(self) -> None:
         runner = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
         )
         proxy = self.source(
             "tooling/acceptance/fixtures/chat_submit_fault_proxy.py"
         )
-        self.assertIn("ProfileThreeSubmitFaultProxy", runner)
+        self.assertIn("AcceptanceStationSubmitFaultProxy", runner)
         self.assertIn("arm_connection_loss", runner)
         self.assertIn('"messaging_dispatch"', runner)
         self.assertIn('"retry_wait"', runner)
         self.assertIn("receiverVisibleCount", runner)
         self.assertIn('SUBMIT_PATH = "/messaging/command/submit"', proxy)
-        self.assertIn("profile_three_environment(station_url)", proxy)
+        self.assertIn("acceptance_station_environment(station_url)", proxy)
         self.assertIn("requestSha256", proxy)
         self.assertIn("commandSha256", proxy)
         self.assertIn("_submit_command_bytes", proxy)
         self.assertNotIn("localhost:18080", proxy)
 
-    def test_profile_three_restart_is_remote_and_source_bound(self) -> None:
+    def test_disposable_station_restart_is_remote_and_source_bound(self) -> None:
         runner = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
         )
         fixture = self.source(
             "tooling/acceptance/fixtures/chat_native_reset.py"
         )
-        self.assertIn("restart_profile_three_station", runner)
+        self.assertIn("restart_acceptance_station", runner)
         self.assertNotIn('"station-restart"', runner)
         self.assertIn("CHAT_ACCEPTANCE_ALLOW_STATION_RESTART", fixture)
         self.assertIn("docker restart", fixture)
         self.assertIn(".State.StartedAt", fixture)
         self.assertIn("parsed_url.hostname != host", fixture)
-        self.assertIn("parsed_url.port != 18080", fixture)
+        self.assertIn("parsed_url.port != expected.port", fixture)
+        self.assertIn("PT_ACCEPTANCE_DISPOSABLE", fixture)
+        self.assertIn("PT_ACCEPTANCE_COMPOSE_PROJECT", fixture)
+        self.assertIn("PT_ACCEPTANCE_POSTGRES_VOLUME", fixture)
+        self.assertIn("verify_disposable_station_runtime", fixture)
         self.assertIn("beforeCommit", fixture)
         self.assertIn("afterCommit", fixture)
         self.assertIn("lane_row.next_sequence + 1", fixture)

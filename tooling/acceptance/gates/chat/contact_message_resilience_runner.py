@@ -13,9 +13,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
 from tooling.acceptance.drivers.tauri import TauriSession
-from tooling.acceptance.fixtures.chat_native_reset import profile_three_environment
+from tooling.acceptance.fixtures.chat_native_reset import (
+    acceptance_station_environment,
+)
 from tooling.acceptance.fixtures.chat_contact_message_fault_proxy import (
-    ProfileThreeContactMessageFaultProxy,
+    AcceptanceStationContactMessageFaultProxy,
 )
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
@@ -50,7 +52,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
             DEFAULT_STATION,
         ).rstrip("/")
         self.client: TauriSession | None = None
-        self.proxy: ProfileThreeContactMessageFaultProxy | None = None
+        self.proxy: AcceptanceStationContactMessageFaultProxy | None = None
         self.ptid = ""
         self.bob_ptid = ""
 
@@ -203,7 +205,7 @@ class ContactMessageResilienceGate(AcceptanceGate):
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
         try:
-            profile_three_environment(self.station_url)
+            acceptance_station_environment(self.station_url)
         except RuntimeError as error:
             raise GateError(str(error)) from error
 
@@ -244,7 +246,9 @@ class ContactMessageResilienceGate(AcceptanceGate):
             steps.append({"step": "navigate.contacts", "status": "pass", "ptid": self.bob_ptid})
 
             steps.append({"step": "proxy.start", "status": "start"})
-            self.proxy = ProfileThreeContactMessageFaultProxy(self.station_url)
+            self.proxy = AcceptanceStationContactMessageFaultProxy(
+                self.station_url
+            )
             self.proxy.start()
             configure_station(self.client, self.proxy.url)
             self.proxy.arm_create_direct_failure()

@@ -47,6 +47,7 @@
     ],
     "visible": [
       "Alice and Bob use the real picker, hover toolbar, reaction picker, Details actions, attachment picker and send button",
+      "Alice opens Bob through the visible conversation-list search result, then repeats the search and reuses the same Direct conversation",
       "one PTID resolves to the same loaded avatar URL across message, conversation list and Details",
       "Station attribution is visible and equal in both clients",
       "visible Chat shell copy resolves from loaded locale resources without exposing raw auth, chat or common keys",
@@ -56,6 +57,8 @@
   },
   "negative": [
     "Store actions, fixed commands and Acceptance Harness methods must not substitute for claimed Chat UI actions",
+    "conversation-list search must not create a duplicate Direct, expose error.unknown or a generic Conversation action failed message, or use a Harness/store shortcut",
+    "destructive Chat Fixture reset must not target a Station or PostgreSQL volume used by a persistent Desktop",
     "failed upload or send must not clear the Composer draft or create an empty message",
     "missing bundled locale resources or visible raw localization keys must fail the Native Gate",
     "static selectors, API readback or screenshots alone must not prove the native journey",

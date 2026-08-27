@@ -16,13 +16,12 @@ from typing import Any, Callable
 from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
-    deploy_environment,
-    duplicate_profile_three_queue_delivery,
-    profile_three_environment,
-    restart_profile_three_station,
+    acceptance_station_environment,
+    duplicate_acceptance_queue_delivery,
+    restart_acceptance_station,
 )
 from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
-    ProfileThreeSubmitFaultProxy,
+    AcceptanceStationSubmitFaultProxy,
 )
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
@@ -199,15 +198,14 @@ def recipient_queue_item_ids(
 
 
 def station_readback(conversation_id: str, message_id: str) -> dict[str, Any]:
-    environment = deploy_environment("station-three")
+    environment = acceptance_station_environment(DEFAULT_STATION)
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     user = environment.get("PT_DEPLOY_USER", "").strip()
     if not host or not user:
-        raise GateError("station-three deployment host identity is unavailable")
-    container = os.environ.get(
-        "CHAT_ACCEPTANCE_POSTGRES_CONTAINER",
-        "pt-station-a-postgres-1",
-    )
+        raise GateError(
+            "Chat Acceptance Station deployment host identity is unavailable"
+        )
+    container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
     conversation = sql_literal(conversation_id)
     message = sql_literal(message_id)
     query = f"""
@@ -1292,7 +1290,7 @@ class NativeInteractionsGate(AcceptanceGate):
             source_device = str(
                 source.get("recipientDeviceId") or self.device_ids[actor]
             )
-            injected = duplicate_profile_three_queue_delivery(
+            injected = duplicate_acceptance_queue_delivery(
                 self.station_url,
                 str(source.get("itemId") or ""),
                 self.ptids[actor],
@@ -1380,7 +1378,7 @@ class NativeInteractionsGate(AcceptanceGate):
             )
 
         before_station = station_readback(conversation_id, message_id)
-        proxy = ProfileThreeSubmitFaultProxy(self.station_url)
+        proxy = AcceptanceStationSubmitFaultProxy(self.station_url)
         proxy.start()
         proxy_port = proxy.port
         command_id = ""
@@ -1925,7 +1923,7 @@ class NativeInteractionsGate(AcceptanceGate):
 
     def restart_station(self) -> None:
         try:
-            self.restart_evidence = restart_profile_three_station(
+            self.restart_evidence = restart_acceptance_station(
                 self.station_url,
                 self.tested_commit,
             )
@@ -1947,7 +1945,7 @@ class NativeInteractionsGate(AcceptanceGate):
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
         try:
-            profile_three_environment(self.station_url)
+            acceptance_station_environment(self.station_url)
         except RuntimeError as error:
             raise GateError(str(error)) from error
         self.report.station_url = self.station_url
