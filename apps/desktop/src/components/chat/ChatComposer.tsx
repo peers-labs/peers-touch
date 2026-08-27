@@ -410,51 +410,11 @@ export function ChatComposer({
     const messageType = chatMessageTypeForAttachments(readyAttachments);
     const previousOutcomeRevision = useSocialChatStore.getState()
       .sendOutcomes[activeConversationId]?.revision ?? 0;
-    // #region debug-point A:composer-submit-snapshot
-    fetch('http://127.0.0.1:7780/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'attachment-send-draft',
-        runId: 'post-fix',
-        hypothesisId: 'A',
-        location: 'ChatComposer:submit',
-        msg: '[DEBUG] Composer attachment state before send',
-        data: {
-          conversationId: activeConversationId,
-          previousOutcomeRevision,
-          drafts: drafts.map((item) => ({
-            status: item.status,
-            size: item.size,
-            mimeType: item.mimeType,
-            hasAttachment: Boolean(item.attachment),
-          })),
-          readyAttachmentCount: readyAttachments.length,
-          uploading,
-          failed,
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     await onSend({
       text: value.trim(),
       attachments: readyAttachments,
       messageType,
     });
-    // #region debug-point B,C:composer-outcome-snapshot
-    fetch('http://127.0.0.1:7780/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'attachment-send-draft',
-        runId: 'post-fix',
-        hypothesisId: 'B,C',
-        location: 'ChatComposer:submit:outcome',
-        msg: '[DEBUG] Composer observed send outcome',
-        data: useSocialChatStore.getState().sendOutcomes[activeConversationId] ?? null,
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     if (
       readyAttachments.length === 0
       || didQueueExpectedChatAttachments(
@@ -637,6 +597,7 @@ export function ChatComposer({
               <Flexbox
                 key={item.id}
                 data-chat-attachment-draft={item.id}
+                data-chat-attachment-attempt={item.attempt}
                 data-chat-attachment-status={item.status}
                 data-chat-attachment-preview={item.previewUrl || ''}
                 gap={6}
