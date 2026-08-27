@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Transparent Profile Three proxy with bounded Chat submit connection loss."""
+"""Transparent disposable-Station proxy with bounded Chat submit connection loss."""
 
 from __future__ import annotations
 
@@ -11,7 +11,9 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from tooling.acceptance.fixtures.chat_native_reset import profile_three_environment
+from tooling.acceptance.fixtures.chat_native_reset import (
+    acceptance_station_environment,
+)
 
 
 SUBMIT_PATH = "/messaging/command/submit"
@@ -184,7 +186,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             if self.command != "HEAD":
                 self.wfile.write(response_body)
         except (OSError, http.client.HTTPException):
-            self.send_error(502, "Profile Three forwarding failed")
+            self.send_error(502, "Acceptance Station forwarding failed")
         finally:
             upstream.close()
 
@@ -200,11 +202,11 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         return
 
 
-class ProfileThreeSubmitFaultProxy:
-    """Forward to Profile Three and drop armed command-submit connections."""
+class AcceptanceStationSubmitFaultProxy:
+    """Forward to the disposable Acceptance Station and drop armed submits."""
 
     def __init__(self, station_url: str) -> None:
-        profile_three_environment(station_url)
+        acceptance_station_environment(station_url)
         self._server = _ProxyServer(station_url)
         self._thread = threading.Thread(
             target=self._server.serve_forever,

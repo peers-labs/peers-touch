@@ -13,7 +13,9 @@ from typing import Any, Callable
 
 from tooling.acceptance.core import AcceptanceGate, ActorRuntime, GateError, REPORTS_DIR
 from tooling.acceptance.drivers.tauri import TauriSession
-from tooling.acceptance.fixtures.chat_native_reset import profile_three_environment
+from tooling.acceptance.fixtures.chat_native_reset import (
+    acceptance_station_environment,
+)
 from tooling.acceptance.gates.chat.native_support import (
     DEFAULT_STATION,
     async_harness,
@@ -563,7 +565,7 @@ class NativeTypingGate(AcceptanceGate):
         if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
         try:
-            profile_three_environment(self.station_url)
+            acceptance_station_environment(self.station_url)
         except RuntimeError as error:
             raise GateError(str(error)) from error
         self.report.station_url = self.station_url
