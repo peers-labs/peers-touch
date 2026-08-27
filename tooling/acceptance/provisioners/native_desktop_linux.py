@@ -543,6 +543,7 @@ class NativeDesktopLinuxProvisioner:
         )
         self.transport = SshTransport(self.target)
         self._actors: dict[str, _ActorRuntime] = {}
+        self._actor_port_slots: dict[str, int] = {}
         self._endpoints: dict[str, _EndpointRuntime] = {}
         self._tunnel_failures: list[dict[str, object]] = []
 
@@ -844,16 +845,24 @@ class NativeDesktopLinuxProvisioner:
             raise ProvisioningError(
                 f"Linux runtime-cell actor {actor!r} is already launched"
             )
-        remote = self._start_remote_actor(
-            remote_control=Path(str(state["remoteControl"])),
-            run_id=str(state["runId"]),
-            container_name=str(state["containerName"]),
-            actor=actor,
-            webdriver_port=int(client_spec["webdriver_port"]),
-            gateway_port=int(client_spec["gateway_port"]),
-            profile=str(client_spec["profile"]),
-            environment=environment,
+        remote_webdriver_port, remote_gateway_port = self._actor_remote_ports(
+            actor,
+            client_spec,
         )
+        try:
+            remote = self._start_remote_actor(
+                remote_control=Path(str(state["remoteControl"])),
+                run_id=str(state["runId"]),
+                container_name=str(state["containerName"]),
+                actor=actor,
+                webdriver_port=remote_webdriver_port,
+                gateway_port=remote_gateway_port,
+                profile=str(client_spec["profile"]),
+                environment=environment,
+            )
+        except BaseException:
+            self._actor_port_slots.pop(actor, None)
+            raise
         webdriver_tunnel: SshTunnel | None = None
         gateway_tunnel: SshTunnel | None = None
         try:
@@ -930,6 +939,54 @@ class NativeDesktopLinuxProvisioner:
             ),
             alive=lambda: self.actor_is_alive(actor),
         )
+
+    def _actor_remote_ports(
+        self,
+        actor: str,
+        client_spec: dict[str, Any],
+    ) -> tuple[int, int]:
+        slots = getattr(self, "_actor_port_slots", {})
+        if actor not in slots:
+            used_slots = set(slots.values())
+            slot = next(
+                (
+                    candidate
+                    for candidate in range(0, 1024)
+                    if candidate not in used_slots
+                ),
+                None,
+            )
+            if slot is None:
+                raise ProvisioningError(
+                    "Linux runtime-cell actor port range is exhausted"
+                )
+            slots[actor] = slot
+            self._actor_port_slots = slots
+        slot = slots[actor]
+        webdriver_port = int(
+            getattr(
+                self.profile,
+                "webdriver_port",
+                client_spec["webdriver_port"],
+            )
+        ) + slot
+        gateway_port = int(
+            getattr(
+                self.profile,
+                "gateway_port",
+                client_spec["gateway_port"],
+            )
+        ) + slot
+        if (
+            webdriver_port > 65535
+            or gateway_port > 65535
+            or webdriver_port == gateway_port
+        ):
+            slots.pop(actor, None)
+            raise ProvisioningError(
+                f"Linux runtime-cell actor {actor!r} has no valid remote port pair"
+            )
+        return webdriver_port, gateway_port
 
     def expose_orchestrator_endpoint(
         self,
@@ -1097,6 +1154,8 @@ class NativeDesktopLinuxProvisioner:
                 failures.append(f"remote actor: {error}")
         if not failures:
             self._actors.pop(actor, None)
+            if not preserve_state:
+                self._actor_port_slots.pop(actor, None)
         if failures:
             runtime.released = False
             raise ProvisioningError(
