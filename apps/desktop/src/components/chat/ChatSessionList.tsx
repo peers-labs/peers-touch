@@ -18,7 +18,6 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import type { IMConversationProjection } from '@peers-touch/client-chat-core';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
@@ -31,6 +30,7 @@ import {
   projectGroupAvatarSlots,
   resolveActorIdentity,
 } from '../../store/socialProfileProjection';
+import type { DesktopIMConversationProjection } from '../../store/socialProjection';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
 import { CreateGroupModal } from './CreateGroupModal';
@@ -192,7 +192,7 @@ export function ChatSessionList() {
     ],
   );
 
-  const handleSearchSelect = async (c: any) => {
+  const handleSearchSelect = async (c: DesktopIMConversationProjection) => {
     const existingConv = getIMConversations().find(
       (conv) => conv.id === c.id || (c.peerDid && conv.peerDid === c.peerDid),
     );
@@ -232,7 +232,7 @@ export function ChatSessionList() {
 
     const existingPeerIds = new Set(fromConversations.map((c) => c.peerDid).filter(Boolean));
     const myId = currentUserDid || '';
-    const fromContacts: IMConversationProjection[] = friendRequests
+    const fromContacts: DesktopIMConversationProjection[] = friendRequests
       .filter((r) => r.status === 2)
       .map((r) => {
         const isSender = r.senderId === myId;
@@ -253,6 +253,7 @@ export function ChatSessionList() {
         lastActivityMs: 0,
         unread: 0,
         visibleUnread: 0,
+        authorityStationId: '',
         hidden: false,
         muted: false,
         alertEnabled: true,
@@ -278,7 +279,7 @@ export function ChatSessionList() {
     },
   ];
 
-  const handleSelect = (c: IMConversationProjection) => {
+  const handleSelect = (c: DesktopIMConversationProjection) => {
     clearChatUnread(c.id);
     if (c.kind === 'friend') {
       selectSession(c.id);
@@ -287,7 +288,7 @@ export function ChatSessionList() {
     }
   };
 
-  const buildContextMenu = useCallback((c: IMConversationProjection) => {
+  const buildContextMenu = useCallback((c: DesktopIMConversationProjection) => {
     const localState = conversationLocalState[`${c.kind}:${c.id}`];
     const isPinned = Boolean(localState?.sticky);
     const isMuted = Boolean(localState?.muted);
@@ -357,7 +358,7 @@ export function ChatSessionList() {
     };
   }, [conversationLocalState, t, updateConversationLocalState, hideConversation]);
 
-  const isRowActive = (c: IMConversationProjection) => {
+  const isRowActive = (c: DesktopIMConversationProjection) => {
     if (c.kind === 'friend') {
       return activeTab === 'friend' && c.id === activeSessionUlid;
     }
@@ -386,6 +387,7 @@ export function ChatSessionList() {
         <Flexbox gap={8} style={{ padding: '12px 12px 0' }}>
           <Flexbox horizontal align="center" gap={8}>
             <Input
+              data-chat-session-search
               prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
               placeholder={t('chat.social.sessionList.searchPlaceholder')}
               value={searchText}
