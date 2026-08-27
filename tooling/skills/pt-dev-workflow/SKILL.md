@@ -1,9 +1,6 @@
 ---
 name: pt-dev-workflow
-description: >
-  Use when the user asks to start a complete development task, from planning
-  through coding to PR creation. Drives the full Peers-Touch development
-  lifecycle with status tracking and standardized outputs at each phase.
+description: "Drives Peers-Touch work from planning through implementation and PR delivery. Invoke for complete development tasks requiring stage tracking."
 stage: orchestrator
 requires: []
 produces: ["completed task with merged PR"]
@@ -29,8 +26,8 @@ for the authoritative dispatch table. This skill's job is to **detect + dispatch
 
 ## 1. Entry Point
 
-This skill is invoked by `pt-god-view` after it determines the stage and selects
-a work item. It receives:
+This skill is invoked by `pt-god-view` after it determines the stage and either
+classifies new pre-plan work or selects tracked work. For tracked work, it receives:
 
 - The execution plan path
 - The current stage
@@ -63,7 +60,8 @@ decision, or implementation of something already accepted and planned.
 
 ## 3. Stage Dispatch
 
-Based on current `active_work.stage`, invoke the appropriate skill:
+Invoke by the classified stage. For tracked work, `active_work.stage` must agree
+with that classification:
 
 ### Stage: PRODUCT
 
@@ -89,17 +87,16 @@ Next:   → PLAN
 
 ```
 Invoke: pt-architecture-execution-methodology (dependency analysis)
-Then:   pt-plan-and-document (落盘 + Context Anchor + review prompt generation)
+Then:   pt-plan-and-document (落盘 + review prompt generation)
 Gate:   Plan review prompt generated + review passes
-Output: execution-plans/<plan>.md with plan-owned Context Anchor
+Output: execution-plans/<plan>.md + active_work registration
 Next:   → EXECUTE
 ```
 
 ### Stage: EXECUTE
 
 ```
-Invoke: pt-context-anchor (verify worktree, branch, stage, and step)
-Then:   pt-execution-plan-guardian (keeps work on plan rails)
+Invoke: pt-execution-plan-guardian (keeps work on plan rails)
 Also:   pt-read-before-edit (before any file edit)
         pt-desktop-runtime-projections (if touching Desktop kernel)
 Gate:   All completion criteria in plan checked + pt-completion-auditor passes
@@ -128,9 +125,8 @@ Every stage gate follows the same pattern:
 2. Present prompt to user
 3. User decides: send to reviewer, iterate, or accept
 4. If review returns "needs modification" → iterate within current stage
-5. If review passes → update `active_work.stage` → move to next stage
-
-Synchronize the plan-owned Context Anchor before updating `active_work`.
+5. If review passes → move to the next stage; update `active_work.stage` only
+   when a registered plan row exists
 
 **Agent MUST NOT auto-advance past a gate.** Gate passage requires either:
 - User explicitly says "pass" / "approved" / "move on"
@@ -153,6 +149,8 @@ Maintained as a table — one row per in-flight task:
 ```
 
 **Update rules:**
+- PRODUCT/DESIGN work without a formal execution plan has no row and no Context Anchor
+- Plan creation → register the repo-relative plan path with `stage: PLAN`
 - Stage transition → update `stage` + `current_step`
 - Session end → update `last_session`
 - All phases complete → set `stage: complete`
@@ -173,12 +171,6 @@ Update individual step status as work progresses:
 | Step 3 | ⬜ pending | — | |
 ```
 
-### Context Anchor
-
-Every tracked plan owns one `## Context Anchor`, maintained through
-`pt-context-anchor`. It is updated before `active_work`, todos, dashboards, or
-chat projections.
-
 ---
 
 ## 6. Cross-Session Resume
@@ -187,13 +179,13 @@ When resuming a previous session:
 
 1. Read `active_work` from project memory
 2. Read the referenced execution plan
-3. Invoke `pt-context-anchor` and verify actual worktree and branch
-4. Reconcile the Anchor with the status table and evidence
-5. Return the standard Context Anchor projection
+3. Invoke `pt-context-anchor` and verify actual worktree/branch
+4. Reconcile the plan status table with `active_work`
+5. Emit the required fenced chat projection
 6. Dispatch to the correct stage skill
 
-**Key principle**: The plan status table and Context Anchor are ground truth.
-Project memory's `active_work` is only an index pointing to them.
+**Key principle**: The execution plan's status table is ground truth for "what's done".
+Project memory's `active_work` is just an index pointing to it.
 
 ---
 
@@ -203,8 +195,8 @@ Project memory's `active_work` is only an index pointing to them.
 |-------|--------------|-------------------|
 | PRODUCT | `pt-product-design-methodology` | `pt-prototype-design`, `pt-plan-and-document` (document routing only) |
 | DESIGN | `pt-architecture-design-methodology` | `pt-plan-and-document` (for doc落盘) |
-| PLAN | `pt-architecture-execution-methodology` + `pt-plan-and-document` | `pt-context-anchor` |
-| EXECUTE | `pt-context-anchor` + `pt-execution-plan-guardian` | `pt-read-before-edit`, `pt-desktop-runtime-projections`, `pt-small-fix-discipline`, `pt-completion-auditor` |
+| PLAN | `pt-architecture-execution-methodology` + `pt-plan-and-document` | `pt-context-anchor` after plan registration |
+| EXECUTE | `pt-execution-plan-guardian` | `pt-context-anchor`, `pt-read-before-edit`, `pt-desktop-runtime-projections`, `pt-small-fix-discipline`, `pt-completion-auditor` |
 | DELIVER | `pt-github-commit` + `pt-github-pr` + `pt-github-review` | `pt-quality-check` |
 
 ---
@@ -212,9 +204,9 @@ Project memory's `active_work` is only an index pointing to them.
 ## 8. Anti-Patterns
 
 - **Skip a gate** — never advance to next stage without explicit gate passage
-- **Work without active_work** — always initialize tracking before starting
+- **Premature active_work** — never create a placeholder row before a formal plan exists
+- **Untracked planned execution** — after plan creation, never execute without a matching `active_work` row
 - **Forget to update status** — every step completion / stage transition must be recorded
 - **Resume without reading plan** — always re-read execution plan status table before continuing
-- **Resume without verifying Anchor** — verify worktree/branch and reconcile the durable Anchor first
 - **Invoke stage skill without context** — always tell the skill what plan you're executing and what step you're on
 - **Self-approve a review** — agent generates prompts, user decides whether to send; agent never marks its own review as "passed"

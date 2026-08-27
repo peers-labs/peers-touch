@@ -40,6 +40,10 @@ class CredentialRef:
     def resolve(self) -> str:
         import os
 
+        if self.source_ref.startswith("auto:"):
+            if not hasattr(self, "_auto_value"):
+                object.__setattr__(self, "_auto_value", secrets.token_urlsafe(32))
+            return self._auto_value  # type: ignore[attr-defined]
         if self.source_ref.startswith("env:"):
             env_name = self.source_ref[4:]
             value = os.environ.get(env_name, "")
@@ -152,12 +156,15 @@ class EnvironmentContract:
             )
         if any(
             credential.get("generated_if_missing", False)
-            and not str(credential["source_ref"]).startswith("env:")
+            and not (
+                str(credential["source_ref"]).startswith("env:")
+                or str(credential["source_ref"]).startswith("auto:")
+            )
             for credential in credentials_data
         ):
             raise ProvisioningError(
                 "invalid environment contract at "
-                f"{path}: generated credentials require an env: source_ref"
+                f"{path}: generated credentials require an env: or auto: source_ref"
             )
         if not isinstance(cleanup_data, dict):
             raise ProvisioningError(

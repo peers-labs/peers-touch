@@ -29,6 +29,8 @@ ACTOR_ACCOUNTS = {
     "charlie": "carol@p.t",
 }
 
+ACTOR_PASSWORD = "1"
+
 
 def _load_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
@@ -221,7 +223,6 @@ def produce_actor_manifest(
     station_url: str,
     deployment_environment: str,
     roles: Iterable[str],
-    password: str,
     credential_ref: str,
     reset_authorized: bool,
 ) -> tuple[ActorManifest, Path, dict[str, str]]:
@@ -238,7 +239,7 @@ def produce_actor_manifest(
     verify_reset_target(station_url, deployment_environment)
     reset_fixture(deployment_environment, unique_roles)
     actors = tuple(
-        resolve_actor_identity(station_url, role, password)
+        resolve_actor_identity(station_url, role, ACTOR_PASSWORD)
         for role in unique_roles
     )
     manifest = ActorManifest(
