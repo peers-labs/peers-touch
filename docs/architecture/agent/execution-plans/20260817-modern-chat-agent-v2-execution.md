@@ -2532,6 +2532,15 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   The failing producer dereferenced an omitted `providerCalls` collection in
   `foundationExecutionSnapshot`; this is an Acceptance normalization defect,
   not evidence of provider execution or a Station attachment rejection.
+- After normalizing omitted provider-call evidence, the source-matched
+  `ce1f6704a` run
+  `20260828T145731482275Z-d64e547798278d2032e2f3b330481284`
+  failed earlier at Browser AS-F02 `zh-CN` with
+  `rejectedDraftRestored=false`; cleanup and redaction passed. The periodic
+  Agent topic reconciliation compared a persisted canonical Agent ID with the
+  Agent display name and could switch the active conversation before the draft
+  was sampled. This is a Desktop runtime projection identity defect, not a
+  locale-specific failure or permission to weaken the AS-F02 draft contract.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

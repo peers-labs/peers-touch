@@ -26,7 +26,7 @@ async function reconcileTopics(reason: string): Promise<void> {
   const currentSession = useChatStore
     .getState()
     .sessions.find((session) => session.key === useChatStore.getState().currentSessionKey);
-  if (currentSession?.agent_name === agent.name) {
+  if (currentSession?.agent_name === agent.id) {
     await useChatStore.getState().bootstrapSession();
     await useChatStore.getState().syncTurnQueue(currentSession.key);
     return;
