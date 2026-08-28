@@ -3273,6 +3273,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_agent_turn::agent_turn_queue_cancel(input, &token))
         }
+        "agent_submit_tool_decision" => {
+            let input = match parse_args::<AgentToolDecisionIntentInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::submit_tool_decision(input, &token))
+        }
         "agent_turn_trace_list" => {
             let input = match parse_args::<AgentTurnTraceListInput>(args) {
                 Ok(v) => v,

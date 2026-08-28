@@ -2187,6 +2187,15 @@ AS-F04 implementation progress (2026-08-28):
   version bound as the canonical manifest, and terminal failure fields must be
   bounded independently so an underlying persistence error cannot leave the
   Turn running. Cleanup passed; AS-F04 remains `UNPROVEN`.
+- Source-matched rerun
+  `20260828T074934530974Z-544bd56d178952c1975a02fca4c7638c`
+  proved Browser auto policy end to end: one Station-owned `skills_list`
+  execution, one result, one continuation, and a completed Turn. The next
+  failure moved to manual approval because the Desktop HTTP Gateway omitted
+  the already-canonical `agent_submit_tool_decision` application command and
+  returned `unknown command`. W8a must expose that same Rust application
+  command through the Browser gateway; adding Browser-owned decision logic or
+  bypassing Rust is forbidden. Cleanup passed; AS-F04 remains `UNPROVEN`.
 
 **W8a checks**:
 
