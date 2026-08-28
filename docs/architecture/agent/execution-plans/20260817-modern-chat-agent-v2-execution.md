@@ -2673,6 +2673,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   AS-F05 normalization and does not justify treating thinking as answer text or
   weakening the timeout; the next action is a source-matched rerun of the same
   product behavior. The Gate remains `PARTIAL / UNPROVEN`.
+- The exact-source `785b3999b` rerun
+  `20260828T192441951453Z-4164824609104ada4dd486f69430073f`
+  passed the Browser AS-F03/AS-F04/AS-F05 prefix and advanced the unique first
+  failure to `foundation-browser-direct / AS-F06 / en / single / sample-001`.
+  The adapter failed closed with `AS-F06: direct-runtime group is not
+  implemented`; cleanup passed. This is the first source-backed AS-F06
+  implementation gap and does not promote AS-F05 or the complete Gate beyond
+  diagnostic progress. AS-F06 must now implement the accepted disconnect,
+  replay, reconciliation, and stale-revision failure contract through
+  production-reachable Browser and Desktop paths before another Gate run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
