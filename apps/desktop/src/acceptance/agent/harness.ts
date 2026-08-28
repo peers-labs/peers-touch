@@ -1233,7 +1233,7 @@ async function foundationResolvedBytes(objectRef: string): Promise<Uint8Array> {
     const encoded = resolved.data_url.split(',', 2)[1] ?? '';
     return Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
   }
-  const response = await fetch(resolved.url);
+  const response = await fetch(resolved.url, { cache: 'no-store' });
   if (!response.ok) {
     throw new Error('agent.acceptance.foundationAttachmentDownloadFailed');
   }
@@ -1390,10 +1390,7 @@ async function runFoundationF05Scenario(input: {
       });
       let attachment: AgentAttachmentRefInput;
       if (kind === 'unauthorized') {
-        attachment = {
-          ...png,
-          authorization_scope: `conversation:${rejectedConversation.conversation_id}`,
-        };
+        attachment = { ...png };
       } else {
         const uploadedForCase = await api.ossUploadAgentAttachmentBytes({
           filename: `${kind}.png`,

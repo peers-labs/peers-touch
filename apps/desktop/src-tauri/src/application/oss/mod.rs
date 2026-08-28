@@ -22,8 +22,9 @@
 //          `file://` path the WebView can load via `convertFileSrc`.
 //        * For backends that require signed URLs we return the absolute
 //          HTTPS endpoint and let the renderer fetch directly. The
-//          caller is responsible for supplying any signing material;
-//          the resolver never holds Station credentials.
+//          caller is responsible for supplying any signing material.
+//        * Bound-station mirrors forward the active session bearer so
+//          actor-private objects pass the Station's read policy.
 //
 // Both functions are deliberately blocking — Tauri commands run on a
 // worker thread and our station_client helpers are blocking too.
@@ -592,7 +593,8 @@ pub fn oss_resolve_url(
     // distinguish "couldn't reach the network" from "denied by
     // policy" (the badge component renders different states).
     let local_path = if bound_station {
-        match oss_cache::attachment_ensure(&uri, None) {
+        let bearer = (!home_token.trim().is_empty()).then_some(home_token);
+        match oss_cache::attachment_ensure(&uri, None, bearer) {
             Ok(p) => Some(p.to_string_lossy().to_string()),
             Err(err) => {
                 tracing::warn!(error = %err, uri = %input, "OSS attachment cache miss (local)");

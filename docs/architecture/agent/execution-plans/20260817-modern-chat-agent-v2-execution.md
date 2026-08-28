@@ -2541,6 +2541,26 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Agent display name and could switch the active conversation before the draft
   was sampled. This is a Desktop runtime projection identity defect, not a
   locale-specific failure or permission to weaken the AS-F02 draft contract.
+- Commit `9e7c26211` corrected the Agent ID/display-name mismatch and added a
+  deterministic runtime regression. Its first source-matched run was interrupted
+  at Browser AS-F01 when the real provider exhausted its 120-second HTTP
+  deadline; Station retry subsequently completed, so the run remains an
+  external-latency `FAILED / UNPROVEN` sample rather than a product pass. The
+  next run
+  `20260828T152315053204Z-438f83240fc7631e46886f8668bde597`
+  advanced through the prefix to Browser AS-F05 and failed the independent
+  oracle on `authorizedDownloadVerified`,
+  `failedUploadRemovalPreservedSiblings`, and
+  `unauthorizedRejectedBeforeProvider`; source identity matched and cleanup
+  passed.
+- The follow-up closure forwards the active bearer token when the Desktop OSS
+  resolver downloads an actor-private object from its bound Station, retains
+  anonymous public and peer-token federation behavior, and verifies that
+  deleting one cache entry preserves sibling entries. The AS-F05 producer now
+  keeps the original conversation scope when exercising cross-conversation
+  rejection and bypasses the browser HTTP cache for read-after-delete checks.
+  These changes require a new source-matched Foundation run before any AS-F05
+  assertion can be promoted.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

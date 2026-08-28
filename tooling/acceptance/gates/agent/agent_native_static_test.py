@@ -221,6 +221,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("api.ossUploadAgentAttachmentBytes", self.source)
         self.assertIn("api.ossResolveUrl", self.source)
         self.assertIn("api.ossDeleteAgentAttachment", self.source)
+        self.assertIn("fetch(resolved.url, { cache: 'no-store' })", self.source)
+        self.assertIn("attachment = { ...png }", self.source)
+        self.assertNotIn(
+            "authorization_scope: `conversation:${rejectedConversation.conversation_id}`",
+            self.source,
+        )
         self.assertIn("startObservedFoundationTurn", self.source)
         self.assertIn("foundationDiagnosticReplay", self.source)
         self.assertNotIn("mockFoundationAttachment", self.source)

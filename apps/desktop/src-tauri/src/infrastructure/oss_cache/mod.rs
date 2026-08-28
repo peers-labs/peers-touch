@@ -417,7 +417,8 @@ pub fn attachment_invalidate(uri: &OssUri) -> Result<(), OssCacheError> {
 /// `signed_url` is true, a Station-issued signed query — for now we
 /// rely on the caller to pre-sign or on `signed_url == false` (home
 /// deployments). When the backend requires a signed URL the caller
-/// should supply `signed_query`.
+/// should supply `signed_query`. Actor-private objects on the bound
+/// station require the caller's session token in `bearer`.
 ///
 /// Bound-station origin only (i.e. the URI was minted by the same
 /// station this client is talking to). For the federated path
@@ -425,6 +426,7 @@ pub fn attachment_invalidate(uri: &OssUri) -> Result<(), OssCacheError> {
 pub fn attachment_ensure(
     uri: &OssUri,
     signed_query: Option<&str>,
+    bearer: Option<&str>,
 ) -> Result<PathBuf, OssCacheError> {
     if let Some(path) = attachment_lookup(uri) {
         return Ok(path);
@@ -449,7 +451,7 @@ pub fn attachment_ensure(
         }
     }
 
-    let bytes = http_get_bytes(&url, None)?;
+    let bytes = http_get_bytes(&url, bearer)?;
     write_to_cache(uri, &bytes)
 }
 
@@ -582,12 +584,7 @@ fn http_get_bytes(url: &str, bearer: Option<&str>) -> Result<Vec<u8>, OssCacheEr
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| OssCacheError::Network(format!("http client: {e}")))?;
-    let mut req = client.get(url);
-    if let Some(t) = bearer {
-        if !t.is_empty() {
-            req = req.bearer_auth(t);
-        }
-    }
+    let req = http_get_request(&client, url, bearer);
     let resp = req
         .send()
         .map_err(|e| OssCacheError::Network(e.to_string()))?;
@@ -611,6 +608,20 @@ fn http_get_bytes(url: &str, bearer: Option<&str>) -> Result<Vec<u8>, OssCacheEr
         return Err(OssCacheError::Network("empty body".into()));
     }
     Ok(body.to_vec())
+}
+
+fn http_get_request(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    bearer: Option<&str>,
+) -> reqwest::blocking::RequestBuilder {
+    let mut req = client.get(url);
+    if let Some(t) = bearer {
+        if !t.is_empty() {
+            req = req.bearer_auth(t);
+        }
+    }
+    req
 }
 
 /// Persist `bytes` to the per-`uri` cache slot and return the path.
@@ -944,6 +955,63 @@ mod tests {
 
         // Second invalidate must remain a no-op.
         attachment_invalidate(&uri).expect("idempotent");
+    }
+
+    #[test]
+    fn attachment_invalidate_preserves_sibling_cache_entries() {
+        let origin = format!("test.invalidate.sibling.{}", ulid::Ulid::new());
+        let removed = OssUri {
+            origin: origin.clone(),
+            key: "tmp/removed.bin".to_string(),
+        };
+        let sibling = OssUri {
+            origin,
+            key: "tmp/sibling.bin".to_string(),
+        };
+        let removed_path = match write_to_cache(&removed, b"removed") {
+            Ok(path) => path,
+            Err(OssCacheError::Storage(_)) => return,
+            Err(other) => panic!("failed to create removed fixture: {other}"),
+        };
+        let sibling_path = write_to_cache(&sibling, b"sibling")
+            .expect("sibling fixture should use the same cache layout");
+
+        attachment_invalidate(&removed).expect("target invalidation should succeed");
+
+        assert!(!removed_path.exists(), "target cache entry removed");
+        assert_eq!(
+            fs::read(&sibling_path).expect("sibling cache entry remains readable"),
+            b"sibling"
+        );
+        attachment_invalidate(&sibling).expect("sibling cleanup should succeed");
+    }
+
+    #[test]
+    fn http_get_request_adds_non_empty_bearer_without_affecting_anonymous_reads() {
+        use reqwest::header::AUTHORIZATION;
+
+        let client = reqwest::blocking::Client::new();
+        let authenticated = http_get_request(
+            &client,
+            "http://127.0.0.1/sub-oss/file?key=private",
+            Some("actor-private-token"),
+        )
+        .build()
+        .expect("authenticated request should build");
+        assert_eq!(
+            authenticated.headers().get(AUTHORIZATION),
+            Some(&reqwest::header::HeaderValue::from_static(
+                "Bearer actor-private-token"
+            ))
+        );
+
+        let anonymous = http_get_request(&client, "http://127.0.0.1/sub-oss/file?key=public", None)
+            .build()
+            .expect("anonymous request should build");
+        assert!(
+            anonymous.headers().get(AUTHORIZATION).is_none(),
+            "public reads remain valid without an Authorization header"
+        );
     }
 
     // ── GC ─────────────────────────────────────────────────────────
