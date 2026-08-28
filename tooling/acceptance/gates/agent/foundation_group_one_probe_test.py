@@ -13,7 +13,11 @@ from tooling.acceptance.gates.agent.foundation_group_one_probe import (
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f02,
     evaluate_as_f03,
+    evaluate_as_f04,
     evaluate_as_f10,
+)
+from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
+    valid_as_f04_capture,
 )
 
 
@@ -50,6 +54,14 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
         }
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_as_f03(facts)
+        return result
+    if probe.cell == "AS-F04":
+        facts = valid_as_f04_capture(probe.platform)
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_as_f04(
+            facts,
+            platform=probe.platform,
+        )
         return result
     if probe.cell == "AS-F10":
         browser = probe.platform == "browser"
@@ -190,8 +202,8 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         observations = runner.collect(scenario_capture)
 
         self.assertEqual(len(observations), EXPECTED_GROUP_ONE_TUPLES)
-        self.assertEqual(len(desktop.locales), 16)
-        self.assertEqual(len(browser.locales), 16)
+        self.assertEqual(len(desktop.locales), 18)
+        self.assertEqual(len(browser.locales), 18)
         self.assertEqual(set(desktop.locales), {"en", "zh-CN"})
         self.assertEqual(set(browser.locales), {"en", "zh-CN"})
 

@@ -20,7 +20,14 @@ func TestPersistRuntimeAuthorityStoresBindingAndAttemptSnapshot(t *testing.T) {
 
 	admission := runtimeAuthorityAdmission("provider-1", "model-1", 1)
 	config := runtimeAuthorityConfig("turn-1", "attempt-1")
-	if err := (&TurnService{}).persistRuntimeAuthority(context.Background(), config, admission); err != nil {
+	readiness := runtimeAuthorityReadiness(config, admission)
+	if err := (&TurnService{}).persistRuntimeAuthority(
+		context.Background(),
+		config,
+		admission,
+		readiness,
+		11,
+	); err != nil {
 		t.Fatalf("persist runtime authority: %v", err)
 	}
 
@@ -68,7 +75,7 @@ func TestPersistRuntimeAuthorityStoresBindingAndAttemptSnapshot(t *testing.T) {
 		snapshot.GetAgentConfigVersion() != "11" ||
 		snapshot.GetExternalSessionId() != "" ||
 		snapshot.GetExternalSessionEpoch() != 0 ||
-		attempt.ReadinessSnapshotID != admission.SnapshotID {
+		attempt.ReadinessSnapshotID != readiness.GetSnapshotId() {
 		t.Fatalf("unexpected attempt runtime snapshot: snapshot=%+v attempt=%+v", snapshot, attempt)
 	}
 	expectedHash, err := runtimeSnapshotHash(snapshot)
@@ -90,6 +97,11 @@ func TestPersistRuntimeAuthorityRejectsTupleMismatchWithoutOverwrite(t *testing.
 		context.Background(),
 		runtimeAuthorityConfig("turn-1", "attempt-1"),
 		first,
+		runtimeAuthorityReadiness(
+			runtimeAuthorityConfig("turn-1", "attempt-1"),
+			first,
+		),
+		11,
 	); err != nil {
 		t.Fatalf("persist first runtime authority: %v", err)
 	}
@@ -104,6 +116,11 @@ func TestPersistRuntimeAuthorityRejectsTupleMismatchWithoutOverwrite(t *testing.
 		context.Background(),
 		runtimeAuthorityConfig("turn-2", "attempt-2"),
 		mismatched,
+		runtimeAuthorityReadiness(
+			runtimeAuthorityConfig("turn-2", "attempt-2"),
+			mismatched,
+		),
+		11,
 	)
 	var bizErr *errcode.BizError
 	if !errors.As(err, &bizErr) || bizErr.Code != errcode.AgentVersionConflict {
@@ -136,6 +153,11 @@ func TestPersistRuntimeAuthorityReusesBoundCapabilityObservation(t *testing.T) {
 		context.Background(),
 		runtimeAuthorityConfig("turn-1", "attempt-1"),
 		first,
+		runtimeAuthorityReadiness(
+			runtimeAuthorityConfig("turn-1", "attempt-1"),
+			first,
+		),
+		11,
 	); err != nil {
 		t.Fatalf("persist first runtime authority: %v", err)
 	}
@@ -145,6 +167,11 @@ func TestPersistRuntimeAuthorityReusesBoundCapabilityObservation(t *testing.T) {
 		context.Background(),
 		runtimeAuthorityConfig("turn-2", "attempt-2"),
 		second,
+		runtimeAuthorityReadiness(
+			runtimeAuthorityConfig("turn-2", "attempt-2"),
+			second,
+		),
+		11,
 	); err != nil {
 		t.Fatalf("persist matching runtime authority: %v", err)
 	}
@@ -362,5 +389,19 @@ func runtimeAuthorityAdmission(providerID string, modelID string, observedDay in
 				),
 			},
 		},
+	}
+}
+
+func runtimeAuthorityReadiness(
+	config *TurnConfig,
+	admission *AdmissionSnapshot,
+) *model.CapabilityReadinessSnapshot {
+	return &model.CapabilityReadinessSnapshot{
+		SnapshotId:        "capability-" + admission.SnapshotID,
+		Ptid:              config.ActorID,
+		AgentId:           config.AgentID,
+		RuntimeSnapshotId: admission.SnapshotID,
+		CreatedAt:         timestamppb.Now(),
+		ExpiresAt:         timestamppb.New(time.Now().UTC().Add(time.Minute)),
 	}
 }

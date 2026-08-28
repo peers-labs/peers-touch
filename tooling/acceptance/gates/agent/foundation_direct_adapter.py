@@ -61,6 +61,18 @@ REQUIRED_ASSERTIONS = {
             "toolAndApprovalWaits",
         }
     ),
+    "AS-F04": frozenset(
+        {
+            "autoPolicyExecutedOnce",
+            "manualApprovalExecutedOnce",
+            "denialExecutedZero",
+            "expiryExecutedZero",
+            "duplicateDeliveryIdempotent",
+            "authorityLineagePersisted",
+            "loopBudgetEnforced",
+            "sourceReplayEqual",
+        }
+    ),
     "AS-F07": frozenset(
         {
             "retryCreatedAttempt",

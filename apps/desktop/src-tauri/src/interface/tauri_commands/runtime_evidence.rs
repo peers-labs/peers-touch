@@ -1,9 +1,7 @@
 use crate::application::desktop_executor_worker::CapabilityWorkerSupervisor;
 use crate::application::runtime_evidence as application_runtime_evidence;
 use crate::application::session_resolver;
-use crate::contracts::{
-    AgentCapabilityReadinessInput, AgentRuntimeActivityInput, AgentRuntimeProfileInput, StubPayload,
-};
+use crate::contracts::{AgentRuntimeActivityInput, AgentRuntimeProfileInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
 use std::sync::Arc;
@@ -32,18 +30,6 @@ pub fn agent_runtime_profile_effective(
 ) -> AppResult<StubPayload> {
     match authenticated_token(state.inner(), &window) {
         Ok(token) => application_runtime_evidence::effective_runtime_profile(input, &token),
-        Err(error) => error,
-    }
-}
-
-#[tauri::command]
-pub fn agent_capability_readiness(
-    input: AgentCapabilityReadinessInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    match authenticated_token(state.inner(), &window) {
-        Ok(token) => application_runtime_evidence::capability_readiness(input, &token),
         Err(error) => error,
     }
 }

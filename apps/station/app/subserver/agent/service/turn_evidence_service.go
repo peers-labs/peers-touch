@@ -84,6 +84,8 @@ func (s *TurnService) ExportTurnDiagnostics(
 		StartedAt:      timestamppb.New(turn.StartedAt),
 		GeneratedAt:    timestamppb.New(time.Now().UTC()),
 		Trace:          trace,
+		ToolIterations:     uint32(max(turn.ToolIterations, 0)),
+		ToolIterationLimit: uint32(maxToolIterations),
 	}
 	if turn.EndedAt != nil {
 		replay.EndedAt = timestamppb.New(*turn.EndedAt)
@@ -279,20 +281,57 @@ func loadDiagnosticToolCalls(
 		Find(&records).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "load diagnostic tool calls", err)
 	}
+	var continuations []persistence.ToolContinuation
+	if err := db.WithContext(ctx).
+		Where("turn_id = ?", turnID).
+		Find(&continuations).Error; err != nil {
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"load diagnostic tool continuations",
+			err,
+		)
+	}
+	continuationByBatch := make(map[string]string, len(continuations))
+	for index := range continuations {
+		continuationByBatch[continuations[index].ToolBatchID] = continuations[index].ID
+	}
 	facts := make([]*model.TurnDiagnosticToolFact, 0, len(records))
 	for index := range records {
 		record := &records[index]
 		fact := &model.TurnDiagnosticToolFact{
-			ToolCallId:        record.ToolCallID,
-			AttemptId:         record.AttemptID,
-			ToolName:          record.ToolName,
-			Status:            diagnosticToolCallStatus(record.Status),
-			ExecutionOwner:    diagnosticToolExecutionOwner(record.ExecutionOwner),
-			ArgumentsHash:     record.ArgumentsHash,
-			RedactedArguments: redactDiagnosticText(record.RedactedArguments),
-			ResultId:          record.ResultID,
-			ErrorCode:         redactDiagnosticText(record.ErrorCode),
-			FencingToken:      record.FencingToken,
+			ToolCallId:             record.ToolCallID,
+			AttemptId:              record.AttemptID,
+			ToolName:               record.ToolName,
+			Status:                 diagnosticToolCallStatus(record.Status),
+			ExecutionOwner:         diagnosticToolExecutionOwner(record.ExecutionOwner),
+			ArgumentsHash:          record.ArgumentsHash,
+			RedactedArguments:      redactDiagnosticText(record.RedactedArguments),
+			ResultId:               record.ResultID,
+			ErrorCode:              redactDiagnosticText(record.ErrorCode),
+			FencingToken:           record.FencingToken,
+			ApprovalPolicy:         record.ApprovalPolicy,
+			ManifestId:             record.ManifestID,
+			ManifestVersion:        record.ManifestVersion,
+			BindingId:              record.BindingID,
+			BindingRevision:        record.BindingRevision,
+			ReadinessSnapshotId:    record.ReadinessSnapID,
+			ApprovalId:             record.ApprovalID,
+			DecisionId:             record.DecisionID,
+			DecisionRevision:       record.DecisionRevision,
+			ExecutionClaimId:       record.ExecutionClaimID,
+			ExecutorLeaseId:        record.ExecutorLeaseID,
+			SideEffectReceiptId:    record.SideEffectReceipt,
+			ToolBatchId:            record.ToolBatchID,
+			CapabilitySessionId:    record.CapabilitySessionID,
+			TargetDeviceId:         record.TargetDeviceID,
+			DispatchSequence:       record.DispatchSequence,
+			ExecutionAttemptCount:  record.ExecutionAttemptCount,
+			DuplicateDeliveryCount: record.DuplicateDeliveryCount,
+			ContinuationId:         continuationByBatch[record.ToolBatchID],
+		}
+		if record.DispatchCommittedAt != nil {
+			fact.DispatchCommittedAt = timestamppb.New(*record.DispatchCommittedAt)
 		}
 		if record.StartedAt != nil {
 			fact.StartedAt = timestamppb.New(*record.StartedAt)

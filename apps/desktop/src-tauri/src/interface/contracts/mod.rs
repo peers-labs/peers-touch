@@ -557,19 +557,6 @@ pub struct AgentDuplicateInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentPackageExportInput {
-    pub id: String,
-    #[serde(default, rename = "include_local_paths", alias = "includeLocalPaths")]
-    pub include_local_paths: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentPackageImportInput {
-    pub package: serde_json::Value,
-    pub name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSearchInput {
     pub q: String,
 }

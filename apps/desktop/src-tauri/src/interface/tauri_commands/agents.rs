@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use crate::application::agent_workspace::{self, WorkspaceCleanScope};
 use crate::contracts::{
-    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentPackageExportInput,
-    AgentPackageImportInput, AgentSearchInput, AgentSelectInput, AgentUpdateInput,
-    AgentWorkspaceCleanInput, AgentWorkspaceInfoInput, StubPayload,
+    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentSelectInput,
+    AgentUpdateInput, AgentWorkspaceCleanInput, AgentWorkspaceInfoInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 
@@ -119,28 +118,6 @@ pub fn agents_duplicate(
     let actor_id = actor_id_for_cmd(&state, &window);
     let token = token_for_cmd(&state, &window);
     application_agents::agents_duplicate(&actor_id, &token, input)
-}
-
-#[tauri::command]
-pub fn agents_export_package(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-    input: AgentPackageExportInput,
-) -> AppResult<StubPayload> {
-    let actor_id = actor_id_for_cmd(&state, &window);
-    let token = token_for_cmd(&state, &window);
-    application_agents::agents_export_package(&actor_id, &token, input)
-}
-
-#[tauri::command]
-pub fn agents_import_package(
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-    input: AgentPackageImportInput,
-) -> AppResult<StubPayload> {
-    let actor_id = actor_id_for_cmd(&state, &window);
-    let token = token_for_cmd(&state, &window);
-    application_agents::agents_import_package(&actor_id, &token, input)
 }
 
 #[tauri::command]

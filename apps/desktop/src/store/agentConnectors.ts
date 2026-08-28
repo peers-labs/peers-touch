@@ -2,12 +2,17 @@ import { createDesktopStore } from './createDesktopStore';
 import { log } from '../utils/logger';
 import { useOAuth2Store } from './oauth2';
 import { useAgentStore } from './agent';
-import { api, parseAgentChatConfig } from '../services/desktop_api';
-import type {
-  OAuth2ProviderSummary,
-  OAuth2Connection,
-  AgentConnectorConfigEntry,
-} from '../services/desktop_api';
+import {
+  selectCapabilityManifestBySource,
+  useAgentCapabilityStore,
+} from './agentCapabilities';
+import type { OAuth2ProviderSummary, OAuth2Connection } from '../services/desktop_api';
+import {
+  CapabilityApprovalPolicy,
+  CapabilitySourceKind,
+  type AgentCapabilityBinding,
+  type CapabilityManifest,
+} from '../gen/proto/domain/agent/capability_pb';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -29,36 +34,69 @@ export interface ConnectorInfo {
 export interface AgentConnectorBinding {
   agentId: string;
   connectorId: string;
-  enabledTools: string[];
+  bindingId: string;
+  capabilityId: string;
+  capabilityVersion: string;
+  enabled: boolean;
 }
 
-// ── chatConfig persistence ───────────────────────────────────────────
-// C7: connector mounts are per-agent config, durable through the same Station
-// config_json channel used by mcpServers/skills/tools. There is no localStorage
-// fallback — the agent store is the single source of truth for the mount relation.
-
-function readAgentConnectorEntries(agentId: string): AgentConnectorConfigEntry[] {
-  const agent = useAgentStore.getState().agents.find((a) => a.id === agentId);
-  if (!agent) return [];
-  return parseAgentChatConfig(agent).connectors ?? [];
+function createMutationId(action: 'bind' | 'unbind'): string {
+  return `connector-${action}:${globalThis.crypto.randomUUID()}`;
 }
 
-function entriesToBindings(agentId: string, entries: AgentConnectorConfigEntry[]): AgentConnectorBinding[] {
-  return entries.map((entry) => ({
-    agentId,
-    connectorId: entry.connectorId,
-    enabledTools: entry.enabledTools ?? [],
-  }));
+function findManifestBinding(
+  bindings: readonly AgentCapabilityBinding[],
+  manifest: CapabilityManifest,
+): AgentCapabilityBinding | undefined {
+  return bindings.find(
+    (binding) =>
+      binding.capabilityId === manifest.capabilityId
+      && binding.capabilityVersion === manifest.version,
+  );
 }
 
-async function persistAgentConnectorEntries(
+function toConnectorBinding(
   agentId: string,
-  entries: AgentConnectorConfigEntry[],
-): Promise<void> {
-  const agentStore = useAgentStore.getState();
-  const agent = agentStore.agents.find((a) => a.id === agentId);
-  if (!agent) throw new Error(`agent ${agentId} not found`);
-  await agentStore.updateAgentConfig(agent.name, { chatConfig: { connectors: entries } });
+  manifest: CapabilityManifest,
+  binding: AgentCapabilityBinding,
+): AgentConnectorBinding {
+  return {
+    agentId,
+    connectorId: manifest.sourceInstanceId,
+    bindingId: binding.bindingId,
+    capabilityId: binding.capabilityId,
+    capabilityVersion: binding.capabilityVersion,
+    enabled: binding.enabled,
+  };
+}
+
+async function loadConnectorAuthority(
+  agentId: string,
+  connectorId: string,
+): Promise<{
+  manifest: CapabilityManifest;
+  binding: AgentCapabilityBinding | undefined;
+}> {
+  const capabilityStore = useAgentCapabilityStore.getState();
+  await Promise.all([
+    capabilityStore.loadCatalog(),
+    capabilityStore.loadAgent(agentId),
+  ]);
+
+  const state = useAgentCapabilityStore.getState();
+  const manifest = selectCapabilityManifestBySource(
+    state,
+    CapabilitySourceKind.CONNECTOR,
+    connectorId,
+  );
+  if (!manifest) {
+    throw new Error('agent.connectorManifestMissing');
+  }
+
+  return {
+    manifest,
+    binding: findManifestBinding(state.bindingsByAgentId[agentId] ?? [], manifest),
+  };
 }
 
 // ── Mapping helpers ──────────────────────────────────────────────────
@@ -95,7 +133,6 @@ interface AgentConnectorState {
   connectConnector: (connectorId: string) => Promise<void>;
   bindConnector: (agentId: string, connectorId: string) => Promise<void>;
   unbindConnector: (agentId: string, connectorId: string) => Promise<void>;
-  syncConnectorTools: (agentId: string, connectorId: string) => Promise<void>;
   getBindingsForAgent: (agentId: string) => AgentConnectorBinding[];
   getAvailableForAgent: (agentId: string) => ConnectorInfo[];
   isConnectorBound: (agentId: string, connectorId: string) => boolean;
@@ -148,48 +185,57 @@ export const useAgentConnectorStore = createDesktopStore<AgentConnectorState>(
     },
 
     bindConnector: async (agentId: string, connectorId: string) => {
-      const entries = readAgentConnectorEntries(agentId);
-      if (entries.some((e) => e.connectorId === connectorId)) return;
-      const updated = [...entries, { connectorId, enabledTools: [] }];
-      await persistAgentConnectorEntries(agentId, updated);
+      const agent = useAgentStore.getState().agents.find((item) => item.id === agentId);
+      if (!agent) throw new Error('agent.connectorAgentMissing');
+
+      const { manifest, binding } = await loadConnectorAuthority(agentId, connectorId);
+      if (binding?.enabled) return;
+      const approvalPolicy = binding?.approvalPolicy ?? manifest.defaultApprovalPolicy;
+      if (approvalPolicy === CapabilityApprovalPolicy.UNSPECIFIED) {
+        throw new Error('agent.connectorApprovalPolicyMissing');
+      }
+
+      await useAgentCapabilityStore.getState().upsertBinding({
+        bindingId: binding?.bindingId,
+        agentId,
+        capabilityId: manifest.capabilityId,
+        capabilityVersion: manifest.version,
+        enabled: true,
+        approvalPolicy,
+        expectedAgentVersion: agent.version,
+        expectedBindingRevision: binding?.revision ?? 0n,
+        idempotencyKey: createMutationId('bind'),
+      });
       log.info('agentConnectors', 'Bound connector to agent', { agentId, connectorId });
-      // Sync the connector's tool set right after mount, mirroring Lobe's mount→syncTools.
-      await get().syncConnectorTools(agentId, connectorId);
     },
 
     unbindConnector: async (agentId: string, connectorId: string) => {
-      const entries = readAgentConnectorEntries(agentId);
-      const updated = entries.filter((e) => e.connectorId !== connectorId);
-      if (updated.length === entries.length) return;
-      await persistAgentConnectorEntries(agentId, updated);
+      const { binding } = await loadConnectorAuthority(agentId, connectorId);
+      if (!binding) return;
+
+      await useAgentCapabilityStore.getState().deleteBinding({
+        agentId,
+        bindingId: binding.bindingId,
+        expectedBindingRevision: binding.revision,
+        idempotencyKey: createMutationId('unbind'),
+        reason: 'connector_unbound',
+      });
       log.info('agentConnectors', 'Unbound connector from agent', { agentId, connectorId });
     },
 
-    // syncTools leg: pull the connector provider's declared resources (its callable
-    // surface) and persist them as the mount's enabledTools. Reuses the existing
-    // oauth2 provider detail; no separate tool-discovery backend.
-    syncConnectorTools: async (agentId: string, connectorId: string) => {
-      try {
-        const detail = await api.oauth2GetProvider(connectorId);
-        const tools = detail.resources ? Object.keys(detail.resources) : [];
-        const entries = readAgentConnectorEntries(agentId);
-        const updated = entries.map((e) =>
-          e.connectorId === connectorId ? { ...e, enabledTools: tools } : e,
-        );
-        if (!updated.some((e) => e.connectorId === connectorId)) return;
-        await persistAgentConnectorEntries(agentId, updated);
-      } catch (error) {
-        log.error('agentConnectors', 'Failed to sync connector tools', {
-          agentId,
-          connectorId,
-          error: String(error),
-        });
-        throw error;
-      }
-    },
-
     getBindingsForAgent: (agentId: string) => {
-      return entriesToBindings(agentId, readAgentConnectorEntries(agentId));
+      const state = useAgentCapabilityStore.getState();
+      const bindings = state.bindingsByAgentId[agentId] ?? [];
+      return state.manifests
+        .filter(
+          (manifest) =>
+            manifest.sourceKind === CapabilitySourceKind.CONNECTOR
+            && Boolean(manifest.sourceInstanceId),
+        )
+        .flatMap((manifest) => {
+          const binding = findManifestBinding(bindings, manifest);
+          return binding ? [toConnectorBinding(agentId, manifest, binding)] : [];
+        });
     },
 
     getAvailableForAgent: (_agentId: string) => {
@@ -197,7 +243,9 @@ export const useAgentConnectorStore = createDesktopStore<AgentConnectorState>(
     },
 
     isConnectorBound: (agentId: string, connectorId: string) => {
-      return readAgentConnectorEntries(agentId).some((e) => e.connectorId === connectorId);
+      return get()
+        .getBindingsForAgent(agentId)
+        .some((binding) => binding.connectorId === connectorId && binding.enabled);
     },
   }),
 );

@@ -109,6 +109,45 @@ func TestClientCapabilityProofServiceVerifyAllCommandDomains(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:   "pull operations",
+			domain: model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_PULL_OPERATIONS,
+			request: &model.PullCapabilityOperationsRequest{
+				CapabilitySessionId: "session-1",
+				DeviceId:            proofTestDeviceID,
+				AfterSequence:       4,
+				Limit:               20,
+			},
+		},
+		{
+			name:   "report operation event",
+			domain: model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_REPORT_OPERATION_EVENT,
+			request: &model.ReportCapabilityOperationEventRequest{
+				TargetDeviceId: proofTestDeviceID,
+				Event: &model.CapabilityOperationEvent{
+					OperationId:  "operation-1",
+					AttemptEpoch: 1,
+					Sequence:     2,
+					FencingToken: 3,
+				},
+			},
+		},
+		{
+			name:   "take over operation",
+			domain: model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_TAKE_OVER_OPERATION,
+			request: &model.TakeOverCapabilityOperationRequest{
+				OperationId: "operation-1", ExpectedRevision: 2,
+				TargetDeviceId: proofTestDeviceID, CapabilitySessionId: "session-1",
+			},
+		},
+		{
+			name:   "take over cleanup",
+			domain: model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_TAKE_OVER_CLEANUP,
+			request: &model.TakeOverCapabilityCleanupRequest{
+				OperationId: "operation-1", ExpectedCleanupEpoch: 1,
+				TargetDeviceId: proofTestDeviceID, CapabilitySessionId: "session-1",
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -451,6 +490,14 @@ func attachCapabilityCommandProofForTest(
 		typed.CommandProof = proof
 	case *model.SubmitClientCapabilityReceiptRequest:
 		typed.CommandProof = proof
+	case *model.PullCapabilityOperationsRequest:
+		typed.CommandProof = proof
+	case *model.ReportCapabilityOperationEventRequest:
+		typed.CommandProof = proof
+	case *model.TakeOverCapabilityOperationRequest:
+		typed.CommandProof = proof
+	case *model.TakeOverCapabilityCleanupRequest:
+		typed.CommandProof = proof
 	default:
 		t.Fatalf("unsupported request type %T", request)
 	}
@@ -472,6 +519,14 @@ func commandProofForTest(
 	case *model.PullClientCapabilityRequestsRequest:
 		return typed.GetCommandProof()
 	case *model.SubmitClientCapabilityReceiptRequest:
+		return typed.GetCommandProof()
+	case *model.PullCapabilityOperationsRequest:
+		return typed.GetCommandProof()
+	case *model.ReportCapabilityOperationEventRequest:
+		return typed.GetCommandProof()
+	case *model.TakeOverCapabilityOperationRequest:
+		return typed.GetCommandProof()
+	case *model.TakeOverCapabilityCleanupRequest:
 		return typed.GetCommandProof()
 	default:
 		t.Fatalf("unsupported request type %T", request)

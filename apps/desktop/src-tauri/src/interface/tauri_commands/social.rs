@@ -28,11 +28,10 @@ use crate::contracts::{
     SocialCreateCommentInput, SocialCreateMomentInput, SocialDeleteCommentInput,
     SocialDeleteMomentInput, SocialFollowInput, SocialFriendRequestAcceptInput,
     SocialFriendRequestListInput, SocialFriendRequestRejectInput, SocialFriendRequestSendInput,
-    SocialGetCommentsInput, SocialGetFollowersInput, SocialGetFollowingInput,
-    SocialGetMomentInput, SocialGetRelationshipInput, SocialGetTimelineInput,
-    SocialListByAuthorInput, SocialReactInput, SocialStationModerationDeleteInput,
-    SocialStationModerationListInput, SocialStationModerationUpsertInput,
-    SocialSyncMomentsProjectionInput, SocialUnreactInput,
+    SocialGetCommentsInput, SocialGetFollowersInput, SocialGetFollowingInput, SocialGetMomentInput,
+    SocialGetRelationshipInput, SocialGetTimelineInput, SocialListByAuthorInput, SocialReactInput,
+    SocialStationModerationDeleteInput, SocialStationModerationListInput,
+    SocialStationModerationUpsertInput, SocialSyncMomentsProjectionInput, SocialUnreactInput,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;

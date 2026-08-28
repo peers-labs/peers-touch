@@ -19,8 +19,14 @@ impl std::fmt::Display for DeviceEnrollmentError {
         match self {
             Self::RegistryAccess(e) => write!(f, "device enrollment registry access failed: {e}"),
             Self::NoEngine => write!(f, "device enrollment requires an active messaging engine"),
-            Self::ExhaustedRetries { attempts, last_error } => {
-                write!(f, "device enrollment failed after {attempts} attempts: {last_error}")
+            Self::ExhaustedRetries {
+                attempts,
+                last_error,
+            } => {
+                write!(
+                    f,
+                    "device enrollment failed after {attempts} attempts: {last_error}"
+                )
             }
         }
     }
@@ -29,7 +35,11 @@ impl std::fmt::Display for DeviceEnrollmentError {
 /// Attempt device enrollment exactly once without retries. Returns immediately
 /// regardless of outcome, suitable for the auth login hot path where the
 /// lifecycle worker handles subsequent retries.
-pub fn try_enroll_device_once(state: &AppState, account_id: &str, token: &str) -> Result<(), DeviceEnrollmentError> {
+pub fn try_enroll_device_once(
+    state: &AppState,
+    account_id: &str,
+    token: &str,
+) -> Result<(), DeviceEnrollmentError> {
     let engine = state
         .messaging_engines
         .get(account_id)
@@ -56,7 +66,11 @@ pub fn try_enroll_device_once(state: &AppState, account_id: &str, token: &str) -
 /// Attempt device enrollment with exponential-backoff retries. This blocks the
 /// calling thread for up to ~30s in the worst case; prefer `try_enroll_device_once`
 /// on latency-sensitive paths.
-pub fn ensure_device_enrolled(state: &AppState, account_id: &str, token: &str) -> Result<(), DeviceEnrollmentError> {
+pub fn ensure_device_enrolled(
+    state: &AppState,
+    account_id: &str,
+    token: &str,
+) -> Result<(), DeviceEnrollmentError> {
     let engine = state
         .messaging_engines
         .get(account_id)

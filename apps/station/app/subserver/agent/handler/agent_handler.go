@@ -20,6 +20,7 @@ type AgentHandlers struct {
 }
 
 func NewAgentHandlers(agentService *service.AgentService, eventBus domain.EventBus) *AgentHandlers {
+	agentService.SetEventBus(eventBus)
 	return &AgentHandlers{agentService: agentService, eventBus: eventBus}
 }
 

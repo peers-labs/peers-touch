@@ -11,15 +11,14 @@ use crate::contracts::{
     AgentConversationListInput, AgentConversationMessagesInput, AgentConversationRestoreInput,
     AgentConversationUpdateInput, AgentEditAndResendInput, AgentExecuteTurnInput,
     AgentGroupCreateInput, AgentGroupDeleteInput, AgentGroupUpdateInput,
-    AgentKnowledgeBindingCreateInput, AgentKnowledgeBindingDeleteInput,
-    AgentKnowledgeBindingListInput, AgentKnowledgeBindingUpdateInput, AgentMessageTranslateInput,
-    AgentRegenerateTurnInput, AgentRetryTurnInput, AgentSelectActiveBranchInput,
-    AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput, AgentTaskStatusInput,
-    AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput, AgentThreadCreateInput,
-    AgentThreadListInput, AgentThreadMessagesInput, AgentTombstoneMessageInput,
-    AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput, AgentTurnQueueCancelInput,
-    AgentTurnQueueListInput, AgentTurnTraceGetInput, AgentTurnTraceListInput, StubPayload,
-    TopicCommentCreateInput, TopicCommentDeleteInput, TopicCommentListInput,
+    AgentMessageTranslateInput, AgentRegenerateTurnInput, AgentRetryTurnInput,
+    AgentSelectActiveBranchInput, AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput,
+    AgentTaskStatusInput, AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput,
+    AgentThreadCreateInput, AgentThreadListInput, AgentThreadMessagesInput,
+    AgentTombstoneMessageInput, AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput,
+    AgentTurnQueueCancelInput, AgentTurnQueueListInput, AgentTurnTraceGetInput,
+    AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput, TopicCommentDeleteInput,
+    TopicCommentListInput,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -525,7 +524,6 @@ fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value 
         "effort": input.effort.unwrap_or_else(|| "medium".to_string()),
         "context_window_size": input.context_window_size.unwrap_or(128000),
         "max_retries": input.max_retries.unwrap_or(3),
-        "knowledge_resources": input.knowledge_resources.unwrap_or_default(),
     });
     if let Some(provider) = input.provider.filter(|value| !value.trim().is_empty()) {
         body["provider"] = json!(provider);
@@ -1378,190 +1376,6 @@ pub fn topic_comment_list(input: TopicCommentListInput, token: &str) -> AppResul
         Err(err) => {
             tracing::error!(command = "topic_comment_list", error = %err, "Topic comment list failed");
             err.into_app_result("Failed to list topic comments")
-        }
-    }
-}
-
-// ── C6 Knowledge bindings (Station `agent_knowledge_bindings`) ──
-// The resource descriptor catalog remains in agent `config_json`; these protobuf commands
-// persist the first-class agent↔resource join relation, mirroring LobeHub `createAgentFiles`.
-fn knowledge_binding_json(binding: &agent::AgentKnowledgeBinding) -> Value {
-    json!({
-        "id": binding.id,
-        "agentId": binding.agent_id,
-        "resourceId": binding.resource_id,
-        "policy": binding.policy,
-        "enabled": binding.enabled,
-    })
-}
-
-pub fn agent_knowledge_binding_list(
-    input: AgentKnowledgeBindingListInput,
-    token: &str,
-) -> AppResult<StubPayload> {
-    let agent_id = input.agent_id.trim().to_string();
-    if agent_id.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "agent_id is required", None);
-    }
-    let request = agent::ListAgentKnowledgeBindingsRequest { agent_id };
-    match station_client::request_proto::<
-        agent::ListAgentKnowledgeBindingsRequest,
-        agent::ListAgentKnowledgeBindingsResponse,
-    >(
-        Method::POST,
-        "/sub-agent/config/knowledge/list",
-        token,
-        None,
-        Some(&request),
-    ) {
-        Ok(response) => success_payload(
-            "agent_knowledge_binding_list",
-            json!({
-                "bindings": response
-                    .bindings
-                    .iter()
-                    .map(knowledge_binding_json)
-                    .collect::<Vec<_>>()
-            }),
-        ),
-        Err(err) => {
-            tracing::error!(command = "agent_knowledge_binding_list", error = %err, "Knowledge binding list failed");
-            err.into_app_result("Failed to list knowledge bindings")
-        }
-    }
-}
-
-pub fn agent_knowledge_binding_create(
-    input: AgentKnowledgeBindingCreateInput,
-    token: &str,
-) -> AppResult<StubPayload> {
-    let agent_id = input.agent_id.trim().to_string();
-    let resource_id = input.resource_id.trim().to_string();
-    if agent_id.is_empty() || resource_id.is_empty() {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "agent_id and resource_id are required",
-            None,
-        );
-    }
-    let request = agent::CreateAgentKnowledgeBindingRequest {
-        binding: Some(agent::AgentKnowledgeBinding {
-            id: String::new(),
-            agent_id,
-            resource_id,
-            policy: input.policy.unwrap_or_else(|| "manual".to_string()),
-            enabled: input.enabled.unwrap_or(true),
-            created_at: None,
-            updated_at: None,
-        }),
-    };
-    match station_client::request_proto::<
-        agent::CreateAgentKnowledgeBindingRequest,
-        agent::CreateAgentKnowledgeBindingResponse,
-    >(
-        Method::POST,
-        "/sub-agent/config/knowledge/create",
-        token,
-        None,
-        Some(&request),
-    ) {
-        Ok(response) => match response.binding.as_ref() {
-            Some(binding) => success_payload(
-                "agent_knowledge_binding_create",
-                json!({ "binding": knowledge_binding_json(binding) }),
-            ),
-            None => AppResult::fail(
-                ErrorCode::InternalError,
-                "Station created knowledge binding without a binding payload",
-                None,
-            ),
-        },
-        Err(err) => {
-            tracing::error!(command = "agent_knowledge_binding_create", error = %err, "Knowledge binding create failed");
-            err.into_app_result("Failed to create knowledge binding")
-        }
-    }
-}
-
-pub fn agent_knowledge_binding_update(
-    input: AgentKnowledgeBindingUpdateInput,
-    token: &str,
-) -> AppResult<StubPayload> {
-    let id = input.id.trim().to_string();
-    let agent_id = input.agent_id.trim().to_string();
-    let resource_id = input.resource_id.trim().to_string();
-    if id.is_empty() || resource_id.is_empty() {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "id and resource_id are required",
-            None,
-        );
-    }
-    let request = agent::UpdateAgentKnowledgeBindingRequest {
-        binding: Some(agent::AgentKnowledgeBinding {
-            id,
-            agent_id,
-            resource_id,
-            policy: input.policy.unwrap_or_else(|| "manual".to_string()),
-            enabled: input.enabled.unwrap_or(true),
-            created_at: None,
-            updated_at: None,
-        }),
-    };
-    match station_client::request_proto::<
-        agent::UpdateAgentKnowledgeBindingRequest,
-        agent::UpdateAgentKnowledgeBindingResponse,
-    >(
-        Method::POST,
-        "/sub-agent/config/knowledge/update",
-        token,
-        None,
-        Some(&request),
-    ) {
-        Ok(response) => match response.binding.as_ref() {
-            Some(binding) => success_payload(
-                "agent_knowledge_binding_update",
-                json!({ "binding": knowledge_binding_json(binding) }),
-            ),
-            None => AppResult::fail(
-                ErrorCode::InternalError,
-                "Station updated knowledge binding without a binding payload",
-                None,
-            ),
-        },
-        Err(err) => {
-            tracing::error!(command = "agent_knowledge_binding_update", error = %err, "Knowledge binding update failed");
-            err.into_app_result("Failed to update knowledge binding")
-        }
-    }
-}
-
-pub fn agent_knowledge_binding_delete(
-    input: AgentKnowledgeBindingDeleteInput,
-    token: &str,
-) -> AppResult<StubPayload> {
-    let id = input.id.trim().to_string();
-    if id.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
-    }
-    let request = agent::DeleteAgentKnowledgeBindingRequest { id };
-    match station_client::request_proto::<
-        agent::DeleteAgentKnowledgeBindingRequest,
-        agent::DeleteAgentKnowledgeBindingResponse,
-    >(
-        Method::POST,
-        "/sub-agent/config/knowledge/delete",
-        token,
-        None,
-        Some(&request),
-    ) {
-        Ok(response) => success_payload(
-            "agent_knowledge_binding_delete",
-            json!({ "success": response.success }),
-        ),
-        Err(err) => {
-            tracing::error!(command = "agent_knowledge_binding_delete", error = %err, "Knowledge binding delete failed");
-            err.into_app_result("Failed to delete knowledge binding")
         }
     }
 }

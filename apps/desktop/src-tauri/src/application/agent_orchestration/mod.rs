@@ -1,3 +1,4 @@
+use crate::application::agent_event_stream;
 use crate::application::agents as application_agents;
 use crate::contracts::{
     AgentCollaborationCancelInput, AgentCollaborationCancelTaskInput,
@@ -9,33 +10,14 @@ use crate::contracts::{
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
-use reqwest::blocking::Client;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Method;
-use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::io::Read;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
-use tauri::{AppHandle, Emitter};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use tauri::AppHandle;
 
 const AGENT_COLLABORATION_EVENT: &str = "agent:collaboration-event";
-
-#[derive(Clone, Serialize)]
-struct AgentCollaborationEventPayload {
-    #[serde(rename = "streamId")]
-    stream_id: String,
-    #[serde(rename = "agentId")]
-    agent_id: String,
-    event: String,
-    data: Value,
-}
-
-fn stream_cancel_registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
@@ -252,25 +234,15 @@ pub fn agent_collaboration_create(
 }
 
 pub fn register_collaboration_stream(stream_id: &str) -> Arc<AtomicBool> {
-    let flag = Arc::new(AtomicBool::new(false));
-    if let Ok(mut registry) = stream_cancel_registry().lock() {
-        registry.insert(stream_id.to_string(), Arc::clone(&flag));
-    }
-    flag
+    agent_event_stream::register_stream(stream_id)
 }
 
 pub fn unregister_collaboration_stream(stream_id: &str) {
-    if let Ok(mut registry) = stream_cancel_registry().lock() {
-        registry.remove(stream_id);
-    }
+    agent_event_stream::unregister_stream(stream_id);
 }
 
 pub fn cancel_collaboration_stream(input: AgentCollaborationCancelInput) -> AppResult<StubPayload> {
-    if let Ok(registry) = stream_cancel_registry().lock() {
-        if let Some(flag) = registry.get(input.stream_id.trim()) {
-            flag.store(true, Ordering::SeqCst);
-        }
-    }
+    agent_event_stream::cancel_stream(&input.stream_id);
     success_payload(
         "agent_collaboration_cancel_stream",
         json!({ "stream_id": input.stream_id }),
@@ -523,8 +495,9 @@ pub fn agent_collaboration_subscribe(
     token: String,
     cancel_flag: Arc<AtomicBool>,
 ) {
-    if let Err(error) = stream_station_agent_events(
+    if let Err(error) = agent_event_stream::stream(
         &app,
+        AGENT_COLLABORATION_EVENT,
         &stream_id,
         &input.agent_id,
         input.task_id.as_deref(),
@@ -532,117 +505,13 @@ pub fn agent_collaboration_subscribe(
         &token,
         &cancel_flag,
     ) {
-        emit_collaboration_event(
+        agent_event_stream::emit_error(
             &app,
+            AGENT_COLLABORATION_EVENT,
             &stream_id,
             &input.agent_id,
-            "error",
-            json!({ "error": error }),
+            error,
         );
-    }
-}
-
-fn stream_station_agent_events(
-    app: &AppHandle,
-    stream_id: &str,
-    agent_id: &str,
-    task_id: Option<&str>,
-    after_event_seq: i64,
-    token: &str,
-    cancel_flag: &AtomicBool,
-) -> Result<(), String> {
-    let url = format!(
-        "{}{}",
-        station_client::station_base_url(),
-        "/sub-agent/agent/events/subscribe"
-    );
-    let client = Client::builder()
-        .build()
-        .map_err(|error| format!("failed to create Station event client: {error}"))?;
-    let auth = format!("Bearer {}", token.trim());
-    let mut body = json!({
-        "agent_id": agent_id,
-        "after_event_seq": after_event_seq.max(0),
-    });
-    if let Some(task_id) = task_id.map(str::trim).filter(|value| !value.is_empty()) {
-        body["task_id"] = json!(task_id);
-    }
-    let mut response = client
-        .post(url)
-        .header(CONTENT_TYPE, "application/json")
-        .header(AUTHORIZATION, auth)
-        .header("Accept", "text/event-stream")
-        .json(&body)
-        .send()
-        .map_err(|error| format!("Station agent event stream request failed: {error}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "Station agent event stream returned HTTP {}",
-            response.status()
-        ));
-    }
-
-    let mut bytes = [0_u8; 4096];
-    let mut buffer = String::new();
-    loop {
-        if cancel_flag.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-        let read = response
-            .read(&mut bytes)
-            .map_err(|error| format!("failed to read Station agent event stream: {error}"))?;
-        if read == 0 {
-            break;
-        }
-        buffer.push_str(&String::from_utf8_lossy(&bytes[..read]));
-        while let Some(frame_end) = buffer.find("\n\n") {
-            let frame = buffer[..frame_end].to_string();
-            buffer = buffer[frame_end + 2..].to_string();
-            if let Some((event, data)) = parse_sse_frame(&frame) {
-                emit_collaboration_event(app, stream_id, agent_id, &event, data);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn parse_sse_frame(frame: &str) -> Option<(String, Value)> {
-    let mut event = "message".to_string();
-    let mut data_lines = Vec::new();
-    for line in frame.lines() {
-        let line = line.trim_end_matches('\r');
-        if let Some(value) = line.strip_prefix("event:") {
-            event = value.trim().to_string();
-        } else if let Some(value) = line.strip_prefix("data:") {
-            data_lines.push(value.trim_start().to_string());
-        }
-    }
-    if data_lines.is_empty() {
-        return None;
-    }
-    let data = data_lines.join("\n");
-    let parsed = serde_json::from_str::<Value>(&data).unwrap_or_else(|_| json!({ "raw": data }));
-    Some((event, parsed))
-}
-
-fn emit_collaboration_event(
-    app: &AppHandle,
-    stream_id: &str,
-    agent_id: &str,
-    event: &str,
-    data: Value,
-) {
-    if let Err(error) = app.emit(
-        AGENT_COLLABORATION_EVENT,
-        AgentCollaborationEventPayload {
-            stream_id: stream_id.to_string(),
-            agent_id: agent_id.to_string(),
-            event: event.to_string(),
-            data,
-        },
-    ) {
-        tracing::warn!(error = %error, "Failed to emit Agent collaboration event");
     }
 }
 

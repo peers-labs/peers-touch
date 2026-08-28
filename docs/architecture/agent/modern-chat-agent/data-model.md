@@ -43,6 +43,37 @@ sources only and are deleted after C12 cutover.
 
 Local selected-Agent and layout preferences are not fields of this entity.
 
+### 2.1A KnowledgeResourceDescriptor
+
+Station-owned resource identity used by Knowledge capability manifests.
+
+| Field | Meaning |
+|---|---|
+| `resource_id`, `ptid` | Stable actor-scoped identity |
+| `revision` | Monotonic descriptor revision |
+| `resource_kind`, `title` | Resource class and user-facing label |
+| `locator` | Oneof immutable `station_content_ref` or opaque `client_resource_ref` |
+| `content_hash`, `index_revision` | Immutable retrieval provenance where Station-hosted |
+| `availability`, `reason_code` | Typed source/index readiness |
+| `created_at`, `updated_at`, `tombstoned_at` | Lifecycle and deletion evidence |
+
+Rules:
+
+- Every accepted descriptor revision publishes a Knowledge
+  `CapabilityManifest` version whose `owner_ptid` equals the descriptor owner.
+  Global catalog manifests keep `owner_ptid` empty; actor-owned manifests are
+  visible, bindable, and mutable only by that actor.
+- Binding policy lives only in `AgentCapabilityBinding`.
+- A Turn pins descriptor identity through manifest version plus binding
+  revision; `ExecuteTurnRequest` does not carry Knowledge descriptors.
+- `client_resource_ref` requires the selected capability session and never
+  exposes a raw path to Station.
+- Package import either resolves each portable descriptor before Agent
+  creation or returns an unresolved dependency plan; partial binding import is
+  forbidden.
+- Tombstoning a descriptor retires every published manifest revision so no
+  historical revision can receive new admission.
+
 ### 2.2 Conversation
 
 | Field | Meaning |

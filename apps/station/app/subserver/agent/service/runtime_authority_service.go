@@ -89,12 +89,17 @@ func (s *TurnService) persistRuntimeAuthority(
 	ctx context.Context,
 	config *TurnConfig,
 	admission *AdmissionSnapshot,
+	readiness *model.CapabilityReadinessSnapshot,
+	expectedAgentVersion uint64,
 ) error {
-	if config == nil || admission == nil || strings.TrimSpace(config.AttemptID) == "" {
+	if config == nil || admission == nil || readiness == nil ||
+		strings.TrimSpace(config.AttemptID) == "" ||
+		strings.TrimSpace(readiness.GetSnapshotId()) == "" ||
+		expectedAgentVersion == 0 {
 		return errcode.New(
 			errcode.AgentInvalidRequest,
 			http.StatusBadRequest,
-			"runtime authority requires turn config, admission, and attempt",
+			"runtime authority requires turn config, admission, readiness, agent version, and attempt",
 			nil,
 		)
 	}
@@ -103,6 +108,25 @@ func (s *TurnService) persistRuntimeAuthority(
 			errcode.AgentInvalidSourceState,
 			http.StatusConflict,
 			"runtime admission returned no capability snapshot",
+			nil,
+		)
+	}
+	if readiness.GetPtid() != config.ActorID ||
+		readiness.GetAgentId() != config.AgentID ||
+		readiness.GetRuntimeSnapshotId() != admission.SnapshotID {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"capability readiness does not match the admitted turn",
+			nil,
+		)
+	}
+	if selectedSessionID := readiness.GetSelectedClientSessionId(); selectedSessionID != "" &&
+		selectedSessionID != config.ClientCapabilitySessionID {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"capability readiness selected client session does not match the turn",
 			nil,
 		)
 	}
@@ -133,13 +157,21 @@ func (s *TurnService) persistRuntimeAuthority(
 				"load conversation runtime binding", err)
 		}
 
-		agentConfigVersion, err := loadAgentConfigVersionTx(tx, config.ActorID, config.AgentID)
+		agentVersion, err := loadAgentConfigVersionTx(tx, config.ActorID, config.AgentID)
 		if err != nil {
 			return err
 		}
+		if uint64(agentVersion) != expectedAgentVersion {
+			return errcode.New(
+				errcode.AgentVersionConflict,
+				http.StatusConflict,
+				"agent revision changed during turn admission",
+				nil,
+			)
+		}
 		snapshot := newDirectRuntimeSnapshot(
 			admission,
-			agentConfigVersion,
+			fmt.Sprintf("%d", agentVersion),
 			config.ThinkingMode,
 		)
 
@@ -206,7 +238,7 @@ func (s *TurnService) persistRuntimeAuthority(
 			Updates(map[string]interface{}{
 				"runtime_snapshot":      encodedSnapshot,
 				"runtime_snapshot_hash": snapshotHash,
-				"readiness_snapshot_id": admission.SnapshotID,
+				"readiness_snapshot_id": readiness.GetSnapshotId(),
 			})
 		if result.Error != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -220,23 +252,23 @@ func (s *TurnService) persistRuntimeAuthority(
 	})
 }
 
-func loadAgentConfigVersionTx(tx *gorm.DB, ptid string, agentID string) (string, error) {
+func loadAgentConfigVersionTx(tx *gorm.DB, ptid string, agentID string) (int64, error) {
 	var agent persistence.Agent
 	if err := tx.Select("version").
 		Where("id = ? AND owner_actor_id = ?", agentID, ptid).
 		First(&agent).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return "", errcode.New(
+			return 0, errcode.New(
 				errcode.AgentSecurityViolation,
 				http.StatusForbidden,
 				"runtime snapshot requires the owned agent",
 				err,
 			)
 		}
-		return "", errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+		return 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"load agent config version", err)
 	}
-	return fmt.Sprintf("%d", agent.Version), nil
+	return agent.Version, nil
 }
 
 func newDirectRuntimeSnapshot(

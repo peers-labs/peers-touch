@@ -10,7 +10,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct LocalCapabilityExecutor {
     contracts: HashMap<String, CapabilityContract>,
     execution_attempts: AtomicU64,
-    side_effects_started: AtomicU64,
 }
 
 impl LocalCapabilityExecutor {
@@ -53,16 +52,11 @@ impl LocalCapabilityExecutor {
         Ok(Self {
             contracts: indexed,
             execution_attempts: AtomicU64::new(0),
-            side_effects_started: AtomicU64::new(0),
         })
     }
 
     pub fn execution_attempt_count(&self) -> u64 {
         self.execution_attempts.load(Ordering::SeqCst)
-    }
-
-    pub fn side_effect_count(&self) -> u64 {
-        self.side_effects_started.load(Ordering::SeqCst)
     }
 }
 
@@ -76,6 +70,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
         request: &ClientCapabilityRequest,
         resources: &[LocalResource],
         external_idempotency_key: Option<&str>,
+        record_side_effect_start: &mut dyn FnMut() -> Result<(), String>,
     ) -> Result<Vec<u8>, String> {
         self.execution_attempts.fetch_add(1, Ordering::SeqCst);
         if external_idempotency_key.is_some() {
@@ -93,7 +88,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
             .collect::<Vec<_>>();
         let mut result = match request.capability_id.as_str() {
             "filesystem.read" => {
-                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                record_side_effect_start()?;
                 execute_builtin(
                     "local_file_read",
                     arguments,
@@ -103,7 +98,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                 )?
             }
             "filesystem.list" => {
-                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                record_side_effect_start()?;
                 execute_builtin(
                     "local_workspace_list",
                     arguments,
@@ -113,7 +108,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                 )?
             }
             "clipboard.read" => {
-                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                record_side_effect_start()?;
                 execute_builtin(
                     "local_clipboard_read",
                     arguments,
@@ -123,7 +118,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                 )?
             }
             "clipboard.write" => {
-                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                record_side_effect_start()?;
                 execute_builtin(
                     "local_clipboard_write",
                     arguments,
@@ -133,7 +128,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                 )?
             }
             "shell.execute" => {
-                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                record_side_effect_start()?;
                 execute_builtin(
                     "local_shell_safe",
                     arguments,
@@ -143,7 +138,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                 )?
             }
             "mcp.invoke" => {
-                self.side_effects_started.fetch_add(1, Ordering::SeqCst);
+                record_side_effect_start()?;
                 execute_mcp(
                     arguments,
                     workspace_root,
@@ -288,13 +283,18 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(executor.execution_attempt_count(), 0);
-        assert_eq!(executor.side_effect_count(), 0);
+        let mut side_effect_starts = 0;
         assert_eq!(
-            executor.execute(&request, &[], None).unwrap_err(),
+            executor
+                .execute(&request, &[], None, &mut || {
+                    side_effect_starts += 1;
+                    Ok(())
+                })
+                .unwrap_err(),
             "CLIENT_CAPABILITY_RESOURCE_REQUIRED"
         );
         assert_eq!(executor.execution_attempt_count(), 1);
-        assert_eq!(executor.side_effect_count(), 0);
+        assert_eq!(side_effect_starts, 0);
     }
 
     #[test]

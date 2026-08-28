@@ -3,14 +3,99 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { App, theme, Empty, Switch } from 'antd';
 import { Button, Tag } from '@lobehub/ui';
-import { Link2, RefreshCw, Unplug, Settings2 } from 'lucide-react';
+import { Link2, Unplug, Settings2 } from 'lucide-react';
 import { useAgentConnectorStore, type ConnectorInfo } from '../../store/agentConnectors';
-import { useAgentStore } from '../../store/agent';
-import { parseAgentChatConfig } from '../../services/desktop_api';
+import {
+  selectAgentCapabilityBindingsBySource,
+  selectAgentCapabilityReadinessBySource,
+  selectCapabilityManifestsBySource,
+  useAgentCapabilityStore,
+  type AgentCapabilityState,
+} from '../../store/agentCapabilities';
+import {
+  CapabilityReadinessState,
+  CapabilitySourceKind,
+  type AgentCapabilityBinding,
+  type CapabilityManifest,
+  type CapabilityReadiness,
+} from '../../gen/proto/domain/agent/capability_pb';
 
 interface AgentConnectorsPanelProps {
   agentId: string;
   onNavigateToSettings?: () => void;
+}
+
+interface ConnectorCapabilityProjection {
+  manifests: CapabilityManifest[];
+  bindings: AgentCapabilityBinding[];
+  readiness: CapabilityReadiness[];
+}
+
+const EMPTY_CONNECTOR_BINDINGS: AgentCapabilityBinding[] = [];
+
+function createConnectorCapabilitySelector(agentId: string) {
+  let manifestsReference: CapabilityManifest[] | undefined;
+  let bindingsReference: AgentCapabilityBinding[] | undefined;
+  let readinessReference: ReturnType<typeof useAgentCapabilityStore.getState>['readinessByAgentId'][string];
+  let projection: ConnectorCapabilityProjection | undefined;
+
+  return (state: AgentCapabilityState): ConnectorCapabilityProjection => {
+    const bindings = state.bindingsByAgentId[agentId] ?? EMPTY_CONNECTOR_BINDINGS;
+    const readiness = state.readinessByAgentId[agentId];
+    if (
+      projection
+      && manifestsReference === state.manifests
+      && bindingsReference === bindings
+      && readinessReference === readiness
+    ) {
+      return projection;
+    }
+    manifestsReference = state.manifests;
+    bindingsReference = bindings;
+    readinessReference = readiness;
+    projection = {
+      manifests: selectCapabilityManifestsBySource(
+        state,
+        CapabilitySourceKind.CONNECTOR,
+      ),
+      bindings: selectAgentCapabilityBindingsBySource(
+        state,
+        agentId,
+        CapabilitySourceKind.CONNECTOR,
+      ),
+      readiness: selectAgentCapabilityReadinessBySource(
+        state,
+        agentId,
+        CapabilitySourceKind.CONNECTOR,
+      ),
+    };
+    return projection;
+  };
+}
+
+function connectorBindingReadiness(
+  bindings: AgentCapabilityBinding[],
+  readiness: CapabilityReadiness[],
+): CapabilityReadinessState {
+  const states = bindings.map((binding) => readiness.find(
+    (item) =>
+      item.bindingId === binding.bindingId
+      && item.bindingRevision === binding.revision,
+  )?.state ?? CapabilityReadinessState.UNKNOWN);
+  if (states.some((state) =>
+    state === CapabilityReadinessState.UNAVAILABLE
+    || state === CapabilityReadinessState.BLOCKED)) {
+    return CapabilityReadinessState.UNAVAILABLE;
+  }
+  if (states.some((state) =>
+    state === CapabilityReadinessState.UNKNOWN
+    || state === CapabilityReadinessState.UNSPECIFIED)) {
+    return CapabilityReadinessState.UNKNOWN;
+  }
+  if (states.some((state) => state === CapabilityReadinessState.DEGRADED)) {
+    return CapabilityReadinessState.DEGRADED;
+  }
+  return CapabilityReadinessState.READY;
 }
 
 function ConnectorStatusBadge({ status }: { status: ConnectorInfo['status'] }) {
@@ -32,18 +117,41 @@ function ConnectorStatusBadge({ status }: { status: ConnectorInfo['status'] }) {
   );
 }
 
+function ConnectorReadinessBadge({
+  state,
+}: {
+  state: CapabilityReadinessState;
+}) {
+  const { t } = useTranslation('agent');
+  if (state === CapabilityReadinessState.READY) {
+    return <Tag color="success" style={{ margin: 0 }}>{t('agent.profile.enabled')}</Tag>;
+  }
+  if (state === CapabilityReadinessState.DEGRADED) {
+    return <Tag color="warning" style={{ margin: 0 }}>{t('agent.profile.degradation.partial')}</Tag>;
+  }
+  if (
+    state === CapabilityReadinessState.UNAVAILABLE
+    || state === CapabilityReadinessState.BLOCKED
+  ) {
+    return <Tag color="error" style={{ margin: 0 }}>{t('agent.profile.degradation.unavailable')}</Tag>;
+  }
+  return <Tag style={{ margin: 0 }}>{t('agent.profile.unknown')}</Tag>;
+}
+
 function ConnectorRow({
   connector,
   bound,
+  readiness,
+  bindingAvailable,
   pending,
-  onSync,
   onToggle,
   onConnect,
 }: {
   connector: ConnectorInfo;
   bound: boolean;
+  readiness?: CapabilityReadinessState;
+  bindingAvailable: boolean;
   pending: boolean;
-  onSync: (connectorId: string) => void;
   onToggle: (connectorId: string, checked: boolean) => void;
   onConnect: (connectorId: string) => void;
 }) {
@@ -119,6 +227,9 @@ function ConnectorRow({
       </Flexbox>
 
       <ConnectorStatusBadge status={connector.status} />
+      {bound && readiness !== undefined && (
+        <ConnectorReadinessBadge state={readiness} />
+      )}
 
       {connector.status === 'disconnected' ? (
         <Button
@@ -131,21 +242,10 @@ function ConnectorRow({
         </Button>
       ) : (
         <Flexbox horizontal align="center" gap={6}>
-          {bound && (
-            <Button
-              data-pt-agent-connector-sync={connector.id}
-              aria-label={t('agent.connectors.syncTools')}
-              icon={<RefreshCw size={12} />}
-              loading={pending}
-              size="small"
-              title={t('agent.connectors.syncTools')}
-              onClick={() => onSync(connector.id)}
-            />
-          )}
           <Switch
             data-pt-agent-connector-toggle={connector.id}
             checked={bound}
-            disabled={pending}
+            disabled={pending || !bindingAvailable}
             loading={pending}
             size="small"
             onChange={(checked) => onToggle(connector.id, checked)}
@@ -164,16 +264,38 @@ export function AgentConnectorsPanel({ agentId, onNavigateToSettings }: AgentCon
 
   const availableConnectors = useAgentConnectorStore((s) => s.availableConnectors);
   const loading = useAgentConnectorStore((s) => s.loading);
+  const connectConnector = useAgentConnectorStore((s) => s.connectConnector);
   const bindConnector = useAgentConnectorStore((s) => s.bindConnector);
   const unbindConnector = useAgentConnectorStore((s) => s.unbindConnector);
-  const connectConnector = useAgentConnectorStore((s) => s.connectConnector);
-  const syncConnectorTools = useAgentConnectorStore((s) => s.syncConnectorTools);
-  // Bindings live in the agent's chatConfig; subscribe to the agent record so the
-  // panel re-renders when a mount is added/removed (C7 durable persistence).
-  const agent = useAgentStore((s) => s.agents.find((a) => a.id === agentId));
-  const boundConnectorIds = useMemo(
-    () => new Set((agent ? parseAgentChatConfig(agent).connectors ?? [] : []).map((e) => e.connectorId)),
-    [agent],
+  const capabilitySelector = useMemo(
+    () => createConnectorCapabilitySelector(agentId),
+    [agentId],
+  );
+  const capabilityProjection = useAgentCapabilityStore(capabilitySelector);
+  const connectorCapabilities = useMemo(
+    () => new Map(availableConnectors.map((connector) => {
+      const manifests = capabilityProjection.manifests.filter(
+        (manifest) =>
+          manifest.sourceInstanceId === connector.id
+          && !manifest.retiredAt,
+      );
+      const manifestKeys = new Set(manifests.map((manifest) =>
+        `${manifest.capabilityId}\u0000${manifest.version}`));
+      const bindings = capabilityProjection.bindings.filter(
+        (binding) =>
+          binding.enabled
+          && !binding.tombstonedAt
+          && manifestKeys.has(`${binding.capabilityId}\u0000${binding.capabilityVersion}`),
+      );
+      return [connector.id, {
+        manifests,
+        bindings,
+        readiness: bindings.length > 0
+          ? connectorBindingReadiness(bindings, capabilityProjection.readiness)
+          : undefined,
+      }] as const;
+    })),
+    [availableConnectors, capabilityProjection],
   );
 
   const runConnectorAction = useCallback(
@@ -193,9 +315,15 @@ export function AgentConnectorsPanel({ agentId, onNavigateToSettings }: AgentCon
   const handleToggle = useCallback(
     (connectorId: string, checked: boolean) => {
       if (checked) {
-        void runConnectorAction(connectorId, () => bindConnector(agentId, connectorId));
+        void runConnectorAction(
+          connectorId,
+          () => bindConnector(agentId, connectorId),
+        );
       } else {
-        void runConnectorAction(connectorId, () => unbindConnector(agentId, connectorId));
+        void runConnectorAction(
+          connectorId,
+          () => unbindConnector(agentId, connectorId),
+        );
       }
     },
     [agentId, bindConnector, runConnectorAction, unbindConnector],
@@ -206,13 +334,6 @@ export function AgentConnectorsPanel({ agentId, onNavigateToSettings }: AgentCon
       void runConnectorAction(connectorId, () => connectConnector(connectorId));
     },
     [connectConnector, runConnectorAction],
-  );
-
-  const handleSync = useCallback(
-    (connectorId: string) => {
-      void runConnectorAction(connectorId, () => syncConnectorTools(agentId, connectorId));
-    },
-    [agentId, runConnectorAction, syncConnectorTools],
   );
 
   if (!loading && availableConnectors.length === 0) {
@@ -250,17 +371,21 @@ export function AgentConnectorsPanel({ agentId, onNavigateToSettings }: AgentCon
 
   return (
     <Flexbox data-pt-agent-connectors gap={6} style={{ minHeight: 0, overflow: 'auto' }}>
-      {availableConnectors.map((connector) => (
-        <ConnectorRow
-          key={connector.id}
-          connector={connector}
-          bound={boundConnectorIds.has(connector.id)}
-          pending={pendingConnectorId === connector.id}
-          onToggle={handleToggle}
-          onConnect={handleConnect}
-          onSync={handleSync}
-        />
-      ))}
+      {availableConnectors.map((connector) => {
+        const capability = connectorCapabilities.get(connector.id);
+        return (
+          <ConnectorRow
+            key={connector.id}
+            connector={connector}
+            bound={(capability?.bindings.length ?? 0) > 0}
+            readiness={capability?.readiness}
+            bindingAvailable={(capability?.manifests.length ?? 0) > 0}
+            pending={pendingConnectorId === connector.id}
+            onToggle={handleToggle}
+            onConnect={handleConnect}
+          />
+        );
+      })}
     </Flexbox>
   );
 }

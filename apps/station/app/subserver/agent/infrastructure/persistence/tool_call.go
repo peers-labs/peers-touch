@@ -77,7 +77,9 @@ type ToolCall struct {
 	RiskClass                   string     `gorm:"not null;type:varchar(20);default:'low'"`
 	ApprovalPolicy              string     `gorm:"not null;type:varchar(20);default:'auto'"`
 	ManifestID                  string     `gorm:"not null;type:varchar(100);default:''"`
+	ManifestVersion             string     `gorm:"not null;type:varchar(64);default:''"`
 	BindingID                   string     `gorm:"not null;type:varchar(100);default:''"`
+	BindingRevision             uint64     `gorm:"not null;default:0"`
 	ReadinessSnapID             string     `gorm:"not null;type:varchar(100);default:''"`
 	ApprovalID                  string     `gorm:"not null;type:varchar(64);default:''"`
 	DecisionID                  string     `gorm:"not null;type:varchar(64);default:''"`
@@ -93,10 +95,13 @@ type ToolCall struct {
 	SideEffectReceipt           string     `gorm:"not null;type:varchar(100);default:''"`
 	IdempotencyKey              string     `gorm:"not null;type:varchar(100);default:''"`
 	DispatchSequence            uint64     `gorm:"not null;default:0"`
+	DispatchCommittedAt         *time.Time `gorm:"type:timestamp"`
 	PayloadHash                 string     `gorm:"not null;type:varchar(64);default:''"`
 	ReplayPolicy                int32      `gorm:"not null;default:0"`
 	ExternalIdempotencyKey      string     `gorm:"not null;type:varchar(100);default:''"`
 	ReceiptRecoveryCredentialID string     `gorm:"not null;type:varchar(64);default:'';index"`
+	ExecutionAttemptCount       uint32     `gorm:"not null;default:0"`
+	DuplicateDeliveryCount      uint32     `gorm:"not null;default:0"`
 	Status                      string     `gorm:"not null;type:varchar(25);index"`
 	ResultRef                   string     `gorm:"not null;type:text;default:''"`
 	ResultID                    string     `gorm:"not null;type:varchar(64);default:''"`

@@ -1,7 +1,9 @@
 use crate::domain::storage::database::{DatabaseOpenSpec, EncryptionLevel};
 use crate::infrastructure::storage;
 use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
-use crate::model::agent::{ClientCapabilityReceipt, ClientCapabilityRequest};
+use crate::model::agent::{
+    ClientCapabilityReceipt, ClientCapabilityReceiptStatus, ClientCapabilityRequest,
+};
 use prost::Message;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 #[cfg(test)]
@@ -26,6 +28,12 @@ pub struct ReceiptRecord {
     pub station_url: String,
     pub envelope: ClientCapabilityRequest,
     pub receipt: ClientCapabilityReceipt,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolCallSideEffectCount {
+    pub tool_call_id: String,
+    pub side_effect_count: u64,
 }
 
 impl ReceiptLedger {
@@ -113,6 +121,73 @@ impl ReceiptLedger {
             let (station_url, envelope, receipt) =
                 row.map_err(|error| format!("read client capability receipt row: {error}"))?;
             decode_record(station_url, &envelope, &receipt)
+        })
+        .collect()
+    }
+
+    pub fn record_side_effect_start(
+        &self,
+        envelope: &ClientCapabilityRequest,
+    ) -> Result<(), String> {
+        let envelope_bytes = envelope.encode_to_vec();
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| format!("begin side-effect counter transaction: {error}"))?;
+        let existing = load_tx(&transaction, &envelope.tool_call_id, envelope.fencing_token)?
+            .ok_or_else(|| "CLIENT_CAPABILITY_PREPARED_RECEIPT_MISSING".to_string())?;
+        if existing.envelope.encode_to_vec() != envelope_bytes {
+            return Err("CLIENT_CAPABILITY_ENVELOPE_CONFLICT".to_string());
+        }
+        if existing.receipt.status != ClientCapabilityReceiptStatus::Prepared as i32 {
+            return Err("CLIENT_CAPABILITY_SIDE_EFFECT_AFTER_TERMINAL".to_string());
+        }
+        let updated = transaction
+            .execute(
+                "UPDATE client_capability_receipts
+                 SET side_effect_count = side_effect_count + 1, updated_at_ms = ?1
+                 WHERE tool_call_id = ?2 AND fencing_token = ?3
+                   AND side_effect_count = 0",
+                params![
+                    now_unix_ms(),
+                    envelope.tool_call_id,
+                    to_sql_u64("fencing_token", envelope.fencing_token)?,
+                ],
+            )
+            .map_err(|error| format!("persist ToolCall side-effect count: {error}"))?;
+        if updated != 1 {
+            return Err("CLIENT_CAPABILITY_SIDE_EFFECT_ALREADY_STARTED".to_string());
+        }
+        transaction
+            .commit()
+            .map_err(|error| format!("commit ToolCall side-effect count: {error}"))
+    }
+
+    pub fn side_effect_counts(&self) -> Result<Vec<ToolCallSideEffectCount>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT tool_call_id, SUM(side_effect_count)
+                 FROM client_capability_receipts
+                 GROUP BY tool_call_id
+                 HAVING SUM(side_effect_count) > 0
+                 ORDER BY tool_call_id ASC",
+            )
+            .map_err(|error| format!("prepare ToolCall side-effect count scan: {error}"))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|error| format!("scan ToolCall side-effect counts: {error}"))?;
+        rows.map(|row| {
+            let (tool_call_id, side_effect_count) =
+                row.map_err(|error| format!("read ToolCall side-effect count row: {error}"))?;
+            Ok(ToolCallSideEffectCount {
+                tool_call_id,
+                side_effect_count: u64::try_from(side_effect_count).map_err(|_| {
+                    "ToolCall side-effect count is outside the supported range".to_string()
+                })?,
+            })
         })
         .collect()
     }
@@ -242,6 +317,7 @@ impl ReceiptLedger {
                     station_url TEXT NOT NULL,
                     envelope BLOB NOT NULL,
                     receipt BLOB NOT NULL,
+                    side_effect_count INTEGER NOT NULL DEFAULT 0,
                     updated_at_ms INTEGER NOT NULL,
                     PRIMARY KEY(tool_call_id, fencing_token),
                     UNIQUE(request_id)
@@ -275,6 +351,34 @@ impl ReceiptLedger {
                     [],
                 )
                 .map_err(|error| format!("add receipt Station origin: {error}"))?;
+        }
+        let has_side_effect_count = {
+            let mut statement = connection
+                .prepare("PRAGMA table_info(client_capability_receipts)")
+                .map_err(|error| format!("inspect client capability receipt ledger: {error}"))?;
+            let columns = statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|error| format!("read client capability receipt columns: {error}"))?;
+            let mut found = false;
+            for column in columns {
+                if column
+                    .map_err(|error| format!("decode client capability receipt column: {error}"))?
+                    == "side_effect_count"
+                {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        };
+        if !has_side_effect_count {
+            connection
+                .execute(
+                    "ALTER TABLE client_capability_receipts
+                     ADD COLUMN side_effect_count INTEGER NOT NULL DEFAULT 0",
+                    [],
+                )
+                .map_err(|error| format!("add ToolCall side-effect counter: {error}"))?;
         }
         Ok(())
     }

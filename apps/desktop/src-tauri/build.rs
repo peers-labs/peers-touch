@@ -90,14 +90,8 @@ fn compile_protos() {
     }
 
     prost_build::Config::new()
-        .extern_path(
-            ".peers_touch.model.chat.v1",
-            "crate::model::chat",
-        )
-        .extern_path(
-            ".peers_touch.model.common.v1",
-            "crate::model::common",
-        )
+        .extern_path(".peers_touch.model.chat.v1", "crate::model::chat")
+        .extern_path(".peers_touch.model.common.v1", "crate::model::common")
         .compile_protos(&proto_files, &[&proto_root])
         .expect("Failed to compile proto files");
 }

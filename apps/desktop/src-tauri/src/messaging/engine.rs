@@ -242,7 +242,9 @@ impl MessagingEngine {
         self.mls_manager.actor_identity()
     }
 
-    pub fn device_signing_identity(&self) -> Result<Option<(String, ed25519_dalek::SigningKey)>, String> {
+    pub fn device_signing_identity(
+        &self,
+    ) -> Result<Option<(String, ed25519_dalek::SigningKey)>, String> {
         let Some((seed, key_id)) = self.store.device_signing_seed()? else {
             return Ok(None);
         };
@@ -983,9 +985,7 @@ impl MessagingEngine {
         let (projection, _) = self
             .store
             .message_projection(conversation_id, message_id)?
-            .ok_or_else(|| {
-                "messaging interaction target projection is unavailable".to_string()
-            })?;
+            .ok_or_else(|| "messaging interaction target projection is unavailable".to_string())?;
         if matches!(interaction, MetadataInteraction::Retract)
             && projection.sender_ptid != self.endpoint.ptid
         {

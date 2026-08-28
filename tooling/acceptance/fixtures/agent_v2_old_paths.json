@@ -4,12 +4,13 @@
     "deleted-authority",
     "retained-local-executor",
     "retained-station-service",
+    "retained-nonbinding-config",
     "retained-guarded-downstream",
     "historical-migration-reader",
     "test-fixture"
   ],
   "discovery": {
-    "pattern": "\\bChatStore\\b|executeAgentTurnOnce|resolveAgentModelRef|buildAgentRuntimeConfig|buildAgentTurnDiagnosticsExport|agent-turn-diagnostics\\.v1|Replay through AgentExecuteTurnInput|default_cli_command|is_cli_provider|is_cli_turn|falling back to non-streaming|provider_remote::chat_completion|executeCLITurn|HandleVerifyCli|HandleFetchCliModels|replayAgentConversationEvents|stream_cancel_registry|stream_turn_registry|chatTaskEventSeq|deriveProviderReadiness|runtimeKind === 'cli'|hasCliCommand|provider\\.runtime_kind === 'direct'|catalogProviderReadyForAgent|catalogModelAvailableForAgent|cliRegistry\\.IsRegistered|\\bClientCapabilitySession\\b|executionOwner\\??:.*desktop-rust|owner: 'desktop-rust'|decideToolApproval|tool_approval_registry|pendingCalls|chatConfig|enabledTools|useMCPStore|\\bMcpStore\\b|McpServerRecord|mcp_process|peers-eval-datasets|quickCompletion|CustomPluginsPage|useCustomPluginsStore|peers-ai-custom-plugins|ecosystem/plugin|ecosystem_custom_plugins",
+    "pattern": "\\bChatStore\\b|executeAgentTurnOnce|resolveAgentModelRef|buildAgentRuntimeConfig|buildAgentTurnDiagnosticsExport|agent-turn-diagnostics\\.v1|Replay through AgentExecuteTurnInput|default_cli_command|is_cli_provider|is_cli_turn|falling back to non-streaming|provider_remote::chat_completion|executeCLITurn|HandleVerifyCli|HandleFetchCliModels|replayAgentConversationEvents|stream_cancel_registry|stream_turn_registry|chatTaskEventSeq|deriveProviderReadiness|runtimeKind === 'cli'|hasCliCommand|provider\\.runtime_kind === 'direct'|catalogProviderReadyForAgent|catalogModelAvailableForAgent|cliRegistry\\.IsRegistered|\\bClientCapabilitySession\\b|executionOwner\\??:.*desktop-rust|owner: 'desktop-rust'|decideToolApproval|tool_approval_registry|pendingCalls|chatConfig|enabledTools|/config/(knowledge|skill|mcp)/(list|create|update|delete)|NewAgentConfigHandlers|NewAgentConfigService|type AgentConfigService interface|useMCPStore|\\bMcpStore\\b|McpServerRecord|mcp_process|peers-eval-datasets|quickCompletion|CustomPluginsPage|useCustomPluginsStore|peers-ai-custom-plugins|ecosystem/plugin|ecosystem_custom_plugins",
     "paths": [
       "apps/desktop/src",
       "apps/desktop/src-tauri/src",
@@ -198,7 +199,14 @@
       "pattern": "\\bClientCapabilitySession\\b",
       "paths": [
         "apps/desktop/src/gen/proto/domain/agent/agent_pb.ts",
+        "apps/desktop/src-tauri/src/application/runtime_evidence.rs",
         "apps/station/app/subserver/agent/model/agent.pb.go",
+        "apps/station/app/subserver/agent/service/runtime_readiness_service.go",
+        "apps/station/app/subserver/agent/service/runtime_readiness_service_test.go",
+        "apps/station/app/subserver/agent/service/capability_readiness_authority_service.go",
+        "apps/station/app/subserver/agent/service/capability_authority_service_test.go",
+        "apps/station/app/subserver/agent/service/tool_dispatch_service.go",
+        "apps/station/app/subserver/agent/service/tool_dispatch_service_test.go",
         "model/domain/agent/agent.proto"
       ]
     },
@@ -279,7 +287,7 @@
     },
     {
       "id": "desktop-owner-in-shared-agent-semantics",
-      "closures": ["C07", "C10"],
+      "closures": ["C07", "C10", "C13-TOOLCALL"],
       "disposition": "deleted-authority",
       "pattern": "desktop-rust",
       "paths": [
@@ -322,7 +330,7 @@
     },
     {
       "id": "legacy-approval-authority",
-      "closures": ["C07", "C09"],
+      "closures": ["C07", "C09", "C13-TOOLCALL"],
       "disposition": "deleted-authority",
       "pattern": "decideToolApproval|tool_approval_registry|pendingCalls",
       "paths": [
@@ -343,15 +351,171 @@
       "id": "embedded-agent-capability-bindings",
       "closures": ["C12"],
       "disposition": "deleted-authority",
-      "pattern": "chatConfig|enabledTools",
+      "pattern": "mcpServers|enabledTools|AgentConnectorConfigEntry|chatConfig\\.(tools|skills|mcpServers|connectors)|chat_config\\.get\\(\"(tools|skills|mcpServers|connectors)\"\\)",
+      "paths": [
+        "apps/desktop/src/services/desktop_api.ts",
+        "apps/desktop/src/services/agent-service.ts",
+        "apps/desktop/src/services/mock-gateway.ts",
+        "apps/desktop/src/store/agent.ts",
+        "apps/desktop/src/store/agentConnectors.ts",
+        "apps/desktop/src/pages/AgentProfilePage.tsx",
+        "apps/desktop/src/components/AgentSidebar.tsx",
+        "apps/desktop/src/components/agent/AgentConnectorsPanel.tsx",
+        "apps/desktop/src/acceptance/agent/harness.ts"
+      ]
+    },
+    {
+      "id": "agent-package-legacy-binding-rejection",
+      "closures": ["C12"],
+      "disposition": "retained-guarded-downstream",
+      "pattern": "config\\.remove\\(\"(mcpServers|tools|skills)\"\\)|if \\[\"mcpServers\", \"tools\", \"skills\"\\]",
+      "paths": [
+        "apps/desktop/src-tauri/src/application/agents/mod.rs"
+      ]
+    },
+    {
+      "id": "agent-package-legacy-binding-fixture",
+      "closures": ["C12"],
+      "disposition": "test-fixture",
+      "pattern": "chatConfig|chatBehavior.*mcpServers|\"mcpServers\": \\[\"local\"\\]",
+      "paths": [
+        "apps/desktop/src-tauri/src/application/agents/mod.rs",
+        "apps/desktop/src-tauri/src/application/skills_market/mod.rs"
+      ]
+    },
+    {
+      "id": "legacy-desktop-agent-package-authority",
+      "closures": ["C12"],
+      "disposition": "deleted-authority",
+      "pattern": "agents_export_package|agents_import_package|AgentPackageExportInput|AgentPackageImportInput|rollback_agent_package_import|import_failure_after_rollback|package_binding_idempotency_key",
+      "paths": [
+        "apps/desktop/src-tauri/src"
+      ]
+    },
+    {
+      "id": "legacy-agent-binding-proto-contracts",
+      "closures": ["C12"],
+      "disposition": "deleted-authority",
+      "pattern": "AgentKnowledgeBinding|AgentSkillBinding|AgentMcpBinding|(List|Create|Update|Delete)Agent(Knowledge|Skill|Mcp)Bindings?",
+      "paths": [
+        "model/domain/agent/agent_config.proto",
+        "apps/station/app/subserver/agent/model/agent_config.pb.go",
+        "apps/desktop/src/gen/proto/domain/agent/agent_config_pb.ts",
+        "apps/mobile/src/gen/proto/domain/agent/agent_config_pb.ts"
+      ]
+    },
+    {
+      "id": "station-agent-package-chat-config-guard",
+      "closures": ["C12"],
+      "disposition": "retained-guarded-downstream",
+      "pattern": "chatConfig|chat_config",
+      "paths": [
+        "apps/station/app/subserver/agent/service/agent_package_service.go"
+      ]
+    },
+    {
+      "id": "station-agent-package-chat-config-fixture",
+      "closures": ["C12"],
+      "disposition": "test-fixture",
+      "pattern": "chatConfig|chat_config",
+      "paths": [
+        "apps/station/app/subserver/agent/service/agent_package_service_test.go"
+      ]
+    },
+    {
+      "id": "agent-nonbinding-behavior-config",
+      "closures": ["C12"],
+      "disposition": "retained-nonbinding-config",
+      "pattern": "chatConfig",
       "paths": [
         "apps/desktop/src",
         "apps/desktop/src-tauri/src/application/agents"
       ]
     },
     {
+      "id": "capability-binding-backfill-reader",
+      "closures": ["C12"],
+      "disposition": "historical-migration-reader",
+      "pattern": "chatConfig|enabledTools",
+      "paths": [
+        "apps/station/app/subserver/agent/service/capability_backfill_service.go"
+      ]
+    },
+    {
+      "id": "capability-binding-backfill-fixture",
+      "closures": ["C12"],
+      "disposition": "test-fixture",
+      "pattern": "chatConfig|enabledTools",
+      "paths": [
+        "apps/station/app/subserver/agent/service/capability_authority_service_test.go"
+      ]
+    },
+    {
+      "id": "legacy-station-agent-config-binding-crud",
+      "closures": ["C12"],
+      "disposition": "deleted-authority",
+      "pattern": "/config/(knowledge|skill|mcp)/(list|create|update|delete)|NewAgentConfigHandlers|NewAgentConfigService|type AgentConfigService interface",
+      "paths": [
+        "apps/station/app/subserver/agent/agent.go",
+        "apps/station/app/subserver/agent/handler/agent_config_handler.go",
+        "apps/station/app/subserver/agent/service/agent_config_service.go",
+        "apps/station/app/subserver/agent/domain/agent_config_service.go"
+      ]
+    },
+    {
+      "id": "legacy-client-agent-config-binding-crud",
+      "closures": ["C12"],
+      "disposition": "deleted-authority",
+      "pattern": "/sub-agent/config/(knowledge|skill|mcp)/(list|create|update|delete)",
+      "paths": [
+        "apps/desktop/src-tauri/src/application/agent_turn/mod.rs"
+      ]
+    },
+    {
+      "id": "request-supplied-knowledge-authority",
+      "closures": ["C12"],
+      "disposition": "deleted-authority",
+      "pattern": "knowledge_resources|KnowledgeResources|knowledgeResources",
+      "paths": [
+        "apps/station/app/subserver/agent/service/turn_service.go",
+        "apps/desktop/src/services/desktop_api.ts",
+        "apps/desktop/src/store/agent.ts",
+        "apps/desktop/src/pages/AgentProfilePage.tsx",
+        "apps/desktop/src-tauri/src/contracts.rs",
+        "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
+        "apps/desktop/src-tauri/src/application/agents/mod.rs"
+      ]
+    },
+    {
+      "id": "request-supplied-knowledge-guard",
+      "closures": ["C12"],
+      "disposition": "retained-guarded-downstream",
+      "pattern": "knowledge_resources|knowledgeResources",
+      "paths": [
+        "apps/station/app/subserver/agent/handler/turn_handler.go"
+      ]
+    },
+    {
+      "id": "reserved-knowledge-wire-field",
+      "closures": ["C12"],
+      "disposition": "historical-migration-reader",
+      "pattern": "reserved \"knowledge_resources\"",
+      "paths": [
+        "model/domain/agent/agent.proto"
+      ]
+    },
+    {
+      "id": "station-turn-time-knowledge-locator",
+      "closures": ["C12"],
+      "disposition": "deleted-authority",
+      "pattern": "loadKnowledgeDirectory|loadKnowledgeFileOrLiteral|loadURL\\(",
+      "paths": [
+        "apps/station/app/subserver/agent/service/knowledge_retrieval_service.go"
+      ]
+    },
+    {
       "id": "client-mcp-process-owner",
-      "closures": ["C13"],
+      "closures": ["C13-OPERATION"],
       "disposition": "retained-local-executor",
       "pattern": "useMCPStore|McpStore|McpServerRecord|mcp_process",
       "paths": [
@@ -361,7 +525,7 @@
     },
     {
       "id": "client-mcp-projection-consumers",
-      "closures": ["C13"],
+      "closures": ["C13-OPERATION"],
       "disposition": "deleted-authority",
       "pattern": "useMCPStore",
       "paths": [
@@ -412,7 +576,7 @@
     },
     {
       "id": "rejected-custom-http-plugin",
-      "closures": ["C12", "C13", "C14"],
+      "closures": ["C14"],
       "disposition": "deleted-authority",
       "pattern": "CustomPlugin|customPlugins|custom-plugins|peers-ai-custom-plugins|ecosystem/plugin|ecosystem_custom_plugins",
       "paths": [

@@ -16,6 +16,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"gorm.io/gorm"
 )
 
 const memoryGuidance = `## Memory
@@ -79,7 +80,8 @@ type promptBuildInput struct {
 	agentConfigPrompt string
 	availableTools    []string
 	userInput         string
-	knowledgeResources []domain.KnowledgeResource
+	db                *gorm.DB
+	authorized        *AuthorizedCapabilitySet
 	memoryDisabled    bool
 }
 
@@ -153,8 +155,8 @@ type memoryProcessor struct {
 func (p memoryProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
 	if in.memoryDisabled || p.memoryService == nil {
 		return []ContextSegment{{
-			Type:   model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MEMORY,
-			Decision: model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED,
+			Type:           model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MEMORY,
+			Decision:       model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED,
 			DecisionReason: "memory_disabled",
 		}}, nil
 	}
@@ -185,7 +187,12 @@ func (p skillsProcessor) process(in *promptBuildInput) ([]ContextSegment, error)
 		return nil, nil
 	}
 
-	skillIndex, skillCount, err := p.skillService.BuildSkillIndex(in.ctx, in.agentID, in.availableTools)
+	skillIndex, skillCount, err := p.skillService.BuildAuthorizedSkillIndex(
+		in.ctx,
+		in.agentID,
+		in.availableTools,
+		in.authorized,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("build skill index: %w", err)
 	}
@@ -230,18 +237,13 @@ type knowledgeProcessor struct {
 }
 
 func (p knowledgeProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
-	if len(in.knowledgeResources) == 0 || p.retrieval == nil {
+	if p.retrieval == nil {
 		return nil, nil
 	}
 
-	result, err := p.retrieval.Retrieve(in.ctx, in.knowledgeResources, in.userInput)
+	result, err := p.retrieval.Retrieve(in.ctx, in.db, in.authorized, in.userInput)
 	if err != nil {
-		logger.Warnf(in.ctx, "prompt assembly: knowledge retrieval failed for agent %s: %v", in.agentID, err)
-		return []ContextSegment{{
-			Type:           model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_KNOWLEDGE,
-			Decision:       model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED,
-			DecisionReason: "retrieval_failed",
-		}}, nil
+		return nil, fmt.Errorf("retrieve authorized Knowledge: %w", err)
 	}
 
 	if result.PromptBlock == "" {
@@ -317,7 +319,8 @@ func (s *PromptAssemblyService) Assemble(
 	agentConfigPrompt string,
 	availableTools []string,
 	userInput string,
-	knowledgeResources []domain.KnowledgeResource,
+	db *gorm.DB,
+	authorized *AuthorizedCapabilitySet,
 	memoryDisabled bool,
 ) (*PromptAssemblyResult, error) {
 
@@ -328,7 +331,8 @@ func (s *PromptAssemblyService) Assemble(
 		agentConfigPrompt: agentConfigPrompt,
 		availableTools:    availableTools,
 		userInput:         userInput,
-		knowledgeResources: knowledgeResources,
+		db:                db,
+		authorized:        authorized,
 		memoryDisabled:    memoryDisabled,
 	}
 

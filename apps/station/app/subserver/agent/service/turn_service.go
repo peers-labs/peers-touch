@@ -84,7 +84,7 @@ type TurnConfig struct {
 	ThinkingMode              domain.ThinkingMode
 	FallbackModel             string // Alternate model for billing/model_not_found fallback recovery.
 	WorkspaceRoot             string
-	KnowledgeResources        []domain.KnowledgeResource
+	AuthorizedCapabilities    *AuthorizedCapabilitySet
 	PrecreatedTurnID          string
 	ExistingTurnID            string
 	SkipUserMessage           bool
@@ -152,33 +152,40 @@ type continuationProviderCall func(
 // credential lease → provider call → error recovery → tool dispatch →
 // nudge evaluation → persistence.
 type TurnService struct {
-	errorClassifier    *ErrorClassifierService
-	memoryService      *MemoryService
-	skillService       *SkillService
-	promptAssembly     *PromptAssemblyService
-	compression        *CompressionService
-	providerService    *ProviderService
-	credentialPool     *CredentialPoolService
-	delegation         *DelegationService
-	toolRegistry       *ToolRegistryService
-	reviewService      *ReviewService
-	growthMetrics      *GrowthMetricsService
-	convService        *ConversationService
-	nudgeState         *domain.NudgeState
-	liveResumeBroker   *LiveResumeBroker
-	toolDispatch       *ToolDispatchService
-	chatTaskService    *ChatTaskService
-	eventBus           domain.EventBus
-	eventWriter        *TaskEventWriter
-	activeTurns        sync.Mutex
-	activeTurnCancel   map[string]context.CancelFunc
-	admissionResolver  *RuntimeAdmissionResolver
-	turnAdmission      *TurnAdmissionService
-	resumeProviderCall continuationProviderCall
+	errorClassifier     *ErrorClassifierService
+	memoryService       *MemoryService
+	skillService        *SkillService
+	promptAssembly      *PromptAssemblyService
+	compression         *CompressionService
+	providerService     *ProviderService
+	credentialPool      *CredentialPoolService
+	delegation          *DelegationService
+	toolRegistry        *ToolRegistryService
+	reviewService       *ReviewService
+	growthMetrics       *GrowthMetricsService
+	convService         *ConversationService
+	nudgeState          *domain.NudgeState
+	liveResumeBroker    *LiveResumeBroker
+	toolDispatch        *ToolDispatchService
+	chatTaskService     *ChatTaskService
+	eventBus            domain.EventBus
+	eventWriter         *TaskEventWriter
+	activeTurns         sync.Mutex
+	activeTurnCancel    map[string]context.CancelFunc
+	admissionResolver   *RuntimeAdmissionResolver
+	capabilityReadiness *CapabilityAuthorityReadinessService
+	turnAdmission       *TurnAdmissionService
+	resumeProviderCall  continuationProviderCall
 }
 
 func (s *TurnService) SetAdmissionResolver(r *RuntimeAdmissionResolver) {
 	s.admissionResolver = r
+}
+
+func (s *TurnService) SetCapabilityReadiness(
+	readiness *CapabilityAuthorityReadinessService,
+) {
+	s.capabilityReadiness = readiness
 }
 
 func (s *TurnService) SetTurnAdmissionService(admission *TurnAdmissionService) {
@@ -369,10 +376,6 @@ func (s *TurnService) queuedTurnConfig(
 	if maxRetries <= 0 {
 		maxRetries = 3
 	}
-	var availableTools []string
-	if s.toolRegistry != nil {
-		availableTools = s.toolRegistry.ToolNames()
-	}
 	return &TurnConfig{
 		TurnID:                    turnID,
 		PrecreatedTurnID:          turnID,
@@ -381,7 +384,6 @@ func (s *TurnService) queuedTurnConfig(
 		ConversationID:            request.GetConversationId(),
 		Identity:                  request.GetIdentity(),
 		AgentConfigPrompt:         request.GetAgentConfigPrompt(),
-		AvailableTools:            availableTools,
 		ContextWindowSize:         contextWindowSize,
 		MaxRetries:                maxRetries,
 		Provider:                  request.GetProvider(),
@@ -389,62 +391,7 @@ func (s *TurnService) queuedTurnConfig(
 		Effort:                    request.GetEffort(),
 		ThinkingMode:              domain.ThinkingMode(request.GetThinkingMode()),
 		ClientCapabilitySessionID: request.GetClientCapabilitySessionId(),
-		KnowledgeResources:        queuedKnowledgeResources(request),
 		MemoryDisabled:            request.GetMemoryDisabled(),
-	}
-}
-
-func queuedKnowledgeResources(request *model.ExecuteTurnRequest) []domain.KnowledgeResource {
-	resources := request.GetKnowledgeResources()
-	result := make([]domain.KnowledgeResource, 0, len(resources))
-	for _, resource := range resources {
-		if strings.TrimSpace(resource.GetSource()) == "" {
-			continue
-		}
-		result = append(result, domain.KnowledgeResource{
-			ResourceID: resource.GetResourceId(),
-			AgentID:    resource.GetAgentId(),
-			Type:       queuedKnowledgeResourceType(resource.GetType()),
-			Title:      resource.GetTitle(),
-			Source:     resource.GetSource(),
-			Policy:     queuedKnowledgeResourcePolicy(resource.GetPolicy()),
-			Status:     resource.GetStatus().String(),
-		})
-	}
-	return result
-}
-
-func queuedKnowledgeResourceType(
-	value model.KnowledgeResourceType,
-) domain.KnowledgeResourceType {
-	switch value {
-	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_FOLDER:
-		return domain.KnowledgeResourceTypeFolder
-	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_PROJECT:
-		return domain.KnowledgeResourceTypeProject
-	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_URL:
-		return domain.KnowledgeResourceTypeURL
-	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_NOTEBOOK:
-		return domain.KnowledgeResourceTypeNotebook
-	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_WORKSPACE:
-		return domain.KnowledgeResourceTypeWorkspace
-	default:
-		return domain.KnowledgeResourceTypeDocument
-	}
-}
-
-func queuedKnowledgeResourcePolicy(
-	value model.KnowledgeResourcePolicy,
-) domain.KnowledgeResourcePolicy {
-	switch value {
-	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_AUTO:
-		return domain.KnowledgeResourcePolicyAuto
-	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_ALWAYS:
-		return domain.KnowledgeResourcePolicyAlways
-	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_DISABLED:
-		return domain.KnowledgeResourcePolicyDisabled
-	default:
-		return domain.KnowledgeResourcePolicyManual
 	}
 }
 
@@ -759,6 +706,53 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 	config.ThinkingMode = thinkingMode
 
+	if s.admissionResolver == nil || s.capabilityReadiness == nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime admission and capability readiness authority are required",
+			nil,
+		)
+	}
+	runtimeSnapshot, admitErr := s.admissionResolver.Resolve(
+		ctx,
+		config.ActorID,
+		config.Provider,
+		config.Model,
+	)
+	if admitErr != nil {
+		return nil, admitErr
+	}
+	readiness, agentVersion, readinessErr := s.capabilityReadiness.ResolveForTurn(
+		ctx,
+		config.ActorID,
+		config.AgentID,
+		config.ClientCapabilitySessionID,
+		runtimeSnapshot,
+	)
+	if readinessErr != nil {
+		return nil, readinessErr
+	}
+	if persistErr := s.persistRuntimeAuthority(
+		ctx,
+		config,
+		runtimeSnapshot,
+		readiness,
+		agentVersion,
+	); persistErr != nil {
+		return nil, persistErr
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	config.AuthorizedCapabilities, err = LoadAuthorizedCapabilitySet(ctx, db, config)
+	if err != nil {
+		return nil, err
+	}
+	config.AvailableTools = config.AuthorizedCapabilities.ToolNames()
+	trace.CapabilitySnapshotID = config.AuthorizedCapabilities.SnapshotID
+
 	logger.Infof(ctx, "turn started: turn_id=%s agent_id=%s conversation_id=%s provider=%s",
 		turnID, config.AgentID, config.ConversationID, config.Provider)
 	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
@@ -792,7 +786,8 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		config.AgentConfigPrompt,
 		config.AvailableTools,
 		processedInput,
-		config.KnowledgeResources,
+		db,
+		config.AuthorizedCapabilities,
 		config.MemoryDisabled,
 	)
 	if err != nil {
@@ -870,31 +865,6 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			Update("context_ledger", string(ledgerJSON)).Error; updateErr != nil {
 			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"persist turn attempt context ledger", updateErr)
-		}
-	}
-
-	// Step 6 — Admission gate: resolve capability/budget snapshot BEFORE
-	// any provider call. Rejection here guarantees zero provider calls.
-	if s.admissionResolver != nil {
-		snapshot, admitErr := s.admissionResolver.Resolve(ctx, config.ActorID, config.Provider, config.Model)
-		if admitErr != nil {
-			_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "admission rejected")
-			s.emitTurnEvent(ctx, config, turnID, TurnEvent{
-				Type:  "error",
-				Stage: "admission_rejected",
-				Error: admitErr.Error(),
-			})
-			return nil, admitErr
-		}
-		trace.CapabilitySnapshotID = snapshot.SnapshotID
-		if persistErr := s.persistRuntimeAuthority(ctx, config, snapshot); persistErr != nil {
-			_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "runtime authority rejected")
-			s.emitTurnEvent(ctx, config, turnID, TurnEvent{
-				Type:  "error",
-				Stage: "runtime_authority_rejected",
-				Error: persistErr.Error(),
-			})
-			return nil, persistErr
 		}
 	}
 
@@ -1211,6 +1181,10 @@ func (s *TurnService) runCompression(
 		turnID, compResult.TokensBefore, compResult.TokensAfter, compResult.WasPruned)
 
 	// Rebuild system prompt with fresh snapshot after compression.
+	db, dbErr := s.getDB(ctx)
+	if dbErr != nil {
+		return nil, dbErr
+	}
 	freshAssembly, freshErr := s.promptAssembly.Assemble(
 		ctx,
 		config.AgentID,
@@ -1218,7 +1192,8 @@ func (s *TurnService) runCompression(
 		config.AgentConfigPrompt,
 		config.AvailableTools,
 		messages[len(messages)-1].Content,
-		config.KnowledgeResources,
+		db,
+		config.AuthorizedCapabilities,
 		config.MemoryDisabled,
 	)
 	if freshErr != nil {
@@ -1575,10 +1550,9 @@ func (s *TurnService) processToolCalls(
 		})
 
 		toolBatchID := stableToolBatchID(turnID, config.AttemptID, iterations)
-		clientProposals := make([]ClientToolProposal, 0, len(toolCalls))
+		proposals := make([]AuthorizedToolProposal, 0, len(toolCalls))
 
 		for index, tc := range toolCalls {
-			callStart := time.Now()
 			callID := stableToolCallID(toolBatchID, index, tc)
 			s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 				Type:       "tool_call",
@@ -1588,111 +1562,57 @@ func (s *TurnService) processToolCalls(
 				Iteration:  iterations,
 			})
 
-			if isClientOwnedTool(tc.ToolName) {
-				capabilityID := capabilityIDForTool(tc.ToolName)
-				if capabilityID == "" {
-					return iterations, false, fmt.Errorf("client capability mapping missing for %s", tc.ToolName)
-				}
-				clientProposals = append(clientProposals, ClientToolProposal{
-					ToolCallID:    callID,
-					ToolName:      tc.ToolName,
-					CapabilityID:  capabilityID,
-					SchemaVersion: "1",
-					Arguments:     []byte(tc.Arguments),
-				})
-				continue
-			}
-
-			var toolResult string
-			var toolErr error
-
-			meta := &domain.ToolCallMeta{
-				AgentID:        config.AgentID,
-				ConversationID: config.ConversationID,
-				TurnID:         turnID,
-			}
-
-			if tc.ToolName == "station_human_decision_resume" {
-				toolResult, toolErr = s.executeStationHumanDecisionResumeTool(ctx, config, turnID, tc)
-			} else if tc.ToolName == "delegate_task" {
-				toolResult, toolErr = s.executeDelegation(ctx, turnID, tc, config)
-			} else {
-				result := s.toolRegistry.Dispatch(ctx, meta, tc.ToolName, tc.Arguments)
-				toolResult = result.Content
-				if result.IsError {
-					toolErr = fmt.Errorf("%s", result.Content)
-				}
-			}
-
-			if err := s.recordToolOutcome(
-				ctx,
-				config,
-				turnID,
-				trace,
-				&messages,
-				callID,
-				tc,
-				toolResult,
-				toolErr,
-				time.Since(callStart),
-				iterations,
-				true,
-			); err != nil {
-				return iterations, false, err
-			}
-		}
-
-		if len(clientProposals) > 0 {
-			if s.toolDispatch == nil {
-				return iterations, false, fmt.Errorf("tool dispatch not configured")
-			}
-			if strings.TrimSpace(config.ClientCapabilitySessionID) == "" {
-				return iterations, false, errcode.New(
-					errcode.AgentInvalidRequest,
-					http.StatusConflict,
-					"client capability session is required for device-local tools",
+			authorized, ok := config.AuthorizedCapabilities.Tool(tc.ToolName)
+			if !ok {
+				return iterations, false, capabilityStateError(
+					"tool is not authorized by the admitted capability set",
 					nil,
 				)
 			}
-			decisions, err := s.toolDispatch.ProposeBatch(ctx, ToolBatchProposal{
-				ActorID:                   config.ActorID,
-				TurnID:                    turnID,
-				AttemptID:                 config.AttemptID,
-				ToolBatchID:               toolBatchID,
-				ConversationID:            config.ConversationID,
-				AgentID:                   config.AgentID,
-				Provider:                  config.Provider,
-				Model:                     config.Model,
-				Effort:                    config.Effort,
-				ThinkingMode:              string(config.ThinkingMode),
-				SystemPrompt:              systemPrompt,
-				Iteration:                 uint32(iterations),
-				MaxRetries:                uint32(config.MaxRetries),
-				ContextWindowSize:         uint32(config.ContextWindowSize),
-				TaskID:                    config.TaskID,
-				StepID:                    config.StepID,
-				ClientCapabilitySessionID: config.ClientCapabilitySessionID,
-				Deadline:                  time.Now().UTC().Add(localToolTimeout),
-				Calls:                     clientProposals,
+			proposals = append(proposals, AuthorizedToolProposal{
+				ToolCallID:      callID,
+				ToolName:        tc.ToolName,
+				CapabilityID:    authorized.Manifest.GetCapabilityId(),
+				SchemaVersion:   authorized.Manifest.GetVersion(),
+				BindingID:       authorized.Binding.GetBindingId(),
+				BindingRevision: authorized.Binding.GetRevision(),
+				ExecutionOwner:  authorized.Manifest.GetExecutionOwner(),
+				Arguments:       []byte(tc.Arguments),
 			})
-			if err != nil {
-				return iterations, false, err
-			}
-			for _, decision := range decisions {
-				s.emitTurnEvent(ctx, config, turnID, toolDecisionTurnEvent(decision, iterations))
-			}
-			return iterations, true, nil
 		}
 
-		nextResponse, providerCalls, _, reCallErr := s.providerCallWithRetry(
-			ctx, config, turnID, trace, systemPrompt, messages,
-		)
-		if reCallErr != nil {
-			return iterations, false, fmt.Errorf("provider re-call after tool iteration %d: %w", iterations, reCallErr)
+		if s.toolDispatch == nil {
+			return iterations, false, fmt.Errorf("tool dispatch not configured")
 		}
-		trace.ProviderCalls = append(trace.ProviderCalls, providerCalls...)
-
-		*responsePtr = nextResponse
+		decisions, err := s.toolDispatch.ProposeAuthorizedBatch(ctx, ToolBatchProposal{
+			ActorID:                   config.ActorID,
+			TurnID:                    turnID,
+			AttemptID:                 config.AttemptID,
+			ToolBatchID:               toolBatchID,
+			ConversationID:            config.ConversationID,
+			AgentID:                   config.AgentID,
+			Provider:                  config.Provider,
+			Model:                     config.Model,
+			Effort:                    config.Effort,
+			ThinkingMode:              string(config.ThinkingMode),
+			SystemPrompt:              systemPrompt,
+			Iteration:                 uint32(iterations),
+			MaxRetries:                uint32(config.MaxRetries),
+			ContextWindowSize:         uint32(config.ContextWindowSize),
+			TaskID:                    config.TaskID,
+			StepID:                    config.StepID,
+			ClientCapabilitySessionID: config.ClientCapabilitySessionID,
+			ReadinessSnapshotID:       config.AuthorizedCapabilities.SnapshotID,
+			Deadline:                  time.Now().UTC().Add(localToolTimeout),
+			Calls:                     proposals,
+		})
+		if err != nil {
+			return iterations, false, err
+		}
+		for _, decision := range decisions {
+			s.emitTurnEvent(ctx, config, turnID, toolDecisionTurnEvent(decision, iterations))
+		}
+		return iterations, true, nil
 	}
 
 	if iterations >= maxToolIterations {
@@ -1768,7 +1688,9 @@ func (s *TurnService) RunToolContinuationWorker(ctx context.Context) {
 			}
 			nextTakeoverReconciliation = now.Add(preparedTakeoverReconcileInterval)
 		}
-		if _, err := s.toolDispatch.SettleExpiredToolCalls(ctx); err != nil {
+		if err := s.executeReadyStationTools(ctx); err != nil {
+			logger.Errorf(ctx, "Station tool execution failed: %v", err)
+		} else if _, err := s.toolDispatch.SettleExpiredToolCalls(ctx); err != nil {
 			logger.Errorf(ctx, "expired tool settlement failed: %v", err)
 		} else if err := s.settleBlockedToolBatches(ctx); err != nil {
 			logger.Errorf(ctx, "blocked tool batch settlement failed: %v", err)
@@ -1792,6 +1714,84 @@ func (s *TurnService) RunToolContinuationWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		}
+	}
+}
+
+func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
+	if s.toolDispatch == nil || s.toolRegistry == nil {
+		return nil
+	}
+	for {
+		claim, err := s.toolDispatch.ClaimReadyStationTool(ctx)
+		if err != nil {
+			return err
+		}
+		if claim == nil {
+			return nil
+		}
+
+		db, err := s.getDB(ctx)
+		if err != nil {
+			return err
+		}
+		var batch persistence.ToolBatch
+		if err := db.WithContext(ctx).
+			Where("id = ? AND actor_id = ?", claim.ToolBatchID, claim.ActorID).
+			First(&batch).Error; err != nil {
+			return fmt.Errorf("load Station tool batch %s: %w", claim.ToolBatchID, err)
+		}
+		config := &TurnConfig{
+			ActorID:        claim.ActorID,
+			AgentID:        batch.AgentID,
+			ConversationID: batch.ConversationID,
+			TaskID:         batch.TaskID,
+			StepID:         batch.StepID,
+		}
+		call := toolCallEntry{
+			ToolName:  claim.ToolName,
+			Arguments: string(claim.BoundedArguments),
+		}
+		var output string
+		var executionErr error
+		switch call.ToolName {
+		case "station_human_decision_resume":
+			output, executionErr = s.executeStationHumanDecisionResumeTool(
+				ctx,
+				config,
+				claim.TurnID,
+				call,
+			)
+		case "delegate_task":
+			output, executionErr = s.executeDelegation(
+				ctx,
+				claim.TurnID,
+				call,
+				config,
+			)
+		default:
+			result := s.toolRegistry.Dispatch(
+				ctx,
+				&domain.ToolCallMeta{
+					AgentID:        batch.AgentID,
+					ConversationID: batch.ConversationID,
+					TurnID:         claim.TurnID,
+				},
+				call.ToolName,
+				call.Arguments,
+			)
+			output = result.Content
+			if result.IsError {
+				executionErr = errors.New(result.Content)
+			}
+		}
+		if _, err := s.toolDispatch.CompleteStationToolExecution(
+			ctx,
+			claim,
+			output,
+			executionErr,
+		); err != nil {
+			return err
 		}
 	}
 }
@@ -1994,6 +1994,11 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		StepID:                    batch.StepID,
 		AttemptID:                 batch.AttemptID,
 	}
+	config.AuthorizedCapabilities, err = LoadAuthorizedCapabilitySet(ctx, db, config)
+	if err != nil {
+		return true, err
+	}
+	config.AvailableTools = config.AuthorizedCapabilities.ToolNames()
 	trace, err := s.loadTurnTraceForResume(ctx, batch.TurnID)
 	if err != nil {
 		return true, err

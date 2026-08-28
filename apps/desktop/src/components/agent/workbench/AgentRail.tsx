@@ -88,14 +88,19 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
   const exportAgent = useCallback(
     async (agent: Agent) => {
       try {
-        const pkg = await api.exportAgentPackage(agent.id);
-        const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+        const exported = await api.exportAgentPackage(agent.id);
+        const blob = new Blob([JSON.stringify(exported.package, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement('a');
         anchor.href = url;
         anchor.download = `${agent.name || agent.id}.agent.json`;
         anchor.click();
         URL.revokeObjectURL(url);
+        if (exported.unresolvedDependencies.length > 0) {
+          toast.warning(t('agent.sidebar.toast.agentExportUnresolved', {
+            count: exported.unresolvedDependencies.length,
+          }));
+        }
         toast.success(t('agent.chat.toast.agentExported'));
       } catch (errorValue) {
         const message = errorValue instanceof Error ? errorValue.message : String(errorValue);

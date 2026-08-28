@@ -4,19 +4,17 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
-	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"gorm.io/gorm"
 )
 
 const (
@@ -40,7 +38,6 @@ type knowledgeChunk struct {
 }
 
 type KnowledgeRetrievalService struct {
-	httpClient        *http.Client
 	embeddingProvider MemoryEmbeddingProvider
 }
 
@@ -49,32 +46,39 @@ func NewKnowledgeRetrievalService(embeddingProvider MemoryEmbeddingProvider) *Kn
 		embeddingProvider = NewHashMemoryEmbeddingProvider(knowledgeEmbeddingDims)
 	}
 	return &KnowledgeRetrievalService{
-		httpClient:        &http.Client{Timeout: 8 * time.Second},
 		embeddingProvider: embeddingProvider,
 	}
 }
 
 func (s *KnowledgeRetrievalService) Retrieve(
 	ctx context.Context,
-	resources []domain.KnowledgeResource,
+	db *gorm.DB,
+	authorized *AuthorizedCapabilitySet,
 	query string,
 ) (*KnowledgeRetrievalResult, error) {
-	if len(resources) == 0 {
+	if authorized == nil {
+		return nil, capabilityStateError("authorized capability set is required for Knowledge retrieval", nil)
+	}
+	capabilities := authorized.Sources(
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_KNOWLEDGE,
+	)
+	if len(capabilities) == 0 {
 		return &KnowledgeRetrievalResult{}, nil
 	}
 
 	queryVector := s.embedText(ctx, query)
 	var candidates []knowledgeChunk
-	for _, resource := range resources {
-		if resource.Source == "" || resource.Policy == domain.KnowledgeResourcePolicyDisabled {
-			continue
-		}
-		content, err := s.loadResourceContent(ctx, resource)
+	for _, capability := range capabilities {
+		resource, content, err := loadAuthorizedKnowledgeResource(
+			ctx,
+			db,
+			authorized,
+			capability,
+		)
 		if err != nil {
-			logger.Warnf(ctx, "knowledge retrieval: failed to load resource %s: %v", resource.ResourceID, err)
-			continue
+			return nil, err
 		}
-		for _, chunk := range s.splitKnowledgeChunks(ctx, resource, content) {
+		for _, chunk := range s.splitKnowledgeChunks(ctx, *resource, content) {
 			chunk.score = cosineSimilarity(queryVector, chunk.vector) + keywordOverlapScore(query, chunk.content)
 			candidates = append(candidates, chunk)
 		}
@@ -99,82 +103,69 @@ func (s *KnowledgeRetrievalService) Retrieve(
 	}, nil
 }
 
-func (s *KnowledgeRetrievalService) loadResourceContent(ctx context.Context, resource domain.KnowledgeResource) (string, error) {
-	source := strings.TrimSpace(resource.Source)
-	switch resource.Type {
-	case domain.KnowledgeResourceTypeURL:
-		return s.loadURL(ctx, source)
-	case domain.KnowledgeResourceTypeFolder, domain.KnowledgeResourceTypeProject, domain.KnowledgeResourceTypeWorkspace:
-		return loadKnowledgeDirectory(source)
-	default:
-		return loadKnowledgeFileOrLiteral(source)
+func loadAuthorizedKnowledgeResource(
+	ctx context.Context,
+	db *gorm.DB,
+	authorized *AuthorizedCapabilitySet,
+	capability AuthorizedCapability,
+) (*domain.KnowledgeResource, string, error) {
+	if db == nil {
+		return nil, "", capabilityStateError("database is required for Knowledge retrieval", nil)
 	}
-}
-
-func (s *KnowledgeRetrievalService) loadURL(ctx context.Context, source string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+	revision, err := authorized.KnowledgeRevision(capability)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return "", err
+	resourceID := capability.Manifest.GetSourceInstanceId()
+	var descriptor persistence.KnowledgeResourceRevision
+	if err := db.WithContext(ctx).Where(
+		"resource_id = ? AND revision = ? AND ptid = ?",
+		resourceID,
+		revision,
+		authorized.ActorID,
+	).First(&descriptor).Error; err != nil {
+		return nil, "", capabilityStateError(
+			"authorized Knowledge descriptor revision is unavailable",
+			err,
+		)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("unexpected HTTP status %d", resp.StatusCode)
+	if descriptor.LocatorKind != "station" ||
+		strings.TrimSpace(descriptor.StationContentRef) == "" ||
+		model.KnowledgeResourceAvailability(descriptor.Availability) !=
+			model.KnowledgeResourceAvailability_KNOWLEDGE_RESOURCE_AVAILABILITY_READY {
+		return nil, "", capabilityStateError(
+			"authorized Knowledge descriptor is not immutable Station content",
+			nil,
+		)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, knowledgeMaxResourceChars))
-	if err != nil {
-		return "", err
+	var content persistence.KnowledgeContentRevision
+	if err := db.WithContext(ctx).Where(
+		"content_ref = ? AND resource_id = ? AND revision = ? AND ptid = ?",
+		descriptor.StationContentRef,
+		resourceID,
+		revision,
+		authorized.ActorID,
+	).First(&content).Error; err != nil {
+		return nil, "", capabilityStateError(
+			"authorized Knowledge content revision is unavailable",
+			err,
+		)
 	}
-	return string(data), nil
-}
-
-func loadKnowledgeFileOrLiteral(source string) (string, error) {
-	if stat, err := os.Stat(source); err == nil && !stat.IsDir() {
-		data, readErr := os.ReadFile(source)
-		if readErr != nil {
-			return "", readErr
-		}
-		return truncateKnowledgeContent(string(data)), nil
+	sum := sha256.Sum256(content.Content)
+	if content.ContentHash != descriptor.ContentHash ||
+		content.ContentHash != hex.EncodeToString(sum[:]) ||
+		content.IndexRevision != descriptor.IndexRevision {
+		return nil, "", capabilityStateError(
+			"authorized Knowledge content integrity mismatch",
+			nil,
+		)
 	}
-	return truncateKnowledgeContent(source), nil
-}
-
-func loadKnowledgeDirectory(root string) (string, error) {
-	var builder strings.Builder
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() {
-			return nil
-		}
-		if builder.Len() >= knowledgeMaxResourceChars || !isKnowledgeTextFile(path) {
-			return nil
-		}
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, path)
-		builder.WriteString("\n\n# ")
-		builder.WriteString(rel)
-		builder.WriteString("\n")
-		builder.WriteString(string(data))
-		return nil
-	})
-	if err != nil {
-		return "", err
-	}
-	return truncateKnowledgeContent(builder.String()), nil
-}
-
-func isKnowledgeTextFile(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".md", ".txt", ".json", ".yaml", ".yml", ".go", ".ts", ".tsx", ".js", ".jsx", ".rs", ".proto":
-		return true
-	default:
-		return false
-	}
+	return &domain.KnowledgeResource{
+		ResourceID: descriptor.ResourceID,
+		AgentID:    authorized.AgentID,
+		Title:      descriptor.Title,
+		Source:     descriptor.StationContentRef,
+	}, truncateKnowledgeContent(string(content.Content)), nil
 }
 
 func (s *KnowledgeRetrievalService) embedText(ctx context.Context, text string) []float64 {

@@ -214,6 +214,67 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 		}).Error; err != nil {
 		t.Fatalf("update attempt evidence: %v", err)
 	}
+	dispatchCommittedAt := now.Add(100 * time.Millisecond)
+	toolStartedAt := now.Add(200 * time.Millisecond)
+	toolEndedAt := now.Add(300 * time.Millisecond)
+	if err := db.Create(&persistence.ToolCall{
+		ID:                     "tool-row-diagnostic",
+		ActorID:                "actor-1",
+		TurnID:                 "turn-1",
+		AttemptID:              "attempt-1",
+		ToolBatchID:            "batch-diagnostic",
+		ToolName:               "local_file_read",
+		ToolCallID:             "tool-call-diagnostic",
+		CapabilityID:           "filesystem.read",
+		SchemaVersion:          "1",
+		ExecutionOwner:         persistence.ToolOwnerClientCapability,
+		BoundedArguments:       []byte(`{"path":"safe.txt"}`),
+		ResourceRefs:           []byte{},
+		ArgumentsHash:          "arguments-hash",
+		RedactedArguments:      `{"path":"safe.txt"}`,
+		RiskClass:              "tool",
+		ApprovalPolicy:         string(ToolPolicyManual),
+		ManifestID:             "filesystem.read",
+		ManifestVersion:        "1",
+		BindingID:              "binding-1",
+		BindingRevision:        2,
+		ReadinessSnapID:        "readiness-1",
+		ApprovalID:             "approval-1",
+		DecisionID:             "decision-1",
+		DecisionRevision:       1,
+		Approved:               true,
+		CapabilitySessionID:    "session-1",
+		TargetDeviceID:         "device-1",
+		ExecutionClaimID:       "claim-1",
+		ExecutorLeaseID:        "lease-1",
+		FencingToken:           3,
+		SideEffectReceipt:      "receipt-1",
+		DispatchSequence:       4,
+		DispatchCommittedAt:    &dispatchCommittedAt,
+		ExecutionAttemptCount:  1,
+		DuplicateDeliveryCount: 2,
+		Status:                 persistence.ToolCallStatusSucceeded,
+		ResultID:               "result-1",
+		ResultPersisted:        true,
+		StartedAt:              &toolStartedAt,
+		EndedAt:                &toolEndedAt,
+		CreatedAt:              now,
+		UpdatedAt:              toolEndedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed diagnostic tool call: %v", err)
+	}
+	if err := db.Create(&persistence.ToolContinuation{
+		ID:          "continuation-1",
+		TurnID:      "turn-1",
+		AttemptID:   "attempt-1",
+		ToolBatchID: "batch-diagnostic",
+		Status:      persistence.ToolContinuationStatusCompleted,
+		CreatedAt:   now,
+		UpdatedAt:   toolEndedAt,
+		CompletedAt: &toolEndedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed diagnostic continuation: %v", err)
+	}
 	trace := &domain.TurnTrace{
 		TraceID: "trace-1",
 		TurnID:  "turn-1",
@@ -258,6 +319,14 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 		replay.Attempts[0].GetRuntimeSnapshot().GetModelId() != "seed" ||
 		len(replay.ContextLedgers) != 1 ||
 		replay.ContextLedgers[0].GetSegments()[0].GetContentHash() != "content-hash" ||
+		len(replay.ToolCalls) != 1 ||
+		replay.ToolCalls[0].GetBindingId() != "binding-1" ||
+		replay.ToolCalls[0].GetReadinessSnapshotId() != "readiness-1" ||
+		replay.ToolCalls[0].GetExecutionClaimId() != "claim-1" ||
+		replay.ToolCalls[0].GetSideEffectReceiptId() != "receipt-1" ||
+		replay.ToolCalls[0].GetContinuationId() != "continuation-1" ||
+		replay.ToolCalls[0].GetExecutionAttemptCount() != 1 ||
+		replay.ToolCalls[0].GetDuplicateDeliveryCount() != 2 ||
 		len(replay.Messages) != 2 ||
 		replay.Messages[0].GetContentHash() == "" {
 		t.Fatalf("diagnostic replay lost exact-turn evidence: %+v", replay)
@@ -313,6 +382,7 @@ func openTurnEvidenceDB(t *testing.T, name string) *gorm.DB {
 	if err := db.AutoMigrate(
 		&persistence.TurnAttempt{},
 		&persistence.ToolCall{},
+		&persistence.ToolContinuation{},
 		&persistence.TurnTrace{},
 		&persistence.UserFeedback{},
 		&persistence.GrowthEvent{},

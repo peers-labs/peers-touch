@@ -244,10 +244,7 @@ pub fn sync_user_profile(
             None,
         );
     }
-    application_profile::sync_user_profile(
-        &session.jwt,
-        &session.actor.ptid,
-    )
+    application_profile::sync_user_profile(&session.jwt, &session.actor.ptid)
 }
 
 /// Resolve a remote avatar URL to a local cache file, downloading it on miss.

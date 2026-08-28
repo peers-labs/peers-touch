@@ -951,19 +951,6 @@ pub struct AgentDuplicateInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentPackageExportInput {
-    pub id: String,
-    #[serde(default, rename = "include_local_paths", alias = "includeLocalPaths")]
-    pub include_local_paths: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentPackageImportInput {
-    pub package: serde_json::Value,
-    pub name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSearchInput {
     pub q: String,
 }
@@ -993,7 +980,6 @@ pub struct AgentExecuteTurnInput {
     pub context_window_size: Option<u32>,
     pub max_retries: Option<u32>,
     pub client_capability_session_id: Option<String>,
-    pub knowledge_resources: Option<Vec<Value>>,
     pub available_tools: Option<Vec<Value>>,
     pub memory_disabled: Option<bool>,
 }
@@ -1038,13 +1024,6 @@ pub struct AgentTurnDiagnosticsInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRuntimeProfileInput {
     pub agent_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentCapabilityReadinessInput {
-    pub agent_id: String,
-    pub runtime_snapshot_id: Option<String>,
-    pub client_capability_session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1250,36 +1229,6 @@ pub struct AgentTaskSubtaskCompleteInput {
     pub subtask_id: String,
 }
 
-// C6 Knowledge binding — first-class join rows in Station `agent_knowledge_bindings`
-// (mirrors LobeHub `agentsFiles`/`createAgentFiles`). The resource descriptor catalog
-// still lives in agent `config_json`; these inputs reconcile the queryable binding relation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentKnowledgeBindingListInput {
-    pub agent_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentKnowledgeBindingCreateInput {
-    pub agent_id: String,
-    pub resource_id: String,
-    pub policy: Option<String>,
-    pub enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentKnowledgeBindingUpdateInput {
-    pub id: String,
-    pub agent_id: String,
-    pub resource_id: String,
-    pub policy: Option<String>,
-    pub enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentKnowledgeBindingDeleteInput {
-    pub id: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentMessageTranslateInput {
     pub message_id: String,
@@ -1324,6 +1273,17 @@ pub struct AgentCollaborationSubscribeInput {
     pub agent_id: String,
     pub task_id: Option<String>,
     pub after_event_seq: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentEventSubscribeInput {
+    pub stream_id: Option<String>,
+    pub agent_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentEventCancelInput {
+    pub stream_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

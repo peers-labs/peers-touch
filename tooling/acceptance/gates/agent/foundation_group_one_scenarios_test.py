@@ -7,6 +7,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
     evaluate_as_f02,
     evaluate_as_f03,
+    evaluate_as_f04,
     evaluate_as_f10,
 )
 
@@ -133,6 +134,121 @@ def valid_as_f03_capture() -> dict[str, object]:
     }
 
 
+def valid_as_f04_capture(
+    platform: str = "desktop_app",
+) -> dict[str, object]:
+    execution_owner = (
+        "station" if platform == "browser" else "client_capability"
+    )
+
+    def lineage(suffix: str, *, terminal: bool) -> dict[str, object]:
+        result: dict[str, object] = {
+            "toolCallId": f"tool-call-{suffix}",
+            "toolBatchId": f"tool-batch-{suffix}",
+            "manifestId": f"manifest-{suffix}",
+            "manifestVersion": "1",
+            "bindingId": f"binding-{suffix}",
+            "bindingRevision": 1,
+            "readinessSnapshotId": f"readiness-{suffix}",
+            "approvalId": f"approval-{suffix}",
+            "decisionId": f"decision-{suffix}",
+        }
+        if terminal:
+            result.update(
+                {
+                    "executionClaimId": f"claim-{suffix}",
+                    "fencingToken": 1,
+                    "sideEffectReceiptId": f"receipt-{suffix}",
+                    "resultId": f"result-{suffix}",
+                    "continuationId": f"continuation-{suffix}",
+                    "dispatchCommittedAt": "2026-08-28T00:00:00Z",
+                    "startedAt": "2026-08-28T00:00:01Z",
+                    "endedAt": "2026-08-28T00:00:02Z",
+                }
+            )
+        return result
+
+    expiry_lineage = lineage("expiry", terminal=False)
+    expiry_lineage["decisionId"] = ""
+    return {
+        "cases": {
+            "auto": {
+                "policy": "auto",
+                "executionOwner": execution_owner,
+                "states": [
+                    "policy_check",
+                    "auto_approved",
+                    "running",
+                    "succeeded",
+                ],
+                "executionAttemptCount": 1,
+                "sideEffectCount": 1,
+                "resultCount": 1,
+                "continuationCount": 1,
+                "lineage": lineage("auto", terminal=True),
+            },
+            "manual": {
+                "policy": "manual",
+                "executionOwner": execution_owner,
+                "states": [
+                    "policy_check",
+                    "awaiting_user",
+                    "approved",
+                    "running",
+                    "succeeded",
+                ],
+                "executionAttemptCount": 1,
+                "sideEffectCount": 1,
+                "resultCount": 1,
+                "continuationCount": 1,
+                "lineage": lineage("manual", terminal=True),
+            },
+            "deny": {
+                "policy": "deny",
+                "executionOwner": execution_owner,
+                "states": ["policy_check", "denied"],
+                "executionAttemptCount": 0,
+                "sideEffectCount": 0,
+                "resultCount": 0,
+                "continuationCount": 0,
+                "lineage": lineage("deny", terminal=False),
+            },
+            "expiry": {
+                "policy": "manual",
+                "executionOwner": execution_owner,
+                "states": ["policy_check", "awaiting_user", "expired"],
+                "executionAttemptCount": 0,
+                "sideEffectCount": 0,
+                "resultCount": 0,
+                "continuationCount": 0,
+                "lineage": expiry_lineage,
+            },
+        },
+        "duplicateDelivery": {
+            "deliveryCount": 2,
+            "executionAttemptCount": 1,
+            "sideEffectCount": 1,
+            "resultCount": 1,
+            "continuationCount": 1,
+            "originalResultId": "result-auto",
+            "replayedResultId": "result-auto",
+            "originalContinuationId": "continuation-auto",
+            "replayedContinuationId": "continuation-auto",
+        },
+        "loopBudget": {
+            "stopped": True,
+            "observedIterations": 25,
+            "maximumIterations": 25,
+            "executionAfterLimit": 0,
+        },
+        "replay": {
+            "sourceHash": "source-hash",
+            "replayHash": "source-hash",
+            "equal": True,
+        },
+    }
+
+
 class FoundationGroupOneScenariosTest(unittest.TestCase):
     def test_as_f03_accepts_sequenced_text_then_cancel(self) -> None:
         assertions = evaluate_as_f03(valid_as_f03_capture())
@@ -177,6 +293,43 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "progressiveEventsSequenced",
         ):
             evaluate_as_f03(capture)
+
+    def test_as_f04_accepts_governed_desktop_and_browser_facts(self) -> None:
+        for platform in ("desktop_app", "browser"):
+            with self.subTest(platform=platform):
+                assertions = evaluate_as_f04(
+                    valid_as_f04_capture(platform),
+                    platform=platform,
+                )
+
+                self.assertEqual(len(assertions), 8)
+                self.assertTrue(all(assertions.values()))
+
+    def test_as_f04_rejects_duplicate_side_effect(self) -> None:
+        capture = valid_as_f04_capture()
+        duplicate = capture["duplicateDelivery"]
+        assert isinstance(duplicate, dict)
+        duplicate["sideEffectCount"] = 2
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "duplicateDeliveryIdempotent",
+        ):
+            evaluate_as_f04(capture, platform="desktop_app")
+
+    def test_as_f04_rejects_browser_client_execution(self) -> None:
+        capture = valid_as_f04_capture("browser")
+        cases = capture["cases"]
+        assert isinstance(cases, dict)
+        auto = cases["auto"]
+        assert isinstance(auto, dict)
+        auto["executionOwner"] = "client_capability"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "authorityLineagePersisted",
+        ):
+            evaluate_as_f04(capture, platform="browser")
 
     def test_as_f02_accepts_complete_production_facts(self) -> None:
         assertions = evaluate_as_f02(valid_capture())

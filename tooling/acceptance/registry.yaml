@@ -926,9 +926,10 @@
       ],
       "when": {
         "paths": [
-          "apps/station/app/subserver/agent/**/agent_config*",
-          "apps/station/app/subserver/agent/**/runtime_admission*",
-          "apps/desktop/src/store/agent.ts"
+          "apps/station/app/subserver/agent/**/capability_authority*",
+          "apps/station/app/subserver/agent/**/capability_readiness_authority*",
+          "apps/desktop/src/store/agentCapabilities.ts",
+          "apps/desktop/src/runtimes/agentCapabilityRuntime.ts"
         ]
       },
       "require": [

@@ -340,6 +340,11 @@ func migrateToolCallColumns(tx *gorm.DB) error {
 	}
 	for column, field := range map[string]string{
 		"capability_lease_revision":      "CapabilityLeaseRevision",
+		"manifest_version":               "ManifestVersion",
+		"binding_revision":               "BindingRevision",
+		"dispatch_committed_at":          "DispatchCommittedAt",
+		"execution_attempt_count":         "ExecutionAttemptCount",
+		"duplicate_delivery_count":        "DuplicateDeliveryCount",
 		"replay_policy":                  "ReplayPolicy",
 		"external_idempotency_key":       "ExternalIdempotencyKey",
 		"receipt_recovery_credential_id": "ReceiptRecoveryCredentialID",

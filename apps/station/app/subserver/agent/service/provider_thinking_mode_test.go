@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 )
 
 func TestOpenAIThinkingModePayload(t *testing.T) {
@@ -107,7 +108,10 @@ func TestProviderThinkingControlUsesCatalogModelCapability(t *testing.T) {
 }
 
 func TestAgentServicePreservesThinkingModeWhenUpdateOmitsIt(t *testing.T) {
-	openRuntimeAuthorityDB(t, "thinking_mode_agent_update")
+	db := openRuntimeAuthorityDB(t, "thinking_mode_agent_update")
+	if err := db.AutoMigrate(&persistence.AgentCapabilityBinding{}); err != nil {
+		t.Fatalf("migrate agent capability binding: %v", err)
+	}
 	service := NewAgentService()
 	created, err := service.CreateAgent(context.Background(), domain.AgentUpsertOptions{
 		ActorID:      "ptid:person:owner",

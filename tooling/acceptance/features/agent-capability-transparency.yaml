@@ -3,9 +3,9 @@
   "status": "active",
   "product_area": "agent",
   "owners": [
-    "apps/station/app/subserver/agent/handler/agent_config_handler.go",
-    "apps/station/app/subserver/agent/service/runtime_admission_service.go",
-    "apps/desktop/src/store/agent.ts"
+    "apps/station/app/subserver/agent/handler/capability_authority_handler.go",
+    "apps/station/app/subserver/agent/service/capability_readiness_authority_service.go",
+    "apps/desktop/src/store/agentCapabilities.ts"
   ],
   "truth_sources": [
     "Station agent capability snapshot (provider + model + tools + connectors)",
@@ -13,7 +13,7 @@
     "Desktop runtime capability projection"
   ],
   "visible_surfaces": [
-    {"type": "api", "route": "/agent/config/capabilities"},
+    {"type": "api", "route": "/sub-agent/agent/capability/readiness"},
     {"type": "ui", "surface": "Agent profile capability badge"},
     {"type": "ui", "surface": "Composer capability indicator"}
   ],

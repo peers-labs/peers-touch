@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-08-27
+> **Created**: 2026-08-17 | **Updated**: 2026-08-28
 > **Owner**: Peers-Touch Agent Team
 > **Plan gate**: `OWNER_APPROVED_EXECUTION`
 > **Entry gate**: Owner accepted MCA-D19A/D19B/D19C into the main Goal G1 task on 2026-08-22
@@ -243,13 +243,13 @@ Parallel policy:
 | F2 Runtime/Stream/Capability/Portability | complete | F1 |
 | F3 Context/Resource Intelligence | core complete / C08 unproven | F2 |
 | F4 Tool Policy/Observability | G1-A through G1-F and pre-W1 G1-XR diagnostic complete through AS-F03; post-W8a G-F pending | F2 + accepted D19A/D19B/D19C |
-| W1 Capability Authority | pending | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
+| W1 Capability Authority | implementation checks complete; product proof UNPROVEN until W9 Gate | F1-F4 implementation checks complete; Foundation diagnostic reaches AS-F04 |
 | W2 Home Projection | pending | G-F complete 419-cell Foundation Gate |
-| W3 Capability Operation Substrate | pending | W1 |
+| W3 Capability Operation Substrate | implementation checks complete; activation/proof deferred to W4/W8b | W1 |
 | W4 MCP Lifecycle | pending | G-F + W3 + W6 invocation join |
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
-| W6 Governed ToolCall Fencing | pending | W1 + W3 |
-| W8a Capability/ToolCall Cutover | pending | W1 + W3 + W6 |
+| W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
+| W8a Capability/ToolCall Cutover | in progress: MCA-D15K K1-K5 and AS-F04 implementation/scoped verification complete; source-matched runtime proof pending | W1 + W3 + W6 |
 | G-F Complete Foundation Gate | blocked | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
@@ -1581,7 +1581,10 @@ proves the AS-F03 runtime closure but does not make the 419-cell Foundation Gate
 
 ```bash
 test -n "${PT_ACCEPTANCE_ARTIFACT_ROOT:-}"
-python3 tooling/scripts/acceptance-prove.py --gate agent-v2-kernel-foundation-e2e
+python3 tooling/scripts/acceptance-prove.py \
+  --gate agent-v2-kernel-foundation-e2e \
+  --proof-envelope-ref-out \
+  "${PT_ACCEPTANCE_ARTIFACT_ROOT}/agent-v2-kernel-foundation-e2e-proof-envelope-ref.json"
 ```
 
 The Gate emits independent C01-C10 cell results and all mandatory artifact
@@ -1627,6 +1630,35 @@ Staging and migration:
   `store/agent.ts#chatConfig` Skill/Knowledge/MCP/Tool/Connector binding.
 - Keep the new read/write entrypoints unreachable until W8a. W1 does not switch
   consumers or delete the old path.
+
+Progress:
+
+- Capability authority schema, generated bindings, Station persistence, and
+  service-level CAS are implemented. Manifest versions and readiness snapshots
+  are immutable; binding mutation validates both Agent version and binding
+  revision; deletion retains an actor-scoped tombstone.
+- The authority is registered for migration but has no production route or
+  consumer before W8a.
+- Deterministic startup backfill now imports builtin Tool, Skill, Knowledge,
+  MCP, Connector, and client-native capability sources. It reconciles dedicated
+  binding rows with embedded `chatConfig`, persists one hash-addressed report,
+  and records malformed/unknown rows plus every Custom HTTP Plugin as typed
+  rejection instead of inventing a manifest.
+- Focused Agent tests, Desktop typecheck, Mobile contract tests, and Go style
+  pass. C12 inventory coverage now has zero unregistered or unresolved
+  matches. The 40 embedded binding matches remain intentionally classified as
+  `deleted-authority` for W8a; the backfill reader is classified only as a
+  historical migration reader. Rejected Custom HTTP Plugin residue is assigned
+  to W8b-owned C14 rather than C12.
+- Authority-backed readiness now joins the pinned runtime snapshot, current
+  Agent/binding revisions, immutable manifest availability, required runtime
+  capabilities, and the selected authenticated client capability session.
+  Missing/stale facts fail closed with typed readiness states and reason codes.
+  Its handlers compile but are deliberately absent from the production route
+  table until W8a.
+- Full Agent package tests, Desktop check plus 321 unit tests, Mobile Agent
+  contract tests, changed-file formatting, and Go style pass. Product runtime
+  proof remains assigned to `agent-v2-capability-binding-e2e` in W9.
 
 Checks:
 
@@ -1689,6 +1721,59 @@ R-11 both-ordering artifacts.
 **Target roots**: capability operation proto, Station operation/outbox/lease
 domain-service-persistence packages, Desktop Rust capability executor, and
 deterministic barrier fixtures.
+
+Progress:
+
+- Proto now defines deadline-bearing Start plus ReportEvent, Reconcile,
+  TakeOverOperation, and TakeOverCleanup commands.
+- Station persistence now has separate operation, idempotency command, event,
+  transactional outbox, business lease, and cleanup lease records.
+- Start atomically validates the manifest and actor/device/session lease,
+  creates the dispatched operation, first fenced business lease, outbox
+  envelope, and idempotency result. Cancel uses expected revision CAS, releases
+  the business lease, and enters bounded cleanup settlement under an
+  independent cleanup epoch/fence.
+- ReportEvent enforces monotonic sequence plus actor/device/session/lease,
+  attempt-epoch, and business-fence identity. Invalid events leave the aggregate
+  unchanged and persist a rejection audit fact; identical accepted events
+  replay the current operation.
+- Terminal intent always enters cleanup settlement. Business and cleanup
+  takeovers advance independent epochs/fences, non-idempotent ambiguity becomes
+  `UNKNOWN_SIDE_EFFECT`, and execution/cleanup deadline sweeps converge to
+  bounded timeout or `cleanup_failed`.
+- Focused tests prove same-payload replay keeps one operation/outbox/lease,
+  cross-actor lease selection rejects, stale cancel revision rejects, old
+  business fences reject, both takeover fences advance, and cleanup settles
+  exactly once. Rejected late/stale events are retained as immutable audit
+  facts without mutating the aggregate.
+- Desktop now has a staged fenced operation executor that reports `RUNNING`
+  before side effects, reports terminal intent, requires Station-issued cleanup
+  authority, and reports cleanup success/failure separately. Device/session
+  mismatch rejects before execution. The module is not attached to the worker
+  supervisor before W4/W8b.
+- Station ReportEvent/Reconcile/business takeover/cleanup takeover and
+  execution/cleanup deadline sweeps are implemented. Accepted events use
+  monotonic sequence CAS; stale or invalid events are retained in a separate
+  rejection-audit table without mutating the aggregate.
+- Operation Pull/Report/business-takeover/cleanup-takeover command domains use
+  the existing D19B device-possession proof contract. New business and cleanup
+  lease IDs are Station-issued; the client cannot choose either authority.
+- Station operation pull allocates outbox sequence through the selected
+  capability lease's monotonic cursor. Desktop transport signs pull/report
+  requests with the existing actor-device command proof and rejects operations
+  targeted at another device or session.
+- Focused Station tests cover event replay, stale business and cleanup fences,
+  terminal cleanup settlement, both lease takeovers, execution timeout, and
+  cleanup deadline failure. Desktop binary tests cover the three-report
+  execute/cleanup sequence and pre-side-effect device rejection.
+- Desktop encrypted operation ledger and polling worker persist per-Station/
+  session cursors and operation/fence checkpoints. Restart reconciliation never
+  re-executes a non-idempotent operation whose Station state may have crossed
+  the side-effect boundary.
+- W3 implementation checks pass for Station operation/cleanup/receipt tests and
+  Desktop `capability_operation` tests. Production route registration,
+  supervisor activation, and concrete MCP operation mapping remain deferred to
+  W4/W8b as required by the dependency graph.
 
 Deliverables:
 
@@ -1805,6 +1890,19 @@ Deliverables:
   `C13-OPERATION`; the former is W8a-deletable while the latter remains for
   W8b.
 
+Progress:
+
+- Added a staged authority-only proposal path that joins the actor/Agent-bound
+  manifest version, binding revision, immutable readiness snapshot, and
+  selected client capability session before any ToolCall or outbox row exists.
+- Binding policy is the decision source for authority-backed proposals;
+  disabled/stale bindings, retired manifests, expired/mismatched snapshots, and
+  non-ready capability entries fail closed and roll back the whole batch.
+- ToolCall rows now preserve manifest, binding, and readiness snapshot lineage.
+  Existing decision/claim/PREPARED/APPLIED/result/continuation fencing tests and
+  Desktop client-capability receipt tests pass. The legacy proposal entrypoint
+  remains active only until the W8a atomic consumer switch.
+
 Cutover preparation:
 
 - Identify the Desktop in-memory approval registries and unfenced local
@@ -1812,7 +1910,7 @@ Cutover preparation:
 
 ```bash
 (cd apps/station && go test ./app/subserver/agent/... -run 'ToolCall|ExecutionClaim|SideEffectReceipt|DispatchFence')
-cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml tool_call_receipt
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml client_capability
 tooling/scripts/review/agent-v2-old-paths.sh --inventory-only --closure C12,C13-TOOLCALL
 ```
 
@@ -1897,6 +1995,177 @@ Deliverables:
   counters; and replay readback.
 - Make the unchanged complete G-F Gate eligible. G-F, not W8a, executes the
   Gate; AS-F04 remains `UNPROVEN` until that Gate passes.
+
+Progress:
+
+- Station now exposes the canonical Manifest/Binding/Readiness handlers and
+  routes. The former runtime-only readiness selector and its tests are deleted.
+- Turn admission now persists the immutable W1 readiness snapshot ID on
+  `TurnAttempt` separately from the runtime admission snapshot. Device-local
+  ToolCalls resolve the exact READY binding from that pinned snapshot and enter
+  only the authority-backed proposal path.
+- The legacy static risk/deny proposal entrypoint is deleted. C13-TOOLCALL
+  reports `unresolvedCount=0`, and Agent package tests pass.
+- Local capability backfill now uses the executor protocol identities
+  (`filesystem.read/1`, `mcp.invoke/1`, and peers) so W1 bindings can join the
+  capability lease without an ID/version split. MCP remains explicitly
+  unavailable until W4.
+- Desktop Rust/Web Manifest/Binding/Readiness transport, the
+  `agent-capability` runtime projection, Agent Profile/Sidebar/Connector
+  consumers, package refs, and Acceptance cleanup now use the canonical
+  authority. C12 and C13-TOOLCALL both report `unresolvedCount=0`.
+- Agent updates and live binding revision rebases now commit in one DB
+  transaction and publish `agent.authority.invalidated`; Station Agent tests,
+  Desktop check/338 tests/build, Rust authority/package/receipt tests, and Go
+  style pass.
+- Native Desktop now consumes the shared Agent SSE through one extracted
+  parser/stream owner; `agent-capability` maintains bounded per-Agent authority
+  subscriptions, refreshes the affected projection immediately, and retains
+  periodic reconciliation for dropped events. Browser keeps the existing
+  resync fallback because the browser gateway has no Tauri event channel.
+- Semantic audit found closure work not represented by the original text-only
+  inventory: Turn requests can still supply Knowledge resources directly,
+  Station-owned Tool/Skill execution can bypass the pinned readiness snapshot,
+  and an Agent revision change makes every live binding stale. W8a therefore
+  also owns removal of request-supplied Knowledge authority, one authorized
+  capability set for prompt and execution, and transactional binding revision
+  rebasing with Agent updates.
+- `MCA-D15K` is accepted: Station owns the versioned Knowledge descriptor,
+  immutable Station content refs, and opaque client resource refs. W8a resumes
+  with Turn request authority removal, descriptor/manifest/binding closure,
+  and exact snapshot-pinned Knowledge retrieval; static closure alone does not
+  promote W8a or G-F runtime proof.
+- Package export/import must carry the portable manifest/resource dependency
+  closure and must not leave a created Agent with partially imported bindings.
+  Compensating client requests are not sufficient proof of atomic import.
+
+Accepted MCA-D15K execution closure:
+
+1. **K1 Contract and persistence** — add proto-first
+   `KnowledgeResourceDescriptor` create/update/list/tombstone contracts and
+   actor-scoped immutable revisions. Persistence and manifest publication commit
+   atomically.
+2. **K2 Migration and binding** — migrate embedded Knowledge descriptors as
+   historical input, publish exact Knowledge manifest versions, and reconcile
+   live bindings without retaining a second mutation authority.
+3. **K3 Turn authority cutover** — remove and reserve request-supplied Knowledge
+   fields; derive one authorized Knowledge/Skill/Tool set from the pinned
+   readiness snapshot before prompt assembly or execution.
+4. **K4 Desktop and package cutover** — Profile mutates descriptors/bindings
+   through typed commands; package preflights portable descriptors and returns
+   unresolved client-local dependencies before Agent creation.
+5. **K5 Proof and deletion** — prove actor isolation, stale revision rejection,
+   disabled omission, local-session fencing, restart readback, and no partial
+   package import; delete embedded Knowledge writes and runtime path/URL reads.
+
+K1 implementation evidence (2026-08-28):
+
+- Descriptor revisions, bounded Station content, command receipts, actor-owned
+  Knowledge manifest versions, and CRUD handlers are registered in Station.
+- Manifest ownership is enforced for catalog list, binding, retirement, and
+  invalidation fan-out. Descriptor tombstone retires every historical manifest
+  revision so deleted resources cannot receive new admission.
+- Manifest registration uses database-native conflict handling compatible with
+  PostgreSQL transactions. Descriptor and binding command replay preserve the
+  original immutable mutation result after later lifecycle changes.
+- `./model/build.sh`, Agent package tests, focused race tests, Desktop type
+  checks, Go style, and diff checks pass. K1 runtime product proof remains
+  `UNPROVEN` until K5/W9.
+- Residual before K5: the shared binary-protobuf typed-handler error path still
+  needs a canonical `ErrorResponse` envelope; current handlers otherwise risk
+  returning an empty protobuf error body.
+
+K2 implementation evidence (2026-08-28):
+
+- Startup backfill parses string- or array-encoded legacy
+  `config_json.knowledgeResources`, derives actor-scoped deterministic
+  descriptor identities, and atomically commits descriptor/content revision,
+  owned manifest, canonical binding, migration receipt, legacy authority
+  retirement, and immutable reconciliation report.
+- Plain bounded document content is ingested as Station content. Mutable URLs,
+  local paths, and client-local resource classes fail closed into stable
+  rejection reason codes without persisting or reporting the raw locator.
+- Legacy JSON and join rows remain read-only migration input until K4/K5 remove
+  their writers/readers. The initial import report is distinct from the stable
+  reconciliation report; subsequent startup and database reopen preserve the
+  same descriptor and binding identities without overwriting canonical policy.
+- K2 focused tests, focused race tests, Agent package tests, Desktop type
+  checks, Go style, and diff checks pass. Runtime migration proof remains
+  `UNPROVEN` until K5/W9.
+
+K3 implementation progress (2026-08-28):
+
+- `ExecuteTurnRequest.knowledge_resources` is removed and reserved; Desktop
+  Rust/TypeScript no longer forwards that field.
+- Turn admission now resolves and persists readiness before prompt assembly,
+  then loads one actor/session-bound `AuthorizedCapabilitySet` from the pinned
+  snapshot. Prompt skills, Station tools, client tools, and Knowledge consume
+  that set.
+- Knowledge retrieval now reads only immutable Station content revisions with
+  descriptor/content hash checks. Direct filesystem, directory, and mutable URL
+  loaders are deleted.
+- JSON and protobuf Turn routes reject non-empty legacy field 13 before
+  deserialization, including mixed snake/camel aliases. Scoped Agent tests,
+  focused race tests, Desktop type checks, Rust compile, Go style, diff checks,
+  and the guard/inventory reconciliation pass. K3 runtime proof remains
+  `UNPROVEN` until K5/W9.
+
+K4 implementation evidence (2026-08-28):
+
+- Desktop Profile now mutates Knowledge descriptors and canonical capability
+  bindings through generated contracts, while the `agent-capability` runtime
+  remains the sole descriptor/binding/readiness projection owner.
+- Desktop package export/import uses the generated Station package contracts.
+  The former Desktop-local package authority, create-then-bind compensation,
+  rollback helpers, public legacy commands, and duplicate package DTOs are
+  deleted.
+- Marketplace Agent installation converts the external JSON artifact into an
+  `AgentPackageDocument`, submits one Station atomic import with a stable
+  idempotency key, and returns unresolved dependencies without recording a
+  partially imported Agent.
+- Station package tests, Desktop 343 tests, Desktop production build, Rust
+  package/authority tests, Rust compile, Go style, diff checks, and C12 plus
+  C13-TOOLCALL old-path reconciliation pass. K4 runtime product proof remains
+  `UNPROVEN` until K5/W9.
+
+K5 implementation and scoped-proof evidence (2026-08-28):
+
+- Removed the obsolete Knowledge/Skill/MCP binding CRUD messages from
+  `agent_config.proto` and regenerated Station, Desktop, and Mobile Web
+  contracts. Historical database rows remain read-only migration input until a
+  source-matched migration/readback run permits their reader to be removed.
+- Actor isolation, descriptor revision CAS/tombstone, stale binding rejection,
+  disabled Knowledge omission, package dependency preflight/zero-write
+  behavior, package rollback, idempotent replay, database restart readback, and
+  actor/device/session-scoped opaque local-resource fencing pass focused Station
+  and Desktop Rust tests, including the focused Go race suite.
+- Desktop typecheck, 343 tests, production build, Mobile check, Agent proto
+  coverage, Go style, diff checks, and C12 plus C13-TOOLCALL old-path
+  reconciliation pass. These are implementation/scoped evidence only;
+  AS-F04 and all Foundation runtime cells remain `UNPROVEN`.
+
+AS-F04 implementation progress (2026-08-28):
+
+- Station-owned tools now enter the same binding-policy, decision, claim,
+  result, batch, and unique-continuation authority as client-owned tools.
+  The continuation worker durably claims each approved Station tool before
+  invoking its production handler.
+- Turn diagnostic replay now includes the exact manifest/binding/readiness,
+  decision/claim/fence/receipt/result/batch/continuation lineage and persisted
+  execution/duplicate counts needed by the source-bound oracle.
+- Desktop Rust persists a ToolCall-keyed side-effect-start counter in the
+  receipt ledger and exposes it through runtime evidence; duplicate terminal
+  replay does not increment the counter.
+- AS-F04 is registered in the direct adapter and Group One matrix, and the
+  actual Foundation runner independently recomputes Harness assertions from
+  scenario facts. Focused Python oracle tests, Desktop typecheck, Agent Go
+  tests, Rust receipt/runtime-evidence tests, Go style, diff checks, and Agent
+  Acceptance structural validation pass.
+- The live `foundationDirectProbe` now drives canonical binding policy
+  mutations, real Turn execution, manual decision replay, expiry, loop-budget
+  exhaustion, Station diagnostic replay, and Desktop ToolCall-keyed side-effect
+  counters. AS-F04 and the complete Foundation Gate remain `UNPROVEN` until the
+  source-matched profile `two` run passes.
 
 **W8a checks**:
 

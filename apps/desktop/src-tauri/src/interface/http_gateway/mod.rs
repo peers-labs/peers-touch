@@ -37,6 +37,7 @@ use crate::application::agents as app_agents;
 use crate::application::applet_store as app_applet_store;
 use crate::application::applets as app_applets;
 use crate::application::auth::service as app_auth;
+use crate::application::capability_authority as app_capability_authority;
 use crate::application::channels as app_channels;
 use crate::application::chat_storage;
 use crate::application::cron as app_cron;
@@ -2173,8 +2174,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                             if !token.is_empty() {
                                 let mut actor =
                                     crate::domain::identity::ActorRef::new_person(actor_id.clone());
-                                actor.ptid =
-                                    data.ptid.clone().unwrap_or_default();
+                                actor.ptid = data.ptid.clone().unwrap_or_default();
                                 let account_id =
                                     crate::infrastructure::auth_identity::find_account_id_by_actor_id(actor_id)
                                         .unwrap_or_else(|| {
@@ -2458,10 +2458,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some((token, account_id)) => {
                     let actor_ptid = app_auth::canonical_ptid_for_token(&token);
                     match actor_ptid {
-                        Some(ptid) => to_json(app_profile::sync_user_profile(
-                            &token,
-                            &ptid,
-                        )),
+                        Some(ptid) => to_json(app_profile::sync_user_profile(&token, &ptid)),
                         None => to_json(AppResult::<StubPayload>::fail(
                             ErrorCode::Unauthorized,
                             "canonical actor identity unavailable",
@@ -2872,28 +2869,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(error) => return error,
             };
             to_json(app_agents::agents_duplicate("", &token, input))
-        }
-        "agents_export_package" => {
-            let input = match parse_args::<AgentPackageExportInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            to_json(app_agents::agents_export_package("", &token, input))
-        }
-        "agents_import_package" => {
-            let input = match parse_args::<AgentPackageImportInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let token = match token_from_state(state) {
-                Ok(token) => token,
-                Err(error) => return error,
-            };
-            to_json(app_agents::agents_import_package("", &token, input))
         }
         "agents_search" => {
             let input = match parse_args::<AgentSearchInput>(args) {
@@ -3344,8 +3319,135 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 input, &token,
             ))
         }
+        "agent_capability_manifest_list" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityManifestListInput>(args) {
+                    Ok(value) => value,
+                    Err(error) => return error,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_manifests(input, &token))
+        }
+        "agent_capability_binding_list" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingListInput>(args) {
+                    Ok(value) => value,
+                    Err(error) => return error,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_bindings(input, &token))
+        }
+        "agent_capability_binding_upsert" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingUpsertInput>(args) {
+                    Ok(value) => value,
+                    Err(error) => return error,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::upsert_binding(input, &token))
+        }
+        "agent_capability_binding_delete" => {
+            let input =
+                match parse_args::<app_capability_authority::CapabilityBindingDeleteInput>(args) {
+                    Ok(value) => value,
+                    Err(error) => return error,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::delete_binding(input, &token))
+        }
+        "agent_knowledge_descriptor_create" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::create_knowledge_descriptor(
+                input, &token,
+            ))
+        }
+        "agent_knowledge_descriptor_update" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::update_knowledge_descriptor(
+                input, &token,
+            ))
+        }
+        "agent_knowledge_descriptor_list" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::list_knowledge_descriptors(
+                input, &token,
+            ))
+        }
+        "agent_knowledge_descriptor_tombstone" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::tombstone_knowledge_descriptor(
+                input, &token,
+            ))
+        }
+        "agent_package_export" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::export_agent_package(
+                input, &token,
+            ))
+        }
+        "agent_package_import" => {
+            let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
+                Ok(value) => value,
+                Err(error) => return error,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(token) => token,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::import_agent_package(
+                input, &token,
+            ))
+        }
         "agent_capability_readiness" => {
-            let input = match parse_args::<AgentCapabilityReadinessInput>(args) {
+            let input = match parse_args::<app_capability_authority::CapabilityReadinessInput>(args)
+            {
                 Ok(v) => v,
                 Err(e) => return e,
             };
@@ -3353,7 +3455,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
             };
-            to_json(app_runtime_evidence::capability_readiness(input, &token))
+            to_json(app_capability_authority::readiness(input, &token))
         }
         "agent_capability_sessions" => {
             let token = match http_gateway_bearer_token(state) {
@@ -3430,7 +3532,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             if args.get("negativeControl").is_some() {
                 let input = match parse_args::<
                     app_runtime_evidence::AgentCapabilitySessionSnapshotInput,
-                >(args) {
+                >(args)
+                {
                     Ok(input) => input,
                     Err(error) => return error,
                 };
@@ -5022,7 +5125,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "tts_voices" => to_json(app_tts::tts_voices()),
 
-
         // =================================================================
         // Social Friend Requests (state-dependent, station proto API)
         // =================================================================
@@ -5050,7 +5152,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 model::chat::SendFriendRequestRequest,
                 model::chat::SendFriendRequestResponse,
             >(
-                Method::POST, "/api/v1/social/friend-request/send", &token, None, Some(&req),
+                Method::POST,
+                "/api/v1/social/friend-request/send",
+                &token,
+                None,
+                Some(&req),
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -5068,15 +5174,23 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             if input.request_id.trim().is_empty() {
                 return to_json(AppResult::<Vec<u8>>::fail(
-                    ErrorCode::InvalidArgument, "request_id is required", None,
+                    ErrorCode::InvalidArgument,
+                    "request_id is required",
+                    None,
                 ));
             }
-            let req = model::chat::AcceptFriendRequestRequest { request_id: input.request_id };
+            let req = model::chat::AcceptFriendRequestRequest {
+                request_id: input.request_id,
+            };
             let resp = match station_client::request_proto::<
                 model::chat::AcceptFriendRequestRequest,
                 model::chat::AcceptFriendRequestResponse,
             >(
-                Method::POST, "/api/v1/social/friend-request/accept", &token, None, Some(&req),
+                Method::POST,
+                "/api/v1/social/friend-request/accept",
+                &token,
+                None,
+                Some(&req),
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -5094,15 +5208,23 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             if input.request_id.trim().is_empty() {
                 return to_json(AppResult::<Vec<u8>>::fail(
-                    ErrorCode::InvalidArgument, "request_id is required", None,
+                    ErrorCode::InvalidArgument,
+                    "request_id is required",
+                    None,
                 ));
             }
-            let req = model::chat::RejectFriendRequestRequest { request_id: input.request_id };
+            let req = model::chat::RejectFriendRequestRequest {
+                request_id: input.request_id,
+            };
             let resp = match station_client::request_proto::<
                 model::chat::RejectFriendRequestRequest,
                 model::chat::RejectFriendRequestResponse,
             >(
-                Method::POST, "/api/v1/social/friend-request/reject", &token, None, Some(&req),
+                Method::POST,
+                "/api/v1/social/friend-request/reject",
+                &token,
+                None,
+                Some(&req),
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -5125,9 +5247,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             query.push(("limit", input.limit.unwrap_or(50).clamp(1, 200).to_string()));
             query.push(("offset", input.offset.unwrap_or(0).to_string()));
             let resp = match station_client::request_proto::<
-                (), model::chat::ListFriendRequestsResponse,
+                (),
+                model::chat::ListFriendRequestsResponse,
             >(
-                Method::GET, "/api/v1/social/friend-requests", &token, Some(&query), None::<&()>,
+                Method::GET,
+                "/api/v1/social/friend-requests",
+                &token,
+                Some(&query),
+                None::<&()>,
             ) {
                 Ok(r) => r,
                 Err(e) => return to_json(e.into_app_result::<Vec<u8>>("Station request failed")),
@@ -7358,9 +7485,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 "group" => crate::model::chat::ConversationKind::Group,
                 _ => crate::model::chat::ConversationKind::Direct,
             };
-            let plaintext = args.get("plaintext").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let reply_to_message_id = args.get("reply_to_message_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let thread_root_message_id = args.get("thread_root_message_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let plaintext = args
+                .get("plaintext")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let reply_to_message_id = args
+                .get("reply_to_message_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let thread_root_message_id = args
+                .get("thread_root_message_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if conversation_id.is_empty() || plaintext.is_empty() {
                 return to_json(AppResult::<Value>::fail(
                     ErrorCode::InvalidArgument,
@@ -7585,11 +7724,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 .get("command_id")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            match engine.acceptance_interaction_snapshot(
-                conversation_id,
-                message_id,
-                command_id,
-            ) {
+            match engine.acceptance_interaction_snapshot(conversation_id, message_id, command_id) {
                 Ok(snapshot) => to_json(AppResult::success(snapshot)),
                 Err(error) => to_json(AppResult::<Value>::fail(
                     ErrorCode::InternalError,
@@ -7810,32 +7945,78 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
         "messaging_membership_transition" => {
             let guard = state.session.lock().map_err(|_| ()).ok();
-            let actor_id = guard.as_ref().and_then(|g| g.actor_id.clone()).unwrap_or_default();
-            let token = guard.as_ref().and_then(|g| g.token.clone()).unwrap_or_default();
-            let account_id = guard.as_ref().and_then(|g| g.account_id.clone())
-                .unwrap_or_else(|| crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id));
+            let actor_id = guard
+                .as_ref()
+                .and_then(|g| g.actor_id.clone())
+                .unwrap_or_default();
+            let token = guard
+                .as_ref()
+                .and_then(|g| g.token.clone())
+                .unwrap_or_default();
+            let account_id = guard
+                .as_ref()
+                .and_then(|g| g.account_id.clone())
+                .unwrap_or_else(|| {
+                    crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
+                });
             drop(guard);
             if actor_id.is_empty() || token.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::Unauthorized, "authentication required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::Unauthorized,
+                    "authentication required",
+                    None,
+                ));
             }
             let engine = match state.messaging_engines.get(&account_id) {
                 Ok(Some(e)) => e,
-                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InternalError, "messaging engine not active", None)),
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
             };
-            let conversation_id = args.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let conversation_id = args
+                .get("conversation_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let action_str = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
-            let target_ptid = args.get("target_ptid").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let target_device_id = args.get("target_device_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let role = args.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let target_ptid = args
+                .get("target_ptid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let target_device_id = args
+                .get("target_device_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let role = args
+                .get("role")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if conversation_id.is_empty() || target_ptid.is_empty() {
-                return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "conversation_id and target_ptid required", None));
+                return to_json(AppResult::<Value>::fail(
+                    ErrorCode::InvalidArgument,
+                    "conversation_id and target_ptid required",
+                    None,
+                ));
             }
             let action = match action_str {
                 "add_actor" => crate::model::chat::MessagingMembershipAction::AddActor,
                 "remove_actor" => crate::model::chat::MessagingMembershipAction::RemoveActor,
                 "add_device" => crate::model::chat::MessagingMembershipAction::AddDevice,
                 "remove_device" => crate::model::chat::MessagingMembershipAction::RemoveDevice,
-                _ => return to_json(AppResult::<Value>::fail(ErrorCode::InvalidArgument, "unsupported action", None)),
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InvalidArgument,
+                        "unsupported action",
+                        None,
+                    ))
+                }
             };
             match engine.prepare_membership_transition(
                 &token,

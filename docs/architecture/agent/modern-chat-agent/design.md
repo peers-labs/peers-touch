@@ -398,6 +398,42 @@ combines manifest, Agent binding, model/runtime compatibility, connection state,
 and selected client capability lease. Unknown or stale facts reject or degrade
 before provider/tool execution.
 
+Accepted Knowledge refinement (`MCA-D15K`):
+
+- Station owns an actor-scoped, versioned Knowledge resource descriptor.
+- Station-hosted resources reference immutable content/index revisions.
+- Device-local resources expose only opaque client resource refs and require
+  the selected capability session.
+- Turn requests never supply Knowledge locators, policy, or content; context
+  assembly consumes only READY Knowledge bindings from the pinned snapshot.
+
+```text
+Knowledge source mutation
+  -> Station KnowledgeResourceDescriptor revision
+  -> immutable Knowledge CapabilityManifest version
+  -> AgentCapabilityBinding CAS
+  -> CapabilityReadinessSnapshot
+  -> ContextLedger source record
+  -> provider prompt
+```
+
+The descriptor API owns create/update/list/tombstone and returns the manifest
+identity published by the mutation. Station content ingestion must complete
+and produce a content hash/index revision before readiness becomes `READY`.
+Client-local descriptors remain `UNAVAILABLE` until the selected capability
+session proves the opaque resource and can execute bounded retrieval.
+
+Forbidden relationships:
+
+- `ExecuteTurnRequest` must not carry Knowledge source, path, URL, policy, or
+  content.
+- Web/desktop-rust must not infer Knowledge readiness from a selected file,
+  stored label, or legacy Agent JSON.
+- Station retrieval must not open a client-local path or fetch a mutable URL at
+  turn time.
+- Package import must not create the Agent until all portable descriptors and
+  manifest versions resolve; unresolved local refs return a dependency plan.
+
 ToolCall side-effect protocol:
 
 1. Station commits one decision and one execution claim.

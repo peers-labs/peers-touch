@@ -356,7 +356,8 @@ message AgentMessage {
 
 message ExecuteTurnRequest {
   // Fields 9, 10, 15, 16, 17 reserved (removed in C10 portability cleanup).
-  reserved 9, 10, 15, 16, 17;
+  reserved 9, 10, 13, 15, 16, 17;
+  reserved "knowledge_resources";
 
   string conversation_id = 1;
   string agent_id = 2;
@@ -369,7 +370,6 @@ message ExecuteTurnRequest {
   optional string agent_config_prompt = 8;
   optional int32 context_window_size = 11;
   optional int32 max_retries = 12;
-  repeated KnowledgeResource knowledge_resources = 13;
   // Reasoning effort level: "low" | "medium" | "high".
   // Passed through to LLM providers as reasoning_effort where supported.
   optional string effort = 14;
@@ -1032,6 +1032,10 @@ enum ClientCapabilityCommandDomain {
   CLIENT_CAPABILITY_COMMAND_DOMAIN_REVOKE_LEASE = 3;
   CLIENT_CAPABILITY_COMMAND_DOMAIN_PULL_REQUESTS = 4;
   CLIENT_CAPABILITY_COMMAND_DOMAIN_SUBMIT_ACTIVE_RECEIPT = 5;
+  CLIENT_CAPABILITY_COMMAND_DOMAIN_PULL_OPERATIONS = 6;
+  CLIENT_CAPABILITY_COMMAND_DOMAIN_REPORT_OPERATION_EVENT = 7;
+  CLIENT_CAPABILITY_COMMAND_DOMAIN_TAKE_OVER_OPERATION = 8;
+  CLIENT_CAPABILITY_COMMAND_DOMAIN_TAKE_OVER_CLEANUP = 9;
 }
 
 message ClientCapabilityCommandProof {
@@ -1280,6 +1284,26 @@ message TurnDiagnosticToolFact {
   uint64 fencing_token = 10;
   google.protobuf.Timestamp started_at = 11;
   google.protobuf.Timestamp ended_at = 12;
+  string approval_policy = 13;
+  string manifest_id = 14;
+  string manifest_version = 15;
+  string binding_id = 16;
+  uint64 binding_revision = 17;
+  string readiness_snapshot_id = 18;
+  string approval_id = 19;
+  string decision_id = 20;
+  uint64 decision_revision = 21;
+  string execution_claim_id = 22;
+  string executor_lease_id = 23;
+  string side_effect_receipt_id = 24;
+  string tool_batch_id = 25;
+  string capability_session_id = 26;
+  string target_device_id = 27;
+  uint64 dispatch_sequence = 28;
+  uint32 execution_attempt_count = 29;
+  uint32 duplicate_delivery_count = 30;
+  string continuation_id = 31;
+  google.protobuf.Timestamp dispatch_committed_at = 32;
 }
 
 message TurnDiagnosticReplay {
@@ -1297,6 +1321,8 @@ message TurnDiagnosticReplay {
   google.protobuf.Timestamp ended_at = 12;
   google.protobuf.Timestamp generated_at = 13;
   TurnTrace trace = 14;
+  uint32 tool_iterations = 15;
+  uint32 tool_iteration_limit = 16;
 }
 
 message ListTurnFeedbackRequest {

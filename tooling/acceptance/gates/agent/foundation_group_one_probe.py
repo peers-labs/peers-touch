@@ -19,6 +19,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     GroupOneScenarioError,
     evaluate_as_f02,
     evaluate_as_f03,
+    evaluate_as_f04,
     evaluate_as_f10,
 )
 
@@ -28,6 +29,7 @@ GROUP_ONE_CELLS = frozenset(
         "AS-F01",
         "AS-F02",
         "AS-F03",
+        "AS-F04",
         "AS-F07",
         "AS-F08",
         "AS-F09",
@@ -41,7 +43,7 @@ GROUP_ONE_ROWS = frozenset(
         "foundation-browser-direct",
     }
 )
-EXPECTED_GROUP_ONE_TUPLES = 32
+EXPECTED_GROUP_ONE_TUPLES = 36
 
 
 class GroupOneProbeError(RuntimeError):
@@ -154,57 +156,73 @@ class FoundationGroupOneProbeRunner:
         runtime_tuple: FoundationTuple,
         capture: Mapping[str, Any],
     ) -> None:
-        evaluators = {
-            "AS-F02": lambda facts: evaluate_as_f02(facts),
-            "AS-F03": lambda facts: evaluate_as_f03(facts),
-            "AS-F10": lambda facts: evaluate_as_f10(
-                facts,
+        assert_group_one_capture(
+            DirectRuntimeProbeInput(
                 platform=runtime_tuple.platform,
+                locale=runtime_tuple.locale,
+                cell=runtime_tuple.cell,
+                sample_id=runtime_tuple.sample_id,
             ),
-        }
-        evaluator = evaluators.get(runtime_tuple.cell)
-        if evaluator is None:
-            return
-        scenario_facts = capture.get("scenarioFacts")
-        assertions = capture.get("assertions")
-        if not isinstance(scenario_facts, Mapping):
-            raise GroupOneProbeError(
-                f"{runtime_tuple.cell} capture must contain scenarioFacts"
-            )
-        if not isinstance(assertions, Mapping):
-            raise GroupOneProbeError(
-                f"{runtime_tuple.cell} capture must contain assertions"
-            )
-        try:
-            evaluated = evaluator(scenario_facts)
-        except GroupOneScenarioError as error:
-            raise GroupOneProbeError(str(error)) from error
-        # Compare non-deferred assertions strictly; deferred (None) values are
-        # recorded as "deferred_to_w6" and excluded from pass/fail matching.
-        normalized_assertions = {
-            key: value
-            for key, value in dict(assertions).items()
-            if value is not None
-        }
-        normalized_evaluated = {
-            key: value
-            for key, value in evaluated.items()
-            if value is not None
-        }
-        if normalized_assertions != normalized_evaluated:
-            raise GroupOneProbeError(
-                f"{runtime_tuple.cell} assertions do not match production scenario facts"
-            )
-        # Verify deferred keys are consistent between capture and evaluator.
-        deferred_capture = {
-            key for key, value in dict(assertions).items() if value is None
-        }
-        deferred_evaluated = {
-            key for key, value in evaluated.items() if value is None
-        }
-        if deferred_capture != deferred_evaluated:
-            raise GroupOneProbeError(
-                f"{runtime_tuple.cell} deferred_to_w6 keys mismatch: "
-                f"capture={sorted(deferred_capture)}, "
-                f"evaluated={sorted(deferred_evaluated)}"
-            )
+            capture,
+        )
+
+
+def assert_group_one_capture(
+    probe_input: DirectRuntimeProbeInput,
+    capture: Mapping[str, Any],
+) -> None:
+    evaluators = {
+        "AS-F02": lambda facts: evaluate_as_f02(facts),
+        "AS-F03": lambda facts: evaluate_as_f03(facts),
+        "AS-F04": lambda facts: evaluate_as_f04(
+            facts,
+            platform=probe_input.platform,
+        ),
+        "AS-F10": lambda facts: evaluate_as_f10(
+            facts,
+            platform=probe_input.platform,
+        ),
+    }
+    evaluator = evaluators.get(probe_input.cell)
+    if evaluator is None:
+        return
+    scenario_facts = capture.get("scenarioFacts")
+    assertions = capture.get("assertions")
+    if not isinstance(scenario_facts, Mapping):
+        raise GroupOneProbeError(
+            f"{probe_input.cell} capture must contain scenarioFacts"
+        )
+    if not isinstance(assertions, Mapping):
+        raise GroupOneProbeError(
+            f"{probe_input.cell} capture must contain assertions"
+        )
+    try:
+        evaluated = evaluator(scenario_facts)
+    except GroupOneScenarioError as error:
+        raise GroupOneProbeError(str(error)) from error
+    normalized_assertions = {
+        key: value
+        for key, value in dict(assertions).items()
+        if value is not None
+    }
+    normalized_evaluated = {
+        key: value
+        for key, value in evaluated.items()
+        if value is not None
+    }
+    if normalized_assertions != normalized_evaluated:
+        raise GroupOneProbeError(
+            f"{probe_input.cell} assertions do not match production scenario facts"
+        )
+    deferred_capture = {
+        key for key, value in dict(assertions).items() if value is None
+    }
+    deferred_evaluated = {
+        key for key, value in evaluated.items() if value is None
+    }
+    if deferred_capture != deferred_evaluated:
+        raise GroupOneProbeError(
+            f"{probe_input.cell} deferred keys mismatch: "
+            f"capture={sorted(deferred_capture)}, "
+            f"evaluated={sorted(deferred_evaluated)}"
+        )

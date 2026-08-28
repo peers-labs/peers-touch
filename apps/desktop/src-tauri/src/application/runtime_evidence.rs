@@ -1,9 +1,7 @@
 use crate::application::desktop_executor_worker::supervisor::{
     CapabilityWorkerSnapshot, CapabilityWorkerSupervisor, RequestedCapabilityNegativeControl,
 };
-use crate::contracts::{
-    AgentCapabilityReadinessInput, AgentRuntimeActivityInput, AgentRuntimeProfileInput, StubPayload,
-};
+use crate::contracts::{AgentRuntimeActivityInput, AgentRuntimeProfileInput, StubPayload};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::model::agent;
@@ -103,50 +101,6 @@ pub fn effective_runtime_profile(
             "readiness_snapshot_id": snapshot.readiness_snapshot_id,
             "runtimes": snapshot.runtimes.iter().map(runtime_advertisement_json).collect::<Vec<_>>(),
             "observed_at": timestamp_json(snapshot.observed_at.as_ref()),
-        }),
-    )
-}
-
-pub fn capability_readiness(
-    input: AgentCapabilityReadinessInput,
-    token: &str,
-) -> AppResult<StubPayload> {
-    let request = agent::GetCapabilityReadinessRequest {
-        agent_id: input.agent_id.trim().to_string(),
-        runtime_snapshot_id: input.runtime_snapshot_id.unwrap_or_default(),
-        client_capability_session_id: input.client_capability_session_id,
-    };
-    let response = match station_client::request_proto::<_, agent::GetCapabilityReadinessResponse>(
-        Method::POST,
-        "/sub-agent/agent/capability/readiness",
-        token,
-        None,
-        Some(&request),
-    ) {
-        Ok(response) => response,
-        Err(error) => return error.into_app_result("agent.capabilityReadinessFailed"),
-    };
-    let Some(snapshot) = response.snapshot else {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            "agent.capabilityReadinessSnapshotMissing",
-            None,
-        );
-    };
-    success_payload(
-        "agent_capability_readiness",
-        json!({
-            "snapshot_id": snapshot.snapshot_id,
-            "ptid": snapshot.ptid,
-            "agent_id": snapshot.agent_id,
-            "runtime_snapshot_id": snapshot.runtime_snapshot_id,
-            "model_capabilities": snapshot.model_capabilities.as_ref().map(runtime_capabilities_json),
-            "binding_revisions": snapshot.binding_revisions,
-            "connection_revisions": snapshot.connection_revisions,
-            "selected_client_session_id": snapshot.selected_client_session_id,
-            "capabilities": snapshot.capabilities.iter().map(capability_readiness_json).collect::<Vec<_>>(),
-            "created_at": timestamp_json(snapshot.created_at.as_ref()),
-            "expires_at": timestamp_json(snapshot.expires_at.as_ref()),
         }),
     )
 }
@@ -263,6 +217,10 @@ pub fn capability_session_snapshot(
                 "capability_ids": worker.capability_ids,
                 "local_execution_attempt_count": worker.local_execution_attempt_count,
                 "local_side_effect_count": worker.local_side_effect_count,
+                "tool_call_side_effect_counts": worker.tool_call_side_effect_counts.iter().map(|count| json!({
+                    "tool_call_id": count.tool_call_id,
+                    "side_effect_count": count.side_effect_count,
+                })).collect::<Vec<_>>(),
                 "expires_at_ms": worker.expires_at_ms,
             })
         })
@@ -433,20 +391,6 @@ fn runtime_advertisement_json(value: &agent::EffectiveRuntimeAdvertisement) -> s
     })
 }
 
-fn capability_readiness_json(value: &agent::CapabilityReadiness) -> serde_json::Value {
-    let state = agent::CapabilityReadinessState::try_from(value.state)
-        .unwrap_or(agent::CapabilityReadinessState::Unspecified);
-    json!({
-        "capability_id": value.capability_id,
-        "capability_version": value.capability_version,
-        "binding_id": value.binding_id,
-        "binding_revision": value.binding_revision,
-        "state": state.as_str_name(),
-        "authority": value.authority,
-        "reason_code": value.reason_code,
-    })
-}
-
 fn capability_session_json(value: &agent::ClientCapabilitySession) -> serde_json::Value {
     json!({
         "session_id": value.session_id,
@@ -471,52 +415,6 @@ fn capability_session_json(value: &agent::ClientCapabilitySession) -> serde_json
         "connection_id": value.connection_id,
         "lease_id": value.lease_id,
         "lease_revision": value.lease_revision,
-    })
-}
-
-fn runtime_capabilities_json(value: &agent::RuntimeCapabilitySnapshot) -> serde_json::Value {
-    json!({
-        "snapshot_id": value.snapshot_id,
-        "input": value.input.as_ref().map(|input| json!({
-            "text": input.text,
-            "image": input.image,
-            "file": input.file,
-            "audio": input.audio,
-        })),
-        "output": value.output.as_ref().map(|output| json!({
-            "text": output.text,
-            "structured": output.structured,
-            "image": output.image,
-        })),
-        "runtime": value.runtime.as_ref().map(|runtime| json!({
-            "streaming": runtime.streaming,
-            "reasoning": runtime.reasoning,
-            "prompt_cache": runtime.prompt_cache,
-            "external_resume": runtime.external_resume,
-        })),
-        "agentic": value.agentic.as_ref().map(|agentic| json!({
-            "native_tools": agentic.native_tools,
-            "parallel_tools": agentic.parallel_tools,
-            "local_bridge": agentic.local_bridge,
-        })),
-        "limits": value.limits.as_ref().map(|limits| json!({
-            "context_tokens": limits.context_tokens,
-            "output_tokens": limits.output_tokens,
-            "attachment_count": limits.attachment_count,
-            "attachment_bytes": limits.attachment_bytes,
-        })),
-        "resolution": value.resolution.iter().map(|resolution| json!({
-            "capability_id": resolution.capability_id,
-            "resolution": agent::RuntimeCapabilityResolution::try_from(resolution.resolution)
-                .unwrap_or(agent::RuntimeCapabilityResolution::Unspecified)
-                .as_str_name(),
-            "reason_code": resolution.reason_code,
-        })).collect::<Vec<_>>(),
-        "provenance": value.provenance.as_ref().map(|provenance| json!({
-            "discovery_source": provenance.discovery_source,
-            "source_version": provenance.source_version,
-            "observed_at": timestamp_json(provenance.observed_at.as_ref()),
-        })),
     })
 }
 
@@ -598,6 +496,7 @@ fn success_payload(command: &str, status: serde_json::Value) -> AppResult<StubPa
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::desktop_executor_worker::receipt_ledger::ToolCallSideEffectCount;
 
     #[test]
     fn candidate_validation_rejects_unknown_runtime() {
@@ -626,7 +525,11 @@ mod tests {
             platform: agent::ClientPlatform::Desktop as i32,
             capability_ids: vec!["clipboard.read".to_string()],
             local_execution_attempt_count: 3,
-            local_side_effect_count: 2,
+            local_side_effect_count: 1,
+            tool_call_side_effect_counts: vec![ToolCallSideEffectCount {
+                tool_call_id: "tool-call-exact".to_string(),
+                side_effect_count: 1,
+            }],
             expires_at_ms: 123,
         }]);
         assert!(result.ok);
@@ -637,7 +540,9 @@ mod tests {
         assert!(!status.contains("lease-secret"));
         assert!(status.contains("capability-hash"));
         assert!(status.contains("\"local_execution_attempt_count\":3"));
-        assert!(status.contains("\"local_side_effect_count\":2"));
+        assert!(status.contains("\"local_side_effect_count\":1"));
+        assert!(status.contains("\"tool_call_id\":\"tool-call-exact\""));
+        assert!(status.contains("\"side_effect_count\":1"));
     }
 
     #[test]
@@ -653,6 +558,7 @@ mod tests {
             capability_ids: Vec::new(),
             local_execution_attempt_count: 0,
             local_side_effect_count: 0,
+            tool_call_side_effect_counts: Vec::new(),
             expires_at_ms: 456,
         }]);
         assert!(result.ok);
@@ -661,6 +567,7 @@ mod tests {
         assert!(status.contains("\"capability_ids\":[]"));
         assert!(status.contains("\"local_execution_attempt_count\":0"));
         assert!(status.contains("\"local_side_effect_count\":0"));
+        assert!(status.contains("\"tool_call_side_effect_counts\":[]"));
         assert!(!status.contains("filesystem.read"));
         assert!(!status.contains("shell.execute"));
     }

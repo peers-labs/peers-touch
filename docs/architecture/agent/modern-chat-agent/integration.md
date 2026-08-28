@@ -521,6 +521,22 @@ This is the authoritative starting point for the next planning job.
 | C14 | Connector `enabledTools`/labels as readiness or binding identity | OAuth connection owner + Connector resource manifests + Agent bindings |
 | C15 | Evaluation localStorage datasets/runs/results and Evaluation `quickCompletion` execution | Station Evaluation aggregate using canonical Turn/Trace |
 
+Accepted C12 Knowledge closure (`MCA-D15K`):
+
+1. Import legacy Agent Knowledge JSON into actor-scoped descriptor revisions;
+   the legacy data is read-only migration input.
+2. Publish one immutable Knowledge manifest version per descriptor revision and
+   create/reconcile bindings with exact Agent version and binding revision.
+3. Switch Profile, package, prompt assembly, retrieval, and trace attribution
+   to descriptor/manifest/binding/readiness contracts.
+4. Reject non-empty request-supplied Knowledge fields before provider or
+   retrieval work.
+5. Delete legacy Knowledge binding routes, config writes, request fields, and
+   Station local-path/turn-time URL retrieval.
+6. Prove disabled-resource omission, actor isolation, stale revision rejection,
+   local-resource session fencing, package dependency failure, and restart
+   readback before removing the migration reader.
+
 Entity deletion, tombstone, historical snapshot, and cleanup rules are governed
 by `data-model.md §6`; implementation plans must prove both tree-wide consumer
 cutover and runtime resource cleanup.

@@ -37,6 +37,7 @@ pub trait CapabilityExecutor {
         request: &ClientCapabilityRequest,
         resources: &[LocalResource],
         external_idempotency_key: Option<&str>,
+        record_side_effect_start: &mut dyn FnMut() -> Result<(), String>,
     ) -> Result<Vec<u8>, String>;
 }
 
@@ -213,7 +214,13 @@ impl<'a> FencedExecutor<'a> {
             .ok_or_else(|| "CLIENT_CAPABILITY_PREPARED_RECEIPT_MISSING".to_string())?
             .receipt
             .side_effect_receipt_id;
-        let executed = self.executor.execute(envelope, resources, idempotency_key);
+        let mut record_side_effect_start = || self.ledger.record_side_effect_start(envelope);
+        let executed = self.executor.execute(
+            envelope,
+            resources,
+            idempotency_key,
+            &mut record_side_effect_start,
+        );
         let terminal_at_ms = now_unix_ms().max(prepared_at_ms);
         let receipt = match executed {
             Ok(result) if result.len() <= contract.max_result_bytes => terminal_receipt(
@@ -282,7 +289,12 @@ impl<'a> FencedExecutor<'a> {
             if reconciliation_deadline <= now_ms {
                 return Err("CLIENT_CAPABILITY_RECONCILIATION_DEADLINE_EXPIRED".to_string());
             }
-            sign_terminal_recovery(self.signing_key_id, self.signing_key, envelope, &mut receipt)?;
+            sign_terminal_recovery(
+                self.signing_key_id,
+                self.signing_key,
+                envelope,
+                &mut receipt,
+            )?;
         }
         Ok(receipt)
     }

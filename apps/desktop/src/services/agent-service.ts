@@ -2,6 +2,8 @@ import {
   api,
   type Agent,
   type AgentPackage,
+  type AgentPackageExportResult,
+  type AgentPackageImportResult,
   type AgentChatConfig,
   parseAgentChatConfig,
   type GrowthSnapshot,
@@ -40,11 +42,11 @@ export class AgentService {
     return api.duplicateAgent(id, name);
   }
 
-  async exportPackage(id: string, options?: { includeLocalPaths?: boolean }): Promise<AgentPackage> {
+  async exportPackage(id: string, options?: { includeLocalPaths?: boolean }): Promise<AgentPackageExportResult> {
     return api.exportAgentPackage(id, options);
   }
 
-  async importPackage(pkg: AgentPackage | Record<string, unknown>, name?: string): Promise<Agent> {
+  async importPackage(pkg: AgentPackage | Record<string, unknown>, name?: string): Promise<AgentPackageImportResult> {
     return api.importAgentPackage(pkg, name);
   }
 

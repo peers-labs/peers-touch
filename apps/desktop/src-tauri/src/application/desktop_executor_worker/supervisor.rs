@@ -1,6 +1,6 @@
 use super::fenced_executor::{CapabilityContract, ExecutionLease, FencedExecutor};
 use super::local_executor::LocalCapabilityExecutor;
-use super::receipt_ledger::ReceiptLedger;
+use super::receipt_ledger::{ReceiptLedger, ToolCallSideEffectCount};
 use super::resource_registry::ResourceRegistry;
 use super::station_transport::{
     CapabilityNegativeControl, CapabilityNegativeControlStationFact, CapabilityStationTransport,
@@ -87,6 +87,7 @@ pub struct CapabilityWorkerSnapshot {
     pub capability_ids: Vec<String>,
     pub local_execution_attempt_count: u64,
     pub local_side_effect_count: u64,
+    pub tool_call_side_effect_counts: Vec<ToolCallSideEffectCount>,
     pub expires_at_ms: i64,
 }
 
@@ -415,14 +416,24 @@ fn run_supervisor(
         for account in replace_accounts {
             workers.remove(&account);
         }
-        publish_worker_snapshot(&snapshot, &workers);
+        if let Err(error) = publish_worker_snapshot(&snapshot, &workers) {
+            tracing::warn!(
+                error = %error,
+                "client capability worker snapshot publication failed"
+            );
+        }
         thread::sleep(POLL_INTERVAL);
     }
     stop_all(
         &mut workers,
         ClientCapabilityLeaseRevokeReason::WorkerShutdown,
     );
-    publish_worker_snapshot(&snapshot, &workers);
+    if let Err(error) = publish_worker_snapshot(&snapshot, &workers) {
+        tracing::warn!(
+            error = %error,
+            "final client capability worker snapshot publication failed"
+        );
+    }
 }
 
 fn process_negative_controls(
@@ -455,7 +466,7 @@ fn emit_negative_control_from_worker(
     if matches.next().is_some() {
         return Err("AS_F10_CAPABILITY_SESSION_AMBIGUOUS".to_string());
     }
-    let before = execution_counters(worker);
+    let before = execution_counters(worker)?;
     let Some(station_control) = request.control.station_control() else {
         return Ok(CapabilityNegativeControlFacts {
             control: request.control.as_str(),
@@ -479,23 +490,34 @@ fn emit_negative_control_from_worker(
         capability_session_id_hash: request.capability_session_id_hash.clone(),
         before,
         station: Some(station),
-        after: execution_counters(worker),
+        after: execution_counters(worker)?,
     })
 }
 
-fn execution_counters(worker: &ActiveWorker) -> CapabilityExecutionCounters {
-    CapabilityExecutionCounters {
+fn execution_counters(worker: &ActiveWorker) -> Result<CapabilityExecutionCounters, String> {
+    let side_effect_counts = tool_call_side_effect_counts(worker)?;
+    Ok(CapabilityExecutionCounters {
         local_execution_attempt_count: worker
             .executor
             .as_ref()
             .map(LocalCapabilityExecutor::execution_attempt_count)
             .unwrap_or_default(),
-        local_side_effect_count: worker
-            .executor
-            .as_ref()
-            .map(LocalCapabilityExecutor::side_effect_count)
-            .unwrap_or_default(),
-    }
+        local_side_effect_count: side_effect_counts
+            .iter()
+            .map(|count| count.side_effect_count)
+            .sum(),
+    })
+}
+
+fn tool_call_side_effect_counts(
+    worker: &ActiveWorker,
+) -> Result<Vec<ToolCallSideEffectCount>, String> {
+    worker
+        .ledger
+        .as_ref()
+        .map(ReceiptLedger::side_effect_counts)
+        .transpose()
+        .map(Option::unwrap_or_default)
 }
 
 fn hash_identifier(value: &str) -> String {
@@ -505,48 +527,54 @@ fn hash_identifier(value: &str) -> String {
 fn publish_worker_snapshot(
     target: &Mutex<Vec<CapabilityWorkerSnapshot>>,
     workers: &HashMap<String, ActiveWorker>,
-) {
+) -> Result<(), String> {
     let mut next = workers
         .values()
-        .map(|worker| CapabilityWorkerSnapshot {
-            actor_ptid: worker.context.actor_ptid.clone(),
-            device_id: worker.context.device_id.clone(),
-            capability_session_id: worker.lease.capability_session_id.clone(),
-            lease_id: worker.lease.lease_id.clone(),
-            lease_revision: worker.lease.lease_revision,
-            capability_set_hash: worker.lease.capability_set_hash.clone(),
-            platform: worker.lease.platform,
-            capability_ids: worker
-                .lease
-                .capabilities
+        .map(|worker| {
+            let tool_call_side_effect_counts = tool_call_side_effect_counts(worker)?;
+            let local_side_effect_count = tool_call_side_effect_counts
                 .iter()
-                .map(|capability| capability.capability_id.clone())
-                .collect(),
-            local_execution_attempt_count: worker
-                .executor
-                .as_ref()
-                .map(LocalCapabilityExecutor::execution_attempt_count)
-                .unwrap_or_default(),
-            local_side_effect_count: worker
-                .executor
-                .as_ref()
-                .map(LocalCapabilityExecutor::side_effect_count)
-                .unwrap_or_default(),
-            expires_at_ms: worker
-                .lease
-                .expires_at
-                .as_ref()
-                .map(|timestamp| {
-                    timestamp.seconds.saturating_mul(1_000)
-                        + i64::from(timestamp.nanos).div_euclid(1_000_000)
-                })
-                .unwrap_or_default(),
+                .map(|count| count.side_effect_count)
+                .sum();
+            Ok(CapabilityWorkerSnapshot {
+                actor_ptid: worker.context.actor_ptid.clone(),
+                device_id: worker.context.device_id.clone(),
+                capability_session_id: worker.lease.capability_session_id.clone(),
+                lease_id: worker.lease.lease_id.clone(),
+                lease_revision: worker.lease.lease_revision,
+                capability_set_hash: worker.lease.capability_set_hash.clone(),
+                platform: worker.lease.platform,
+                capability_ids: worker
+                    .lease
+                    .capabilities
+                    .iter()
+                    .map(|capability| capability.capability_id.clone())
+                    .collect(),
+                local_execution_attempt_count: worker
+                    .executor
+                    .as_ref()
+                    .map(LocalCapabilityExecutor::execution_attempt_count)
+                    .unwrap_or_default(),
+                local_side_effect_count,
+                tool_call_side_effect_counts,
+                expires_at_ms: worker
+                    .lease
+                    .expires_at
+                    .as_ref()
+                    .map(|timestamp| {
+                        timestamp.seconds.saturating_mul(1_000)
+                            + i64::from(timestamp.nanos).div_euclid(1_000_000)
+                    })
+                    .unwrap_or_default(),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, String>>()?;
     next.sort_by(|left, right| left.capability_session_id.cmp(&right.capability_session_id));
-    if let Ok(mut current) = target.lock() {
-        *current = next;
-    }
+    let mut current = target
+        .lock()
+        .map_err(|_| "client capability worker snapshot lock poisoned".to_string())?;
+    *current = next;
+    Ok(())
 }
 
 const KEY_NOT_FOUND_BACKOFF: Duration = Duration::from_secs(5);

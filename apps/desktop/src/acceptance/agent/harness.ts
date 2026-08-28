@@ -5,7 +5,6 @@ import i18n, { changeLanguage } from '../../i18n';
 import { installDeferredAppRuntimeProjections } from '../../services/appRuntime';
 import {
   api,
-  parseAgentChatConfig,
   streamAgentTurn,
   submitAgentFeedback,
 } from '../../services/desktop_api';
@@ -13,7 +12,17 @@ import { useAgentStore } from '../../store/agent';
 import { useChatStore } from '../../store/chat';
 import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
-import { AgentTurnStatus } from '../../gen/proto/domain/agent/agent_pb';
+import {
+  AgentTurnStatus,
+  ToolCallStatus,
+  ToolExecutionOwner,
+} from '../../gen/proto/domain/agent/agent_pb';
+import {
+  CapabilityApprovalPolicy,
+  CapabilitySourceKind,
+  type AgentCapabilityBinding,
+  type CapabilityManifest,
+} from '../../gen/proto/domain/agent/capability_pb';
 import { registerAcceptanceHarness } from '../registry';
 
 interface LoginInput {
@@ -61,6 +70,7 @@ function startObservedFoundationTurn(input: {
   effort?: 'low' | 'medium' | 'high';
   thinkingMode?: 'auto' | 'enabled' | 'disabled';
   clientCapabilitySessionId?: string;
+  timeoutMs?: number;
 }): ObservedFoundationTurn {
   const events: ObservedFoundationTurnResult['events'] = [];
   let resolveFirstEvent: (
@@ -109,7 +119,7 @@ function startObservedFoundationTurn(input: {
   timeout = window.setTimeout(() => {
     controller.abort();
     finish(false, 'agent.acceptance.turnSubmissionTimeout');
-  }, 120_000);
+  }, input.timeoutMs ?? 120_000);
   return { controller, events, firstEvent, result };
 }
 
@@ -396,6 +406,681 @@ async function waitFor(
   throw new Error(`timed out waiting for: ${description}`);
 }
 
+const FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS = 180_000;
+
+interface FoundationToolFixture {
+  manifest: CapabilityManifest;
+  binding: AgentCapabilityBinding | null;
+  toolName: string;
+  arguments: Record<string, unknown>;
+}
+
+interface FoundationToolTurn {
+  conversationId: string;
+  turnId: string;
+  observed: ObservedFoundationTurn;
+}
+
+function toolStatusName(value: unknown): string {
+  switch (value) {
+    case ToolCallStatus.PROPOSED:
+      return 'proposed';
+    case ToolCallStatus.WAITING_APPROVAL:
+      return 'waiting_approval';
+    case ToolCallStatus.APPROVED:
+      return 'approved';
+    case ToolCallStatus.CLAIMED:
+      return 'claimed';
+    case ToolCallStatus.RUNNING:
+      return 'running';
+    case ToolCallStatus.SUCCEEDED:
+      return 'succeeded';
+    case ToolCallStatus.FAILED:
+      return 'failed';
+    case ToolCallStatus.CANCELLED:
+      return 'cancelled';
+    case ToolCallStatus.EXPIRED:
+      return 'expired';
+    case ToolCallStatus.UNKNOWN_SIDE_EFFECT:
+      return 'unknown_side_effect';
+    case ToolCallStatus.DENIED:
+      return 'denied';
+    default:
+      throw new Error('agent.acceptance.toolStatusMissing');
+  }
+}
+
+function toolExecutionOwnerName(value: unknown): string {
+  switch (value) {
+    case ToolExecutionOwner.STATION:
+      return 'station';
+    case ToolExecutionOwner.CLIENT_CAPABILITY:
+      return 'client_capability';
+    default:
+      throw new Error('agent.acceptance.toolExecutionOwnerMissing');
+  }
+}
+
+async function foundationDiagnosticReplay(
+  turnId: string,
+): Promise<Record<string, unknown>> {
+  const response = evidenceRecord(
+    evidenceValue(await api.exportAgentTurnDiagnostics(turnId)),
+    'turnDiagnostics',
+  );
+  return evidenceRecord(response.replay, 'turnDiagnosticReplay');
+}
+
+function foundationDiagnosticToolFacts(
+  replay: Record<string, unknown>,
+): Record<string, unknown>[] {
+  const values = evidenceField(replay, 'toolCalls', 'tool_calls');
+  if (!Array.isArray(values)) {
+    throw new Error('agent.acceptance.turnDiagnosticToolFactsMissing');
+  }
+  return values.map((value) =>
+    evidenceRecord(value, 'turnDiagnosticToolFact'));
+}
+
+async function waitForFoundationToolFacts(
+  turnId: string,
+  predicate: (
+    facts: Record<string, unknown>[],
+    replay: Record<string, unknown>,
+  ) => boolean,
+  description: string,
+  timeoutMs = FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+): Promise<{
+  replay: Record<string, unknown>;
+  facts: Record<string, unknown>[];
+}> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const replay = await foundationDiagnosticReplay(turnId);
+    const facts = foundationDiagnosticToolFacts(replay);
+    if (predicate(facts, replay)) return { replay, facts };
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error(`timed out waiting for: ${description}`);
+}
+
+async function foundationToolFixture(
+  agentId: string,
+  platform: string,
+): Promise<FoundationToolFixture> {
+  const sourceKind = platform === 'browser'
+    ? CapabilitySourceKind.BUILTIN_TOOL
+    : CapabilitySourceKind.CLIENT_NATIVE;
+  const toolName = platform === 'browser'
+    ? 'skills_list'
+    : 'local_clipboard_read';
+  const [manifests, bindings] = await Promise.all([
+    api.listCapabilityManifests([sourceKind]),
+    api.listAgentCapabilityBindings(agentId),
+  ]);
+  const manifest = manifests.find((candidate) =>
+    candidate.sourceKind === sourceKind
+    && candidate.sourceInstanceId === toolName);
+  if (!manifest) {
+    throw new Error('agent.acceptance.foundationToolManifestMissing');
+  }
+  const binding = bindings.find((candidate) =>
+    candidate.capabilityId === manifest.capabilityId
+    && candidate.capabilityVersion === manifest.version
+    && !candidate.tombstonedAt) ?? null;
+  return {
+    manifest,
+    binding,
+    toolName,
+    arguments: platform === 'browser'
+      ? {}
+      : {},
+  };
+}
+
+async function updateFoundationToolPolicy(
+  agent: NonNullable<ReturnType<typeof selectedAgent>>,
+  fixture: FoundationToolFixture,
+  current: AgentCapabilityBinding | null,
+  policy: CapabilityApprovalPolicy,
+  enabled = true,
+): Promise<AgentCapabilityBinding> {
+  return api.upsertAgentCapabilityBinding({
+    bindingId: current?.bindingId,
+    agentId: agent.id || agent.name,
+    capabilityId: fixture.manifest.capabilityId,
+    capabilityVersion: fixture.manifest.version,
+    enabled,
+    approvalPolicy: policy,
+    expectedAgentVersion: agent.version,
+  }, current?.revision ?? 0, crypto.randomUUID());
+}
+
+async function startFoundationToolTurn(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  fixture: FoundationToolFixture;
+  sampleId: string;
+  label: string;
+  repeatUntilStopped?: boolean;
+}): Promise<FoundationToolTurn> {
+  const agentId = input.agent.id || input.agent.name;
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation ${input.label} ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  const argumentsJSON = JSON.stringify(input.fixture.arguments);
+  const content = input.repeatUntilStopped
+    ? `Call ${input.fixture.toolName} with ${argumentsJSON}. After every tool result, call the same tool again with the same arguments. Do not stop voluntarily; let the runtime tool-loop budget stop the turn.`
+    : `Call ${input.fixture.toolName} exactly once with ${argumentsJSON}. After the tool result, answer with one short sentence and do not call another tool.`;
+  const observed = startObservedFoundationTurn({
+    conversationId: conversation.conversation_id,
+    agentId,
+    content,
+    idempotencyKey: crypto.randomUUID(),
+    provider: input.agent.provider || undefined,
+    model: input.agent.model || undefined,
+    clientCapabilitySessionId: input.capabilitySessionId,
+    timeoutMs: input.repeatUntilStopped
+      ? 300_000
+      : FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+  });
+  const startedAt = Date.now();
+  let turnId = '';
+  while (!turnId && Date.now() - startedAt < 30_000) {
+    turnId = observedTurnId(observed.events);
+    if (!turnId) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  if (!turnId) {
+    observed.controller.abort();
+    throw new Error('agent.acceptance.foundationTurnIdMissing');
+  }
+  return {
+    conversationId: conversation.conversation_id,
+    turnId,
+    observed,
+  };
+}
+
+function toolApprovalEvent(
+  observed: ObservedFoundationTurn,
+): Record<string, unknown> | null {
+  const event = observed.events.find((candidate) =>
+    candidate.event === 'tool_approval_required');
+  return event?.data ?? null;
+}
+
+async function waitForToolApprovalEvent(
+  turn: FoundationToolTurn,
+): Promise<Record<string, unknown>> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 60_000) {
+    const event = toolApprovalEvent(turn.observed);
+    if (event) return event;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error('agent.acceptance.foundationToolApprovalMissing');
+}
+
+function withoutDiagnosticGenerationTime(
+  replay: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(replay).filter(
+      ([key]) => key !== 'generatedAt' && key !== 'generated_at',
+    ),
+  );
+}
+
+function diagnosticToolCase(
+  fact: Record<string, unknown>,
+  sideEffectCount: number,
+): Record<string, unknown> {
+  const status = toolStatusName(fact.status);
+  const policy = String(
+    evidenceField(fact, 'approvalPolicy', 'approval_policy') ?? '',
+  );
+  const approved = Boolean(fact.approved);
+  const states = ['policy_check'];
+  if (policy === 'auto') {
+    states.push('auto_approved');
+  } else if (status === 'denied') {
+    states.push('denied');
+  } else {
+    states.push('awaiting_user');
+    if (status !== 'expired') states.push(approved ? 'approved' : 'denied');
+  }
+  if (status === 'succeeded') states.push('running', 'succeeded');
+  if (status === 'expired') states.push('expired');
+
+  const stringField = (camelCase: string, snakeCase: string): string =>
+    String(evidenceField(fact, camelCase, snakeCase) ?? '');
+  const numberField = (camelCase: string, snakeCase: string): number =>
+    Number(evidenceField(fact, camelCase, snakeCase) ?? 0);
+
+  return {
+    policy,
+    states,
+    executionOwner: toolExecutionOwnerName(
+      evidenceField(fact, 'executionOwner', 'execution_owner'),
+    ),
+    executionAttemptCount: numberField(
+      'executionAttemptCount',
+      'execution_attempt_count',
+    ),
+    sideEffectCount,
+    resultCount: stringField('resultId', 'result_id') ? 1 : 0,
+    continuationCount: stringField('continuationId', 'continuation_id') ? 1 : 0,
+    duplicateDeliveryCount: numberField(
+      'duplicateDeliveryCount',
+      'duplicate_delivery_count',
+    ),
+    lineage: {
+      toolCallId: stringField('toolCallId', 'tool_call_id'),
+      toolBatchId: stringField('toolBatchId', 'tool_batch_id'),
+      manifestId: stringField('manifestId', 'manifest_id'),
+      manifestVersion: stringField('manifestVersion', 'manifest_version'),
+      bindingId: stringField('bindingId', 'binding_id'),
+      bindingRevision: numberField('bindingRevision', 'binding_revision'),
+      readinessSnapshotId: stringField(
+        'readinessSnapshotId',
+        'readiness_snapshot_id',
+      ),
+      approvalId: stringField('approvalId', 'approval_id'),
+      decisionId: stringField('decisionId', 'decision_id'),
+      executionClaimId: stringField(
+        'executionClaimId',
+        'execution_claim_id',
+      ),
+      fencingToken: numberField('fencingToken', 'fencing_token'),
+      sideEffectReceiptId: stringField(
+        'sideEffectReceiptId',
+        'side_effect_receipt_id',
+      ),
+      resultId: stringField('resultId', 'result_id'),
+      continuationId: stringField('continuationId', 'continuation_id'),
+      dispatchCommittedAt: evidenceField(
+        fact,
+        'dispatchCommittedAt',
+        'dispatch_committed_at',
+      ),
+      startedAt: evidenceField(fact, 'startedAt', 'started_at'),
+      endedAt: evidenceField(fact, 'endedAt', 'ended_at'),
+    },
+  };
+}
+
+async function foundationToolSideEffectCount(
+  platform: string,
+  fact: Record<string, unknown>,
+): Promise<number> {
+  const toolCallId = String(
+    evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '',
+  );
+  if (!toolCallId) {
+    throw new Error('agent.acceptance.foundationToolCallIdMissing');
+  }
+  if (platform === 'browser') {
+    return Number(
+      evidenceField(
+        fact,
+        'executionAttemptCount',
+        'execution_attempt_count',
+      ) ?? 0,
+    );
+  }
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 30_000) {
+    const snapshot = await api.getAgentCapabilitySessionSnapshot();
+    const matches = snapshot.sessions.flatMap((session) =>
+      session.tool_call_side_effect_counts.filter(
+        (entry) => entry.tool_call_id === toolCallId,
+      ));
+    if (matches.length > 1) {
+      throw new Error('agent.acceptance.foundationToolSideEffectCountAmbiguous');
+    }
+    if (matches.length === 1) return matches[0].side_effect_count;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error('agent.acceptance.foundationToolSideEffectCountMissing');
+}
+
+function diagnosticReplayTerminal(replay: Record<string, unknown>): boolean {
+  return [
+    AgentTurnStatus.COMPLETED,
+    AgentTurnStatus.FAILED,
+    AgentTurnStatus.CANCELLED,
+    AgentTurnStatus.INTERRUPTED,
+    AgentTurnStatus.REJECTED,
+  ].includes(Number(replay.status) as AgentTurnStatus);
+}
+
+async function runFoundationF04Scenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  platform: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: {
+    eventType: string;
+    sequence: number;
+    observedAt: string;
+  };
+  facts: Record<string, unknown>;
+}> {
+  const fixture = await foundationToolFixture(
+    input.agent.id || input.agent.name,
+    input.platform,
+  );
+  const originalBinding = fixture.binding;
+  let currentBinding = originalBinding;
+  const diagnosticPairs: Array<{
+    source: Record<string, unknown>;
+    replay: Record<string, unknown>;
+  }> = [];
+  let primaryConversationId = '';
+  let primaryTurnId = '';
+  const startedAt = performance.now();
+
+  const applyPolicy = async (policy: CapabilityApprovalPolicy) => {
+    currentBinding = await updateFoundationToolPolicy(
+      input.agent,
+      fixture,
+      currentBinding,
+      policy,
+    );
+  };
+
+  const runCase = async (
+    label: string,
+    policy: CapabilityApprovalPolicy,
+    targetStatus: ToolCallStatus,
+    decision?: boolean,
+  ) => {
+    await applyPolicy(policy);
+    const turn = await startFoundationToolTurn({
+      agent: input.agent,
+      capabilitySessionId: input.capabilitySessionId,
+      fixture,
+      sampleId: input.sampleId,
+      label,
+    });
+    let decisionIntent: Parameters<typeof api.submitAgentToolDecision>[0] | null = null;
+    let firstDecision: Awaited<ReturnType<typeof api.submitAgentToolDecision>> | null = null;
+    if (decision !== undefined) {
+      const approval = await waitForToolApprovalEvent(turn);
+      const approvalId = String(
+        evidenceField(approval, 'approvalId', 'approval_id') ?? '',
+      );
+      const toolCallId = String(
+        evidenceField(approval, 'toolCallId', 'tool_call_id') ?? '',
+      );
+      const expectedRevision = Number(
+        evidenceField(approval, 'decisionRevision', 'decision_revision') ?? 0,
+      );
+      if (!approvalId || !toolCallId || !Number.isInteger(expectedRevision)) {
+        throw new Error('agent.acceptance.foundationToolApprovalInvalid');
+      }
+      decisionIntent = {
+        approval_id: approvalId,
+        tool_call_id: toolCallId,
+        decision_id: crypto.randomUUID(),
+        expected_revision: expectedRevision,
+        approved: decision,
+        idempotency_key: crypto.randomUUID(),
+      };
+      firstDecision = await api.submitAgentToolDecision(decisionIntent);
+      if (!firstDecision.accepted) {
+        throw new Error('agent.acceptance.foundationToolDecisionRejected');
+      }
+    }
+
+    const beforeReplay = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts, replay) =>
+        facts.length === 1
+        && Number(facts[0].status) === targetStatus
+        && diagnosticReplayTerminal(replay),
+      `Foundation ${label} ToolCall settlement`,
+    );
+    let replayedDecision = firstDecision;
+    if (decisionIntent && firstDecision) {
+      replayedDecision = await api.submitAgentToolDecision(decisionIntent);
+      if (
+        !replayedDecision.accepted
+        || replayedDecision.decision_id !== firstDecision.decision_id
+        || replayedDecision.decision_revision !== firstDecision.decision_revision
+        || replayedDecision.payload_hash !== firstDecision.payload_hash
+      ) {
+        throw new Error('agent.acceptance.foundationToolDecisionReplayMismatch');
+      }
+    }
+    const source = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts, replay) =>
+        facts.length === 1
+        && Number(facts[0].status) === targetStatus
+        && diagnosticReplayTerminal(replay),
+      `Foundation ${label} diagnostic replay`,
+    );
+    const replayed = await waitForFoundationToolFacts(
+      turn.turnId,
+      (facts, replay) =>
+        facts.length === 1
+        && Number(facts[0].status) === targetStatus
+        && diagnosticReplayTerminal(replay),
+      `Foundation ${label} repeated diagnostic replay`,
+    );
+    diagnosticPairs.push({ source: source.replay, replay: replayed.replay });
+    const fact = replayed.facts[0];
+    const sideEffectCount = await foundationToolSideEffectCount(
+      input.platform,
+      fact,
+    );
+    return {
+      turn,
+      fact,
+      sourceReplay: source.replay,
+      replay: replayed.replay,
+      beforeReplayFact: diagnosticToolCase(
+        beforeReplay.facts[0],
+        sideEffectCount,
+      ),
+      caseFact: diagnosticToolCase(fact, sideEffectCount),
+      decision: replayedDecision,
+    };
+  };
+
+  try {
+    const auto = await runCase(
+      'auto',
+      CapabilityApprovalPolicy.AUTO,
+      ToolCallStatus.SUCCEEDED,
+    );
+    const manual = await runCase(
+      'manual',
+      CapabilityApprovalPolicy.MANUAL,
+      ToolCallStatus.SUCCEEDED,
+      true,
+    );
+    const denied = await runCase(
+      'deny',
+      CapabilityApprovalPolicy.DENY,
+      ToolCallStatus.DENIED,
+    );
+    const expired = await runCase(
+      'expiry',
+      CapabilityApprovalPolicy.MANUAL,
+      ToolCallStatus.EXPIRED,
+    );
+
+    await applyPolicy(CapabilityApprovalPolicy.AUTO);
+    const loopTurn = await startFoundationToolTurn({
+      agent: input.agent,
+      capabilitySessionId: input.capabilitySessionId,
+      fixture,
+      sampleId: input.sampleId,
+      label: 'loop-budget',
+      repeatUntilStopped: true,
+    });
+    const loop = await waitForFoundationToolFacts(
+      loopTurn.turnId,
+      (facts, replay) =>
+        facts.length > 0
+        && facts.every((fact) => Number(fact.status) === ToolCallStatus.SUCCEEDED)
+        && Number(replay.status) === AgentTurnStatus.COMPLETED,
+      'Foundation ToolCall loop budget',
+      600_000,
+    );
+    const observedIterations = Number(
+      evidenceField(loop.replay, 'toolIterations', 'tool_iterations') ?? 0,
+    );
+    const maximumIterations = Number(
+      evidenceField(
+        loop.replay,
+        'toolIterationLimit',
+        'tool_iteration_limit',
+      ) ?? 0,
+    );
+    if (
+      observedIterations <= 0
+      || loop.facts.length !== observedIterations
+    ) {
+      throw new Error('agent.acceptance.foundationToolLoopBudgetNotObserved');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const loopReplay = await foundationDiagnosticReplay(loopTurn.turnId);
+    diagnosticPairs.push({ source: loop.replay, replay: loopReplay });
+
+    primaryConversationId = manual.turn.conversationId;
+    primaryTurnId = manual.turn.turnId;
+    const originalManualLineage = evidenceRecord(
+      manual.beforeReplayFact.lineage,
+      'foundationF04ManualLineage',
+    );
+    const replayedManualLineage = evidenceRecord(
+      manual.caseFact.lineage,
+      'foundationF04ManualReplayLineage',
+    );
+    const duplicateDeliveryCount = Number(
+      manual.caseFact.duplicateDeliveryCount ?? 0,
+    );
+    const originalResultId = String(originalManualLineage.resultId ?? '');
+    const originalContinuationId = String(
+      originalManualLineage.continuationId ?? '',
+    );
+    const replayedResultId = String(replayedManualLineage.resultId ?? '');
+    const replayedContinuationId = String(
+      replayedManualLineage.continuationId ?? '',
+    );
+    const normalizedSource = diagnosticPairs.map(({ source }) =>
+      withoutDiagnosticGenerationTime(source));
+    const normalizedReplay = diagnosticPairs.map(({ replay }) =>
+      withoutDiagnosticGenerationTime(replay));
+    const sourceHash = await sha256Hex(stableJson(normalizedSource));
+    const replayHash = await sha256Hex(stableJson(normalizedReplay));
+    const runtimeEvent = [...manual.turn.observed.events]
+      .reverse()
+      .map((event) => ({
+        eventType: event.event,
+        sequence: Number(event.data.seq ?? 0),
+        observedAt: event.observedAt,
+      }))
+      .find((event) => event.sequence > 0);
+    if (!runtimeEvent) {
+      throw new Error('agent.acceptance.foundationToolRuntimeEventMissing');
+    }
+
+    return {
+      conversationId: primaryConversationId,
+      turnId: primaryTurnId,
+      durationMs: performance.now() - startedAt,
+      runtimeEvent,
+      facts: {
+        cases: {
+          auto: auto.caseFact,
+          manual: manual.caseFact,
+          deny: denied.caseFact,
+          expiry: expired.caseFact,
+        },
+        duplicateDelivery: {
+          deliveryCount: duplicateDeliveryCount + 1,
+          executionAttemptCount: manual.caseFact.executionAttemptCount,
+          sideEffectCount: manual.caseFact.sideEffectCount,
+          resultCount: manual.caseFact.resultCount,
+          continuationCount: manual.caseFact.continuationCount,
+          originalResultId,
+          replayedResultId,
+          originalContinuationId,
+          replayedContinuationId,
+        },
+        loopBudget: {
+          stopped:
+            observedIterations > 0
+            && observedIterations === maximumIterations,
+          observedIterations,
+          maximumIterations,
+          executionAfterLimit:
+            foundationDiagnosticToolFacts(loopReplay)
+              .reduce(
+                (total, fact) =>
+                  total
+                  + Number(
+                    evidenceField(
+                      fact,
+                      'executionAttemptCount',
+                      'execution_attempt_count',
+                    ) ?? 0,
+                  ),
+                0,
+              )
+            - loop.facts.reduce(
+              (total, fact) =>
+                total
+                + Number(
+                  evidenceField(
+                    fact,
+                    'executionAttemptCount',
+                    'execution_attempt_count',
+                  ) ?? 0,
+                ),
+              0,
+            ),
+        },
+        replay: {
+          sourceHash,
+          replayHash,
+          equal: sourceHash === replayHash,
+        },
+      },
+    };
+  } finally {
+    if (originalBinding) {
+      await updateFoundationToolPolicy(
+        input.agent,
+        fixture,
+        currentBinding,
+        originalBinding.approvalPolicy,
+        originalBinding.enabled,
+      );
+    } else if (currentBinding) {
+      await api.deleteAgentCapabilityBinding(
+        currentBinding.bindingId,
+        currentBinding.revision,
+        crypto.randomUUID(),
+        'acceptance_fixture_cleanup',
+      );
+    }
+  }
+}
+
 interface DirectCellAssertionContext {
   cell: string;
   agent: ReturnType<typeof selectedAgent>;
@@ -655,6 +1340,8 @@ async function evaluateDirectCellAssertions(
       return evaluateF02(ctx);
     case 'AS-F03':
       return evaluateF03(ctx);
+    case 'AS-F04':
+      return evaluateF04(ctx);
     case 'AS-F07':
       return evaluateF07(ctx);
     case 'AS-F08':
@@ -668,6 +1355,153 @@ async function evaluateDirectCellAssertions(
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+function evaluateF04(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
+  const facts = evidenceRecord(ctx.scenarioFacts, 'foundationF04Facts');
+  const cases = evidenceRecord(facts.cases, 'foundationF04Cases');
+  const auto = evidenceRecord(cases.auto, 'foundationF04Auto');
+  const manual = evidenceRecord(cases.manual, 'foundationF04Manual');
+  const denied = evidenceRecord(cases.deny, 'foundationF04Deny');
+  const expired = evidenceRecord(cases.expiry, 'foundationF04Expiry');
+  const duplicate = evidenceRecord(
+    facts.duplicateDelivery,
+    'foundationF04DuplicateDelivery',
+  );
+  const loopBudget = evidenceRecord(
+    facts.loopBudget,
+    'foundationF04LoopBudget',
+  );
+  const replay = evidenceRecord(facts.replay, 'foundationF04Replay');
+  const expectedOwner = ctx.platform === 'browser' ? 'station' : 'client_capability';
+
+  const states = (value: Record<string, unknown>, name: string): string[] =>
+    evidenceArray(value.states, name).map((state) => {
+      if (typeof state !== 'string' || !state) {
+        throw new Error(`agent.acceptance.invalidEvidence:${name}`);
+      }
+      return state;
+    });
+  const count = (value: Record<string, unknown>, key: string): number => {
+    const result = Number(value[key]);
+    if (!Number.isInteger(result) || result < 0) {
+      throw new Error(`agent.acceptance.invalidEvidence:foundationF04.${key}`);
+    }
+    return result;
+  };
+  const sameStates = (
+    actual: string[],
+    expected: readonly string[],
+  ): boolean =>
+    actual.length === expected.length
+    && actual.every((state, index) => state === expected[index]);
+  const lineageComplete = (
+    value: Record<string, unknown>,
+    terminal: boolean,
+    decisionRequired = true,
+  ): boolean => {
+    const lineage = evidenceRecord(value.lineage, 'foundationF04Lineage');
+    const common = [
+      lineage.toolCallId,
+      lineage.toolBatchId,
+      lineage.manifestId,
+      lineage.manifestVersion,
+      lineage.bindingId,
+      lineage.readinessSnapshotId,
+    ].every((entry) => typeof entry === 'string' && entry.length > 0)
+      && typeof lineage.approvalId === 'string'
+      && lineage.approvalId.length > 0
+      && count(lineage, 'bindingRevision') > 0
+      && (
+        !decisionRequired
+        || (typeof lineage.decisionId === 'string' && lineage.decisionId.length > 0)
+      );
+    if (!common || !terminal) return common;
+    const identifiersPresent = [
+      lineage.executionClaimId,
+      lineage.sideEffectReceiptId,
+      lineage.resultId,
+      lineage.continuationId,
+    ].every((entry) => typeof entry === 'string' && entry.length > 0)
+      && count(lineage, 'fencingToken') > 0;
+    return identifiersPresent
+      && Boolean(lineage.dispatchCommittedAt)
+      && Boolean(lineage.startedAt)
+      && Boolean(lineage.endedAt);
+  };
+
+  const autoStates = states(auto, 'foundationF04AutoStates');
+  const manualStates = states(manual, 'foundationF04ManualStates');
+  const deniedStates = states(denied, 'foundationF04DenyStates');
+  const expiredStates = states(expired, 'foundationF04ExpiryStates');
+
+  return {
+    autoPolicyExecutedOnce:
+      auto.policy === 'auto'
+      && sameStates(
+        autoStates,
+        ['policy_check', 'auto_approved', 'running', 'succeeded'],
+      )
+      && count(auto, 'executionAttemptCount') === 1
+      && count(auto, 'sideEffectCount') === 1
+      && count(auto, 'resultCount') === 1
+      && count(auto, 'continuationCount') === 1,
+    manualApprovalExecutedOnce:
+      manual.policy === 'manual'
+      && sameStates(
+        manualStates,
+        [
+          'policy_check',
+          'awaiting_user',
+          'approved',
+          'running',
+          'succeeded',
+        ],
+      )
+      && count(manual, 'executionAttemptCount') === 1
+      && count(manual, 'sideEffectCount') === 1
+      && count(manual, 'resultCount') === 1
+      && count(manual, 'continuationCount') === 1,
+    denialExecutedZero:
+      denied.policy === 'deny'
+      && sameStates(deniedStates, ['policy_check', 'denied'])
+      && ['executionAttemptCount', 'sideEffectCount', 'resultCount', 'continuationCount']
+        .every((key) => count(denied, key) === 0),
+    expiryExecutedZero:
+      expired.policy === 'manual'
+      && sameStates(
+        expiredStates,
+        ['policy_check', 'awaiting_user', 'expired'],
+      )
+      && ['executionAttemptCount', 'sideEffectCount', 'resultCount', 'continuationCount']
+        .every((key) => count(expired, key) === 0),
+    duplicateDeliveryIdempotent:
+      count(duplicate, 'deliveryCount') >= 2
+      && count(duplicate, 'executionAttemptCount') === 1
+      && count(duplicate, 'sideEffectCount') === 1
+      && count(duplicate, 'resultCount') === 1
+      && count(duplicate, 'continuationCount') === 1
+      && duplicate.originalResultId === duplicate.replayedResultId
+      && duplicate.originalContinuationId === duplicate.replayedContinuationId,
+    authorityLineagePersisted:
+      [auto, manual, denied, expired]
+        .every((value) => value.executionOwner === expectedOwner)
+      && lineageComplete(auto, true)
+      && lineageComplete(manual, true)
+      && lineageComplete(denied, false)
+      && lineageComplete(expired, false, false),
+    loopBudgetEnforced:
+      loopBudget.stopped === true
+      && count(loopBudget, 'observedIterations') > 0
+      && count(loopBudget, 'observedIterations')
+        === count(loopBudget, 'maximumIterations')
+      && count(loopBudget, 'executionAfterLimit') === 0,
+    sourceReplayEqual:
+      typeof replay.sourceHash === 'string'
+      && replay.sourceHash.length > 0
+      && replay.sourceHash === replay.replayHash
+      && replay.equal === true,
+  };
 }
 
 function evaluateF03(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
@@ -972,11 +1806,6 @@ export function installAcceptanceHarness(): void {
         await agentStore.updateAgentProfile(agentId, {
           provider: providerId,
           model: modelId,
-          chatConfig: JSON.stringify({
-            ...parseAgentChatConfig(agent),
-            provider: providerId,
-            model: modelId,
-          }),
         });
         await agentStore.loadAgents();
         const readiness = await api.getAgentCapabilityReadiness({
@@ -2030,6 +2859,26 @@ export function installAcceptanceHarness(): void {
         };
       }
 
+      if (cell === 'AS-F04') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationF04Scenario({
+          agent,
+          capabilitySessionId,
+          platform,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+        await useChatStore.getState().selectSession(scenario.conversationId);
+      }
+
       const [profile, readiness, conversations] = await Promise.all([
         api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
         api.getAgentCapabilityReadiness({
@@ -2157,11 +3006,12 @@ export function installAcceptanceHarness(): void {
           }
         : { eventId: '', sequence: 0, eventType: '', occurredAt: '' };
 
+      const measurementLimitMs = cell === 'AS-F04' ? 900_000 : 120_000;
       const measurementReport: Record<string, unknown> = {
         metric: 'foundation-turn-duration-ms',
         sampleIds: [sampleId],
-        threshold: '<=120000',
-        passed: turnDurationMs !== null && turnDurationMs <= 120_000,
+        threshold: `<=${measurementLimitMs}`,
+        passed: turnDurationMs !== null && turnDurationMs <= measurementLimitMs,
         tokenUsage: turnEvidence
           ? ((turnEvidence as Record<string, unknown>).diagnostics as Record<string, unknown>)?.token_usage ?? null
           : null,
@@ -2170,11 +3020,35 @@ export function installAcceptanceHarness(): void {
       };
 
       const queueEntryCount = turnQueue?.entries?.length ?? 0;
-      const sideEffectCount: Record<string, unknown> = {
-        counterId: 'pending-turn-queue',
-        count: queueEntryCount,
-        maximum: 8,
-      };
+      const sideEffectCount: Record<string, unknown> = cell === 'AS-F04'
+        ? (() => {
+            const facts = evidenceRecord(
+              scenarioFacts,
+              'foundationF04SideEffectFacts',
+            );
+            const cases = evidenceRecord(
+              facts.cases,
+              'foundationF04SideEffectCases',
+            );
+            const manual = evidenceRecord(
+              cases.manual,
+              'foundationF04ManualSideEffect',
+            );
+            const lineage = evidenceRecord(
+              manual.lineage,
+              'foundationF04ManualSideEffectLineage',
+            );
+            return {
+              counterId: String(lineage.toolCallId ?? ''),
+              count: Number(manual.sideEffectCount ?? 0),
+              maximum: 1,
+            };
+          })()
+        : {
+            counterId: 'pending-turn-queue',
+            count: queueEntryCount,
+            maximum: 8,
+          };
 
       const replayEvidence: Record<string, unknown> = {
         sourceHash: sourceReadbackHash,

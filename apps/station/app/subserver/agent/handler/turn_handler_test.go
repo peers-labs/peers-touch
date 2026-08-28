@@ -11,6 +11,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -80,35 +81,80 @@ func TestDomainTurnStatusToProtoProjectsLocalToolWaitAsRunning(t *testing.T) {
 	}
 }
 
-func TestTurnConfigFromRequestCarriesKnowledgeResources(t *testing.T) {
+func TestTurnConfigFromRequestDoesNotAcceptKnowledgeAuthority(t *testing.T) {
 	handlers := NewTurnHandlers(&service.TurnService{}, service.NewToolRegistryService(nil, nil), nil, nil)
 	config := handlers.turnConfigFromRequest(context.Background(), &model.ExecuteTurnRequest{
 		ConversationId: "conv_1",
 		AgentId:        "agent_1",
 		UserInput:      "How do traces work?",
 		ThinkingMode:   "disabled",
-		KnowledgeResources: []*model.KnowledgeResource{{
-			ResourceId: "kr_1",
-			AgentId:    "agent_1",
-			Type:       model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_DOCUMENT,
-			Title:      "Trace Guide",
-			Source:     "trace content",
-			Policy:     model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_ALWAYS,
-			Status:     model.KnowledgeResourceStatus_KNOWLEDGE_RESOURCE_STATUS_BOUND,
-		}},
 	}, nil)
 
-	if len(config.KnowledgeResources) != 1 {
-		t.Fatalf("expected one knowledge resource, got %d", len(config.KnowledgeResources))
-	}
-	if config.KnowledgeResources[0].ResourceID != "kr_1" {
-		t.Fatalf("expected resource id kr_1, got %q", config.KnowledgeResources[0].ResourceID)
-	}
 	if config.ThinkingMode != domain.ThinkingModeDisabled {
 		t.Fatalf("expected disabled thinking mode, got %q", config.ThinkingMode)
 	}
-	if config.KnowledgeResources[0].Source != "trace content" {
-		t.Fatalf("expected resource source to be preserved, got %q", config.KnowledgeResources[0].Source)
+	if config.AuthorizedCapabilities != nil {
+		t.Fatal("handler must not manufacture an authorized capability set")
+	}
+}
+
+func TestHasLegacyTurnKnowledge(t *testing.T) {
+	legacyWire := protowire.AppendTag(nil, 13, protowire.BytesType)
+	legacyWire = protowire.AppendBytes(legacyWire, []byte{1})
+	normalWire := protowire.AppendTag(nil, 1, protowire.BytesType)
+	normalWire = protowire.AppendString(normalWire, "conversation-1")
+
+	tests := []struct {
+		name        string
+		contentType string
+		body        []byte
+		want        bool
+	}{
+		{
+			name:        "snake case JSON",
+			contentType: "application/json",
+			body:        []byte(`{"knowledge_resources":[{"resource_id":"legacy"}]}`),
+			want:        true,
+		},
+		{
+			name:        "camel case JSON",
+			contentType: "application/json",
+			body:        []byte(`{"knowledgeResources":[{"resourceId":"legacy"}]}`),
+			want:        true,
+		},
+		{
+			name:        "either alias non-empty",
+			contentType: "application/json",
+			body: []byte(
+				`{"knowledge_resources":[],"knowledgeResources":[{"resourceId":"legacy"}]}`,
+			),
+			want: true,
+		},
+		{
+			name:        "empty JSON array",
+			contentType: "application/json",
+			body:        []byte(`{"knowledge_resources":[]}`),
+			want:        false,
+		},
+		{
+			name:        "protobuf field 13",
+			contentType: "application/x-protobuf",
+			body:        legacyWire,
+			want:        true,
+		},
+		{
+			name:        "protobuf without field 13",
+			contentType: "application/x-protobuf",
+			body:        normalWire,
+			want:        false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := hasLegacyTurnKnowledge(test.contentType, test.body); got != test.want {
+				t.Fatalf("hasLegacyTurnKnowledge() = %t, want %t", got, test.want)
+			}
+		})
 	}
 }
 

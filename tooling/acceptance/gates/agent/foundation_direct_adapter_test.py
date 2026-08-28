@@ -261,13 +261,13 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
                     },
                 )
 
-    def test_unimplemented_cell_fails_closed(self) -> None:
+    def test_unknown_cell_fails_closed(self) -> None:
         with self.assertRaisesRegex(
             DirectRuntimeEvidenceError,
             "direct-runtime group is not implemented",
         ):
             self.adapter().observe_desktop_native(
-                runtime_tuple("AS-F04")
+                runtime_tuple("AS-F05")
             )
 
     def test_missing_required_assertion_fails_closed(self) -> None:

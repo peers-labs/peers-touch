@@ -143,7 +143,8 @@ pub(crate) fn activate_messaging_profile(
         actor_identity_seed,
         crate::messaging::INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
     )?;
-    if let Err(e) = crate::domain::device_identity::try_enroll_device_once(state, account_id, token) {
+    if let Err(e) = crate::domain::device_identity::try_enroll_device_once(state, account_id, token)
+    {
         tracing::info!(error = %e, "device enrollment deferred to lifecycle worker");
     }
     state
@@ -363,11 +364,13 @@ pub fn access_submit_login(
     if let Err(error) = validate_login_input(&input.account, &input.password) {
         return map_domain_error(error);
     }
-    let device_type = input
-        .device_type
-        .as_deref()
-        .unwrap_or("desktop-native");
-    let data = match submit_login_gate(&input.attempt_id, &input.account, &input.password, device_type) {
+    let device_type = input.device_type.as_deref().unwrap_or("desktop-native");
+    let data = match submit_login_gate(
+        &input.attempt_id,
+        &input.account,
+        &input.password,
+        device_type,
+    ) {
         Ok(data) => data,
         Err(error) => return error,
     };
@@ -380,10 +383,7 @@ pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSess
     }
 
     // Resolve device_type: callers may override; default is "desktop-native".
-    let device_type = input
-        .device_type
-        .as_deref()
-        .unwrap_or("desktop-native");
+    let device_type = input.device_type.as_deref().unwrap_or("desktop-native");
 
     let attempt = match start_access_attempt::<AuthSessionPayload>() {
         Ok(decision) => decision,

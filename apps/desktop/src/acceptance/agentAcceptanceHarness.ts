@@ -1,4 +1,10 @@
-import { api, parseAgentChatConfig, type Agent } from '../services/desktop_api';
+import {
+  CapabilityApprovalPolicy,
+  CapabilitySourceKind,
+  type AgentCapabilityBinding,
+  type CapabilityManifest,
+} from '../gen/proto/domain/agent/capability_pb';
+import { api, type Agent } from '../services/desktop_api';
 import { useAgentStore } from '../store/agent';
 import { useAgentConnectorStore } from '../store/agentConnectors';
 import { useMentionStore } from '../store/mentions';
@@ -10,9 +16,29 @@ interface AgentFixture {
   sendReady: boolean;
 }
 
+interface KnowledgeBindingSnapshot {
+  bindingId: string;
+  capabilityId: string;
+  capabilityVersion: string;
+  resourceId: string;
+  policy: string;
+  enabled: boolean;
+  revision: string;
+}
+
+interface ConnectorBindingSnapshot {
+  bindingId: string;
+  capabilityId: string;
+  capabilityVersion: string;
+  connectorId: string;
+  enabled: boolean;
+  revision: string;
+}
+
 const FIXTURE_PREFIX = 'acceptance-agent-';
 const CLI_PROVIDER_ID = 'claude-cli';
 const CLI_PROVIDER_FIXTURE_URL = 'acceptance://agent-phase2-native';
+const CLEANUP_REASON = 'acceptance_fixture_cleanup';
 const createdAgentIds = new Set<string>();
 let createdCliProvider = false;
 
@@ -21,10 +47,10 @@ declare global {
     __PT_AGENT_ACCEPTANCE__?: {
       ensureFixture(): Promise<AgentFixture>;
       activateAgent(name: string, surface: 'chat' | 'profile'): Promise<void>;
-      knowledgeBindings(agentId: string): ReturnType<typeof api.listAgentKnowledgeBindings>;
+      knowledgeBindings(agentId: string): Promise<KnowledgeBindingSnapshot[]>;
       connectorSnapshot(agentId: string): Promise<{
         available: ReturnType<typeof useAgentConnectorStore.getState>['availableConnectors'];
-        configured: ReturnType<typeof parseAgentChatConfig>['connectors'];
+        configured: ConnectorBindingSnapshot[];
       }>;
       conversationSnapshot(agentId: string): Promise<{
         conversations: Awaited<ReturnType<typeof api.listAgentConversations>>;
@@ -34,6 +60,53 @@ declare global {
       portalSnapshot(): Pick<ReturnType<typeof usePortalStore.getState>, 'activeView' | 'expanded' | 'portalStack'>;
       cleanupFixture(): Promise<{ deletedAgentIds: string[] }>;
     };
+  }
+}
+
+function capabilityManifestKey(capabilityId: string, version: string): string {
+  return `${capabilityId}\u0000${version}`;
+}
+
+async function listBindingsBySource(
+  agentId: string,
+  sourceKind: CapabilitySourceKind,
+): Promise<Array<{
+  binding: AgentCapabilityBinding;
+  manifest: CapabilityManifest;
+}>> {
+  const [bindings, manifests] = await Promise.all([
+    api.listAgentCapabilityBindings(agentId),
+    api.listCapabilityManifests([sourceKind]),
+  ]);
+  const manifestsByKey = new Map(
+    manifests
+      .filter((manifest) => manifest.sourceKind === sourceKind)
+      .map((manifest) => [
+        capabilityManifestKey(manifest.capabilityId, manifest.version),
+        manifest,
+      ]),
+  );
+
+  return bindings.flatMap((binding) => {
+    const manifest = manifestsByKey.get(
+      capabilityManifestKey(binding.capabilityId, binding.capabilityVersion),
+    );
+    return manifest ? [{ binding, manifest }] : [];
+  });
+}
+
+function approvalPolicyName(policy: CapabilityApprovalPolicy): string {
+  switch (policy) {
+    case CapabilityApprovalPolicy.MANUAL:
+      return 'manual';
+    case CapabilityApprovalPolicy.ALLOW_LIST:
+      return 'allow_list';
+    case CapabilityApprovalPolicy.AUTO:
+      return 'auto';
+    case CapabilityApprovalPolicy.DENY:
+      return 'disabled';
+    default:
+      return 'unspecified';
   }
 }
 
@@ -110,16 +183,40 @@ export function installAgentAcceptanceHarness(): void {
       window.location.hash = '#/agent';
     },
 
-    knowledgeBindings(agentId) {
-      return api.listAgentKnowledgeBindings(agentId);
+    async knowledgeBindings(agentId) {
+      const projections = await listBindingsBySource(
+        agentId,
+        CapabilitySourceKind.KNOWLEDGE,
+      );
+      return projections.map(({ binding, manifest }) => ({
+        bindingId: binding.bindingId,
+        capabilityId: binding.capabilityId,
+        capabilityVersion: binding.capabilityVersion,
+        resourceId: manifest.sourceInstanceId,
+        policy: approvalPolicyName(binding.approvalPolicy),
+        enabled: binding.enabled,
+        revision: binding.revision.toString(),
+      }));
     },
 
     async connectorSnapshot(agentId) {
-      await useAgentConnectorStore.getState().loadConnectors();
-      const agent = useAgentStore.getState().agents.find((item) => item.id === agentId);
+      const connectorStore = useAgentConnectorStore.getState();
+      const [, projections] = await Promise.all([
+        connectorStore.loadConnectors(),
+        listBindingsBySource(agentId, CapabilitySourceKind.CONNECTOR),
+      ]);
       return {
         available: useAgentConnectorStore.getState().availableConnectors,
-        configured: agent ? parseAgentChatConfig(agent).connectors ?? [] : [],
+        configured: projections
+          .filter(({ binding }) => binding.enabled && !binding.tombstonedAt)
+          .map(({ binding, manifest }) => ({
+            bindingId: binding.bindingId,
+            capabilityId: binding.capabilityId,
+            capabilityVersion: binding.capabilityVersion,
+            connectorId: manifest.sourceInstanceId,
+            enabled: binding.enabled,
+            revision: binding.revision.toString(),
+          })),
       };
     },
 
@@ -157,9 +254,14 @@ export function installAgentAcceptanceHarness(): void {
     async cleanupFixture() {
       const deletedAgentIds: string[] = [];
       for (const agentId of createdAgentIds) {
-        const bindings = await api.listAgentKnowledgeBindings(agentId);
+        const bindings = await api.listAgentCapabilityBindings(agentId);
         for (const binding of bindings) {
-          await api.deleteAgentKnowledgeBinding(binding.id);
+          await api.deleteAgentCapabilityBinding(
+            binding.bindingId,
+            binding.revision,
+            crypto.randomUUID(),
+            CLEANUP_REASON,
+          );
         }
         await api.deleteAgent(agentId);
         deletedAgentIds.push(agentId);

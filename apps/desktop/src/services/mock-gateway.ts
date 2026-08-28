@@ -105,7 +105,7 @@ const MOCK_AGENT = {
     'Analyze this data',
     'Explain a concept',
   ]),
-  chatConfig: JSON.stringify({ memory: { enabled: true }, tools: ['web_search'] }),
+  chatConfig: JSON.stringify({ memory: { enabled: true } }),
   systemPrompt: 'You are a helpful assistant.',
 };
 

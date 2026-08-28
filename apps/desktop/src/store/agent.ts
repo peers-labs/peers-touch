@@ -5,71 +5,14 @@ import {
   api,
   type AvailableModel,
   type Agent,
-  type AgentChatConfig,
   type AgentCreate,
-  type AgentKnowledgeResource,
   type AppletInfo,
-  parseAgentChatConfig,
-  parseAgentKnowledgeResources,
 } from '../services/desktop_api';
+import { useAgentCapabilityStore } from './agentCapabilities';
 import { beginMutation, endMutation, toStoreError, type RevalidationState } from './revalidation';
 
 type AgentSurface = 'chat' | 'profile';
 export type AgentSaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'failed' | 'conflict';
-
-// C6: Reconcile Station `agent_knowledge_bindings` (the first-class join relation) with the
-// agent's knowledge-resource descriptor catalog. Each descriptor whose policy is not
-// `disabled` gets a binding row keyed by resource id (LobeHub `addFilesToAgent` boundary);
-// descriptors removed or disabled have their binding rows deleted; policy changes update the
-// existing row. Bindings are matched to descriptors by `resource_id`.
-async function reconcileKnowledgeBindings(
-  agentId: string,
-  resources: AgentKnowledgeResource[],
-): Promise<void> {
-  const existing = await api.listAgentKnowledgeBindings(agentId);
-  const existingByResource = new Map(existing.map((b) => [b.resourceId, b]));
-  const desired = new Map(
-    resources
-      .filter((r) => r.policy !== 'disabled')
-      .map((r) => [r.id, r.policy || 'manual'] as const),
-  );
-
-  const ops: Promise<unknown>[] = [];
-
-  // Create or update rows for every desired (enabled) resource.
-  for (const [resourceId, policy] of desired) {
-    const current = existingByResource.get(resourceId);
-    if (!current) {
-      ops.push(
-        api.createAgentKnowledgeBinding({
-          agent_id: agentId,
-          resource_id: resourceId,
-          policy,
-          enabled: true,
-        }),
-      );
-    } else if (current.policy !== policy || current.enabled !== true) {
-      ops.push(
-        api.updateAgentKnowledgeBinding({
-          id: current.id,
-          agent_id: agentId,
-          resource_id: resourceId,
-          policy,
-          enabled: true,
-        }),
-      );
-    }
-  }
-
-  // Delete rows whose resource is no longer bound (removed or disabled).
-  for (const binding of existing) {
-    if (!desired.has(binding.resourceId)) {
-      ops.push(api.deleteAgentKnowledgeBinding(binding.id));
-    }
-  }
-
-  await Promise.all(ops);
-}
 
 interface AgentState extends RevalidationState {
   selectedModel: string;
@@ -97,10 +40,6 @@ interface AgentState extends RevalidationState {
   toggleApplet: (id: string) => Promise<void>;
   createAgent: (input: AgentCreate) => Promise<Agent>;
   updateAgentProfile: (agentId: string, updates: Partial<AgentCreate>) => Promise<Agent>;
-  updateAgentConfig: (agentName: string, updates: { chatConfig?: Partial<AgentChatConfig> }) => Promise<void>;
-  getCurrentAgentChatConfig: () => AgentChatConfig;
-  updateKnowledgeResources: (agentId: string, resources: AgentKnowledgeResource[]) => Promise<void>;
-  getAgentKnowledgeResources: (agentId: string) => AgentKnowledgeResource[];
 }
 
 export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) => ({
@@ -389,6 +328,16 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         saveStateByAgentId: { ...state.saveStateByAgentId, [agentId]: 'saved' },
         lastLoadedAt: Date.now(),
       }));
+      try {
+        await useAgentCapabilityStore.getState().loadAgent(agentId);
+      } catch (error) {
+        const message = toStoreError(error);
+        log.error('agent', 'Failed to refresh capability projection after Agent update', {
+          agentId,
+          error: message,
+        });
+        set({ error: message });
+      }
       return reconciled;
     } catch (error) {
       const message = toStoreError(error);
@@ -406,107 +355,5 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
     } finally {
       set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
     }
-  },
-
-  updateAgentConfig: async (agentName, updates: { chatConfig?: Partial<AgentChatConfig> }) => {
-    const { agents } = get();
-    const agent = agents.find((a) => a.name === agentName);
-    if (!agent) return;
-
-    const payload: Record<string, string> = {};
-
-    if (updates.chatConfig) {
-      const existing = parseAgentChatConfig(agent);
-      const merged = { ...existing, ...updates.chatConfig };
-      payload.chatConfig = JSON.stringify(merged);
-    }
-    const previousAgents = agents;
-    const optimisticAgent = { ...agent, ...payload };
-    const mutationKey = `agent:${agent.id}`;
-    set((state) => ({
-      agents: state.agents.map((item) => (item.id === agent.id ? optimisticAgent : item)),
-      error: null,
-      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
-    }));
-
-    try {
-      const updated = await api.updateAgent(agent.id, payload);
-      set((s) => ({
-        agents: s.agents.map((a) => (a.id === updated.id ? updated : a)),
-        lastLoadedAt: Date.now(),
-      }));
-    } catch (e) {
-      const message = toStoreError(e);
-      log.error('agent', 'Failed to update agent config', { agentName, error: message });
-      set({ agents: previousAgents, error: message });
-      throw e;
-    } finally {
-      set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
-    }
-  },
-
-  getCurrentAgentChatConfig: () => {
-    const { agents, selectedAgent } = get();
-    const agent = agents.find((a) => a.name === selectedAgent);
-    if (!agent) return {};
-    return parseAgentChatConfig(agent);
-  },
-
-  updateKnowledgeResources: async (agentId: string, resources: AgentKnowledgeResource[]) => {
-    const { agents } = get();
-    const agent = agents.find((a) => a.id === agentId);
-    if (!agent) return;
-
-    const previousAgents = agents;
-    const mutationKey = `knowledge:${agentId}`;
-    const serialized = JSON.stringify(resources);
-    const optimisticAgent = { ...agent, knowledgeResources: serialized };
-
-    set((state) => ({
-      agents: state.agents.map((item) => (item.id === agentId ? optimisticAgent : item)),
-      error: null,
-      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
-    }));
-
-    try {
-      const updated = await api.updateAgent(agentId, { knowledgeResources: serialized });
-      set((s) => ({
-        agents: s.agents.map((a) => (a.id === updated.id ? updated : a)),
-        lastLoadedAt: Date.now(),
-      }));
-    } catch (error) {
-      const message = toStoreError(error);
-      log.error('agent', 'Failed to update knowledge resources', { agentId, error: message });
-      set((state) => ({
-        agents: previousAgents,
-        error: message,
-        pendingMutations: endMutation(state.pendingMutations, mutationKey),
-      }));
-      throw error;
-    }
-
-    try {
-      // C6: reconcile the first-class agent↔resource binding relation in Station
-      // `agent_knowledge_bindings` (LobeHub `addFilesToAgent` semantic boundary). The
-      // descriptor catalog above stays in config_json; here we keep the queryable join
-      // relation in sync so bindings are addressable server-side, not only inline JSON.
-      await reconcileKnowledgeBindings(agentId, resources);
-    } catch (error) {
-      const message = toStoreError(error);
-      log.error('agent', 'Failed to reconcile knowledge bindings', { agentId, error: message });
-      // The descriptor write already succeeded remotely. Keep that projection visible and
-      // surface the partial failure so the UI can report it; reconciliation is idempotent.
-      set({ error: message });
-      throw error;
-    } finally {
-      set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
-    }
-  },
-
-  getAgentKnowledgeResources: (agentId: string) => {
-    const { agents } = get();
-    const agent = agents.find((a) => a.id === agentId);
-    if (!agent) return [];
-    return parseAgentKnowledgeResources(agent);
   },
 }));

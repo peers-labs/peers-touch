@@ -1,6 +1,7 @@
 pub mod account;
 pub mod actor;
 pub mod admin;
+pub mod agent_events;
 pub mod agent_growth;
 pub mod agent_orchestration;
 pub mod agent_scheduler;
@@ -8,6 +9,7 @@ pub mod agent_turn;
 pub mod agents;
 pub mod applets;
 pub mod auth;
+pub mod capability_authority;
 pub mod channels;
 pub mod conversation;
 pub mod cron;

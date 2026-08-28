@@ -46,6 +46,9 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter import (
     DirectRuntimeFoundationAdapter,
     DirectRuntimeProbeInput,
 )
+from tooling.acceptance.gates.agent.foundation_group_one_probe import (
+    assert_group_one_capture,
+)
 from tooling.acceptance.gates.agent.foundation_d11_adapter import (
     D11FoundationAdapter,
 )
@@ -185,13 +188,14 @@ def _make_direct_probe(
                 "cell": probe_input.cell,
                 "sampleId": probe_input.sample_id,
             },
-            timeout=300,
+            timeout=900 if probe_input.cell == "AS-F04" else 300,
         )
         if not isinstance(result, Mapping):
             raise ScenarioRunnerError(
                 f"direct probe returned invalid result for "
                 f"{probe_input.cell}/{probe_input.sample_id}"
             )
+        assert_group_one_capture(probe_input, result)
         return result
 
     return probe

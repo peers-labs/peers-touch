@@ -1113,13 +1113,15 @@
         "agent-capability-transparency-e2e"
       ],
       "synthetic_paths": [
-        "apps/station/app/subserver/agent/handler/agent_config_handler.go",
-        "apps/station/app/subserver/agent/service/runtime_admission_service.go"
+        "apps/station/app/subserver/agent/handler/capability_authority_handler.go",
+        "apps/station/app/subserver/agent/service/capability_readiness_authority_service.go",
+        "apps/desktop/src/store/agentCapabilities.ts"
       ],
       "evidence": {
         "truth_sources": [
-          "Station agent capability snapshot",
-          "Station pre-admission gate results"
+          "Station capability manifests, Agent bindings, and immutable readiness snapshots",
+          "Station pre-admission gate results",
+          "Desktop agent-capability runtime projection"
         ],
         "surfaces": [
           "Native Tauri agent capability badges",

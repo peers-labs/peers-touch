@@ -3,18 +3,16 @@ use crate::application::session_resolver;
 use crate::contracts::{
     AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
     AgentConversationListInput, AgentConversationMessagesInput, AgentConversationRestoreInput,
-    AgentConversationUpdateInput,
-    AgentEditAndResendInput, AgentExecuteTurnInput, AgentGroupCreateInput, AgentGroupDeleteInput,
-    AgentGroupUpdateInput, AgentKnowledgeBindingCreateInput, AgentKnowledgeBindingDeleteInput,
-    AgentKnowledgeBindingListInput, AgentKnowledgeBindingUpdateInput, AgentMessageTranslateInput,
-    AgentRegenerateTurnInput, AgentRetryTurnInput, AgentSelectActiveBranchInput,
-    AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput, AgentTaskStatusInput,
-    AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput, AgentThreadCreateInput,
-    AgentThreadListInput, AgentThreadMessagesInput, AgentTombstoneMessageInput,
-    AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput, AgentTurnQueueCancelInput,
-    AgentTurnQueueListInput, AgentTurnStreamCancelInput, AgentTurnTraceGetInput,
-    AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput, TopicCommentDeleteInput,
-    TopicCommentListInput,
+    AgentConversationUpdateInput, AgentEditAndResendInput, AgentExecuteTurnInput,
+    AgentGroupCreateInput, AgentGroupDeleteInput, AgentGroupUpdateInput,
+    AgentMessageTranslateInput, AgentRegenerateTurnInput, AgentRetryTurnInput,
+    AgentSelectActiveBranchInput, AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput,
+    AgentTaskStatusInput, AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput,
+    AgentThreadCreateInput, AgentThreadListInput, AgentThreadMessagesInput,
+    AgentTombstoneMessageInput, AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput,
+    AgentTurnQueueCancelInput, AgentTurnQueueListInput, AgentTurnStreamCancelInput,
+    AgentTurnTraceGetInput, AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput,
+    TopicCommentDeleteInput, TopicCommentListInput,
 };
 use crate::error::AppResult;
 use crate::error::ErrorCode;
@@ -424,58 +422,6 @@ pub fn topic_comment_list(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     application_agent_turn::topic_comment_list(input, &token)
-}
-
-#[tauri::command]
-pub fn agent_knowledge_binding_list(
-    input: AgentKnowledgeBindingListInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    if token.trim().is_empty() {
-        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
-    }
-    application_agent_turn::agent_knowledge_binding_list(input, &token)
-}
-
-#[tauri::command]
-pub fn agent_knowledge_binding_create(
-    input: AgentKnowledgeBindingCreateInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    if token.trim().is_empty() {
-        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
-    }
-    application_agent_turn::agent_knowledge_binding_create(input, &token)
-}
-
-#[tauri::command]
-pub fn agent_knowledge_binding_update(
-    input: AgentKnowledgeBindingUpdateInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    if token.trim().is_empty() {
-        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
-    }
-    application_agent_turn::agent_knowledge_binding_update(input, &token)
-}
-
-#[tauri::command]
-pub fn agent_knowledge_binding_delete(
-    input: AgentKnowledgeBindingDeleteInput,
-    state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    if token.trim().is_empty() {
-        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
-    }
-    application_agent_turn::agent_knowledge_binding_delete(input, &token)
 }
 
 #[tauri::command]

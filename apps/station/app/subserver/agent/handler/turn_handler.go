@@ -22,6 +22,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -31,6 +32,57 @@ type TurnHandlers struct {
 	chatTaskService *service.ChatTaskService
 	convService     *service.ConversationService
 	admission       *service.TurnAdmissionService
+}
+
+func RejectLegacyTurnKnowledge(next server.EndpointHandler) server.EndpointHandler {
+	return func(ctx context.Context, req server.Request, resp server.Response) error {
+		if hasLegacyTurnKnowledge(req.Header()["Content-Type"], req.Body()) {
+			resp.SetHeader("Content-Type", "application/json")
+			resp.WriteHeader(http.StatusBadRequest)
+			_, _ = resp.Write([]byte(
+				`{"code":"AGENT_4001","error":"request-supplied Knowledge resources are forbidden"}`,
+			))
+			return nil
+		}
+		return next(ctx, req, resp)
+	}
+}
+
+func hasLegacyTurnKnowledge(contentType string, body []byte) bool {
+	if strings.Contains(strings.ToLower(contentType), "protobuf") {
+		for len(body) > 0 {
+			number, wireType, tagSize := protowire.ConsumeTag(body)
+			if tagSize < 0 {
+				return false
+			}
+			body = body[tagSize:]
+			fieldSize := protowire.ConsumeFieldValue(number, wireType, body)
+			if fieldSize < 0 {
+				return false
+			}
+			if number == 13 {
+				return true
+			}
+			body = body[fieldSize:]
+		}
+		return false
+	}
+
+	var payload map[string]json.RawMessage
+	if json.Unmarshal(body, &payload) != nil {
+		return false
+	}
+	for _, key := range []string{"knowledge_resources", "knowledgeResources"} {
+		raw, ok := payload[key]
+		if !ok {
+			continue
+		}
+		trimmed := strings.TrimSpace(string(raw))
+		if trimmed != "" && trimmed != "null" && trimmed != "[]" {
+			return true
+		}
+	}
+	return false
 }
 
 type cancelTurnRequest struct {
@@ -481,7 +533,6 @@ func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.Exe
 		Effort:                    req.GetEffort(),
 		ThinkingMode:              domain.ThinkingMode(req.GetThinkingMode()),
 		ClientCapabilitySessionID: req.GetClientCapabilitySessionId(),
-		KnowledgeResources:        knowledgeResourcesFromRequest(req),
 		EventSink:                 sink,
 		MemoryDisabled:            req.GetMemoryDisabled(),
 	}
@@ -500,59 +551,6 @@ func validateFrozenDirectModelRequest(req *model.ExecuteTurnRequest) error {
 			"CLI runtimes are not supported by the active Agent profile", nil)
 	}
 	return nil
-}
-
-func knowledgeResourcesFromRequest(req *model.ExecuteTurnRequest) []domain.KnowledgeResource {
-	resources := req.GetKnowledgeResources()
-	if len(resources) == 0 {
-		return nil
-	}
-	out := make([]domain.KnowledgeResource, 0, len(resources))
-	for _, resource := range resources {
-		if resource.GetSource() == "" {
-			continue
-		}
-		out = append(out, domain.KnowledgeResource{
-			ResourceID: resource.GetResourceId(),
-			AgentID:    resource.GetAgentId(),
-			Type:       knowledgeResourceTypeFromProto(resource.GetType()),
-			Title:      resource.GetTitle(),
-			Source:     resource.GetSource(),
-			Policy:     knowledgeResourcePolicyFromProto(resource.GetPolicy()),
-			Status:     resource.GetStatus().String(),
-		})
-	}
-	return out
-}
-
-func knowledgeResourceTypeFromProto(value model.KnowledgeResourceType) domain.KnowledgeResourceType {
-	switch value {
-	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_FOLDER:
-		return domain.KnowledgeResourceTypeFolder
-	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_PROJECT:
-		return domain.KnowledgeResourceTypeProject
-	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_URL:
-		return domain.KnowledgeResourceTypeURL
-	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_NOTEBOOK:
-		return domain.KnowledgeResourceTypeNotebook
-	case model.KnowledgeResourceType_KNOWLEDGE_RESOURCE_TYPE_WORKSPACE:
-		return domain.KnowledgeResourceTypeWorkspace
-	default:
-		return domain.KnowledgeResourceTypeDocument
-	}
-}
-
-func knowledgeResourcePolicyFromProto(value model.KnowledgeResourcePolicy) domain.KnowledgeResourcePolicy {
-	switch value {
-	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_AUTO:
-		return domain.KnowledgeResourcePolicyAuto
-	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_ALWAYS:
-		return domain.KnowledgeResourcePolicyAlways
-	case model.KnowledgeResourcePolicy_KNOWLEDGE_RESOURCE_POLICY_DISABLED:
-		return domain.KnowledgeResourcePolicyDisabled
-	default:
-		return domain.KnowledgeResourcePolicyManual
-	}
 }
 
 func writeTurnStreamEvent(resp server.Response, event string, payload any) error {

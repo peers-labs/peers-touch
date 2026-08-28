@@ -9,7 +9,6 @@ package model
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -77,1322 +76,6 @@ func (ToolApprovalDecisionErrorCode) EnumDescriptor() ([]byte, []int) {
 	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{0}
 }
 
-type AgentKnowledgeBinding struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	AgentId       string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	ResourceId    string                 `protobuf:"bytes,3,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
-	Policy        string                 `protobuf:"bytes,4,opt,name=policy,proto3" json:"policy,omitempty"`
-	Enabled       bool                   `protobuf:"varint,5,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AgentKnowledgeBinding) Reset() {
-	*x = AgentKnowledgeBinding{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AgentKnowledgeBinding) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AgentKnowledgeBinding) ProtoMessage() {}
-
-func (x *AgentKnowledgeBinding) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AgentKnowledgeBinding.ProtoReflect.Descriptor instead.
-func (*AgentKnowledgeBinding) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *AgentKnowledgeBinding) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *AgentKnowledgeBinding) GetAgentId() string {
-	if x != nil {
-		return x.AgentId
-	}
-	return ""
-}
-
-func (x *AgentKnowledgeBinding) GetResourceId() string {
-	if x != nil {
-		return x.ResourceId
-	}
-	return ""
-}
-
-func (x *AgentKnowledgeBinding) GetPolicy() string {
-	if x != nil {
-		return x.Policy
-	}
-	return ""
-}
-
-func (x *AgentKnowledgeBinding) GetEnabled() bool {
-	if x != nil {
-		return x.Enabled
-	}
-	return false
-}
-
-func (x *AgentKnowledgeBinding) GetCreatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.CreatedAt
-	}
-	return nil
-}
-
-func (x *AgentKnowledgeBinding) GetUpdatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.UpdatedAt
-	}
-	return nil
-}
-
-type AgentSkillBinding struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	AgentId       string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	SkillId       string                 `protobuf:"bytes,3,opt,name=skill_id,json=skillId,proto3" json:"skill_id,omitempty"`
-	Enabled       bool                   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AgentSkillBinding) Reset() {
-	*x = AgentSkillBinding{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AgentSkillBinding) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AgentSkillBinding) ProtoMessage() {}
-
-func (x *AgentSkillBinding) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AgentSkillBinding.ProtoReflect.Descriptor instead.
-func (*AgentSkillBinding) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *AgentSkillBinding) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *AgentSkillBinding) GetAgentId() string {
-	if x != nil {
-		return x.AgentId
-	}
-	return ""
-}
-
-func (x *AgentSkillBinding) GetSkillId() string {
-	if x != nil {
-		return x.SkillId
-	}
-	return ""
-}
-
-func (x *AgentSkillBinding) GetEnabled() bool {
-	if x != nil {
-		return x.Enabled
-	}
-	return false
-}
-
-func (x *AgentSkillBinding) GetCreatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.CreatedAt
-	}
-	return nil
-}
-
-func (x *AgentSkillBinding) GetUpdatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.UpdatedAt
-	}
-	return nil
-}
-
-type AgentMcpBinding struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	AgentId       string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	ServerName    string                 `protobuf:"bytes,3,opt,name=server_name,json=serverName,proto3" json:"server_name,omitempty"`
-	Enabled       bool                   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AgentMcpBinding) Reset() {
-	*x = AgentMcpBinding{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AgentMcpBinding) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AgentMcpBinding) ProtoMessage() {}
-
-func (x *AgentMcpBinding) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AgentMcpBinding.ProtoReflect.Descriptor instead.
-func (*AgentMcpBinding) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *AgentMcpBinding) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *AgentMcpBinding) GetAgentId() string {
-	if x != nil {
-		return x.AgentId
-	}
-	return ""
-}
-
-func (x *AgentMcpBinding) GetServerName() string {
-	if x != nil {
-		return x.ServerName
-	}
-	return ""
-}
-
-func (x *AgentMcpBinding) GetEnabled() bool {
-	if x != nil {
-		return x.Enabled
-	}
-	return false
-}
-
-func (x *AgentMcpBinding) GetCreatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.CreatedAt
-	}
-	return nil
-}
-
-func (x *AgentMcpBinding) GetUpdatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.UpdatedAt
-	}
-	return nil
-}
-
-type ListAgentKnowledgeBindingsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAgentKnowledgeBindingsRequest) Reset() {
-	*x = ListAgentKnowledgeBindingsRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAgentKnowledgeBindingsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAgentKnowledgeBindingsRequest) ProtoMessage() {}
-
-func (x *ListAgentKnowledgeBindingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAgentKnowledgeBindingsRequest.ProtoReflect.Descriptor instead.
-func (*ListAgentKnowledgeBindingsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ListAgentKnowledgeBindingsRequest) GetAgentId() string {
-	if x != nil {
-		return x.AgentId
-	}
-	return ""
-}
-
-type ListAgentKnowledgeBindingsResponse struct {
-	state         protoimpl.MessageState   `protogen:"open.v1"`
-	Bindings      []*AgentKnowledgeBinding `protobuf:"bytes,1,rep,name=bindings,proto3" json:"bindings,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAgentKnowledgeBindingsResponse) Reset() {
-	*x = ListAgentKnowledgeBindingsResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAgentKnowledgeBindingsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAgentKnowledgeBindingsResponse) ProtoMessage() {}
-
-func (x *ListAgentKnowledgeBindingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAgentKnowledgeBindingsResponse.ProtoReflect.Descriptor instead.
-func (*ListAgentKnowledgeBindingsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ListAgentKnowledgeBindingsResponse) GetBindings() []*AgentKnowledgeBinding {
-	if x != nil {
-		return x.Bindings
-	}
-	return nil
-}
-
-type CreateAgentKnowledgeBindingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentKnowledgeBinding `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateAgentKnowledgeBindingRequest) Reset() {
-	*x = CreateAgentKnowledgeBindingRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateAgentKnowledgeBindingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateAgentKnowledgeBindingRequest) ProtoMessage() {}
-
-func (x *CreateAgentKnowledgeBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateAgentKnowledgeBindingRequest.ProtoReflect.Descriptor instead.
-func (*CreateAgentKnowledgeBindingRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *CreateAgentKnowledgeBindingRequest) GetBinding() *AgentKnowledgeBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type CreateAgentKnowledgeBindingResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentKnowledgeBinding `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateAgentKnowledgeBindingResponse) Reset() {
-	*x = CreateAgentKnowledgeBindingResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateAgentKnowledgeBindingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateAgentKnowledgeBindingResponse) ProtoMessage() {}
-
-func (x *CreateAgentKnowledgeBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateAgentKnowledgeBindingResponse.ProtoReflect.Descriptor instead.
-func (*CreateAgentKnowledgeBindingResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *CreateAgentKnowledgeBindingResponse) GetBinding() *AgentKnowledgeBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type UpdateAgentKnowledgeBindingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentKnowledgeBinding `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateAgentKnowledgeBindingRequest) Reset() {
-	*x = UpdateAgentKnowledgeBindingRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateAgentKnowledgeBindingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateAgentKnowledgeBindingRequest) ProtoMessage() {}
-
-func (x *UpdateAgentKnowledgeBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateAgentKnowledgeBindingRequest.ProtoReflect.Descriptor instead.
-func (*UpdateAgentKnowledgeBindingRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *UpdateAgentKnowledgeBindingRequest) GetBinding() *AgentKnowledgeBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type UpdateAgentKnowledgeBindingResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentKnowledgeBinding `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateAgentKnowledgeBindingResponse) Reset() {
-	*x = UpdateAgentKnowledgeBindingResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateAgentKnowledgeBindingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateAgentKnowledgeBindingResponse) ProtoMessage() {}
-
-func (x *UpdateAgentKnowledgeBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateAgentKnowledgeBindingResponse.ProtoReflect.Descriptor instead.
-func (*UpdateAgentKnowledgeBindingResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *UpdateAgentKnowledgeBindingResponse) GetBinding() *AgentKnowledgeBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type DeleteAgentKnowledgeBindingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteAgentKnowledgeBindingRequest) Reset() {
-	*x = DeleteAgentKnowledgeBindingRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteAgentKnowledgeBindingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteAgentKnowledgeBindingRequest) ProtoMessage() {}
-
-func (x *DeleteAgentKnowledgeBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteAgentKnowledgeBindingRequest.ProtoReflect.Descriptor instead.
-func (*DeleteAgentKnowledgeBindingRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *DeleteAgentKnowledgeBindingRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-type DeleteAgentKnowledgeBindingResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteAgentKnowledgeBindingResponse) Reset() {
-	*x = DeleteAgentKnowledgeBindingResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteAgentKnowledgeBindingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteAgentKnowledgeBindingResponse) ProtoMessage() {}
-
-func (x *DeleteAgentKnowledgeBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteAgentKnowledgeBindingResponse.ProtoReflect.Descriptor instead.
-func (*DeleteAgentKnowledgeBindingResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *DeleteAgentKnowledgeBindingResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
-}
-
-type ListAgentSkillBindingsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAgentSkillBindingsRequest) Reset() {
-	*x = ListAgentSkillBindingsRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAgentSkillBindingsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAgentSkillBindingsRequest) ProtoMessage() {}
-
-func (x *ListAgentSkillBindingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAgentSkillBindingsRequest.ProtoReflect.Descriptor instead.
-func (*ListAgentSkillBindingsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *ListAgentSkillBindingsRequest) GetAgentId() string {
-	if x != nil {
-		return x.AgentId
-	}
-	return ""
-}
-
-type ListAgentSkillBindingsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Bindings      []*AgentSkillBinding   `protobuf:"bytes,1,rep,name=bindings,proto3" json:"bindings,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAgentSkillBindingsResponse) Reset() {
-	*x = ListAgentSkillBindingsResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAgentSkillBindingsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAgentSkillBindingsResponse) ProtoMessage() {}
-
-func (x *ListAgentSkillBindingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAgentSkillBindingsResponse.ProtoReflect.Descriptor instead.
-func (*ListAgentSkillBindingsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *ListAgentSkillBindingsResponse) GetBindings() []*AgentSkillBinding {
-	if x != nil {
-		return x.Bindings
-	}
-	return nil
-}
-
-type CreateAgentSkillBindingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentSkillBinding     `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateAgentSkillBindingRequest) Reset() {
-	*x = CreateAgentSkillBindingRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateAgentSkillBindingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateAgentSkillBindingRequest) ProtoMessage() {}
-
-func (x *CreateAgentSkillBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateAgentSkillBindingRequest.ProtoReflect.Descriptor instead.
-func (*CreateAgentSkillBindingRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *CreateAgentSkillBindingRequest) GetBinding() *AgentSkillBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type CreateAgentSkillBindingResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentSkillBinding     `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateAgentSkillBindingResponse) Reset() {
-	*x = CreateAgentSkillBindingResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateAgentSkillBindingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateAgentSkillBindingResponse) ProtoMessage() {}
-
-func (x *CreateAgentSkillBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateAgentSkillBindingResponse.ProtoReflect.Descriptor instead.
-func (*CreateAgentSkillBindingResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *CreateAgentSkillBindingResponse) GetBinding() *AgentSkillBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type UpdateAgentSkillBindingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentSkillBinding     `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateAgentSkillBindingRequest) Reset() {
-	*x = UpdateAgentSkillBindingRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[15]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateAgentSkillBindingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateAgentSkillBindingRequest) ProtoMessage() {}
-
-func (x *UpdateAgentSkillBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[15]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateAgentSkillBindingRequest.ProtoReflect.Descriptor instead.
-func (*UpdateAgentSkillBindingRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *UpdateAgentSkillBindingRequest) GetBinding() *AgentSkillBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type UpdateAgentSkillBindingResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentSkillBinding     `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateAgentSkillBindingResponse) Reset() {
-	*x = UpdateAgentSkillBindingResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[16]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateAgentSkillBindingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateAgentSkillBindingResponse) ProtoMessage() {}
-
-func (x *UpdateAgentSkillBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[16]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateAgentSkillBindingResponse.ProtoReflect.Descriptor instead.
-func (*UpdateAgentSkillBindingResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *UpdateAgentSkillBindingResponse) GetBinding() *AgentSkillBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type DeleteAgentSkillBindingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteAgentSkillBindingRequest) Reset() {
-	*x = DeleteAgentSkillBindingRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteAgentSkillBindingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteAgentSkillBindingRequest) ProtoMessage() {}
-
-func (x *DeleteAgentSkillBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteAgentSkillBindingRequest.ProtoReflect.Descriptor instead.
-func (*DeleteAgentSkillBindingRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *DeleteAgentSkillBindingRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-type DeleteAgentSkillBindingResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteAgentSkillBindingResponse) Reset() {
-	*x = DeleteAgentSkillBindingResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteAgentSkillBindingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteAgentSkillBindingResponse) ProtoMessage() {}
-
-func (x *DeleteAgentSkillBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteAgentSkillBindingResponse.ProtoReflect.Descriptor instead.
-func (*DeleteAgentSkillBindingResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{18}
-}
-
-func (x *DeleteAgentSkillBindingResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
-}
-
-type ListAgentMcpBindingsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAgentMcpBindingsRequest) Reset() {
-	*x = ListAgentMcpBindingsRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAgentMcpBindingsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAgentMcpBindingsRequest) ProtoMessage() {}
-
-func (x *ListAgentMcpBindingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAgentMcpBindingsRequest.ProtoReflect.Descriptor instead.
-func (*ListAgentMcpBindingsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *ListAgentMcpBindingsRequest) GetAgentId() string {
-	if x != nil {
-		return x.AgentId
-	}
-	return ""
-}
-
-type ListAgentMcpBindingsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Bindings      []*AgentMcpBinding     `protobuf:"bytes,1,rep,name=bindings,proto3" json:"bindings,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAgentMcpBindingsResponse) Reset() {
-	*x = ListAgentMcpBindingsResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[20]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAgentMcpBindingsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAgentMcpBindingsResponse) ProtoMessage() {}
-
-func (x *ListAgentMcpBindingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[20]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAgentMcpBindingsResponse.ProtoReflect.Descriptor instead.
-func (*ListAgentMcpBindingsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{20}
-}
-
-func (x *ListAgentMcpBindingsResponse) GetBindings() []*AgentMcpBinding {
-	if x != nil {
-		return x.Bindings
-	}
-	return nil
-}
-
-type CreateAgentMcpBindingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentMcpBinding       `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateAgentMcpBindingRequest) Reset() {
-	*x = CreateAgentMcpBindingRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[21]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateAgentMcpBindingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateAgentMcpBindingRequest) ProtoMessage() {}
-
-func (x *CreateAgentMcpBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[21]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateAgentMcpBindingRequest.ProtoReflect.Descriptor instead.
-func (*CreateAgentMcpBindingRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *CreateAgentMcpBindingRequest) GetBinding() *AgentMcpBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type CreateAgentMcpBindingResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentMcpBinding       `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateAgentMcpBindingResponse) Reset() {
-	*x = CreateAgentMcpBindingResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[22]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateAgentMcpBindingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateAgentMcpBindingResponse) ProtoMessage() {}
-
-func (x *CreateAgentMcpBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[22]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateAgentMcpBindingResponse.ProtoReflect.Descriptor instead.
-func (*CreateAgentMcpBindingResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{22}
-}
-
-func (x *CreateAgentMcpBindingResponse) GetBinding() *AgentMcpBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type UpdateAgentMcpBindingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentMcpBinding       `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateAgentMcpBindingRequest) Reset() {
-	*x = UpdateAgentMcpBindingRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[23]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateAgentMcpBindingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateAgentMcpBindingRequest) ProtoMessage() {}
-
-func (x *UpdateAgentMcpBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[23]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateAgentMcpBindingRequest.ProtoReflect.Descriptor instead.
-func (*UpdateAgentMcpBindingRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{23}
-}
-
-func (x *UpdateAgentMcpBindingRequest) GetBinding() *AgentMcpBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type UpdateAgentMcpBindingResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Binding       *AgentMcpBinding       `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateAgentMcpBindingResponse) Reset() {
-	*x = UpdateAgentMcpBindingResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[24]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateAgentMcpBindingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateAgentMcpBindingResponse) ProtoMessage() {}
-
-func (x *UpdateAgentMcpBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[24]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateAgentMcpBindingResponse.ProtoReflect.Descriptor instead.
-func (*UpdateAgentMcpBindingResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{24}
-}
-
-func (x *UpdateAgentMcpBindingResponse) GetBinding() *AgentMcpBinding {
-	if x != nil {
-		return x.Binding
-	}
-	return nil
-}
-
-type DeleteAgentMcpBindingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteAgentMcpBindingRequest) Reset() {
-	*x = DeleteAgentMcpBindingRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[25]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteAgentMcpBindingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteAgentMcpBindingRequest) ProtoMessage() {}
-
-func (x *DeleteAgentMcpBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[25]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteAgentMcpBindingRequest.ProtoReflect.Descriptor instead.
-func (*DeleteAgentMcpBindingRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{25}
-}
-
-func (x *DeleteAgentMcpBindingRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-type DeleteAgentMcpBindingResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteAgentMcpBindingResponse) Reset() {
-	*x = DeleteAgentMcpBindingResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[26]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteAgentMcpBindingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteAgentMcpBindingResponse) ProtoMessage() {}
-
-func (x *DeleteAgentMcpBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[26]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteAgentMcpBindingResponse.ProtoReflect.Descriptor instead.
-func (*DeleteAgentMcpBindingResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{26}
-}
-
-func (x *DeleteAgentMcpBindingResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
-}
-
 // Provider model visibility preferences.
 type HideModelRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1404,7 +87,7 @@ type HideModelRequest struct {
 
 func (x *HideModelRequest) Reset() {
 	*x = HideModelRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[27]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1416,7 +99,7 @@ func (x *HideModelRequest) String() string {
 func (*HideModelRequest) ProtoMessage() {}
 
 func (x *HideModelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[27]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1429,7 +112,7 @@ func (x *HideModelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HideModelRequest.ProtoReflect.Descriptor instead.
 func (*HideModelRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{27}
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *HideModelRequest) GetProviderId() string {
@@ -1455,7 +138,7 @@ type HideModelResponse struct {
 
 func (x *HideModelResponse) Reset() {
 	*x = HideModelResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[28]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1467,7 +150,7 @@ func (x *HideModelResponse) String() string {
 func (*HideModelResponse) ProtoMessage() {}
 
 func (x *HideModelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[28]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1480,7 +163,7 @@ func (x *HideModelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HideModelResponse.ProtoReflect.Descriptor instead.
 func (*HideModelResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{28}
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *HideModelResponse) GetOk() bool {
@@ -1499,7 +182,7 @@ type GetHiddenModelsRequest struct {
 
 func (x *GetHiddenModelsRequest) Reset() {
 	*x = GetHiddenModelsRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[29]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1511,7 +194,7 @@ func (x *GetHiddenModelsRequest) String() string {
 func (*GetHiddenModelsRequest) ProtoMessage() {}
 
 func (x *GetHiddenModelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[29]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1524,7 +207,7 @@ func (x *GetHiddenModelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHiddenModelsRequest.ProtoReflect.Descriptor instead.
 func (*GetHiddenModelsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{29}
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *GetHiddenModelsRequest) GetProviderId() string {
@@ -1543,7 +226,7 @@ type GetHiddenModelsResponse struct {
 
 func (x *GetHiddenModelsResponse) Reset() {
 	*x = GetHiddenModelsResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[30]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1555,7 +238,7 @@ func (x *GetHiddenModelsResponse) String() string {
 func (*GetHiddenModelsResponse) ProtoMessage() {}
 
 func (x *GetHiddenModelsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[30]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1568,7 +251,7 @@ func (x *GetHiddenModelsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetHiddenModelsResponse.ProtoReflect.Descriptor instead.
 func (*GetHiddenModelsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{30}
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GetHiddenModelsResponse) GetHiddenModels() []string {
@@ -1595,7 +278,7 @@ type SubmitToolApprovalDecisionRequest struct {
 
 func (x *SubmitToolApprovalDecisionRequest) Reset() {
 	*x = SubmitToolApprovalDecisionRequest{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[31]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1607,7 +290,7 @@ func (x *SubmitToolApprovalDecisionRequest) String() string {
 func (*SubmitToolApprovalDecisionRequest) ProtoMessage() {}
 
 func (x *SubmitToolApprovalDecisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[31]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1620,7 +303,7 @@ func (x *SubmitToolApprovalDecisionRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use SubmitToolApprovalDecisionRequest.ProtoReflect.Descriptor instead.
 func (*SubmitToolApprovalDecisionRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{31}
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SubmitToolApprovalDecisionRequest) GetApprovalId() string {
@@ -1689,7 +372,7 @@ type SubmitToolApprovalDecisionResponse struct {
 
 func (x *SubmitToolApprovalDecisionResponse) Reset() {
 	*x = SubmitToolApprovalDecisionResponse{}
-	mi := &file_domain_agent_agent_config_proto_msgTypes[32]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1701,7 +384,7 @@ func (x *SubmitToolApprovalDecisionResponse) String() string {
 func (*SubmitToolApprovalDecisionResponse) ProtoMessage() {}
 
 func (x *SubmitToolApprovalDecisionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_agent_config_proto_msgTypes[32]
+	mi := &file_domain_agent_agent_config_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1714,7 +397,7 @@ func (x *SubmitToolApprovalDecisionResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use SubmitToolApprovalDecisionResponse.ProtoReflect.Descriptor instead.
 func (*SubmitToolApprovalDecisionResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{32}
+	return file_domain_agent_agent_config_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SubmitToolApprovalDecisionResponse) GetAccepted() bool {
@@ -1784,85 +467,7 @@ var File_domain_agent_agent_config_proto protoreflect.FileDescriptor
 
 const file_domain_agent_agent_config_proto_rawDesc = "" +
 	"\n" +
-	"\x1fdomain/agent/agent_config.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8b\x02\n" +
-	"\x15AgentKnowledgeBinding\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
-	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1f\n" +
-	"\vresource_id\x18\x03 \x01(\tR\n" +
-	"resourceId\x12\x16\n" +
-	"\x06policy\x18\x04 \x01(\tR\x06policy\x12\x18\n" +
-	"\aenabled\x18\x05 \x01(\bR\aenabled\x129\n" +
-	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
-	"\n" +
-	"updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xe9\x01\n" +
-	"\x11AgentSkillBinding\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
-	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x19\n" +
-	"\bskill_id\x18\x03 \x01(\tR\askillId\x12\x18\n" +
-	"\aenabled\x18\x04 \x01(\bR\aenabled\x129\n" +
-	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
-	"\n" +
-	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xed\x01\n" +
-	"\x0fAgentMcpBinding\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
-	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1f\n" +
-	"\vserver_name\x18\x03 \x01(\tR\n" +
-	"serverName\x12\x18\n" +
-	"\aenabled\x18\x04 \x01(\bR\aenabled\x129\n" +
-	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
-	"\n" +
-	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\">\n" +
-	"!ListAgentKnowledgeBindingsRequest\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\"s\n" +
-	"\"ListAgentKnowledgeBindingsResponse\x12M\n" +
-	"\bbindings\x18\x01 \x03(\v21.peers_touch.model.agent.v1.AgentKnowledgeBindingR\bbindings\"q\n" +
-	"\"CreateAgentKnowledgeBindingRequest\x12K\n" +
-	"\abinding\x18\x01 \x01(\v21.peers_touch.model.agent.v1.AgentKnowledgeBindingR\abinding\"r\n" +
-	"#CreateAgentKnowledgeBindingResponse\x12K\n" +
-	"\abinding\x18\x01 \x01(\v21.peers_touch.model.agent.v1.AgentKnowledgeBindingR\abinding\"q\n" +
-	"\"UpdateAgentKnowledgeBindingRequest\x12K\n" +
-	"\abinding\x18\x01 \x01(\v21.peers_touch.model.agent.v1.AgentKnowledgeBindingR\abinding\"r\n" +
-	"#UpdateAgentKnowledgeBindingResponse\x12K\n" +
-	"\abinding\x18\x01 \x01(\v21.peers_touch.model.agent.v1.AgentKnowledgeBindingR\abinding\"4\n" +
-	"\"DeleteAgentKnowledgeBindingRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"?\n" +
-	"#DeleteAgentKnowledgeBindingResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\":\n" +
-	"\x1dListAgentSkillBindingsRequest\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\"k\n" +
-	"\x1eListAgentSkillBindingsResponse\x12I\n" +
-	"\bbindings\x18\x01 \x03(\v2-.peers_touch.model.agent.v1.AgentSkillBindingR\bbindings\"i\n" +
-	"\x1eCreateAgentSkillBindingRequest\x12G\n" +
-	"\abinding\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.AgentSkillBindingR\abinding\"j\n" +
-	"\x1fCreateAgentSkillBindingResponse\x12G\n" +
-	"\abinding\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.AgentSkillBindingR\abinding\"i\n" +
-	"\x1eUpdateAgentSkillBindingRequest\x12G\n" +
-	"\abinding\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.AgentSkillBindingR\abinding\"j\n" +
-	"\x1fUpdateAgentSkillBindingResponse\x12G\n" +
-	"\abinding\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.AgentSkillBindingR\abinding\"0\n" +
-	"\x1eDeleteAgentSkillBindingRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\";\n" +
-	"\x1fDeleteAgentSkillBindingResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"8\n" +
-	"\x1bListAgentMcpBindingsRequest\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\"g\n" +
-	"\x1cListAgentMcpBindingsResponse\x12G\n" +
-	"\bbindings\x18\x01 \x03(\v2+.peers_touch.model.agent.v1.AgentMcpBindingR\bbindings\"e\n" +
-	"\x1cCreateAgentMcpBindingRequest\x12E\n" +
-	"\abinding\x18\x01 \x01(\v2+.peers_touch.model.agent.v1.AgentMcpBindingR\abinding\"f\n" +
-	"\x1dCreateAgentMcpBindingResponse\x12E\n" +
-	"\abinding\x18\x01 \x01(\v2+.peers_touch.model.agent.v1.AgentMcpBindingR\abinding\"e\n" +
-	"\x1cUpdateAgentMcpBindingRequest\x12E\n" +
-	"\abinding\x18\x01 \x01(\v2+.peers_touch.model.agent.v1.AgentMcpBindingR\abinding\"f\n" +
-	"\x1dUpdateAgentMcpBindingResponse\x12E\n" +
-	"\abinding\x18\x01 \x01(\v2+.peers_touch.model.agent.v1.AgentMcpBindingR\abinding\".\n" +
-	"\x1cDeleteAgentMcpBindingRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"9\n" +
-	"\x1dDeleteAgentMcpBindingResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"N\n" +
+	"\x1fdomain/agent/agent_config.proto\x12\x1apeers_touch.model.agent.v1\"N\n" +
 	"\x10HideModelRequest\x12\x1f\n" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\x12\x19\n" +
@@ -1919,72 +524,23 @@ func file_domain_agent_agent_config_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_agent_agent_config_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_agent_agent_config_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
+var file_domain_agent_agent_config_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_domain_agent_agent_config_proto_goTypes = []any{
-	(ToolApprovalDecisionErrorCode)(0),          // 0: peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode
-	(*AgentKnowledgeBinding)(nil),               // 1: peers_touch.model.agent.v1.AgentKnowledgeBinding
-	(*AgentSkillBinding)(nil),                   // 2: peers_touch.model.agent.v1.AgentSkillBinding
-	(*AgentMcpBinding)(nil),                     // 3: peers_touch.model.agent.v1.AgentMcpBinding
-	(*ListAgentKnowledgeBindingsRequest)(nil),   // 4: peers_touch.model.agent.v1.ListAgentKnowledgeBindingsRequest
-	(*ListAgentKnowledgeBindingsResponse)(nil),  // 5: peers_touch.model.agent.v1.ListAgentKnowledgeBindingsResponse
-	(*CreateAgentKnowledgeBindingRequest)(nil),  // 6: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingRequest
-	(*CreateAgentKnowledgeBindingResponse)(nil), // 7: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingResponse
-	(*UpdateAgentKnowledgeBindingRequest)(nil),  // 8: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingRequest
-	(*UpdateAgentKnowledgeBindingResponse)(nil), // 9: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingResponse
-	(*DeleteAgentKnowledgeBindingRequest)(nil),  // 10: peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingRequest
-	(*DeleteAgentKnowledgeBindingResponse)(nil), // 11: peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingResponse
-	(*ListAgentSkillBindingsRequest)(nil),       // 12: peers_touch.model.agent.v1.ListAgentSkillBindingsRequest
-	(*ListAgentSkillBindingsResponse)(nil),      // 13: peers_touch.model.agent.v1.ListAgentSkillBindingsResponse
-	(*CreateAgentSkillBindingRequest)(nil),      // 14: peers_touch.model.agent.v1.CreateAgentSkillBindingRequest
-	(*CreateAgentSkillBindingResponse)(nil),     // 15: peers_touch.model.agent.v1.CreateAgentSkillBindingResponse
-	(*UpdateAgentSkillBindingRequest)(nil),      // 16: peers_touch.model.agent.v1.UpdateAgentSkillBindingRequest
-	(*UpdateAgentSkillBindingResponse)(nil),     // 17: peers_touch.model.agent.v1.UpdateAgentSkillBindingResponse
-	(*DeleteAgentSkillBindingRequest)(nil),      // 18: peers_touch.model.agent.v1.DeleteAgentSkillBindingRequest
-	(*DeleteAgentSkillBindingResponse)(nil),     // 19: peers_touch.model.agent.v1.DeleteAgentSkillBindingResponse
-	(*ListAgentMcpBindingsRequest)(nil),         // 20: peers_touch.model.agent.v1.ListAgentMcpBindingsRequest
-	(*ListAgentMcpBindingsResponse)(nil),        // 21: peers_touch.model.agent.v1.ListAgentMcpBindingsResponse
-	(*CreateAgentMcpBindingRequest)(nil),        // 22: peers_touch.model.agent.v1.CreateAgentMcpBindingRequest
-	(*CreateAgentMcpBindingResponse)(nil),       // 23: peers_touch.model.agent.v1.CreateAgentMcpBindingResponse
-	(*UpdateAgentMcpBindingRequest)(nil),        // 24: peers_touch.model.agent.v1.UpdateAgentMcpBindingRequest
-	(*UpdateAgentMcpBindingResponse)(nil),       // 25: peers_touch.model.agent.v1.UpdateAgentMcpBindingResponse
-	(*DeleteAgentMcpBindingRequest)(nil),        // 26: peers_touch.model.agent.v1.DeleteAgentMcpBindingRequest
-	(*DeleteAgentMcpBindingResponse)(nil),       // 27: peers_touch.model.agent.v1.DeleteAgentMcpBindingResponse
-	(*HideModelRequest)(nil),                    // 28: peers_touch.model.agent.v1.HideModelRequest
-	(*HideModelResponse)(nil),                   // 29: peers_touch.model.agent.v1.HideModelResponse
-	(*GetHiddenModelsRequest)(nil),              // 30: peers_touch.model.agent.v1.GetHiddenModelsRequest
-	(*GetHiddenModelsResponse)(nil),             // 31: peers_touch.model.agent.v1.GetHiddenModelsResponse
-	(*SubmitToolApprovalDecisionRequest)(nil),   // 32: peers_touch.model.agent.v1.SubmitToolApprovalDecisionRequest
-	(*SubmitToolApprovalDecisionResponse)(nil),  // 33: peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse
-	(*timestamppb.Timestamp)(nil),               // 34: google.protobuf.Timestamp
+	(ToolApprovalDecisionErrorCode)(0),         // 0: peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode
+	(*HideModelRequest)(nil),                   // 1: peers_touch.model.agent.v1.HideModelRequest
+	(*HideModelResponse)(nil),                  // 2: peers_touch.model.agent.v1.HideModelResponse
+	(*GetHiddenModelsRequest)(nil),             // 3: peers_touch.model.agent.v1.GetHiddenModelsRequest
+	(*GetHiddenModelsResponse)(nil),            // 4: peers_touch.model.agent.v1.GetHiddenModelsResponse
+	(*SubmitToolApprovalDecisionRequest)(nil),  // 5: peers_touch.model.agent.v1.SubmitToolApprovalDecisionRequest
+	(*SubmitToolApprovalDecisionResponse)(nil), // 6: peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse
 }
 var file_domain_agent_agent_config_proto_depIdxs = []int32{
-	34, // 0: peers_touch.model.agent.v1.AgentKnowledgeBinding.created_at:type_name -> google.protobuf.Timestamp
-	34, // 1: peers_touch.model.agent.v1.AgentKnowledgeBinding.updated_at:type_name -> google.protobuf.Timestamp
-	34, // 2: peers_touch.model.agent.v1.AgentSkillBinding.created_at:type_name -> google.protobuf.Timestamp
-	34, // 3: peers_touch.model.agent.v1.AgentSkillBinding.updated_at:type_name -> google.protobuf.Timestamp
-	34, // 4: peers_touch.model.agent.v1.AgentMcpBinding.created_at:type_name -> google.protobuf.Timestamp
-	34, // 5: peers_touch.model.agent.v1.AgentMcpBinding.updated_at:type_name -> google.protobuf.Timestamp
-	1,  // 6: peers_touch.model.agent.v1.ListAgentKnowledgeBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
-	1,  // 7: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
-	1,  // 8: peers_touch.model.agent.v1.CreateAgentKnowledgeBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
-	1,  // 9: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
-	1,  // 10: peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentKnowledgeBinding
-	2,  // 11: peers_touch.model.agent.v1.ListAgentSkillBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
-	2,  // 12: peers_touch.model.agent.v1.CreateAgentSkillBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
-	2,  // 13: peers_touch.model.agent.v1.CreateAgentSkillBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
-	2,  // 14: peers_touch.model.agent.v1.UpdateAgentSkillBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
-	2,  // 15: peers_touch.model.agent.v1.UpdateAgentSkillBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentSkillBinding
-	3,  // 16: peers_touch.model.agent.v1.ListAgentMcpBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
-	3,  // 17: peers_touch.model.agent.v1.CreateAgentMcpBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
-	3,  // 18: peers_touch.model.agent.v1.CreateAgentMcpBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
-	3,  // 19: peers_touch.model.agent.v1.UpdateAgentMcpBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
-	3,  // 20: peers_touch.model.agent.v1.UpdateAgentMcpBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentMcpBinding
-	0,  // 21: peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse.error_code:type_name -> peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode
-	22, // [22:22] is the sub-list for method output_type
-	22, // [22:22] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	0, // 0: peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse.error_code:type_name -> peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_agent_config_proto_init() }
@@ -1998,7 +554,7 @@ func file_domain_agent_agent_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_agent_config_proto_rawDesc), len(file_domain_agent_agent_config_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   33,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

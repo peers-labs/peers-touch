@@ -27,6 +27,7 @@
 | MCA-D13 | Route device-local work through a platform-neutral client capability session | approved |
 | MCA-D14 | Project Home from Station-owned work state | approved |
 | MCA-D15 | Use one versioned capability manifest and Agent binding contract | approved |
+| MCA-D15K | Make Knowledge resources versioned capability dependencies | approved |
 | MCA-D16 | Model MCP lifecycle as Station operations executed by client capability managers | approved |
 | MCA-D17 | Separate Connector OAuth/resources from Agent tool manifests and bindings | approved |
 | MCA-D18 | Make Evaluation a Station aggregate using the canonical Turn kernel | approved |
@@ -688,6 +689,77 @@ misrepresented as executable readiness.
 
 Adding a source type requires manifest schema and owner semantics, not a new
 parallel registry.
+
+## MCA-D15K: Versioned Knowledge Resource Descriptor
+
+**Status**: approved
+**Date**: 2026-08-28
+
+### Context
+
+W8a removed embedded Knowledge binding rows, but `ExecuteTurnRequest` can still
+carry resource source, type, policy, and status. Station therefore cannot prove
+that retrieval used an actor-owned resource revision pinned by the immutable
+readiness snapshot.
+
+| Claim | Class | Evidence | Missing proof |
+|---|---|---|---|
+| Turn callers currently choose Knowledge source/policy | verified_fact | `agent.proto#ExecuteTurnRequest`, `turn_handler.go` | none |
+| Station retrieval can open caller-provided paths/URLs | verified_fact | `knowledge_retrieval_service.go` | none |
+| Existing W1 snapshots cannot identify a Knowledge descriptor revision | verified_fact | `capability.proto`, `capability_readiness_authority_service.go` | none |
+| One descriptor revision per manifest version closes the lineage gap | proposal | D15 manifest/version contract | runtime and migration gates below |
+
+### Decision
+
+Station owns a versioned, actor-scoped `KnowledgeResourceDescriptor`. Each
+descriptor revision publishes one Knowledge `CapabilityManifest` version.
+Actor-owned manifests carry the descriptor `owner_ptid`; catalog reads,
+binding mutations, retirement, and invalidation fan-out enforce that owner.
+`AgentCapabilityBinding` owns enablement and approval policy. Turn admission
+pins the manifest version, binding revision, and readiness state; the request
+may not supply a Knowledge locator, policy, or content.
+
+Descriptor locators have exactly two forms:
+
+- `station_content_ref`: immutable Station content/index revision.
+- `client_resource_ref`: opaque device resource identity resolved only through
+  the selected capability session and governed execution.
+
+Raw local paths, mutable URLs, credentials, and unversioned client content are
+forbidden in Turn and package contracts. A URL is ingested into a Station
+content revision before it can become READY.
+
+### Rationale
+
+This preserves Station business authority without moving device-local files or
+secrets across the trust boundary. Manifest versioning supplies the immutable
+identity already consumed by readiness and trace lineage.
+
+### Alternatives Considered
+
+- Keep `knowledge_resources` on `ExecuteTurnRequest`: rejected because the
+  caller becomes retrieval authority.
+- Store local paths on Station: rejected because local resources and secrets
+  belong to the selected client capability manager.
+- Use the legacy Agent Knowledge binding table: rejected because it restores a
+  second binding authority without manifest or readiness lineage.
+
+### Consequences
+
+- Knowledge CRUD becomes a Station resource API that creates descriptor and
+  manifest revisions transactionally.
+- Descriptor tombstone retires every manifest revision and blocks all new
+  admission while preserving immutable historical records.
+- Local Knowledge retrieval is a governed client capability; Station-hosted
+  retrieval reads immutable Station content/index refs.
+- Package export includes portable descriptors and declares unresolved
+  client-local dependencies instead of copying paths.
+- Existing embedded descriptors remain historical migration input only.
+
+### Review Condition
+
+Accept only with actor isolation, immutable revision, deletion/tombstone,
+package dependency, and local-resource negative-control tests.
 
 ## MCA-D16: Station Capability Operations, Client MCP Execution
 

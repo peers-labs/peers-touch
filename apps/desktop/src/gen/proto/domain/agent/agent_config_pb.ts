@@ -4,554 +4,13 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/agent/agent_config.proto.
  */
 export const file_domain_agent_agent_config: GenFile = /*@__PURE__*/
-  fileDesc("Ch9kb21haW4vYWdlbnQvYWdlbnRfY29uZmlnLnByb3RvEhpwZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MSLLAQoVQWdlbnRLbm93bGVkZ2VCaW5kaW5nEgoKAmlkGAEgASgJEhAKCGFnZW50X2lkGAIgASgJEhMKC3Jlc291cmNlX2lkGAMgASgJEg4KBnBvbGljeRgEIAEoCRIPCgdlbmFibGVkGAUgASgIEi4KCmNyZWF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrQBChFBZ2VudFNraWxsQmluZGluZxIKCgJpZBgBIAEoCRIQCghhZ2VudF9pZBgCIAEoCRIQCghza2lsbF9pZBgDIAEoCRIPCgdlbmFibGVkGAQgASgIEi4KCmNyZWF0ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrUBCg9BZ2VudE1jcEJpbmRpbmcSCgoCaWQYASABKAkSEAoIYWdlbnRfaWQYAiABKAkSEwoLc2VydmVyX25hbWUYAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI1CiFMaXN0QWdlbnRLbm93bGVkZ2VCaW5kaW5nc1JlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkiaQoiTGlzdEFnZW50S25vd2xlZGdlQmluZGluZ3NSZXNwb25zZRJDCghiaW5kaW5ncxgBIAMoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50S25vd2xlZGdlQmluZGluZyJoCiJDcmVhdGVBZ2VudEtub3dsZWRnZUJpbmRpbmdSZXF1ZXN0EkIKB2JpbmRpbmcYASABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudEtub3dsZWRnZUJpbmRpbmciaQojQ3JlYXRlQWdlbnRLbm93bGVkZ2VCaW5kaW5nUmVzcG9uc2USQgoHYmluZGluZxgBIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50S25vd2xlZGdlQmluZGluZyJoCiJVcGRhdGVBZ2VudEtub3dsZWRnZUJpbmRpbmdSZXF1ZXN0EkIKB2JpbmRpbmcYASABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudEtub3dsZWRnZUJpbmRpbmciaQojVXBkYXRlQWdlbnRLbm93bGVkZ2VCaW5kaW5nUmVzcG9uc2USQgoHYmluZGluZxgBIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50S25vd2xlZGdlQmluZGluZyIwCiJEZWxldGVBZ2VudEtub3dsZWRnZUJpbmRpbmdSZXF1ZXN0EgoKAmlkGAEgASgJIjYKI0RlbGV0ZUFnZW50S25vd2xlZGdlQmluZGluZ1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiMQodTGlzdEFnZW50U2tpbGxCaW5kaW5nc1JlcXVlc3QSEAoIYWdlbnRfaWQYASABKAkiYQoeTGlzdEFnZW50U2tpbGxCaW5kaW5nc1Jlc3BvbnNlEj8KCGJpbmRpbmdzGAEgAygLMi0ucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRTa2lsbEJpbmRpbmciYAoeQ3JlYXRlQWdlbnRTa2lsbEJpbmRpbmdSZXF1ZXN0Ej4KB2JpbmRpbmcYASABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudFNraWxsQmluZGluZyJhCh9DcmVhdGVBZ2VudFNraWxsQmluZGluZ1Jlc3BvbnNlEj4KB2JpbmRpbmcYASABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudFNraWxsQmluZGluZyJgCh5VcGRhdGVBZ2VudFNraWxsQmluZGluZ1JlcXVlc3QSPgoHYmluZGluZxgBIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50U2tpbGxCaW5kaW5nImEKH1VwZGF0ZUFnZW50U2tpbGxCaW5kaW5nUmVzcG9uc2USPgoHYmluZGluZxgBIAEoCzItLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkFnZW50U2tpbGxCaW5kaW5nIiwKHkRlbGV0ZUFnZW50U2tpbGxCaW5kaW5nUmVxdWVzdBIKCgJpZBgBIAEoCSIyCh9EZWxldGVBZ2VudFNraWxsQmluZGluZ1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiLwobTGlzdEFnZW50TWNwQmluZGluZ3NSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJIl0KHExpc3RBZ2VudE1jcEJpbmRpbmdzUmVzcG9uc2USPQoIYmluZGluZ3MYASADKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1jcEJpbmRpbmciXAocQ3JlYXRlQWdlbnRNY3BCaW5kaW5nUmVxdWVzdBI8CgdiaW5kaW5nGAEgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRNY3BCaW5kaW5nIl0KHUNyZWF0ZUFnZW50TWNwQmluZGluZ1Jlc3BvbnNlEjwKB2JpbmRpbmcYASABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1jcEJpbmRpbmciXAocVXBkYXRlQWdlbnRNY3BCaW5kaW5nUmVxdWVzdBI8CgdiaW5kaW5nGAEgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuQWdlbnRNY3BCaW5kaW5nIl0KHVVwZGF0ZUFnZW50TWNwQmluZGluZ1Jlc3BvbnNlEjwKB2JpbmRpbmcYASABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5BZ2VudE1jcEJpbmRpbmciKgocRGVsZXRlQWdlbnRNY3BCaW5kaW5nUmVxdWVzdBIKCgJpZBgBIAEoCSIwCh1EZWxldGVBZ2VudE1jcEJpbmRpbmdSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIIjkKEEhpZGVNb2RlbFJlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkSEAoIbW9kZWxfaWQYAiABKAkiHwoRSGlkZU1vZGVsUmVzcG9uc2USCgoCb2sYASABKAgiLQoWR2V0SGlkZGVuTW9kZWxzUmVxdWVzdBITCgtwcm92aWRlcl9pZBgBIAEoCSIwChdHZXRIaWRkZW5Nb2RlbHNSZXNwb25zZRIVCg1oaWRkZW5fbW9kZWxzGAEgAygJIr8BCiFTdWJtaXRUb29sQXBwcm92YWxEZWNpc2lvblJlcXVlc3QSEwoLYXBwcm92YWxfaWQYASABKAkSFAoMdG9vbF9jYWxsX2lkGAIgASgJEhMKC2RlY2lzaW9uX2lkGAMgASgJEhkKEWV4cGVjdGVkX3JldmlzaW9uGAQgASgEEhAKCGFwcHJvdmVkGAUgASgIEhcKD2lkZW1wb3RlbmN5X2tleRgGIAEoCRIUCgxwYXlsb2FkX2hhc2gYByABKAkioQIKIlN1Ym1pdFRvb2xBcHByb3ZhbERlY2lzaW9uUmVzcG9uc2USEAoIYWNjZXB0ZWQYASABKAgSGQoRZGVjaXNpb25fcmV2aXNpb24YAiABKAQSEwoLYXBwcm92YWxfaWQYAyABKAkSFAoMdG9vbF9jYWxsX2lkGAQgASgJEhMKC2RlY2lzaW9uX2lkGAUgASgJEhAKCGFwcHJvdmVkGAYgASgIEhcKD2lkZW1wb3RlbmN5X2tleRgHIAEoCRIUCgxwYXlsb2FkX2hhc2gYCCABKAkSTQoKZXJyb3JfY29kZRgJIAEoDjI5LnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRvb2xBcHByb3ZhbERlY2lzaW9uRXJyb3JDb2RlKqQCCh1Ub29sQXBwcm92YWxEZWNpc2lvbkVycm9yQ29kZRIxCi1UT09MX0FQUFJPVkFMX0RFQ0lTSU9OX0VSUk9SX0NPREVfVU5TUEVDSUZJRUQQABI0CjBUT09MX0FQUFJPVkFMX0RFQ0lTSU9OX0VSUk9SX0NPREVfU1RBTEVfUkVWSVNJT04QARI6CjZUT09MX0FQUFJPVkFMX0RFQ0lTSU9OX0VSUk9SX0NPREVfSURFTVBPVEVOQ1lfQ09ORkxJQ1QQAhItCilUT09MX0FQUFJPVkFMX0RFQ0lTSU9OX0VSUk9SX0NPREVfRVhQSVJFRBADEi8KK1RPT0xfQVBQUk9WQUxfREVDSVNJT05fRVJST1JfQ09ERV9OT1RfRk9VTkQQBEJLWklnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2FnZW50L21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
-
-/**
- * @generated from message peers_touch.model.agent.v1.AgentKnowledgeBinding
- */
-export type AgentKnowledgeBinding = Message<"peers_touch.model.agent.v1.AgentKnowledgeBinding"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
-  id: string;
-
-  /**
-   * @generated from field: string agent_id = 2;
-   */
-  agentId: string;
-
-  /**
-   * @generated from field: string resource_id = 3;
-   */
-  resourceId: string;
-
-  /**
-   * @generated from field: string policy = 4;
-   */
-  policy: string;
-
-  /**
-   * @generated from field: bool enabled = 5;
-   */
-  enabled: boolean;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp created_at = 6;
-   */
-  createdAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp updated_at = 7;
-   */
-  updatedAt?: Timestamp | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.AgentKnowledgeBinding.
- * Use `create(AgentKnowledgeBindingSchema)` to create a new message.
- */
-export const AgentKnowledgeBindingSchema: GenMessage<AgentKnowledgeBinding> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 0);
-
-/**
- * @generated from message peers_touch.model.agent.v1.AgentSkillBinding
- */
-export type AgentSkillBinding = Message<"peers_touch.model.agent.v1.AgentSkillBinding"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
-  id: string;
-
-  /**
-   * @generated from field: string agent_id = 2;
-   */
-  agentId: string;
-
-  /**
-   * @generated from field: string skill_id = 3;
-   */
-  skillId: string;
-
-  /**
-   * @generated from field: bool enabled = 4;
-   */
-  enabled: boolean;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp created_at = 5;
-   */
-  createdAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp updated_at = 6;
-   */
-  updatedAt?: Timestamp | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.AgentSkillBinding.
- * Use `create(AgentSkillBindingSchema)` to create a new message.
- */
-export const AgentSkillBindingSchema: GenMessage<AgentSkillBinding> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 1);
-
-/**
- * @generated from message peers_touch.model.agent.v1.AgentMcpBinding
- */
-export type AgentMcpBinding = Message<"peers_touch.model.agent.v1.AgentMcpBinding"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
-  id: string;
-
-  /**
-   * @generated from field: string agent_id = 2;
-   */
-  agentId: string;
-
-  /**
-   * @generated from field: string server_name = 3;
-   */
-  serverName: string;
-
-  /**
-   * @generated from field: bool enabled = 4;
-   */
-  enabled: boolean;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp created_at = 5;
-   */
-  createdAt?: Timestamp | undefined;
-
-  /**
-   * @generated from field: google.protobuf.Timestamp updated_at = 6;
-   */
-  updatedAt?: Timestamp | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.AgentMcpBinding.
- * Use `create(AgentMcpBindingSchema)` to create a new message.
- */
-export const AgentMcpBindingSchema: GenMessage<AgentMcpBinding> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 2);
-
-/**
- * @generated from message peers_touch.model.agent.v1.ListAgentKnowledgeBindingsRequest
- */
-export type ListAgentKnowledgeBindingsRequest = Message<"peers_touch.model.agent.v1.ListAgentKnowledgeBindingsRequest"> & {
-  /**
-   * @generated from field: string agent_id = 1;
-   */
-  agentId: string;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.ListAgentKnowledgeBindingsRequest.
- * Use `create(ListAgentKnowledgeBindingsRequestSchema)` to create a new message.
- */
-export const ListAgentKnowledgeBindingsRequestSchema: GenMessage<ListAgentKnowledgeBindingsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 3);
-
-/**
- * @generated from message peers_touch.model.agent.v1.ListAgentKnowledgeBindingsResponse
- */
-export type ListAgentKnowledgeBindingsResponse = Message<"peers_touch.model.agent.v1.ListAgentKnowledgeBindingsResponse"> & {
-  /**
-   * @generated from field: repeated peers_touch.model.agent.v1.AgentKnowledgeBinding bindings = 1;
-   */
-  bindings: AgentKnowledgeBinding[];
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.ListAgentKnowledgeBindingsResponse.
- * Use `create(ListAgentKnowledgeBindingsResponseSchema)` to create a new message.
- */
-export const ListAgentKnowledgeBindingsResponseSchema: GenMessage<ListAgentKnowledgeBindingsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 4);
-
-/**
- * @generated from message peers_touch.model.agent.v1.CreateAgentKnowledgeBindingRequest
- */
-export type CreateAgentKnowledgeBindingRequest = Message<"peers_touch.model.agent.v1.CreateAgentKnowledgeBindingRequest"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentKnowledgeBinding binding = 1;
-   */
-  binding?: AgentKnowledgeBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.CreateAgentKnowledgeBindingRequest.
- * Use `create(CreateAgentKnowledgeBindingRequestSchema)` to create a new message.
- */
-export const CreateAgentKnowledgeBindingRequestSchema: GenMessage<CreateAgentKnowledgeBindingRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 5);
-
-/**
- * @generated from message peers_touch.model.agent.v1.CreateAgentKnowledgeBindingResponse
- */
-export type CreateAgentKnowledgeBindingResponse = Message<"peers_touch.model.agent.v1.CreateAgentKnowledgeBindingResponse"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentKnowledgeBinding binding = 1;
-   */
-  binding?: AgentKnowledgeBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.CreateAgentKnowledgeBindingResponse.
- * Use `create(CreateAgentKnowledgeBindingResponseSchema)` to create a new message.
- */
-export const CreateAgentKnowledgeBindingResponseSchema: GenMessage<CreateAgentKnowledgeBindingResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 6);
-
-/**
- * @generated from message peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingRequest
- */
-export type UpdateAgentKnowledgeBindingRequest = Message<"peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingRequest"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentKnowledgeBinding binding = 1;
-   */
-  binding?: AgentKnowledgeBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingRequest.
- * Use `create(UpdateAgentKnowledgeBindingRequestSchema)` to create a new message.
- */
-export const UpdateAgentKnowledgeBindingRequestSchema: GenMessage<UpdateAgentKnowledgeBindingRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 7);
-
-/**
- * @generated from message peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingResponse
- */
-export type UpdateAgentKnowledgeBindingResponse = Message<"peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingResponse"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentKnowledgeBinding binding = 1;
-   */
-  binding?: AgentKnowledgeBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.UpdateAgentKnowledgeBindingResponse.
- * Use `create(UpdateAgentKnowledgeBindingResponseSchema)` to create a new message.
- */
-export const UpdateAgentKnowledgeBindingResponseSchema: GenMessage<UpdateAgentKnowledgeBindingResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 8);
-
-/**
- * @generated from message peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingRequest
- */
-export type DeleteAgentKnowledgeBindingRequest = Message<"peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingRequest"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
-  id: string;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingRequest.
- * Use `create(DeleteAgentKnowledgeBindingRequestSchema)` to create a new message.
- */
-export const DeleteAgentKnowledgeBindingRequestSchema: GenMessage<DeleteAgentKnowledgeBindingRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 9);
-
-/**
- * @generated from message peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingResponse
- */
-export type DeleteAgentKnowledgeBindingResponse = Message<"peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingResponse"> & {
-  /**
-   * @generated from field: bool success = 1;
-   */
-  success: boolean;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.DeleteAgentKnowledgeBindingResponse.
- * Use `create(DeleteAgentKnowledgeBindingResponseSchema)` to create a new message.
- */
-export const DeleteAgentKnowledgeBindingResponseSchema: GenMessage<DeleteAgentKnowledgeBindingResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 10);
-
-/**
- * @generated from message peers_touch.model.agent.v1.ListAgentSkillBindingsRequest
- */
-export type ListAgentSkillBindingsRequest = Message<"peers_touch.model.agent.v1.ListAgentSkillBindingsRequest"> & {
-  /**
-   * @generated from field: string agent_id = 1;
-   */
-  agentId: string;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.ListAgentSkillBindingsRequest.
- * Use `create(ListAgentSkillBindingsRequestSchema)` to create a new message.
- */
-export const ListAgentSkillBindingsRequestSchema: GenMessage<ListAgentSkillBindingsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 11);
-
-/**
- * @generated from message peers_touch.model.agent.v1.ListAgentSkillBindingsResponse
- */
-export type ListAgentSkillBindingsResponse = Message<"peers_touch.model.agent.v1.ListAgentSkillBindingsResponse"> & {
-  /**
-   * @generated from field: repeated peers_touch.model.agent.v1.AgentSkillBinding bindings = 1;
-   */
-  bindings: AgentSkillBinding[];
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.ListAgentSkillBindingsResponse.
- * Use `create(ListAgentSkillBindingsResponseSchema)` to create a new message.
- */
-export const ListAgentSkillBindingsResponseSchema: GenMessage<ListAgentSkillBindingsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 12);
-
-/**
- * @generated from message peers_touch.model.agent.v1.CreateAgentSkillBindingRequest
- */
-export type CreateAgentSkillBindingRequest = Message<"peers_touch.model.agent.v1.CreateAgentSkillBindingRequest"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentSkillBinding binding = 1;
-   */
-  binding?: AgentSkillBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.CreateAgentSkillBindingRequest.
- * Use `create(CreateAgentSkillBindingRequestSchema)` to create a new message.
- */
-export const CreateAgentSkillBindingRequestSchema: GenMessage<CreateAgentSkillBindingRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 13);
-
-/**
- * @generated from message peers_touch.model.agent.v1.CreateAgentSkillBindingResponse
- */
-export type CreateAgentSkillBindingResponse = Message<"peers_touch.model.agent.v1.CreateAgentSkillBindingResponse"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentSkillBinding binding = 1;
-   */
-  binding?: AgentSkillBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.CreateAgentSkillBindingResponse.
- * Use `create(CreateAgentSkillBindingResponseSchema)` to create a new message.
- */
-export const CreateAgentSkillBindingResponseSchema: GenMessage<CreateAgentSkillBindingResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 14);
-
-/**
- * @generated from message peers_touch.model.agent.v1.UpdateAgentSkillBindingRequest
- */
-export type UpdateAgentSkillBindingRequest = Message<"peers_touch.model.agent.v1.UpdateAgentSkillBindingRequest"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentSkillBinding binding = 1;
-   */
-  binding?: AgentSkillBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.UpdateAgentSkillBindingRequest.
- * Use `create(UpdateAgentSkillBindingRequestSchema)` to create a new message.
- */
-export const UpdateAgentSkillBindingRequestSchema: GenMessage<UpdateAgentSkillBindingRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 15);
-
-/**
- * @generated from message peers_touch.model.agent.v1.UpdateAgentSkillBindingResponse
- */
-export type UpdateAgentSkillBindingResponse = Message<"peers_touch.model.agent.v1.UpdateAgentSkillBindingResponse"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentSkillBinding binding = 1;
-   */
-  binding?: AgentSkillBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.UpdateAgentSkillBindingResponse.
- * Use `create(UpdateAgentSkillBindingResponseSchema)` to create a new message.
- */
-export const UpdateAgentSkillBindingResponseSchema: GenMessage<UpdateAgentSkillBindingResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 16);
-
-/**
- * @generated from message peers_touch.model.agent.v1.DeleteAgentSkillBindingRequest
- */
-export type DeleteAgentSkillBindingRequest = Message<"peers_touch.model.agent.v1.DeleteAgentSkillBindingRequest"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
-  id: string;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.DeleteAgentSkillBindingRequest.
- * Use `create(DeleteAgentSkillBindingRequestSchema)` to create a new message.
- */
-export const DeleteAgentSkillBindingRequestSchema: GenMessage<DeleteAgentSkillBindingRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 17);
-
-/**
- * @generated from message peers_touch.model.agent.v1.DeleteAgentSkillBindingResponse
- */
-export type DeleteAgentSkillBindingResponse = Message<"peers_touch.model.agent.v1.DeleteAgentSkillBindingResponse"> & {
-  /**
-   * @generated from field: bool success = 1;
-   */
-  success: boolean;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.DeleteAgentSkillBindingResponse.
- * Use `create(DeleteAgentSkillBindingResponseSchema)` to create a new message.
- */
-export const DeleteAgentSkillBindingResponseSchema: GenMessage<DeleteAgentSkillBindingResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 18);
-
-/**
- * @generated from message peers_touch.model.agent.v1.ListAgentMcpBindingsRequest
- */
-export type ListAgentMcpBindingsRequest = Message<"peers_touch.model.agent.v1.ListAgentMcpBindingsRequest"> & {
-  /**
-   * @generated from field: string agent_id = 1;
-   */
-  agentId: string;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.ListAgentMcpBindingsRequest.
- * Use `create(ListAgentMcpBindingsRequestSchema)` to create a new message.
- */
-export const ListAgentMcpBindingsRequestSchema: GenMessage<ListAgentMcpBindingsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 19);
-
-/**
- * @generated from message peers_touch.model.agent.v1.ListAgentMcpBindingsResponse
- */
-export type ListAgentMcpBindingsResponse = Message<"peers_touch.model.agent.v1.ListAgentMcpBindingsResponse"> & {
-  /**
-   * @generated from field: repeated peers_touch.model.agent.v1.AgentMcpBinding bindings = 1;
-   */
-  bindings: AgentMcpBinding[];
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.ListAgentMcpBindingsResponse.
- * Use `create(ListAgentMcpBindingsResponseSchema)` to create a new message.
- */
-export const ListAgentMcpBindingsResponseSchema: GenMessage<ListAgentMcpBindingsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 20);
-
-/**
- * @generated from message peers_touch.model.agent.v1.CreateAgentMcpBindingRequest
- */
-export type CreateAgentMcpBindingRequest = Message<"peers_touch.model.agent.v1.CreateAgentMcpBindingRequest"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentMcpBinding binding = 1;
-   */
-  binding?: AgentMcpBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.CreateAgentMcpBindingRequest.
- * Use `create(CreateAgentMcpBindingRequestSchema)` to create a new message.
- */
-export const CreateAgentMcpBindingRequestSchema: GenMessage<CreateAgentMcpBindingRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 21);
-
-/**
- * @generated from message peers_touch.model.agent.v1.CreateAgentMcpBindingResponse
- */
-export type CreateAgentMcpBindingResponse = Message<"peers_touch.model.agent.v1.CreateAgentMcpBindingResponse"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentMcpBinding binding = 1;
-   */
-  binding?: AgentMcpBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.CreateAgentMcpBindingResponse.
- * Use `create(CreateAgentMcpBindingResponseSchema)` to create a new message.
- */
-export const CreateAgentMcpBindingResponseSchema: GenMessage<CreateAgentMcpBindingResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 22);
-
-/**
- * @generated from message peers_touch.model.agent.v1.UpdateAgentMcpBindingRequest
- */
-export type UpdateAgentMcpBindingRequest = Message<"peers_touch.model.agent.v1.UpdateAgentMcpBindingRequest"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentMcpBinding binding = 1;
-   */
-  binding?: AgentMcpBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.UpdateAgentMcpBindingRequest.
- * Use `create(UpdateAgentMcpBindingRequestSchema)` to create a new message.
- */
-export const UpdateAgentMcpBindingRequestSchema: GenMessage<UpdateAgentMcpBindingRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 23);
-
-/**
- * @generated from message peers_touch.model.agent.v1.UpdateAgentMcpBindingResponse
- */
-export type UpdateAgentMcpBindingResponse = Message<"peers_touch.model.agent.v1.UpdateAgentMcpBindingResponse"> & {
-  /**
-   * @generated from field: peers_touch.model.agent.v1.AgentMcpBinding binding = 1;
-   */
-  binding?: AgentMcpBinding | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.UpdateAgentMcpBindingResponse.
- * Use `create(UpdateAgentMcpBindingResponseSchema)` to create a new message.
- */
-export const UpdateAgentMcpBindingResponseSchema: GenMessage<UpdateAgentMcpBindingResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 24);
-
-/**
- * @generated from message peers_touch.model.agent.v1.DeleteAgentMcpBindingRequest
- */
-export type DeleteAgentMcpBindingRequest = Message<"peers_touch.model.agent.v1.DeleteAgentMcpBindingRequest"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
-  id: string;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.DeleteAgentMcpBindingRequest.
- * Use `create(DeleteAgentMcpBindingRequestSchema)` to create a new message.
- */
-export const DeleteAgentMcpBindingRequestSchema: GenMessage<DeleteAgentMcpBindingRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 25);
-
-/**
- * @generated from message peers_touch.model.agent.v1.DeleteAgentMcpBindingResponse
- */
-export type DeleteAgentMcpBindingResponse = Message<"peers_touch.model.agent.v1.DeleteAgentMcpBindingResponse"> & {
-  /**
-   * @generated from field: bool success = 1;
-   */
-  success: boolean;
-};
-
-/**
- * Describes the message peers_touch.model.agent.v1.DeleteAgentMcpBindingResponse.
- * Use `create(DeleteAgentMcpBindingResponseSchema)` to create a new message.
- */
-export const DeleteAgentMcpBindingResponseSchema: GenMessage<DeleteAgentMcpBindingResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 26);
+  fileDesc("Ch9kb21haW4vYWdlbnQvYWdlbnRfY29uZmlnLnByb3RvEhpwZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MSI5ChBIaWRlTW9kZWxSZXF1ZXN0EhMKC3Byb3ZpZGVyX2lkGAEgASgJEhAKCG1vZGVsX2lkGAIgASgJIh8KEUhpZGVNb2RlbFJlc3BvbnNlEgoKAm9rGAEgASgIIi0KFkdldEhpZGRlbk1vZGVsc1JlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkiMAoXR2V0SGlkZGVuTW9kZWxzUmVzcG9uc2USFQoNaGlkZGVuX21vZGVscxgBIAMoCSK/AQohU3VibWl0VG9vbEFwcHJvdmFsRGVjaXNpb25SZXF1ZXN0EhMKC2FwcHJvdmFsX2lkGAEgASgJEhQKDHRvb2xfY2FsbF9pZBgCIAEoCRITCgtkZWNpc2lvbl9pZBgDIAEoCRIZChFleHBlY3RlZF9yZXZpc2lvbhgEIAEoBBIQCghhcHByb3ZlZBgFIAEoCBIXCg9pZGVtcG90ZW5jeV9rZXkYBiABKAkSFAoMcGF5bG9hZF9oYXNoGAcgASgJIqECCiJTdWJtaXRUb29sQXBwcm92YWxEZWNpc2lvblJlc3BvbnNlEhAKCGFjY2VwdGVkGAEgASgIEhkKEWRlY2lzaW9uX3JldmlzaW9uGAIgASgEEhMKC2FwcHJvdmFsX2lkGAMgASgJEhQKDHRvb2xfY2FsbF9pZBgEIAEoCRITCgtkZWNpc2lvbl9pZBgFIAEoCRIQCghhcHByb3ZlZBgGIAEoCBIXCg9pZGVtcG90ZW5jeV9rZXkYByABKAkSFAoMcGF5bG9hZF9oYXNoGAggASgJEk0KCmVycm9yX2NvZGUYCSABKA4yOS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5Ub29sQXBwcm92YWxEZWNpc2lvbkVycm9yQ29kZSqkAgodVG9vbEFwcHJvdmFsRGVjaXNpb25FcnJvckNvZGUSMQotVE9PTF9BUFBST1ZBTF9ERUNJU0lPTl9FUlJPUl9DT0RFX1VOU1BFQ0lGSUVEEAASNAowVE9PTF9BUFBST1ZBTF9ERUNJU0lPTl9FUlJPUl9DT0RFX1NUQUxFX1JFVklTSU9OEAESOgo2VE9PTF9BUFBST1ZBTF9ERUNJU0lPTl9FUlJPUl9DT0RFX0lERU1QT1RFTkNZX0NPTkZMSUNUEAISLQopVE9PTF9BUFBST1ZBTF9ERUNJU0lPTl9FUlJPUl9DT0RFX0VYUElSRUQQAxIvCitUT09MX0FQUFJPVkFMX0RFQ0lTSU9OX0VSUk9SX0NPREVfTk9UX0ZPVU5EEARCS1pJZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9hZ2VudC9tb2RlbDttb2RlbGIGcHJvdG8z");
 
 /**
  * Provider model visibility preferences.
@@ -575,7 +34,7 @@ export type HideModelRequest = Message<"peers_touch.model.agent.v1.HideModelRequ
  * Use `create(HideModelRequestSchema)` to create a new message.
  */
 export const HideModelRequestSchema: GenMessage<HideModelRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 27);
+  messageDesc(file_domain_agent_agent_config, 0);
 
 /**
  * @generated from message peers_touch.model.agent.v1.HideModelResponse
@@ -592,7 +51,7 @@ export type HideModelResponse = Message<"peers_touch.model.agent.v1.HideModelRes
  * Use `create(HideModelResponseSchema)` to create a new message.
  */
 export const HideModelResponseSchema: GenMessage<HideModelResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 28);
+  messageDesc(file_domain_agent_agent_config, 1);
 
 /**
  * @generated from message peers_touch.model.agent.v1.GetHiddenModelsRequest
@@ -609,7 +68,7 @@ export type GetHiddenModelsRequest = Message<"peers_touch.model.agent.v1.GetHidd
  * Use `create(GetHiddenModelsRequestSchema)` to create a new message.
  */
 export const GetHiddenModelsRequestSchema: GenMessage<GetHiddenModelsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 29);
+  messageDesc(file_domain_agent_agent_config, 2);
 
 /**
  * @generated from message peers_touch.model.agent.v1.GetHiddenModelsResponse
@@ -626,7 +85,7 @@ export type GetHiddenModelsResponse = Message<"peers_touch.model.agent.v1.GetHid
  * Use `create(GetHiddenModelsResponseSchema)` to create a new message.
  */
 export const GetHiddenModelsResponseSchema: GenMessage<GetHiddenModelsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 30);
+  messageDesc(file_domain_agent_agent_config, 3);
 
 /**
  * Station-authoritative approval command. Actor identity is derived from the
@@ -676,7 +135,7 @@ export type SubmitToolApprovalDecisionRequest = Message<"peers_touch.model.agent
  * Use `create(SubmitToolApprovalDecisionRequestSchema)` to create a new message.
  */
 export const SubmitToolApprovalDecisionRequestSchema: GenMessage<SubmitToolApprovalDecisionRequest> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 31);
+  messageDesc(file_domain_agent_agent_config, 4);
 
 /**
  * @generated from message peers_touch.model.agent.v1.SubmitToolApprovalDecisionResponse
@@ -733,7 +192,7 @@ export type SubmitToolApprovalDecisionResponse = Message<"peers_touch.model.agen
  * Use `create(SubmitToolApprovalDecisionResponseSchema)` to create a new message.
  */
 export const SubmitToolApprovalDecisionResponseSchema: GenMessage<SubmitToolApprovalDecisionResponse> = /*@__PURE__*/
-  messageDesc(file_domain_agent_agent_config, 32);
+  messageDesc(file_domain_agent_agent_config, 5);
 
 /**
  * @generated from enum peers_touch.model.agent.v1.ToolApprovalDecisionErrorCode

@@ -5,6 +5,9 @@ use std::sync::Arc;
 
 pub(crate) mod fenced_executor;
 pub(crate) mod local_executor;
+pub(crate) mod operation_executor;
+pub(crate) mod operation_ledger;
+pub(crate) mod operation_worker;
 pub(crate) mod receipt_ledger;
 pub(crate) mod recovery_signer;
 pub(crate) mod resource_registry;
@@ -74,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn client_capability_persists_prepared_before_side_effect_and_replays_terminal() {
+    fn tool_call_receipt_persists_prepared_before_side_effect_and_replays_terminal() {
         let fixture = Fixture::new(false);
         let envelope = fixture.envelope(ClientExecutionReplayPolicy::NoReplayAfterPrepared);
         let executor = RecordingExecutor::new(
@@ -102,18 +105,65 @@ mod tests {
                 ClientCapabilityReceiptStatus::Applied as i32,
             ]
         );
+        assert_eq!(
+            fixture.ledger.side_effect_counts().unwrap(),
+            vec![receipt_ledger::ToolCallSideEffectCount {
+                tool_call_id: envelope.tool_call_id.clone(),
+                side_effect_count: 1,
+            }]
+        );
 
         let duplicate = kernel
-            .consume_at(envelope, fixture.now_ms + 1)
+            .consume_at(envelope.clone(), fixture.now_ms + 1)
             .expect("duplicate delivery");
         assert!(duplicate.duplicate);
         assert!(!duplicate.side_effect_executed);
         assert_eq!(duplicate.receipt.result_id, first.receipt.result_id);
         assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            ReceiptLedger::open_test(&fixture.ledger_path)
+                .unwrap()
+                .side_effect_counts()
+                .unwrap(),
+            vec![receipt_ledger::ToolCallSideEffectCount {
+                tool_call_id: envelope.tool_call_id,
+                side_effect_count: 1,
+            }]
+        );
     }
 
     #[test]
-    fn tool_receipt_restart_without_replay_settles_unknown_without_side_effect() {
+    fn tool_call_side_effect_start_is_single_claim() {
+        let fixture = Fixture::new(false);
+        let envelope = fixture.envelope(ClientExecutionReplayPolicy::NoReplayAfterPrepared);
+        let prepared = prepared_for_test(&envelope, fixture.now_ms);
+        fixture
+            .ledger
+            .prepare(&fixture.lease.station_url, &envelope, &prepared)
+            .expect("persist PREPARED receipt");
+
+        fixture
+            .ledger
+            .record_side_effect_start(&envelope)
+            .expect("claim side-effect start");
+        assert_eq!(
+            fixture
+                .ledger
+                .record_side_effect_start(&envelope)
+                .expect_err("duplicate side-effect start must fail"),
+            "CLIENT_CAPABILITY_SIDE_EFFECT_ALREADY_STARTED"
+        );
+        assert_eq!(
+            fixture.ledger.side_effect_counts().unwrap(),
+            vec![receipt_ledger::ToolCallSideEffectCount {
+                tool_call_id: envelope.tool_call_id,
+                side_effect_count: 1,
+            }]
+        );
+    }
+
+    #[test]
+    fn tool_call_receipt_restart_without_replay_settles_unknown_without_side_effect() {
         let fixture = Fixture::new(false);
         let envelope = fixture.envelope(ClientExecutionReplayPolicy::NoReplayAfterPrepared);
         let prepared = prepared_for_test(&envelope, fixture.now_ms);
@@ -151,6 +201,7 @@ mod tests {
             ClientCapabilityReceiptStatus::ReconciledUnknown as i32
         );
         assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+        assert!(reopened.side_effect_counts().unwrap().is_empty());
     }
 
     #[test]
@@ -408,7 +459,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_receipt_late_recovery_is_signed_and_terminal_only() {
+    fn tool_call_receipt_late_recovery_is_signed_and_terminal_only() {
         let mut fixture = Fixture::new(false);
         let envelope = fixture.envelope(ClientExecutionReplayPolicy::NoReplayAfterPrepared);
         fixture
@@ -627,6 +678,7 @@ mod tests {
             _request: &ClientCapabilityRequest,
             resources: &[LocalResource],
             external_idempotency_key: Option<&str>,
+            record_side_effect_start: &mut dyn FnMut() -> Result<(), String>,
         ) -> Result<Vec<u8>, String> {
             let persisted = self
                 .ledger
@@ -635,6 +687,7 @@ mod tests {
             if persisted.receipt.status != ClientCapabilityReceiptStatus::Prepared as i32 {
                 return Err("PREPARED was not durable before side effect".to_string());
             }
+            record_side_effect_start()?;
             self.calls.fetch_add(1, Ordering::SeqCst);
             if let Some(key) = external_idempotency_key {
                 self.idempotency_keys.lock().unwrap().push(key.to_string());

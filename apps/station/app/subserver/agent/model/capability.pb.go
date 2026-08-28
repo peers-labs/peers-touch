@@ -684,6 +684,122 @@ func (ConnectorErrorCode) EnumDescriptor() ([]byte, []int) {
 	return file_domain_agent_capability_proto_rawDescGZIP(), []int{10}
 }
 
+type KnowledgeResourceKind int32
+
+const (
+	KnowledgeResourceKind_KNOWLEDGE_RESOURCE_KIND_UNSPECIFIED  KnowledgeResourceKind = 0
+	KnowledgeResourceKind_KNOWLEDGE_RESOURCE_KIND_DOCUMENT     KnowledgeResourceKind = 1
+	KnowledgeResourceKind_KNOWLEDGE_RESOURCE_KIND_FOLDER       KnowledgeResourceKind = 2
+	KnowledgeResourceKind_KNOWLEDGE_RESOURCE_KIND_PROJECT      KnowledgeResourceKind = 3
+	KnowledgeResourceKind_KNOWLEDGE_RESOURCE_KIND_URL_SNAPSHOT KnowledgeResourceKind = 4
+	KnowledgeResourceKind_KNOWLEDGE_RESOURCE_KIND_NOTEBOOK     KnowledgeResourceKind = 5
+	KnowledgeResourceKind_KNOWLEDGE_RESOURCE_KIND_WORKSPACE    KnowledgeResourceKind = 6
+)
+
+// Enum value maps for KnowledgeResourceKind.
+var (
+	KnowledgeResourceKind_name = map[int32]string{
+		0: "KNOWLEDGE_RESOURCE_KIND_UNSPECIFIED",
+		1: "KNOWLEDGE_RESOURCE_KIND_DOCUMENT",
+		2: "KNOWLEDGE_RESOURCE_KIND_FOLDER",
+		3: "KNOWLEDGE_RESOURCE_KIND_PROJECT",
+		4: "KNOWLEDGE_RESOURCE_KIND_URL_SNAPSHOT",
+		5: "KNOWLEDGE_RESOURCE_KIND_NOTEBOOK",
+		6: "KNOWLEDGE_RESOURCE_KIND_WORKSPACE",
+	}
+	KnowledgeResourceKind_value = map[string]int32{
+		"KNOWLEDGE_RESOURCE_KIND_UNSPECIFIED":  0,
+		"KNOWLEDGE_RESOURCE_KIND_DOCUMENT":     1,
+		"KNOWLEDGE_RESOURCE_KIND_FOLDER":       2,
+		"KNOWLEDGE_RESOURCE_KIND_PROJECT":      3,
+		"KNOWLEDGE_RESOURCE_KIND_URL_SNAPSHOT": 4,
+		"KNOWLEDGE_RESOURCE_KIND_NOTEBOOK":     5,
+		"KNOWLEDGE_RESOURCE_KIND_WORKSPACE":    6,
+	}
+)
+
+func (x KnowledgeResourceKind) Enum() *KnowledgeResourceKind {
+	p := new(KnowledgeResourceKind)
+	*p = x
+	return p
+}
+
+func (x KnowledgeResourceKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (KnowledgeResourceKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_agent_capability_proto_enumTypes[11].Descriptor()
+}
+
+func (KnowledgeResourceKind) Type() protoreflect.EnumType {
+	return &file_domain_agent_capability_proto_enumTypes[11]
+}
+
+func (x KnowledgeResourceKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use KnowledgeResourceKind.Descriptor instead.
+func (KnowledgeResourceKind) EnumDescriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{11}
+}
+
+type KnowledgeResourceAvailability int32
+
+const (
+	KnowledgeResourceAvailability_KNOWLEDGE_RESOURCE_AVAILABILITY_UNSPECIFIED KnowledgeResourceAvailability = 0
+	KnowledgeResourceAvailability_KNOWLEDGE_RESOURCE_AVAILABILITY_READY       KnowledgeResourceAvailability = 1
+	KnowledgeResourceAvailability_KNOWLEDGE_RESOURCE_AVAILABILITY_INDEXING    KnowledgeResourceAvailability = 2
+	KnowledgeResourceAvailability_KNOWLEDGE_RESOURCE_AVAILABILITY_UNAVAILABLE KnowledgeResourceAvailability = 3
+	KnowledgeResourceAvailability_KNOWLEDGE_RESOURCE_AVAILABILITY_TOMBSTONED  KnowledgeResourceAvailability = 4
+)
+
+// Enum value maps for KnowledgeResourceAvailability.
+var (
+	KnowledgeResourceAvailability_name = map[int32]string{
+		0: "KNOWLEDGE_RESOURCE_AVAILABILITY_UNSPECIFIED",
+		1: "KNOWLEDGE_RESOURCE_AVAILABILITY_READY",
+		2: "KNOWLEDGE_RESOURCE_AVAILABILITY_INDEXING",
+		3: "KNOWLEDGE_RESOURCE_AVAILABILITY_UNAVAILABLE",
+		4: "KNOWLEDGE_RESOURCE_AVAILABILITY_TOMBSTONED",
+	}
+	KnowledgeResourceAvailability_value = map[string]int32{
+		"KNOWLEDGE_RESOURCE_AVAILABILITY_UNSPECIFIED": 0,
+		"KNOWLEDGE_RESOURCE_AVAILABILITY_READY":       1,
+		"KNOWLEDGE_RESOURCE_AVAILABILITY_INDEXING":    2,
+		"KNOWLEDGE_RESOURCE_AVAILABILITY_UNAVAILABLE": 3,
+		"KNOWLEDGE_RESOURCE_AVAILABILITY_TOMBSTONED":  4,
+	}
+)
+
+func (x KnowledgeResourceAvailability) Enum() *KnowledgeResourceAvailability {
+	p := new(KnowledgeResourceAvailability)
+	*p = x
+	return p
+}
+
+func (x KnowledgeResourceAvailability) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (KnowledgeResourceAvailability) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_agent_capability_proto_enumTypes[12].Descriptor()
+}
+
+func (KnowledgeResourceAvailability) Type() protoreflect.EnumType {
+	return &file_domain_agent_capability_proto_enumTypes[12]
+}
+
+func (x KnowledgeResourceAvailability) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use KnowledgeResourceAvailability.Descriptor instead.
+func (KnowledgeResourceAvailability) EnumDescriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{12}
+}
+
 type CapabilityDisplayMetadata struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -759,6 +875,11 @@ type CapabilityManifest struct {
 	DefaultApprovalPolicy       CapabilityApprovalPolicy   `protobuf:"varint,11,opt,name=default_approval_policy,json=defaultApprovalPolicy,proto3,enum=peers_touch.model.agent.v1.CapabilityApprovalPolicy" json:"default_approval_policy,omitempty"`
 	SecretBoundary              string                     `protobuf:"bytes,12,opt,name=secret_boundary,json=secretBoundary,proto3" json:"secret_boundary,omitempty"`
 	Availability                CapabilityAvailability     `protobuf:"varint,13,opt,name=availability,proto3,enum=peers_touch.model.agent.v1.CapabilityAvailability" json:"availability,omitempty"`
+	CreatedAt                   *timestamppb.Timestamp     `protobuf:"bytes,14,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	RetiredAt                   *timestamppb.Timestamp     `protobuf:"bytes,15,opt,name=retired_at,json=retiredAt,proto3" json:"retired_at,omitempty"`
+	RetiredByPtid               string                     `protobuf:"bytes,16,opt,name=retired_by_ptid,json=retiredByPtid,proto3" json:"retired_by_ptid,omitempty"`
+	RetirementReason            string                     `protobuf:"bytes,17,opt,name=retirement_reason,json=retirementReason,proto3" json:"retirement_reason,omitempty"`
+	OwnerPtid                   string                     `protobuf:"bytes,18,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
 	unknownFields               protoimpl.UnknownFields
 	sizeCache                   protoimpl.SizeCache
 }
@@ -884,6 +1005,41 @@ func (x *CapabilityManifest) GetAvailability() CapabilityAvailability {
 	return CapabilityAvailability_CAPABILITY_AVAILABILITY_UNSPECIFIED
 }
 
+func (x *CapabilityManifest) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *CapabilityManifest) GetRetiredAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RetiredAt
+	}
+	return nil
+}
+
+func (x *CapabilityManifest) GetRetiredByPtid() string {
+	if x != nil {
+		return x.RetiredByPtid
+	}
+	return ""
+}
+
+func (x *CapabilityManifest) GetRetirementReason() string {
+	if x != nil {
+		return x.RetirementReason
+	}
+	return ""
+}
+
+func (x *CapabilityManifest) GetOwnerPtid() string {
+	if x != nil {
+		return x.OwnerPtid
+	}
+	return ""
+}
+
 type AgentCapabilityBinding struct {
 	state                protoimpl.MessageState   `protogen:"open.v1"`
 	BindingId            string                   `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
@@ -896,6 +1052,9 @@ type AgentCapabilityBinding struct {
 	ExpectedAgentVersion uint64                   `protobuf:"varint,8,opt,name=expected_agent_version,json=expectedAgentVersion,proto3" json:"expected_agent_version,omitempty"`
 	Revision             uint64                   `protobuf:"varint,9,opt,name=revision,proto3" json:"revision,omitempty"`
 	UpdatedAt            *timestamppb.Timestamp   `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	TombstonedAt         *timestamppb.Timestamp   `protobuf:"bytes,11,opt,name=tombstoned_at,json=tombstonedAt,proto3" json:"tombstoned_at,omitempty"`
+	TombstonedByPtid     string                   `protobuf:"bytes,12,opt,name=tombstoned_by_ptid,json=tombstonedByPtid,proto3" json:"tombstoned_by_ptid,omitempty"`
+	TombstoneReason      string                   `protobuf:"bytes,13,opt,name=tombstone_reason,json=tombstoneReason,proto3" json:"tombstone_reason,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -998,6 +1157,27 @@ func (x *AgentCapabilityBinding) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *AgentCapabilityBinding) GetTombstonedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.TombstonedAt
+	}
+	return nil
+}
+
+func (x *AgentCapabilityBinding) GetTombstonedByPtid() string {
+	if x != nil {
+		return x.TombstonedByPtid
+	}
+	return ""
+}
+
+func (x *AgentCapabilityBinding) GetTombstoneReason() string {
+	if x != nil {
+		return x.TombstoneReason
+	}
+	return ""
 }
 
 type CapabilityReadiness struct {
@@ -1663,6 +1843,9 @@ type CapabilityOperation struct {
 	CreatedAt              *timestamppb.Timestamp    `protobuf:"bytes,31,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt              *timestamppb.Timestamp    `protobuf:"bytes,32,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	TerminalAt             *timestamppb.Timestamp    `protobuf:"bytes,33,opt,name=terminal_at,json=terminalAt,proto3" json:"terminal_at,omitempty"`
+	BoundedArguments       []byte                    `protobuf:"bytes,34,opt,name=bounded_arguments,json=boundedArguments,proto3" json:"bounded_arguments,omitempty"`
+	ExternalIdempotencyKey string                    `protobuf:"bytes,35,opt,name=external_idempotency_key,json=externalIdempotencyKey,proto3" json:"external_idempotency_key,omitempty"`
+	DispatchSequence       uint64                    `protobuf:"varint,36,opt,name=dispatch_sequence,json=dispatchSequence,proto3" json:"dispatch_sequence,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -1926,6 +2109,27 @@ func (x *CapabilityOperation) GetTerminalAt() *timestamppb.Timestamp {
 		return x.TerminalAt
 	}
 	return nil
+}
+
+func (x *CapabilityOperation) GetBoundedArguments() []byte {
+	if x != nil {
+		return x.BoundedArguments
+	}
+	return nil
+}
+
+func (x *CapabilityOperation) GetExternalIdempotencyKey() string {
+	if x != nil {
+		return x.ExternalIdempotencyKey
+	}
+	return ""
+}
+
+func (x *CapabilityOperation) GetDispatchSequence() uint64 {
+	if x != nil {
+		return x.DispatchSequence
+	}
+	return 0
 }
 
 type CapabilityOperationEvent struct {
@@ -2204,6 +2408,1384 @@ func (x *ConnectorResourceManifest) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type KnowledgeStationContentRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContentRef    string                 `protobuf:"bytes,1,opt,name=content_ref,json=contentRef,proto3" json:"content_ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KnowledgeStationContentRef) Reset() {
+	*x = KnowledgeStationContentRef{}
+	mi := &file_domain_agent_capability_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KnowledgeStationContentRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KnowledgeStationContentRef) ProtoMessage() {}
+
+func (x *KnowledgeStationContentRef) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KnowledgeStationContentRef.ProtoReflect.Descriptor instead.
+func (*KnowledgeStationContentRef) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *KnowledgeStationContentRef) GetContentRef() string {
+	if x != nil {
+		return x.ContentRef
+	}
+	return ""
+}
+
+type KnowledgeClientResourceRef struct {
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	OpaqueResourceRef         string                 `protobuf:"bytes,1,opt,name=opaque_resource_ref,json=opaqueResourceRef,proto3" json:"opaque_resource_ref,omitempty"`
+	RequiredCapabilityId      string                 `protobuf:"bytes,2,opt,name=required_capability_id,json=requiredCapabilityId,proto3" json:"required_capability_id,omitempty"`
+	RequiredCapabilityVersion string                 `protobuf:"bytes,3,opt,name=required_capability_version,json=requiredCapabilityVersion,proto3" json:"required_capability_version,omitempty"`
+	DeviceId                  string                 `protobuf:"bytes,4,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	IntegrityHash             string                 `protobuf:"bytes,5,opt,name=integrity_hash,json=integrityHash,proto3" json:"integrity_hash,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
+}
+
+func (x *KnowledgeClientResourceRef) Reset() {
+	*x = KnowledgeClientResourceRef{}
+	mi := &file_domain_agent_capability_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KnowledgeClientResourceRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KnowledgeClientResourceRef) ProtoMessage() {}
+
+func (x *KnowledgeClientResourceRef) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KnowledgeClientResourceRef.ProtoReflect.Descriptor instead.
+func (*KnowledgeClientResourceRef) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *KnowledgeClientResourceRef) GetOpaqueResourceRef() string {
+	if x != nil {
+		return x.OpaqueResourceRef
+	}
+	return ""
+}
+
+func (x *KnowledgeClientResourceRef) GetRequiredCapabilityId() string {
+	if x != nil {
+		return x.RequiredCapabilityId
+	}
+	return ""
+}
+
+func (x *KnowledgeClientResourceRef) GetRequiredCapabilityVersion() string {
+	if x != nil {
+		return x.RequiredCapabilityVersion
+	}
+	return ""
+}
+
+func (x *KnowledgeClientResourceRef) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *KnowledgeClientResourceRef) GetIntegrityHash() string {
+	if x != nil {
+		return x.IntegrityHash
+	}
+	return ""
+}
+
+type KnowledgeResourceDescriptor struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	ResourceId   string                 `protobuf:"bytes,1,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	Ptid         string                 `protobuf:"bytes,2,opt,name=ptid,proto3" json:"ptid,omitempty"`
+	Revision     uint64                 `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	ResourceKind KnowledgeResourceKind  `protobuf:"varint,4,opt,name=resource_kind,json=resourceKind,proto3,enum=peers_touch.model.agent.v1.KnowledgeResourceKind" json:"resource_kind,omitempty"`
+	// Types that are valid to be assigned to Locator:
+	//
+	//	*KnowledgeResourceDescriptor_StationContentRef
+	//	*KnowledgeResourceDescriptor_ClientResourceRef
+	Locator          isKnowledgeResourceDescriptor_Locator `protobuf_oneof:"locator"`
+	ContentHash      string                                `protobuf:"bytes,7,opt,name=content_hash,json=contentHash,proto3" json:"content_hash,omitempty"`
+	IndexRevision    string                                `protobuf:"bytes,8,opt,name=index_revision,json=indexRevision,proto3" json:"index_revision,omitempty"`
+	Availability     KnowledgeResourceAvailability         `protobuf:"varint,9,opt,name=availability,proto3,enum=peers_touch.model.agent.v1.KnowledgeResourceAvailability" json:"availability,omitempty"`
+	ReasonCode       string                                `protobuf:"bytes,10,opt,name=reason_code,json=reasonCode,proto3" json:"reason_code,omitempty"`
+	CreatedAt        *timestamppb.Timestamp                `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt        *timestamppb.Timestamp                `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	TombstonedAt     *timestamppb.Timestamp                `protobuf:"bytes,13,opt,name=tombstoned_at,json=tombstonedAt,proto3" json:"tombstoned_at,omitempty"`
+	Title            string                                `protobuf:"bytes,14,opt,name=title,proto3" json:"title,omitempty"`
+	TombstonedByPtid string                                `protobuf:"bytes,15,opt,name=tombstoned_by_ptid,json=tombstonedByPtid,proto3" json:"tombstoned_by_ptid,omitempty"`
+	TombstoneReason  string                                `protobuf:"bytes,16,opt,name=tombstone_reason,json=tombstoneReason,proto3" json:"tombstone_reason,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *KnowledgeResourceDescriptor) Reset() {
+	*x = KnowledgeResourceDescriptor{}
+	mi := &file_domain_agent_capability_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KnowledgeResourceDescriptor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KnowledgeResourceDescriptor) ProtoMessage() {}
+
+func (x *KnowledgeResourceDescriptor) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KnowledgeResourceDescriptor.ProtoReflect.Descriptor instead.
+func (*KnowledgeResourceDescriptor) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *KnowledgeResourceDescriptor) GetResourceId() string {
+	if x != nil {
+		return x.ResourceId
+	}
+	return ""
+}
+
+func (x *KnowledgeResourceDescriptor) GetPtid() string {
+	if x != nil {
+		return x.Ptid
+	}
+	return ""
+}
+
+func (x *KnowledgeResourceDescriptor) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *KnowledgeResourceDescriptor) GetResourceKind() KnowledgeResourceKind {
+	if x != nil {
+		return x.ResourceKind
+	}
+	return KnowledgeResourceKind_KNOWLEDGE_RESOURCE_KIND_UNSPECIFIED
+}
+
+func (x *KnowledgeResourceDescriptor) GetLocator() isKnowledgeResourceDescriptor_Locator {
+	if x != nil {
+		return x.Locator
+	}
+	return nil
+}
+
+func (x *KnowledgeResourceDescriptor) GetStationContentRef() *KnowledgeStationContentRef {
+	if x != nil {
+		if x, ok := x.Locator.(*KnowledgeResourceDescriptor_StationContentRef); ok {
+			return x.StationContentRef
+		}
+	}
+	return nil
+}
+
+func (x *KnowledgeResourceDescriptor) GetClientResourceRef() *KnowledgeClientResourceRef {
+	if x != nil {
+		if x, ok := x.Locator.(*KnowledgeResourceDescriptor_ClientResourceRef); ok {
+			return x.ClientResourceRef
+		}
+	}
+	return nil
+}
+
+func (x *KnowledgeResourceDescriptor) GetContentHash() string {
+	if x != nil {
+		return x.ContentHash
+	}
+	return ""
+}
+
+func (x *KnowledgeResourceDescriptor) GetIndexRevision() string {
+	if x != nil {
+		return x.IndexRevision
+	}
+	return ""
+}
+
+func (x *KnowledgeResourceDescriptor) GetAvailability() KnowledgeResourceAvailability {
+	if x != nil {
+		return x.Availability
+	}
+	return KnowledgeResourceAvailability_KNOWLEDGE_RESOURCE_AVAILABILITY_UNSPECIFIED
+}
+
+func (x *KnowledgeResourceDescriptor) GetReasonCode() string {
+	if x != nil {
+		return x.ReasonCode
+	}
+	return ""
+}
+
+func (x *KnowledgeResourceDescriptor) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *KnowledgeResourceDescriptor) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *KnowledgeResourceDescriptor) GetTombstonedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.TombstonedAt
+	}
+	return nil
+}
+
+func (x *KnowledgeResourceDescriptor) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *KnowledgeResourceDescriptor) GetTombstonedByPtid() string {
+	if x != nil {
+		return x.TombstonedByPtid
+	}
+	return ""
+}
+
+func (x *KnowledgeResourceDescriptor) GetTombstoneReason() string {
+	if x != nil {
+		return x.TombstoneReason
+	}
+	return ""
+}
+
+type isKnowledgeResourceDescriptor_Locator interface {
+	isKnowledgeResourceDescriptor_Locator()
+}
+
+type KnowledgeResourceDescriptor_StationContentRef struct {
+	StationContentRef *KnowledgeStationContentRef `protobuf:"bytes,5,opt,name=station_content_ref,json=stationContentRef,proto3,oneof"`
+}
+
+type KnowledgeResourceDescriptor_ClientResourceRef struct {
+	ClientResourceRef *KnowledgeClientResourceRef `protobuf:"bytes,6,opt,name=client_resource_ref,json=clientResourceRef,proto3,oneof"`
+}
+
+func (*KnowledgeResourceDescriptor_StationContentRef) isKnowledgeResourceDescriptor_Locator() {}
+
+func (*KnowledgeResourceDescriptor_ClientResourceRef) isKnowledgeResourceDescriptor_Locator() {}
+
+type CreateKnowledgeResourceDescriptorRequest struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	ResourceKind KnowledgeResourceKind  `protobuf:"varint,1,opt,name=resource_kind,json=resourceKind,proto3,enum=peers_touch.model.agent.v1.KnowledgeResourceKind" json:"resource_kind,omitempty"`
+	// Types that are valid to be assigned to Source:
+	//
+	//	*CreateKnowledgeResourceDescriptorRequest_StationContent
+	//	*CreateKnowledgeResourceDescriptorRequest_ClientResourceRef
+	Source         isCreateKnowledgeResourceDescriptorRequest_Source `protobuf_oneof:"source"`
+	IdempotencyKey string                                            `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Title          string                                            `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CreateKnowledgeResourceDescriptorRequest) Reset() {
+	*x = CreateKnowledgeResourceDescriptorRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateKnowledgeResourceDescriptorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateKnowledgeResourceDescriptorRequest) ProtoMessage() {}
+
+func (x *CreateKnowledgeResourceDescriptorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateKnowledgeResourceDescriptorRequest.ProtoReflect.Descriptor instead.
+func (*CreateKnowledgeResourceDescriptorRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CreateKnowledgeResourceDescriptorRequest) GetResourceKind() KnowledgeResourceKind {
+	if x != nil {
+		return x.ResourceKind
+	}
+	return KnowledgeResourceKind_KNOWLEDGE_RESOURCE_KIND_UNSPECIFIED
+}
+
+func (x *CreateKnowledgeResourceDescriptorRequest) GetSource() isCreateKnowledgeResourceDescriptorRequest_Source {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+func (x *CreateKnowledgeResourceDescriptorRequest) GetStationContent() []byte {
+	if x != nil {
+		if x, ok := x.Source.(*CreateKnowledgeResourceDescriptorRequest_StationContent); ok {
+			return x.StationContent
+		}
+	}
+	return nil
+}
+
+func (x *CreateKnowledgeResourceDescriptorRequest) GetClientResourceRef() *KnowledgeClientResourceRef {
+	if x != nil {
+		if x, ok := x.Source.(*CreateKnowledgeResourceDescriptorRequest_ClientResourceRef); ok {
+			return x.ClientResourceRef
+		}
+	}
+	return nil
+}
+
+func (x *CreateKnowledgeResourceDescriptorRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *CreateKnowledgeResourceDescriptorRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+type isCreateKnowledgeResourceDescriptorRequest_Source interface {
+	isCreateKnowledgeResourceDescriptorRequest_Source()
+}
+
+type CreateKnowledgeResourceDescriptorRequest_StationContent struct {
+	StationContent []byte `protobuf:"bytes,2,opt,name=station_content,json=stationContent,proto3,oneof"`
+}
+
+type CreateKnowledgeResourceDescriptorRequest_ClientResourceRef struct {
+	ClientResourceRef *KnowledgeClientResourceRef `protobuf:"bytes,3,opt,name=client_resource_ref,json=clientResourceRef,proto3,oneof"`
+}
+
+func (*CreateKnowledgeResourceDescriptorRequest_StationContent) isCreateKnowledgeResourceDescriptorRequest_Source() {
+}
+
+func (*CreateKnowledgeResourceDescriptorRequest_ClientResourceRef) isCreateKnowledgeResourceDescriptorRequest_Source() {
+}
+
+type CreateKnowledgeResourceDescriptorResponse struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	Descriptor_   *KnowledgeResourceDescriptor `protobuf:"bytes,1,opt,name=descriptor,proto3" json:"descriptor,omitempty"`
+	Manifest      *CapabilityManifest          `protobuf:"bytes,2,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateKnowledgeResourceDescriptorResponse) Reset() {
+	*x = CreateKnowledgeResourceDescriptorResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateKnowledgeResourceDescriptorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateKnowledgeResourceDescriptorResponse) ProtoMessage() {}
+
+func (x *CreateKnowledgeResourceDescriptorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateKnowledgeResourceDescriptorResponse.ProtoReflect.Descriptor instead.
+func (*CreateKnowledgeResourceDescriptorResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CreateKnowledgeResourceDescriptorResponse) GetDescriptor_() *KnowledgeResourceDescriptor {
+	if x != nil {
+		return x.Descriptor_
+	}
+	return nil
+}
+
+func (x *CreateKnowledgeResourceDescriptorResponse) GetManifest() *CapabilityManifest {
+	if x != nil {
+		return x.Manifest
+	}
+	return nil
+}
+
+type UpdateKnowledgeResourceDescriptorRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ResourceId       string                 `protobuf:"bytes,1,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	ResourceKind     KnowledgeResourceKind  `protobuf:"varint,3,opt,name=resource_kind,json=resourceKind,proto3,enum=peers_touch.model.agent.v1.KnowledgeResourceKind" json:"resource_kind,omitempty"`
+	// Types that are valid to be assigned to Source:
+	//
+	//	*UpdateKnowledgeResourceDescriptorRequest_StationContent
+	//	*UpdateKnowledgeResourceDescriptorRequest_ClientResourceRef
+	Source         isUpdateKnowledgeResourceDescriptorRequest_Source `protobuf_oneof:"source"`
+	IdempotencyKey string                                            `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Title          string                                            `protobuf:"bytes,7,opt,name=title,proto3" json:"title,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *UpdateKnowledgeResourceDescriptorRequest) Reset() {
+	*x = UpdateKnowledgeResourceDescriptorRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateKnowledgeResourceDescriptorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateKnowledgeResourceDescriptorRequest) ProtoMessage() {}
+
+func (x *UpdateKnowledgeResourceDescriptorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateKnowledgeResourceDescriptorRequest.ProtoReflect.Descriptor instead.
+func (*UpdateKnowledgeResourceDescriptorRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *UpdateKnowledgeResourceDescriptorRequest) GetResourceId() string {
+	if x != nil {
+		return x.ResourceId
+	}
+	return ""
+}
+
+func (x *UpdateKnowledgeResourceDescriptorRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *UpdateKnowledgeResourceDescriptorRequest) GetResourceKind() KnowledgeResourceKind {
+	if x != nil {
+		return x.ResourceKind
+	}
+	return KnowledgeResourceKind_KNOWLEDGE_RESOURCE_KIND_UNSPECIFIED
+}
+
+func (x *UpdateKnowledgeResourceDescriptorRequest) GetSource() isUpdateKnowledgeResourceDescriptorRequest_Source {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+func (x *UpdateKnowledgeResourceDescriptorRequest) GetStationContent() []byte {
+	if x != nil {
+		if x, ok := x.Source.(*UpdateKnowledgeResourceDescriptorRequest_StationContent); ok {
+			return x.StationContent
+		}
+	}
+	return nil
+}
+
+func (x *UpdateKnowledgeResourceDescriptorRequest) GetClientResourceRef() *KnowledgeClientResourceRef {
+	if x != nil {
+		if x, ok := x.Source.(*UpdateKnowledgeResourceDescriptorRequest_ClientResourceRef); ok {
+			return x.ClientResourceRef
+		}
+	}
+	return nil
+}
+
+func (x *UpdateKnowledgeResourceDescriptorRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *UpdateKnowledgeResourceDescriptorRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+type isUpdateKnowledgeResourceDescriptorRequest_Source interface {
+	isUpdateKnowledgeResourceDescriptorRequest_Source()
+}
+
+type UpdateKnowledgeResourceDescriptorRequest_StationContent struct {
+	StationContent []byte `protobuf:"bytes,4,opt,name=station_content,json=stationContent,proto3,oneof"`
+}
+
+type UpdateKnowledgeResourceDescriptorRequest_ClientResourceRef struct {
+	ClientResourceRef *KnowledgeClientResourceRef `protobuf:"bytes,5,opt,name=client_resource_ref,json=clientResourceRef,proto3,oneof"`
+}
+
+func (*UpdateKnowledgeResourceDescriptorRequest_StationContent) isUpdateKnowledgeResourceDescriptorRequest_Source() {
+}
+
+func (*UpdateKnowledgeResourceDescriptorRequest_ClientResourceRef) isUpdateKnowledgeResourceDescriptorRequest_Source() {
+}
+
+type UpdateKnowledgeResourceDescriptorResponse struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	Descriptor_   *KnowledgeResourceDescriptor `protobuf:"bytes,1,opt,name=descriptor,proto3" json:"descriptor,omitempty"`
+	Manifest      *CapabilityManifest          `protobuf:"bytes,2,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateKnowledgeResourceDescriptorResponse) Reset() {
+	*x = UpdateKnowledgeResourceDescriptorResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateKnowledgeResourceDescriptorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateKnowledgeResourceDescriptorResponse) ProtoMessage() {}
+
+func (x *UpdateKnowledgeResourceDescriptorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateKnowledgeResourceDescriptorResponse.ProtoReflect.Descriptor instead.
+func (*UpdateKnowledgeResourceDescriptorResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *UpdateKnowledgeResourceDescriptorResponse) GetDescriptor_() *KnowledgeResourceDescriptor {
+	if x != nil {
+		return x.Descriptor_
+	}
+	return nil
+}
+
+func (x *UpdateKnowledgeResourceDescriptorResponse) GetManifest() *CapabilityManifest {
+	if x != nil {
+		return x.Manifest
+	}
+	return nil
+}
+
+type ListKnowledgeResourceDescriptorsRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	IncludeTombstoned bool                   `protobuf:"varint,1,opt,name=include_tombstoned,json=includeTombstoned,proto3" json:"include_tombstoned,omitempty"`
+	Cursor            string                 `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	PageSize          uint32                 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ListKnowledgeResourceDescriptorsRequest) Reset() {
+	*x = ListKnowledgeResourceDescriptorsRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListKnowledgeResourceDescriptorsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListKnowledgeResourceDescriptorsRequest) ProtoMessage() {}
+
+func (x *ListKnowledgeResourceDescriptorsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListKnowledgeResourceDescriptorsRequest.ProtoReflect.Descriptor instead.
+func (*ListKnowledgeResourceDescriptorsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ListKnowledgeResourceDescriptorsRequest) GetIncludeTombstoned() bool {
+	if x != nil {
+		return x.IncludeTombstoned
+	}
+	return false
+}
+
+func (x *ListKnowledgeResourceDescriptorsRequest) GetCursor() string {
+	if x != nil {
+		return x.Cursor
+	}
+	return ""
+}
+
+func (x *ListKnowledgeResourceDescriptorsRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type ListKnowledgeResourceDescriptorsResponse struct {
+	state         protoimpl.MessageState         `protogen:"open.v1"`
+	Descriptors   []*KnowledgeResourceDescriptor `protobuf:"bytes,1,rep,name=descriptors,proto3" json:"descriptors,omitempty"`
+	NextCursor    string                         `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListKnowledgeResourceDescriptorsResponse) Reset() {
+	*x = ListKnowledgeResourceDescriptorsResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListKnowledgeResourceDescriptorsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListKnowledgeResourceDescriptorsResponse) ProtoMessage() {}
+
+func (x *ListKnowledgeResourceDescriptorsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListKnowledgeResourceDescriptorsResponse.ProtoReflect.Descriptor instead.
+func (*ListKnowledgeResourceDescriptorsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ListKnowledgeResourceDescriptorsResponse) GetDescriptors() []*KnowledgeResourceDescriptor {
+	if x != nil {
+		return x.Descriptors
+	}
+	return nil
+}
+
+func (x *ListKnowledgeResourceDescriptorsResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+type TombstoneKnowledgeResourceDescriptorRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ResourceId       string                 `protobuf:"bytes,1,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Reason           string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *TombstoneKnowledgeResourceDescriptorRequest) Reset() {
+	*x = TombstoneKnowledgeResourceDescriptorRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TombstoneKnowledgeResourceDescriptorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TombstoneKnowledgeResourceDescriptorRequest) ProtoMessage() {}
+
+func (x *TombstoneKnowledgeResourceDescriptorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TombstoneKnowledgeResourceDescriptorRequest.ProtoReflect.Descriptor instead.
+func (*TombstoneKnowledgeResourceDescriptorRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *TombstoneKnowledgeResourceDescriptorRequest) GetResourceId() string {
+	if x != nil {
+		return x.ResourceId
+	}
+	return ""
+}
+
+func (x *TombstoneKnowledgeResourceDescriptorRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *TombstoneKnowledgeResourceDescriptorRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *TombstoneKnowledgeResourceDescriptorRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type TombstoneKnowledgeResourceDescriptorResponse struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	Descriptor_   *KnowledgeResourceDescriptor `protobuf:"bytes,1,opt,name=descriptor,proto3" json:"descriptor,omitempty"`
+	Manifest      *CapabilityManifest          `protobuf:"bytes,2,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TombstoneKnowledgeResourceDescriptorResponse) Reset() {
+	*x = TombstoneKnowledgeResourceDescriptorResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TombstoneKnowledgeResourceDescriptorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TombstoneKnowledgeResourceDescriptorResponse) ProtoMessage() {}
+
+func (x *TombstoneKnowledgeResourceDescriptorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TombstoneKnowledgeResourceDescriptorResponse.ProtoReflect.Descriptor instead.
+func (*TombstoneKnowledgeResourceDescriptorResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *TombstoneKnowledgeResourceDescriptorResponse) GetDescriptor_() *KnowledgeResourceDescriptor {
+	if x != nil {
+		return x.Descriptor_
+	}
+	return nil
+}
+
+func (x *TombstoneKnowledgeResourceDescriptorResponse) GetManifest() *CapabilityManifest {
+	if x != nil {
+		return x.Manifest
+	}
+	return nil
+}
+
+type AgentPackageBindingRef struct {
+	state             protoimpl.MessageState   `protogen:"open.v1"`
+	CapabilityId      string                   `protobuf:"bytes,1,opt,name=capability_id,json=capabilityId,proto3" json:"capability_id,omitempty"`
+	CapabilityVersion string                   `protobuf:"bytes,2,opt,name=capability_version,json=capabilityVersion,proto3" json:"capability_version,omitempty"`
+	Enabled           bool                     `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	ApprovalPolicy    CapabilityApprovalPolicy `protobuf:"varint,4,opt,name=approval_policy,json=approvalPolicy,proto3,enum=peers_touch.model.agent.v1.CapabilityApprovalPolicy" json:"approval_policy,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AgentPackageBindingRef) Reset() {
+	*x = AgentPackageBindingRef{}
+	mi := &file_domain_agent_capability_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentPackageBindingRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentPackageBindingRef) ProtoMessage() {}
+
+func (x *AgentPackageBindingRef) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentPackageBindingRef.ProtoReflect.Descriptor instead.
+func (*AgentPackageBindingRef) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *AgentPackageBindingRef) GetCapabilityId() string {
+	if x != nil {
+		return x.CapabilityId
+	}
+	return ""
+}
+
+func (x *AgentPackageBindingRef) GetCapabilityVersion() string {
+	if x != nil {
+		return x.CapabilityVersion
+	}
+	return ""
+}
+
+func (x *AgentPackageBindingRef) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *AgentPackageBindingRef) GetApprovalPolicy() CapabilityApprovalPolicy {
+	if x != nil {
+		return x.ApprovalPolicy
+	}
+	return CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_UNSPECIFIED
+}
+
+type AgentPackageKnowledgeResource struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	PackageResourceId string                 `protobuf:"bytes,1,opt,name=package_resource_id,json=packageResourceId,proto3" json:"package_resource_id,omitempty"`
+	ResourceKind      KnowledgeResourceKind  `protobuf:"varint,2,opt,name=resource_kind,json=resourceKind,proto3,enum=peers_touch.model.agent.v1.KnowledgeResourceKind" json:"resource_kind,omitempty"`
+	Title             string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	StationContent    []byte                 `protobuf:"bytes,4,opt,name=station_content,json=stationContent,proto3" json:"station_content,omitempty"`
+	ContentHash       string                 `protobuf:"bytes,5,opt,name=content_hash,json=contentHash,proto3" json:"content_hash,omitempty"`
+	IndexRevision     string                 `protobuf:"bytes,6,opt,name=index_revision,json=indexRevision,proto3" json:"index_revision,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AgentPackageKnowledgeResource) Reset() {
+	*x = AgentPackageKnowledgeResource{}
+	mi := &file_domain_agent_capability_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentPackageKnowledgeResource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentPackageKnowledgeResource) ProtoMessage() {}
+
+func (x *AgentPackageKnowledgeResource) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentPackageKnowledgeResource.ProtoReflect.Descriptor instead.
+func (*AgentPackageKnowledgeResource) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *AgentPackageKnowledgeResource) GetPackageResourceId() string {
+	if x != nil {
+		return x.PackageResourceId
+	}
+	return ""
+}
+
+func (x *AgentPackageKnowledgeResource) GetResourceKind() KnowledgeResourceKind {
+	if x != nil {
+		return x.ResourceKind
+	}
+	return KnowledgeResourceKind_KNOWLEDGE_RESOURCE_KIND_UNSPECIFIED
+}
+
+func (x *AgentPackageKnowledgeResource) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *AgentPackageKnowledgeResource) GetStationContent() []byte {
+	if x != nil {
+		return x.StationContent
+	}
+	return nil
+}
+
+func (x *AgentPackageKnowledgeResource) GetContentHash() string {
+	if x != nil {
+		return x.ContentHash
+	}
+	return ""
+}
+
+func (x *AgentPackageKnowledgeResource) GetIndexRevision() string {
+	if x != nil {
+		return x.IndexRevision
+	}
+	return ""
+}
+
+type AgentPackageDocument struct {
+	state              protoimpl.MessageState           `protogen:"open.v1"`
+	SchemaVersion      string                           `protobuf:"bytes,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	Agent              *Agent                           `protobuf:"bytes,2,opt,name=agent,proto3" json:"agent,omitempty"`
+	Bindings           []*AgentPackageBindingRef        `protobuf:"bytes,3,rep,name=bindings,proto3" json:"bindings,omitempty"`
+	KnowledgeResources []*AgentPackageKnowledgeResource `protobuf:"bytes,4,rep,name=knowledge_resources,json=knowledgeResources,proto3" json:"knowledge_resources,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *AgentPackageDocument) Reset() {
+	*x = AgentPackageDocument{}
+	mi := &file_domain_agent_capability_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentPackageDocument) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentPackageDocument) ProtoMessage() {}
+
+func (x *AgentPackageDocument) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentPackageDocument.ProtoReflect.Descriptor instead.
+func (*AgentPackageDocument) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *AgentPackageDocument) GetSchemaVersion() string {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return ""
+}
+
+func (x *AgentPackageDocument) GetAgent() *Agent {
+	if x != nil {
+		return x.Agent
+	}
+	return nil
+}
+
+func (x *AgentPackageDocument) GetBindings() []*AgentPackageBindingRef {
+	if x != nil {
+		return x.Bindings
+	}
+	return nil
+}
+
+func (x *AgentPackageDocument) GetKnowledgeResources() []*AgentPackageKnowledgeResource {
+	if x != nil {
+		return x.KnowledgeResources
+	}
+	return nil
+}
+
+type AgentPackageUnresolvedDependency struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	PackageResourceId string                 `protobuf:"bytes,1,opt,name=package_resource_id,json=packageResourceId,proto3" json:"package_resource_id,omitempty"`
+	CapabilityId      string                 `protobuf:"bytes,2,opt,name=capability_id,json=capabilityId,proto3" json:"capability_id,omitempty"`
+	CapabilityVersion string                 `protobuf:"bytes,3,opt,name=capability_version,json=capabilityVersion,proto3" json:"capability_version,omitempty"`
+	ReasonCode        string                 `protobuf:"bytes,4,opt,name=reason_code,json=reasonCode,proto3" json:"reason_code,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AgentPackageUnresolvedDependency) Reset() {
+	*x = AgentPackageUnresolvedDependency{}
+	mi := &file_domain_agent_capability_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentPackageUnresolvedDependency) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentPackageUnresolvedDependency) ProtoMessage() {}
+
+func (x *AgentPackageUnresolvedDependency) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentPackageUnresolvedDependency.ProtoReflect.Descriptor instead.
+func (*AgentPackageUnresolvedDependency) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *AgentPackageUnresolvedDependency) GetPackageResourceId() string {
+	if x != nil {
+		return x.PackageResourceId
+	}
+	return ""
+}
+
+func (x *AgentPackageUnresolvedDependency) GetCapabilityId() string {
+	if x != nil {
+		return x.CapabilityId
+	}
+	return ""
+}
+
+func (x *AgentPackageUnresolvedDependency) GetCapabilityVersion() string {
+	if x != nil {
+		return x.CapabilityVersion
+	}
+	return ""
+}
+
+func (x *AgentPackageUnresolvedDependency) GetReasonCode() string {
+	if x != nil {
+		return x.ReasonCode
+	}
+	return ""
+}
+
+type ExportAgentPackageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportAgentPackageRequest) Reset() {
+	*x = ExportAgentPackageRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportAgentPackageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportAgentPackageRequest) ProtoMessage() {}
+
+func (x *ExportAgentPackageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportAgentPackageRequest.ProtoReflect.Descriptor instead.
+func (*ExportAgentPackageRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ExportAgentPackageRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+type ExportAgentPackageResponse struct {
+	state                  protoimpl.MessageState              `protogen:"open.v1"`
+	Package                *AgentPackageDocument               `protobuf:"bytes,1,opt,name=package,proto3" json:"package,omitempty"`
+	UnresolvedDependencies []*AgentPackageUnresolvedDependency `protobuf:"bytes,2,rep,name=unresolved_dependencies,json=unresolvedDependencies,proto3" json:"unresolved_dependencies,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ExportAgentPackageResponse) Reset() {
+	*x = ExportAgentPackageResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportAgentPackageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportAgentPackageResponse) ProtoMessage() {}
+
+func (x *ExportAgentPackageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportAgentPackageResponse.ProtoReflect.Descriptor instead.
+func (*ExportAgentPackageResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ExportAgentPackageResponse) GetPackage() *AgentPackageDocument {
+	if x != nil {
+		return x.Package
+	}
+	return nil
+}
+
+func (x *ExportAgentPackageResponse) GetUnresolvedDependencies() []*AgentPackageUnresolvedDependency {
+	if x != nil {
+		return x.UnresolvedDependencies
+	}
+	return nil
+}
+
+type ImportAgentPackageRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Package        *AgentPackageDocument  `protobuf:"bytes,1,opt,name=package,proto3" json:"package,omitempty"`
+	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ImportAgentPackageRequest) Reset() {
+	*x = ImportAgentPackageRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportAgentPackageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportAgentPackageRequest) ProtoMessage() {}
+
+func (x *ImportAgentPackageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportAgentPackageRequest.ProtoReflect.Descriptor instead.
+func (*ImportAgentPackageRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ImportAgentPackageRequest) GetPackage() *AgentPackageDocument {
+	if x != nil {
+		return x.Package
+	}
+	return nil
+}
+
+func (x *ImportAgentPackageRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ImportAgentPackageRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type ImportAgentPackageResponse struct {
+	state                  protoimpl.MessageState              `protogen:"open.v1"`
+	Agent                  *Agent                              `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
+	UnresolvedDependencies []*AgentPackageUnresolvedDependency `protobuf:"bytes,2,rep,name=unresolved_dependencies,json=unresolvedDependencies,proto3" json:"unresolved_dependencies,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ImportAgentPackageResponse) Reset() {
+	*x = ImportAgentPackageResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportAgentPackageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportAgentPackageResponse) ProtoMessage() {}
+
+func (x *ImportAgentPackageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportAgentPackageResponse.ProtoReflect.Descriptor instead.
+func (*ImportAgentPackageResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ImportAgentPackageResponse) GetAgent() *Agent {
+	if x != nil {
+		return x.Agent
+	}
+	return nil
+}
+
+func (x *ImportAgentPackageResponse) GetUnresolvedDependencies() []*AgentPackageUnresolvedDependency {
+	if x != nil {
+		return x.UnresolvedDependencies
+	}
+	return nil
+}
+
 type ListCapabilityManifestsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SourceKinds   []CapabilitySourceKind `protobuf:"varint,1,rep,packed,name=source_kinds,json=sourceKinds,proto3,enum=peers_touch.model.agent.v1.CapabilitySourceKind" json:"source_kinds,omitempty"`
@@ -2213,7 +3795,7 @@ type ListCapabilityManifestsRequest struct {
 
 func (x *ListCapabilityManifestsRequest) Reset() {
 	*x = ListCapabilityManifestsRequest{}
-	mi := &file_domain_agent_capability_proto_msgTypes[14]
+	mi := &file_domain_agent_capability_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2225,7 +3807,7 @@ func (x *ListCapabilityManifestsRequest) String() string {
 func (*ListCapabilityManifestsRequest) ProtoMessage() {}
 
 func (x *ListCapabilityManifestsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[14]
+	mi := &file_domain_agent_capability_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2238,7 +3820,7 @@ func (x *ListCapabilityManifestsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCapabilityManifestsRequest.ProtoReflect.Descriptor instead.
 func (*ListCapabilityManifestsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{14}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ListCapabilityManifestsRequest) GetSourceKinds() []CapabilitySourceKind {
@@ -2257,7 +3839,7 @@ type ListCapabilityManifestsResponse struct {
 
 func (x *ListCapabilityManifestsResponse) Reset() {
 	*x = ListCapabilityManifestsResponse{}
-	mi := &file_domain_agent_capability_proto_msgTypes[15]
+	mi := &file_domain_agent_capability_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2269,7 +3851,7 @@ func (x *ListCapabilityManifestsResponse) String() string {
 func (*ListCapabilityManifestsResponse) ProtoMessage() {}
 
 func (x *ListCapabilityManifestsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[15]
+	mi := &file_domain_agent_capability_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2282,12 +3864,124 @@ func (x *ListCapabilityManifestsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCapabilityManifestsResponse.ProtoReflect.Descriptor instead.
 func (*ListCapabilityManifestsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{15}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListCapabilityManifestsResponse) GetManifests() []*CapabilityManifest {
 	if x != nil {
 		return x.Manifests
+	}
+	return nil
+}
+
+type RetireCapabilityManifestRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CapabilityId   string                 `protobuf:"bytes,1,opt,name=capability_id,json=capabilityId,proto3" json:"capability_id,omitempty"`
+	Version        string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Reason         string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RetireCapabilityManifestRequest) Reset() {
+	*x = RetireCapabilityManifestRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RetireCapabilityManifestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RetireCapabilityManifestRequest) ProtoMessage() {}
+
+func (x *RetireCapabilityManifestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RetireCapabilityManifestRequest.ProtoReflect.Descriptor instead.
+func (*RetireCapabilityManifestRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *RetireCapabilityManifestRequest) GetCapabilityId() string {
+	if x != nil {
+		return x.CapabilityId
+	}
+	return ""
+}
+
+func (x *RetireCapabilityManifestRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *RetireCapabilityManifestRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *RetireCapabilityManifestRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type RetireCapabilityManifestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Manifest      *CapabilityManifest    `protobuf:"bytes,1,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RetireCapabilityManifestResponse) Reset() {
+	*x = RetireCapabilityManifestResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RetireCapabilityManifestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RetireCapabilityManifestResponse) ProtoMessage() {}
+
+func (x *RetireCapabilityManifestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RetireCapabilityManifestResponse.ProtoReflect.Descriptor instead.
+func (*RetireCapabilityManifestResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *RetireCapabilityManifestResponse) GetManifest() *CapabilityManifest {
+	if x != nil {
+		return x.Manifest
 	}
 	return nil
 }
@@ -2301,7 +3995,7 @@ type ListAgentCapabilityBindingsRequest struct {
 
 func (x *ListAgentCapabilityBindingsRequest) Reset() {
 	*x = ListAgentCapabilityBindingsRequest{}
-	mi := &file_domain_agent_capability_proto_msgTypes[16]
+	mi := &file_domain_agent_capability_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2313,7 +4007,7 @@ func (x *ListAgentCapabilityBindingsRequest) String() string {
 func (*ListAgentCapabilityBindingsRequest) ProtoMessage() {}
 
 func (x *ListAgentCapabilityBindingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[16]
+	mi := &file_domain_agent_capability_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2326,7 +4020,7 @@ func (x *ListAgentCapabilityBindingsRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ListAgentCapabilityBindingsRequest.ProtoReflect.Descriptor instead.
 func (*ListAgentCapabilityBindingsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{16}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ListAgentCapabilityBindingsRequest) GetAgentId() string {
@@ -2345,7 +4039,7 @@ type ListAgentCapabilityBindingsResponse struct {
 
 func (x *ListAgentCapabilityBindingsResponse) Reset() {
 	*x = ListAgentCapabilityBindingsResponse{}
-	mi := &file_domain_agent_capability_proto_msgTypes[17]
+	mi := &file_domain_agent_capability_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2357,7 +4051,7 @@ func (x *ListAgentCapabilityBindingsResponse) String() string {
 func (*ListAgentCapabilityBindingsResponse) ProtoMessage() {}
 
 func (x *ListAgentCapabilityBindingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[17]
+	mi := &file_domain_agent_capability_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2370,7 +4064,7 @@ func (x *ListAgentCapabilityBindingsResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ListAgentCapabilityBindingsResponse.ProtoReflect.Descriptor instead.
 func (*ListAgentCapabilityBindingsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{17}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ListAgentCapabilityBindingsResponse) GetBindings() []*AgentCapabilityBinding {
@@ -2381,16 +4075,17 @@ func (x *ListAgentCapabilityBindingsResponse) GetBindings() []*AgentCapabilityBi
 }
 
 type UpsertAgentCapabilityBindingRequest struct {
-	state          protoimpl.MessageState  `protogen:"open.v1"`
-	Binding        *AgentCapabilityBinding `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
-	IdempotencyKey string                  `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                   protoimpl.MessageState  `protogen:"open.v1"`
+	Binding                 *AgentCapabilityBinding `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
+	IdempotencyKey          string                  `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	ExpectedBindingRevision uint64                  `protobuf:"varint,3,opt,name=expected_binding_revision,json=expectedBindingRevision,proto3" json:"expected_binding_revision,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *UpsertAgentCapabilityBindingRequest) Reset() {
 	*x = UpsertAgentCapabilityBindingRequest{}
-	mi := &file_domain_agent_capability_proto_msgTypes[18]
+	mi := &file_domain_agent_capability_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2402,7 +4097,7 @@ func (x *UpsertAgentCapabilityBindingRequest) String() string {
 func (*UpsertAgentCapabilityBindingRequest) ProtoMessage() {}
 
 func (x *UpsertAgentCapabilityBindingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[18]
+	mi := &file_domain_agent_capability_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2415,7 +4110,7 @@ func (x *UpsertAgentCapabilityBindingRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use UpsertAgentCapabilityBindingRequest.ProtoReflect.Descriptor instead.
 func (*UpsertAgentCapabilityBindingRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{18}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *UpsertAgentCapabilityBindingRequest) GetBinding() *AgentCapabilityBinding {
@@ -2432,6 +4127,13 @@ func (x *UpsertAgentCapabilityBindingRequest) GetIdempotencyKey() string {
 	return ""
 }
 
+func (x *UpsertAgentCapabilityBindingRequest) GetExpectedBindingRevision() uint64 {
+	if x != nil {
+		return x.ExpectedBindingRevision
+	}
+	return 0
+}
+
 type UpsertAgentCapabilityBindingResponse struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	Binding       *AgentCapabilityBinding `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
@@ -2441,7 +4143,7 @@ type UpsertAgentCapabilityBindingResponse struct {
 
 func (x *UpsertAgentCapabilityBindingResponse) Reset() {
 	*x = UpsertAgentCapabilityBindingResponse{}
-	mi := &file_domain_agent_capability_proto_msgTypes[19]
+	mi := &file_domain_agent_capability_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2453,7 +4155,7 @@ func (x *UpsertAgentCapabilityBindingResponse) String() string {
 func (*UpsertAgentCapabilityBindingResponse) ProtoMessage() {}
 
 func (x *UpsertAgentCapabilityBindingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[19]
+	mi := &file_domain_agent_capability_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2466,10 +4168,122 @@ func (x *UpsertAgentCapabilityBindingResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use UpsertAgentCapabilityBindingResponse.ProtoReflect.Descriptor instead.
 func (*UpsertAgentCapabilityBindingResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{19}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *UpsertAgentCapabilityBindingResponse) GetBinding() *AgentCapabilityBinding {
+	if x != nil {
+		return x.Binding
+	}
+	return nil
+}
+
+type DeleteAgentCapabilityBindingRequest struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	BindingId               string                 `protobuf:"bytes,1,opt,name=binding_id,json=bindingId,proto3" json:"binding_id,omitempty"`
+	ExpectedBindingRevision uint64                 `protobuf:"varint,2,opt,name=expected_binding_revision,json=expectedBindingRevision,proto3" json:"expected_binding_revision,omitempty"`
+	IdempotencyKey          string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Reason                  string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *DeleteAgentCapabilityBindingRequest) Reset() {
+	*x = DeleteAgentCapabilityBindingRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAgentCapabilityBindingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAgentCapabilityBindingRequest) ProtoMessage() {}
+
+func (x *DeleteAgentCapabilityBindingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAgentCapabilityBindingRequest.ProtoReflect.Descriptor instead.
+func (*DeleteAgentCapabilityBindingRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *DeleteAgentCapabilityBindingRequest) GetBindingId() string {
+	if x != nil {
+		return x.BindingId
+	}
+	return ""
+}
+
+func (x *DeleteAgentCapabilityBindingRequest) GetExpectedBindingRevision() uint64 {
+	if x != nil {
+		return x.ExpectedBindingRevision
+	}
+	return 0
+}
+
+func (x *DeleteAgentCapabilityBindingRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *DeleteAgentCapabilityBindingRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type DeleteAgentCapabilityBindingResponse struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Binding       *AgentCapabilityBinding `protobuf:"bytes,1,opt,name=binding,proto3" json:"binding,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteAgentCapabilityBindingResponse) Reset() {
+	*x = DeleteAgentCapabilityBindingResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAgentCapabilityBindingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAgentCapabilityBindingResponse) ProtoMessage() {}
+
+func (x *DeleteAgentCapabilityBindingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAgentCapabilityBindingResponse.ProtoReflect.Descriptor instead.
+func (*DeleteAgentCapabilityBindingResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *DeleteAgentCapabilityBindingResponse) GetBinding() *AgentCapabilityBinding {
 	if x != nil {
 		return x.Binding
 	}
@@ -2487,7 +4301,7 @@ type GetCapabilityReadinessRequest struct {
 
 func (x *GetCapabilityReadinessRequest) Reset() {
 	*x = GetCapabilityReadinessRequest{}
-	mi := &file_domain_agent_capability_proto_msgTypes[20]
+	mi := &file_domain_agent_capability_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2499,7 +4313,7 @@ func (x *GetCapabilityReadinessRequest) String() string {
 func (*GetCapabilityReadinessRequest) ProtoMessage() {}
 
 func (x *GetCapabilityReadinessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[20]
+	mi := &file_domain_agent_capability_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2512,7 +4326,7 @@ func (x *GetCapabilityReadinessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapabilityReadinessRequest.ProtoReflect.Descriptor instead.
 func (*GetCapabilityReadinessRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{20}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *GetCapabilityReadinessRequest) GetAgentId() string {
@@ -2545,7 +4359,7 @@ type GetCapabilityReadinessResponse struct {
 
 func (x *GetCapabilityReadinessResponse) Reset() {
 	*x = GetCapabilityReadinessResponse{}
-	mi := &file_domain_agent_capability_proto_msgTypes[21]
+	mi := &file_domain_agent_capability_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2557,7 +4371,7 @@ func (x *GetCapabilityReadinessResponse) String() string {
 func (*GetCapabilityReadinessResponse) ProtoMessage() {}
 
 func (x *GetCapabilityReadinessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[21]
+	mi := &file_domain_agent_capability_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2570,7 +4384,7 @@ func (x *GetCapabilityReadinessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapabilityReadinessResponse.ProtoReflect.Descriptor instead.
 func (*GetCapabilityReadinessResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{21}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *GetCapabilityReadinessResponse) GetSnapshot() *CapabilityReadinessSnapshot {
@@ -2589,7 +4403,7 @@ type GetEffectiveRuntimeProfileRequest struct {
 
 func (x *GetEffectiveRuntimeProfileRequest) Reset() {
 	*x = GetEffectiveRuntimeProfileRequest{}
-	mi := &file_domain_agent_capability_proto_msgTypes[22]
+	mi := &file_domain_agent_capability_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2601,7 +4415,7 @@ func (x *GetEffectiveRuntimeProfileRequest) String() string {
 func (*GetEffectiveRuntimeProfileRequest) ProtoMessage() {}
 
 func (x *GetEffectiveRuntimeProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[22]
+	mi := &file_domain_agent_capability_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2614,7 +4428,7 @@ func (x *GetEffectiveRuntimeProfileRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use GetEffectiveRuntimeProfileRequest.ProtoReflect.Descriptor instead.
 func (*GetEffectiveRuntimeProfileRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{22}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *GetEffectiveRuntimeProfileRequest) GetAgentId() string {
@@ -2633,7 +4447,7 @@ type GetEffectiveRuntimeProfileResponse struct {
 
 func (x *GetEffectiveRuntimeProfileResponse) Reset() {
 	*x = GetEffectiveRuntimeProfileResponse{}
-	mi := &file_domain_agent_capability_proto_msgTypes[23]
+	mi := &file_domain_agent_capability_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2645,7 +4459,7 @@ func (x *GetEffectiveRuntimeProfileResponse) String() string {
 func (*GetEffectiveRuntimeProfileResponse) ProtoMessage() {}
 
 func (x *GetEffectiveRuntimeProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[23]
+	mi := &file_domain_agent_capability_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2658,7 +4472,7 @@ func (x *GetEffectiveRuntimeProfileResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use GetEffectiveRuntimeProfileResponse.ProtoReflect.Descriptor instead.
 func (*GetEffectiveRuntimeProfileResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{23}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *GetEffectiveRuntimeProfileResponse) GetSnapshot() *EffectiveRuntimeProfileSnapshot {
@@ -2678,7 +4492,7 @@ type GetRuntimeActivityRequest struct {
 
 func (x *GetRuntimeActivityRequest) Reset() {
 	*x = GetRuntimeActivityRequest{}
-	mi := &file_domain_agent_capability_proto_msgTypes[24]
+	mi := &file_domain_agent_capability_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2690,7 +4504,7 @@ func (x *GetRuntimeActivityRequest) String() string {
 func (*GetRuntimeActivityRequest) ProtoMessage() {}
 
 func (x *GetRuntimeActivityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[24]
+	mi := &file_domain_agent_capability_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2703,7 +4517,7 @@ func (x *GetRuntimeActivityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRuntimeActivityRequest.ProtoReflect.Descriptor instead.
 func (*GetRuntimeActivityRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{24}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *GetRuntimeActivityRequest) GetRuntimeKind() RuntimeKind {
@@ -2729,7 +4543,7 @@ type GetRuntimeActivityResponse struct {
 
 func (x *GetRuntimeActivityResponse) Reset() {
 	*x = GetRuntimeActivityResponse{}
-	mi := &file_domain_agent_capability_proto_msgTypes[25]
+	mi := &file_domain_agent_capability_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2741,7 +4555,7 @@ func (x *GetRuntimeActivityResponse) String() string {
 func (*GetRuntimeActivityResponse) ProtoMessage() {}
 
 func (x *GetRuntimeActivityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[25]
+	mi := &file_domain_agent_capability_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2754,7 +4568,7 @@ func (x *GetRuntimeActivityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRuntimeActivityResponse.ProtoReflect.Descriptor instead.
 func (*GetRuntimeActivityResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{25}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *GetRuntimeActivityResponse) GetSnapshot() *RuntimeActivitySnapshot {
@@ -2773,13 +4587,14 @@ type StartCapabilityOperationRequest struct {
 	CapabilitySessionId string                 `protobuf:"bytes,5,opt,name=capability_session_id,json=capabilitySessionId,proto3" json:"capability_session_id,omitempty"`
 	BoundedArguments    []byte                 `protobuf:"bytes,6,opt,name=bounded_arguments,json=boundedArguments,proto3" json:"bounded_arguments,omitempty"`
 	IdempotencyKey      string                 `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Deadline            *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=deadline,proto3" json:"deadline,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
 
 func (x *StartCapabilityOperationRequest) Reset() {
 	*x = StartCapabilityOperationRequest{}
-	mi := &file_domain_agent_capability_proto_msgTypes[26]
+	mi := &file_domain_agent_capability_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2791,7 +4606,7 @@ func (x *StartCapabilityOperationRequest) String() string {
 func (*StartCapabilityOperationRequest) ProtoMessage() {}
 
 func (x *StartCapabilityOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[26]
+	mi := &file_domain_agent_capability_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2804,7 +4619,7 @@ func (x *StartCapabilityOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartCapabilityOperationRequest.ProtoReflect.Descriptor instead.
 func (*StartCapabilityOperationRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{26}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *StartCapabilityOperationRequest) GetCapabilityId() string {
@@ -2856,6 +4671,13 @@ func (x *StartCapabilityOperationRequest) GetIdempotencyKey() string {
 	return ""
 }
 
+func (x *StartCapabilityOperationRequest) GetDeadline() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Deadline
+	}
+	return nil
+}
+
 type StartCapabilityOperationResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Operation     *CapabilityOperation   `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
@@ -2865,7 +4687,7 @@ type StartCapabilityOperationResponse struct {
 
 func (x *StartCapabilityOperationResponse) Reset() {
 	*x = StartCapabilityOperationResponse{}
-	mi := &file_domain_agent_capability_proto_msgTypes[27]
+	mi := &file_domain_agent_capability_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2877,7 +4699,7 @@ func (x *StartCapabilityOperationResponse) String() string {
 func (*StartCapabilityOperationResponse) ProtoMessage() {}
 
 func (x *StartCapabilityOperationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[27]
+	mi := &file_domain_agent_capability_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2890,7 +4712,7 @@ func (x *StartCapabilityOperationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartCapabilityOperationResponse.ProtoReflect.Descriptor instead.
 func (*StartCapabilityOperationResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{27}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *StartCapabilityOperationResponse) GetOperation() *CapabilityOperation {
@@ -2911,7 +4733,7 @@ type CancelCapabilityOperationRequest struct {
 
 func (x *CancelCapabilityOperationRequest) Reset() {
 	*x = CancelCapabilityOperationRequest{}
-	mi := &file_domain_agent_capability_proto_msgTypes[28]
+	mi := &file_domain_agent_capability_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2923,7 +4745,7 @@ func (x *CancelCapabilityOperationRequest) String() string {
 func (*CancelCapabilityOperationRequest) ProtoMessage() {}
 
 func (x *CancelCapabilityOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[28]
+	mi := &file_domain_agent_capability_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2936,7 +4758,7 @@ func (x *CancelCapabilityOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelCapabilityOperationRequest.ProtoReflect.Descriptor instead.
 func (*CancelCapabilityOperationRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{28}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *CancelCapabilityOperationRequest) GetOperationId() string {
@@ -2969,7 +4791,7 @@ type CancelCapabilityOperationResponse struct {
 
 func (x *CancelCapabilityOperationResponse) Reset() {
 	*x = CancelCapabilityOperationResponse{}
-	mi := &file_domain_agent_capability_proto_msgTypes[29]
+	mi := &file_domain_agent_capability_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2981,7 +4803,7 @@ func (x *CancelCapabilityOperationResponse) String() string {
 func (*CancelCapabilityOperationResponse) ProtoMessage() {}
 
 func (x *CancelCapabilityOperationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[29]
+	mi := &file_domain_agent_capability_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2994,7 +4816,7 @@ func (x *CancelCapabilityOperationResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use CancelCapabilityOperationResponse.ProtoReflect.Descriptor instead.
 func (*CancelCapabilityOperationResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{29}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *CancelCapabilityOperationResponse) GetOperation() *CapabilityOperation {
@@ -3013,7 +4835,7 @@ type GetCapabilityOperationRequest struct {
 
 func (x *GetCapabilityOperationRequest) Reset() {
 	*x = GetCapabilityOperationRequest{}
-	mi := &file_domain_agent_capability_proto_msgTypes[30]
+	mi := &file_domain_agent_capability_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3025,7 +4847,7 @@ func (x *GetCapabilityOperationRequest) String() string {
 func (*GetCapabilityOperationRequest) ProtoMessage() {}
 
 func (x *GetCapabilityOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[30]
+	mi := &file_domain_agent_capability_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3038,7 +4860,7 @@ func (x *GetCapabilityOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapabilityOperationRequest.ProtoReflect.Descriptor instead.
 func (*GetCapabilityOperationRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{30}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *GetCapabilityOperationRequest) GetOperationId() string {
@@ -3057,7 +4879,7 @@ type GetCapabilityOperationResponse struct {
 
 func (x *GetCapabilityOperationResponse) Reset() {
 	*x = GetCapabilityOperationResponse{}
-	mi := &file_domain_agent_capability_proto_msgTypes[31]
+	mi := &file_domain_agent_capability_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3069,7 +4891,7 @@ func (x *GetCapabilityOperationResponse) String() string {
 func (*GetCapabilityOperationResponse) ProtoMessage() {}
 
 func (x *GetCapabilityOperationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[31]
+	mi := &file_domain_agent_capability_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3082,10 +4904,666 @@ func (x *GetCapabilityOperationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapabilityOperationResponse.ProtoReflect.Descriptor instead.
 func (*GetCapabilityOperationResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{31}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *GetCapabilityOperationResponse) GetOperation() *CapabilityOperation {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
+type ReportCapabilityOperationEventRequest struct {
+	state               protoimpl.MessageState        `protogen:"open.v1"`
+	Event               *CapabilityOperationEvent     `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
+	TargetDeviceId      string                        `protobuf:"bytes,2,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
+	CapabilitySessionId string                        `protobuf:"bytes,3,opt,name=capability_session_id,json=capabilitySessionId,proto3" json:"capability_session_id,omitempty"`
+	ExecutorLeaseId     string                        `protobuf:"bytes,4,opt,name=executor_lease_id,json=executorLeaseId,proto3" json:"executor_lease_id,omitempty"`
+	CleanupLeaseId      string                        `protobuf:"bytes,5,opt,name=cleanup_lease_id,json=cleanupLeaseId,proto3" json:"cleanup_lease_id,omitempty"`
+	CleanupEpoch        uint64                        `protobuf:"varint,6,opt,name=cleanup_epoch,json=cleanupEpoch,proto3" json:"cleanup_epoch,omitempty"`
+	CleanupFencingToken uint64                        `protobuf:"varint,7,opt,name=cleanup_fencing_token,json=cleanupFencingToken,proto3" json:"cleanup_fencing_token,omitempty"`
+	CleanupOutcome      string                        `protobuf:"bytes,8,opt,name=cleanup_outcome,json=cleanupOutcome,proto3" json:"cleanup_outcome,omitempty"`
+	CommandProof        *ClientCapabilityCommandProof `protobuf:"bytes,9,opt,name=command_proof,json=commandProof,proto3" json:"command_proof,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ReportCapabilityOperationEventRequest) Reset() {
+	*x = ReportCapabilityOperationEventRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportCapabilityOperationEventRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportCapabilityOperationEventRequest) ProtoMessage() {}
+
+func (x *ReportCapabilityOperationEventRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportCapabilityOperationEventRequest.ProtoReflect.Descriptor instead.
+func (*ReportCapabilityOperationEventRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *ReportCapabilityOperationEventRequest) GetEvent() *CapabilityOperationEvent {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *ReportCapabilityOperationEventRequest) GetTargetDeviceId() string {
+	if x != nil {
+		return x.TargetDeviceId
+	}
+	return ""
+}
+
+func (x *ReportCapabilityOperationEventRequest) GetCapabilitySessionId() string {
+	if x != nil {
+		return x.CapabilitySessionId
+	}
+	return ""
+}
+
+func (x *ReportCapabilityOperationEventRequest) GetExecutorLeaseId() string {
+	if x != nil {
+		return x.ExecutorLeaseId
+	}
+	return ""
+}
+
+func (x *ReportCapabilityOperationEventRequest) GetCleanupLeaseId() string {
+	if x != nil {
+		return x.CleanupLeaseId
+	}
+	return ""
+}
+
+func (x *ReportCapabilityOperationEventRequest) GetCleanupEpoch() uint64 {
+	if x != nil {
+		return x.CleanupEpoch
+	}
+	return 0
+}
+
+func (x *ReportCapabilityOperationEventRequest) GetCleanupFencingToken() uint64 {
+	if x != nil {
+		return x.CleanupFencingToken
+	}
+	return 0
+}
+
+func (x *ReportCapabilityOperationEventRequest) GetCleanupOutcome() string {
+	if x != nil {
+		return x.CleanupOutcome
+	}
+	return ""
+}
+
+func (x *ReportCapabilityOperationEventRequest) GetCommandProof() *ClientCapabilityCommandProof {
+	if x != nil {
+		return x.CommandProof
+	}
+	return nil
+}
+
+type ReportCapabilityOperationEventResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Operation     *CapabilityOperation   `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportCapabilityOperationEventResponse) Reset() {
+	*x = ReportCapabilityOperationEventResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportCapabilityOperationEventResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportCapabilityOperationEventResponse) ProtoMessage() {}
+
+func (x *ReportCapabilityOperationEventResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportCapabilityOperationEventResponse.ProtoReflect.Descriptor instead.
+func (*ReportCapabilityOperationEventResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *ReportCapabilityOperationEventResponse) GetOperation() *CapabilityOperation {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
+func (x *ReportCapabilityOperationEventResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type ReconcileCapabilityOperationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OperationId   string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	AfterSequence uint64                 `protobuf:"varint,2,opt,name=after_sequence,json=afterSequence,proto3" json:"after_sequence,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReconcileCapabilityOperationRequest) Reset() {
+	*x = ReconcileCapabilityOperationRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReconcileCapabilityOperationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReconcileCapabilityOperationRequest) ProtoMessage() {}
+
+func (x *ReconcileCapabilityOperationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReconcileCapabilityOperationRequest.ProtoReflect.Descriptor instead.
+func (*ReconcileCapabilityOperationRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *ReconcileCapabilityOperationRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *ReconcileCapabilityOperationRequest) GetAfterSequence() uint64 {
+	if x != nil {
+		return x.AfterSequence
+	}
+	return 0
+}
+
+type ReconcileCapabilityOperationResponse struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	Operation     *CapabilityOperation        `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
+	Events        []*CapabilityOperationEvent `protobuf:"bytes,2,rep,name=events,proto3" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReconcileCapabilityOperationResponse) Reset() {
+	*x = ReconcileCapabilityOperationResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReconcileCapabilityOperationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReconcileCapabilityOperationResponse) ProtoMessage() {}
+
+func (x *ReconcileCapabilityOperationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReconcileCapabilityOperationResponse.ProtoReflect.Descriptor instead.
+func (*ReconcileCapabilityOperationResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *ReconcileCapabilityOperationResponse) GetOperation() *CapabilityOperation {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
+func (x *ReconcileCapabilityOperationResponse) GetEvents() []*CapabilityOperationEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+type PullCapabilityOperationsRequest struct {
+	state               protoimpl.MessageState        `protogen:"open.v1"`
+	CapabilitySessionId string                        `protobuf:"bytes,1,opt,name=capability_session_id,json=capabilitySessionId,proto3" json:"capability_session_id,omitempty"`
+	DeviceId            string                        `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	AfterSequence       uint64                        `protobuf:"varint,3,opt,name=after_sequence,json=afterSequence,proto3" json:"after_sequence,omitempty"`
+	Limit               uint32                        `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	CommandProof        *ClientCapabilityCommandProof `protobuf:"bytes,5,opt,name=command_proof,json=commandProof,proto3" json:"command_proof,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *PullCapabilityOperationsRequest) Reset() {
+	*x = PullCapabilityOperationsRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PullCapabilityOperationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PullCapabilityOperationsRequest) ProtoMessage() {}
+
+func (x *PullCapabilityOperationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PullCapabilityOperationsRequest.ProtoReflect.Descriptor instead.
+func (*PullCapabilityOperationsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *PullCapabilityOperationsRequest) GetCapabilitySessionId() string {
+	if x != nil {
+		return x.CapabilitySessionId
+	}
+	return ""
+}
+
+func (x *PullCapabilityOperationsRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *PullCapabilityOperationsRequest) GetAfterSequence() uint64 {
+	if x != nil {
+		return x.AfterSequence
+	}
+	return 0
+}
+
+func (x *PullCapabilityOperationsRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *PullCapabilityOperationsRequest) GetCommandProof() *ClientCapabilityCommandProof {
+	if x != nil {
+		return x.CommandProof
+	}
+	return nil
+}
+
+type PullCapabilityOperationsResponse struct {
+	state         protoimpl.MessageState           `protogen:"open.v1"`
+	Operations    []*CapabilityOperation           `protobuf:"bytes,1,rep,name=operations,proto3" json:"operations,omitempty"`
+	LastSequence  uint64                           `protobuf:"varint,2,opt,name=last_sequence,json=lastSequence,proto3" json:"last_sequence,omitempty"`
+	ErrorCode     ClientCapabilityCommandErrorCode `protobuf:"varint,3,opt,name=error_code,json=errorCode,proto3,enum=peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode" json:"error_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PullCapabilityOperationsResponse) Reset() {
+	*x = PullCapabilityOperationsResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PullCapabilityOperationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PullCapabilityOperationsResponse) ProtoMessage() {}
+
+func (x *PullCapabilityOperationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PullCapabilityOperationsResponse.ProtoReflect.Descriptor instead.
+func (*PullCapabilityOperationsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *PullCapabilityOperationsResponse) GetOperations() []*CapabilityOperation {
+	if x != nil {
+		return x.Operations
+	}
+	return nil
+}
+
+func (x *PullCapabilityOperationsResponse) GetLastSequence() uint64 {
+	if x != nil {
+		return x.LastSequence
+	}
+	return 0
+}
+
+func (x *PullCapabilityOperationsResponse) GetErrorCode() ClientCapabilityCommandErrorCode {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ClientCapabilityCommandErrorCode_CLIENT_CAPABILITY_COMMAND_ERROR_CODE_UNSPECIFIED
+}
+
+type TakeOverCapabilityOperationRequest struct {
+	state                  protoimpl.MessageState        `protogen:"open.v1"`
+	OperationId            string                        `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	ExpectedRevision       uint64                        `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	TargetDeviceId         string                        `protobuf:"bytes,3,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
+	CapabilitySessionId    string                        `protobuf:"bytes,4,opt,name=capability_session_id,json=capabilitySessionId,proto3" json:"capability_session_id,omitempty"`
+	CleanupOnly            bool                          `protobuf:"varint,6,opt,name=cleanup_only,json=cleanupOnly,proto3" json:"cleanup_only,omitempty"`
+	ExternalIdempotencyKey string                        `protobuf:"bytes,7,opt,name=external_idempotency_key,json=externalIdempotencyKey,proto3" json:"external_idempotency_key,omitempty"`
+	CommandProof           *ClientCapabilityCommandProof `protobuf:"bytes,8,opt,name=command_proof,json=commandProof,proto3" json:"command_proof,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *TakeOverCapabilityOperationRequest) Reset() {
+	*x = TakeOverCapabilityOperationRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TakeOverCapabilityOperationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TakeOverCapabilityOperationRequest) ProtoMessage() {}
+
+func (x *TakeOverCapabilityOperationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TakeOverCapabilityOperationRequest.ProtoReflect.Descriptor instead.
+func (*TakeOverCapabilityOperationRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *TakeOverCapabilityOperationRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *TakeOverCapabilityOperationRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *TakeOverCapabilityOperationRequest) GetTargetDeviceId() string {
+	if x != nil {
+		return x.TargetDeviceId
+	}
+	return ""
+}
+
+func (x *TakeOverCapabilityOperationRequest) GetCapabilitySessionId() string {
+	if x != nil {
+		return x.CapabilitySessionId
+	}
+	return ""
+}
+
+func (x *TakeOverCapabilityOperationRequest) GetCleanupOnly() bool {
+	if x != nil {
+		return x.CleanupOnly
+	}
+	return false
+}
+
+func (x *TakeOverCapabilityOperationRequest) GetExternalIdempotencyKey() string {
+	if x != nil {
+		return x.ExternalIdempotencyKey
+	}
+	return ""
+}
+
+func (x *TakeOverCapabilityOperationRequest) GetCommandProof() *ClientCapabilityCommandProof {
+	if x != nil {
+		return x.CommandProof
+	}
+	return nil
+}
+
+type TakeOverCapabilityOperationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Operation     *CapabilityOperation   `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TakeOverCapabilityOperationResponse) Reset() {
+	*x = TakeOverCapabilityOperationResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TakeOverCapabilityOperationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TakeOverCapabilityOperationResponse) ProtoMessage() {}
+
+func (x *TakeOverCapabilityOperationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TakeOverCapabilityOperationResponse.ProtoReflect.Descriptor instead.
+func (*TakeOverCapabilityOperationResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *TakeOverCapabilityOperationResponse) GetOperation() *CapabilityOperation {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
+type TakeOverCapabilityCleanupRequest struct {
+	state                protoimpl.MessageState        `protogen:"open.v1"`
+	OperationId          string                        `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	ExpectedCleanupEpoch uint64                        `protobuf:"varint,2,opt,name=expected_cleanup_epoch,json=expectedCleanupEpoch,proto3" json:"expected_cleanup_epoch,omitempty"`
+	TargetDeviceId       string                        `protobuf:"bytes,3,opt,name=target_device_id,json=targetDeviceId,proto3" json:"target_device_id,omitempty"`
+	CapabilitySessionId  string                        `protobuf:"bytes,4,opt,name=capability_session_id,json=capabilitySessionId,proto3" json:"capability_session_id,omitempty"`
+	CommandProof         *ClientCapabilityCommandProof `protobuf:"bytes,6,opt,name=command_proof,json=commandProof,proto3" json:"command_proof,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *TakeOverCapabilityCleanupRequest) Reset() {
+	*x = TakeOverCapabilityCleanupRequest{}
+	mi := &file_domain_agent_capability_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TakeOverCapabilityCleanupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TakeOverCapabilityCleanupRequest) ProtoMessage() {}
+
+func (x *TakeOverCapabilityCleanupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TakeOverCapabilityCleanupRequest.ProtoReflect.Descriptor instead.
+func (*TakeOverCapabilityCleanupRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *TakeOverCapabilityCleanupRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *TakeOverCapabilityCleanupRequest) GetExpectedCleanupEpoch() uint64 {
+	if x != nil {
+		return x.ExpectedCleanupEpoch
+	}
+	return 0
+}
+
+func (x *TakeOverCapabilityCleanupRequest) GetTargetDeviceId() string {
+	if x != nil {
+		return x.TargetDeviceId
+	}
+	return ""
+}
+
+func (x *TakeOverCapabilityCleanupRequest) GetCapabilitySessionId() string {
+	if x != nil {
+		return x.CapabilitySessionId
+	}
+	return ""
+}
+
+func (x *TakeOverCapabilityCleanupRequest) GetCommandProof() *ClientCapabilityCommandProof {
+	if x != nil {
+		return x.CommandProof
+	}
+	return nil
+}
+
+type TakeOverCapabilityCleanupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Operation     *CapabilityOperation   `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TakeOverCapabilityCleanupResponse) Reset() {
+	*x = TakeOverCapabilityCleanupResponse{}
+	mi := &file_domain_agent_capability_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TakeOverCapabilityCleanupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TakeOverCapabilityCleanupResponse) ProtoMessage() {}
+
+func (x *TakeOverCapabilityCleanupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_capability_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TakeOverCapabilityCleanupResponse.ProtoReflect.Descriptor instead.
+func (*TakeOverCapabilityCleanupResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *TakeOverCapabilityCleanupResponse) GetOperation() *CapabilityOperation {
 	if x != nil {
 		return x.Operation
 	}
@@ -3101,7 +5579,7 @@ type ListConnectorResourceManifestsRequest struct {
 
 func (x *ListConnectorResourceManifestsRequest) Reset() {
 	*x = ListConnectorResourceManifestsRequest{}
-	mi := &file_domain_agent_capability_proto_msgTypes[32]
+	mi := &file_domain_agent_capability_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3113,7 +5591,7 @@ func (x *ListConnectorResourceManifestsRequest) String() string {
 func (*ListConnectorResourceManifestsRequest) ProtoMessage() {}
 
 func (x *ListConnectorResourceManifestsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[32]
+	mi := &file_domain_agent_capability_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3126,7 +5604,7 @@ func (x *ListConnectorResourceManifestsRequest) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use ListConnectorResourceManifestsRequest.ProtoReflect.Descriptor instead.
 func (*ListConnectorResourceManifestsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{32}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *ListConnectorResourceManifestsRequest) GetConnectorId() string {
@@ -3145,7 +5623,7 @@ type ListConnectorResourceManifestsResponse struct {
 
 func (x *ListConnectorResourceManifestsResponse) Reset() {
 	*x = ListConnectorResourceManifestsResponse{}
-	mi := &file_domain_agent_capability_proto_msgTypes[33]
+	mi := &file_domain_agent_capability_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3157,7 +5635,7 @@ func (x *ListConnectorResourceManifestsResponse) String() string {
 func (*ListConnectorResourceManifestsResponse) ProtoMessage() {}
 
 func (x *ListConnectorResourceManifestsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_agent_capability_proto_msgTypes[33]
+	mi := &file_domain_agent_capability_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3170,7 +5648,7 @@ func (x *ListConnectorResourceManifestsResponse) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use ListConnectorResourceManifestsResponse.ProtoReflect.Descriptor instead.
 func (*ListConnectorResourceManifestsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_agent_capability_proto_rawDescGZIP(), []int{33}
+	return file_domain_agent_capability_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *ListConnectorResourceManifestsResponse) GetManifests() []*ConnectorResourceManifest {
@@ -3188,7 +5666,7 @@ const file_domain_agent_capability_proto_rawDesc = "" +
 	"\x19CapabilityDisplayMetadata\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x19\n" +
-	"\bicon_ref\x18\x03 \x01(\tR\aiconRef\"\xb7\x06\n" +
+	"\bicon_ref\x18\x03 \x01(\tR\aiconRef\"\xa1\b\n" +
 	"\x12CapabilityManifest\x12#\n" +
 	"\rcapability_id\x18\x01 \x01(\tR\fcapabilityId\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12Q\n" +
@@ -3205,7 +5683,15 @@ const file_domain_agent_capability_proto_rawDesc = "" +
 	" \x01(\tR\triskClass\x12l\n" +
 	"\x17default_approval_policy\x18\v \x01(\x0e24.peers_touch.model.agent.v1.CapabilityApprovalPolicyR\x15defaultApprovalPolicy\x12'\n" +
 	"\x0fsecret_boundary\x18\f \x01(\tR\x0esecretBoundary\x12V\n" +
-	"\favailability\x18\r \x01(\x0e22.peers_touch.model.agent.v1.CapabilityAvailabilityR\favailability\"\xc0\x03\n" +
+	"\favailability\x18\r \x01(\x0e22.peers_touch.model.agent.v1.CapabilityAvailabilityR\favailability\x129\n" +
+	"\n" +
+	"created_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"retired_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tretiredAt\x12&\n" +
+	"\x0fretired_by_ptid\x18\x10 \x01(\tR\rretiredByPtid\x12+\n" +
+	"\x11retirement_reason\x18\x11 \x01(\tR\x10retirementReason\x12\x1d\n" +
+	"\n" +
+	"owner_ptid\x18\x12 \x01(\tR\townerPtid\"\xda\x04\n" +
 	"\x16AgentCapabilityBinding\x12\x1d\n" +
 	"\n" +
 	"binding_id\x18\x01 \x01(\tR\tbindingId\x12\x12\n" +
@@ -3219,7 +5705,10 @@ const file_domain_agent_capability_proto_rawDesc = "" +
 	"\brevision\x18\t \x01(\x04R\brevision\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xbe\x02\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12?\n" +
+	"\rtombstoned_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\ftombstonedAt\x12,\n" +
+	"\x12tombstoned_by_ptid\x18\f \x01(\tR\x10tombstonedByPtid\x12)\n" +
+	"\x10tombstone_reason\x18\r \x01(\tR\x0ftombstoneReason\"\xbe\x02\n" +
 	"\x13CapabilityReadiness\x12#\n" +
 	"\rcapability_id\x18\x01 \x01(\tR\fcapabilityId\x12-\n" +
 	"\x12capability_version\x18\x02 \x01(\tR\x11capabilityVersion\x12\x1d\n" +
@@ -3288,7 +5777,7 @@ const file_domain_agent_capability_proto_rawDesc = "" +
 	"\x18CapabilityOperationError\x12L\n" +
 	"\x04code\x18\x01 \x01(\x0e28.peers_touch.model.agent.v1.CapabilityOperationErrorCodeR\x04code\x12\x1c\n" +
 	"\tretryable\x18\x02 \x01(\bR\tretryable\x12'\n" +
-	"\x0frecovery_action\x18\x03 \x01(\tR\x0erecoveryAction\"\x89\r\n" +
+	"\x0frecovery_action\x18\x03 \x01(\tR\x0erecoveryAction\"\x9d\x0e\n" +
 	"\x13CapabilityOperation\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12!\n" +
@@ -3327,7 +5816,10 @@ const file_domain_agent_capability_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18  \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12;\n" +
 	"\vterminal_at\x18! \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"terminalAt\"\xc5\x03\n" +
+	"terminalAt\x12+\n" +
+	"\x11bounded_arguments\x18\" \x01(\fR\x10boundedArguments\x128\n" +
+	"\x18external_idempotency_key\x18# \x01(\tR\x16externalIdempotencyKey\x12+\n" +
+	"\x11dispatch_sequence\x18$ \x01(\x04R\x10dispatchSequence\"\xc5\x03\n" +
 	"\x18CapabilityOperationEvent\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12#\n" +
 	"\rattempt_epoch\x18\x02 \x01(\x04R\fattemptEpoch\x12\x1a\n" +
@@ -3356,19 +5848,148 @@ const file_domain_agent_capability_proto_rawDesc = "" +
 	"\x06status\x18\t \x01(\x0e23.peers_touch.model.agent.v1.ConnectorResourceStatusR\x06status\x129\n" +
 	"\n" +
 	"expires_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"u\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"=\n" +
+	"\x1aKnowledgeStationContentRef\x12\x1f\n" +
+	"\vcontent_ref\x18\x01 \x01(\tR\n" +
+	"contentRef\"\x86\x02\n" +
+	"\x1aKnowledgeClientResourceRef\x12.\n" +
+	"\x13opaque_resource_ref\x18\x01 \x01(\tR\x11opaqueResourceRef\x124\n" +
+	"\x16required_capability_id\x18\x02 \x01(\tR\x14requiredCapabilityId\x12>\n" +
+	"\x1brequired_capability_version\x18\x03 \x01(\tR\x19requiredCapabilityVersion\x12\x1b\n" +
+	"\tdevice_id\x18\x04 \x01(\tR\bdeviceId\x12%\n" +
+	"\x0eintegrity_hash\x18\x05 \x01(\tR\rintegrityHash\"\x95\a\n" +
+	"\x1bKnowledgeResourceDescriptor\x12\x1f\n" +
+	"\vresource_id\x18\x01 \x01(\tR\n" +
+	"resourceId\x12\x12\n" +
+	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x04R\brevision\x12V\n" +
+	"\rresource_kind\x18\x04 \x01(\x0e21.peers_touch.model.agent.v1.KnowledgeResourceKindR\fresourceKind\x12h\n" +
+	"\x13station_content_ref\x18\x05 \x01(\v26.peers_touch.model.agent.v1.KnowledgeStationContentRefH\x00R\x11stationContentRef\x12h\n" +
+	"\x13client_resource_ref\x18\x06 \x01(\v26.peers_touch.model.agent.v1.KnowledgeClientResourceRefH\x00R\x11clientResourceRef\x12!\n" +
+	"\fcontent_hash\x18\a \x01(\tR\vcontentHash\x12%\n" +
+	"\x0eindex_revision\x18\b \x01(\tR\rindexRevision\x12]\n" +
+	"\favailability\x18\t \x01(\x0e29.peers_touch.model.agent.v1.KnowledgeResourceAvailabilityR\favailability\x12\x1f\n" +
+	"\vreason_code\x18\n" +
+	" \x01(\tR\n" +
+	"reasonCode\x129\n" +
+	"\n" +
+	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12?\n" +
+	"\rtombstoned_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\ftombstonedAt\x12\x14\n" +
+	"\x05title\x18\x0e \x01(\tR\x05title\x12,\n" +
+	"\x12tombstoned_by_ptid\x18\x0f \x01(\tR\x10tombstonedByPtid\x12)\n" +
+	"\x10tombstone_reason\x18\x10 \x01(\tR\x0ftombstoneReasonB\t\n" +
+	"\alocator\"\xe0\x02\n" +
+	"(CreateKnowledgeResourceDescriptorRequest\x12V\n" +
+	"\rresource_kind\x18\x01 \x01(\x0e21.peers_touch.model.agent.v1.KnowledgeResourceKindR\fresourceKind\x12)\n" +
+	"\x0fstation_content\x18\x02 \x01(\fH\x00R\x0estationContent\x12h\n" +
+	"\x13client_resource_ref\x18\x03 \x01(\v26.peers_touch.model.agent.v1.KnowledgeClientResourceRefH\x00R\x11clientResourceRef\x12'\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12\x14\n" +
+	"\x05title\x18\x05 \x01(\tR\x05titleB\b\n" +
+	"\x06source\"\xd0\x01\n" +
+	")CreateKnowledgeResourceDescriptorResponse\x12W\n" +
+	"\n" +
+	"descriptor\x18\x01 \x01(\v27.peers_touch.model.agent.v1.KnowledgeResourceDescriptorR\n" +
+	"descriptor\x12J\n" +
+	"\bmanifest\x18\x02 \x01(\v2..peers_touch.model.agent.v1.CapabilityManifestR\bmanifest\"\xae\x03\n" +
+	"(UpdateKnowledgeResourceDescriptorRequest\x12\x1f\n" +
+	"\vresource_id\x18\x01 \x01(\tR\n" +
+	"resourceId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12V\n" +
+	"\rresource_kind\x18\x03 \x01(\x0e21.peers_touch.model.agent.v1.KnowledgeResourceKindR\fresourceKind\x12)\n" +
+	"\x0fstation_content\x18\x04 \x01(\fH\x00R\x0estationContent\x12h\n" +
+	"\x13client_resource_ref\x18\x05 \x01(\v26.peers_touch.model.agent.v1.KnowledgeClientResourceRefH\x00R\x11clientResourceRef\x12'\n" +
+	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12\x14\n" +
+	"\x05title\x18\a \x01(\tR\x05titleB\b\n" +
+	"\x06source\"\xd0\x01\n" +
+	")UpdateKnowledgeResourceDescriptorResponse\x12W\n" +
+	"\n" +
+	"descriptor\x18\x01 \x01(\v27.peers_touch.model.agent.v1.KnowledgeResourceDescriptorR\n" +
+	"descriptor\x12J\n" +
+	"\bmanifest\x18\x02 \x01(\v2..peers_touch.model.agent.v1.CapabilityManifestR\bmanifest\"\x8d\x01\n" +
+	"'ListKnowledgeResourceDescriptorsRequest\x12-\n" +
+	"\x12include_tombstoned\x18\x01 \x01(\bR\x11includeTombstoned\x12\x16\n" +
+	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12\x1b\n" +
+	"\tpage_size\x18\x03 \x01(\rR\bpageSize\"\xa6\x01\n" +
+	"(ListKnowledgeResourceDescriptorsResponse\x12Y\n" +
+	"\vdescriptors\x18\x01 \x03(\v27.peers_touch.model.agent.v1.KnowledgeResourceDescriptorR\vdescriptors\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\tR\n" +
+	"nextCursor\"\xbc\x01\n" +
+	"+TombstoneKnowledgeResourceDescriptorRequest\x12\x1f\n" +
+	"\vresource_id\x18\x01 \x01(\tR\n" +
+	"resourceId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\xd3\x01\n" +
+	",TombstoneKnowledgeResourceDescriptorResponse\x12W\n" +
+	"\n" +
+	"descriptor\x18\x01 \x01(\v27.peers_touch.model.agent.v1.KnowledgeResourceDescriptorR\n" +
+	"descriptor\x12J\n" +
+	"\bmanifest\x18\x02 \x01(\v2..peers_touch.model.agent.v1.CapabilityManifestR\bmanifest\"\xe5\x01\n" +
+	"\x16AgentPackageBindingRef\x12#\n" +
+	"\rcapability_id\x18\x01 \x01(\tR\fcapabilityId\x12-\n" +
+	"\x12capability_version\x18\x02 \x01(\tR\x11capabilityVersion\x12\x18\n" +
+	"\aenabled\x18\x03 \x01(\bR\aenabled\x12]\n" +
+	"\x0fapproval_policy\x18\x04 \x01(\x0e24.peers_touch.model.agent.v1.CapabilityApprovalPolicyR\x0eapprovalPolicy\"\xb0\x02\n" +
+	"\x1dAgentPackageKnowledgeResource\x12.\n" +
+	"\x13package_resource_id\x18\x01 \x01(\tR\x11packageResourceId\x12V\n" +
+	"\rresource_kind\x18\x02 \x01(\x0e21.peers_touch.model.agent.v1.KnowledgeResourceKindR\fresourceKind\x12\x14\n" +
+	"\x05title\x18\x03 \x01(\tR\x05title\x12'\n" +
+	"\x0fstation_content\x18\x04 \x01(\fR\x0estationContent\x12!\n" +
+	"\fcontent_hash\x18\x05 \x01(\tR\vcontentHash\x12%\n" +
+	"\x0eindex_revision\x18\x06 \x01(\tR\rindexRevision\"\xb2\x02\n" +
+	"\x14AgentPackageDocument\x12%\n" +
+	"\x0eschema_version\x18\x01 \x01(\tR\rschemaVersion\x127\n" +
+	"\x05agent\x18\x02 \x01(\v2!.peers_touch.model.agent.v1.AgentR\x05agent\x12N\n" +
+	"\bbindings\x18\x03 \x03(\v22.peers_touch.model.agent.v1.AgentPackageBindingRefR\bbindings\x12j\n" +
+	"\x13knowledge_resources\x18\x04 \x03(\v29.peers_touch.model.agent.v1.AgentPackageKnowledgeResourceR\x12knowledgeResources\"\xc7\x01\n" +
+	" AgentPackageUnresolvedDependency\x12.\n" +
+	"\x13package_resource_id\x18\x01 \x01(\tR\x11packageResourceId\x12#\n" +
+	"\rcapability_id\x18\x02 \x01(\tR\fcapabilityId\x12-\n" +
+	"\x12capability_version\x18\x03 \x01(\tR\x11capabilityVersion\x12\x1f\n" +
+	"\vreason_code\x18\x04 \x01(\tR\n" +
+	"reasonCode\"6\n" +
+	"\x19ExportAgentPackageRequest\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\"\xdf\x01\n" +
+	"\x1aExportAgentPackageResponse\x12J\n" +
+	"\apackage\x18\x01 \x01(\v20.peers_touch.model.agent.v1.AgentPackageDocumentR\apackage\x12u\n" +
+	"\x17unresolved_dependencies\x18\x02 \x03(\v2<.peers_touch.model.agent.v1.AgentPackageUnresolvedDependencyR\x16unresolvedDependencies\"\xa4\x01\n" +
+	"\x19ImportAgentPackageRequest\x12J\n" +
+	"\apackage\x18\x01 \x01(\v20.peers_touch.model.agent.v1.AgentPackageDocumentR\apackage\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"\xcc\x01\n" +
+	"\x1aImportAgentPackageResponse\x127\n" +
+	"\x05agent\x18\x01 \x01(\v2!.peers_touch.model.agent.v1.AgentR\x05agent\x12u\n" +
+	"\x17unresolved_dependencies\x18\x02 \x03(\v2<.peers_touch.model.agent.v1.AgentPackageUnresolvedDependencyR\x16unresolvedDependencies\"u\n" +
 	"\x1eListCapabilityManifestsRequest\x12S\n" +
 	"\fsource_kinds\x18\x01 \x03(\x0e20.peers_touch.model.agent.v1.CapabilitySourceKindR\vsourceKinds\"o\n" +
 	"\x1fListCapabilityManifestsResponse\x12L\n" +
-	"\tmanifests\x18\x01 \x03(\v2..peers_touch.model.agent.v1.CapabilityManifestR\tmanifests\"?\n" +
+	"\tmanifests\x18\x01 \x03(\v2..peers_touch.model.agent.v1.CapabilityManifestR\tmanifests\"\xa1\x01\n" +
+	"\x1fRetireCapabilityManifestRequest\x12#\n" +
+	"\rcapability_id\x18\x01 \x01(\tR\fcapabilityId\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"n\n" +
+	" RetireCapabilityManifestResponse\x12J\n" +
+	"\bmanifest\x18\x01 \x01(\v2..peers_touch.model.agent.v1.CapabilityManifestR\bmanifest\"?\n" +
 	"\"ListAgentCapabilityBindingsRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\"u\n" +
 	"#ListAgentCapabilityBindingsResponse\x12N\n" +
-	"\bbindings\x18\x01 \x03(\v22.peers_touch.model.agent.v1.AgentCapabilityBindingR\bbindings\"\x9c\x01\n" +
+	"\bbindings\x18\x01 \x03(\v22.peers_touch.model.agent.v1.AgentCapabilityBindingR\bbindings\"\xd8\x01\n" +
 	"#UpsertAgentCapabilityBindingRequest\x12L\n" +
 	"\abinding\x18\x01 \x01(\v22.peers_touch.model.agent.v1.AgentCapabilityBindingR\abinding\x12'\n" +
-	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\"t\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12:\n" +
+	"\x19expected_binding_revision\x18\x03 \x01(\x04R\x17expectedBindingRevision\"t\n" +
 	"$UpsertAgentCapabilityBindingResponse\x12L\n" +
+	"\abinding\x18\x01 \x01(\v22.peers_touch.model.agent.v1.AgentCapabilityBindingR\abinding\"\xc1\x01\n" +
+	"#DeleteAgentCapabilityBindingRequest\x12\x1d\n" +
+	"\n" +
+	"binding_id\x18\x01 \x01(\tR\tbindingId\x12:\n" +
+	"\x19expected_binding_revision\x18\x02 \x01(\x04R\x17expectedBindingRevision\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"t\n" +
+	"$DeleteAgentCapabilityBindingResponse\x12L\n" +
 	"\abinding\x18\x01 \x01(\v22.peers_touch.model.agent.v1.AgentCapabilityBindingR\abinding\"\xd1\x01\n" +
 	"\x1dGetCapabilityReadinessRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12.\n" +
@@ -3386,7 +6007,7 @@ const file_domain_agent_capability_proto_rawDesc = "" +
 	"\n" +
 	"runtime_id\x18\x02 \x01(\tR\truntimeId\"m\n" +
 	"\x1aGetRuntimeActivityResponse\x12O\n" +
-	"\bsnapshot\x18\x01 \x01(\v23.peers_touch.model.agent.v1.RuntimeActivitySnapshotR\bsnapshot\"\xd0\x02\n" +
+	"\bsnapshot\x18\x01 \x01(\v23.peers_touch.model.agent.v1.RuntimeActivitySnapshotR\bsnapshot\"\x88\x03\n" +
 	"\x1fStartCapabilityOperationRequest\x12#\n" +
 	"\rcapability_id\x18\x01 \x01(\tR\fcapabilityId\x12-\n" +
 	"\x12capability_version\x18\x02 \x01(\tR\x11capabilityVersion\x12%\n" +
@@ -3394,7 +6015,8 @@ const file_domain_agent_capability_proto_rawDesc = "" +
 	"\x10target_device_id\x18\x04 \x01(\tR\x0etargetDeviceId\x122\n" +
 	"\x15capability_session_id\x18\x05 \x01(\tR\x13capabilitySessionId\x12+\n" +
 	"\x11bounded_arguments\x18\x06 \x01(\fR\x10boundedArguments\x12'\n" +
-	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\"q\n" +
+	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\x126\n" +
+	"\bdeadline\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\bdeadline\"q\n" +
 	" StartCapabilityOperationResponse\x12M\n" +
 	"\toperation\x18\x01 \x01(\v2/.peers_touch.model.agent.v1.CapabilityOperationR\toperation\"\x9b\x01\n" +
 	" CancelCapabilityOperationRequest\x12!\n" +
@@ -3406,6 +6028,56 @@ const file_domain_agent_capability_proto_rawDesc = "" +
 	"\x1dGetCapabilityOperationRequest\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\"o\n" +
 	"\x1eGetCapabilityOperationResponse\x12M\n" +
+	"\toperation\x18\x01 \x01(\v2/.peers_touch.model.agent.v1.CapabilityOperationR\toperation\"\x88\x04\n" +
+	"%ReportCapabilityOperationEventRequest\x12J\n" +
+	"\x05event\x18\x01 \x01(\v24.peers_touch.model.agent.v1.CapabilityOperationEventR\x05event\x12(\n" +
+	"\x10target_device_id\x18\x02 \x01(\tR\x0etargetDeviceId\x122\n" +
+	"\x15capability_session_id\x18\x03 \x01(\tR\x13capabilitySessionId\x12*\n" +
+	"\x11executor_lease_id\x18\x04 \x01(\tR\x0fexecutorLeaseId\x12(\n" +
+	"\x10cleanup_lease_id\x18\x05 \x01(\tR\x0ecleanupLeaseId\x12#\n" +
+	"\rcleanup_epoch\x18\x06 \x01(\x04R\fcleanupEpoch\x122\n" +
+	"\x15cleanup_fencing_token\x18\a \x01(\x04R\x13cleanupFencingToken\x12'\n" +
+	"\x0fcleanup_outcome\x18\b \x01(\tR\x0ecleanupOutcome\x12]\n" +
+	"\rcommand_proof\x18\t \x01(\v28.peers_touch.model.agent.v1.ClientCapabilityCommandProofR\fcommandProof\"\x93\x01\n" +
+	"&ReportCapabilityOperationEventResponse\x12M\n" +
+	"\toperation\x18\x01 \x01(\v2/.peers_touch.model.agent.v1.CapabilityOperationR\toperation\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"o\n" +
+	"#ReconcileCapabilityOperationRequest\x12!\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12%\n" +
+	"\x0eafter_sequence\x18\x02 \x01(\x04R\rafterSequence\"\xc3\x01\n" +
+	"$ReconcileCapabilityOperationResponse\x12M\n" +
+	"\toperation\x18\x01 \x01(\v2/.peers_touch.model.agent.v1.CapabilityOperationR\toperation\x12L\n" +
+	"\x06events\x18\x02 \x03(\v24.peers_touch.model.agent.v1.CapabilityOperationEventR\x06events\"\x8e\x02\n" +
+	"\x1fPullCapabilityOperationsRequest\x122\n" +
+	"\x15capability_session_id\x18\x01 \x01(\tR\x13capabilitySessionId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12%\n" +
+	"\x0eafter_sequence\x18\x03 \x01(\x04R\rafterSequence\x12\x14\n" +
+	"\x05limit\x18\x04 \x01(\rR\x05limit\x12]\n" +
+	"\rcommand_proof\x18\x05 \x01(\v28.peers_touch.model.agent.v1.ClientCapabilityCommandProofR\fcommandProof\"\xf5\x01\n" +
+	" PullCapabilityOperationsResponse\x12O\n" +
+	"\n" +
+	"operations\x18\x01 \x03(\v2/.peers_touch.model.agent.v1.CapabilityOperationR\n" +
+	"operations\x12#\n" +
+	"\rlast_sequence\x18\x02 \x01(\x04R\flastSequence\x12[\n" +
+	"\n" +
+	"error_code\x18\x03 \x01(\x0e2<.peers_touch.model.agent.v1.ClientCapabilityCommandErrorCodeR\terrorCode\"\xa7\x03\n" +
+	"\"TakeOverCapabilityOperationRequest\x12!\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12(\n" +
+	"\x10target_device_id\x18\x03 \x01(\tR\x0etargetDeviceId\x122\n" +
+	"\x15capability_session_id\x18\x04 \x01(\tR\x13capabilitySessionId\x12!\n" +
+	"\fcleanup_only\x18\x06 \x01(\bR\vcleanupOnly\x128\n" +
+	"\x18external_idempotency_key\x18\a \x01(\tR\x16externalIdempotencyKey\x12]\n" +
+	"\rcommand_proof\x18\b \x01(\v28.peers_touch.model.agent.v1.ClientCapabilityCommandProofR\fcommandProofJ\x04\b\x05\x10\x06R\x11executor_lease_id\"t\n" +
+	"#TakeOverCapabilityOperationResponse\x12M\n" +
+	"\toperation\x18\x01 \x01(\v2/.peers_touch.model.agent.v1.CapabilityOperationR\toperation\"\xd0\x02\n" +
+	" TakeOverCapabilityCleanupRequest\x12!\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\x124\n" +
+	"\x16expected_cleanup_epoch\x18\x02 \x01(\x04R\x14expectedCleanupEpoch\x12(\n" +
+	"\x10target_device_id\x18\x03 \x01(\tR\x0etargetDeviceId\x122\n" +
+	"\x15capability_session_id\x18\x04 \x01(\tR\x13capabilitySessionId\x12]\n" +
+	"\rcommand_proof\x18\x06 \x01(\v28.peers_touch.model.agent.v1.ClientCapabilityCommandProofR\fcommandProofJ\x04\b\x05\x10\x06R\x10cleanup_lease_id\"r\n" +
+	"!TakeOverCapabilityCleanupResponse\x12M\n" +
 	"\toperation\x18\x01 \x01(\v2/.peers_touch.model.agent.v1.CapabilityOperationR\toperation\"J\n" +
 	"%ListConnectorResourceManifestsRequest\x12!\n" +
 	"\fconnector_id\x18\x01 \x01(\tR\vconnectorId\"}\n" +
@@ -3497,7 +6169,21 @@ const file_domain_agent_capability_proto_rawDesc = "" +
 	"\"CONNECTOR_ERROR_CODE_OAUTH_EXPIRED\x10\x01\x12%\n" +
 	"!CONNECTOR_ERROR_CODE_SCOPE_DENIED\x10\x02\x12)\n" +
 	"%CONNECTOR_ERROR_CODE_RESOURCE_REMOVED\x10\x03\x12'\n" +
-	"#CONNECTOR_ERROR_CODE_MANIFEST_STALE\x10\x04BKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
+	"#CONNECTOR_ERROR_CODE_MANIFEST_STALE\x10\x04*\xa6\x02\n" +
+	"\x15KnowledgeResourceKind\x12'\n" +
+	"#KNOWLEDGE_RESOURCE_KIND_UNSPECIFIED\x10\x00\x12$\n" +
+	" KNOWLEDGE_RESOURCE_KIND_DOCUMENT\x10\x01\x12\"\n" +
+	"\x1eKNOWLEDGE_RESOURCE_KIND_FOLDER\x10\x02\x12#\n" +
+	"\x1fKNOWLEDGE_RESOURCE_KIND_PROJECT\x10\x03\x12(\n" +
+	"$KNOWLEDGE_RESOURCE_KIND_URL_SNAPSHOT\x10\x04\x12$\n" +
+	" KNOWLEDGE_RESOURCE_KIND_NOTEBOOK\x10\x05\x12%\n" +
+	"!KNOWLEDGE_RESOURCE_KIND_WORKSPACE\x10\x06*\x8a\x02\n" +
+	"\x1dKnowledgeResourceAvailability\x12/\n" +
+	"+KNOWLEDGE_RESOURCE_AVAILABILITY_UNSPECIFIED\x10\x00\x12)\n" +
+	"%KNOWLEDGE_RESOURCE_AVAILABILITY_READY\x10\x01\x12,\n" +
+	"(KNOWLEDGE_RESOURCE_AVAILABILITY_INDEXING\x10\x02\x12/\n" +
+	"+KNOWLEDGE_RESOURCE_AVAILABILITY_UNAVAILABLE\x10\x03\x12.\n" +
+	"*KNOWLEDGE_RESOURCE_AVAILABILITY_TOMBSTONED\x10\x04BKZIgithub.com/peers-labs/peers-touch/station/app/subserver/agent/model;modelb\x06proto3"
 
 var (
 	file_domain_agent_capability_proto_rawDescOnce sync.Once
@@ -3511,115 +6197,199 @@ func file_domain_agent_capability_proto_rawDescGZIP() []byte {
 	return file_domain_agent_capability_proto_rawDescData
 }
 
-var file_domain_agent_capability_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
-var file_domain_agent_capability_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_domain_agent_capability_proto_enumTypes = make([]protoimpl.EnumInfo, 13)
+var file_domain_agent_capability_proto_msgTypes = make([]protoimpl.MessageInfo, 67)
 var file_domain_agent_capability_proto_goTypes = []any{
-	(CapabilitySourceKind)(0),                      // 0: peers_touch.model.agent.v1.CapabilitySourceKind
-	(CapabilityAvailability)(0),                    // 1: peers_touch.model.agent.v1.CapabilityAvailability
-	(CapabilityReadinessState)(0),                  // 2: peers_touch.model.agent.v1.CapabilityReadinessState
-	(CapabilityApprovalPolicy)(0),                  // 3: peers_touch.model.agent.v1.CapabilityApprovalPolicy
-	(CapabilityOperationStatus)(0),                 // 4: peers_touch.model.agent.v1.CapabilityOperationStatus
-	(CapabilityOperationErrorCode)(0),              // 5: peers_touch.model.agent.v1.CapabilityOperationErrorCode
-	(CapabilityCatalogErrorCode)(0),                // 6: peers_touch.model.agent.v1.CapabilityCatalogErrorCode
-	(CapabilityBindingErrorCode)(0),                // 7: peers_touch.model.agent.v1.CapabilityBindingErrorCode
-	(RuntimeAdvertisementState)(0),                 // 8: peers_touch.model.agent.v1.RuntimeAdvertisementState
-	(ConnectorResourceStatus)(0),                   // 9: peers_touch.model.agent.v1.ConnectorResourceStatus
-	(ConnectorErrorCode)(0),                        // 10: peers_touch.model.agent.v1.ConnectorErrorCode
-	(*CapabilityDisplayMetadata)(nil),              // 11: peers_touch.model.agent.v1.CapabilityDisplayMetadata
-	(*CapabilityManifest)(nil),                     // 12: peers_touch.model.agent.v1.CapabilityManifest
-	(*AgentCapabilityBinding)(nil),                 // 13: peers_touch.model.agent.v1.AgentCapabilityBinding
-	(*CapabilityReadiness)(nil),                    // 14: peers_touch.model.agent.v1.CapabilityReadiness
-	(*CapabilityReadinessSnapshot)(nil),            // 15: peers_touch.model.agent.v1.CapabilityReadinessSnapshot
-	(*EffectiveRuntimeAdvertisement)(nil),          // 16: peers_touch.model.agent.v1.EffectiveRuntimeAdvertisement
-	(*EffectiveRuntimeProfileSnapshot)(nil),        // 17: peers_touch.model.agent.v1.EffectiveRuntimeProfileSnapshot
-	(*RuntimeActivityCounters)(nil),                // 18: peers_touch.model.agent.v1.RuntimeActivityCounters
-	(*RuntimeActivitySnapshot)(nil),                // 19: peers_touch.model.agent.v1.RuntimeActivitySnapshot
-	(*CapabilityOperationError)(nil),               // 20: peers_touch.model.agent.v1.CapabilityOperationError
-	(*CapabilityOperation)(nil),                    // 21: peers_touch.model.agent.v1.CapabilityOperation
-	(*CapabilityOperationEvent)(nil),               // 22: peers_touch.model.agent.v1.CapabilityOperationEvent
-	(*ConnectorToolManifestRef)(nil),               // 23: peers_touch.model.agent.v1.ConnectorToolManifestRef
-	(*ConnectorResourceManifest)(nil),              // 24: peers_touch.model.agent.v1.ConnectorResourceManifest
-	(*ListCapabilityManifestsRequest)(nil),         // 25: peers_touch.model.agent.v1.ListCapabilityManifestsRequest
-	(*ListCapabilityManifestsResponse)(nil),        // 26: peers_touch.model.agent.v1.ListCapabilityManifestsResponse
-	(*ListAgentCapabilityBindingsRequest)(nil),     // 27: peers_touch.model.agent.v1.ListAgentCapabilityBindingsRequest
-	(*ListAgentCapabilityBindingsResponse)(nil),    // 28: peers_touch.model.agent.v1.ListAgentCapabilityBindingsResponse
-	(*UpsertAgentCapabilityBindingRequest)(nil),    // 29: peers_touch.model.agent.v1.UpsertAgentCapabilityBindingRequest
-	(*UpsertAgentCapabilityBindingResponse)(nil),   // 30: peers_touch.model.agent.v1.UpsertAgentCapabilityBindingResponse
-	(*GetCapabilityReadinessRequest)(nil),          // 31: peers_touch.model.agent.v1.GetCapabilityReadinessRequest
-	(*GetCapabilityReadinessResponse)(nil),         // 32: peers_touch.model.agent.v1.GetCapabilityReadinessResponse
-	(*GetEffectiveRuntimeProfileRequest)(nil),      // 33: peers_touch.model.agent.v1.GetEffectiveRuntimeProfileRequest
-	(*GetEffectiveRuntimeProfileResponse)(nil),     // 34: peers_touch.model.agent.v1.GetEffectiveRuntimeProfileResponse
-	(*GetRuntimeActivityRequest)(nil),              // 35: peers_touch.model.agent.v1.GetRuntimeActivityRequest
-	(*GetRuntimeActivityResponse)(nil),             // 36: peers_touch.model.agent.v1.GetRuntimeActivityResponse
-	(*StartCapabilityOperationRequest)(nil),        // 37: peers_touch.model.agent.v1.StartCapabilityOperationRequest
-	(*StartCapabilityOperationResponse)(nil),       // 38: peers_touch.model.agent.v1.StartCapabilityOperationResponse
-	(*CancelCapabilityOperationRequest)(nil),       // 39: peers_touch.model.agent.v1.CancelCapabilityOperationRequest
-	(*CancelCapabilityOperationResponse)(nil),      // 40: peers_touch.model.agent.v1.CancelCapabilityOperationResponse
-	(*GetCapabilityOperationRequest)(nil),          // 41: peers_touch.model.agent.v1.GetCapabilityOperationRequest
-	(*GetCapabilityOperationResponse)(nil),         // 42: peers_touch.model.agent.v1.GetCapabilityOperationResponse
-	(*ListConnectorResourceManifestsRequest)(nil),  // 43: peers_touch.model.agent.v1.ListConnectorResourceManifestsRequest
-	(*ListConnectorResourceManifestsResponse)(nil), // 44: peers_touch.model.agent.v1.ListConnectorResourceManifestsResponse
-	(ToolExecutionOwner)(0),                        // 45: peers_touch.model.agent.v1.ToolExecutionOwner
-	(*timestamppb.Timestamp)(nil),                  // 46: google.protobuf.Timestamp
-	(*RuntimeCapabilitySnapshot)(nil),              // 47: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
-	(RuntimeKind)(0),                               // 48: peers_touch.model.agent.v1.RuntimeKind
+	(CapabilitySourceKind)(0),                            // 0: peers_touch.model.agent.v1.CapabilitySourceKind
+	(CapabilityAvailability)(0),                          // 1: peers_touch.model.agent.v1.CapabilityAvailability
+	(CapabilityReadinessState)(0),                        // 2: peers_touch.model.agent.v1.CapabilityReadinessState
+	(CapabilityApprovalPolicy)(0),                        // 3: peers_touch.model.agent.v1.CapabilityApprovalPolicy
+	(CapabilityOperationStatus)(0),                       // 4: peers_touch.model.agent.v1.CapabilityOperationStatus
+	(CapabilityOperationErrorCode)(0),                    // 5: peers_touch.model.agent.v1.CapabilityOperationErrorCode
+	(CapabilityCatalogErrorCode)(0),                      // 6: peers_touch.model.agent.v1.CapabilityCatalogErrorCode
+	(CapabilityBindingErrorCode)(0),                      // 7: peers_touch.model.agent.v1.CapabilityBindingErrorCode
+	(RuntimeAdvertisementState)(0),                       // 8: peers_touch.model.agent.v1.RuntimeAdvertisementState
+	(ConnectorResourceStatus)(0),                         // 9: peers_touch.model.agent.v1.ConnectorResourceStatus
+	(ConnectorErrorCode)(0),                              // 10: peers_touch.model.agent.v1.ConnectorErrorCode
+	(KnowledgeResourceKind)(0),                           // 11: peers_touch.model.agent.v1.KnowledgeResourceKind
+	(KnowledgeResourceAvailability)(0),                   // 12: peers_touch.model.agent.v1.KnowledgeResourceAvailability
+	(*CapabilityDisplayMetadata)(nil),                    // 13: peers_touch.model.agent.v1.CapabilityDisplayMetadata
+	(*CapabilityManifest)(nil),                           // 14: peers_touch.model.agent.v1.CapabilityManifest
+	(*AgentCapabilityBinding)(nil),                       // 15: peers_touch.model.agent.v1.AgentCapabilityBinding
+	(*CapabilityReadiness)(nil),                          // 16: peers_touch.model.agent.v1.CapabilityReadiness
+	(*CapabilityReadinessSnapshot)(nil),                  // 17: peers_touch.model.agent.v1.CapabilityReadinessSnapshot
+	(*EffectiveRuntimeAdvertisement)(nil),                // 18: peers_touch.model.agent.v1.EffectiveRuntimeAdvertisement
+	(*EffectiveRuntimeProfileSnapshot)(nil),              // 19: peers_touch.model.agent.v1.EffectiveRuntimeProfileSnapshot
+	(*RuntimeActivityCounters)(nil),                      // 20: peers_touch.model.agent.v1.RuntimeActivityCounters
+	(*RuntimeActivitySnapshot)(nil),                      // 21: peers_touch.model.agent.v1.RuntimeActivitySnapshot
+	(*CapabilityOperationError)(nil),                     // 22: peers_touch.model.agent.v1.CapabilityOperationError
+	(*CapabilityOperation)(nil),                          // 23: peers_touch.model.agent.v1.CapabilityOperation
+	(*CapabilityOperationEvent)(nil),                     // 24: peers_touch.model.agent.v1.CapabilityOperationEvent
+	(*ConnectorToolManifestRef)(nil),                     // 25: peers_touch.model.agent.v1.ConnectorToolManifestRef
+	(*ConnectorResourceManifest)(nil),                    // 26: peers_touch.model.agent.v1.ConnectorResourceManifest
+	(*KnowledgeStationContentRef)(nil),                   // 27: peers_touch.model.agent.v1.KnowledgeStationContentRef
+	(*KnowledgeClientResourceRef)(nil),                   // 28: peers_touch.model.agent.v1.KnowledgeClientResourceRef
+	(*KnowledgeResourceDescriptor)(nil),                  // 29: peers_touch.model.agent.v1.KnowledgeResourceDescriptor
+	(*CreateKnowledgeResourceDescriptorRequest)(nil),     // 30: peers_touch.model.agent.v1.CreateKnowledgeResourceDescriptorRequest
+	(*CreateKnowledgeResourceDescriptorResponse)(nil),    // 31: peers_touch.model.agent.v1.CreateKnowledgeResourceDescriptorResponse
+	(*UpdateKnowledgeResourceDescriptorRequest)(nil),     // 32: peers_touch.model.agent.v1.UpdateKnowledgeResourceDescriptorRequest
+	(*UpdateKnowledgeResourceDescriptorResponse)(nil),    // 33: peers_touch.model.agent.v1.UpdateKnowledgeResourceDescriptorResponse
+	(*ListKnowledgeResourceDescriptorsRequest)(nil),      // 34: peers_touch.model.agent.v1.ListKnowledgeResourceDescriptorsRequest
+	(*ListKnowledgeResourceDescriptorsResponse)(nil),     // 35: peers_touch.model.agent.v1.ListKnowledgeResourceDescriptorsResponse
+	(*TombstoneKnowledgeResourceDescriptorRequest)(nil),  // 36: peers_touch.model.agent.v1.TombstoneKnowledgeResourceDescriptorRequest
+	(*TombstoneKnowledgeResourceDescriptorResponse)(nil), // 37: peers_touch.model.agent.v1.TombstoneKnowledgeResourceDescriptorResponse
+	(*AgentPackageBindingRef)(nil),                       // 38: peers_touch.model.agent.v1.AgentPackageBindingRef
+	(*AgentPackageKnowledgeResource)(nil),                // 39: peers_touch.model.agent.v1.AgentPackageKnowledgeResource
+	(*AgentPackageDocument)(nil),                         // 40: peers_touch.model.agent.v1.AgentPackageDocument
+	(*AgentPackageUnresolvedDependency)(nil),             // 41: peers_touch.model.agent.v1.AgentPackageUnresolvedDependency
+	(*ExportAgentPackageRequest)(nil),                    // 42: peers_touch.model.agent.v1.ExportAgentPackageRequest
+	(*ExportAgentPackageResponse)(nil),                   // 43: peers_touch.model.agent.v1.ExportAgentPackageResponse
+	(*ImportAgentPackageRequest)(nil),                    // 44: peers_touch.model.agent.v1.ImportAgentPackageRequest
+	(*ImportAgentPackageResponse)(nil),                   // 45: peers_touch.model.agent.v1.ImportAgentPackageResponse
+	(*ListCapabilityManifestsRequest)(nil),               // 46: peers_touch.model.agent.v1.ListCapabilityManifestsRequest
+	(*ListCapabilityManifestsResponse)(nil),              // 47: peers_touch.model.agent.v1.ListCapabilityManifestsResponse
+	(*RetireCapabilityManifestRequest)(nil),              // 48: peers_touch.model.agent.v1.RetireCapabilityManifestRequest
+	(*RetireCapabilityManifestResponse)(nil),             // 49: peers_touch.model.agent.v1.RetireCapabilityManifestResponse
+	(*ListAgentCapabilityBindingsRequest)(nil),           // 50: peers_touch.model.agent.v1.ListAgentCapabilityBindingsRequest
+	(*ListAgentCapabilityBindingsResponse)(nil),          // 51: peers_touch.model.agent.v1.ListAgentCapabilityBindingsResponse
+	(*UpsertAgentCapabilityBindingRequest)(nil),          // 52: peers_touch.model.agent.v1.UpsertAgentCapabilityBindingRequest
+	(*UpsertAgentCapabilityBindingResponse)(nil),         // 53: peers_touch.model.agent.v1.UpsertAgentCapabilityBindingResponse
+	(*DeleteAgentCapabilityBindingRequest)(nil),          // 54: peers_touch.model.agent.v1.DeleteAgentCapabilityBindingRequest
+	(*DeleteAgentCapabilityBindingResponse)(nil),         // 55: peers_touch.model.agent.v1.DeleteAgentCapabilityBindingResponse
+	(*GetCapabilityReadinessRequest)(nil),                // 56: peers_touch.model.agent.v1.GetCapabilityReadinessRequest
+	(*GetCapabilityReadinessResponse)(nil),               // 57: peers_touch.model.agent.v1.GetCapabilityReadinessResponse
+	(*GetEffectiveRuntimeProfileRequest)(nil),            // 58: peers_touch.model.agent.v1.GetEffectiveRuntimeProfileRequest
+	(*GetEffectiveRuntimeProfileResponse)(nil),           // 59: peers_touch.model.agent.v1.GetEffectiveRuntimeProfileResponse
+	(*GetRuntimeActivityRequest)(nil),                    // 60: peers_touch.model.agent.v1.GetRuntimeActivityRequest
+	(*GetRuntimeActivityResponse)(nil),                   // 61: peers_touch.model.agent.v1.GetRuntimeActivityResponse
+	(*StartCapabilityOperationRequest)(nil),              // 62: peers_touch.model.agent.v1.StartCapabilityOperationRequest
+	(*StartCapabilityOperationResponse)(nil),             // 63: peers_touch.model.agent.v1.StartCapabilityOperationResponse
+	(*CancelCapabilityOperationRequest)(nil),             // 64: peers_touch.model.agent.v1.CancelCapabilityOperationRequest
+	(*CancelCapabilityOperationResponse)(nil),            // 65: peers_touch.model.agent.v1.CancelCapabilityOperationResponse
+	(*GetCapabilityOperationRequest)(nil),                // 66: peers_touch.model.agent.v1.GetCapabilityOperationRequest
+	(*GetCapabilityOperationResponse)(nil),               // 67: peers_touch.model.agent.v1.GetCapabilityOperationResponse
+	(*ReportCapabilityOperationEventRequest)(nil),        // 68: peers_touch.model.agent.v1.ReportCapabilityOperationEventRequest
+	(*ReportCapabilityOperationEventResponse)(nil),       // 69: peers_touch.model.agent.v1.ReportCapabilityOperationEventResponse
+	(*ReconcileCapabilityOperationRequest)(nil),          // 70: peers_touch.model.agent.v1.ReconcileCapabilityOperationRequest
+	(*ReconcileCapabilityOperationResponse)(nil),         // 71: peers_touch.model.agent.v1.ReconcileCapabilityOperationResponse
+	(*PullCapabilityOperationsRequest)(nil),              // 72: peers_touch.model.agent.v1.PullCapabilityOperationsRequest
+	(*PullCapabilityOperationsResponse)(nil),             // 73: peers_touch.model.agent.v1.PullCapabilityOperationsResponse
+	(*TakeOverCapabilityOperationRequest)(nil),           // 74: peers_touch.model.agent.v1.TakeOverCapabilityOperationRequest
+	(*TakeOverCapabilityOperationResponse)(nil),          // 75: peers_touch.model.agent.v1.TakeOverCapabilityOperationResponse
+	(*TakeOverCapabilityCleanupRequest)(nil),             // 76: peers_touch.model.agent.v1.TakeOverCapabilityCleanupRequest
+	(*TakeOverCapabilityCleanupResponse)(nil),            // 77: peers_touch.model.agent.v1.TakeOverCapabilityCleanupResponse
+	(*ListConnectorResourceManifestsRequest)(nil),        // 78: peers_touch.model.agent.v1.ListConnectorResourceManifestsRequest
+	(*ListConnectorResourceManifestsResponse)(nil),       // 79: peers_touch.model.agent.v1.ListConnectorResourceManifestsResponse
+	(ToolExecutionOwner)(0),                              // 80: peers_touch.model.agent.v1.ToolExecutionOwner
+	(*timestamppb.Timestamp)(nil),                        // 81: google.protobuf.Timestamp
+	(*RuntimeCapabilitySnapshot)(nil),                    // 82: peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
+	(RuntimeKind)(0),                                     // 83: peers_touch.model.agent.v1.RuntimeKind
+	(*Agent)(nil),                                        // 84: peers_touch.model.agent.v1.Agent
+	(*ClientCapabilityCommandProof)(nil),                 // 85: peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	(ClientCapabilityCommandErrorCode)(0),                // 86: peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
 }
 var file_domain_agent_capability_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.agent.v1.CapabilityManifest.source_kind:type_name -> peers_touch.model.agent.v1.CapabilitySourceKind
-	11, // 1: peers_touch.model.agent.v1.CapabilityManifest.display_metadata:type_name -> peers_touch.model.agent.v1.CapabilityDisplayMetadata
-	45, // 2: peers_touch.model.agent.v1.CapabilityManifest.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
+	13, // 1: peers_touch.model.agent.v1.CapabilityManifest.display_metadata:type_name -> peers_touch.model.agent.v1.CapabilityDisplayMetadata
+	80, // 2: peers_touch.model.agent.v1.CapabilityManifest.execution_owner:type_name -> peers_touch.model.agent.v1.ToolExecutionOwner
 	3,  // 3: peers_touch.model.agent.v1.CapabilityManifest.default_approval_policy:type_name -> peers_touch.model.agent.v1.CapabilityApprovalPolicy
 	1,  // 4: peers_touch.model.agent.v1.CapabilityManifest.availability:type_name -> peers_touch.model.agent.v1.CapabilityAvailability
-	3,  // 5: peers_touch.model.agent.v1.AgentCapabilityBinding.approval_policy:type_name -> peers_touch.model.agent.v1.CapabilityApprovalPolicy
-	46, // 6: peers_touch.model.agent.v1.AgentCapabilityBinding.updated_at:type_name -> google.protobuf.Timestamp
-	2,  // 7: peers_touch.model.agent.v1.CapabilityReadiness.state:type_name -> peers_touch.model.agent.v1.CapabilityReadinessState
-	47, // 8: peers_touch.model.agent.v1.CapabilityReadinessSnapshot.model_capabilities:type_name -> peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
-	14, // 9: peers_touch.model.agent.v1.CapabilityReadinessSnapshot.capabilities:type_name -> peers_touch.model.agent.v1.CapabilityReadiness
-	46, // 10: peers_touch.model.agent.v1.CapabilityReadinessSnapshot.created_at:type_name -> google.protobuf.Timestamp
-	46, // 11: peers_touch.model.agent.v1.CapabilityReadinessSnapshot.expires_at:type_name -> google.protobuf.Timestamp
-	48, // 12: peers_touch.model.agent.v1.EffectiveRuntimeAdvertisement.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
-	8,  // 13: peers_touch.model.agent.v1.EffectiveRuntimeAdvertisement.state:type_name -> peers_touch.model.agent.v1.RuntimeAdvertisementState
-	16, // 14: peers_touch.model.agent.v1.EffectiveRuntimeProfileSnapshot.runtimes:type_name -> peers_touch.model.agent.v1.EffectiveRuntimeAdvertisement
-	46, // 15: peers_touch.model.agent.v1.EffectiveRuntimeProfileSnapshot.observed_at:type_name -> google.protobuf.Timestamp
-	48, // 16: peers_touch.model.agent.v1.RuntimeActivitySnapshot.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
-	18, // 17: peers_touch.model.agent.v1.RuntimeActivitySnapshot.counters:type_name -> peers_touch.model.agent.v1.RuntimeActivityCounters
-	46, // 18: peers_touch.model.agent.v1.RuntimeActivitySnapshot.observed_at:type_name -> google.protobuf.Timestamp
-	5,  // 19: peers_touch.model.agent.v1.CapabilityOperationError.code:type_name -> peers_touch.model.agent.v1.CapabilityOperationErrorCode
-	4,  // 20: peers_touch.model.agent.v1.CapabilityOperation.status:type_name -> peers_touch.model.agent.v1.CapabilityOperationStatus
-	46, // 21: peers_touch.model.agent.v1.CapabilityOperation.deadline:type_name -> google.protobuf.Timestamp
-	46, // 22: peers_touch.model.agent.v1.CapabilityOperation.cancel_requested_at:type_name -> google.protobuf.Timestamp
-	46, // 23: peers_touch.model.agent.v1.CapabilityOperation.cancel_ack_at:type_name -> google.protobuf.Timestamp
-	4,  // 24: peers_touch.model.agent.v1.CapabilityOperation.desired_terminal_outcome:type_name -> peers_touch.model.agent.v1.CapabilityOperationStatus
-	46, // 25: peers_touch.model.agent.v1.CapabilityOperation.cleanup_deadline:type_name -> google.protobuf.Timestamp
-	46, // 26: peers_touch.model.agent.v1.CapabilityOperation.side_effect_started_at:type_name -> google.protobuf.Timestamp
-	20, // 27: peers_touch.model.agent.v1.CapabilityOperation.error:type_name -> peers_touch.model.agent.v1.CapabilityOperationError
-	46, // 28: peers_touch.model.agent.v1.CapabilityOperation.created_at:type_name -> google.protobuf.Timestamp
-	46, // 29: peers_touch.model.agent.v1.CapabilityOperation.updated_at:type_name -> google.protobuf.Timestamp
-	46, // 30: peers_touch.model.agent.v1.CapabilityOperation.terminal_at:type_name -> google.protobuf.Timestamp
-	4,  // 31: peers_touch.model.agent.v1.CapabilityOperationEvent.status:type_name -> peers_touch.model.agent.v1.CapabilityOperationStatus
-	20, // 32: peers_touch.model.agent.v1.CapabilityOperationEvent.error:type_name -> peers_touch.model.agent.v1.CapabilityOperationError
-	46, // 33: peers_touch.model.agent.v1.CapabilityOperationEvent.occurred_at:type_name -> google.protobuf.Timestamp
-	23, // 34: peers_touch.model.agent.v1.ConnectorResourceManifest.tool_manifests:type_name -> peers_touch.model.agent.v1.ConnectorToolManifestRef
-	9,  // 35: peers_touch.model.agent.v1.ConnectorResourceManifest.status:type_name -> peers_touch.model.agent.v1.ConnectorResourceStatus
-	46, // 36: peers_touch.model.agent.v1.ConnectorResourceManifest.expires_at:type_name -> google.protobuf.Timestamp
-	0,  // 37: peers_touch.model.agent.v1.ListCapabilityManifestsRequest.source_kinds:type_name -> peers_touch.model.agent.v1.CapabilitySourceKind
-	12, // 38: peers_touch.model.agent.v1.ListCapabilityManifestsResponse.manifests:type_name -> peers_touch.model.agent.v1.CapabilityManifest
-	13, // 39: peers_touch.model.agent.v1.ListAgentCapabilityBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentCapabilityBinding
-	13, // 40: peers_touch.model.agent.v1.UpsertAgentCapabilityBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentCapabilityBinding
-	13, // 41: peers_touch.model.agent.v1.UpsertAgentCapabilityBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentCapabilityBinding
-	15, // 42: peers_touch.model.agent.v1.GetCapabilityReadinessResponse.snapshot:type_name -> peers_touch.model.agent.v1.CapabilityReadinessSnapshot
-	17, // 43: peers_touch.model.agent.v1.GetEffectiveRuntimeProfileResponse.snapshot:type_name -> peers_touch.model.agent.v1.EffectiveRuntimeProfileSnapshot
-	48, // 44: peers_touch.model.agent.v1.GetRuntimeActivityRequest.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
-	19, // 45: peers_touch.model.agent.v1.GetRuntimeActivityResponse.snapshot:type_name -> peers_touch.model.agent.v1.RuntimeActivitySnapshot
-	21, // 46: peers_touch.model.agent.v1.StartCapabilityOperationResponse.operation:type_name -> peers_touch.model.agent.v1.CapabilityOperation
-	21, // 47: peers_touch.model.agent.v1.CancelCapabilityOperationResponse.operation:type_name -> peers_touch.model.agent.v1.CapabilityOperation
-	21, // 48: peers_touch.model.agent.v1.GetCapabilityOperationResponse.operation:type_name -> peers_touch.model.agent.v1.CapabilityOperation
-	24, // 49: peers_touch.model.agent.v1.ListConnectorResourceManifestsResponse.manifests:type_name -> peers_touch.model.agent.v1.ConnectorResourceManifest
-	50, // [50:50] is the sub-list for method output_type
-	50, // [50:50] is the sub-list for method input_type
-	50, // [50:50] is the sub-list for extension type_name
-	50, // [50:50] is the sub-list for extension extendee
-	0,  // [0:50] is the sub-list for field type_name
+	81, // 5: peers_touch.model.agent.v1.CapabilityManifest.created_at:type_name -> google.protobuf.Timestamp
+	81, // 6: peers_touch.model.agent.v1.CapabilityManifest.retired_at:type_name -> google.protobuf.Timestamp
+	3,  // 7: peers_touch.model.agent.v1.AgentCapabilityBinding.approval_policy:type_name -> peers_touch.model.agent.v1.CapabilityApprovalPolicy
+	81, // 8: peers_touch.model.agent.v1.AgentCapabilityBinding.updated_at:type_name -> google.protobuf.Timestamp
+	81, // 9: peers_touch.model.agent.v1.AgentCapabilityBinding.tombstoned_at:type_name -> google.protobuf.Timestamp
+	2,  // 10: peers_touch.model.agent.v1.CapabilityReadiness.state:type_name -> peers_touch.model.agent.v1.CapabilityReadinessState
+	82, // 11: peers_touch.model.agent.v1.CapabilityReadinessSnapshot.model_capabilities:type_name -> peers_touch.model.agent.v1.RuntimeCapabilitySnapshot
+	16, // 12: peers_touch.model.agent.v1.CapabilityReadinessSnapshot.capabilities:type_name -> peers_touch.model.agent.v1.CapabilityReadiness
+	81, // 13: peers_touch.model.agent.v1.CapabilityReadinessSnapshot.created_at:type_name -> google.protobuf.Timestamp
+	81, // 14: peers_touch.model.agent.v1.CapabilityReadinessSnapshot.expires_at:type_name -> google.protobuf.Timestamp
+	83, // 15: peers_touch.model.agent.v1.EffectiveRuntimeAdvertisement.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
+	8,  // 16: peers_touch.model.agent.v1.EffectiveRuntimeAdvertisement.state:type_name -> peers_touch.model.agent.v1.RuntimeAdvertisementState
+	18, // 17: peers_touch.model.agent.v1.EffectiveRuntimeProfileSnapshot.runtimes:type_name -> peers_touch.model.agent.v1.EffectiveRuntimeAdvertisement
+	81, // 18: peers_touch.model.agent.v1.EffectiveRuntimeProfileSnapshot.observed_at:type_name -> google.protobuf.Timestamp
+	83, // 19: peers_touch.model.agent.v1.RuntimeActivitySnapshot.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
+	20, // 20: peers_touch.model.agent.v1.RuntimeActivitySnapshot.counters:type_name -> peers_touch.model.agent.v1.RuntimeActivityCounters
+	81, // 21: peers_touch.model.agent.v1.RuntimeActivitySnapshot.observed_at:type_name -> google.protobuf.Timestamp
+	5,  // 22: peers_touch.model.agent.v1.CapabilityOperationError.code:type_name -> peers_touch.model.agent.v1.CapabilityOperationErrorCode
+	4,  // 23: peers_touch.model.agent.v1.CapabilityOperation.status:type_name -> peers_touch.model.agent.v1.CapabilityOperationStatus
+	81, // 24: peers_touch.model.agent.v1.CapabilityOperation.deadline:type_name -> google.protobuf.Timestamp
+	81, // 25: peers_touch.model.agent.v1.CapabilityOperation.cancel_requested_at:type_name -> google.protobuf.Timestamp
+	81, // 26: peers_touch.model.agent.v1.CapabilityOperation.cancel_ack_at:type_name -> google.protobuf.Timestamp
+	4,  // 27: peers_touch.model.agent.v1.CapabilityOperation.desired_terminal_outcome:type_name -> peers_touch.model.agent.v1.CapabilityOperationStatus
+	81, // 28: peers_touch.model.agent.v1.CapabilityOperation.cleanup_deadline:type_name -> google.protobuf.Timestamp
+	81, // 29: peers_touch.model.agent.v1.CapabilityOperation.side_effect_started_at:type_name -> google.protobuf.Timestamp
+	22, // 30: peers_touch.model.agent.v1.CapabilityOperation.error:type_name -> peers_touch.model.agent.v1.CapabilityOperationError
+	81, // 31: peers_touch.model.agent.v1.CapabilityOperation.created_at:type_name -> google.protobuf.Timestamp
+	81, // 32: peers_touch.model.agent.v1.CapabilityOperation.updated_at:type_name -> google.protobuf.Timestamp
+	81, // 33: peers_touch.model.agent.v1.CapabilityOperation.terminal_at:type_name -> google.protobuf.Timestamp
+	4,  // 34: peers_touch.model.agent.v1.CapabilityOperationEvent.status:type_name -> peers_touch.model.agent.v1.CapabilityOperationStatus
+	22, // 35: peers_touch.model.agent.v1.CapabilityOperationEvent.error:type_name -> peers_touch.model.agent.v1.CapabilityOperationError
+	81, // 36: peers_touch.model.agent.v1.CapabilityOperationEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	25, // 37: peers_touch.model.agent.v1.ConnectorResourceManifest.tool_manifests:type_name -> peers_touch.model.agent.v1.ConnectorToolManifestRef
+	9,  // 38: peers_touch.model.agent.v1.ConnectorResourceManifest.status:type_name -> peers_touch.model.agent.v1.ConnectorResourceStatus
+	81, // 39: peers_touch.model.agent.v1.ConnectorResourceManifest.expires_at:type_name -> google.protobuf.Timestamp
+	11, // 40: peers_touch.model.agent.v1.KnowledgeResourceDescriptor.resource_kind:type_name -> peers_touch.model.agent.v1.KnowledgeResourceKind
+	27, // 41: peers_touch.model.agent.v1.KnowledgeResourceDescriptor.station_content_ref:type_name -> peers_touch.model.agent.v1.KnowledgeStationContentRef
+	28, // 42: peers_touch.model.agent.v1.KnowledgeResourceDescriptor.client_resource_ref:type_name -> peers_touch.model.agent.v1.KnowledgeClientResourceRef
+	12, // 43: peers_touch.model.agent.v1.KnowledgeResourceDescriptor.availability:type_name -> peers_touch.model.agent.v1.KnowledgeResourceAvailability
+	81, // 44: peers_touch.model.agent.v1.KnowledgeResourceDescriptor.created_at:type_name -> google.protobuf.Timestamp
+	81, // 45: peers_touch.model.agent.v1.KnowledgeResourceDescriptor.updated_at:type_name -> google.protobuf.Timestamp
+	81, // 46: peers_touch.model.agent.v1.KnowledgeResourceDescriptor.tombstoned_at:type_name -> google.protobuf.Timestamp
+	11, // 47: peers_touch.model.agent.v1.CreateKnowledgeResourceDescriptorRequest.resource_kind:type_name -> peers_touch.model.agent.v1.KnowledgeResourceKind
+	28, // 48: peers_touch.model.agent.v1.CreateKnowledgeResourceDescriptorRequest.client_resource_ref:type_name -> peers_touch.model.agent.v1.KnowledgeClientResourceRef
+	29, // 49: peers_touch.model.agent.v1.CreateKnowledgeResourceDescriptorResponse.descriptor:type_name -> peers_touch.model.agent.v1.KnowledgeResourceDescriptor
+	14, // 50: peers_touch.model.agent.v1.CreateKnowledgeResourceDescriptorResponse.manifest:type_name -> peers_touch.model.agent.v1.CapabilityManifest
+	11, // 51: peers_touch.model.agent.v1.UpdateKnowledgeResourceDescriptorRequest.resource_kind:type_name -> peers_touch.model.agent.v1.KnowledgeResourceKind
+	28, // 52: peers_touch.model.agent.v1.UpdateKnowledgeResourceDescriptorRequest.client_resource_ref:type_name -> peers_touch.model.agent.v1.KnowledgeClientResourceRef
+	29, // 53: peers_touch.model.agent.v1.UpdateKnowledgeResourceDescriptorResponse.descriptor:type_name -> peers_touch.model.agent.v1.KnowledgeResourceDescriptor
+	14, // 54: peers_touch.model.agent.v1.UpdateKnowledgeResourceDescriptorResponse.manifest:type_name -> peers_touch.model.agent.v1.CapabilityManifest
+	29, // 55: peers_touch.model.agent.v1.ListKnowledgeResourceDescriptorsResponse.descriptors:type_name -> peers_touch.model.agent.v1.KnowledgeResourceDescriptor
+	29, // 56: peers_touch.model.agent.v1.TombstoneKnowledgeResourceDescriptorResponse.descriptor:type_name -> peers_touch.model.agent.v1.KnowledgeResourceDescriptor
+	14, // 57: peers_touch.model.agent.v1.TombstoneKnowledgeResourceDescriptorResponse.manifest:type_name -> peers_touch.model.agent.v1.CapabilityManifest
+	3,  // 58: peers_touch.model.agent.v1.AgentPackageBindingRef.approval_policy:type_name -> peers_touch.model.agent.v1.CapabilityApprovalPolicy
+	11, // 59: peers_touch.model.agent.v1.AgentPackageKnowledgeResource.resource_kind:type_name -> peers_touch.model.agent.v1.KnowledgeResourceKind
+	84, // 60: peers_touch.model.agent.v1.AgentPackageDocument.agent:type_name -> peers_touch.model.agent.v1.Agent
+	38, // 61: peers_touch.model.agent.v1.AgentPackageDocument.bindings:type_name -> peers_touch.model.agent.v1.AgentPackageBindingRef
+	39, // 62: peers_touch.model.agent.v1.AgentPackageDocument.knowledge_resources:type_name -> peers_touch.model.agent.v1.AgentPackageKnowledgeResource
+	40, // 63: peers_touch.model.agent.v1.ExportAgentPackageResponse.package:type_name -> peers_touch.model.agent.v1.AgentPackageDocument
+	41, // 64: peers_touch.model.agent.v1.ExportAgentPackageResponse.unresolved_dependencies:type_name -> peers_touch.model.agent.v1.AgentPackageUnresolvedDependency
+	40, // 65: peers_touch.model.agent.v1.ImportAgentPackageRequest.package:type_name -> peers_touch.model.agent.v1.AgentPackageDocument
+	84, // 66: peers_touch.model.agent.v1.ImportAgentPackageResponse.agent:type_name -> peers_touch.model.agent.v1.Agent
+	41, // 67: peers_touch.model.agent.v1.ImportAgentPackageResponse.unresolved_dependencies:type_name -> peers_touch.model.agent.v1.AgentPackageUnresolvedDependency
+	0,  // 68: peers_touch.model.agent.v1.ListCapabilityManifestsRequest.source_kinds:type_name -> peers_touch.model.agent.v1.CapabilitySourceKind
+	14, // 69: peers_touch.model.agent.v1.ListCapabilityManifestsResponse.manifests:type_name -> peers_touch.model.agent.v1.CapabilityManifest
+	14, // 70: peers_touch.model.agent.v1.RetireCapabilityManifestResponse.manifest:type_name -> peers_touch.model.agent.v1.CapabilityManifest
+	15, // 71: peers_touch.model.agent.v1.ListAgentCapabilityBindingsResponse.bindings:type_name -> peers_touch.model.agent.v1.AgentCapabilityBinding
+	15, // 72: peers_touch.model.agent.v1.UpsertAgentCapabilityBindingRequest.binding:type_name -> peers_touch.model.agent.v1.AgentCapabilityBinding
+	15, // 73: peers_touch.model.agent.v1.UpsertAgentCapabilityBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentCapabilityBinding
+	15, // 74: peers_touch.model.agent.v1.DeleteAgentCapabilityBindingResponse.binding:type_name -> peers_touch.model.agent.v1.AgentCapabilityBinding
+	17, // 75: peers_touch.model.agent.v1.GetCapabilityReadinessResponse.snapshot:type_name -> peers_touch.model.agent.v1.CapabilityReadinessSnapshot
+	19, // 76: peers_touch.model.agent.v1.GetEffectiveRuntimeProfileResponse.snapshot:type_name -> peers_touch.model.agent.v1.EffectiveRuntimeProfileSnapshot
+	83, // 77: peers_touch.model.agent.v1.GetRuntimeActivityRequest.runtime_kind:type_name -> peers_touch.model.agent.v1.RuntimeKind
+	21, // 78: peers_touch.model.agent.v1.GetRuntimeActivityResponse.snapshot:type_name -> peers_touch.model.agent.v1.RuntimeActivitySnapshot
+	81, // 79: peers_touch.model.agent.v1.StartCapabilityOperationRequest.deadline:type_name -> google.protobuf.Timestamp
+	23, // 80: peers_touch.model.agent.v1.StartCapabilityOperationResponse.operation:type_name -> peers_touch.model.agent.v1.CapabilityOperation
+	23, // 81: peers_touch.model.agent.v1.CancelCapabilityOperationResponse.operation:type_name -> peers_touch.model.agent.v1.CapabilityOperation
+	23, // 82: peers_touch.model.agent.v1.GetCapabilityOperationResponse.operation:type_name -> peers_touch.model.agent.v1.CapabilityOperation
+	24, // 83: peers_touch.model.agent.v1.ReportCapabilityOperationEventRequest.event:type_name -> peers_touch.model.agent.v1.CapabilityOperationEvent
+	85, // 84: peers_touch.model.agent.v1.ReportCapabilityOperationEventRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	23, // 85: peers_touch.model.agent.v1.ReportCapabilityOperationEventResponse.operation:type_name -> peers_touch.model.agent.v1.CapabilityOperation
+	23, // 86: peers_touch.model.agent.v1.ReconcileCapabilityOperationResponse.operation:type_name -> peers_touch.model.agent.v1.CapabilityOperation
+	24, // 87: peers_touch.model.agent.v1.ReconcileCapabilityOperationResponse.events:type_name -> peers_touch.model.agent.v1.CapabilityOperationEvent
+	85, // 88: peers_touch.model.agent.v1.PullCapabilityOperationsRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	23, // 89: peers_touch.model.agent.v1.PullCapabilityOperationsResponse.operations:type_name -> peers_touch.model.agent.v1.CapabilityOperation
+	86, // 90: peers_touch.model.agent.v1.PullCapabilityOperationsResponse.error_code:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandErrorCode
+	85, // 91: peers_touch.model.agent.v1.TakeOverCapabilityOperationRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	23, // 92: peers_touch.model.agent.v1.TakeOverCapabilityOperationResponse.operation:type_name -> peers_touch.model.agent.v1.CapabilityOperation
+	85, // 93: peers_touch.model.agent.v1.TakeOverCapabilityCleanupRequest.command_proof:type_name -> peers_touch.model.agent.v1.ClientCapabilityCommandProof
+	23, // 94: peers_touch.model.agent.v1.TakeOverCapabilityCleanupResponse.operation:type_name -> peers_touch.model.agent.v1.CapabilityOperation
+	26, // 95: peers_touch.model.agent.v1.ListConnectorResourceManifestsResponse.manifests:type_name -> peers_touch.model.agent.v1.ConnectorResourceManifest
+	96, // [96:96] is the sub-list for method output_type
+	96, // [96:96] is the sub-list for method input_type
+	96, // [96:96] is the sub-list for extension type_name
+	96, // [96:96] is the sub-list for extension extendee
+	0,  // [0:96] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_capability_proto_init() }
@@ -3629,14 +6399,26 @@ func file_domain_agent_capability_proto_init() {
 	}
 	file_domain_agent_agent_proto_init()
 	file_domain_agent_capability_proto_msgTypes[4].OneofWrappers = []any{}
-	file_domain_agent_capability_proto_msgTypes[20].OneofWrappers = []any{}
+	file_domain_agent_capability_proto_msgTypes[16].OneofWrappers = []any{
+		(*KnowledgeResourceDescriptor_StationContentRef)(nil),
+		(*KnowledgeResourceDescriptor_ClientResourceRef)(nil),
+	}
+	file_domain_agent_capability_proto_msgTypes[17].OneofWrappers = []any{
+		(*CreateKnowledgeResourceDescriptorRequest_StationContent)(nil),
+		(*CreateKnowledgeResourceDescriptorRequest_ClientResourceRef)(nil),
+	}
+	file_domain_agent_capability_proto_msgTypes[19].OneofWrappers = []any{
+		(*UpdateKnowledgeResourceDescriptorRequest_StationContent)(nil),
+		(*UpdateKnowledgeResourceDescriptorRequest_ClientResourceRef)(nil),
+	}
+	file_domain_agent_capability_proto_msgTypes[43].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_capability_proto_rawDesc), len(file_domain_agent_capability_proto_rawDesc)),
-			NumEnums:      11,
-			NumMessages:   34,
+			NumEnums:      13,
+			NumMessages:   67,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -47,8 +47,79 @@ import { usePortalStore } from '../store/portal';
 import { useSessionGroupStore } from '../store/sessionGroups';
 import type { SessionGroup } from '../store/sessionGroups';
 import { resolveI18nValue } from '../i18n';
+import {
+  selectAgentCapabilityBindings,
+  selectAgentCapabilityReadiness,
+  useAgentCapabilityStore,
+  type AgentCapabilityState,
+} from '../store/agentCapabilities';
+import {
+  CapabilityReadinessState,
+  type AgentCapabilityBinding,
+  type CapabilityReadinessSnapshot,
+} from '../gen/proto/domain/agent/capability_pb';
 
 const OVERFLOW_TOOLTIP_ELLIPSIS = { tooltipWhenOverflow: true } as const;
+const EMPTY_CAPABILITY_BINDINGS: AgentCapabilityBinding[] = [];
+
+interface AgentCapabilityBadgeProjection {
+  bindings: AgentCapabilityBinding[];
+  readiness?: CapabilityReadinessSnapshot;
+}
+
+function createAgentCapabilityBadgeSelector(agentId: string) {
+  let bindingsReference: AgentCapabilityBinding[] | undefined;
+  let readinessReference: CapabilityReadinessSnapshot | undefined;
+  let projection: AgentCapabilityBadgeProjection | undefined;
+
+  return (state: AgentCapabilityState): AgentCapabilityBadgeProjection => {
+    const bindings = state.bindingsByAgentId[agentId] ?? EMPTY_CAPABILITY_BINDINGS;
+    const readiness = state.readinessByAgentId[agentId];
+    if (
+      projection
+      && bindingsReference === bindings
+      && readinessReference === readiness
+    ) {
+      return projection;
+    }
+    bindingsReference = bindings;
+    readinessReference = readiness;
+    projection = {
+      bindings: selectAgentCapabilityBindings(state, agentId),
+      readiness: selectAgentCapabilityReadiness(state, agentId),
+    };
+    return projection;
+  };
+}
+
+function capabilityBadgeState(
+  bindings: AgentCapabilityBinding[],
+  readiness?: CapabilityReadinessSnapshot,
+): CapabilityReadinessState | undefined {
+  const enabledBindings = bindings.filter(
+    (binding) => binding.enabled && !binding.tombstonedAt,
+  );
+  if (enabledBindings.length === 0) return undefined;
+  const states = enabledBindings.map((binding) => readiness?.capabilities.find(
+    (item) =>
+      item.bindingId === binding.bindingId
+      && item.bindingRevision === binding.revision,
+  )?.state ?? CapabilityReadinessState.UNKNOWN);
+  if (states.some((state) =>
+    state === CapabilityReadinessState.UNAVAILABLE
+    || state === CapabilityReadinessState.BLOCKED)) {
+    return CapabilityReadinessState.UNAVAILABLE;
+  }
+  if (states.some((state) =>
+    state === CapabilityReadinessState.UNKNOWN
+    || state === CapabilityReadinessState.UNSPECIFIED)) {
+    return CapabilityReadinessState.UNKNOWN;
+  }
+  if (states.some((state) => state === CapabilityReadinessState.DEGRADED)) {
+    return CapabilityReadinessState.DEGRADED;
+  }
+  return CapabilityReadinessState.READY;
+}
 
 interface AgentSidebarProps {
   onEditAgent: (agent: Agent) => void;
@@ -252,14 +323,19 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   const handleExportAgentPackage = useCallback(async () => {
     if (!currentAgent) return;
     try {
-      const pkg = await api.exportAgentPackage(currentAgent.id);
-      const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+      const exported = await api.exportAgentPackage(currentAgent.id);
+      const blob = new Blob([JSON.stringify(exported.package, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
       anchor.download = `${currentAgent.name || currentAgent.id}.agent.json`;
       anchor.click();
       URL.revokeObjectURL(url);
+      if (exported.unresolvedDependencies.length > 0) {
+        toast.warning(t('agent.sidebar.toast.agentExportUnresolved', {
+          count: exported.unresolvedDependencies.length,
+        }));
+      }
       toast.success(t('agent.sidebar.toast.agentExported'));
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
@@ -271,7 +347,17 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     try {
       const text = await file.text();
       const pkg = JSON.parse(text);
-      const imported = await api.importAgentPackage(pkg);
+      const result = await api.importAgentPackage(pkg);
+      if (result.unresolvedDependencies.length > 0) {
+        toast.error(t('agent.sidebar.toast.agentImportUnresolved', {
+          count: result.unresolvedDependencies.length,
+        }));
+        return;
+      }
+      if (!result.agent) {
+        throw new Error(t('agent.sidebar.toast.agentImportFailed'));
+      }
+      const imported = result.agent;
       await loadAgents();
       void openAgentChatSession(imported, { reason: 'import-agent-package' });
       toast.success(t('agent.sidebar.toast.agentImported', { name: imported.title || imported.name }));
@@ -1539,12 +1625,46 @@ function AgentPickerItem({
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [hovered, setHovered] = useState(false);
+  const capabilitySelector = useMemo(
+    () => createAgentCapabilityBadgeSelector(agent.id),
+    [agent.id],
+  );
+  const capabilityProjection = useAgentCapabilityStore(capabilitySelector);
+  const canonicalCapabilityState = capabilityBadgeState(
+    capabilityProjection.bindings,
+    capabilityProjection.readiness,
+  );
   const chatConfig = parseAgentChatConfig(agent);
   const statusBadges = [
-    chatConfig.memory?.enabled ? t('agent.sidebar.status.memory') : '',
-    (chatConfig.tools?.length ?? 0) > 0 || (chatConfig.skills?.length ?? 0) > 0 || (chatConfig.mcpServers?.length ?? 0) > 0 ? t('agent.sidebar.status.tools') : '',
-    chatConfig.workspace?.root ? t('agent.sidebar.status.workspace') : '',
-  ].filter(Boolean);
+    chatConfig.memory?.enabled
+      ? { label: t('agent.sidebar.status.memory'), color: token.colorSuccess }
+      : undefined,
+    canonicalCapabilityState === undefined
+      ? undefined
+      : {
+          label: [
+            t('agent.sidebar.status.tools'),
+            canonicalCapabilityState === CapabilityReadinessState.READY
+              ? t('agent.profile.enabled')
+              : canonicalCapabilityState === CapabilityReadinessState.DEGRADED
+                ? t('agent.profile.degradation.partial')
+                : canonicalCapabilityState === CapabilityReadinessState.UNAVAILABLE
+                  ? t('agent.profile.degradation.unavailable')
+                  : t('agent.profile.unknown'),
+          ].join(' · '),
+          color:
+            canonicalCapabilityState === CapabilityReadinessState.READY
+              ? token.colorSuccess
+              : canonicalCapabilityState === CapabilityReadinessState.DEGRADED
+                ? token.colorWarning
+                : canonicalCapabilityState === CapabilityReadinessState.UNAVAILABLE
+                  ? token.colorError
+                  : token.colorTextQuaternary,
+        },
+    chatConfig.workspace?.root
+      ? { label: t('agent.sidebar.status.workspace'), color: token.colorSuccess }
+      : undefined,
+  ].filter((badge): badge is { label: string; color: string } => badge !== undefined);
 
   return (
     <Block
@@ -1579,7 +1699,9 @@ function AgentPickerItem({
       </Text>
       {statusBadges.length > 0 && (
         <span
-          title={t('agent.sidebar.status.summary', { status: statusBadges.join(' · ') })}
+          title={t('agent.sidebar.status.summary', {
+            status: statusBadges.map(({ label }) => label).join(' · '),
+          })}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -1589,12 +1711,12 @@ function AgentPickerItem({
         >
           {statusBadges.slice(0, 3).map((badge) => (
             <span
-              key={badge}
+              key={badge.label}
               style={{
                 width: 6,
                 height: 6,
                 borderRadius: 3,
-                background: token.colorSuccess,
+                background: badge.color,
               }}
             />
           ))}

@@ -1,7 +1,6 @@
-use crate::application::security::redact_secret_like_values;
 use crate::contracts::{
-    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentPackageExportInput,
-    AgentPackageImportInput, AgentSearchInput, AgentSelectInput, AgentUpdateInput, StubPayload,
+    AgentCreateInput, AgentDuplicateInput, AgentIdInput, AgentSearchInput, AgentSelectInput,
+    AgentUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::actor_bucket::actor_bucket_id;
@@ -14,10 +13,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_AGENT_NAME: &str = "assistant";
-const AGENT_PACKAGE_SCHEMA: &str = "peers.agent.package.v1";
 
 #[derive(Clone)]
 struct AgentRecord {
@@ -328,42 +325,6 @@ fn station_agent(token: &str, agent_id: &str) -> Result<Value, station_client::S
     ))
 }
 
-fn unique_station_agent_name(
-    token: &str,
-    requested: &str,
-) -> Result<String, station_client::StationClientError> {
-    let result = station_client::request_json_auth(
-        Method::POST,
-        "/sub-agent/agent/list",
-        token,
-        None,
-        Some(&json!({"page": 1, "page_size": 100})),
-    )?;
-    let existing = result
-        .get("agents")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|agent| agent.get("name").and_then(Value::as_str))
-        .collect::<Vec<_>>();
-    let base = requested.trim();
-    let base = if base.is_empty() {
-        DEFAULT_AGENT_NAME
-    } else {
-        base
-    };
-    if !existing.contains(&base) {
-        return Ok(base.to_string());
-    }
-    for index in 2..1000 {
-        let candidate = format!("{base} {index}");
-        if !existing.iter().any(|name| *name == candidate) {
-            return Ok(candidate);
-        }
-    }
-    Ok(format!("{base} {}", now_rfc3339()))
-}
-
 fn create_station_agent(
     actor_id: &str,
     token: &str,
@@ -520,8 +481,6 @@ fn normalize_agent_value(mut data: Value) -> Value {
         .or_insert_with(|| json!(""));
     obj.entry("openingQuestions".to_string())
         .or_insert_with(|| json!(""));
-    obj.entry("knowledgeResources".to_string())
-        .or_insert_with(|| json!(""));
     obj.entry("isDefault".to_string())
         .or_insert_with(|| json!(false));
     obj.entry("createdAt".to_string())
@@ -619,164 +578,6 @@ fn mark_default_agent(agents: &mut [AgentRecord], default_agent: &str) {
 fn set_default_agent(store: &mut AgentStore, name: String) {
     store.default_agent = name.clone();
     mark_default_agent(&mut store.agents, &name);
-}
-
-fn now_rfc3339() -> String {
-    let unix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_else(|_| Duration::from_secs(0))
-        .as_secs() as i64;
-    let dt =
-        time::OffsetDateTime::from_unix_timestamp(unix).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
-    dt.format(&time::format_description::well_known::Rfc3339)
-        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
-}
-
-fn sanitize_chat_config_for_export(
-    chat_config: &mut Value,
-    include_local_paths: bool,
-    redactions: &mut Vec<String>,
-) {
-    if include_local_paths {
-        return;
-    }
-    if let Some(workspace) = chat_config
-        .get_mut("workspace")
-        .and_then(Value::as_object_mut)
-    {
-        if workspace
-            .get("root")
-            .and_then(Value::as_str)
-            .map(|value| !value.trim().is_empty())
-            .unwrap_or(false)
-        {
-            workspace.insert("root".to_string(), json!(""));
-            redactions.push("agent.chatConfig.workspace.root".to_string());
-        }
-    }
-}
-
-fn is_shareable_knowledge_resource(resource: &Value) -> bool {
-    matches!(
-        resource.get("type").and_then(Value::as_str),
-        Some("url") | Some("notebook")
-    )
-}
-
-fn sanitize_knowledge_resources_for_export(
-    data: &mut Value,
-    include_local_paths: bool,
-    redactions: &mut Vec<String>,
-) {
-    if include_local_paths {
-        return;
-    }
-    let Some(raw) = data.get("knowledgeResources").and_then(Value::as_str) else {
-        return;
-    };
-    let Ok(parsed) = serde_json::from_str::<Value>(raw) else {
-        return;
-    };
-    let Some(resources) = parsed.as_array() else {
-        return;
-    };
-    let shareable = resources
-        .iter()
-        .filter(|resource| is_shareable_knowledge_resource(resource))
-        .cloned()
-        .collect::<Vec<_>>();
-    if shareable.len() != resources.len() {
-        redactions.push("agent.knowledgeResources.localSources".to_string());
-    }
-    if let Some(obj) = data.as_object_mut() {
-        let knowledge_json = serde_json::to_string(&shareable).unwrap_or_else(|_| "[]".to_string());
-        obj.insert("knowledgeResources".to_string(), json!(knowledge_json));
-    }
-}
-
-fn sanitize_agent_for_export(
-    record: &AgentRecord,
-    include_local_paths: bool,
-) -> (Value, Value, Vec<String>) {
-    let mut data = record.data.clone();
-    let mut redactions = Vec::new();
-    sanitize_knowledge_resources_for_export(&mut data, include_local_paths, &mut redactions);
-
-    let chat_config = data
-        .get("chatConfig")
-        .and_then(Value::as_str)
-        .and_then(|value| serde_json::from_str::<Value>(value).ok())
-        .unwrap_or_else(|| json!({}));
-    let mut chat_config = chat_config;
-    sanitize_chat_config_for_export(&mut chat_config, include_local_paths, &mut redactions);
-    redact_secret_like_values(&mut data, "agent", &mut redactions);
-    redact_secret_like_values(&mut chat_config, "chatBehavior", &mut redactions);
-
-    if let Some(obj) = data.as_object_mut() {
-        obj.insert("chatConfig".to_string(), json!(chat_config.to_string()));
-        obj.remove("params");
-        obj.remove("toolsAllow");
-        obj.remove("toolsDeny");
-        obj.remove("toolsProfile");
-        obj.insert("isDefault".to_string(), json!(false));
-        obj.remove("pinned");
-        obj.remove("favorite");
-        obj.remove("sortOrder");
-    }
-
-    (data, chat_config, redactions)
-}
-
-fn package_agent_data(record: &AgentRecord, include_local_paths: bool) -> Value {
-    let (data, chat_config, redactions) = sanitize_agent_for_export(record, include_local_paths);
-    json!({
-        "schemaVersion": AGENT_PACKAGE_SCHEMA,
-        "exportedAt": now_rfc3339(),
-        "source": {
-            "agentId": record.id,
-            "name": data.get("name").cloned().unwrap_or_else(|| json!(DEFAULT_AGENT_NAME)),
-            "packageType": "agent",
-            "exportedFrom": "desktop",
-            "sharePolicy": {
-                "includeLocalPaths": include_local_paths,
-                "secrets": "redacted"
-            },
-            "redactions": redactions
-        },
-        "agent": data,
-        "providerPreset": {
-            "provider": data.get("provider").cloned().unwrap_or_else(|| json!("")),
-            "model": data.get("model").cloned().unwrap_or_else(|| json!(""))
-        },
-        "bindings": {
-            "mcpServers": chat_config.get("mcpServers").cloned().unwrap_or_else(|| json!([])),
-            "tools": chat_config.get("tools").cloned().unwrap_or_else(|| json!([])),
-            "skills": chat_config.get("skills").cloned().unwrap_or_else(|| json!([]))
-        },
-        "opening": {
-            "message": data.get("openingMessage").cloned().unwrap_or_else(|| json!("")),
-            "questions": data.get("openingQuestions").cloned().unwrap_or_else(|| json!(""))
-        },
-        "chatBehavior": chat_config
-    })
-}
-
-fn agent_data_from_package(package: Value) -> Result<Value, String> {
-    let schema = package
-        .get("schemaVersion")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    if schema != AGENT_PACKAGE_SCHEMA {
-        return Err(format!("unsupported agent package schema: {schema}"));
-    }
-    let agent = package
-        .get("agent")
-        .cloned()
-        .ok_or_else(|| "agent package is missing agent".to_string())?;
-    if !agent.is_object() {
-        return Err("agent package agent must be an object".to_string());
-    }
-    Ok(agent)
 }
 
 pub fn agents_list(actor_id: &str, token: &str) -> AppResult<StubPayload> {
@@ -985,68 +786,6 @@ pub fn agents_duplicate(
     create_station_agent(actor_id, token, data, "agents_duplicate")
 }
 
-pub fn agents_export_package(
-    _actor_id: &str,
-    token: &str,
-    input: AgentPackageExportInput,
-) -> AppResult<StubPayload> {
-    if input.id.trim().is_empty() {
-        return invalid_argument("id is required");
-    }
-    if let Err(error) = require_token(token) {
-        return error;
-    }
-    let data = match station_agent(token, &input.id) {
-        Ok(agent) => agent,
-        Err(error) => return station_failure(error, "Failed to load Agent before export"),
-    };
-    let Some(agent) = record_from_value(data) else {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            "Station returned an Agent without an id",
-            None,
-        );
-    };
-    success_payload(
-        "agents_export_package",
-        json!({ "package": package_agent_data(&agent, input.include_local_paths) }),
-    )
-}
-
-pub fn agents_import_package(
-    actor_id: &str,
-    token: &str,
-    input: AgentPackageImportInput,
-) -> AppResult<StubPayload> {
-    if let Err(error) = require_token(token) {
-        return error;
-    }
-    let mut data = match agent_data_from_package(input.package) {
-        Ok(data) => data,
-        Err(error) => return AppResult::fail(ErrorCode::InvalidArgument, error, None),
-    };
-    let requested_name = input
-        .name
-        .as_deref()
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .or_else(|| data.get("name").and_then(Value::as_str))
-        .unwrap_or(DEFAULT_AGENT_NAME);
-    let unique_name = match unique_station_agent_name(token, requested_name) {
-        Ok(name) => name,
-        Err(error) => return station_failure(error, "Failed to resolve imported Agent name"),
-    };
-    if let Some(obj) = data.as_object_mut() {
-        obj.insert("name".to_string(), json!(unique_name));
-        obj.insert("isDefault".to_string(), json!(false));
-        obj.remove("id");
-        obj.remove("version");
-        obj.remove("createdAt");
-        obj.remove("updatedAt");
-    }
-    create_station_agent(actor_id, token, data, "agents_import_package")
-}
-
 pub fn agents_search(actor_id: &str, input: AgentSearchInput) -> AppResult<StubPayload> {
     if input.q.trim().is_empty() {
         return invalid_argument("q is required");
@@ -1102,28 +841,5 @@ mod tests {
         assert_eq!(body["visibility"], "private");
         assert_eq!(body["version"], 2);
         assert_eq!(body["thinking_mode"], "disabled");
-    }
-
-    #[test]
-    fn agent_package_round_trip_keeps_runtime_identity_and_redacts_secrets() {
-        let record = record_from_value(json!({
-            "id": "agent-1",
-            "name": "coder",
-            "provider": "ark",
-            "model": "ep-model",
-            "chatConfig": "{\"mcpServers\":[\"local\"],\"api_key\":\"secret\"}",
-            "knowledgeResources": "[{\"id\":\"docs\",\"type\":\"url\",\"source\":\"https://example.test\"}]"
-        }))
-        .expect("agent record");
-
-        let package = package_agent_data(&record, false);
-        let text = package.to_string();
-        assert_eq!(package["providerPreset"]["provider"], "ark");
-        assert_eq!(package["providerPreset"]["model"], "ep-model");
-        assert!(!text.contains("\"api_key\":\"secret\""));
-
-        let imported = agent_data_from_package(package).expect("package round trip");
-        assert_eq!(imported["provider"], "ark");
-        assert_eq!(imported["model"], "ep-model");
     }
 }

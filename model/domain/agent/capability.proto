@@ -114,6 +114,24 @@ enum ConnectorErrorCode {
   CONNECTOR_ERROR_CODE_MANIFEST_STALE = 4;
 }
 
+enum KnowledgeResourceKind {
+  KNOWLEDGE_RESOURCE_KIND_UNSPECIFIED = 0;
+  KNOWLEDGE_RESOURCE_KIND_DOCUMENT = 1;
+  KNOWLEDGE_RESOURCE_KIND_FOLDER = 2;
+  KNOWLEDGE_RESOURCE_KIND_PROJECT = 3;
+  KNOWLEDGE_RESOURCE_KIND_URL_SNAPSHOT = 4;
+  KNOWLEDGE_RESOURCE_KIND_NOTEBOOK = 5;
+  KNOWLEDGE_RESOURCE_KIND_WORKSPACE = 6;
+}
+
+enum KnowledgeResourceAvailability {
+  KNOWLEDGE_RESOURCE_AVAILABILITY_UNSPECIFIED = 0;
+  KNOWLEDGE_RESOURCE_AVAILABILITY_READY = 1;
+  KNOWLEDGE_RESOURCE_AVAILABILITY_INDEXING = 2;
+  KNOWLEDGE_RESOURCE_AVAILABILITY_UNAVAILABLE = 3;
+  KNOWLEDGE_RESOURCE_AVAILABILITY_TOMBSTONED = 4;
+}
+
 message CapabilityDisplayMetadata {
   string name = 1;
   string description = 2;
@@ -134,6 +152,11 @@ message CapabilityManifest {
   CapabilityApprovalPolicy default_approval_policy = 11;
   string secret_boundary = 12;
   CapabilityAvailability availability = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp retired_at = 15;
+  string retired_by_ptid = 16;
+  string retirement_reason = 17;
+  string owner_ptid = 18;
 }
 
 message AgentCapabilityBinding {
@@ -147,6 +170,9 @@ message AgentCapabilityBinding {
   uint64 expected_agent_version = 8;
   uint64 revision = 9;
   google.protobuf.Timestamp updated_at = 10;
+  google.protobuf.Timestamp tombstoned_at = 11;
+  string tombstoned_by_ptid = 12;
+  string tombstone_reason = 13;
 }
 
 message CapabilityReadiness {
@@ -251,6 +277,9 @@ message CapabilityOperation {
   google.protobuf.Timestamp created_at = 31;
   google.protobuf.Timestamp updated_at = 32;
   google.protobuf.Timestamp terminal_at = 33;
+  bytes bounded_arguments = 34;
+  string external_idempotency_key = 35;
+  uint64 dispatch_sequence = 36;
 }
 
 message CapabilityOperationEvent {
@@ -283,12 +312,161 @@ message ConnectorResourceManifest {
   google.protobuf.Timestamp expires_at = 10;
 }
 
+message KnowledgeStationContentRef {
+  string content_ref = 1;
+}
+
+message KnowledgeClientResourceRef {
+  string opaque_resource_ref = 1;
+  string required_capability_id = 2;
+  string required_capability_version = 3;
+  string device_id = 4;
+  string integrity_hash = 5;
+}
+
+message KnowledgeResourceDescriptor {
+  string resource_id = 1;
+  string ptid = 2;
+  uint64 revision = 3;
+  KnowledgeResourceKind resource_kind = 4;
+  oneof locator {
+    KnowledgeStationContentRef station_content_ref = 5;
+    KnowledgeClientResourceRef client_resource_ref = 6;
+  }
+  string content_hash = 7;
+  string index_revision = 8;
+  KnowledgeResourceAvailability availability = 9;
+  string reason_code = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  google.protobuf.Timestamp tombstoned_at = 13;
+  string title = 14;
+  string tombstoned_by_ptid = 15;
+  string tombstone_reason = 16;
+}
+
+message CreateKnowledgeResourceDescriptorRequest {
+  KnowledgeResourceKind resource_kind = 1;
+  oneof source {
+    bytes station_content = 2;
+    KnowledgeClientResourceRef client_resource_ref = 3;
+  }
+  string idempotency_key = 4;
+  string title = 5;
+}
+
+message CreateKnowledgeResourceDescriptorResponse {
+  KnowledgeResourceDescriptor descriptor = 1;
+  CapabilityManifest manifest = 2;
+}
+
+message UpdateKnowledgeResourceDescriptorRequest {
+  string resource_id = 1;
+  uint64 expected_revision = 2;
+  KnowledgeResourceKind resource_kind = 3;
+  oneof source {
+    bytes station_content = 4;
+    KnowledgeClientResourceRef client_resource_ref = 5;
+  }
+  string idempotency_key = 6;
+  string title = 7;
+}
+
+message UpdateKnowledgeResourceDescriptorResponse {
+  KnowledgeResourceDescriptor descriptor = 1;
+  CapabilityManifest manifest = 2;
+}
+
+message ListKnowledgeResourceDescriptorsRequest {
+  bool include_tombstoned = 1;
+  string cursor = 2;
+  uint32 page_size = 3;
+}
+
+message ListKnowledgeResourceDescriptorsResponse {
+  repeated KnowledgeResourceDescriptor descriptors = 1;
+  string next_cursor = 2;
+}
+
+message TombstoneKnowledgeResourceDescriptorRequest {
+  string resource_id = 1;
+  uint64 expected_revision = 2;
+  string idempotency_key = 3;
+  string reason = 4;
+}
+
+message TombstoneKnowledgeResourceDescriptorResponse {
+  KnowledgeResourceDescriptor descriptor = 1;
+  CapabilityManifest manifest = 2;
+}
+
+message AgentPackageBindingRef {
+  string capability_id = 1;
+  string capability_version = 2;
+  bool enabled = 3;
+  CapabilityApprovalPolicy approval_policy = 4;
+}
+
+message AgentPackageKnowledgeResource {
+  string package_resource_id = 1;
+  KnowledgeResourceKind resource_kind = 2;
+  string title = 3;
+  bytes station_content = 4;
+  string content_hash = 5;
+  string index_revision = 6;
+}
+
+message AgentPackageDocument {
+  string schema_version = 1;
+  Agent agent = 2;
+  repeated AgentPackageBindingRef bindings = 3;
+  repeated AgentPackageKnowledgeResource knowledge_resources = 4;
+}
+
+message AgentPackageUnresolvedDependency {
+  string package_resource_id = 1;
+  string capability_id = 2;
+  string capability_version = 3;
+  string reason_code = 4;
+}
+
+message ExportAgentPackageRequest {
+  string agent_id = 1;
+}
+
+message ExportAgentPackageResponse {
+  AgentPackageDocument package = 1;
+  repeated AgentPackageUnresolvedDependency unresolved_dependencies = 2;
+}
+
+message ImportAgentPackageRequest {
+  AgentPackageDocument package = 1;
+  string name = 2;
+  string idempotency_key = 3;
+}
+
+message ImportAgentPackageResponse {
+  Agent agent = 1;
+  repeated AgentPackageUnresolvedDependency unresolved_dependencies = 2;
+}
+
 message ListCapabilityManifestsRequest {
   repeated CapabilitySourceKind source_kinds = 1;
 }
 
 message ListCapabilityManifestsResponse {
   repeated CapabilityManifest manifests = 1;
+}
+
+message RetireCapabilityManifestRequest {
+  string capability_id = 1;
+  string version = 2;
+  string idempotency_key = 3;
+  string reason = 4;
+}
+
+message RetireCapabilityManifestResponse {
+  CapabilityManifest manifest = 1;
 }
 
 message ListAgentCapabilityBindingsRequest {
@@ -302,9 +480,21 @@ message ListAgentCapabilityBindingsResponse {
 message UpsertAgentCapabilityBindingRequest {
   AgentCapabilityBinding binding = 1;
   string idempotency_key = 2;
+  uint64 expected_binding_revision = 3;
 }
 
 message UpsertAgentCapabilityBindingResponse {
+  AgentCapabilityBinding binding = 1;
+}
+
+message DeleteAgentCapabilityBindingRequest {
+  string binding_id = 1;
+  uint64 expected_binding_revision = 2;
+  string idempotency_key = 3;
+  string reason = 4;
+}
+
+message DeleteAgentCapabilityBindingResponse {
   AgentCapabilityBinding binding = 1;
 }
 
@@ -343,6 +533,7 @@ message StartCapabilityOperationRequest {
   string capability_session_id = 5;
   bytes bounded_arguments = 6;
   string idempotency_key = 7;
+  google.protobuf.Timestamp deadline = 8;
 }
 
 message StartCapabilityOperationResponse {
@@ -364,6 +555,77 @@ message GetCapabilityOperationRequest {
 }
 
 message GetCapabilityOperationResponse {
+  CapabilityOperation operation = 1;
+}
+
+message ReportCapabilityOperationEventRequest {
+  CapabilityOperationEvent event = 1;
+  string target_device_id = 2;
+  string capability_session_id = 3;
+  string executor_lease_id = 4;
+  string cleanup_lease_id = 5;
+  uint64 cleanup_epoch = 6;
+  uint64 cleanup_fencing_token = 7;
+  string cleanup_outcome = 8;
+  ClientCapabilityCommandProof command_proof = 9;
+}
+
+message ReportCapabilityOperationEventResponse {
+  CapabilityOperation operation = 1;
+  bool replayed = 2;
+}
+
+message ReconcileCapabilityOperationRequest {
+  string operation_id = 1;
+  uint64 after_sequence = 2;
+}
+
+message ReconcileCapabilityOperationResponse {
+  CapabilityOperation operation = 1;
+  repeated CapabilityOperationEvent events = 2;
+}
+
+message PullCapabilityOperationsRequest {
+  string capability_session_id = 1;
+  string device_id = 2;
+  uint64 after_sequence = 3;
+  uint32 limit = 4;
+  ClientCapabilityCommandProof command_proof = 5;
+}
+
+message PullCapabilityOperationsResponse {
+  repeated CapabilityOperation operations = 1;
+  uint64 last_sequence = 2;
+  ClientCapabilityCommandErrorCode error_code = 3;
+}
+
+message TakeOverCapabilityOperationRequest {
+  reserved 5;
+  reserved "executor_lease_id";
+  string operation_id = 1;
+  uint64 expected_revision = 2;
+  string target_device_id = 3;
+  string capability_session_id = 4;
+  bool cleanup_only = 6;
+  string external_idempotency_key = 7;
+  ClientCapabilityCommandProof command_proof = 8;
+}
+
+message TakeOverCapabilityOperationResponse {
+  CapabilityOperation operation = 1;
+}
+
+message TakeOverCapabilityCleanupRequest {
+  reserved 5;
+  reserved "cleanup_lease_id";
+  string operation_id = 1;
+  uint64 expected_cleanup_epoch = 2;
+  string target_device_id = 3;
+  string capability_session_id = 4;
+  ClientCapabilityCommandProof command_proof = 6;
+}
+
+message TakeOverCapabilityCleanupResponse {
   CapabilityOperation operation = 1;
 }
 

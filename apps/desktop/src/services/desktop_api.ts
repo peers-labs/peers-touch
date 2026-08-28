@@ -1,6 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
-import { fromBinary, fromJsonString } from '@bufbuild/protobuf';
-import type { Message as ProtoMessage } from '@bufbuild/protobuf';
+import {
+  create,
+  fromBinary,
+  fromJsonString,
+  toBinary,
+  toJson,
+} from '@bufbuild/protobuf';
+import type { JsonValue, Message as ProtoMessage } from '@bufbuild/protobuf';
 import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
 import { throttleInvoke } from '../kernel/invokeThrottler';
@@ -81,6 +87,37 @@ import {
   ListTurnFeedbackResponseSchema,
   RecordFeedbackResponseSchema,
 } from '../gen/proto/domain/agent/agent_pb';
+import type {
+  CapabilityApprovalPolicy,
+  CapabilityReadinessSnapshot as ProtoCapabilityReadinessSnapshot,
+  CapabilitySourceKind,
+  AgentPackageUnresolvedDependency,
+  CreateKnowledgeResourceDescriptorRequest,
+  ListKnowledgeResourceDescriptorsRequest,
+  TombstoneKnowledgeResourceDescriptorRequest,
+  UpdateKnowledgeResourceDescriptorRequest,
+} from '../gen/proto/domain/agent/capability_pb';
+import {
+  DeleteAgentCapabilityBindingResponseSchema,
+  AgentPackageDocumentSchema,
+  AgentCapabilityBindingSchema,
+  CreateKnowledgeResourceDescriptorRequestSchema,
+  CreateKnowledgeResourceDescriptorResponseSchema,
+  GetCapabilityReadinessResponseSchema,
+  ListAgentCapabilityBindingsResponseSchema,
+  ListCapabilityManifestsResponseSchema,
+  ListKnowledgeResourceDescriptorsRequestSchema,
+  ListKnowledgeResourceDescriptorsResponseSchema,
+  ExportAgentPackageRequestSchema,
+  ExportAgentPackageResponseSchema,
+  ImportAgentPackageRequestSchema,
+  ImportAgentPackageResponseSchema,
+  TombstoneKnowledgeResourceDescriptorRequestSchema,
+  TombstoneKnowledgeResourceDescriptorResponseSchema,
+  UpdateKnowledgeResourceDescriptorRequestSchema,
+  UpdateKnowledgeResourceDescriptorResponseSchema,
+  UpsertAgentCapabilityBindingResponseSchema,
+} from '../gen/proto/domain/agent/capability_pb';
 import type {
   ClaimDesktopExecutorTaskResponse,
   CollaborationTask,
@@ -243,6 +280,10 @@ const ALWAYS_QUIET_COMMANDS = new Set([
   'ice_peer_register',
   'frontend_telemetry_upload',
   'notification_list',
+  'agent_knowledge_descriptor_create',
+  'agent_knowledge_descriptor_update',
+  'agent_knowledge_descriptor_list',
+  'agent_knowledge_descriptor_tombstone',
   'applets_action',
   'applets_invoke',
   'applets_set_config',
@@ -502,6 +543,22 @@ export async function invokeRustProto<TInput, TMsg extends ProtoMessage>(
     throw new AuthCommandException(response.error);
   }
   throw new Error(response.error?.message || `${command} failed`);
+}
+
+async function invokeRustProtoRequest<
+  TRequest extends ProtoMessage,
+  TResponse extends ProtoMessage,
+>(
+  command: string,
+  requestSchema: GenMessage<TRequest>,
+  responseSchema: GenMessage<TResponse>,
+  request: TRequest,
+): Promise<TResponse> {
+  return invokeRustProto(
+    command,
+    responseSchema,
+    { requestBytes: Array.from(toBinary(requestSchema, request)) },
+  );
 }
 
 function normalizeGroupChatFederatedActors(
@@ -864,23 +921,6 @@ export interface AgentProviderFallbackConfig {
   maxRetries?: number;
 }
 
-export type AgentKnowledgeResourceType = 'document' | 'folder' | 'project' | 'url' | 'notebook' | 'workspace';
-export type AgentKnowledgeResourcePolicy = 'manual' | 'auto' | 'always' | 'disabled';
-export type AgentKnowledgeResourceStatus = 'bound' | 'pending_index' | 'indexed' | 'error';
-
-export interface AgentKnowledgeResource {
-  id: string;
-  type: AgentKnowledgeResourceType;
-  title: string;
-  source: string;
-  policy: AgentKnowledgeResourcePolicy;
-  status: AgentKnowledgeResourceStatus;
-  lastIndexedAt?: string;
-  error?: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 export interface AgentChatConfig {
   historyCount?: number;
   enableHistoryCount?: boolean;
@@ -896,19 +936,6 @@ export interface AgentChatConfig {
   memory?: AgentMemoryConfig;
   providerFallback?: AgentProviderFallbackConfig;
   workspace?: AgentWorkspaceConfig;
-  mcpServers?: string[];
-  tools?: string[];
-  skills?: string[];
-  connectors?: AgentConnectorConfigEntry[];
-}
-
-// C7 Connectors — per-agent connector mount persisted in chatConfig (durable via Station
-// config_json, mirroring mcpServers/skills/tools). `enabledTools` is synced from the OAuth2
-// provider's declared resources. This is the agent↔connector mount relation (LobeHub
-// `mountConnectorToAgent`); the OAuth connection itself lives in the existing OAuth2 subsystem.
-export interface AgentConnectorConfigEntry {
-  connectorId: string;
-  enabledTools: string[];
 }
 
 export interface Agent {
@@ -938,7 +965,6 @@ export interface Agent {
   openingMessage: string;
   openingQuestions: string;
   chatConfig: string;
-  knowledgeResources: string;
   isDefault: boolean;
   version: number;
   createdAt: string;
@@ -971,7 +997,6 @@ export interface AgentCreate {
   openingMessage?: string;
   openingQuestions?: string;
   chatConfig?: string;
-  knowledgeResources?: string;
   version?: number;
 }
 
@@ -988,40 +1013,16 @@ export interface AgentWorkspaceInfo {
   last_modified_at?: string;
 }
 
-export interface AgentPackage {
-  schemaVersion: 'peers.agent.package.v1';
-  exportedAt: string;
-  source: {
-    agentId: string;
-    name: string;
-    packageType?: 'agent';
-    exportedFrom?: 'desktop' | string;
-    sharePolicy?: {
-      includeLocalPaths?: boolean;
-      secrets?: 'redacted' | string;
-    };
-    redactions?: string[];
-  };
-  agent: Agent;
-  providerPreset: {
-    provider: string;
-    model: string;
-  };
-  bindings: {
-    mcpServers: string[];
-    tools: string[];
-    skills: string[];
-  };
-  opening: {
-    message: string;
-    questions: string;
-  };
-  chatBehavior: AgentChatConfig;
+export type AgentPackage = JsonValue;
+
+export interface AgentPackageExportResult {
+  package: AgentPackage;
+  unresolvedDependencies: AgentPackageUnresolvedDependency[];
 }
 
-export interface AgentPackageImportInput {
-  package: AgentPackage | Record<string, unknown>;
-  name?: string;
+export interface AgentPackageImportResult {
+  agent?: Agent;
+  unresolvedDependencies: AgentPackageUnresolvedDependency[];
 }
 
 export interface AgentListResult {
@@ -1111,56 +1112,16 @@ export interface AgentCollaborationStreamPayload {
   data: Record<string, any>;
 }
 
+export interface AgentAuthorityStreamPayload {
+  streamId: string;
+  agentId: string;
+  event: string;
+  data: Record<string, unknown>;
+}
+
 export function parseAgentChatConfig(agent: Agent): AgentChatConfig {
   if (!agent.chatConfig) return {};
   try { return JSON.parse(agent.chatConfig); } catch { return {}; }
-}
-
-function normalizeKnowledgeResource(raw: unknown): AgentKnowledgeResource | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const item = raw as Partial<AgentKnowledgeResource>;
-  const source = typeof item.source === 'string' ? item.source.trim() : '';
-  if (!source) return null;
-  const id = typeof item.id === 'string' && item.id.trim()
-    ? item.id.trim()
-    : `knowledge:${Date.now()}:${source}`;
-  const typeValues: AgentKnowledgeResourceType[] = ['document', 'folder', 'project', 'url', 'notebook', 'workspace'];
-  const policyValues: AgentKnowledgeResourcePolicy[] = ['manual', 'auto', 'always', 'disabled'];
-  const statusValues: AgentKnowledgeResourceStatus[] = ['bound', 'pending_index', 'indexed', 'error'];
-  const type = typeValues.includes(item.type as AgentKnowledgeResourceType)
-    ? item.type as AgentKnowledgeResourceType
-    : 'document';
-  const policy = policyValues.includes(item.policy as AgentKnowledgeResourcePolicy)
-    ? item.policy as AgentKnowledgeResourcePolicy
-    : 'manual';
-  const status = statusValues.includes(item.status as AgentKnowledgeResourceStatus)
-    ? item.status as AgentKnowledgeResourceStatus
-    : 'bound';
-  return {
-    id,
-    type,
-    title: typeof item.title === 'string' && item.title.trim() ? item.title.trim() : source,
-    source,
-    policy,
-    status,
-    lastIndexedAt: typeof item.lastIndexedAt === 'string' ? item.lastIndexedAt : '',
-    error: typeof item.error === 'string' ? item.error : '',
-    createdAt: typeof item.createdAt === 'string' ? item.createdAt : '',
-    updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : '',
-  };
-}
-
-export function parseAgentKnowledgeResources(agent: Agent): AgentKnowledgeResource[] {
-  if (!agent.knowledgeResources) return [];
-  try {
-    const parsed = JSON.parse(agent.knowledgeResources);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map(normalizeKnowledgeResource)
-      .filter((item): item is AgentKnowledgeResource => Boolean(item));
-  } catch {
-    return [];
-  }
 }
 
 export interface ToolInfo {
@@ -2479,7 +2440,6 @@ export interface AgentExecuteTurnInput {
   context_window_size?: number;
   max_retries?: number;
   client_capability_session_id?: string;
-  knowledge_resources?: AgentExecuteTurnKnowledgeResource[];
   available_tools?: McpToolSchemaEntry[];
   memory_disabled?: boolean;
 }
@@ -2487,17 +2447,6 @@ export interface AgentExecuteTurnInput {
 function createAgentTurnStreamId(): string {
   const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `agent-turn-${randomId}`;
-}
-
-export interface AgentExecuteTurnKnowledgeResource {
-  resource_id: string;
-  agent_id: string;
-  type: number;
-  title: string;
-  source: string;
-  policy: number;
-  status: number;
-  last_indexed_at?: string;
 }
 
 export interface AgentTurnStreamCancelInput {
@@ -2555,26 +2504,50 @@ export interface AgentCapabilityReadinessInput {
   client_capability_session_id?: string;
 }
 
-export interface AgentCapabilityReadinessSnapshot {
-  snapshot_id: string;
-  ptid: string;
-  agent_id: string;
-  runtime_snapshot_id: string;
-  model_capabilities: Record<string, unknown> | null;
-  binding_revisions: string[];
-  connection_revisions: string[];
-  selected_client_session_id?: string;
-  capabilities: Array<{
-    capability_id: string;
-    capability_version: string;
-    binding_id: string;
-    binding_revision: number;
-    state: string;
-    authority: string;
-    reason_code: string;
-  }>;
-  created_at: { seconds: number; nanos: number } | null;
-  expires_at: { seconds: number; nanos: number } | null;
+type SnakeCase<S extends string> =
+  S extends `${infer Head}${infer Tail}`
+    ? Tail extends Uncapitalize<Tail>
+      ? `${Lowercase<Head>}${SnakeCase<Tail>}`
+      : `${Lowercase<Head>}_${SnakeCase<Uncapitalize<Tail>>}`
+    : S;
+
+type ProtoJsonProjection<T> =
+  T extends bigint ? string
+    : T extends Uint8Array ? string
+      : T extends ReadonlyArray<infer Item> ? ProtoJsonProjection<Item>[]
+        : T extends object
+          ? {
+              [Key in keyof T as Key extends '$typeName'
+                ? never
+                : Key extends string
+                  ? SnakeCase<Key>
+                  : Key]: ProtoJsonProjection<T[Key]>
+            }
+          : T;
+
+/**
+ * Legacy acceptance callers consume protobuf JSON field names. The shape is
+ * derived from the generated message so readiness never gains a parallel DTO.
+ */
+export type AgentCapabilityReadinessSnapshot =
+  ProtoJsonProjection<ProtoCapabilityReadinessSnapshot>;
+
+export interface AgentCapabilityBindingInput {
+  bindingId?: string;
+  agentId: string;
+  capabilityId: string;
+  capabilityVersion: string;
+  enabled: boolean;
+  approvalPolicy: CapabilityApprovalPolicy;
+  expectedAgentVersion: number | bigint;
+}
+
+function toRustUint64(value: number | bigint, field: string): number {
+  const numeric = Number(value);
+  if (!Number.isSafeInteger(numeric) || numeric < 0) {
+    throw new Error(`agent.capabilityInvalidUint64:${field}`);
+  }
+  return numeric;
 }
 
 export interface AgentRuntimeActivityInput {
@@ -2632,6 +2605,10 @@ export interface AgentCapabilitySessionSnapshot {
     capability_ids: string[];
     local_execution_attempt_count: number;
     local_side_effect_count: number;
+    tool_call_side_effect_counts: Array<{
+      tool_call_id: string;
+      side_effect_count: number;
+    }>;
     expires_at_ms: number;
   }>;
 }
@@ -2955,43 +2932,6 @@ export interface AgentTaskSubtaskCompleteInput {
 export interface AgentMessageTranslateInput {
   message_id: string;
   translation: string;
-}
-
-// C6 Knowledge bindings — first-class agent↔resource join rows in Station
-// `agent_knowledge_bindings` (mirrors LobeHub `agentsFiles`). The resource descriptors
-// (title/source/type) stay in agent config_json; these rows are the queryable relation.
-export interface AgentKnowledgeBindingListInput {
-  agent_id: string;
-}
-
-export interface AgentKnowledgeBindingCreateInput {
-  agent_id: string;
-  resource_id: string;
-  policy?: string;
-  enabled?: boolean;
-}
-
-export interface AgentKnowledgeBindingUpdateInput {
-  id: string;
-  agent_id: string;
-  resource_id: string;
-  policy?: string;
-  enabled?: boolean;
-}
-
-export interface AgentKnowledgeBindingDeleteInput {
-  id: string;
-}
-
-// Raw Station binding row (protojson camelCase from the typed config handler).
-export interface StationAgentKnowledgeBindingRow {
-  id: string;
-  agentId: string;
-  resourceId: string;
-  policy: string;
-  enabled: boolean;
-  createdAt?: string;
-  updatedAt?: string;
 }
 
 // Station task row (snake_case json tags from agent_task_handler).
@@ -3832,18 +3772,53 @@ export const api = {
   duplicateAgent: (id: string, name: string) =>
     invokeRustDataFromStatus<AgentDuplicateInput, Agent>('agents_duplicate', { id, name }),
 
-  exportAgentPackage: (id: string, options?: { includeLocalPaths?: boolean }) =>
-    invokeRustDataFromStatus<AgentIdInput, { package: AgentPackage }>('agents_export_package', {
-      id,
-      includeLocalPaths: Boolean(options?.includeLocalPaths),
-    })
-      .then((r) => r.package),
+  exportAgentPackage: async (
+    id: string,
+    _options?: { includeLocalPaths?: boolean },
+  ): Promise<AgentPackageExportResult> => {
+    const response = await invokeRustProtoRequest(
+      'agent_package_export',
+      ExportAgentPackageRequestSchema,
+      ExportAgentPackageResponseSchema,
+      create(ExportAgentPackageRequestSchema, { agentId: id }),
+    );
+    if (!response.package) {
+      throw new Error('agent.packageExportResponseMissing');
+    }
+    return {
+      package: toJson(AgentPackageDocumentSchema, response.package, {
+        enumAsInteger: true,
+      }) as unknown as AgentPackage,
+      unresolvedDependencies: response.unresolvedDependencies,
+    };
+  },
 
-  importAgentPackage: (pkg: AgentPackage | Record<string, unknown>, name?: string) =>
-    invokeRustDataFromStatus<AgentPackageImportInput, Agent>('agents_import_package', {
-      package: pkg,
-      name,
-    }),
+  importAgentPackage: async (
+    pkg: AgentPackage | Record<string, unknown>,
+    name?: string,
+  ): Promise<AgentPackageImportResult> => {
+    const document = fromJsonString(
+      AgentPackageDocumentSchema,
+      JSON.stringify(pkg),
+      { ignoreUnknownFields: false },
+    );
+    const response = await invokeRustProtoRequest(
+      'agent_package_import',
+      ImportAgentPackageRequestSchema,
+      ImportAgentPackageResponseSchema,
+      create(ImportAgentPackageRequestSchema, {
+        package: document,
+        name: name ?? '',
+        idempotencyKey: globalThis.crypto.randomUUID(),
+      }),
+    );
+    return {
+      agent: response.agent
+        ? await api.getAgent(response.agent.agentId)
+        : undefined,
+      unresolvedDependencies: response.unresolvedDependencies,
+    };
+  },
 
   searchAgents: (q: string) =>
     invokeRustDataFromStatus<AgentSearchInput, { agents: Agent[] }>('agents_search', { q }).then((r) => r.agents),
@@ -3931,6 +3906,18 @@ export const api = {
   cancelAgentCollaborationStream: (streamId: string) =>
     invokeRustDataFromStatus<{ stream_id: string }, { stream_id: string }>(
       'agent_collaboration_cancel_stream',
+      { stream_id: streamId },
+    ),
+
+  startAgentEventStream: (agentId: string, streamId: string) =>
+    invokeRustDataFromStatus<
+      { agent_id: string; stream_id: string },
+      { stream_id: string }
+    >('agent_events_subscribe', { agent_id: agentId, stream_id: streamId }),
+
+  cancelAgentEventStream: (streamId: string) =>
+    invokeRustDataFromStatus<{ stream_id: string }, { stream_id: string }>(
+      'agent_events_cancel',
       { stream_id: streamId },
     ),
 
@@ -4517,11 +4504,154 @@ export const api = {
       input,
     ),
 
-  getAgentCapabilityReadiness: (input: AgentCapabilityReadinessInput) =>
-    invokeRustDataFromStatus<AgentCapabilityReadinessInput, AgentCapabilityReadinessSnapshot>(
+  listCapabilityManifests: (sourceKinds: readonly CapabilitySourceKind[] = []) =>
+    invokeRustProto(
+      'agent_capability_manifest_list',
+      ListCapabilityManifestsResponseSchema,
+      { sourceKinds: [...sourceKinds] },
+    ).then((response) => response.manifests),
+
+  listAgentCapabilityBindings: (agentId: string) =>
+    invokeRustProto(
+      'agent_capability_binding_list',
+      ListAgentCapabilityBindingsResponseSchema,
+      { agentId },
+    ).then((response) => response.bindings),
+
+  upsertAgentCapabilityBinding: (
+    input: AgentCapabilityBindingInput,
+    expectedBindingRevision: number | bigint,
+    idempotencyKey: string,
+  ) => {
+    const expectedAgentVersion = toRustUint64(
+      input.expectedAgentVersion,
+      'expectedAgentVersion',
+    );
+    const binding = create(AgentCapabilityBindingSchema, {
+      ...input,
+      bindingId: input.bindingId ?? '',
+      expectedAgentVersion: BigInt(expectedAgentVersion),
+    });
+    return invokeRustProto(
+      'agent_capability_binding_upsert',
+      UpsertAgentCapabilityBindingResponseSchema,
+      {
+        binding: {
+          bindingId: binding.bindingId,
+          agentId: binding.agentId,
+          capabilityId: binding.capabilityId,
+          capabilityVersion: binding.capabilityVersion,
+          enabled: binding.enabled,
+          approvalPolicy: binding.approvalPolicy,
+          expectedAgentVersion,
+        },
+        idempotencyKey,
+        expectedBindingRevision: toRustUint64(
+          expectedBindingRevision,
+          'expectedBindingRevision',
+        ),
+      },
+    ).then((response) => {
+      if (!response.binding) {
+        throw new Error('agent.capabilityBindingResponseMissing');
+      }
+      return response.binding;
+    });
+  },
+
+  deleteAgentCapabilityBinding: (
+    bindingId: string,
+    expectedBindingRevision: number | bigint,
+    idempotencyKey: string,
+    reason: string,
+  ) =>
+    invokeRustProto(
+      'agent_capability_binding_delete',
+      DeleteAgentCapabilityBindingResponseSchema,
+      {
+        bindingId,
+        expectedBindingRevision: toRustUint64(
+          expectedBindingRevision,
+          'expectedBindingRevision',
+        ),
+        idempotencyKey,
+        reason,
+      },
+    ).then((response) => {
+      if (!response.binding) {
+        throw new Error('agent.capabilityBindingResponseMissing');
+      }
+      return response.binding;
+    }),
+
+  createKnowledgeResourceDescriptor: (
+    request: CreateKnowledgeResourceDescriptorRequest,
+  ) => invokeRustProtoRequest(
+    'agent_knowledge_descriptor_create',
+    CreateKnowledgeResourceDescriptorRequestSchema,
+    CreateKnowledgeResourceDescriptorResponseSchema,
+    request,
+  ),
+
+  updateKnowledgeResourceDescriptor: (
+    request: UpdateKnowledgeResourceDescriptorRequest,
+  ) => invokeRustProtoRequest(
+    'agent_knowledge_descriptor_update',
+    UpdateKnowledgeResourceDescriptorRequestSchema,
+    UpdateKnowledgeResourceDescriptorResponseSchema,
+    request,
+  ),
+
+  listKnowledgeResourceDescriptors: (
+    request: ListKnowledgeResourceDescriptorsRequest,
+  ) => invokeRustProtoRequest(
+    'agent_knowledge_descriptor_list',
+    ListKnowledgeResourceDescriptorsRequestSchema,
+    ListKnowledgeResourceDescriptorsResponseSchema,
+    request,
+  ),
+
+  tombstoneKnowledgeResourceDescriptor: (
+    request: TombstoneKnowledgeResourceDescriptorRequest,
+  ) => invokeRustProtoRequest(
+    'agent_knowledge_descriptor_tombstone',
+    TombstoneKnowledgeResourceDescriptorRequestSchema,
+    TombstoneKnowledgeResourceDescriptorResponseSchema,
+    request,
+  ),
+
+  readAgentCapabilityReadiness: (input: AgentCapabilityReadinessInput) =>
+    invokeRustProto(
       'agent_capability_readiness',
+      GetCapabilityReadinessResponseSchema,
       input,
-    ),
+    ).then((response) => {
+      if (!response.snapshot) {
+        throw new Error('agent.capabilityReadinessSnapshotMissing');
+      }
+      return response.snapshot;
+    }),
+
+  getAgentCapabilityReadiness: async (
+    input: AgentCapabilityReadinessInput,
+  ): Promise<AgentCapabilityReadinessSnapshot> => {
+    const response = await invokeRustProto(
+      'agent_capability_readiness',
+      GetCapabilityReadinessResponseSchema,
+      input,
+    );
+    const json = toJson(GetCapabilityReadinessResponseSchema, response, {
+      useProtoFieldName: true,
+    });
+    if (json === null || Array.isArray(json) || typeof json !== 'object') {
+      throw new Error('agent.capabilityReadinessResponseInvalid');
+    }
+    const snapshot = json.snapshot;
+    if (snapshot === null || Array.isArray(snapshot) || typeof snapshot !== 'object') {
+      throw new Error('agent.capabilityReadinessSnapshotMissing');
+    }
+    return snapshot as unknown as AgentCapabilityReadinessSnapshot;
+  },
 
   getAgentStationRuntimeActivity: (input: AgentRuntimeActivityInput) =>
     invokeRustDataFromStatus<AgentRuntimeActivityInput, AgentRuntimeActivitySnapshot>(
@@ -4705,31 +4835,6 @@ export const api = {
       'topic_comment_list',
       { topic_key: topicKey },
     ).then((r) => r.comments ?? []),
-
-  // ── Agent Knowledge bindings (Station-backed, C6) ──
-  listAgentKnowledgeBindings: (agentId: string) =>
-    invokeRustDataFromStatus<
-      AgentKnowledgeBindingListInput,
-      { bindings: StationAgentKnowledgeBindingRow[] | null }
-    >('agent_knowledge_binding_list', { agent_id: agentId }).then((r) => r.bindings ?? []),
-
-  createAgentKnowledgeBinding: (input: AgentKnowledgeBindingCreateInput) =>
-    invokeRustDataFromStatus<
-      AgentKnowledgeBindingCreateInput,
-      { binding: StationAgentKnowledgeBindingRow }
-    >('agent_knowledge_binding_create', input).then((r) => r.binding),
-
-  updateAgentKnowledgeBinding: (input: AgentKnowledgeBindingUpdateInput) =>
-    invokeRustDataFromStatus<
-      AgentKnowledgeBindingUpdateInput,
-      { binding: StationAgentKnowledgeBindingRow }
-    >('agent_knowledge_binding_update', input).then((r) => r.binding),
-
-  deleteAgentKnowledgeBinding: (id: string) =>
-    invokeRustDataFromStatus<AgentKnowledgeBindingDeleteInput, { success: boolean }>(
-      'agent_knowledge_binding_delete',
-      { id },
-    ),
 
   // ── Agent Tasks (Station-backed, O3) ──
   createAgentTaskRemote: (input: AgentTaskCreateInput) =>
@@ -6197,6 +6302,60 @@ export function streamAgentCollaborationEvents(
     } catch (err: unknown) {
       unlisten?.();
       onError(err instanceof Error ? err : new Error(String(err)));
+    }
+  })();
+  return controller;
+}
+
+export function streamAgentAuthorityEvents(
+  agentId: string,
+  onEvent: (payload: AgentAuthorityStreamPayload) => void,
+  onError: (error: Error) => void,
+): AbortController {
+  const controller = new AbortController();
+  void (async () => {
+    let unlisten: (() => void) | undefined;
+    const streamId = `agent-authority-${agentId}-${crypto.randomUUID()}`;
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      unlisten = await listen<AgentAuthorityStreamPayload>(
+        'agent:event',
+        (tauriEvent) => {
+          const payload = tauriEvent.payload;
+          if (payload.streamId !== streamId || controller.signal.aborted) return;
+          if (payload.event === 'error') {
+            const detail =
+              typeof payload.data.error === 'string'
+                ? payload.data.error
+                : 'agent.capabilityEventStreamFailed';
+            onError(new Error(detail));
+            return;
+          }
+          onEvent(payload);
+        },
+      );
+      const result = await api.startAgentEventStream(agentId, streamId);
+      if (result.stream_id !== streamId) {
+        throw new Error('agent.capabilityEventStreamIdentityMismatch');
+      }
+      if (controller.signal.aborted) {
+        await api.cancelAgentEventStream(streamId);
+        unlisten();
+        return;
+      }
+      controller.signal.addEventListener('abort', () => {
+        void api.cancelAgentEventStream(streamId).catch((error) => {
+          log.warn('api', 'agent event stream cancellation failed', {
+            error: String(error),
+          });
+        });
+        unlisten?.();
+      }, { once: true });
+    } catch (error) {
+      unlisten?.();
+      if (!controller.signal.aborted) {
+        onError(error instanceof Error ? error : new Error(String(error)));
+      }
     }
   })();
   return controller;

@@ -331,6 +331,34 @@ func canonicalCapabilityCommandRequest(
 			typed.GetReceipt().GetTargetDeviceId(),
 			"",
 			nil
+	case *model.PullCapabilityOperationsRequest:
+		typed.CommandProof = nil
+		return typed,
+			model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_PULL_OPERATIONS,
+			typed.GetDeviceId(),
+			"",
+			nil
+	case *model.ReportCapabilityOperationEventRequest:
+		typed.CommandProof = nil
+		return typed,
+			model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_REPORT_OPERATION_EVENT,
+			typed.GetTargetDeviceId(),
+			"",
+			nil
+	case *model.TakeOverCapabilityOperationRequest:
+		typed.CommandProof = nil
+		return typed,
+			model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_TAKE_OVER_OPERATION,
+			typed.GetTargetDeviceId(),
+			"",
+			nil
+	case *model.TakeOverCapabilityCleanupRequest:
+		typed.CommandProof = nil
+		return typed,
+			model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_TAKE_OVER_CLEANUP,
+			typed.GetTargetDeviceId(),
+			"",
+			nil
 	default:
 		return nil,
 			model.ClientCapabilityCommandDomain_CLIENT_CAPABILITY_COMMAND_DOMAIN_UNSPECIFIED,

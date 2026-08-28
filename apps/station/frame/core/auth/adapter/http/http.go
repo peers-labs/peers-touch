@@ -22,7 +22,6 @@ func RequireJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(ctx c
 		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
-			logger.Debugf(ctx, "[RequireJWT] Authorization header: %s", authHeader)
 
 			if len(authHeader) < 7 || authHeader[:7] != "Bearer " {
 				logger.Warnf(ctx, "[RequireJWT] Missing or invalid Bearer token format")

@@ -135,6 +135,220 @@ def evaluate_as_f03(capture: Mapping[str, Any]) -> dict[str, bool | None]:
     return assertions
 
 
+def evaluate_as_f04(
+    capture: Mapping[str, Any],
+    *,
+    platform: str,
+) -> dict[str, bool]:
+    cases = _mapping(capture, "cases", scenario="AS-F04")
+    auto = _mapping(cases, "auto", scenario="AS-F04")
+    manual = _mapping(cases, "manual", scenario="AS-F04")
+    denied = _mapping(cases, "deny", scenario="AS-F04")
+    expired = _mapping(cases, "expiry", scenario="AS-F04")
+    duplicate = _mapping(capture, "duplicateDelivery", scenario="AS-F04")
+    loop_budget = _mapping(capture, "loopBudget", scenario="AS-F04")
+    replay = _mapping(capture, "replay", scenario="AS-F04")
+
+    expected_owner = {
+        "desktop_app": "client_capability",
+        "browser": "station",
+    }.get(platform)
+    if expected_owner is None:
+        raise GroupOneScenarioError(
+            f"AS-F04 unsupported platform {platform!r}"
+        )
+
+    def states(case: Mapping[str, Any], name: str) -> list[str]:
+        values = case.get("states")
+        if not isinstance(values, list) or any(
+            not isinstance(value, str) or not value for value in values
+        ):
+            raise GroupOneScenarioError(
+                f"AS-F04 {name}.states fact is invalid"
+            )
+        return values
+
+    def count(case: Mapping[str, Any], key: str) -> int:
+        return _nonnegative_int(case, key, scenario="AS-F04")
+
+    def lineage_complete(
+        case: Mapping[str, Any],
+        *,
+        terminal: bool,
+        decision_required: bool = True,
+    ) -> bool:
+        lineage = _mapping(case, "lineage", scenario="AS-F04")
+        common = (
+            _nonempty_string(lineage, "toolCallId", scenario="AS-F04")
+            and _nonempty_string(lineage, "toolBatchId", scenario="AS-F04")
+            and _nonempty_string(lineage, "manifestId", scenario="AS-F04")
+            and _nonempty_string(lineage, "manifestVersion", scenario="AS-F04")
+            and _nonempty_string(lineage, "bindingId", scenario="AS-F04")
+            and _positive_int(lineage, "bindingRevision", scenario="AS-F04")
+            and _nonempty_string(
+                lineage,
+                "readinessSnapshotId",
+                scenario="AS-F04",
+            )
+            and _nonempty_string(lineage, "approvalId", scenario="AS-F04")
+        )
+        if decision_required:
+            common = bool(
+                common
+                and _nonempty_string(
+                    lineage,
+                    "decisionId",
+                    scenario="AS-F04",
+                )
+            )
+        if not common:
+            return False
+        if not terminal:
+            return True
+        return bool(
+            _nonempty_string(lineage, "executionClaimId", scenario="AS-F04")
+            and _positive_int(lineage, "fencingToken", scenario="AS-F04")
+            and _nonempty_string(
+                lineage,
+                "sideEffectReceiptId",
+                scenario="AS-F04",
+            )
+            and _nonempty_string(lineage, "resultId", scenario="AS-F04")
+            and _nonempty_string(lineage, "continuationId", scenario="AS-F04")
+            and lineage.get("dispatchCommittedAt")
+            and lineage.get("startedAt")
+            and lineage.get("endedAt")
+        )
+
+    auto_states = states(auto, "auto")
+    manual_states = states(manual, "manual")
+    deny_states = states(denied, "deny")
+    expiry_states = states(expired, "expiry")
+    executed_cases = (auto, manual)
+    nonexecuted_cases = (denied, expired)
+    owner_matches = all(
+        case.get("executionOwner") == expected_owner
+        for case in (*executed_cases, *nonexecuted_cases)
+    )
+
+    assertions = {
+        "autoPolicyExecutedOnce": (
+            auto.get("policy") == "auto"
+            and auto_states
+            == ["policy_check", "auto_approved", "running", "succeeded"]
+            and count(auto, "executionAttemptCount") == 1
+            and count(auto, "sideEffectCount") == 1
+            and count(auto, "resultCount") == 1
+            and count(auto, "continuationCount") == 1
+        ),
+        "manualApprovalExecutedOnce": (
+            manual.get("policy") == "manual"
+            and manual_states
+            == [
+                "policy_check",
+                "awaiting_user",
+                "approved",
+                "running",
+                "succeeded",
+            ]
+            and count(manual, "executionAttemptCount") == 1
+            and count(manual, "sideEffectCount") == 1
+            and count(manual, "resultCount") == 1
+            and count(manual, "continuationCount") == 1
+        ),
+        "denialExecutedZero": (
+            denied.get("policy") == "deny"
+            and deny_states == ["policy_check", "denied"]
+            and all(
+                count(denied, key) == 0
+                for key in (
+                    "executionAttemptCount",
+                    "sideEffectCount",
+                    "resultCount",
+                    "continuationCount",
+                )
+            )
+        ),
+        "expiryExecutedZero": (
+            expired.get("policy") == "manual"
+            and expiry_states
+            == ["policy_check", "awaiting_user", "expired"]
+            and all(
+                count(expired, key) == 0
+                for key in (
+                    "executionAttemptCount",
+                    "sideEffectCount",
+                    "resultCount",
+                    "continuationCount",
+                )
+            )
+        ),
+        "duplicateDeliveryIdempotent": (
+            count(duplicate, "deliveryCount") >= 2
+            and count(duplicate, "executionAttemptCount") == 1
+            and count(duplicate, "sideEffectCount") == 1
+            and count(duplicate, "resultCount") == 1
+            and count(duplicate, "continuationCount") == 1
+            and _nonempty_string(
+                duplicate,
+                "originalResultId",
+                scenario="AS-F04",
+            )
+            == _nonempty_string(
+                duplicate,
+                "replayedResultId",
+                scenario="AS-F04",
+            )
+            and _nonempty_string(
+                duplicate,
+                "originalContinuationId",
+                scenario="AS-F04",
+            )
+            == _nonempty_string(
+                duplicate,
+                "replayedContinuationId",
+                scenario="AS-F04",
+            )
+        ),
+        "authorityLineagePersisted": (
+            owner_matches
+            and lineage_complete(auto, terminal=True)
+            and lineage_complete(manual, terminal=True)
+            and lineage_complete(denied, terminal=False)
+            and lineage_complete(
+                expired,
+                terminal=False,
+                decision_required=False,
+            )
+        ),
+        "loopBudgetEnforced": (
+            loop_budget.get("stopped") is True
+            and _positive_int(
+                loop_budget,
+                "observedIterations",
+                scenario="AS-F04",
+            )
+            == _positive_int(
+                loop_budget,
+                "maximumIterations",
+                scenario="AS-F04",
+            )
+            and count(loop_budget, "executionAfterLimit") == 0
+        ),
+        "sourceReplayEqual": (
+            _nonempty_string(replay, "sourceHash", scenario="AS-F04")
+            == _nonempty_string(replay, "replayHash", scenario="AS-F04")
+            and replay.get("equal") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"AS-F04 production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_as_f10(
     capture: Mapping[str, Any],
     *,
