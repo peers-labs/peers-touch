@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from tooling.acceptance.fixtures.chat_native_reset import (
     CHAT_TABLES,
+    _remote_transport,
     acceptance_station_environment,
     reset_local_client_storage,
     reset_station_messaging_state,
@@ -199,8 +200,15 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             ):
                 reset_local_client_storage(["../outside"], Path(directory))
 
+    def test_remote_transport_requires_strict_host_verification(self) -> None:
+        transport = _remote_transport(DISPOSABLE_ENVIRONMENT)
+        command = transport.command_prefix()
+
+        self.assertIn("StrictHostKeyChecking=yes", command)
+        self.assertNotIn("StrictHostKeyChecking=no", command)
+
     @patch(
-        "tooling.acceptance.fixtures.chat_native_reset.subprocess.run"
+        "tooling.acceptance.fixtures.chat_native_reset.SshTransport.run_argv"
     )
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.verify_disposable_station_runtime"
@@ -216,7 +224,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         run,
     ) -> None:
         reset_station_messaging_state("chat-native-acceptance")
-        sql = run.call_args.kwargs["input"]
+        sql = run.call_args.kwargs["input_text"]
         self.assertIn("actor_sessions", CHAT_TABLES)
         self.assertIn("friend_chat_friend_requests", CHAT_TABLES)
         self.assertIn("friend_chat_friendships", CHAT_TABLES)
