@@ -214,6 +214,23 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "profile:desktop-port",
             )
 
+    def test_desktop_gateway_profile_ports_include_worktree_offset(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+
+        gateway_port, renderer_port = provisioner._profile_ports(
+            {
+                "PT_DESKTOP_APP_GATEWAY_PORT": "3230",
+                "PT_DESKTOP_APP_WEB_PORT": "3410",
+            },
+            slot=2,
+            worktree_id="peers-group-chat",
+        )
+
+        self.assertEqual(gateway_port, 3300)
+        self.assertEqual(renderer_port, 3480)
+
     def test_desktop_gateway_timeout_names_external_artifact_logically(self):
         provisioner = LocalDesktopGatewayProvisioner(
             EnvironmentContract(id="local-desktop-gateway")
