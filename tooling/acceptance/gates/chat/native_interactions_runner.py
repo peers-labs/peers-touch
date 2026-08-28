@@ -1634,7 +1634,21 @@ class NativeInteractionsGate(AcceptanceGate):
                     and proj.get("edited") is not True
                 ):
                     return proj
-                return None
+                content_state = (
+                    "missing"
+                    if proj is None
+                    else "original"
+                    if proj.get("content") == original_text
+                    else "edited"
+                    if proj.get("content") == edited_text
+                    else "other"
+                )
+                raise GateError(
+                    "Alice interaction projection is not settled: "
+                    f"present={proj is not None}, "
+                    f"contentState={content_state}, "
+                    f"edited={None if proj is None else proj.get('edited')}"
+                )
 
             sender_projection = wait_until(
                 _sender_settled,
