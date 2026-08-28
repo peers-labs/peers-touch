@@ -4022,13 +4022,19 @@ class NativeProductClosureGate(AcceptanceGate):
         return result
 
     def click_confirmation(self, actor: str) -> None:
-        buttons = self.clients[actor].find_elements(
-            ".ant-modal-confirm .ant-btn-primary"
+        def visible_confirmation() -> Any | None:
+            buttons = self.clients[actor].find_elements(
+                ".ant-modal-confirm .ant-btn-primary"
+            )
+            visible = [button for button in buttons if button.is_displayed()]
+            return visible[-1] if visible else None
+
+        confirmation = wait_until(
+            visible_confirmation,
+            f"{actor} confirmation action",
+            timeout=30,
         )
-        visible = [button for button in buttons if button.is_displayed()]
-        if not visible:
-            raise GateError(f"{actor} confirmation action is unavailable")
-        self.click_element(actor, visible[-1])
+        self.click_element(actor, confirmation)
 
     def prove_clear_cursor(self, group_id: str) -> dict[str, Any]:
         self.open_details("alice")
