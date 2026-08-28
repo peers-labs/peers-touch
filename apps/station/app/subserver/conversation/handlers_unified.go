@@ -9,6 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	msgdomain "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 
@@ -220,7 +221,19 @@ func (s *subServer) handleUpdateMemberSettings(ctx context.Context, req *updateM
 		return nil, server.InternalErrorWithCause("update member preferences failed", err)
 	}
 	if err := s.publishMemberSettingsChanged(ctx, conversation, subject.ID); err != nil {
-		return nil, server.InternalErrorWithCause("publish member settings change failed", err)
+		// Settings are already durable and cold-syncable. Realtime is a repair
+		// signal, so a publish failure must be observable without misreporting
+		// the committed update as failed.
+		logger.Warn(
+			ctx,
+			"conversation member settings realtime publish failed",
+			"conversation_id",
+			req.ConversationID,
+			"ptid",
+			subject.ID,
+			"error",
+			err,
+		)
 	}
 	return memberSettingsResponseFrom(settings), nil
 }

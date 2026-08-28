@@ -20,6 +20,8 @@ from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SAFE_RUNTIME_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+APPROVED_DISPOSABLE_STATION_PORT = 18132
+PROTECTED_CLEANUP_PORTS = frozenset({4445, 18080})
 CHAT_TABLES = (
     "actor_devices",
     "actor_identity_keys",
@@ -114,6 +116,11 @@ def acceptance_station_environment(
     expected_url = environment.get("PT_ACCEPTANCE_STATION_URL", "").rstrip("/")
     parsed_url = urllib.parse.urlparse(station_url)
     expected = urllib.parse.urlparse(expected_url)
+    if parsed_url.port in PROTECTED_CLEANUP_PORTS:
+        raise RuntimeError(
+            "Disposable Chat Acceptance refuses protected cleanup target port: "
+            f"{parsed_url.port}"
+        )
     if (
         environment.get("PT_ACCEPTANCE_DISPOSABLE", "").strip() != "1"
         or not host
@@ -124,6 +131,8 @@ def acceptance_station_environment(
         or parsed_url.scheme != expected.scheme
         or parsed_url.hostname != host
         or parsed_url.hostname != expected.hostname
+        or parsed_url.port != APPROVED_DISPOSABLE_STATION_PORT
+        or expected.port != APPROVED_DISPOSABLE_STATION_PORT
         or parsed_url.port != expected.port
         or parsed_url.path not in {"", "/"}
         or parsed_url.params
