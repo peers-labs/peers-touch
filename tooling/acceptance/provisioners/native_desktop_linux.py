@@ -1252,6 +1252,15 @@ class NativeDesktopLinuxProvisioner:
             "sourceCommit": str(source.get("commit") or ""),
         }
 
+    def runtime_identity(self) -> dict[str, Any]:
+        state = self._require_state()
+        manifest = state.get("manifest")
+        if not isinstance(manifest, dict):
+            raise ProvisioningError(
+                "Linux runtime-cell manifest is missing"
+            )
+        return dict(manifest)
+
     def stage_actor_file(
         self,
         actor: str,
