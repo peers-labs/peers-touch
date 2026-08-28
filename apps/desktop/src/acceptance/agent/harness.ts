@@ -1811,12 +1811,11 @@ export function installAcceptanceHarness(): void {
         const readiness = await api.getAgentCapabilityReadiness({
           agent_id: agentId,
         });
-        const directModelReadiness = readiness.capabilities.find(
-          (capability) => capability.capability_id === 'runtime.direct-model',
-        );
+        const modelCapabilities = readiness.model_capabilities;
         if (
           !readiness.runtime_snapshot_id
-          || directModelReadiness?.reason_code !== 'runtime_ready'
+          || !modelCapabilities?.snapshot_id
+          || modelCapabilities.snapshot_id !== readiness.runtime_snapshot_id
         ) {
           throw new Error('agent.acceptance.providerReadinessBlocked');
         }
