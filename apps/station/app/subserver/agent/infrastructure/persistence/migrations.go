@@ -335,6 +335,30 @@ func migrateToolCallColumns(tx *gorm.DB) error {
 	if !tx.Migrator().HasTable(&ToolCall{}) {
 		return nil
 	}
+	if tx.Dialector.Name() != "sqlite" {
+		columnTypes, err := tx.Migrator().ColumnTypes(&ToolCall{})
+		if err != nil {
+			return fmt.Errorf("inspect agent_tool_calls columns: %w", err)
+		}
+		for _, columnType := range columnTypes {
+			if columnType.Name() != "schema_version" {
+				continue
+			}
+			length, bounded := columnType.Length()
+			if !bounded || length < 64 {
+				if err := tx.Migrator().AlterColumn(
+					&ToolCall{},
+					"SchemaVersion",
+				); err != nil {
+					return fmt.Errorf(
+						"expand agent_tool_calls.schema_version: %w",
+						err,
+					)
+				}
+			}
+			break
+		}
+	}
 	if err := migrateLegacyDeadline(tx, "agent_tool_calls"); err != nil {
 		return err
 	}
@@ -343,8 +367,8 @@ func migrateToolCallColumns(tx *gorm.DB) error {
 		"manifest_version":               "ManifestVersion",
 		"binding_revision":               "BindingRevision",
 		"dispatch_committed_at":          "DispatchCommittedAt",
-		"execution_attempt_count":         "ExecutionAttemptCount",
-		"duplicate_delivery_count":        "DuplicateDeliveryCount",
+		"execution_attempt_count":        "ExecutionAttemptCount",
+		"duplicate_delivery_count":       "DuplicateDeliveryCount",
 		"replay_policy":                  "ReplayPolicy",
 		"external_idempotency_key":       "ExternalIdempotencyKey",
 		"receipt_recovery_credential_id": "ReceiptRecoveryCredentialID",
