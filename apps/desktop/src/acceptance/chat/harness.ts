@@ -1,5 +1,4 @@
 import { identityRuntime } from '../../kernel/identityRuntime';
-import { installDeferredAppRuntimeProjections } from '../../services/appRuntime';
 import { refreshSocialProjection } from '../../services/socialRealtime';
 import { api } from '../../services/desktop_api';
 import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
@@ -263,7 +262,6 @@ export function installAcceptanceHarness(): void {
       // #region debug-point A,C:deferred-start
       fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'native-hydration-timeout', runId: 'post-fix', hypothesisId: 'A,C', location: 'chatHarness:login:deferred-start', msg: '[DEBUG] Deferred runtime installation scheduled', data: { account }, ts: Date.now() }) }).catch(() => {});
       // #endregion
-      void installDeferredAppRuntimeProjections();
       return {
         authenticated: true,
         actorId: activeActorId(),
