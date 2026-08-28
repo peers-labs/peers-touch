@@ -1050,6 +1050,21 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('RECOVERY_SELECTORS["restore_submit"]', self.source)
         self.assertNotIn("shutil.copy2", self.source)
 
+    def test_confirmation_waits_for_the_visible_native_click_surface(self) -> None:
+        confirmation = self.source.split(
+            "    def click_confirmation(",
+            maxsplit=1,
+        )[1].split(
+            "    def prove_clear_cursor(",
+            maxsplit=1,
+        )[0]
+
+        self.assertIn("wait_until(", confirmation)
+        self.assertIn('".ant-modal-confirm .ant-btn-primary"', confirmation)
+        self.assertIn("timeout=30", confirmation)
+        self.assertIn("self.click_element(actor, confirmation)", confirmation)
+        self.assertNotIn("execute_script", confirmation)
+
     def test_recovery_latches_transient_lobehub_toast_roles(self) -> None:
         create_recovery = self.source.split(
             "    def create_recovery_revision(",
