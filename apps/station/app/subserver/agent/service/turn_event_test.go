@@ -182,3 +182,52 @@ func TestCancelTurnCancelsRegisteredExecution(t *testing.T) {
 		t.Fatal("missing turn must not report cancellation success")
 	}
 }
+
+func TestRequestCancelWaitingToolPersistsCancelledEvent(t *testing.T) {
+	db := openConversationAuthorityDB(t, "cancel_waiting_tool_event")
+	if err := db.AutoMigrate(
+		&persistence.TurnAttempt{},
+		&persistence.ToolCall{},
+		&persistence.ToolBatch{},
+	); err != nil {
+		t.Fatalf("migrate cancellation dependencies: %v", err)
+	}
+	now := time.Now()
+	if err := db.Create(&persistence.Conversation{
+		ID:        "conv_cancel",
+		AgentID:   "agent_1",
+		Ptid:      "actor_1",
+		Title:     "Cancel waiting tool",
+		Status:    "active",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             "turn_cancel",
+		ConversationID: "conv_cancel",
+		AgentID:        "agent_1",
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed turn: %v", err)
+	}
+
+	svc := TurnService{convService: NewConversationService()}
+	status, err := svc.RequestCancelTurn(context.Background(), "actor_1", "turn_cancel")
+	if err != nil {
+		t.Fatalf("cancel waiting turn: %v", err)
+	}
+	if status != string(domain.TurnStatusCancelled) {
+		t.Fatalf("cancel status = %q, want cancelled", status)
+	}
+
+	var event persistence.TurnEvent
+	if err := db.First(&event, "turn_id = ? AND event_type = ?", "turn_cancel", "cancelled").Error; err != nil {
+		t.Fatalf("load cancelled event: %v", err)
+	}
+	if event.EventSeq != 1 {
+		t.Fatalf("cancelled event sequence = %d, want 1", event.EventSeq)
+	}
+}

@@ -2469,6 +2469,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Failure variant**: Invalid input creates no topic; queue overflow is visible; rejected submit restores editable input; active dependency blocks delete.
 - **Evidence**: Native DOM, Station topic/message/queue rows, command IDs, duplicate counts.
 - **Status**: pending
+- The exact-source `0dd9749b2` run
+  `20260828T175353594892Z-f6aec38fb7f6ca76df645a7834bfce6c`
+  failed Browser AS-F02 `zh-CN` with
+  `agent.acceptance.foundationActiveTurnCancelMissing`; cleanup passed.
+  Station truth showed the Turn reached `waiting_local_tool` and was
+  authoritatively cancelled with `terminal_reason=cancelled_by_user`, but the
+  direct cancellation path had no live execution sink and persisted no
+  `cancelled` TurnEvent. `RequestCancelTurn` now writes that same durable typed
+  terminal event after cancelling a waiting Turn, allowing Browser replay to
+  observe Station truth without client inference. Focused service and race
+  regressions pass; runtime proof remains `UNPROVEN`.
 
 ### AS-F03 Progressive Turn, Tool Waits, And Terminals
 - **Precondition**: Delayed provider and tool/approval fixtures.

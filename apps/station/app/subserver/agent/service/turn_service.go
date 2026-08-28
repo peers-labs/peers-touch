@@ -635,6 +635,13 @@ func (s *TurnService) RequestCancelTurn(ctx context.Context, ptid, turnID string
 	if err := s.cancelTurn(ctx, turn.AgentID, turn.ID, "", ""); err != nil {
 		return "", err
 	}
+	s.emitTurnEvent(ctx, &TurnConfig{
+		AgentID:        turn.AgentID,
+		ConversationID: turn.ConversationID,
+	}, turn.ID, TurnEvent{
+		Type:  "cancelled",
+		Stage: "turn_cancelled",
+	})
 	return string(domain.TurnStatusCancelled), nil
 }
 
