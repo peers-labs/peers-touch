@@ -2512,6 +2512,11 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   actor ownership and private visibility remain the OSS authorization boundary,
   so identical user content can be reused across conversations without
   rebinding or invalidating an earlier Turn.
+- The next source-matched run on `5d1bd5b84` again reached Browser AS-F05 and
+  exposed the storage-strategy dependency: profile `two` uses random OSS keys,
+  whose upload path previously left `sha256` empty. Agent attachment integrity
+  now requires both random and CAS key strategies to hash and persist uploaded
+  bytes; key strategy controls addressing only, never checksum availability.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

@@ -467,6 +467,15 @@ func (s *fileService) SaveFile(ctx context.Context, attr UploadAttribution, file
 }
 
 func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, res *resolved, file multipart.File, header *multipart.FileHeader) (*ossmodel.FileMeta, error) {
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return nil, err
+	}
+	sum := hex.EncodeToString(hasher.Sum(nil))
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
 	rnd, _ := touchutil.RandomString(16)
 	ext := filepath.Ext(header.Filename)
 	mt := detectMime(ext)
@@ -489,7 +498,7 @@ func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, re
 	}
 
 	if s.blobs != nil {
-		if _, terr := s.blobs.Touch(ctx, s.backendName, key, header.Size, ""); terr != nil {
+		if _, terr := s.blobs.Touch(ctx, s.backendName, key, header.Size, sum); terr != nil {
 			_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
 			_ = s.backend.Delete(ctx, key)
 			return nil, terr
@@ -504,6 +513,7 @@ func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, re
 		Mime:          mt,
 		Backend:       s.backendName,
 		Path:          fullPath,
+		Sha256:        sum,
 		BucketID:      res.bucket.ID,
 		OwnerActorID:  attr.ActorID,
 		Visibility:    res.visibility,
