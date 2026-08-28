@@ -1050,6 +1050,16 @@ Python module and its owner test verifies the module argv and repository-root
 working directory. The blocked run remains `BLOCKED/UNPROVEN`; a new clean
 candidate is required for product proof.
 
+The clean candidate `36ffad755a4c` reached `FIXTURE_READY` and completed the
+core Native product assertions, but run
+`20260828T071458758679Z-c06fe73fdd587a0192178ab70eead116` failed at
+`clear.cursor.restart.ui` because the runner queried the Ant Design
+confirmation portal synchronously after the native clear-history click. The
+runner now waits for the same visible primary confirmation control with a
+bounded timeout and still activates it through the native input adapter; it
+does not use a JavaScript click or weaken the clear-cursor assertion. The
+failed run remains `FAILED/UNPROVEN`.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
