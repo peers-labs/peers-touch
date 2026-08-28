@@ -121,6 +121,10 @@ def _load_env(path: Path) -> dict[str, str]:
 
 
 def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
+    # Import lazily to preserve the core -> transport dependency boundary during
+    # package initialization; the SSH transport itself imports core error types.
+    from ..transports import SshTarget, SshTransport
+
     environment_path = (
         REPO_ROOT / ".local" / "deploy" / "envs" / f"{deploy_environment}.env"
     )
@@ -142,6 +146,25 @@ def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
             resource=f"station-deployment:{deploy_environment}",
         )
 
+    try:
+        target = SshTarget(
+            host=host,
+            user=user,
+            port=int(environment.get("PT_DEPLOY_SSH_PORT", "22")),
+            known_hosts_file=environment.get(
+                "PT_DEPLOY_KNOWN_HOSTS_FILE",
+                "",
+            ),
+        )
+    except (ValueError, ProvisioningError) as error:
+        raise BlockedError(
+            reason=(
+                f"Station deployment SSH contract is invalid for "
+                f"{deploy_environment}: {error}"
+            ),
+            resource=f"station-deployment:{deploy_environment}",
+        ) from error
+
     digest_script = (
         "import hashlib,pathlib;"
         "r=pathlib.Path('.').resolve();"
@@ -162,21 +185,8 @@ def _remote_source_identity(deploy_environment: str) -> tuple[str, str, str]:
         "if test -z \"$status\"; then echo clean; else echo dirty; fi && "
         f"python3 -c {shlex.quote(digest_script)}"
     )
-    completed = subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{user}@{host}",
-            remote_command,
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
+    completed = SshTransport(target).run_argv(
+        ["sh", "-lc", remote_command],
         timeout=30,
         check=False,
     )

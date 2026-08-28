@@ -46,7 +46,6 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
     )
     def test_rejects_non_disposable_targets(self, _environment) -> None:
         for station_url in (
-            "http://127.0.0.1:18080",
             "http://10.37.94.156:8080",
             "http://10.37.94.156:18132/other",
             "http://10.37.94.156:18132/?target=other",
@@ -60,6 +59,49 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                         station_url,
                         "chat-native-acceptance",
                     )
+
+    def test_hard_rejects_protected_station_and_webdriver_ports(self) -> None:
+        for port in (18080, 4445):
+            environment = {
+                **DISPOSABLE_ENVIRONMENT,
+                "PT_ACCEPTANCE_STATION_URL": (
+                    f"http://10.37.94.156:{port}"
+                ),
+            }
+            with self.subTest(port=port):
+                with patch(
+                    "tooling.acceptance.fixtures.chat_native_reset."
+                    "deploy_environment",
+                    return_value=environment,
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        f"protected cleanup target port: {port}",
+                    ):
+                        acceptance_station_environment(
+                            f"http://10.37.94.156:{port}",
+                            "chat-native-acceptance",
+                        )
+
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
+        return_value={
+            **DISPOSABLE_ENVIRONMENT,
+            "PT_ACCEPTANCE_STATION_URL": "http://10.37.94.156:18133",
+        },
+    )
+    def test_rejects_unapproved_disposable_station_port(
+        self,
+        _environment,
+    ) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Disposable Chat Acceptance target mismatch",
+        ):
+            acceptance_station_environment(
+                "http://10.37.94.156:18133",
+                "chat-native-acceptance",
+            )
 
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
