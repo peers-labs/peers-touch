@@ -1565,6 +1565,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("len(buttons) >= 2", journey)
         self.assertIn("len(retained_buttons) >= 2", journey)
         self.assertIn(
+            'self.click_element("alice", retained_buttons[1])',
+            journey,
+        )
+        self.assertIn(
+            "failed attachment draft removed before the success journey",
+            journey,
+        )
+        self.assertIn(
             "data-chat-attachment-attempt={item.attempt}",
             self.chat_composer,
         )

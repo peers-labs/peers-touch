@@ -3330,6 +3330,14 @@ class NativeProductClosureGate(AcceptanceGate):
             and len(retained_buttons) >= 2,
             json.dumps(evidence, sort_keys=True),
         )
+        self.click_element("alice", retained_buttons[1])
+        wait_until(
+            lambda: not self.clients["alice"].find_elements(
+                f'[data-chat-attachment-draft="{draft_id}"]'
+            ),
+            "failed attachment draft removed before the success journey",
+            timeout=30,
+        )
         self.wait_for_dialogs_to_stop_intercepting("alice")
 
     def attachment_message(
