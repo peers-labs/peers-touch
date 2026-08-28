@@ -399,6 +399,69 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(result["completionStatus"], "DONE")
         self.assertEqual(result["proofStatus"], "PROVEN")
 
+    def test_validation_artifact_does_not_replace_environment_report(
+        self,
+    ) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("environment-gate", source={})
+            run.write_json(
+                "reports/environment-validation.json",
+                {
+                    "artifactKind": "environment-validation",
+                    "status": "pass",
+                    "completionStatus": "DONE",
+                    "proofStatus": "PROVEN",
+                    "sampleEmissionAllowed": False,
+                    "phase": "environment-proof",
+                    "bom": ["ENV-01"],
+                    "spec": ["environment-runtime"],
+                    "gate": "environment-gate",
+                },
+                role="validation",
+            )
+            report = new_report("environment-gate")
+            report.status = "PASS"
+            report.write(run.run_dir / "reports" / "environment-gate.json")
+
+            result = module.enrich_result_with_run_artifacts(
+                {
+                    "id": "environment-gate",
+                    "status": "passed",
+                    "tier": "env-evidence",
+                    "manifest": {
+                        "state": "FIXTURE_READY",
+                        "runId": "runtime-run",
+                    },
+                },
+                run,
+            )
+            result = module.standardize_result(
+                result,
+                "/tmp/acceptance-plan.json",
+            )
+            run.close()
+
+        self.assertEqual(
+            result["sourceArtifactKind"],
+            "acceptance-gate-evidence-report",
+        )
+        self.assertEqual(
+            result["sourceArtifact"]["path"],
+            "reports/environment-gate.json",
+        )
+        self.assertEqual(result["sourcePhase"], "environment-proof")
+        self.assertEqual(result["sourceBom"], ["ENV-01"])
+        self.assertEqual(result["sourceSpec"], ["environment-runtime"])
+        self.assertEqual(result["sourceGate"], "environment-gate")
+        self.assertEqual(result["completionStatus"], "DONE")
+        self.assertEqual(result["proofStatus"], "PROVEN")
+        self.assertTrue(result["sampleEmissionAllowed"])
+
     def test_failed_gate_cannot_retain_proven_status(self) -> None:
         module = load_module()
 

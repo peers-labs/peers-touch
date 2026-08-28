@@ -517,6 +517,15 @@ class NativeTwoClientGate(AcceptanceGate):
                     }
                 )
 
+        for actor, client in self.clients.items():
+            if not self.save_app_log(client, actor):
+                cleanup_errors.append(
+                    {
+                        "resource": f"log:{client.profile}",
+                        "error": "Native client log was not exported",
+                    }
+                )
+
         try:
             cleanup = self.runtime_binding.finalize_cleanup(
                 self.runtime_instances,
