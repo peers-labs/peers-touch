@@ -265,7 +265,7 @@ func assertToolBatchRejectedBeforeDispatch(
 	}
 	var budgetErr *errcode.BizError
 	if !errors.As(err, &budgetErr) ||
-		budgetErr.Code != runtimeBudgetExhaustedCode ||
+		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
 		budgetErr.Message != wantReason ||
 		!budgetErr.Payload.GetTerminal() {
 		t.Fatalf("unexpected budget exhaustion: %#v", err)

@@ -19,6 +19,7 @@ const (
 	AgentActiveDependency    Code = "ACTIVE_DEPENDENCY"
 	AgentQueueFull           Code = "ADMISSION_QUEUE_FULL"
 	AgentAttachmentRejected  Code = "CONTEXT_ATTACHMENT_REJECTED"
+	AgentToolBudgetExhausted Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
 	AgentProviderFailed      Code = "AGENT_5001"
 	AgentCompressionFailed   Code = "AGENT_5002"
 	AgentDelegationFailed    Code = "AGENT_5003"
@@ -32,6 +33,7 @@ const (
 	AgentCanvasSingleAgentNotReadyLocaleKey    = "agent.errors.canvasSingleAgentNotReady"
 	AgentCanvasSingleAgentNotReadyRequiredGate = "agent-v2-kernel-foundation-e2e"
 	AgentAttachmentRejectedLocaleKey           = "agent.errors.attachmentRejected"
+	AgentToolBudgetExhaustedLocaleKey          = "agent.errors.toolLoopBudgetExhausted"
 )
 
 type BizError struct {

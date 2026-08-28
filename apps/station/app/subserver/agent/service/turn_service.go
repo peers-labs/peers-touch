@@ -1904,10 +1904,8 @@ func (s *TurnService) processToolCalls(
 }
 
 const (
-	runtimeBudgetExhaustedCode           errcode.Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
-	maxToolCallsExhaustedReason                       = "max_tool_calls_exhausted"
-	maxIdenticalToolCallsExhaustedReason              = "max_identical_tool_calls_exhausted"
-	runtimeBudgetExhaustedLocaleKey                   = "agent.errors.toolLoopBudgetExhausted"
+	maxToolCallsExhaustedReason          = "max_tool_calls_exhausted"
+	maxIdenticalToolCallsExhaustedReason = "max_identical_tool_calls_exhausted"
 )
 
 type toolLoopBudgetState struct {
@@ -2007,13 +2005,13 @@ func toolCallBudgetKey(toolName string, argumentsHash string) string {
 
 func runtimeBudgetExhausted(reason string, limit uint32, consumed uint32) error {
 	return &errcode.BizError{
-		Code:       runtimeBudgetExhaustedCode,
+		Code:       errcode.AgentToolBudgetExhausted,
 		HTTPStatus: http.StatusUnprocessableEntity,
 		Message:    reason,
 		Payload: &model.ErrorPayload{
-			Error:     runtimeBudgetExhaustedLocaleKey,
-			ErrorType: string(runtimeBudgetExhaustedCode),
-			LocaleKey: runtimeBudgetExhaustedLocaleKey,
+			Error:     errcode.AgentToolBudgetExhaustedLocaleKey,
+			ErrorType: string(errcode.AgentToolBudgetExhausted),
+			LocaleKey: errcode.AgentToolBudgetExhaustedLocaleKey,
 			Retryable: false,
 			Terminal:  true,
 			Details: map[string]string{
@@ -2027,7 +2025,7 @@ func runtimeBudgetExhausted(reason string, limit uint32, consumed uint32) error 
 
 func runtimeBudgetExhaustionReason(err error) (string, bool) {
 	var budgetErr *errcode.BizError
-	if !errors.As(err, &budgetErr) || budgetErr.Code != runtimeBudgetExhaustedCode {
+	if !errors.As(err, &budgetErr) || budgetErr.Code != errcode.AgentToolBudgetExhausted {
 		return "", false
 	}
 	return budgetErr.Message, true
