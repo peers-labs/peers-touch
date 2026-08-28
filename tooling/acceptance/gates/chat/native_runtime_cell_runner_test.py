@@ -5,10 +5,11 @@ import json
 import os
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.evidence import new_report
+from tooling.acceptance.gates.chat import desktop_gateway_e2e
 from tooling.acceptance.gates.chat.native_support import (
     cleanup_preserving_primary_failure,
 )
@@ -355,6 +356,43 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "python3 -m "
             "tooling.acceptance.gates.chat.desktop_gateway_e2e",
         )
+
+    def test_desktop_gateway_gate_publishes_typed_evidence(self) -> None:
+        report = Mock()
+        report.status = "RUNNING"
+        manifest = {
+            "gateId": "chat-desktop-gateway-e2e",
+            "station": {"url": "http://station.example:18132"},
+        }
+        runtime = {
+            "conversationId": "conversation-1",
+            "messageId": "message-1",
+        }
+
+        with patch.object(
+            desktop_gateway_e2e,
+            "new_report",
+            return_value=report,
+        ), patch.object(
+            desktop_gateway_e2e,
+            "runtime_manifest",
+            return_value=manifest,
+        ), patch.object(
+            desktop_gateway_e2e,
+            "station_url",
+            return_value="http://station.example:18132",
+        ), patch.object(
+            desktop_gateway_e2e,
+            "run_gateway_flow",
+            return_value=runtime,
+        ):
+            self.assertEqual(desktop_gateway_e2e.main(), 0)
+
+        self.assertEqual(report.manifest, manifest)
+        self.assertEqual(report.station_url, "http://station.example:18132")
+        self.assertEqual(report.runtime, runtime)
+        self.assertEqual(report.status, "PASS")
+        report.write.assert_called_once_with()
 
     def test_station_readback_uses_strict_shared_ssh_transport(self) -> None:
         support = (
