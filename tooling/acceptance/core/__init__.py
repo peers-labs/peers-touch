@@ -67,6 +67,7 @@ from .provisioner import EnvironmentProvisioner
 from .runtime_cell import (
     RuntimeCellState,
     CellProofState,
+    RuntimeCellLifecycle,
     TransportContract,
     DisplayContract,
     WebDriverContract,
@@ -134,6 +135,7 @@ __all__ = [
     "EnvironmentProvisioner",
     "RuntimeCellState",
     "CellProofState",
+    "RuntimeCellLifecycle",
     "TransportContract",
     "DisplayContract",
     "WebDriverContract",
