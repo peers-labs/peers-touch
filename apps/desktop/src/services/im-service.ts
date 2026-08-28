@@ -1424,9 +1424,6 @@ const messagingService: MessagingServiceContract = {
   },
 
   async listConversations() {
-    // #region debug-point A,B,C,D:list-conversations-start
-    fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'native-hydration-timeout', runId: 'post-fix', hypothesisId: 'A,B,C,D', location: 'im-service:listConversations:start', msg: '[DEBUG] Messaging conversation projection request started', data: {}, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     const response = await cmd<
       void,
       {
@@ -1445,9 +1442,6 @@ const messagingService: MessagingServiceContract = {
         }>
       }
     >('messaging_list_conversations')
-    // #region debug-point A,B,D:list-conversations-end
-    fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'native-hydration-timeout', runId: 'post-fix', hypothesisId: 'A,B,D', location: 'im-service:listConversations:end', msg: '[DEBUG] Messaging conversation projection request completed', data: { conversationCount: response.conversations.length }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     const conversations = response.conversations.map(conversation => ({
       conversationId: conversation.conversation_id,
       authorityStationId: conversation.authority_station_id,

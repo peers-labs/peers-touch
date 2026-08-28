@@ -235,13 +235,7 @@ function orderedPressureMessages(state: PressureWindowState): GroupMessage[] {
 async function hydrateSocialForActiveActor(): Promise<void> {
   const actorId = activeActorId();
   if (actorId) {
-    // #region debug-point A,C,D:hydrate-entry
-    fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'native-hydration-timeout', runId: 'post-fix', hypothesisId: 'A,C,D', location: 'chatHarness:hydrate:entry', msg: '[DEBUG] Active actor hydration started', data: { actorId }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
     await refreshSocialProjection('acceptance hydration', true);
-    // #region debug-point C,D:hydrate-complete
-    fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'native-hydration-timeout', runId: 'post-fix', hypothesisId: 'C,D', location: 'chatHarness:hydrate:complete', msg: '[DEBUG] Runtime-owned active actor hydration completed', data: { actorId, currentUserDid: useSocialChatStore.getState().currentUserDid, conversationCount: useSocialChatStore.getState().conversations.length }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
   }
 }
 
@@ -259,9 +253,6 @@ export function installAcceptanceHarness(): void {
         ({ lifecycle }) => lifecycle.state === 'ready' && lifecycle.authenticated,
         'authenticated identity lifecycle',
       );
-      // #region debug-point A,C:deferred-start
-      fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'native-hydration-timeout', runId: 'post-fix', hypothesisId: 'A,C', location: 'chatHarness:login:deferred-start', msg: '[DEBUG] Deferred runtime installation scheduled', data: { account }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
       return {
         authenticated: true,
         actorId: activeActorId(),
