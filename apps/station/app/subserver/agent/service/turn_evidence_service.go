@@ -69,6 +69,10 @@ func (s *TurnService) ExportTurnDiagnostics(
 	if err != nil {
 		return nil, err
 	}
+	toolIterationLimit, err := loadDiagnosticToolCallLimit(ctx, db, turnID)
+	if err != nil {
+		return nil, err
+	}
 
 	replay := &model.TurnDiagnosticReplay{
 		TurnId:             turn.ID,
@@ -85,12 +89,58 @@ func (s *TurnService) ExportTurnDiagnostics(
 		GeneratedAt:        timestamppb.New(time.Now().UTC()),
 		Trace:              trace,
 		ToolIterations:     uint32(max(turn.ToolIterations, 0)),
-		ToolIterationLimit: uint32(maxToolIterations),
+		ToolIterationLimit: toolIterationLimit,
 	}
 	if turn.EndedAt != nil {
 		replay.EndedAt = timestamppb.New(*turn.EndedAt)
 	}
 	return replay, nil
+}
+
+func loadDiagnosticToolCallLimit(
+	ctx context.Context,
+	db *gorm.DB,
+	turnID string,
+) (uint32, error) {
+	var attempt persistence.TurnAttempt
+	if err := db.WithContext(ctx).
+		Select("runtime_snapshot").
+		Where("turn_id = ?", turnID).
+		Order("attempt_index DESC").
+		First(&attempt).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return 0, errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"diagnostic replay has no persisted runtime snapshot",
+				err,
+			)
+		}
+		return 0, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"load runtime budget for diagnostic replay",
+			err,
+		)
+	}
+	snapshot, err := persistence.UnmarshalRuntimeSnapshot(attempt.RuntimeSnapshot)
+	if err != nil {
+		return 0, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"decode runtime budget source for diagnostic replay",
+			err,
+		)
+	}
+	if snapshot == nil || snapshot.GetBudget() == nil {
+		return 0, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"diagnostic runtime snapshot has no persisted budget",
+			nil,
+		)
+	}
+	return snapshot.GetBudget().GetMaxToolCalls(), nil
 }
 
 func loadDiagnosticTrace(

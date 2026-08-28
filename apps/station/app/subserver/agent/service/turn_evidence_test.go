@@ -9,6 +9,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"gorm.io/gorm"
 )
 
@@ -199,6 +200,10 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 		"11",
 		domain.ThinkingModeDisabled,
 	)
+	runtimeSnapshot.Budget = &model.RuntimeBudget{
+		MaxToolCalls:          2,
+		MaxIdenticalToolCalls: 1,
+	}
 	encodedRuntimeSnapshot, err := persistence.MarshalRuntimeSnapshot(runtimeSnapshot)
 	if err != nil {
 		t.Fatalf("encode runtime snapshot: %v", err)
@@ -328,6 +333,7 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 		!replay.ToolCalls[0].GetApproved() ||
 		replay.ToolCalls[0].GetExecutionAttemptCount() != 1 ||
 		replay.ToolCalls[0].GetDuplicateDeliveryCount() != 2 ||
+		replay.GetToolIterationLimit() != 2 ||
 		len(replay.Messages) != 2 ||
 		replay.Messages[0].GetContentHash() == "" {
 		t.Fatalf("diagnostic replay lost exact-turn evidence: %+v", replay)

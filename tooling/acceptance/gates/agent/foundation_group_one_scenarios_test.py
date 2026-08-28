@@ -331,8 +331,11 @@ def valid_as_f04_capture(
         },
         "loopBudget": {
             "stopped": True,
-            "observedIterations": 25,
-            "maximumIterations": 25,
+            "terminalReason": "max_tool_calls_exhausted",
+            "requestedLimit": 2,
+            "effectiveLimit": 2,
+            "observedIterations": 2,
+            "maximumIterations": 2,
             "executionAfterLimit": 0,
         },
         "replay": {
@@ -424,6 +427,39 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "authorityLineagePersisted",
         ):
             evaluate_as_f04(capture, platform="browser")
+
+    def test_as_f04_rejects_untyped_loop_budget_terminal(self) -> None:
+        capture = valid_as_f04_capture()
+        loop_budget = capture["loopBudget"]
+        assert isinstance(loop_budget, dict)
+        loop_budget["terminalReason"] = "completed"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "loopBudgetEnforced",
+        ):
+            evaluate_as_f04(capture, platform="desktop_app")
+
+    def test_as_f04_rejects_requested_effective_or_observed_limit_drift(
+        self,
+    ) -> None:
+        for key in (
+            "requestedLimit",
+            "effectiveLimit",
+            "observedIterations",
+            "maximumIterations",
+        ):
+            with self.subTest(key=key):
+                capture = valid_as_f04_capture()
+                loop_budget = capture["loopBudget"]
+                assert isinstance(loop_budget, dict)
+                loop_budget[key] = 3
+
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "loopBudgetEnforced",
+                ):
+                    evaluate_as_f04(capture, platform="desktop_app")
 
     def test_as_f05_accepts_complete_attachment_facts(self) -> None:
         assertions = evaluate_as_f05(valid_as_f05_capture())

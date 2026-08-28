@@ -1757,12 +1757,23 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 		Status:         string(domain.TurnStatusWaitingLocalTool),
 		StartedAt:      now,
 	}
+	pinnedBudget := &model.RuntimeBudget{
+		MaxToolCalls:          7,
+		MaxIdenticalToolCalls: 2,
+	}
+	runtimeSnapshot, err := persistence.MarshalRuntimeSnapshot(&model.RuntimeSnapshot{
+		Budget: pinnedBudget,
+	})
+	if err != nil {
+		t.Fatalf("encode pinned runtime budget: %v", err)
+	}
 	attempt := &persistence.TurnAttempt{
 		ID:                  "attempt-1",
 		TurnID:              turn.ID,
 		AttemptIndex:        1,
 		Status:              string(domain.TurnStatusWaitingLocalTool),
 		ReadinessSnapshotID: authority.ReadinessSnapshotID,
+		RuntimeSnapshot:     runtimeSnapshot,
 		StartedAt:           now,
 	}
 	if err := fixture.db.Create(conversation).Error; err != nil {
@@ -1822,6 +1833,7 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 
 	providerCalls := 0
 	resumedThinkingMode := domain.ThinkingMode("")
+	var resumedBudget *model.RuntimeBudget
 	service := &TurnService{
 		toolDispatch: fixture.service,
 		nudgeState:   domain.NewNudgeState(),
@@ -1835,6 +1847,7 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 		) (string, []ProviderToolCall, []domain.ProviderCallRecord, bool, error) {
 			providerCalls++
 			resumedThinkingMode = config.ThinkingMode
+			resumedBudget = cloneRuntimeBudget(config.RuntimeBudget)
 			return "",
 				[]ProviderToolCall{{
 					ID:        "provider-call-2",
@@ -1856,6 +1869,9 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 	}
 	if resumedThinkingMode != domain.ThinkingModeDisabled {
 		t.Fatalf("resumed thinking mode = %q, want disabled", resumedThinkingMode)
+	}
+	if !proto.Equal(resumedBudget, pinnedBudget) {
+		t.Fatalf("resumed budget = %+v, want persisted %+v", resumedBudget, pinnedBudget)
 	}
 
 	var completed persistence.ToolContinuation

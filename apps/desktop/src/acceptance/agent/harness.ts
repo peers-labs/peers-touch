@@ -8,6 +8,7 @@ import {
   streamAgentTurn,
   submitAgentFeedback,
   type AgentAttachmentRefInput,
+  type AgentRuntimeBudgetInput,
 } from '../../services/desktop_api';
 import { useAgentStore } from '../../store/agent';
 import { useChatStore } from '../../store/chat';
@@ -83,6 +84,7 @@ function startObservedFoundationTurn(input: {
   thinkingMode?: 'auto' | 'enabled' | 'disabled';
   clientCapabilitySessionId?: string;
   attachments?: AgentAttachmentRefInput[];
+  requestedBudget?: AgentRuntimeBudgetInput;
   timeoutMs?: number;
 }): ObservedFoundationTurn {
   const events: ObservedFoundationTurnResult['events'] = [];
@@ -118,6 +120,7 @@ function startObservedFoundationTurn(input: {
     thinking_mode: input.thinkingMode,
     client_capability_session_id: input.clientCapabilitySessionId,
     attachments: input.attachments,
+    requested_budget: input.requestedBudget,
   }, (event) => {
     const observed = {
       event: event.event,
@@ -449,6 +452,7 @@ async function waitFor(
 }
 
 const FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS = 180_000;
+const FOUNDATION_LOOP_MAX_TOOL_CALLS = 2;
 
 interface FoundationToolFixture {
   manifest: CapabilityManifest;
@@ -605,6 +609,7 @@ async function startFoundationToolTurn(input: {
   sampleId: string;
   label: string;
   repeatUntilStopped?: boolean;
+  requestedBudget?: AgentRuntimeBudgetInput;
 }): Promise<FoundationToolTurn> {
   const agentId = input.agent.id || input.agent.name;
   const conversation = await api.createAgentConversation({
@@ -625,6 +630,7 @@ async function startFoundationToolTurn(input: {
     provider: input.agent.provider || undefined,
     model: input.agent.model || undefined,
     clientCapabilitySessionId: input.capabilitySessionId,
+    requestedBudget: input.requestedBudget,
     timeoutMs: input.repeatUntilStopped
       ? 300_000
       : FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
@@ -971,13 +977,19 @@ async function runFoundationF04Scenario(input: {
       sampleId: input.sampleId,
       label: 'loop-budget',
       repeatUntilStopped: true,
+      requestedBudget: {
+        max_tool_calls: FOUNDATION_LOOP_MAX_TOOL_CALLS,
+      },
     });
     const loop = await waitForFoundationToolFacts(
       loopTurn.turnId,
       (facts, replay) =>
         facts.length > 0
         && facts.every((fact) => Number(fact.status) === ToolCallStatus.SUCCEEDED)
-        && Number(replay.status) === AgentTurnStatus.COMPLETED,
+        && Number(replay.status) === AgentTurnStatus.FAILED
+        && String(
+          evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
+        ) === 'max_tool_calls_exhausted',
       'Foundation ToolCall loop budget',
       600_000,
     );
@@ -991,8 +1003,33 @@ async function runFoundationF04Scenario(input: {
         'tool_iteration_limit',
       ) ?? 0,
     );
+    const attempts = evidenceArray(
+      evidenceField(loop.replay, 'attempts', 'attempts'),
+      'foundationF04LoopAttempts',
+    );
+    const latestAttempt = evidenceRecord(
+      attempts[attempts.length - 1],
+      'foundationF04LoopAttempt',
+    );
+    const runtimeSnapshot = evidenceRecord(
+      evidenceField(latestAttempt, 'runtimeSnapshot', 'runtime_snapshot'),
+      'foundationF04LoopRuntimeSnapshot',
+    );
+    const effectiveBudget = evidenceRecord(
+      evidenceField(runtimeSnapshot, 'budget', 'budget'),
+      'foundationF04LoopEffectiveBudget',
+    );
+    const effectiveLimit = Number(
+      evidenceField(effectiveBudget, 'maxToolCalls', 'max_tool_calls') ?? 0,
+    );
+    const terminalReason = String(
+      evidenceField(loop.replay, 'terminalReason', 'terminal_reason') ?? '',
+    );
     if (
-      observedIterations <= 0
+      observedIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+      || effectiveLimit !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+      || maximumIterations !== FOUNDATION_LOOP_MAX_TOOL_CALLS
+      || terminalReason !== 'max_tool_calls_exhausted'
       || loop.facts.length !== observedIterations
     ) {
       throw new Error('agent.acceptance.foundationToolLoopBudgetNotObserved');
@@ -1065,8 +1102,13 @@ async function runFoundationF04Scenario(input: {
         },
         loopBudget: {
           stopped:
-            observedIterations > 0
-            && observedIterations === maximumIterations,
+            terminalReason === 'max_tool_calls_exhausted'
+            && observedIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS
+            && effectiveLimit === FOUNDATION_LOOP_MAX_TOOL_CALLS
+            && maximumIterations === FOUNDATION_LOOP_MAX_TOOL_CALLS,
+          terminalReason,
+          requestedLimit: FOUNDATION_LOOP_MAX_TOOL_CALLS,
+          effectiveLimit,
           observedIterations,
           maximumIterations,
           executionAfterLimit:
@@ -2082,9 +2124,14 @@ function evaluateF04(ctx: DirectCellAssertionContext): Record<string, boolean | 
       && lineageComplete(expired, false, false),
     loopBudgetEnforced:
       loopBudget.stopped === true
-      && count(loopBudget, 'observedIterations') > 0
+      && loopBudget.terminalReason === 'max_tool_calls_exhausted'
+      && count(loopBudget, 'requestedLimit') === FOUNDATION_LOOP_MAX_TOOL_CALLS
+      && count(loopBudget, 'effectiveLimit')
+        === count(loopBudget, 'requestedLimit')
       && count(loopBudget, 'observedIterations')
-        === count(loopBudget, 'maximumIterations')
+        === count(loopBudget, 'effectiveLimit')
+      && count(loopBudget, 'maximumIterations')
+        === count(loopBudget, 'effectiveLimit')
       && count(loopBudget, 'executionAfterLimit') === 0,
     sourceReplayEqual:
       typeof replay.sourceHash === 'string'

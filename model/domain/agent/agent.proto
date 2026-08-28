@@ -384,6 +384,7 @@ message ExecuteTurnRequest {
   // Independent from effort; unspecified normalizes to the Agent default, then AUTO.
   string thinking_mode = 22;
   repeated AgentAttachmentRef attachments = 23;
+  RuntimeBudget requested_budget = 24;
 }
 
 message ExecuteTurnResponse {
@@ -762,6 +763,7 @@ message RuntimeSnapshot {
   string external_session_id = 8;
   uint64 external_session_epoch = 9;
   string thinking_mode = 10;
+  RuntimeBudget budget = 11;
 }
 
 message RuntimeBudget {

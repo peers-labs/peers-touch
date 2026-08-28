@@ -174,6 +174,18 @@ func (s *TurnService) persistRuntimeAuthority(
 			fmt.Sprintf("%d", agentVersion),
 			config.ThinkingMode,
 		)
+		snapshot.Budget = cloneRuntimeBudget(config.RuntimeBudget)
+		if snapshot.Budget == nil {
+			snapshot.Budget = cloneRuntimeBudget(admission.Budget)
+		}
+		if snapshot.Budget == nil {
+			return errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"runtime admission returned no effective budget",
+				nil,
+			)
+		}
 
 		var binding *model.ConversationRuntimeBinding
 		if len(conversation.RuntimeBinding) == 0 {
@@ -288,6 +300,7 @@ func newDirectRuntimeSnapshot(
 		ExternalSessionId:     "",
 		ExternalSessionEpoch:  0,
 		ThinkingMode:          string(thinkingMode),
+		Budget:                cloneRuntimeBudget(admission.Budget),
 	}
 }
 
@@ -464,6 +477,7 @@ func portableRuntimeSnapshot(snapshot *model.RuntimeSnapshot) map[string]interfa
 		"externalSessionId":     snapshot.GetExternalSessionId(),
 		"externalSessionEpoch":  snapshot.GetExternalSessionEpoch(),
 		"thinkingMode":          snapshot.GetThinkingMode(),
+		"budget":                snapshot.GetBudget(),
 	}
 }
 

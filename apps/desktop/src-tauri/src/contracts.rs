@@ -975,6 +975,30 @@ pub struct AgentAttachmentRefInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRuntimeBudgetInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_attempts: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_agent_steps: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tool_calls: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_identical_tool_calls: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_delegation_depth: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wall_time_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_input_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_attachment_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_cost: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentExecuteTurnInput {
     pub stream_id: Option<String>,
     pub client_idempotency_key: String,
@@ -982,6 +1006,7 @@ pub struct AgentExecuteTurnInput {
     pub agent_id: String,
     pub user_input: String,
     pub attachments: Option<Vec<AgentAttachmentRefInput>>,
+    pub requested_budget: Option<AgentRuntimeBudgetInput>,
     pub provider: Option<String>,
     pub model: Option<String>,
     pub workspace_mode: Option<String>,

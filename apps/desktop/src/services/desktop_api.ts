@@ -2441,6 +2441,7 @@ export interface AgentExecuteTurnInput {
   agent_id: string;
   user_input: string;
   attachments?: AgentAttachmentRefInput[];
+  requested_budget?: AgentRuntimeBudgetInput;
   provider?: string;
   model?: string;
   identity?: string;

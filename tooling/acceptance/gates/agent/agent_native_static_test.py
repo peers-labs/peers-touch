@@ -35,6 +35,18 @@ FOUNDATION_RUNTIME_CLIENT = (
 DESKTOP_HTTP_GATEWAY = (
     ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "http_gateway" / "mod.rs"
 )
+DESKTOP_API = ROOT / "apps" / "desktop" / "src" / "services" / "desktop_api.ts"
+DESKTOP_CONTRACTS = ROOT / "apps" / "desktop" / "src-tauri" / "src" / "contracts.rs"
+DESKTOP_AGENT_TURN = (
+    ROOT
+    / "apps"
+    / "desktop"
+    / "src-tauri"
+    / "src"
+    / "application"
+    / "agent_turn"
+    / "mod.rs"
+)
 
 
 class AgentNativeRunnerStaticTest(unittest.TestCase):
@@ -234,6 +246,34 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn('"oss_upload_agent_attachment_bytes"', gateway)
         self.assertIn('"oss_resolve_url"', gateway)
         self.assertIn('"oss_delete_file"', gateway)
+
+    def test_as_f04_budget_uses_browser_and_tauri_production_streams(self) -> None:
+        desktop_api = DESKTOP_API.read_text(encoding="utf-8")
+        contracts = DESKTOP_CONTRACTS.read_text(encoding="utf-8")
+        agent_turn = DESKTOP_AGENT_TURN.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "requested_budget?: AgentRuntimeBudgetInput",
+            desktop_api,
+        )
+        self.assertIn(
+            "body: JSON.stringify({ ...input, stream: true })",
+            desktop_api,
+        )
+        self.assertIn(
+            "pub requested_budget: Option<AgentRuntimeBudgetInput>",
+            contracts,
+        )
+        self.assertIn(
+            'body["requested_budget"] = json!(requested_budget)',
+            agent_turn,
+        )
+        self.assertIn(
+            "max_tool_calls: FOUNDATION_LOOP_MAX_TOOL_CALLS",
+            self.source,
+        )
+        self.assertIn("FOUNDATION_LOOP_MAX_TOOL_CALLS = 2", self.source)
+        self.assertIn("max_tool_calls_exhausted", self.source)
 
     def test_harness_reuses_identity_runtime(self) -> None:
         self.assertIn("identityRuntime", self.source)

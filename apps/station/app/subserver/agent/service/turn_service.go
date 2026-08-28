@@ -59,6 +59,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 // ---------------------------------------------------------------------------
@@ -95,6 +97,7 @@ type TurnConfig struct {
 	AssistantReplacesID       string
 	ClientCapabilitySessionID string
 	RequestedBudgetJSON       json.RawMessage
+	RuntimeBudget             *model.RuntimeBudget
 	Attachments               []*model.AgentAttachmentRef
 	AdmittedAttachments       []AdmittedAttachment
 	RotationStrategy          domain.RotationStrategy
@@ -207,7 +210,10 @@ func (s *TurnService) PreflightAttachments(
 	if request == nil || len(request.GetAttachments()) == 0 {
 		return nil
 	}
-	config := s.queuedTurnConfig(actorID, request, "")
+	config, err := s.queuedTurnConfig(actorID, request, "")
+	if err != nil {
+		return err
+	}
 	s.resolveAgentDefaults(ctx, config)
 	if s.admissionResolver == nil {
 		return errcode.New(
@@ -226,13 +232,20 @@ func (s *TurnService) PreflightAttachments(
 	if err != nil {
 		return err
 	}
+	effectiveBudget, err := effectiveRuntimeBudget(
+		runtimeSnapshot.Budget,
+		config.RequestedBudgetJSON,
+	)
+	if err != nil {
+		return err
+	}
 	_, err = s.attachmentAdmission.Admit(
 		ctx,
 		config.ActorID,
 		config.ConversationID,
 		config.Attachments,
 		runtimeSnapshot.Capabilities,
-		runtimeSnapshot.Budget,
+		effectiveBudget,
 	)
 	return err
 }
@@ -347,7 +360,18 @@ func (s *TurnService) executeAdmittedQueuedTurn(
 		return
 	}
 	request := admitted.Request
-	config := s.queuedTurnConfig(actorID, request, admitted.Admission.GetTurnId())
+	config, configErr := s.queuedTurnConfig(actorID, request, admitted.Admission.GetTurnId())
+	if configErr != nil {
+		_ = s.failTurn(
+			ctx,
+			request.GetAgentId(),
+			admitted.Admission.GetTurnId(),
+			"",
+			"",
+			"failed to decode queued runtime budget",
+		)
+		return
+	}
 	if s.chatTaskService != nil {
 		taskID, err := s.chatTaskService.EnsureChatTask(
 			ctx,
@@ -412,7 +436,7 @@ func (s *TurnService) queuedTurnConfig(
 	actorID string,
 	request *model.ExecuteTurnRequest,
 	turnID string,
-) *TurnConfig {
+) (*TurnConfig, error) {
 	contextWindowSize := int(request.GetContextWindowSize())
 	if contextWindowSize <= 0 {
 		contextWindowSize = 128000
@@ -420,6 +444,10 @@ func (s *TurnService) queuedTurnConfig(
 	maxRetries := int(request.GetMaxRetries())
 	if maxRetries <= 0 {
 		maxRetries = 3
+	}
+	requestedBudgetJSON, err := marshalRequestedRuntimeBudget(request.GetRequestedBudget())
+	if err != nil {
+		return nil, err
 	}
 	return &TurnConfig{
 		TurnID:                    turnID,
@@ -436,9 +464,10 @@ func (s *TurnService) queuedTurnConfig(
 		Effort:                    request.GetEffort(),
 		ThinkingMode:              domain.ThinkingMode(request.GetThinkingMode()),
 		ClientCapabilitySessionID: request.GetClientCapabilitySessionId(),
+		RequestedBudgetJSON:       requestedBudgetJSON,
 		Attachments:               request.GetAttachments(),
 		MemoryDisabled:            request.GetMemoryDisabled(),
-	}
+	}, nil
 }
 
 func (s *TurnService) publishDomainEvent(ctx context.Context, agentID, turnID, taskID, stepID, eventType string, payload interface{}) {
@@ -750,13 +779,21 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	if admitErr != nil {
 		return nil, admitErr
 	}
+	config.RuntimeBudget, err = effectiveRuntimeBudget(
+		runtimeSnapshot.Budget,
+		config.RequestedBudgetJSON,
+	)
+	if err != nil {
+		return nil, err
+	}
+	runtimeSnapshot.Budget = cloneRuntimeBudget(config.RuntimeBudget)
 	admittedAttachments, attachmentErr := s.attachmentAdmission.Admit(
 		ctx,
 		config.ActorID,
 		config.ConversationID,
 		config.Attachments,
 		runtimeSnapshot.Capabilities,
-		runtimeSnapshot.Budget,
+		config.RuntimeBudget,
 	)
 	if attachmentErr != nil {
 		if config.PrecreatedTurnID != "" {
@@ -1048,9 +1085,14 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		return nil, usageErr
 	}
 	if err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, fmt.Sprintf("tool call processing failed: %v", err))
+		terminalReason := fmt.Sprintf("tool call processing failed: %v", err)
+		if reason, exhausted := runtimeBudgetExhaustionReason(err); exhausted {
+			terminalReason = reason
+		}
+		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, terminalReason)
 		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 			Type:  "error",
+			Stage: terminalReason,
 			Error: err.Error(),
 		})
 		return nil, err
@@ -1701,11 +1743,8 @@ func toolSchemaContextSegment(
 // processToolCalls — tool call iteration loop
 // ---------------------------------------------------------------------------
 
-// maxToolIterations is the hard upper bound on tool call rounds per turn
-// to prevent infinite loops from adversarial or buggy tool responses.
 const (
-	maxToolIterations = 25
-	localToolTimeout  = 120 * time.Second
+	localToolTimeout = 120 * time.Second
 
 	toolContinuationPollInterval      = 250 * time.Millisecond
 	toolContinuationLeaseTTL          = 2 * time.Minute
@@ -1729,8 +1768,16 @@ func (s *TurnService) processToolCalls(
 	startingIterations int,
 ) (int, bool, error) {
 	iterations := startingIterations
+	budget := config.RuntimeBudget
+	if budget == nil {
+		budget = defaultRuntimeBudget(int32(config.ContextWindowSize))
+	}
+	budgetState, err := s.loadToolLoopBudgetState(ctx, turnID)
+	if err != nil {
+		return iterations, false, err
+	}
 
-	for iterations < maxToolIterations {
+	for {
 		toolCalls := make([]toolCallEntry, 0, len(providerToolCalls))
 		for _, call := range providerToolCalls {
 			toolCalls = append(toolCalls, toolCallEntry{
@@ -1741,6 +1788,9 @@ func (s *TurnService) processToolCalls(
 		}
 		if len(toolCalls) == 0 {
 			break
+		}
+		if exhaustion := budgetState.admit(budget, toolCalls); exhaustion != nil {
+			return iterations, false, exhaustion
 		}
 
 		iterations++
@@ -1850,11 +1900,222 @@ func (s *TurnService) processToolCalls(
 		return iterations, true, nil
 	}
 
-	if iterations >= maxToolIterations {
-		logger.Warnf(ctx, "tool iteration hard limit reached: turn_id=%s iterations=%d", turnID, iterations)
-	}
-
 	return iterations, false, nil
+}
+
+const (
+	runtimeBudgetExhaustedCode           errcode.Code = "TOOL_LOOP_BUDGET_EXHAUSTED"
+	maxToolCallsExhaustedReason                       = "max_tool_calls_exhausted"
+	maxIdenticalToolCallsExhaustedReason              = "max_identical_tool_calls_exhausted"
+	runtimeBudgetExhaustedLocaleKey                   = "agent.errors.toolLoopBudgetExhausted"
+)
+
+type toolLoopBudgetState struct {
+	total     uint32
+	identical map[string]uint32
+}
+
+func (s *TurnService) loadToolLoopBudgetState(
+	ctx context.Context,
+	turnID string,
+) (*toolLoopBudgetState, error) {
+	state := &toolLoopBudgetState{identical: map[string]uint32{}}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var calls []persistence.ToolCall
+	if err := db.WithContext(ctx).
+		Select("tool_name", "arguments_hash").
+		Where("turn_id = ?", turnID).
+		Find(&calls).Error; err != nil {
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"load persisted tool calls for runtime budget",
+			err,
+		)
+	}
+	state.total = uint32(len(calls))
+	for i := range calls {
+		state.identical[toolCallBudgetKey(calls[i].ToolName, calls[i].ArgumentsHash)]++
+	}
+	return state, nil
+}
+
+func (s *toolLoopBudgetState) admit(
+	budget *model.RuntimeBudget,
+	calls []toolCallEntry,
+) error {
+	if s == nil || budget == nil || len(calls) == 0 {
+		return nil
+	}
+	callCount := uint32(len(calls))
+	if limit := budget.GetMaxToolCalls(); limit > 0 && s.total+callCount > limit {
+		return runtimeBudgetExhausted(
+			maxToolCallsExhaustedReason,
+			limit,
+			s.total,
+		)
+	}
+	nextIdentical := make(map[string]uint32, len(s.identical)+len(calls))
+	for key, count := range s.identical {
+		nextIdentical[key] = count
+	}
+	for i := range calls {
+		key := toolCallBudgetKey(calls[i].ToolName, hashBytes([]byte(calls[i].Arguments)))
+		nextIdentical[key]++
+		if limit := budget.GetMaxIdenticalToolCalls(); limit > 0 && nextIdentical[key] > limit {
+			return runtimeBudgetExhausted(
+				maxIdenticalToolCallsExhaustedReason,
+				limit,
+				nextIdentical[key]-1,
+			)
+		}
+	}
+	s.total += callCount
+	s.identical = nextIdentical
+	return nil
+}
+
+func (s *toolLoopBudgetState) exhaustionBeforeContinuation(
+	budget *model.RuntimeBudget,
+) error {
+	if s == nil || budget == nil {
+		return nil
+	}
+	if limit := budget.GetMaxToolCalls(); limit > 0 && s.total >= limit {
+		return runtimeBudgetExhausted(maxToolCallsExhaustedReason, limit, s.total)
+	}
+	if limit := budget.GetMaxIdenticalToolCalls(); limit > 0 {
+		for _, count := range s.identical {
+			if count >= limit {
+				return runtimeBudgetExhausted(
+					maxIdenticalToolCallsExhaustedReason,
+					limit,
+					count,
+				)
+			}
+		}
+	}
+	return nil
+}
+
+func toolCallBudgetKey(toolName string, argumentsHash string) string {
+	return strings.TrimSpace(toolName) + "\x00" + strings.TrimSpace(argumentsHash)
+}
+
+func runtimeBudgetExhausted(reason string, limit uint32, consumed uint32) error {
+	return &errcode.BizError{
+		Code:       runtimeBudgetExhaustedCode,
+		HTTPStatus: http.StatusUnprocessableEntity,
+		Message:    reason,
+		Payload: &model.ErrorPayload{
+			Error:     runtimeBudgetExhaustedLocaleKey,
+			ErrorType: string(runtimeBudgetExhaustedCode),
+			LocaleKey: runtimeBudgetExhaustedLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details: map[string]string{
+				"reason":   reason,
+				"limit":    fmt.Sprintf("%d", limit),
+				"consumed": fmt.Sprintf("%d", consumed),
+			},
+		},
+	}
+}
+
+func runtimeBudgetExhaustionReason(err error) (string, bool) {
+	var budgetErr *errcode.BizError
+	if !errors.As(err, &budgetErr) || budgetErr.Code != runtimeBudgetExhaustedCode {
+		return "", false
+	}
+	return budgetErr.Message, true
+}
+
+func effectiveRuntimeBudget(
+	policy *model.RuntimeBudget,
+	requestedJSON json.RawMessage,
+) (*model.RuntimeBudget, error) {
+	effective := cloneRuntimeBudget(policy)
+	if effective == nil {
+		effective = defaultRuntimeBudget(128000)
+	}
+	if len(requestedJSON) == 0 || string(requestedJSON) == "null" || string(requestedJSON) == "{}" {
+		return effective, nil
+	}
+	var requested model.RuntimeBudget
+	if err := protojson.Unmarshal(requestedJSON, &requested); err != nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"requested runtime budget is invalid",
+			err,
+		)
+	}
+	effective.MaxAttempts = lowerPositiveLimit(effective.MaxAttempts, requested.MaxAttempts)
+	effective.MaxAgentSteps = lowerPositiveLimit(effective.MaxAgentSteps, requested.MaxAgentSteps)
+	effective.MaxToolCalls = lowerPositiveLimit(effective.MaxToolCalls, requested.MaxToolCalls)
+	effective.MaxIdenticalToolCalls = lowerPositiveLimit(
+		effective.MaxIdenticalToolCalls,
+		requested.MaxIdenticalToolCalls,
+	)
+	effective.MaxDelegationDepth = lowerPositiveLimit(
+		effective.MaxDelegationDepth,
+		requested.MaxDelegationDepth,
+	)
+	effective.WallTimeMs = lowerPositiveLimit64(effective.WallTimeMs, requested.WallTimeMs)
+	effective.MaxInputTokens = lowerPositiveLimit64(effective.MaxInputTokens, requested.MaxInputTokens)
+	effective.MaxOutputTokens = lowerPositiveLimit64(effective.MaxOutputTokens, requested.MaxOutputTokens)
+	effective.MaxAttachmentBytes = lowerPositiveLimit64(
+		effective.MaxAttachmentBytes,
+		requested.MaxAttachmentBytes,
+	)
+	if requested.MaxCost != nil && *requested.MaxCost > 0 &&
+		(effective.MaxCost == nil || *requested.MaxCost < *effective.MaxCost) {
+		value := *requested.MaxCost
+		effective.MaxCost = &value
+	}
+	return effective, nil
+}
+
+func marshalRequestedRuntimeBudget(
+	requested *model.RuntimeBudget,
+) (json.RawMessage, error) {
+	if requested == nil {
+		return nil, nil
+	}
+	encoded, err := protojson.Marshal(requested)
+	if err != nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"encode requested runtime budget",
+			err,
+		)
+	}
+	return encoded, nil
+}
+
+func cloneRuntimeBudget(source *model.RuntimeBudget) *model.RuntimeBudget {
+	if source == nil {
+		return nil
+	}
+	return proto.Clone(source).(*model.RuntimeBudget)
+}
+
+func lowerPositiveLimit(policy uint32, requested uint32) uint32 {
+	if requested > 0 && (policy == 0 || requested < policy) {
+		return requested
+	}
+	return policy
+}
+
+func lowerPositiveLimit64(policy uint64, requested uint64) uint64 {
+	if requested > 0 && (policy == 0 || requested < policy) {
+		return requested
+	}
+	return policy
 }
 
 func toolDecisionTurnEvent(decision ProposalDecision, iteration int) TurnEvent {
@@ -2233,6 +2494,14 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		return true, err
 	}
 	config.AvailableTools = config.AuthorizedCapabilities.ToolNames()
+	config.RuntimeBudget, err = s.loadPinnedRuntimeBudget(
+		ctx,
+		db,
+		batch.AttemptID,
+	)
+	if err != nil {
+		return true, err
+	}
 	trace, err := s.loadTurnTraceForResume(ctx, batch.TurnID)
 	if err != nil {
 		return true, err
@@ -2252,6 +2521,26 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		false,
 	); err != nil {
 		return true, err
+	}
+	budgetState, err := s.loadToolLoopBudgetState(ctx, batch.TurnID)
+	if err != nil {
+		return true, err
+	}
+	if exhaustion := budgetState.exhaustionBeforeContinuation(config.RuntimeBudget); exhaustion != nil {
+		reason, _ := runtimeBudgetExhaustionReason(exhaustion)
+		_ = s.saveTurnTrace(ctx, trace)
+		_ = s.toolDispatch.CompleteContinuation(
+			ctx,
+			continuation.ID,
+			continuation.LeaseID,
+			continuation.FencingToken,
+			nil,
+		)
+		_ = s.failTurn(ctx, batch.AgentID, batch.TurnID, batch.TaskID, batch.StepID, reason)
+		if s.chatTaskService != nil && batch.StepID != "" {
+			_ = s.chatTaskService.FailChatStep(ctx, batch.TaskID, batch.StepID, reason)
+		}
+		return true, exhaustion
 	}
 
 	providerCall := s.resumeProviderCall
@@ -2301,6 +2590,10 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		return true, fmt.Errorf("persist continuation usage: %w", usageErr)
 	}
 	if processErr != nil {
+		terminalReason := "tool continuation processing failed"
+		if reason, exhausted := runtimeBudgetExhaustionReason(processErr); exhausted {
+			terminalReason = reason
+		}
 		_ = s.saveTurnTrace(ctx, trace)
 		_ = s.toolDispatch.CompleteContinuation(
 			ctx,
@@ -2309,9 +2602,9 @@ func (s *TurnService) ResumeReadyToolContinuation(
 			continuation.FencingToken,
 			[]byte(nextResponse),
 		)
-		_ = s.failTurn(ctx, batch.AgentID, batch.TurnID, batch.TaskID, batch.StepID, "tool continuation processing failed")
+		_ = s.failTurn(ctx, batch.AgentID, batch.TurnID, batch.TaskID, batch.StepID, terminalReason)
 		if s.chatTaskService != nil && batch.StepID != "" {
-			_ = s.chatTaskService.FailChatStep(ctx, batch.TaskID, batch.StepID, "tool continuation processing failed")
+			_ = s.chatTaskService.FailChatStep(ctx, batch.TaskID, batch.StepID, terminalReason)
 		}
 		return true, processErr
 	}
@@ -2365,6 +2658,43 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		return true, err
 	}
 	return true, nil
+}
+
+func (s *TurnService) loadPinnedRuntimeBudget(
+	ctx context.Context,
+	db *gorm.DB,
+	attemptID string,
+) (*model.RuntimeBudget, error) {
+	var attempt persistence.TurnAttempt
+	if err := db.WithContext(ctx).
+		Select("runtime_snapshot").
+		Where("id = ?", strings.TrimSpace(attemptID)).
+		First(&attempt).Error; err != nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"load persisted runtime snapshot for tool continuation",
+			err,
+		)
+	}
+	snapshot, err := persistence.UnmarshalRuntimeSnapshot(attempt.RuntimeSnapshot)
+	if err != nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"decode persisted runtime snapshot for tool continuation",
+			err,
+		)
+	}
+	if snapshot == nil || snapshot.GetBudget() == nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"persisted runtime snapshot has no runtime budget",
+			nil,
+		)
+	}
+	return cloneRuntimeBudget(snapshot.GetBudget()), nil
 }
 
 func (s *TurnService) loadTurnTraceForResume(ctx context.Context, turnID string) (*domain.TurnTrace, error) {

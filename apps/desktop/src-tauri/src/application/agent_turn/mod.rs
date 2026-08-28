@@ -531,6 +531,9 @@ fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value 
     if let Some(model) = input.model.filter(|value| !value.trim().is_empty()) {
         body["model"] = json!(model);
     }
+    if let Some(requested_budget) = input.requested_budget {
+        body["requested_budget"] = json!(requested_budget);
+    }
     if let Some(identity) = input.identity.filter(|value| !value.trim().is_empty()) {
         body["identity"] = json!(identity);
     }
@@ -1813,6 +1816,24 @@ mod tests {
             body.get("thinking_mode").and_then(Value::as_str),
             Some("disabled"),
         );
+    }
+
+    #[test]
+    fn turn_request_preserves_requested_runtime_budget() {
+        let input: AgentExecuteTurnInput = serde_json::from_value(json!({
+            "client_idempotency_key": "request-1",
+            "conversation_id": "conversation-1",
+            "agent_id": "agent-1",
+            "user_input": "exercise the bounded tool loop",
+            "requested_budget": {
+                "max_tool_calls": 2
+            }
+        }))
+        .expect("turn input should deserialize");
+
+        let body = build_turn_request_body(input, true);
+
+        assert_eq!(body["requested_budget"], json!({"max_tool_calls": 2}));
     }
 
     #[test]

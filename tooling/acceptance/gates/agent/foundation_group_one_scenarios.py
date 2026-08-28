@@ -11,6 +11,9 @@ class GroupOneScenarioError(RuntimeError):
     """A scenario capture is missing reviewed production facts."""
 
 
+AS_F04_MAX_TOOL_CALLS = 2
+
+
 def evaluate_as_f02(capture: Mapping[str, Any]) -> dict[str, bool]:
     invalid = _mapping(capture, "invalidSubmission")
     duplicate = _mapping(capture, "duplicateSubmission")
@@ -323,7 +326,24 @@ def evaluate_as_f04(
         ),
         "loopBudgetEnforced": (
             loop_budget.get("stopped") is True
+            and _nonempty_string(
+                loop_budget,
+                "terminalReason",
+                scenario="AS-F04",
+            )
+            == "max_tool_calls_exhausted"
             and _positive_int(
+                loop_budget,
+                "requestedLimit",
+                scenario="AS-F04",
+            )
+            == AS_F04_MAX_TOOL_CALLS
+            == _positive_int(
+                loop_budget,
+                "effectiveLimit",
+                scenario="AS-F04",
+            )
+            == _positive_int(
                 loop_budget,
                 "observedIterations",
                 scenario="AS-F04",

@@ -11,6 +11,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -110,18 +111,32 @@ func TestDomainTurnStatusToProtoProjectsLocalToolWaitAsRunning(t *testing.T) {
 
 func TestTurnConfigFromRequestDoesNotAcceptKnowledgeAuthority(t *testing.T) {
 	handlers := NewTurnHandlers(&service.TurnService{}, service.NewToolRegistryService(nil, nil), nil, nil)
-	config := handlers.turnConfigFromRequest(context.Background(), &model.ExecuteTurnRequest{
+	config, err := handlers.turnConfigFromRequest(context.Background(), &model.ExecuteTurnRequest{
 		ConversationId: "conv_1",
 		AgentId:        "agent_1",
 		UserInput:      "How do traces work?",
 		ThinkingMode:   "disabled",
+		RequestedBudget: &model.RuntimeBudget{
+			MaxToolCalls:          2,
+			MaxIdenticalToolCalls: 1,
+		},
 	}, nil)
+	if err != nil {
+		t.Fatalf("map turn config: %v", err)
+	}
 
 	if config.ThinkingMode != domain.ThinkingModeDisabled {
 		t.Fatalf("expected disabled thinking mode, got %q", config.ThinkingMode)
 	}
 	if config.AuthorizedCapabilities != nil {
 		t.Fatal("handler must not manufacture an authorized capability set")
+	}
+	var requested model.RuntimeBudget
+	if err := protojson.Unmarshal(config.RequestedBudgetJSON, &requested); err != nil {
+		t.Fatalf("decode requested runtime budget: %v", err)
+	}
+	if requested.GetMaxToolCalls() != 2 || requested.GetMaxIdenticalToolCalls() != 1 {
+		t.Fatalf("requested runtime budget was not mapped: %+v", &requested)
 	}
 }
 

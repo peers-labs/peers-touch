@@ -2213,6 +2213,42 @@ AS-F04 implementation progress (2026-08-28):
   duplicate replay identity, durable authority lineage, and the exact
   25-iteration loop bound. The complete Gate then advanced to AS-F05 and
   failed closed because that direct-runtime group is not implemented.
+- The later exact-source `e15fc07bc` run
+  `20260828T165050367799Z-2c9ed1a206d665dd1c55cea5541872d4`
+  stopped earlier at Browser AS-F04 `zh-CN` with
+  `loopBudgetEnforced=false`; cleanup and redaction passed. Since AS-F04 had
+  already produced a source-matched pass and the current loop stimulus depends
+  on a real provider voluntarily continuing tool calls, this sample requires a
+  trace-level diagnosis of observed iterations, configured limit, terminal
+  reason, and post-limit execution before any retry or assertion change.
+  Foundation remains `PARTIAL / UNPROVEN`.
+- Station readback identified the failing Turn as
+  `turn_34beff56135d004d23093c4f`: it completed normally after 16 successful
+  `skills_list` ToolCalls and 17 provider calls, while the immediately
+  preceding tuple reached 25 ToolCalls. This proves the fixture depends on the
+  provider voluntarily continuing and therefore cannot deterministically prove
+  exhaustion. Source review also found that the Turn loop still uses a
+  hard-coded 25-round bound instead of the pinned D09 `RuntimeBudget`, and
+  reports exhaustion as ordinary completion. The mechanical plan correction is
+  to carry the already-defined lower requested budget through the active Turn
+  contract, pin and enforce it in Station, persist a typed exhaustion outcome,
+  and make AS-F04 use that production contract. Prompt-only steering,
+  retry-until-green, and synthetic provider evidence remain forbidden.
+- The D09 checkpoint now carries `requested_budget` through the canonical
+  Browser/Tauri `ExecuteTurnRequest`, resolves it lower-only against Station
+  policy, and persists the effective budget in the immutable TurnAttempt
+  runtime snapshot. Initial execution and continuation both enforce total and
+  identical ToolCall bounds before dispatch or another provider call; budget
+  exhaustion terminates with `TOOL_LOOP_BUDGET_EXHAUSTED` and
+  `max_tool_calls_exhausted`. Diagnostic replay reads the persisted limit, and
+  AS-F04 requests a two-call limit and independently verifies the requested,
+  effective, observed, terminal, and zero-post-limit facts. Agent Go tests and
+  focused race tests, Desktop 344 tests/build, Mobile check, 78 Foundation
+  Python tests, Agent Acceptance validation, Go style, and diff checks pass.
+  Shared and Mobile Web protobuf bindings were regenerated; the optional
+  native Kotlin/Swift generation path remains unavailable because the local
+  native protoc plugins are not installed. Runtime proof remains `UNPROVEN`
+  until this checkpoint is committed and deployed.
 
 **W8a checks**:
 

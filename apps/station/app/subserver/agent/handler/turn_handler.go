@@ -180,7 +180,10 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 			"conversation_id is required", nil))
 	}
 
-	config := h.turnConfigFromRequest(ctx, req, nil)
+	config, err := h.turnConfigFromRequest(ctx, req, nil)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
 	var admission *model.TurnAdmission
 	if h.admission != nil {
 		admissionResult, admissionErr := h.admission.Admit(ctx, subjectActorID(ctx), req)
@@ -400,7 +403,7 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 	events := make(chan service.TurnEvent, 32)
 	done := make(chan turnStreamResult, 1)
 	var errorEmitted atomic.Bool
-	config := h.turnConfigFromRequest(ctx, &input, func(eventCtx context.Context, event service.TurnEvent) {
+	config, configErr := h.turnConfigFromRequest(ctx, &input, func(eventCtx context.Context, event service.TurnEvent) {
 		if event.Type == "error" || event.Type == "cancelled" {
 			errorEmitted.Store(true)
 		}
@@ -409,6 +412,13 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		case <-eventCtx.Done():
 		}
 	})
+	if configErr != nil {
+		_ = writeTurnStreamEvent(resp, "error", map[string]any{
+			"type":  "error",
+			"error": configErr.Error(),
+		})
+		return nil
+	}
 	config.TurnID = turnID
 	config.ExecutionContext = turnCtx
 	if admission != nil {
@@ -542,9 +552,15 @@ func (h *TurnHandlers) HandleQuickCompletion(ctx context.Context, req server.Req
 		return nil
 	}
 
-	config := h.turnConfigFromRequest(ctx, &model.ExecuteTurnRequest{
+	config, configErr := h.turnConfigFromRequest(ctx, &model.ExecuteTurnRequest{
 		AgentId: input.AgentID,
 	}, nil)
+	if configErr != nil {
+		resp.WriteHeader(http.StatusBadRequest)
+		out, _ := json.Marshal(map[string]any{"ok": false, "error": configErr.Error()})
+		_, _ = resp.Write(out)
+		return nil
+	}
 
 	content, err := h.turnService.QuickCompletion(ctx, config, input.Prompt)
 	if err != nil {
@@ -573,7 +589,11 @@ func turnModelFromResult(result turnStreamResult) string {
 	return result.model
 }
 
-func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.ExecuteTurnRequest, sink service.TurnEventSink) *service.TurnConfig {
+func (h *TurnHandlers) turnConfigFromRequest(
+	ctx context.Context,
+	req *model.ExecuteTurnRequest,
+	sink service.TurnEventSink,
+) (*service.TurnConfig, error) {
 	contextWindowSize := int(req.GetContextWindowSize())
 	if contextWindowSize <= 0 {
 		contextWindowSize = 128000
@@ -585,6 +605,19 @@ func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.Exe
 	}
 
 	actorID := subjectActorID(ctx)
+	var requestedBudgetJSON json.RawMessage
+	if req.GetRequestedBudget() != nil {
+		encoded, err := protojson.Marshal(req.GetRequestedBudget())
+		if err != nil {
+			return nil, errcode.New(
+				errcode.AgentInvalidRequest,
+				http.StatusBadRequest,
+				"encode requested runtime budget",
+				err,
+			)
+		}
+		requestedBudgetJSON = encoded
+	}
 
 	return &service.TurnConfig{
 		AgentID:                   req.GetAgentId(),
@@ -600,10 +633,11 @@ func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.Exe
 		Effort:                    req.GetEffort(),
 		ThinkingMode:              domain.ThinkingMode(req.GetThinkingMode()),
 		ClientCapabilitySessionID: req.GetClientCapabilitySessionId(),
+		RequestedBudgetJSON:       requestedBudgetJSON,
 		Attachments:               req.GetAttachments(),
 		EventSink:                 sink,
 		MemoryDisabled:            req.GetMemoryDisabled(),
-	}
+	}, nil
 }
 
 func validateFrozenDirectModelRequest(req *model.ExecuteTurnRequest) error {

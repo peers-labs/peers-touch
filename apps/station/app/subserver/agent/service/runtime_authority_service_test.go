@@ -20,6 +20,10 @@ func TestPersistRuntimeAuthorityStoresBindingAndAttemptSnapshot(t *testing.T) {
 
 	admission := runtimeAuthorityAdmission("provider-1", "model-1", 1)
 	config := runtimeAuthorityConfig("turn-1", "attempt-1")
+	config.RuntimeBudget = &model.RuntimeBudget{
+		MaxToolCalls:          2,
+		MaxIdenticalToolCalls: 1,
+	}
 	readiness := runtimeAuthorityReadiness(config, admission)
 	if err := (&TurnService{}).persistRuntimeAuthority(
 		context.Background(),
@@ -75,6 +79,8 @@ func TestPersistRuntimeAuthorityStoresBindingAndAttemptSnapshot(t *testing.T) {
 		snapshot.GetAgentConfigVersion() != "11" ||
 		snapshot.GetExternalSessionId() != "" ||
 		snapshot.GetExternalSessionEpoch() != 0 ||
+		snapshot.GetBudget().GetMaxToolCalls() != 2 ||
+		snapshot.GetBudget().GetMaxIdenticalToolCalls() != 1 ||
 		attempt.ReadinessSnapshotID != readiness.GetSnapshotId() {
 		t.Fatalf("unexpected attempt runtime snapshot: snapshot=%+v attempt=%+v", snapshot, attempt)
 	}
@@ -389,6 +395,7 @@ func runtimeAuthorityAdmission(providerID string, modelID string, observedDay in
 				),
 			},
 		},
+		Budget: defaultRuntimeBudget(128000),
 	}
 }
 
