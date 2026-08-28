@@ -89,6 +89,14 @@ class LinuxRuntimeCell(Protocol):
     ) -> str:
         ...
 
+    def clone_actor_storage(
+        self,
+        source_actor: str,
+        target_actor: str,
+        relative_path: str,
+    ) -> None:
+        ...
+
     def execute_adapter(
         self,
         operation: str,
@@ -146,6 +154,17 @@ class NativeDesktopRuntimeBinding(ABC):
         actor: str,
         path: Path,
     ) -> str:
+        ...
+
+    @abstractmethod
+    def clone_actor_storage(
+        self,
+        source_actor: str,
+        source_spec: Mapping[str, Any],
+        target_actor: str,
+        target_spec: Mapping[str, Any],
+        relative_path: str,
+    ) -> None:
         ...
 
     @abstractmethod
@@ -416,6 +435,21 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
     ) -> str:
         return self._cell.actor_file_sha256(actor, str(path))
 
+    def clone_actor_storage(
+        self,
+        source_actor: str,
+        source_spec: Mapping[str, Any],
+        target_actor: str,
+        target_spec: Mapping[str, Any],
+        relative_path: str,
+    ) -> None:
+        del source_spec, target_spec
+        self._cell.clone_actor_storage(
+            source_actor,
+            target_actor,
+            relative_path,
+        )
+
     def request_cooperative_activation(
         self,
         target: TauriSession,
@@ -542,6 +576,53 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         if not resolved.is_file():
             raise DriverError(f"Native file is missing: {resolved}")
         return _file_sha256(resolved)
+
+    def clone_actor_storage(
+        self,
+        source_actor: str,
+        source_spec: Mapping[str, Any],
+        target_actor: str,
+        target_spec: Mapping[str, Any],
+        relative_path: str,
+    ) -> None:
+        del source_actor, target_actor
+        relative = Path(relative_path)
+        if (
+            not relative_path
+            or relative.is_absolute()
+            or ".." in relative.parts
+        ):
+            raise DriverError("Native actor storage path must be relative")
+        source_root = Path(str(source_spec["storage_root"]))
+        target_root = Path(str(target_spec["storage_root"]))
+        source = source_root / relative
+        if not source.is_dir():
+            raise DriverError(
+                f"Native actor storage source is missing: {source}"
+            )
+        if target_root.exists():
+            raise DriverError(
+                f"Native actor storage target already exists: {target_root}"
+            )
+        temporary_root = target_root.with_name(
+            f".{target_root.name}.clone-{os.getpid()}-{time.time_ns()}"
+        )
+        temporary = temporary_root / relative
+        try:
+            temporary.parent.mkdir(parents=True, exist_ok=False)
+            shutil.copytree(source, temporary)
+            os.replace(temporary_root, target_root)
+        except Exception as error:
+            try:
+                shutil.rmtree(temporary_root)
+            except FileNotFoundError:
+                pass
+            except OSError as cleanup_error:
+                raise DriverError(
+                    "Native actor storage clone failed and temporary "
+                    f"cleanup failed: {cleanup_error}"
+                ) from error
+            raise DriverError("Native actor storage clone failed") from error
 
     def request_cooperative_activation(
         self,

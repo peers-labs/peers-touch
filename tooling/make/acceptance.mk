@@ -134,7 +134,10 @@ acceptance-chat-native-two-client:
 		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-interactions:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-interactions-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-interactions-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-product-closure:
 	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
@@ -143,19 +146,34 @@ acceptance-chat-native-product-closure:
 		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-typing:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-typing-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-typing-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-multi-device:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-multi-device-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-multi-device-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-recovery:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-recovery-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-recovery-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-group-mls:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-group-mls-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-group-mls-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-contact-message-resilience:
-	python3 tooling/scripts/acceptance-run.py --gate chat-contact-message-resilience-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-contact-message-resilience-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-w8:
 	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
@@ -173,8 +191,10 @@ acceptance-chat-w11:
 		--contract tooling/acceptance/closures/messaging-w11.yaml \
 		--output tooling/acceptance/plans/chat-w11-closure.json \
 		--manifest-output tooling/acceptance/reports/w11-contract-manifest.json
-	python3 tooling/scripts/acceptance-run.py \
-		--plan tooling/acceptance/plans/chat-w11-closure.json
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--plan tooling/acceptance/plans/chat-w11-closure.json \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-desktop-anchor-inventory:
 	python3 tooling/scripts/acceptance-run.py --gate desktop-anchor-inventory-gate

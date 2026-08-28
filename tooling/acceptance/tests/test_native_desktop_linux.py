@@ -865,6 +865,163 @@ class LinuxCellProfileTests(unittest.TestCase):
                 "/workspace/run/actors/bob/storage/cache.bin",
             )
 
+    def test_actor_storage_clone_stays_inside_runtime_cell(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner._actors = {
+            "bob1": SimpleNamespace(released=False),
+        }
+        provisioner.transport = Mock()
+        provisioner._require_state = Mock(
+            return_value={"containerName": "runtime-cell"}
+        )
+        provisioner.transport.run_argv.return_value = (
+            subprocess.CompletedProcess((), 0, "", "")
+        )
+
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_linux."
+            "secrets.token_hex",
+            return_value="cloneid",
+        ):
+            provisioner.clone_actor_storage(
+                "bob1",
+                "bob2",
+                "peers-touch/desktop/data/secure-store/identity-keys",
+            )
+
+        commands = [
+            item.args[0]
+            for item in provisioner.transport.run_argv.call_args_list
+        ]
+        source = (
+            "/workspace/run/actors/bob1/storage/"
+            "peers-touch/desktop/data/secure-store/identity-keys"
+        )
+        temporary_root = "/workspace/run/actors/.clone-bob2-cloneid"
+        temporary = (
+            f"{temporary_root}/storage/"
+            "peers-touch/desktop/data/secure-store/identity-keys"
+        )
+        self.assertEqual(
+            commands,
+            [
+                (
+                    "docker",
+                    "exec",
+                    "runtime-cell",
+                    "test",
+                    "-d",
+                    source,
+                ),
+                (
+                    "docker",
+                    "exec",
+                    "runtime-cell",
+                    "test",
+                    "!",
+                    "-e",
+                    "/workspace/run/actors/bob2",
+                ),
+                (
+                    "docker",
+                    "exec",
+                    "runtime-cell",
+                    "mkdir",
+                    "-p",
+                    str(Path(temporary).parent),
+                ),
+                (
+                    "docker",
+                    "exec",
+                    "runtime-cell",
+                    "cp",
+                    "-a",
+                    source,
+                    temporary,
+                ),
+                (
+                    "docker",
+                    "exec",
+                    "runtime-cell",
+                    "mv",
+                    temporary_root,
+                    "/workspace/run/actors/bob2",
+                ),
+            ],
+        )
+
+    def test_actor_storage_clone_removes_temporary_tree_on_copy_failure(
+        self,
+    ) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner._actors = {
+            "bob1": SimpleNamespace(released=False),
+        }
+        provisioner.transport = Mock()
+        provisioner._require_state = Mock(
+            return_value={"containerName": "runtime-cell"}
+        )
+        success = subprocess.CompletedProcess((), 0, "", "")
+        copy_failure = RuntimeError("copy failed")
+        provisioner.transport.run_argv.side_effect = (
+            success,
+            success,
+            success,
+            copy_failure,
+            success,
+        )
+
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_linux."
+            "secrets.token_hex",
+            return_value="cloneid",
+        ), self.assertRaisesRegex(
+            ProvisioningError,
+            "actor storage clone failed",
+        ):
+            provisioner.clone_actor_storage(
+                "bob1",
+                "bob2",
+                "secure-store/identity-keys",
+            )
+
+        cleanup = provisioner.transport.run_argv.call_args_list[-1]
+        self.assertEqual(
+            cleanup.args[0],
+            (
+                "docker",
+                "exec",
+                "runtime-cell",
+                "rm",
+                "-rf",
+                "/workspace/run/actors/.clone-bob2-cloneid",
+            ),
+        )
+        self.assertFalse(cleanup.kwargs["check"])
+
+    def test_actor_storage_clone_rejects_active_target(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner._actors = {
+            "bob1": SimpleNamespace(released=False),
+            "bob2": SimpleNamespace(released=False),
+        }
+        provisioner.transport = Mock()
+        provisioner._require_state = Mock(
+            return_value={"containerName": "runtime-cell"}
+        )
+
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "actor 'bob2' is already active",
+        ):
+            provisioner.clone_actor_storage(
+                "bob1",
+                "bob2",
+                "secure-store/identity-keys",
+            )
+
+        provisioner.transport.run_argv.assert_not_called()
+
     def test_explicit_orchestrator_endpoint_owns_reverse_tunnel(self) -> None:
         provisioner = object.__new__(NativeDesktopLinuxProvisioner)
         provisioner._endpoints = {}

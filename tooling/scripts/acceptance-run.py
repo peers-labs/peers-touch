@@ -401,6 +401,21 @@ def selected_gates_from_plan(plan: dict[str, Any], definitions: dict[str, Any]) 
     return [plan_gate_from_entry(entry, definitions) for entry in plan.get("selected_gates", [])]
 
 
+def resolve_requested_gates(
+    plan: dict[str, Any],
+    definitions: dict[str, Any],
+    requested_gate_ids: list[str],
+) -> list[dict[str, Any]]:
+    if not requested_gate_ids:
+        return selected_gates_from_plan(plan, definitions)
+    resolved: list[dict[str, Any]] = []
+    for gate_id in requested_gate_ids:
+        if gate_id not in definitions:
+            raise SystemExit(f"gate {gate_id!r} is missing from gate definitions")
+        resolved.append(gate_from_definition(gate_id, definitions[gate_id]))
+    return resolved
+
+
 def filter_gates_by_tier(gates: list[dict[str, Any]], tiers: list[str]) -> list[dict[str, Any]]:
     if not tiers:
         return gates
@@ -1087,17 +1102,7 @@ def main() -> int:
         return 1
 
     definitions = load_gate_definitions(Path(args.gates))
-    gates = selected_gates_from_plan(plan, definitions)
-    if args.gate:
-        selected_by_id = {gate["id"]: gate for gate in gates}
-        gates = []
-        for gate_id in args.gate:
-            if gate_id in selected_by_id:
-                gates.append(selected_by_id[gate_id])
-                continue
-            if gate_id not in definitions:
-                raise SystemExit(f"gate {gate_id!r} is missing from {args.gates}")
-            gates.append(gate_from_definition(gate_id, definitions[gate_id]))
+    gates = resolve_requested_gates(plan, definitions, args.gate)
     gates = filter_gates_by_tier(gates, args.tier)
 
     results: list[dict[str, Any]] = []
