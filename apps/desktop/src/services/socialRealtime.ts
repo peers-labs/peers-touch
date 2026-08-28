@@ -51,7 +51,10 @@ let bootstrappedActorId: string | null = null;
 let bootstrapSequence = 0;
 let realtimeStreamActorId: string | null = null;
 let realtimeStreamTransition: Promise<void> = Promise.resolve();
-let socialRefreshInFlight: Promise<void> | null = null;
+let socialRefreshInFlight: {
+  actorId: string;
+  promise: Promise<void>;
+} | null = null;
 let coldResyncInFlight = false;
 let pendingColdResyncPayload: RealtimeResyncPayload | null = null;
 const seenRealtimeMessageKeys = new Set<string>();
@@ -101,21 +104,32 @@ function rememberBounded(set: Set<string>, key: string, maxSize: number): boolea
  * trigger a refresh from view-mount effects.
  */
 export async function refreshSocialProjection(label: string, includeNotifications = false): Promise<void> {
-  if (!currentAuthenticatedActorId()) return;
-  if (socialRefreshInFlight) return socialRefreshInFlight;
+  const actorId = currentAuthenticatedActorId();
+  if (!actorId) return;
+  if (socialRefreshInFlight) {
+    if (socialRefreshInFlight.actorId === actorId) {
+      return socialRefreshInFlight.promise;
+    }
+    await socialRefreshInFlight.promise;
+    if (currentAuthenticatedActorId() !== actorId) return;
+    return refreshSocialProjection(label, includeNotifications);
+  }
 
-  socialRefreshInFlight = (async () => {
+  const refreshPromise = (async () => {
     log.info('socialRealtime', 'social projection refresh started', { label });
 
     const chat = useSocialChatStore.getState();
     const notifications = useNotificationStore.getState();
     await Promise.allSettled([chat.loadCurrentUserProfile()]);
+    if (currentAuthenticatedActorId() !== actorId) return;
+
     await Promise.allSettled([
       chat.loadFriendRequests(),
       chat.loadSessions(),
       notifications.refreshUnreadCounts(),
       includeNotifications ? notifications.loadNotifications() : Promise.resolve(),
     ]);
+    if (currentAuthenticatedActorId() !== actorId) return;
 
     const refreshed = useSocialChatStore.getState();
     const peerPtids = Array.from(new Set(
@@ -132,14 +146,24 @@ export async function refreshSocialProjection(label: string, includeNotification
       refreshed.loadGroupUnreadCounts(),
       refreshed.loadConversationPreviews(),
     ]);
+    if (currentAuthenticatedActorId() !== actorId) return;
+
     useNavigationBadgeStore.getState().reconcileChatBadge();
 
     log.info('socialRealtime', 'social projection refresh completed', { label });
-  })().finally(() => {
-    socialRefreshInFlight = null;
-  });
+  })();
+  socialRefreshInFlight = {
+    actorId,
+    promise: refreshPromise,
+  };
 
-  return socialRefreshInFlight;
+  try {
+    await refreshPromise;
+  } finally {
+    if (socialRefreshInFlight?.promise === refreshPromise) {
+      socialRefreshInFlight = null;
+    }
+  }
 }
 
 export function dispatchSocialRuntimeHostEvent(event: SocialHostEvent): void {

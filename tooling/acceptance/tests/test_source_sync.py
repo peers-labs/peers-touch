@@ -338,6 +338,30 @@ class SourceSyncContractTests(unittest.TestCase):
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertNotIn("StrictHostKeyChecking=no", command)
 
+    def test_ssh_transport_forwards_standard_input(self) -> None:
+        transport = SshTransport(
+            SshTarget(host="station.example", user="acceptance")
+        )
+        with patch(
+            "tooling.acceptance.transports.ssh.subprocess.run",
+            return_value=subprocess.CompletedProcess(
+                args=(),
+                returncode=0,
+                stdout="done\n",
+                stderr="",
+            ),
+        ) as run:
+            completed = transport.run_argv(
+                ["cat"],
+                timeout=10,
+                check=True,
+                input_text="payload\n",
+            )
+
+        self.assertEqual(completed.stdout, "done\n")
+        self.assertEqual(run.call_args.kwargs["input"], "payload\n")
+        self.assertTrue(run.call_args.kwargs["text"])
+
     def test_ssh_copy_uses_strict_host_verification_and_remote_path(self) -> None:
         transport = SshTransport(
             SshTarget(host="station.example", user="acceptance", port=2222)

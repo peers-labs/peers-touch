@@ -1010,6 +1010,30 @@ owned relationship tables on a fresh database. The subserver must own that migra
 and the Chat Fixture must recreate the accepted Alice/Bob/Charlie contact baseline
 after every destructive reset while leaving the messaging conversation tables empty.
 
+The 2026-08-28 independent review of the clean Linux candidate found three
+additional closure defects:
+
+- the destructive Chat Fixture bypassed SSH host verification;
+- cell-scoped blocked/provisioning results omitted `runtimeCell` before latest
+  evidence publication;
+- the Social projection single-flight lane was not actor-bound and could reuse
+  an old actor's refresh during an account transition.
+
+The first correction routes destructive remote commands through the strict
+shared SSH transport, stamps every cell-scoped result before finalization, and
+serializes cross-actor refreshes before running a fresh projection load for the
+current actor. Re-review then found that serialization alone still allowed an
+old actor's in-flight response to publish before the new actor's refresh. The
+Desktop projection owners now fence profile, friend-request, and notification
+publication by the authenticated actor captured when each request starts,
+including notification pagination and mutation completions. Actor transitions
+clear the Social, notification, and navigation-badge projections before the
+new session is hydrated, and the Social runtime stops an obsolete refresh
+between hydration stages and before badge publication. Deferred-response
+regression tests preserve Bob's state while Alice's stale responses complete.
+MP-W13-F remains `UNPROVEN` until an exact-source clean candidate passes the
+selected Gates, Gap Detector, Completion Audit, and independent re-review.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
