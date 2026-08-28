@@ -1320,6 +1320,133 @@ class NativeDesktopLinuxProvisioner:
         observed = completed.stdout.split(maxsplit=1)[0]
         return _digest(observed, "runtime-cell actor file digest")
 
+    def clone_actor_storage(
+        self,
+        source_actor: str,
+        target_actor: str,
+        relative_path: str,
+    ) -> None:
+        state = self._require_state()
+        normalized_source = source_actor.strip()
+        normalized_target = target_actor.strip()
+        if not _ENDPOINT_ID.fullmatch(normalized_source):
+            raise ProvisioningError(
+                "Linux runtime-cell source actor id is invalid"
+            )
+        if not _ENDPOINT_ID.fullmatch(normalized_target):
+            raise ProvisioningError(
+                "Linux runtime-cell target actor id is invalid"
+            )
+        source_runtime = self._actors.get(normalized_source)
+        if source_runtime is None or source_runtime.released:
+            raise ProvisioningError(
+                f"Linux runtime-cell actor {normalized_source!r} is not active"
+            )
+        target_runtime = self._actors.get(normalized_target)
+        if target_runtime is not None and not target_runtime.released:
+            raise ProvisioningError(
+                f"Linux runtime-cell actor {normalized_target!r} is already active"
+            )
+        relative = PurePosixPath(relative_path)
+        if (
+            not relative_path
+            or relative.is_absolute()
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            raise ProvisioningError(
+                "Linux runtime-cell actor storage path is invalid"
+            )
+        actor_root = PurePosixPath("/workspace/run/actors")
+        source = actor_root / normalized_source / "storage" / relative
+        target_root = actor_root / normalized_target
+        temporary_root = actor_root / (
+            f".clone-{normalized_target}-{secrets.token_hex(8)}"
+        )
+        temporary = temporary_root / "storage" / relative
+        container_name = str(state["containerName"])
+        self.transport.run_argv(
+            ("docker", "exec", container_name, "test", "-d", str(source)),
+            timeout=15,
+            check=True,
+        )
+        target_absent = self.transport.run_argv(
+            (
+                "docker",
+                "exec",
+                container_name,
+                "test",
+                "!",
+                "-e",
+                str(target_root),
+            ),
+            timeout=15,
+            check=False,
+        )
+        if target_absent.returncode != 0:
+            raise ProvisioningError(
+                "Linux runtime-cell target actor storage already exists"
+            )
+        try:
+            self.transport.run_argv(
+                (
+                    "docker",
+                    "exec",
+                    container_name,
+                    "mkdir",
+                    "-p",
+                    str(temporary.parent),
+                ),
+                timeout=15,
+                check=True,
+            )
+            self.transport.run_argv(
+                (
+                    "docker",
+                    "exec",
+                    container_name,
+                    "cp",
+                    "-a",
+                    str(source),
+                    str(temporary),
+                ),
+                timeout=30,
+                check=True,
+            )
+            self.transport.run_argv(
+                (
+                    "docker",
+                    "exec",
+                    container_name,
+                    "mv",
+                    str(temporary_root),
+                    str(target_root),
+                ),
+                timeout=15,
+                check=True,
+            )
+        except Exception as error:
+            cleanup = self.transport.run_argv(
+                (
+                    "docker",
+                    "exec",
+                    container_name,
+                    "rm",
+                    "-rf",
+                    str(temporary_root),
+                ),
+                timeout=15,
+                check=False,
+            )
+            detail = cleanup.stderr.strip() or cleanup.stdout.strip()
+            if cleanup.returncode != 0:
+                raise ProvisioningError(
+                    "Linux runtime-cell actor storage clone failed and "
+                    f"temporary cleanup failed: {detail}"
+                ) from error
+            raise ProvisioningError(
+                "Linux runtime-cell actor storage clone failed"
+            ) from error
+
     def _copy_actor_file(
         self,
         actor: str,
