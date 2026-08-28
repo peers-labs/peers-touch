@@ -32,10 +32,29 @@ def commits_match(actual: str, expected: str) -> bool:
 
 
 def source_proto_digest(root: Path) -> str:
+    completed = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--",
+            "model/domain",
+            "apps/desktop/src/gen/proto",
+            "apps/station",
+        ],
+        cwd=root,
+        capture_output=True,
+        check=True,
+    )
     paths = [
-        *(root / "model" / "domain").rglob("*.proto"),
-        *(root / "apps" / "desktop" / "src" / "gen" / "proto").rglob("*.ts"),
-        *(root / "apps" / "station").rglob("*.pb.go"),
+        root / relative.decode()
+        for relative in completed.stdout.split(b"\0")
+        if relative
+        and (
+            relative.endswith(b".proto")
+            or relative.endswith(b"_pb.ts")
+            or relative.endswith(b".pb.go")
+        )
     ]
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda item: item.relative_to(root).as_posix()):
