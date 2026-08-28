@@ -1556,19 +1556,16 @@ class NativeInteractionsGate(AcceptanceGate):
             proxy.arm_connection_loss()
 
             def _submit_edit() -> dict[str, Any] | None:
-                try:
-                    return async_harness(
-                        self.clients["alice"],
-                        "editInteractionMessage",
-                        {
-                            "conversationId": conversation_id,
-                            "kind": kind,
-                            "messageId": message_id,
-                            "plaintext": edited_text,
-                        },
-                    )
-                except Exception:
-                    return None
+                return async_harness(
+                    self.clients["alice"],
+                    "editInteractionMessage",
+                    {
+                        "conversationId": conversation_id,
+                        "kind": kind,
+                        "messageId": message_id,
+                        "plaintext": edited_text,
+                    },
+                )
 
             edit = wait_until(
                 _submit_edit,
