@@ -19,7 +19,14 @@ sys.path.insert(0, str(REPO_ROOT))
 
 RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
-RESULT_TRACEABILITY_FIELDS = ("sourceArtifact", "sourceArtifactKind", "sourcePhase", "sourceBom", "sourceSpec", "sourceGate")
+RESULT_TRACEABILITY_FIELDS = (
+    "sourceArtifact",
+    "sourceArtifactKind",
+    "sourcePhase",
+    "sourceBom",
+    "sourceSpec",
+    "sourceGate",
+)
 
 
 @contextlib.contextmanager
@@ -260,6 +267,40 @@ def redact_runtime_artifacts(
             path.write_text(redacted, encoding="utf-8")
             redacted_paths.append(relative_path)
     return sorted(redacted_paths), sorted(leaked_paths)
+
+
+def persist_provisioner_cleanup_result(
+    *,
+    gate_run: Any,
+    gate_id: str,
+    environment: str,
+    provisioner_id: str,
+    cleanup_status: str,
+    completed_resources: tuple[str, ...],
+    cleanup_error: str,
+    secret_values: tuple[str, ...],
+) -> dict[str, Any]:
+    payload = {
+        "artifactKind": "acceptance-provisioner-cleanup-result",
+        "gateId": gate_id,
+        "environment": environment,
+        "provisioner": provisioner_id,
+        "status": cleanup_status,
+        "completionStatus": (
+            "DONE" if cleanup_status == "passed" else "PARTIAL"
+        ),
+        "proofStatus": (
+            "PROVEN" if cleanup_status == "passed" else "UNPROVEN"
+        ),
+        "completedResources": list(completed_resources),
+        "error": cleanup_error,
+    }
+    redacted_payload, _ = redact_runtime_value(payload, secret_values)
+    return gate_run.write_json(
+        "reports/provisioner-cleanup.json",
+        redacted_payload,
+        role="provisioner-cleanup",
+    ).to_dict()
 
 
 def provisioning_failure_result(
@@ -584,11 +625,19 @@ def result_is_incomplete(result: dict[str, Any]) -> bool:
 
 
 def result_traceability(result: dict[str, Any]) -> dict[str, Any]:
-    missing = [key for key in RESULT_TRACEABILITY_FIELDS if key not in result]
+    required_fields = list(RESULT_TRACEABILITY_FIELDS)
+    if result.get("cleanupStatus") in {"passed", "failed"}:
+        required_fields.append("cleanupArtifact")
+    missing = [key for key in required_fields if key not in result]
     incomplete = result_is_incomplete(result)
     if not missing:
         status = "complete"
-        reason = "result preserves source artifact Phase/BOM/Spec/Gate traceability"
+        reason = (
+            "result preserves source artifact Phase/BOM/Spec/Gate "
+            "traceability"
+        )
+        if "cleanupArtifact" in required_fields:
+            reason += " and immutable provisioner cleanup evidence"
     elif incomplete:
         status = "missing"
         reason = "incomplete acceptance result is missing source artifact Phase/BOM/Spec/Gate traceability"
@@ -600,7 +649,7 @@ def result_traceability(result: dict[str, Any]) -> dict[str, Any]:
         "missingFields": missing,
         "reason": reason,
     }
-    for key in RESULT_TRACEABILITY_FIELDS:
+    for key in required_fields:
         if key in result:
             trace[key] = result[key]
     return trace
@@ -1102,10 +1151,12 @@ def main() -> int:
             exit_code: int | None = None
             timed_out = False
             cleanup_status = "not-required"
+            cleanup_completed_resources: tuple[str, ...] = ()
             cleanup_error = ""
+            cleanup_artifact: dict[str, Any] | None = None
             result: dict[str, Any] | None = None
+            provisioner_id = str(gate.get("provisioner") or "")
             try:
-                provisioner_id = str(gate.get("provisioner") or "")
                 if provisioner_id:
                     if provisioner_id != environment:
                         raise SystemExit(
@@ -1205,12 +1256,24 @@ def main() -> int:
                 if provisioner is not None:
                     try:
                         with run_environment(gate_run.subprocess_environment(os.environ.copy())):
-                            provisioner.cleanup()
+                            cleanup_completed_resources = provisioner.cleanup()
                         cleanup_status = "passed"
                     except Exception as error:
                         cleanup_status = "failed"
                         cleanup_error = str(error)
                         output_text += f"\nProvisioning cleanup failed: {error}\n"
+
+            if provisioner is not None:
+                cleanup_artifact = persist_provisioner_cleanup_result(
+                    gate_run=gate_run,
+                    gate_id=gate_id,
+                    environment=environment,
+                    provisioner_id=provisioner_id,
+                    cleanup_status=cleanup_status,
+                    completed_resources=cleanup_completed_resources,
+                    cleanup_error=cleanup_error,
+                    secret_values=runtime_secrets,
+                )
 
             output_text = redact_runtime_text(output_text, runtime_secrets)
             log_ref = gate_run.write_bytes(
@@ -1271,6 +1334,8 @@ def main() -> int:
             else:
                 result["log"] = log_ref.to_dict()
                 result["cleanupStatus"] = cleanup_status
+            if cleanup_artifact is not None:
+                result["cleanupArtifact"] = cleanup_artifact
             if cleanup_error:
                 result["cleanupError"] = cleanup_error
                 result["status"] = "failed"

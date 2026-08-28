@@ -4568,23 +4568,69 @@ class NativeProductClosureGate(AcceptanceGate):
             raise GateError(f"cleanup assertions failed: {failed}; {detail}")
         return result
 
-    def run(self) -> dict[str, Any]:
-        if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-            raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
+    def source_identity(self) -> dict[str, Any]:
         source = self.manifest.get("source")
         station = self.manifest.get("station")
-        binary_identity = self.runtime_binding.binary_identity()
-        source_identity = {
-            "source": source,
+        runtime_cell = self.runtime_binding.runtime_identity()
+        binary = self.runtime_binding.binary_identity()
+        identity = {
+            "orchestrator": source,
             "station": station,
-            "binary": binary_identity["path"],
-            "binarySha256": binary_identity["sha256"],
+            "runtimeCell": runtime_cell,
+            "binary": binary,
         }
+        self.report.runtime["runtimeCellRunId"] = runtime_cell.get("runId")
+
         source_commit = str(
             source.get("commit") if isinstance(source, dict) else ""
         )
         station_commit = str(
             station.get("liveCommit") if isinstance(station, dict) else ""
+        )
+        cell_source = (
+            runtime_cell.get("source")
+            if isinstance(runtime_cell, dict)
+            else None
+        )
+        platform = (
+            runtime_cell.get("platform")
+            if isinstance(runtime_cell, dict)
+            else None
+        )
+        transport = (
+            runtime_cell.get("transport")
+            if isinstance(runtime_cell, dict)
+            else None
+        )
+        binary_sha256 = str(binary.get("sha256") or "")
+        linux_runtime_valid = (
+            self.runtime_binding.cell_id != "desktop-linux-native"
+            or (
+                isinstance(cell_source, dict)
+                and cell_source.get("remoteCheckoutClean") is True
+                and re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(cell_source.get("remoteSourceDigest") or ""),
+                )
+                is not None
+                and isinstance(platform, dict)
+                and re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(platform.get("imageDigest") or ""),
+                )
+                is not None
+                and isinstance(transport, dict)
+                and re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(transport.get("hostIdentitySha256") or ""),
+                )
+                is not None
+                and re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(transport.get("hostKeySha256") or ""),
+                )
+                is not None
+            )
         )
         self.assert_condition(
             "source_build_runtime_identity",
@@ -4595,10 +4641,29 @@ class NativeProductClosureGate(AcceptanceGate):
             and bool(station_commit)
             and commits_match(source_commit, station_commit)
             and bool(station.get("protoDigest"))
-            and binary_identity.get("sourceCommit") == source_commit
-            and len(source_identity["binarySha256"]) == 64,
-            json.dumps(source_identity),
+            and isinstance(runtime_cell, dict)
+            and runtime_cell.get("artifactKind")
+            == "acceptance-runtime-cell-manifest"
+            and runtime_cell.get("cellId")
+            == self.runtime_binding.cell_id
+            and runtime_cell.get("gateId") == self.gate_id
+            and bool(runtime_cell.get("runId"))
+            and runtime_cell.get("state") == "LEASED"
+            and isinstance(cell_source, dict)
+            and cell_source.get("commit") == source_commit
+            and cell_source.get("workspaceDigest") == "clean"
+            and linux_runtime_valid
+            and binary.get("sourceCommit") == source_commit
+            and re.fullmatch(r"[0-9a-f]{64}", binary_sha256) is not None
+            and cell_source.get("binarySha256") == binary_sha256,
+            json.dumps(identity, sort_keys=True),
         )
+        return identity
+
+    def run(self) -> dict[str, Any]:
+        if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
+            raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
+        source_identity = self.source_identity()
         self.assert_condition("native_dom_only", True)
 
         image_file = self.fixture_root / "w13-image.png"

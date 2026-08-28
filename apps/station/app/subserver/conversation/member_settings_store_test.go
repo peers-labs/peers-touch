@@ -3,13 +3,14 @@ package conversation
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-func newMemberSettingsTestStore(t *testing.T) *memberSettingsStore {
+func newMemberSettingsTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(
 		sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"),
@@ -18,10 +19,91 @@ func newMemberSettingsTestStore(t *testing.T) *memberSettingsStore {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return db
+}
+
+func newMemberSettingsTestStore(t *testing.T) *memberSettingsStore {
+	t.Helper()
+	db := newMemberSettingsTestDB(t)
 	if err := db.AutoMigrate(&conversationMemberSettingsModel{}); err != nil {
 		t.Fatal(err)
 	}
 	return newMemberSettingsStore(db)
+}
+
+func TestMemberSettingsStoreMigrationPreservesLegacyValuesIdempotently(t *testing.T) {
+	ctx := context.Background()
+	db := newMemberSettingsTestDB(t)
+	if err := db.AutoMigrate(&conversationMemberModel{}); err != nil {
+		t.Fatal(err)
+	}
+	joinedAt := time.Date(2026, time.August, 1, 2, 3, 4, 0, time.UTC)
+	legacyMembers := []conversationMemberModel{
+		{
+			ConversationID: "conversation-1",
+			Ptid:           "ptid:alice",
+			Nickname:       "Legacy Alice",
+			Muted:          true,
+			JoinedAt:       joinedAt,
+		},
+		{
+			ConversationID: "conversation-1",
+			Ptid:           "ptid:bob",
+			Nickname:       "Legacy Bob",
+			Muted:          false,
+			JoinedAt:       joinedAt.Add(time.Minute),
+		},
+	}
+	if err := db.Create(&legacyMembers).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	store := newMemberSettingsStore(db)
+	if err := store.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	alice, err := store.Get(ctx, "conversation-1", "ptid:alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alice.Nickname != "Legacy Alice" || !alice.Muted || alice.AlertEnabled {
+		t.Fatalf("legacy alice settings not preserved: %+v", alice)
+	}
+	bob, err := store.Get(ctx, "conversation-1", "ptid:bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bob.Nickname != "Legacy Bob" || bob.Muted || !bob.AlertEnabled {
+		t.Fatalf("legacy bob settings not preserved: %+v", bob)
+	}
+
+	nickname := "Current Alice"
+	pinned := true
+	if _, err := store.Update(ctx, "conversation-1", "ptid:alice", memberSettingsPatch{
+		Nickname: &nickname,
+		Pinned:   &pinned,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	alice, err = store.Get(ctx, "conversation-1", "ptid:alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alice.Nickname != "Current Alice" || !alice.Pinned || !alice.Muted || alice.AlertEnabled {
+		t.Fatalf("repeat migration overwrote current settings: %+v", alice)
+	}
+	var count int64
+	if err := db.Model(&conversationMemberSettingsModel{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("settings row count = %d, want 2", count)
+	}
 }
 
 func TestMemberSettingsStoreDefaultsAndPartialUpdates(t *testing.T) {
