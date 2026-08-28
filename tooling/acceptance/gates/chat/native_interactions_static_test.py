@@ -145,6 +145,20 @@ class NativeInteractionContractsTest(unittest.TestCase):
             self.assertNotIn("time.sleep(", source)
             self.assertNotIn("localhost:18080", source)
 
+    def test_interaction_retry_preserves_the_last_submission_error(self) -> None:
+        source = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+        retry_start = source.index("            def _submit_edit()")
+        retry_end = source.index(
+            "            edit = wait_until(",
+            retry_start,
+        )
+        retry_submission = source[retry_start:retry_end]
+
+        self.assertIn("return async_harness(", retry_submission)
+        self.assertNotIn("except Exception", retry_submission)
+
     def test_interaction_runner_binds_selected_runtime_cell(self) -> None:
         source = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
