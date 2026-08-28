@@ -95,6 +95,8 @@ type TurnConfig struct {
 	AssistantReplacesID       string
 	ClientCapabilitySessionID string
 	RequestedBudgetJSON       json.RawMessage
+	Attachments               []*model.AgentAttachmentRef
+	AdmittedAttachments       []AdmittedAttachment
 	RotationStrategy          domain.RotationStrategy
 	Depth                     int // Current delegation depth (0 = top-level).
 	EventSink                 TurnEventSink
@@ -175,6 +177,7 @@ type TurnService struct {
 	admissionResolver   *RuntimeAdmissionResolver
 	capabilityReadiness *CapabilityAuthorityReadinessService
 	turnAdmission       *TurnAdmissionService
+	attachmentAdmission *AttachmentAdmissionService
 	resumeProviderCall  continuationProviderCall
 }
 
@@ -190,6 +193,48 @@ func (s *TurnService) SetCapabilityReadiness(
 
 func (s *TurnService) SetTurnAdmissionService(admission *TurnAdmissionService) {
 	s.turnAdmission = admission
+}
+
+func (s *TurnService) SetAttachmentAdmissionService(admission *AttachmentAdmissionService) {
+	s.attachmentAdmission = admission
+}
+
+func (s *TurnService) PreflightAttachments(
+	ctx context.Context,
+	actorID string,
+	request *model.ExecuteTurnRequest,
+) error {
+	if request == nil || len(request.GetAttachments()) == 0 {
+		return nil
+	}
+	config := s.queuedTurnConfig(actorID, request, "")
+	s.resolveAgentDefaults(ctx, config)
+	if s.admissionResolver == nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"runtime admission authority is required",
+			nil,
+		)
+	}
+	runtimeSnapshot, err := s.admissionResolver.Resolve(
+		ctx,
+		config.ActorID,
+		config.Provider,
+		config.Model,
+	)
+	if err != nil {
+		return err
+	}
+	_, err = s.attachmentAdmission.Admit(
+		ctx,
+		config.ActorID,
+		config.ConversationID,
+		config.Attachments,
+		runtimeSnapshot.Capabilities,
+		runtimeSnapshot.Budget,
+	)
+	return err
 }
 
 // SetToolDispatch injects the durable ToolDispatchService for F4 tool governance.
@@ -391,6 +436,7 @@ func (s *TurnService) queuedTurnConfig(
 		Effort:                    request.GetEffort(),
 		ThinkingMode:              domain.ThinkingMode(request.GetThinkingMode()),
 		ClientCapabilitySessionID: request.GetClientCapabilitySessionId(),
+		Attachments:               request.GetAttachments(),
 		MemoryDisabled:            request.GetMemoryDisabled(),
 	}
 }
@@ -664,24 +710,6 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		defer release()
 	}
 
-	// Step 1 — Create or reopen the turn record (status=running).
-	turnRecord, err := s.createOrReopenTurnRecord(ctx, config, userInput)
-	if err != nil {
-		return nil, err
-	}
-	turnID := turnRecord.ID
-	if config.AttemptID == "" {
-		config.AttemptID, err = s.ensureInitialTurnAttempt(ctx, turnID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	trace := &domain.TurnTrace{
-		TraceID: generateID("trace"),
-		TurnID:  turnID,
-	}
-
 	// Guard: reject turns that exceed the maximum delegation depth to prevent
 	// unbounded recursive delegation chains.
 	// Fix 2026-04-11: delegation depth was never checked, allowing infinite recursion.
@@ -701,16 +729,15 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 	thinkingMode, err := normalizeThinkingMode(config.ThinkingMode)
 	if err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "invalid thinking mode")
 		return nil, err
 	}
 	config.ThinkingMode = thinkingMode
 
-	if s.admissionResolver == nil || s.capabilityReadiness == nil {
+	if s.admissionResolver == nil {
 		return nil, errcode.New(
 			errcode.AgentInvalidSourceState,
 			http.StatusConflict,
-			"runtime admission and capability readiness authority are required",
+			"runtime admission authority is required",
 			nil,
 		)
 	}
@@ -722,6 +749,56 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	)
 	if admitErr != nil {
 		return nil, admitErr
+	}
+	admittedAttachments, attachmentErr := s.attachmentAdmission.Admit(
+		ctx,
+		config.ActorID,
+		config.ConversationID,
+		config.Attachments,
+		runtimeSnapshot.Capabilities,
+		runtimeSnapshot.Budget,
+	)
+	if attachmentErr != nil {
+		if config.PrecreatedTurnID != "" {
+			_ = s.failTurn(
+				ctx,
+				config.AgentID,
+				config.PrecreatedTurnID,
+				config.TaskID,
+				config.StepID,
+				"attachment admission failed before execution",
+			)
+		}
+		return nil, attachmentErr
+	}
+	config.AdmittedAttachments = admittedAttachments
+	config.Attachments = attachmentRefs(admittedAttachments)
+
+	// Attachment admission is intentionally complete before any Turn, attempt,
+	// runtime binding, message, or provider state is persisted.
+	turnRecord, err := s.createOrReopenTurnRecord(ctx, config, userInput)
+	if err != nil {
+		return nil, err
+	}
+	turnID := turnRecord.ID
+	if config.AttemptID == "" {
+		config.AttemptID, err = s.ensureInitialTurnAttempt(ctx, turnID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	trace := &domain.TurnTrace{
+		TraceID: generateID("trace"),
+		TurnID:  turnID,
+	}
+
+	if s.capabilityReadiness == nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"capability readiness authority is required",
+			nil,
+		)
 	}
 	readiness, agentVersion, readinessErr := s.capabilityReadiness.ResolveForTurn(
 		ctx,
@@ -772,7 +849,15 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	// Persist user message unless a revision command already created or selected
 	// the immutable source branch.
 	if !config.SkipUserMessage {
-		if err := s.persistMessage(ctx, config.ConversationID, turnID, string(domain.MessageRoleUser), userInput, config.Model); err != nil {
+		if err := s.persistMessageWithAttachments(
+			ctx,
+			config.ConversationID,
+			turnID,
+			string(domain.MessageRoleUser),
+			userInput,
+			config.Model,
+			config.Attachments,
+		); err != nil {
 			_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist user message")
 			return nil, err
 		}
@@ -871,6 +956,18 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			*toolSchemaSegment,
 		)
 	}
+	attachmentSegments := attachmentContextSegments(config.AdmittedAttachments)
+	if len(attachmentSegments) > 0 {
+		assemblyResult.Segments = append(assemblyResult.Segments, attachmentSegments...)
+		for _, segment := range attachmentSegments {
+			s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+				Type:   "progress",
+				Stage:  "attachment_omitted",
+				Source: segment.SourceRefs[0],
+				Result: segment.DecisionReason,
+			})
+		}
+	}
 
 	// Persist ContextLedger to TurnAttempt (MCA-D04).
 	if config.AttemptID != "" {
@@ -890,6 +987,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 				"persist turn attempt context ledger", updateErr)
 		}
 	}
+	// Attachment bytes are admission-only transient data until a provider
+	// adapter has an explicit native image/file mapping. Never persist them.
+	config.AdmittedAttachments = nil
 
 	// Step 7 — Credential lease + provider call with error recovery loop.
 	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
@@ -1667,6 +1767,7 @@ func (s *TurnService) processToolCalls(
 			config.Model,
 			toolCallsJSON,
 			nil,
+			nil,
 			"",
 			"",
 			"",
@@ -2388,6 +2489,7 @@ func (s *TurnService) recordToolOutcome(
 			config.Model,
 			nil,
 			metadataJSON,
+			nil,
 			"",
 			"",
 			"",
@@ -2710,6 +2812,40 @@ func (s *TurnService) persistMessage(ctx context.Context, conversationID, turnID
 	)
 }
 
+func (s *TurnService) persistMessageWithAttachments(
+	ctx context.Context,
+	conversationID string,
+	turnID string,
+	role string,
+	content string,
+	modelName string,
+	attachments []*model.AgentAttachmentRef,
+) error {
+	attachmentsJSON, err := json.Marshal(attachments)
+	if err != nil {
+		return errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"encode message attachments",
+			err,
+		)
+	}
+	return s.persistMessageRecord(
+		ctx,
+		conversationID,
+		turnID,
+		role,
+		content,
+		modelName,
+		nil,
+		nil,
+		attachmentsJSON,
+		"",
+		"",
+		"",
+	)
+}
+
 func (s *TurnService) persistMessageWithLineage(
 	ctx context.Context,
 	conversationID string,
@@ -2730,6 +2866,7 @@ func (s *TurnService) persistMessageWithLineage(
 		modelName,
 		nil,
 		nil,
+		nil,
 		branchID,
 		parentMessageID,
 		replacesMessageID,
@@ -2745,6 +2882,7 @@ func (s *TurnService) persistMessageRecord(
 	modelName string,
 	toolCallsJSON json.RawMessage,
 	metadataJSON json.RawMessage,
+	attachmentsJSON json.RawMessage,
 	branchID string,
 	parentMessageID string,
 	replacesMessageID string,
@@ -2770,6 +2908,9 @@ func (s *TurnService) persistMessageRecord(
 	}
 	if len(metadataJSON) > 0 {
 		msg.MetadataJSON = append(json.RawMessage(nil), metadataJSON...)
+	}
+	if len(attachmentsJSON) > 0 {
+		msg.AttachmentsJSON = append(json.RawMessage(nil), attachmentsJSON...)
 	}
 	if modelName != "" {
 		msg.ModelName = &modelName

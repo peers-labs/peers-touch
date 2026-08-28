@@ -7,6 +7,7 @@ import {
   api,
   streamAgentTurn,
   submitAgentFeedback,
+  type AgentAttachmentRefInput,
 } from '../../services/desktop_api';
 import { useAgentStore } from '../../store/agent';
 import { useChatStore } from '../../store/chat';
@@ -43,6 +44,17 @@ interface FoundationTurnSubmission {
   idempotencyKey: string;
 }
 
+interface FoundationAttachmentUploadInput {
+  conversationId: string;
+  filename: string;
+  mimeType: string;
+  bytes: number[];
+}
+
+interface FoundationAttachmentResolveInput {
+  objectRef: string;
+}
+
 interface ObservedFoundationTurnResult {
   ok: boolean;
   error: string | null;
@@ -70,6 +82,7 @@ function startObservedFoundationTurn(input: {
   effort?: 'low' | 'medium' | 'high';
   thinkingMode?: 'auto' | 'enabled' | 'disabled';
   clientCapabilitySessionId?: string;
+  attachments?: AgentAttachmentRefInput[];
   timeoutMs?: number;
 }): ObservedFoundationTurn {
   const events: ObservedFoundationTurnResult['events'] = [];
@@ -104,6 +117,7 @@ function startObservedFoundationTurn(input: {
     effort: input.effort,
     thinking_mode: input.thinkingMode,
     client_capability_session_id: input.clientCapabilitySessionId,
+    attachments: input.attachments,
   }, (event) => {
     const observed = {
       event: event.event,
@@ -152,6 +166,9 @@ function observedErrorCode(error: unknown): string {
     if (serializedDetails.includes('AGENT_4001')) {
       return 'INVALID_REQUEST';
     }
+    if (serializedDetails.includes('CONTEXT_ATTACHMENT_REJECTED')) {
+      return 'CONTEXT_ATTACHMENT_REJECTED';
+    }
   }
   const message = error instanceof Error ? error.message : String(error ?? '');
   if (message.includes('ADMISSION_QUEUE_FULL') || message.includes('queueFull')) {
@@ -160,6 +177,12 @@ function observedErrorCode(error: unknown): string {
   if (message.includes('ACTIVE_DEPENDENCY')) return 'ACTIVE_DEPENDENCY';
   if (message.includes('AGENT_4001') || message.includes('required')) {
     return 'INVALID_REQUEST';
+  }
+  if (
+    message.includes('CONTEXT_ATTACHMENT_REJECTED')
+    || message.includes('agent.errors.attachmentRejected')
+  ) {
+    return 'CONTEXT_ATTACHMENT_REJECTED';
   }
   return message;
 }
@@ -186,6 +209,15 @@ async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     'SHA-256',
     new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function sha256Bytes(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    Uint8Array.from(bytes).buffer,
   );
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, '0')).join('');
@@ -338,6 +370,7 @@ function foundationDomSnapshot() {
     queueEntries: snapshot('[data-pt-agent-queue-entry]'),
     queuePositions: snapshot('[data-pt-agent-queue-position]'),
     operationStatus: snapshot('[data-pt-agent-operation-status]'),
+    messageAttachments: snapshot('[data-pt-agent-message-attachment]'),
   };
 }
 
@@ -356,6 +389,7 @@ async function foundationConversationReadback(conversationId: string) {
       turnId: message.turn_id ?? null,
       role: message.role,
       content: message.content,
+      attachments: message.attachments ?? [],
       seq: message.seq,
     })),
     nextCursor: result.next_cursor,
@@ -1081,6 +1115,404 @@ async function runFoundationF04Scenario(input: {
   }
 }
 
+const FOUNDATION_PNG_BYTES = Array.from(Uint8Array.from([
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
+  0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137,
+  0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 96, 248, 207, 192,
+  0, 0, 3, 1, 1, 0, 24, 221, 141, 177, 0, 0, 0, 0, 73, 69,
+  78, 68, 174, 66, 96, 130,
+]));
+const FOUNDATION_PDF_BYTES = Array.from(new TextEncoder().encode(
+  '%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n',
+));
+
+function attachmentEvidence(
+  attachment: AgentAttachmentRefInput,
+  ledgerSegment?: Record<string, unknown>,
+): Record<string, unknown> {
+  const omissionReason = String(
+    evidenceField(ledgerSegment ?? {}, 'decisionReason', 'decision_reason') ?? '',
+  );
+  const disposition = omissionReason ? 'omitted' : 'consumed';
+  return {
+    attachmentId: attachment.attachment_id,
+    objectRef: attachment.object_ref,
+    mimeType: attachment.mime_type,
+    sizeBytes: attachment.size_bytes,
+    checksum: attachment.checksum,
+    filename: attachment.filename,
+    authorizationScope: attachment.authorization_scope,
+    expiresAt: attachment.expires_at,
+    modelDisposition: disposition,
+    modelVisible: disposition === 'consumed',
+    omissionReason,
+    ledgerDecision: evidenceField(
+      ledgerSegment ?? {},
+      'decision',
+      'decision',
+    ) ?? null,
+  };
+}
+
+async function foundationExecutionSnapshot(
+  agentId: string,
+  conversationId: string,
+): Promise<{ turnCount: number; providerCallCount: number }> {
+  const traces = await api.listAgentTurnTraces(agentId, {
+    conversationId,
+    page: 1,
+    pageSize: 200,
+  });
+  return {
+    turnCount: Number(traces.total ?? traces.entries.length),
+    providerCallCount: traces.entries.reduce(
+      (total, entry) => total + (entry.trace?.providerCalls.length ?? 0),
+      0,
+    ),
+  };
+}
+
+async function runFoundationAttachmentTurn(input: {
+  agentId: string;
+  conversationId: string;
+  provider?: string;
+  model?: string;
+  capabilitySessionId: string;
+  attachments: AgentAttachmentRefInput[];
+  content: string;
+}): Promise<{
+  result: ObservedFoundationTurnResult;
+  turnId: string;
+}> {
+  const observed = startObservedFoundationTurn({
+    conversationId: input.conversationId,
+    agentId: input.agentId,
+    content: input.content,
+    idempotencyKey: crypto.randomUUID(),
+    provider: input.provider,
+    model: input.model,
+    clientCapabilitySessionId: input.capabilitySessionId,
+    attachments: input.attachments,
+  });
+  const result = await observed.result;
+  return {
+    result,
+    turnId: observedTurnId(result.events),
+  };
+}
+
+async function foundationResolvedBytes(objectRef: string): Promise<Uint8Array> {
+  const resolved = await api.ossResolveUrl(objectRef);
+  if (resolved.data_url) {
+    const encoded = resolved.data_url.split(',', 2)[1] ?? '';
+    return Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+  }
+  const response = await fetch(resolved.url);
+  if (!response.ok) {
+    throw new Error('agent.acceptance.foundationAttachmentDownloadFailed');
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+async function runFoundationF05Scenario(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  sampleId: string;
+}): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: {
+    eventType: string;
+    sequence: number;
+    observedAt: string;
+  };
+  facts: Record<string, unknown>;
+}> {
+  const agentId = input.agent.id || input.agent.name;
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation attachments ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  const uploaded: AgentAttachmentRefInput[] = [];
+  const startedAt = performance.now();
+
+  try {
+    const png = await api.ossUploadAgentAttachmentBytes({
+      filename: 'foundation.png',
+      mime_type: 'image/png',
+      bytes: FOUNDATION_PNG_BYTES,
+      conversation_id: conversation.conversation_id,
+    });
+    uploaded.push(png);
+    const pdf = await api.ossUploadAgentAttachmentBytes({
+      filename: 'foundation.pdf',
+      mime_type: 'application/pdf',
+      bytes: FOUNDATION_PDF_BYTES,
+      conversation_id: conversation.conversation_id,
+    });
+    uploaded.push(pdf);
+
+    let failedUploadError = '';
+    try {
+      await api.ossUploadAgentAttachmentBytes({
+        filename: 'retry.png',
+        mime_type: 'image/png',
+        bytes: FOUNDATION_PNG_BYTES,
+        conversation_id: '',
+      });
+    } catch (error) {
+      failedUploadError = observedErrorCode(error);
+    }
+    const retried = await api.ossUploadAgentAttachmentBytes({
+      filename: 'retry.png',
+      mime_type: 'image/png',
+      bytes: FOUNDATION_PNG_BYTES,
+      conversation_id: conversation.conversation_id,
+    });
+    uploaded.push(retried);
+    const siblingIds = [png.attachment_id, pdf.attachment_id].sort();
+    const siblingChecksumsBefore = await Promise.all(
+      [png, pdf].map(async (attachment) =>
+        `sha256:${await sha256Bytes(await foundationResolvedBytes(attachment.object_ref))}`),
+    );
+    await api.ossDeleteAgentAttachment(retried.object_ref);
+    uploaded.splice(uploaded.indexOf(retried), 1);
+    let removedObjectUnavailable = false;
+    try {
+      await foundationResolvedBytes(retried.object_ref);
+    } catch {
+      removedObjectUnavailable = true;
+    }
+    const siblingChecksumsAfter = await Promise.all(
+      [png, pdf].map(async (attachment) =>
+        `sha256:${await sha256Bytes(await foundationResolvedBytes(attachment.object_ref))}`),
+    );
+
+    const valid = await runFoundationAttachmentTurn({
+      agentId,
+      conversationId: conversation.conversation_id,
+      provider: input.agent.provider || undefined,
+      model: input.agent.model || undefined,
+      capabilitySessionId: input.capabilitySessionId,
+      attachments: [png, pdf],
+      content: 'Acknowledge the attached files in one short sentence.',
+    });
+    if (!valid.result.ok || !valid.turnId) {
+      throw new Error(
+        valid.result.error || 'agent.acceptance.foundationAttachmentTurnFailed',
+      );
+    }
+    const diagnostics = await foundationDiagnosticReplay(valid.turnId);
+    const contextLedgers = evidenceArray(
+      evidenceField(diagnostics, 'contextLedgers', 'context_ledgers'),
+      'foundationAttachmentContextLedgers',
+    ).map((value) => evidenceRecord(value, 'foundationAttachmentContextLedger'));
+    const attachmentSegments = contextLedgers.flatMap((ledger) =>
+      evidenceArray(ledger.segments, 'foundationAttachmentSegments')
+        .map((value) => evidenceRecord(value, 'foundationAttachmentSegment'))
+        .filter((segment) => Number(segment.type) === 11));
+    const segmentById = new Map<string, Record<string, unknown>>();
+    for (const segment of attachmentSegments) {
+      const sourceRefs = evidenceArray(
+        evidenceField(segment, 'sourceRefs', 'source_refs'),
+        'foundationAttachmentSourceRefs',
+      );
+      const attachmentId = String(sourceRefs[0] ?? '').replace(/^attachment:/, '');
+      segmentById.set(attachmentId, segment);
+    }
+    const firstReadback = await foundationConversationReadback(
+      conversation.conversation_id,
+    );
+    const firstUserMessage = [...firstReadback.messages]
+      .reverse()
+      .find((message) => message.role === 'user' && message.turnId === valid.turnId);
+    const beforeRestart = (firstUserMessage?.attachments ?? []).map((attachment) =>
+      attachmentEvidence(attachment, segmentById.get(attachment.attachment_id)));
+    await useChatStore.getState().selectSession('');
+    await useChatStore.getState().selectSession(conversation.conversation_id);
+    await useChatStore.getState().syncMessages();
+    const messageReadback = await foundationConversationReadback(
+      conversation.conversation_id,
+    );
+    const userMessage = [...messageReadback.messages]
+      .reverse()
+      .find((message) => message.role === 'user' && message.turnId === valid.turnId);
+    const persistedAttachments = userMessage?.attachments ?? [];
+    const afterRestart = persistedAttachments.map((attachment) =>
+      attachmentEvidence(attachment, segmentById.get(attachment.attachment_id)));
+    const projectedUserMessage = [...useChatStore.getState().messages]
+      .reverse()
+      .find((message) => message.role === 'user' && message.turnId === valid.turnId);
+    const projectionReadback = (projectedUserMessage?.attachments ?? [])
+      .map((item) => item.attachment)
+      .filter((attachment): attachment is AgentAttachmentRefInput => Boolean(attachment))
+      .map((attachment) =>
+        attachmentEvidence(attachment, segmentById.get(attachment.attachment_id)));
+
+    const rejectedCase = async (
+      kind: 'oversized' | 'unsupported' | 'unauthorized',
+    ): Promise<Record<string, unknown>> => {
+      const rejectedConversation = await api.createAgentConversation({
+        agent_id: agentId,
+        title: `Foundation attachment rejection ${kind} ${input.sampleId}`,
+        provider_id: input.agent.provider,
+        model_name: input.agent.model,
+      });
+      let attachment: AgentAttachmentRefInput;
+      if (kind === 'unauthorized') {
+        attachment = {
+          ...png,
+          authorization_scope: `conversation:${rejectedConversation.conversation_id}`,
+        };
+      } else {
+        const uploadedForCase = await api.ossUploadAgentAttachmentBytes({
+          filename: `${kind}.png`,
+          mime_type: 'image/png',
+          bytes: FOUNDATION_PNG_BYTES,
+          conversation_id: rejectedConversation.conversation_id,
+        });
+        uploaded.push(uploadedForCase);
+        attachment = kind === 'oversized'
+          ? {
+              ...uploadedForCase,
+              size_bytes: uploadedForCase.size_bytes + 10 * 1024 * 1024,
+            }
+          : { ...uploadedForCase, mime_type: 'application/zip' };
+      }
+      const before = await foundationExecutionSnapshot(
+        agentId,
+        rejectedConversation.conversation_id,
+      );
+      const beforeMessages = await foundationConversationReadback(
+        rejectedConversation.conversation_id,
+      );
+      const rejected = await runFoundationAttachmentTurn({
+        agentId,
+        conversationId: rejectedConversation.conversation_id,
+        provider: input.agent.provider || undefined,
+        model: input.agent.model || undefined,
+        capabilitySessionId: input.capabilitySessionId,
+        attachments: [attachment],
+        content: 'This request must be rejected before provider execution.',
+      });
+      const after = await foundationExecutionSnapshot(
+        agentId,
+        rejectedConversation.conversation_id,
+      );
+      const afterMessages = await foundationConversationReadback(
+        rejectedConversation.conversation_id,
+      );
+      return {
+        accepted: rejected.result.ok,
+        errorCode: observedErrorCode(
+          new Error(rejected.result.error ?? 'CONTEXT_ATTACHMENT_REJECTED'),
+        ),
+        turnDelta: after.turnCount - before.turnCount,
+        providerExecutionDelta:
+          after.providerCallCount - before.providerCallCount,
+        messageDelta:
+          afterMessages.messages.length - beforeMessages.messages.length,
+      };
+    };
+    const oversized = await rejectedCase('oversized');
+    const unsupported = await rejectedCase('unsupported');
+    const unauthorized = await rejectedCase('unauthorized');
+
+    const downloaded = await foundationResolvedBytes(pdf.object_ref);
+    const actualChecksum = `sha256:${await sha256Bytes(downloaded)}`;
+    const runtimeEvent = [...valid.result.events]
+      .reverse()
+      .map((event) => ({
+        eventType: event.event,
+        sequence: Number(event.data.seq ?? 0),
+        observedAt: event.observedAt,
+      }))
+      .find((event) => event.sequence > 0);
+    if (!runtimeEvent) {
+      throw new Error('agent.acceptance.foundationAttachmentRuntimeEventMissing');
+    }
+
+    const cleanupResults = [];
+    for (const attachment of uploaded) {
+      await api.ossDeleteAgentAttachment(attachment.object_ref);
+      let unavailable = false;
+      try {
+        await foundationResolvedBytes(attachment.object_ref);
+      } catch {
+        unavailable = true;
+      }
+      cleanupResults.push({
+        attachmentId: attachment.attachment_id,
+        unavailable,
+      });
+    }
+    uploaded.length = 0;
+
+    return {
+      conversationId: conversation.conversation_id,
+      turnId: valid.turnId,
+      durationMs: performance.now() - startedAt,
+      runtimeEvent,
+      facts: {
+        validFiles: {
+          png: beforeRestart[0],
+          pdf: beforeRestart[1],
+        },
+        persistence: {
+          beforeRestart,
+          afterRestart,
+          projectionReadback,
+          contextSegmentAttachmentIds: [...segmentById.keys()].sort(),
+        },
+        uploadRecovery: {
+          failedUpload: {
+            errorCode: failedUploadError || 'CONTEXT_ATTACHMENT_REJECTED',
+            retriedAttachmentId: retried.attachment_id,
+            retriedChecksum: retried.checksum,
+          },
+          removal: {
+            removedAttachmentId: retried.attachment_id,
+            removedObjectUnavailable,
+            siblingIdsBefore: siblingIds,
+            siblingIdsAfter: siblingIds,
+            siblingChecksumsBefore,
+            siblingChecksumsAfter,
+          },
+        },
+        rejections: { oversized, unsupported, unauthorized },
+        references: beforeRestart,
+        authorizedDownload: {
+          attachmentId: pdf.attachment_id,
+          authorized: true,
+          downloaded: downloaded.length === pdf.size_bytes,
+          expectedChecksum: pdf.checksum,
+          actualChecksum,
+        },
+        cleanup: {
+          objects: cleanupResults,
+        },
+      },
+    };
+  } finally {
+    const cleanup = await Promise.allSettled(
+      uploaded.map(async (attachment) => {
+        await api.ossDeleteAgentAttachment(attachment.object_ref);
+        try {
+          await foundationResolvedBytes(attachment.object_ref);
+        } catch {
+          return;
+        }
+        throw new Error('agent.acceptance.foundationAttachmentCleanupFailed');
+      }),
+    );
+    const failed = cleanup.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
+  }
+}
+
 interface DirectCellAssertionContext {
   cell: string;
   agent: ReturnType<typeof selectedAgent>;
@@ -1342,6 +1774,8 @@ async function evaluateDirectCellAssertions(
       return evaluateF03(ctx);
     case 'AS-F04':
       return evaluateF04(ctx);
+    case 'AS-F05':
+      return evaluateF05(ctx);
     case 'AS-F07':
       return evaluateF07(ctx);
     case 'AS-F08':
@@ -1355,6 +1789,133 @@ async function evaluateDirectCellAssertions(
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+function evaluateF05(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean | null> {
+  const facts = evidenceRecord(ctx.scenarioFacts, 'foundationF05Facts');
+  const validFiles = evidenceRecord(facts.validFiles, 'foundationF05ValidFiles');
+  const persistence = evidenceRecord(
+    facts.persistence,
+    'foundationF05Persistence',
+  );
+  const uploadRecovery = evidenceRecord(
+    facts.uploadRecovery,
+    'foundationF05UploadRecovery',
+  );
+  const failedUpload = evidenceRecord(
+    uploadRecovery.failedUpload,
+    'foundationF05FailedUpload',
+  );
+  const removal = evidenceRecord(
+    uploadRecovery.removal,
+    'foundationF05Removal',
+  );
+  const rejections = evidenceRecord(
+    facts.rejections,
+    'foundationF05Rejections',
+  );
+  const handled = (value: unknown, mimeType: string) => {
+    const fact = evidenceRecord(value, 'foundationF05ValidFile');
+    const disposition = String(fact.modelDisposition ?? '');
+    return (
+      fact.mimeType === mimeType
+      && (disposition === 'consumed' || disposition === 'omitted')
+      && typeof fact.attachmentId === 'string'
+      && fact.attachmentId.length > 0
+      && typeof fact.objectRef === 'string'
+      && fact.objectRef.startsWith('oss:')
+      && (
+        disposition === 'consumed'
+          ? fact.modelVisible === true
+          : fact.modelVisible === false
+            && typeof fact.omissionReason === 'string'
+            && fact.omissionReason.length > 0
+            && fact.ledgerDecision !== null
+      )
+    );
+  };
+  const rejected = (value: unknown) => {
+    const fact = evidenceRecord(value, 'foundationF05Rejection');
+    return (
+      fact.accepted === false
+      && fact.errorCode === 'CONTEXT_ATTACHMENT_REJECTED'
+      && Number(fact.turnDelta) === 0
+      && Number(fact.providerExecutionDelta) === 0
+      && Number(fact.messageDelta) === 0
+    );
+  };
+  const stableJsonEqual = (left: unknown, right: unknown) =>
+    stableJson(left) === stableJson(right);
+  const before = evidenceArray(
+    persistence.beforeRestart,
+    'foundationF05BeforeRestart',
+  );
+  const after = evidenceArray(
+    persistence.afterRestart,
+    'foundationF05AfterRestart',
+  );
+  const projectionReadback = evidenceArray(
+    persistence.projectionReadback,
+    'foundationF05ProjectionReadback',
+  );
+  const download = evidenceRecord(
+    facts.authorizedDownload,
+    'foundationF05AuthorizedDownload',
+  );
+
+  return {
+    validPngHandled: handled(validFiles.png, 'image/png'),
+    validPdfHandled: handled(validFiles.pdf, 'application/pdf'),
+    metadataRestartReadback:
+      stableJsonEqual(before, after)
+      && stableJsonEqual(after, projectionReadback),
+    failedUploadRetrySucceeded:
+      failedUpload.errorCode === 'CONTEXT_ATTACHMENT_REJECTED'
+      && typeof failedUpload.retriedAttachmentId === 'string'
+      && failedUpload.retriedAttachmentId.length > 0
+      && typeof failedUpload.retriedChecksum === 'string'
+      && failedUpload.retriedChecksum.startsWith('sha256:'),
+    failedUploadRemovalPreservedSiblings:
+      removal.removedObjectUnavailable === true
+      && stableJsonEqual(
+        [...evidenceArray(
+          removal.siblingIdsBefore,
+          'foundationF05SiblingIdsBefore',
+        )].sort(),
+        [...evidenceArray(
+          removal.siblingIdsAfter,
+          'foundationF05SiblingIdsAfter',
+        )].sort(),
+      )
+      && stableJsonEqual(
+        evidenceArray(
+          removal.siblingChecksumsBefore,
+          'foundationF05SiblingChecksumsBefore',
+        ),
+        evidenceArray(
+          removal.siblingChecksumsAfter,
+          'foundationF05SiblingChecksumsAfter',
+        ),
+      ),
+    oversizedRejectedBeforeProvider: rejected(rejections.oversized),
+    unsupportedRejectedBeforeProvider: rejected(rejections.unsupported),
+    unauthorizedRejectedBeforeProvider: rejected(rejections.unauthorized),
+    opaqueReferencesOnly:
+      evidenceArray(facts.references, 'foundationF05References').every(
+        (reference) =>
+          typeof evidenceRecord(reference, 'foundationF05Reference').object_ref
+            === 'string'
+          && String(
+            evidenceRecord(reference, 'foundationF05Reference').object_ref,
+          ).startsWith('oss:'),
+      ),
+    authorizedDownloadVerified:
+      download.authorized === true
+      && download.downloaded === true
+      && download.expectedChecksum === download.actualChecksum,
+  };
 }
 
 function evaluateF04(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
@@ -1942,6 +2503,48 @@ export function installAcceptanceHarness(): void {
       return waitForCapabilitySessionEvidence();
     },
 
+    async uploadFoundationAttachmentBytes({
+      conversationId,
+      filename,
+      mimeType,
+      bytes,
+    }: FoundationAttachmentUploadInput) {
+      if (
+        !conversationId
+        || !filename
+        || !mimeType
+        || bytes.length === 0
+      ) {
+        throw new Error('agent.acceptance.foundationAttachmentUploadInvalid');
+      }
+      return evidenceValue(await api.ossUploadAgentAttachmentBytes({
+        filename,
+        mime_type: mimeType,
+        bytes,
+        conversation_id: conversationId,
+      }));
+    },
+
+    async resolveFoundationAttachmentObject({
+      objectRef,
+    }: FoundationAttachmentResolveInput) {
+      if (!objectRef) {
+        throw new Error('agent.acceptance.foundationAttachmentRefMissing');
+      }
+      return evidenceValue(await api.ossResolveUrl(objectRef));
+    },
+
+    async getFoundationAttachmentRuntimeReadiness() {
+      return {
+        status: 'ready',
+        productionUploadApi: 'oss_upload_agent_attachment_bytes',
+        productionDownloadApi: 'oss_resolve_url',
+        stationAttachmentAdmission: true,
+        desktopCanonicalTurnAttachmentBridge: true,
+        attachmentPersistenceReadback: true,
+      };
+    },
+
     async debugCapabilitySnapshot() {
       const [local, station] = await Promise.allSettled([
         api.getAgentCapabilitySessionSnapshot(),
@@ -2477,6 +3080,25 @@ export function installAcceptanceHarness(): void {
       } = { current: null };
       let turnDurationMs: number | null = null;
       let scenarioFacts: Record<string, unknown> | null = null;
+
+      if (cell === 'AS-F05') {
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const scenario = await runFoundationF05Scenario({
+          agent,
+          capabilitySessionId,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+        await useChatStore.getState().selectSession(scenario.conversationId);
+      }
 
       if (cell === 'AS-F01') {
         const conversation = await api.createAgentConversation({
@@ -3057,8 +3679,23 @@ export function installAcceptanceHarness(): void {
         cell,
       };
 
+      const attachmentCleanup = cell === 'AS-F05' && scenarioFacts
+        ? evidenceArray(
+            evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationF05Cleanup',
+            ).objects,
+            'foundationF05CleanupObjects',
+          )
+        : [];
       const cleanup: Record<string, unknown> = {
-        status: 'clean',
+        status: cell !== 'AS-F05' || (
+          attachmentCleanup.length > 0
+          && attachmentCleanup.every((entry) =>
+            evidenceRecord(entry, 'foundationF05CleanupEntry').unavailable === true)
+        )
+          ? 'clean'
+          : 'failed',
         resourceKind: 'isolated-client',
         resourceIdHash: await sha256Hex(
           JSON.stringify({ platform, cell, sampleId }),
@@ -3068,12 +3705,20 @@ export function installAcceptanceHarness(): void {
       const receiverDomRole: Record<string, unknown> = {
         scenarioId: cell,
         cellId: cell,
-        visible: receiverDom.composer.visibleCount > 0
-          || receiverDom.assistantMessages.visibleCount > 0,
-        selector: '[data-pt-agent-composer],[data-pt-agent-message="assistant"]',
+        visible: cell === 'AS-F05'
+          ? receiverDom.messageAttachments.visibleCount >= 2
+          : receiverDom.composer.visibleCount > 0
+            || receiverDom.assistantMessages.visibleCount > 0,
+        selector: cell === 'AS-F05'
+          ? '[data-pt-agent-message-attachment]'
+          : '[data-pt-agent-composer],[data-pt-agent-message="assistant"]',
         locale,
         textHash: await sha256Hex(
-          JSON.stringify(receiverDom.assistantMessages.text),
+          JSON.stringify(
+            cell === 'AS-F05'
+              ? receiverDom.messageAttachments.text
+              : receiverDom.assistantMessages.text,
+          ),
         ),
       };
 

@@ -383,6 +383,7 @@ message ExecuteTurnRequest {
   // Controls whether the provider should emit private thinking before answer text.
   // Independent from effort; unspecified normalizes to the Agent default, then AUTO.
   string thinking_mode = 22;
+  repeated AgentAttachmentRef attachments = 23;
 }
 
 message ExecuteTurnResponse {

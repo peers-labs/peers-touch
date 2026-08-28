@@ -21,7 +21,9 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -143,6 +145,10 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 		return nil, toHandlerError(err)
 	}
 
+	createdConversation := false
+	if strings.TrimSpace(req.GetConversationId()) == "" && len(req.GetAttachments()) > 0 {
+		return nil, toHandlerError(errcode.NewAttachmentRejected("conversation_scope_required"))
+	}
 	if strings.TrimSpace(req.GetConversationId()) == "" && h.convService != nil {
 		ptid := subjectActorID(ctx)
 		conv, err := h.convService.CreateConversation(ctx, req.GetAgentId(), ptid, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
@@ -150,6 +156,23 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 			return nil, toHandlerError(err)
 		}
 		req.ConversationId = conv.ConversationID
+		createdConversation = true
+	} else if h.convService != nil {
+		ptid := subjectActorID(ctx)
+		existing, getErr := h.convService.GetConversation(ctx, ptid, req.GetConversationId())
+		if getErr != nil || existing == nil {
+			if len(req.GetAttachments()) > 0 {
+				if preflightErr := h.turnService.PreflightAttachments(ctx, ptid, req); preflightErr != nil {
+					return nil, toHandlerError(preflightErr)
+				}
+			}
+			conv, createErr := h.convService.CreateConversationWithID(ctx, req.GetConversationId(), req.GetAgentId(), ptid, truncateForTitle(req.GetUserInput()), "", req.GetModel(), req.GetProvider())
+			if createErr != nil {
+				return nil, toHandlerError(createErr)
+			}
+			createdConversation = true
+			req.ConversationId = conv.ConversationID
+		}
 	}
 
 	if req.GetConversationId() == "" {
@@ -162,6 +185,17 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 	if h.admission != nil {
 		admissionResult, admissionErr := h.admission.Admit(ctx, subjectActorID(ctx), req)
 		if admissionErr != nil {
+			if createdConversation {
+				if cleanupErr := h.convService.ArchiveConversation(
+					ctx,
+					subjectActorID(ctx),
+					req.GetConversationId(),
+					true,
+					1,
+				); cleanupErr != nil {
+					logger.Errorf(ctx, "failed to remove unadmitted Agent conversation: conversation_id=%s err=%v", req.GetConversationId(), cleanupErr)
+				}
+			}
 			return nil, toHandlerError(admissionErr)
 		}
 		admission = admissionResult
@@ -242,7 +276,7 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 	resp.SetHeader("X-Accel-Buffering", "no")
 
 	var input model.ExecuteTurnRequest
-	if err := json.Unmarshal(req.Body(), &input); err != nil {
+	if err := decodeExecuteTurnRequest(req.Body(), &input); err != nil {
 		_ = writeTurnStreamEvent(resp, "error", map[string]any{
 			"type":  "error",
 			"error": "invalid turn stream request",
@@ -268,6 +302,14 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 	turnCtx, releaseTurn := h.turnService.RegisterTurn(ctx, turnID)
 	defer releaseTurn()
 
+	createdConversation := false
+	if strings.TrimSpace(input.GetConversationId()) == "" && len(input.GetAttachments()) > 0 {
+		_ = writeTurnStreamEvent(resp, "error", map[string]any{
+			"type":  "error",
+			"error": errcode.NewAttachmentRejected("conversation_scope_required").Error(),
+		})
+		return nil
+	}
 	if strings.TrimSpace(input.GetConversationId()) == "" && h.convService != nil {
 		ptid := subjectActorID(ctx)
 		conv, err := h.convService.CreateConversation(ctx, input.GetAgentId(), ptid, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
@@ -276,23 +318,27 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 			return nil
 		}
 		input.ConversationId = conv.ConversationID
-		_ = h.writePersistedTurnStreamEvent(ctx, resp, "conversation_created", turnID, conv.ConversationID, input.GetAgentId(), map[string]any{
-			"type":            "conversation_created",
-			"conversation_id": conv.ConversationID,
-		})
+		createdConversation = true
 	} else if h.convService != nil {
 		ptid := subjectActorID(ctx)
 		existing, getErr := h.convService.GetConversation(ctx, ptid, input.GetConversationId())
 		if getErr != nil || existing == nil {
+			if len(input.GetAttachments()) > 0 {
+				if preflightErr := h.turnService.PreflightAttachments(ctx, ptid, &input); preflightErr != nil {
+					_ = writeTurnStreamEvent(resp, "error", map[string]any{
+						"type":  "error",
+						"error": preflightErr.Error(),
+					})
+					return nil
+				}
+			}
 			conv, err := h.convService.CreateConversationWithID(ctx, input.GetConversationId(), input.GetAgentId(), ptid, truncateForTitle(input.GetUserInput()), "", input.GetModel(), input.GetProvider())
 			if err != nil {
 				_ = writeTurnStreamEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
 				return nil
 			}
-			_ = h.writePersistedTurnStreamEvent(ctx, resp, "conversation_created", turnID, conv.ConversationID, input.GetAgentId(), map[string]any{
-				"type":            "conversation_created",
-				"conversation_id": conv.ConversationID,
-			})
+			input.ConversationId = conv.ConversationID
+			createdConversation = true
 		}
 	}
 
@@ -314,11 +360,28 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 			turnID,
 		)
 		if err != nil {
+			if createdConversation {
+				if cleanupErr := h.convService.ArchiveConversation(
+					ctx,
+					subjectActorID(ctx),
+					input.GetConversationId(),
+					true,
+					1,
+				); cleanupErr != nil {
+					logger.Errorf(ctx, "failed to remove unadmitted Agent conversation: conversation_id=%s err=%v", input.GetConversationId(), cleanupErr)
+				}
+			}
 			_ = writeTurnStreamEvent(resp, "error", map[string]any{
 				"type":  "error",
 				"error": err.Error(),
 			})
 			return nil
+		}
+		if createdConversation {
+			_ = h.writePersistedTurnStreamEvent(ctx, resp, "conversation_created", turnID, input.GetConversationId(), input.GetAgentId(), map[string]any{
+				"type":            "conversation_created",
+				"conversation_id": input.GetConversationId(),
+			})
 		}
 		if admission.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
 			event := "admission_replayed"
@@ -441,6 +504,10 @@ func (h *TurnHandlers) writePersistedTurnStreamEvent(
 	return writeTurnStreamEvent(resp, event, payload)
 }
 
+func decodeExecuteTurnRequest(body []byte, request *model.ExecuteTurnRequest) error {
+	return (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(body, request)
+}
+
 func (h *TurnHandlers) HandleCancelTurn(ctx context.Context, req server.Request, resp server.Response) error {
 	resp.SetHeader("Content-Type", "application/json")
 	var input cancelTurnRequest
@@ -533,6 +600,7 @@ func (h *TurnHandlers) turnConfigFromRequest(ctx context.Context, req *model.Exe
 		Effort:                    req.GetEffort(),
 		ThinkingMode:              domain.ThinkingMode(req.GetThinkingMode()),
 		ClientCapabilitySessionID: req.GetClientCapabilitySessionId(),
+		Attachments:               req.GetAttachments(),
 		EventSink:                 sink,
 		MemoryDisabled:            req.GetMemoryDisabled(),
 	}

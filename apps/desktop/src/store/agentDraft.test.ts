@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   agentIdFromDraftKey,
+  conversationIdFromAgentDraftKey,
   createAgentDraftKey,
   isAgentDraftKey,
 } from './agentDraft';
@@ -14,17 +15,20 @@ describe('Agent draft identity', () => {
     expect(key).toBe('draft:agent_123:nonce');
     expect(isAgentDraftKey(key)).toBe(true);
     expect(agentIdFromDraftKey(key)).toBe('agent_123');
+    expect(conversationIdFromAgentDraftKey(key)).toBe('nonce');
   });
 
   it('round-trips encoded Agent identities', () => {
     const key = createAgentDraftKey('station:agent/123', 'nonce');
     expect(agentIdFromDraftKey(key)).toBe('station:agent/123');
+    expect(conversationIdFromAgentDraftKey(key)).toBe('nonce');
   });
 
   it('rejects legacy and durable conversation keys', () => {
     expect(isAgentDraftKey('agent:assistant:123')).toBe(false);
     expect(isAgentDraftKey('session-123')).toBe(false);
     expect(isAgentDraftKey('conversation_123')).toBe(false);
+    expect(conversationIdFromAgentDraftKey('conversation_123')).toBeNull();
   });
 
   it('runs Agent readiness admission before optimistic message creation', () => {

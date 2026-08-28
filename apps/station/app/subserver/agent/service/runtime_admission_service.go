@@ -191,6 +191,9 @@ func (r *RuntimeAdmissionResolver) Resolve(
 	modelEnabled := false
 	var contextWindow int32
 	var modelType string
+	var imageInput bool
+	var fileInput bool
+	dbModels, _ := r.models.List(ctx, actorID, providerID)
 
 	if cp != nil {
 		hidden := parseHiddenModels(func() string {
@@ -212,7 +215,6 @@ func (r *RuntimeAdmissionResolver) Resolve(
 			}
 		}
 		if !modelEnabled {
-			dbModels, _ := r.models.List(ctx, actorID, providerID)
 			for i := range dbModels {
 				if dbModels[i].ModelID == modelID {
 					if !dbModels[i].Enabled {
@@ -222,12 +224,12 @@ func (r *RuntimeAdmissionResolver) Resolve(
 					modelEnabled = true
 					contextWindow = int32(dbModels[i].ContextWindow)
 					modelType = "chat"
+					imageInput, fileInput = modelInputCapabilities(dbModels[i].CapabilitiesJSON)
 					break
 				}
 			}
 		}
 	} else if userMatch != nil {
-		dbModels, _ := r.models.List(ctx, actorID, providerID)
 		for i := range dbModels {
 			if dbModels[i].ModelID == modelID {
 				if !dbModels[i].Enabled {
@@ -237,6 +239,7 @@ func (r *RuntimeAdmissionResolver) Resolve(
 				modelEnabled = true
 				contextWindow = int32(dbModels[i].ContextWindow)
 				modelType = "chat"
+				imageInput, fileInput = modelInputCapabilities(dbModels[i].CapabilitiesJSON)
 				break
 			}
 		}
@@ -246,13 +249,26 @@ func (r *RuntimeAdmissionResolver) Resolve(
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 			fmt.Sprintf("model %q is not available for provider %q", modelID, providerID), nil)
 	}
+	for i := range dbModels {
+		if dbModels[i].ModelID == modelID {
+			imageInput, fileInput = modelInputCapabilities(dbModels[i].CapabilitiesJSON)
+			break
+		}
+	}
 
 	if modelType != "" && modelType != "chat" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 			fmt.Sprintf("model %q type %q is not supported for agent execution", modelID, modelType), nil)
 	}
 
-	capabilities := buildCapabilitySnapshot(providerID, modelID, contextWindow, userMatch)
+	capabilities := buildCapabilitySnapshot(
+		providerID,
+		modelID,
+		contextWindow,
+		userMatch,
+		imageInput,
+		fileInput,
+	)
 	budget := defaultRuntimeBudget(contextWindow)
 
 	snapshotID := computeSnapshotID(actorID, providerID, modelID, capabilities, budget)
@@ -272,10 +288,44 @@ func (r *RuntimeAdmissionResolver) Resolve(
 	}, nil
 }
 
+func modelInputCapabilities(raw json.RawMessage) (image bool, file bool) {
+	var names []string
+	if err := json.Unmarshal(raw, &names); err == nil {
+		for _, name := range names {
+			switch strings.ToLower(strings.TrimSpace(name)) {
+			case "image", "vision", "image_input":
+				image = true
+			case "file", "pdf", "file_input":
+				file = true
+			}
+		}
+		return image, file
+	}
+
+	var flags map[string]bool
+	if err := json.Unmarshal(raw, &flags); err != nil {
+		return false, false
+	}
+	for name, enabled := range flags {
+		if !enabled {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "image", "vision", "image_input":
+			image = true
+		case "file", "pdf", "file_input":
+			file = true
+		}
+	}
+	return image, file
+}
+
 func buildCapabilitySnapshot(
 	providerID, modelID string,
 	contextWindow int32,
 	userMatch *persistence.AgentProvider,
+	imageInput bool,
+	fileInput bool,
 ) *model.RuntimeCapabilitySnapshot {
 	protocol := "openai-compatible"
 	runtimeKind := "http"
@@ -293,7 +343,11 @@ func buildCapabilitySnapshot(
 		strings.Contains(strings.ToLower(modelID), "o1") ||
 		strings.Contains(strings.ToLower(modelID), "o3")
 
-	inputCaps := &model.RuntimeInputCapabilities{Text: true}
+	inputCaps := &model.RuntimeInputCapabilities{
+		Text:  true,
+		Image: imageInput,
+		File:  fileInput,
+	}
 	outputCaps := &model.RuntimeOutputCapabilities{Text: true, Structured: true}
 	execCaps := &model.RuntimeExecutionCapabilities{
 		Streaming:      streaming,
@@ -360,16 +414,26 @@ func computeSnapshotID(
 	budget *model.RuntimeBudget,
 ) string {
 	payload := struct {
-		ActorID    string `json:"actor_id"`
-		ProviderID string `json:"provider_id"`
-		ModelID    string `json:"model_id"`
-		Limits     any    `json:"limits"`
-		Budget     any    `json:"budget"`
+		ActorID    string                              `json:"actor_id"`
+		ProviderID string                              `json:"provider_id"`
+		ModelID    string                              `json:"model_id"`
+		Input      *model.RuntimeInputCapabilities     `json:"input"`
+		Output     *model.RuntimeOutputCapabilities    `json:"output"`
+		Runtime    *model.RuntimeExecutionCapabilities `json:"runtime"`
+		Agentic    *model.RuntimeAgenticCapabilities   `json:"agentic"`
+		Limits     *model.RuntimeCapabilityLimits      `json:"limits"`
+		Resolution []*model.RuntimeCapability          `json:"resolution"`
+		Budget     *model.RuntimeBudget                `json:"budget"`
 	}{
 		ActorID:    actorID,
 		ProviderID: providerID,
 		ModelID:    modelID,
+		Input:      caps.GetInput(),
+		Output:     caps.GetOutput(),
+		Runtime:    caps.GetRuntime(),
+		Agentic:    caps.GetAgentic(),
 		Limits:     caps.Limits,
+		Resolution: caps.GetResolution(),
 		Budget:     budget,
 	}
 	raw, _ := json.Marshal(payload)

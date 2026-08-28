@@ -18,6 +18,7 @@ const (
 	AgentInvalidSourceState  Code = "INVALID_SOURCE_STATE"
 	AgentActiveDependency    Code = "ACTIVE_DEPENDENCY"
 	AgentQueueFull           Code = "ADMISSION_QUEUE_FULL"
+	AgentAttachmentRejected  Code = "CONTEXT_ATTACHMENT_REJECTED"
 	AgentProviderFailed      Code = "AGENT_5001"
 	AgentCompressionFailed   Code = "AGENT_5002"
 	AgentDelegationFailed    Code = "AGENT_5003"
@@ -30,6 +31,7 @@ const (
 
 	AgentCanvasSingleAgentNotReadyLocaleKey    = "agent.errors.canvasSingleAgentNotReady"
 	AgentCanvasSingleAgentNotReadyRequiredGate = "agent-v2-kernel-foundation-e2e"
+	AgentAttachmentRejectedLocaleKey           = "agent.errors.attachmentRejected"
 )
 
 type BizError struct {
@@ -68,6 +70,22 @@ func NewCanvasSingleAgentNotReady() *BizError {
 			Details: map[string]string{
 				"required_gate": AgentCanvasSingleAgentNotReadyRequiredGate,
 			},
+		},
+	}
+}
+
+func NewAttachmentRejected(reasonCode string) *BizError {
+	return &BizError{
+		Code:       AgentAttachmentRejected,
+		HTTPStatus: http.StatusBadRequest,
+		Message:    AgentAttachmentRejectedLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentAttachmentRejectedLocaleKey,
+			ErrorType: string(AgentAttachmentRejected),
+			LocaleKey: AgentAttachmentRejectedLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+			Details:   map[string]string{"reason_code": reasonCode},
 		},
 	}
 }

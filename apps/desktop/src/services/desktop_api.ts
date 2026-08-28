@@ -676,10 +676,20 @@ export interface AgentUploadAttachmentBytesInput {
   filename: string;
   mime_type: string;
   bytes: number[];
-  bucket: string;
-  visibility: 'public' | 'chat' | 'private';
-  /** Required when `visibility` is `chat`. */
-  chat_session_id?: string | null;
+  conversation_id: string;
+}
+
+/** Portable Agent attachment wire shape defined by `AgentAttachmentRef`. */
+export interface AgentAttachmentRefInput {
+  attachment_id: string;
+  object_ref: string;
+  mime_type: string;
+  size_bytes: number;
+  checksum: string;
+  filename: string;
+  authorization_scope: string;
+  expires_at: string;
+  extracted_content_ref: string;
 }
 
 /**
@@ -2430,7 +2440,7 @@ export interface AgentExecuteTurnInput {
   conversation_id: string;
   agent_id: string;
   user_input: string;
-  attachments?: ChatAttachmentInput[];
+  attachments?: AgentAttachmentRefInput[];
   provider?: string;
   model?: string;
   identity?: string;
@@ -2711,6 +2721,7 @@ export interface AgentMessage {
   reasoning_json?: string;
   tool_calls_json?: string;
   metadata_json?: string;
+  attachments?: AgentAttachmentRefInput[];
   created_at: string;
   updated_at: string;
 }
@@ -2795,7 +2806,7 @@ export interface AgentEditAndResendInput {
   conversation_id: string;
   source_user_message_id: string;
   revised_content: string;
-  attachments?: ChatAttachmentInput[];
+  attachments?: AgentAttachmentRefInput[];
   client_idempotency_key: string;
   expected_conversation_version: number;
   requested_budget?: AgentRuntimeBudgetInput;
@@ -3584,9 +3595,15 @@ export const api = {
     ),
 
   ossUploadAgentAttachmentBytes: (input: AgentUploadAttachmentBytesInput) =>
-    invokeRustDataFromStatus<AgentUploadAttachmentBytesInput, OssAttachmentUploaded>(
+    invokeRustDataFromStatus<AgentUploadAttachmentBytesInput, AgentAttachmentRefInput>(
       'oss_upload_agent_attachment_bytes',
       input,
+    ),
+
+  ossDeleteAgentAttachment: (objectRef: string) =>
+    invokeRustDataFromStatus<{ key: string }, OssDeleteResponse>(
+      'oss_delete_file',
+      { key: objectRef },
     ),
 
   /**

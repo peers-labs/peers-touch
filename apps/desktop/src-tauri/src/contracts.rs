@@ -961,13 +961,27 @@ pub struct AgentSelectInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentAttachmentRefInput {
+    pub attachment_id: String,
+    pub object_ref: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
+    pub checksum: String,
+    pub filename: String,
+    pub authorization_scope: String,
+    pub expires_at: String,
+    #[serde(default)]
+    pub extracted_content_ref: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentExecuteTurnInput {
     pub stream_id: Option<String>,
     pub client_idempotency_key: String,
     pub conversation_id: String,
     pub agent_id: String,
     pub user_input: String,
-    pub attachments: Option<Vec<AttachmentInput>>,
+    pub attachments: Option<Vec<AgentAttachmentRefInput>>,
     pub provider: Option<String>,
     pub model: Option<String>,
     pub workspace_mode: Option<String>,
@@ -1109,7 +1123,7 @@ pub struct AgentEditAndResendInput {
     pub conversation_id: String,
     pub source_user_message_id: String,
     pub revised_content: String,
-    pub attachments: Option<Vec<Value>>,
+    pub attachments: Option<Vec<AgentAttachmentRefInput>>,
     pub client_idempotency_key: String,
     pub expected_conversation_version: u64,
     pub requested_budget: Option<Value>,

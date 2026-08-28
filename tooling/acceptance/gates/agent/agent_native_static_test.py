@@ -32,6 +32,9 @@ FOUNDATION_RUNTIME_CLIENT = (
     / "agent"
     / "foundation_runtime_client.py"
 )
+DESKTOP_HTTP_GATEWAY = (
+    ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "http_gateway" / "mod.rs"
+)
 
 
 class AgentNativeRunnerStaticTest(unittest.TestCase):
@@ -172,7 +175,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertLess(profile_update, readiness_readback)
         self.assertLess(readiness_readback, configured_result)
         self.assertIn("model.provider_id === providerId", self.source)
-        self.assertIn("directModelReadiness?.reason_code !== 'runtime_ready'", self.source)
+        self.assertIn(
+            "modelCapabilities.snapshot_id !== readiness.runtime_snapshot_id",
+            self.source,
+        )
 
     def test_harness_exposes_r6_production_actions_and_readback(self) -> None:
         for method in (
@@ -187,6 +193,9 @@ class AgentHarnessStaticTest(unittest.TestCase):
         for method in (
             "getFoundationAgentState",
             "getFoundationCapabilitySessions",
+            "uploadFoundationAttachmentBytes",
+            "resolveFoundationAttachmentObject",
+            "getFoundationAttachmentRuntimeReadiness",
             "captureFoundationRuntimeState",
             "setFoundationLocale",
             "createFoundationConversation",
@@ -205,6 +214,20 @@ class AgentHarnessStaticTest(unittest.TestCase):
         ):
             with self.subTest(method=method):
                 self.assertIn(method, self.source)
+
+    def test_harness_drives_as_f05_through_production_boundaries(self) -> None:
+        self.assertIn("cell === 'AS-F05'", self.source)
+        self.assertIn("runFoundationF05Scenario", self.source)
+        self.assertIn("api.ossUploadAgentAttachmentBytes", self.source)
+        self.assertIn("api.ossResolveUrl", self.source)
+        self.assertIn("api.ossDeleteAgentAttachment", self.source)
+        self.assertIn("startObservedFoundationTurn", self.source)
+        self.assertIn("foundationDiagnosticReplay", self.source)
+        self.assertNotIn("mockFoundationAttachment", self.source)
+        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
+        self.assertIn('"oss_upload_agent_attachment_bytes"', gateway)
+        self.assertIn('"oss_resolve_url"', gateway)
+        self.assertIn('"oss_delete_file"', gateway)
 
     def test_harness_reuses_identity_runtime(self) -> None:
         self.assertIn("identityRuntime", self.source)

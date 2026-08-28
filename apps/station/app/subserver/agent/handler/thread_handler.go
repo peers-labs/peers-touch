@@ -92,7 +92,12 @@ func (h *ThreadHandlers) HandleListThreadMessages(ctx context.Context, req serve
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
 	}
-	writeJSON(resp, http.StatusOK, map[string]any{"ok": true, "messages": messagesToJSON(messages)})
+	messageItems, err := messagesToJSON(messages)
+	if err != nil {
+		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": "failed to decode persisted message attachments"})
+		return nil
+	}
+	writeJSON(resp, http.StatusOK, map[string]any{"ok": true, "messages": messageItems})
 	return nil
 }
 

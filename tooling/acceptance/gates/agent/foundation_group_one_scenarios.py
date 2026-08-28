@@ -349,6 +349,213 @@ def evaluate_as_f04(
     return assertions
 
 
+def evaluate_as_f05(capture: Mapping[str, Any]) -> dict[str, bool]:
+    valid_files = _mapping(capture, "validFiles", scenario="AS-F05")
+    png = _mapping(valid_files, "png", scenario="AS-F05")
+    pdf = _mapping(valid_files, "pdf", scenario="AS-F05")
+    persistence = _mapping(capture, "persistence", scenario="AS-F05")
+    upload_recovery = _mapping(capture, "uploadRecovery", scenario="AS-F05")
+    failed_upload = _mapping(
+        upload_recovery,
+        "failedUpload",
+        scenario="AS-F05",
+    )
+    removal = _mapping(upload_recovery, "removal", scenario="AS-F05")
+    rejections = _mapping(capture, "rejections", scenario="AS-F05")
+    oversized = _mapping(rejections, "oversized", scenario="AS-F05")
+    unsupported = _mapping(rejections, "unsupported", scenario="AS-F05")
+    unauthorized = _mapping(rejections, "unauthorized", scenario="AS-F05")
+    references = _list(capture, "references", scenario="AS-F05")
+    download = _mapping(capture, "authorizedDownload", scenario="AS-F05")
+
+    def valid_handled_file(
+        fact: Mapping[str, Any],
+        *,
+        mime_type: str,
+    ) -> bool:
+        disposition = fact.get("modelDisposition")
+        return (
+            fact.get("mimeType") == mime_type
+            and disposition in {"consumed", "omitted"}
+            and _nonempty_string(fact, "attachmentId", scenario="AS-F05")
+            and _opaque_object_ref(fact, "objectRef")
+            and _positive_int(fact, "sizeBytes", scenario="AS-F05")
+            and _nonempty_string(fact, "checksum", scenario="AS-F05")
+            and _nonempty_string(
+                fact,
+                "authorizationScope",
+                scenario="AS-F05",
+            )
+            and _nonempty_string(fact, "expiresAt", scenario="AS-F05")
+            and (
+                (disposition == "consumed" and fact.get("modelVisible") is True)
+                or (
+                    disposition == "omitted"
+                    and fact.get("modelVisible") is False
+                    and _nonempty_string(
+                        fact,
+                        "omissionReason",
+                        scenario="AS-F05",
+                    )
+                    and fact.get("ledgerDecision") is not None
+                )
+            )
+        )
+
+    before_restart = _normalized_attachment_metadata(
+        persistence,
+        "beforeRestart",
+    )
+    after_restart = _normalized_attachment_metadata(
+        persistence,
+        "afterRestart",
+    )
+    projection_readback = _normalized_attachment_metadata(
+        persistence,
+        "projectionReadback",
+    )
+    context_segment_ids = _string_list(
+        persistence,
+        "contextSegmentAttachmentIds",
+        scenario="AS-F05",
+    )
+    expected_attachment_ids = sorted(
+        {
+            _nonempty_string(png, "attachmentId", scenario="AS-F05"),
+            _nonempty_string(pdf, "attachmentId", scenario="AS-F05"),
+        }
+    )
+
+    before_siblings = sorted(
+        _string_list(
+            removal,
+            "siblingIdsBefore",
+            scenario="AS-F05",
+        )
+    )
+    after_siblings = sorted(
+        _string_list(
+            removal,
+            "siblingIdsAfter",
+            scenario="AS-F05",
+        )
+    )
+    removed_attachment_id = _nonempty_string(
+        removal,
+        "removedAttachmentId",
+        scenario="AS-F05",
+    )
+
+    def rejected_before_provider(fact: Mapping[str, Any]) -> bool:
+        return (
+            fact.get("accepted") is False
+            and fact.get("errorCode") == "CONTEXT_ATTACHMENT_REJECTED"
+            and _nonnegative_int(fact, "turnDelta", scenario="AS-F05") == 0
+            and _nonnegative_int(
+                fact,
+                "providerExecutionDelta",
+                scenario="AS-F05",
+            )
+            == 0
+            and _nonnegative_int(fact, "messageDelta", scenario="AS-F05") == 0
+        )
+
+    normalized_references = [
+        (
+            _nonempty_string(reference, "attachmentId", scenario="AS-F05"),
+            _opaque_object_ref(reference, "objectRef"),
+        )
+        for reference in references
+    ]
+    reference_ids = sorted(
+        attachment_id for attachment_id, opaque in normalized_references if opaque
+    )
+    assertions = {
+        "validPngHandled": valid_handled_file(png, mime_type="image/png"),
+        "validPdfHandled": valid_handled_file(
+            pdf,
+            mime_type="application/pdf",
+        ),
+        "metadataRestartReadback": (
+            before_restart == after_restart == projection_readback
+            and sorted(context_segment_ids) == expected_attachment_ids
+            and sorted(item["attachmentId"] for item in after_restart)
+            == expected_attachment_ids
+        ),
+        "failedUploadRetrySucceeded": (
+            _nonempty_string(
+                failed_upload,
+                "errorCode",
+                scenario="AS-F05",
+            )
+            == "CONTEXT_ATTACHMENT_REJECTED"
+            and _nonempty_string(
+                failed_upload,
+                "retriedAttachmentId",
+                scenario="AS-F05",
+            )
+            and _nonempty_string(
+                failed_upload,
+                "retriedChecksum",
+                scenario="AS-F05",
+            ).startswith("sha256:")
+        ),
+        "failedUploadRemovalPreservedSiblings": (
+            before_siblings == after_siblings == expected_attachment_ids
+            and removed_attachment_id not in after_siblings
+            and removal.get("removedObjectUnavailable") is True
+            and _string_list(
+                removal,
+                "siblingChecksumsBefore",
+                scenario="AS-F05",
+            )
+            == _string_list(
+                removal,
+                "siblingChecksumsAfter",
+                scenario="AS-F05",
+            )
+        ),
+        "oversizedRejectedBeforeProvider": rejected_before_provider(oversized),
+        "unsupportedRejectedBeforeProvider": rejected_before_provider(
+            unsupported
+        ),
+        "unauthorizedRejectedBeforeProvider": rejected_before_provider(
+            unauthorized
+        ),
+        "opaqueReferencesOnly": (
+            len(references) == len(expected_attachment_ids)
+            and reference_ids == expected_attachment_ids
+            and not _contains_raw_path(capture)
+        ),
+        "authorizedDownloadVerified": (
+            download.get("authorized") is True
+            and download.get("downloaded") is True
+            and _nonempty_string(
+                download,
+                "attachmentId",
+                scenario="AS-F05",
+            )
+            in expected_attachment_ids
+            and _nonempty_string(
+                download,
+                "expectedChecksum",
+                scenario="AS-F05",
+            )
+            == _nonempty_string(
+                download,
+                "actualChecksum",
+                scenario="AS-F05",
+            )
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"AS-F05 production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_as_f10(
     capture: Mapping[str, Any],
     *,
@@ -528,6 +735,105 @@ def _list(
     ):
         raise GroupOneScenarioError(f"{scenario} {key} fact is invalid")
     return [dict(entry) for entry in item]
+
+
+def _string_list(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    scenario: str,
+) -> list[str]:
+    item = value.get(key)
+    if (
+        not isinstance(item, list)
+        or any(not isinstance(entry, str) or not entry for entry in item)
+    ):
+        raise GroupOneScenarioError(f"{scenario} {key} fact is invalid")
+    return list(item)
+
+
+def _normalized_attachment_metadata(
+    value: Mapping[str, Any],
+    key: str,
+) -> list[dict[str, Any]]:
+    items = _list(value, key, scenario="AS-F05")
+    normalized = []
+    for item in items:
+        normalized.append(
+            {
+                "attachmentId": _nonempty_string(
+                    item,
+                    "attachmentId",
+                    scenario="AS-F05",
+                ),
+                "objectRef": _opaque_object_ref(item, "objectRef"),
+                "mimeType": _nonempty_string(
+                    item,
+                    "mimeType",
+                    scenario="AS-F05",
+                ),
+                "sizeBytes": _positive_int(
+                    item,
+                    "sizeBytes",
+                    scenario="AS-F05",
+                ),
+                "checksum": _nonempty_string(
+                    item,
+                    "checksum",
+                    scenario="AS-F05",
+                ),
+                "filename": _nonempty_string(
+                    item,
+                    "filename",
+                    scenario="AS-F05",
+                ),
+                "authorizationScope": _nonempty_string(
+                    item,
+                    "authorizationScope",
+                    scenario="AS-F05",
+                ),
+                "expiresAt": _nonempty_string(
+                    item,
+                    "expiresAt",
+                    scenario="AS-F05",
+                ),
+            }
+        )
+    return sorted(normalized, key=lambda item: item["attachmentId"])
+
+
+def _opaque_object_ref(value: Mapping[str, Any], key: str) -> str:
+    item = _nonempty_string(value, key, scenario="AS-F05")
+    lowered = item.lower()
+    if (
+        lowered.startswith(("/", "\\", "file:", "http:", "https:"))
+        or "/users/" in lowered
+        or "\\users\\" in lowered
+        or "/tmp/" in lowered
+    ):
+        raise GroupOneScenarioError(
+            f"AS-F05 {key} must be an opaque authorized reference"
+        )
+    return item
+
+
+def _contains_raw_path(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        return any(_contains_raw_path(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_raw_path(item) for item in value)
+    if not isinstance(value, str):
+        return False
+    lowered = value.lower()
+    return (
+        lowered.startswith(("file:", "http:", "https:", "/users/", "/tmp/"))
+        or "\\users\\" in lowered
+        or (
+            len(value) >= 3
+            and value[0].isalpha()
+            and value[1:3] in {":\\", ":/"}
+        )
+    )
 
 
 def _positive_int(

@@ -73,6 +73,20 @@ REQUIRED_ASSERTIONS = {
             "sourceReplayEqual",
         }
     ),
+    "AS-F05": frozenset(
+        {
+            "validPngHandled",
+            "validPdfHandled",
+            "metadataRestartReadback",
+            "failedUploadRetrySucceeded",
+            "failedUploadRemovalPreservedSiblings",
+            "oversizedRejectedBeforeProvider",
+            "unsupportedRejectedBeforeProvider",
+            "unauthorizedRejectedBeforeProvider",
+            "opaqueReferencesOnly",
+            "authorizedDownloadVerified",
+        }
+    ),
     "AS-F07": frozenset(
         {
             "retryCreatedAttempt",

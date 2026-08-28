@@ -5,13 +5,17 @@ import {
   api,
   type Session,
   type StreamEvent,
-  type ChatAttachmentInput,
+  type AgentAttachmentRefInput,
   type AgentTurnQueueListOutput,
 } from '../services/desktop_api';
 import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
 import { useAgentTopicStore } from './agentTopics';
-import { createAgentDraftKey, isAgentDraftKey } from './agentDraft';
+import {
+  conversationIdFromAgentDraftKey,
+  createAgentDraftKey,
+  isAgentDraftKey,
+} from './agentDraft';
 import { getDesktopAgentChatCache } from '../storage/desktopAgentChatCache';
 import { toolRuntime } from '../runtimes/toolRuntime';
 import type { CachedAgentConversation, CachedAgentMessage } from '@peers-touch/client-chat-core';
@@ -98,7 +102,12 @@ export interface ChatComposerAttachment {
   size: number;
   previewUrl?: string | null;
   url?: string;
-  attachment?: ChatAttachmentInput;
+  attachment?: AgentAttachmentRefInput;
+}
+
+export interface AgentSendLifecycle {
+  onAccepted?: () => void;
+  onRejected?: () => void;
 }
 
 export interface ErrorResolutionAction {
@@ -169,6 +178,23 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
     timestamp: new Date(message.createdAt).getTime(),
     model: message.modelName,
     turnId: message.turnId,
+    attachments: message.attachments?.map((attachment) => ({
+      cid: attachment.objectRef,
+      filename: attachment.filename,
+      mime_type: attachment.mimeType,
+      size: attachment.sizeBytes,
+      attachment: {
+        attachment_id: attachment.attachmentId,
+        object_ref: attachment.objectRef,
+        mime_type: attachment.mimeType,
+        size_bytes: attachment.sizeBytes,
+        checksum: attachment.checksum,
+        filename: attachment.filename,
+        authorization_scope: attachment.authorizationScope,
+        expires_at: attachment.expiresAt,
+        extracted_content_ref: attachment.extractedContentRef,
+      },
+    })),
   };
   if (message.role === 'assistant' && message.reasoningJson) {
     try {
@@ -460,7 +486,11 @@ interface ChatState {
   bootstrapSession: () => Promise<void>;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
-  sendMessage: (content: string, attachments?: ChatComposerAttachment[]) => boolean;
+  sendMessage: (
+    content: string,
+    attachments?: ChatComposerAttachment[],
+    lifecycle?: AgentSendLifecycle,
+  ) => boolean;
   regenerateMessage: (messageId: string) => Promise<void>;
   retryMessage: (messageId: string) => Promise<void>;
   deleteAndRegenerateMessage: (messageId: string) => Promise<void>;
@@ -546,7 +576,9 @@ function buildAgentTurnInput(
     user_input: userInput,
     provider: agent?.provider || undefined,
     model: agent?.model || undefined,
-    attachments: attachments.map((item) => item.attachment).filter((item): item is ChatAttachmentInput => Boolean(item)),
+    attachments: attachments
+      .map((item) => item.attachment)
+      .filter((item): item is AgentAttachmentRefInput => Boolean(item)),
   };
 }
 
@@ -889,11 +921,17 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     await get().loadSessions();
   },
 
-  sendMessage: (content: string, attachments: ChatComposerAttachment[] = []) => {
+  sendMessage: (
+    content: string,
+    attachments: ChatComposerAttachment[] = [],
+    lifecycle?: AgentSendLifecycle,
+  ) => {
     log.info('chat', 'Sending message', { sessionKey: get().currentSessionKey, contentLength: content.length });
     const { currentSessionKey } = get();
     const isDraft = isAgentDraftKey(currentSessionKey);
-    const effectiveConvId = isDraft ? '' : currentSessionKey;
+    const effectiveConvId = isDraft
+      ? conversationIdFromAgentDraftKey(currentSessionKey) ?? ''
+      : currentSessionKey;
     const agentState = useAgentStore.getState();
     const { selectedAgent } = agentState;
     const agentName = selectedAgent || 'assistant';
@@ -904,16 +942,10 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
     set({ readinessErrorKey: null });
 
-    const imageUrls = attachments
-      .filter((item) => item.mime_type.startsWith('image/'))
-      .map((item) => item.previewUrl || item.url || item.cid)
-      .filter((value): value is string => Boolean(value));
-
     const userMsg: ChatMessage = {
       id: tempId(),
       role: 'user',
       content,
-      images: imageUrls.length > 0 ? imageUrls : undefined,
       attachments,
       timestamp: Date.now(),
     };
@@ -929,6 +961,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const startedAt = Date.now();
     const assistantId = assistantMsg.id;
     let resolvedSessionKey = currentSessionKey;
+    let acceptedByStation = false;
+    const notifyAccepted = () => {
+      if (acceptedByStation) return;
+      acceptedByStation = true;
+      lifecycle?.onAccepted?.();
+    };
 
     const controller = agentService.streamTurn(
       buildAgentTurnInput(
@@ -938,6 +976,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         attachments,
       ),
       (event: StreamEvent) => {
+        if (event.event !== 'error') notifyAccepted();
         if (event.event === 'conversation_created' && typeof event.data?.conversation_id === 'string' && isDraft) {
           const realConvId = event.data.conversation_id.trim();
           let promotedSession: Session | undefined;
@@ -1037,6 +1076,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         }
       },
       () => {
+        notifyAccepted();
         log.info('chat', 'Stream complete');
         set((state) => {
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
@@ -1058,6 +1098,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
       (err: Error & { resolution?: ErrorResolutionAction; errorDetail?: string; providerId?: string }) => {
+        if (!acceptedByStation) lifecycle?.onRejected?.();
         log.error('chat', 'Send message failed', { error: err.message });
         set((state) => {
           const isCurrent = state.currentSessionKey === resolvedSessionKey;

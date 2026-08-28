@@ -171,6 +171,13 @@ type FileService interface {
 	ListMyFiles(ctx context.Context, ownerActorID string, req ListMyFilesRequest) (*ListMyFilesResult, error)
 }
 
+// AttachmentReader is the narrow cross-subserver contract for consuming an
+// actor-owned object. The implementation resolves metadata by (owner, key)
+// before opening bytes and enforces a caller-provided read bound.
+type AttachmentReader interface {
+	ReadOwnedFile(ctx context.Context, ownerActorID, key string, maxBytes uint64) (*ossmodel.FileMeta, []byte, error)
+}
+
 // DeleteResult is what the handler echoes back on a successful
 // (or idempotent) DELETE. `AlreadyDeleted` is true when the row
 // was already in the soft-delete state — the handler emits
@@ -200,10 +207,11 @@ type RestoreResult struct {
 // resolves it to a `bucket_id` so the wire shape stays stable
 // even if the on-disk uuid migrates.
 type PatchRequest struct {
-	Visibility    *string
-	ChatSessionID *string
-	BucketName    *string
-	Filename      *string
+	Visibility         *string
+	ChatSessionID      *string
+	AuthorizationScope *string
+	BucketName         *string
+	Filename           *string
 
 	ExpiresAtSet bool
 	ExpiresAt    *time.Time
@@ -278,6 +286,9 @@ var (
 	// ErrInvalidVisibility is returned when the resolved visibility
 	// is not one of public/chat/private. Handlers translate to 400.
 	ErrInvalidVisibility = errors.New("oss: invalid visibility")
+	// ErrInvalidAuthorizationScope is returned when a private object's
+	// higher-level scope is malformed, mutable, or paired with broader visibility.
+	ErrInvalidAuthorizationScope = errors.New("oss: invalid authorization scope")
 	// ErrChatSessionRequired is returned when visibility=chat and
 	// the request did not supply a chat_session_id. Handlers
 	// translate to HTTP 400.
@@ -932,6 +943,48 @@ func (s *fileService) GetFileMeta(ctx context.Context, key string) (*ossmodel.Fi
 	return s.repo.FindByKey(ctx, key)
 }
 
+func (s *fileService) ReadOwnedFile(
+	ctx context.Context,
+	ownerActorID string,
+	key string,
+	maxBytes uint64,
+) (*ossmodel.FileMeta, []byte, error) {
+	owner := strings.TrimSpace(ownerActorID)
+	key = strings.TrimSpace(key)
+	if owner == "" {
+		return nil, nil, ErrActorRequired
+	}
+	if key == "" || maxBytes == 0 {
+		return nil, nil, errors.New("oss: bounded owner read requires key and max_bytes")
+	}
+
+	meta, err := s.repo.FindByOwnerKey(ctx, owner, key)
+	if err != nil {
+		return nil, nil, err
+	}
+	if meta == nil || meta.OwnerActorID != owner || meta.DeletedAt != nil {
+		return nil, nil, ErrFileNotFound
+	}
+	if meta.Size < 0 || uint64(meta.Size) > maxBytes {
+		return nil, nil, ossrepo.ErrQuotaExceeded
+	}
+
+	reader, _, _, err := s.backend.Open(ctx, key, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer reader.Close()
+
+	body, err := io.ReadAll(io.LimitReader(reader, int64(maxBytes)+1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if uint64(len(body)) > maxBytes || int64(len(body)) != meta.Size {
+		return nil, nil, errors.New("oss: object body exceeds bound or size metadata")
+	}
+	return meta, body, nil
+}
+
 // DeleteFile is the owner-only soft-delete path. Ordering:
 //
 //  1. Resolve the live (owner, key) row. Missing → ErrFileNotFound;
@@ -1144,6 +1197,20 @@ func (s *fileService) PatchFile(ctx context.Context, ownerActorID, key string, r
 	} else if strings.TrimSpace(newSession) == "" {
 		return nil, ErrChatSessionRequired
 	}
+	newAuthorizationScope := row.AuthorizationScope
+	if req.AuthorizationScope != nil {
+		newAuthorizationScope = strings.TrimSpace(*req.AuthorizationScope)
+		if !strings.HasPrefix(newAuthorizationScope, "conversation:") ||
+			strings.TrimSpace(strings.TrimPrefix(newAuthorizationScope, "conversation:")) == "" {
+			return nil, ErrInvalidAuthorizationScope
+		}
+		if row.AuthorizationScope != "" && newAuthorizationScope != row.AuthorizationScope {
+			return nil, ErrInvalidAuthorizationScope
+		}
+	}
+	if newAuthorizationScope != "" && newVis != ossmodel.VisibilityPrivate {
+		return nil, ErrInvalidAuthorizationScope
+	}
 
 	// --- Stage 2: bucket move (same-actor only) -----------------
 	prevBucket := row.BucketID
@@ -1205,6 +1272,11 @@ func (s *fileService) PatchFile(ctx context.Context, ownerActorID, key string, r
 			fields = append(fields, "chat_session_id")
 		}
 	}
+	if req.AuthorizationScope != nil {
+		scope := newAuthorizationScope
+		patch.AuthorizationScope = &scope
+		fields = append(fields, "authorization_scope")
+	}
 	if newBucket != prevBucket {
 		b := newBucket
 		patch.BucketID = &b
@@ -1239,6 +1311,9 @@ func (s *fileService) PatchFile(ctx context.Context, ownerActorID, key string, r
 	}
 	if patch.ChatSessionID != nil {
 		row.ChatSessionID = *patch.ChatSessionID
+	}
+	if patch.AuthorizationScope != nil {
+		row.AuthorizationScope = *patch.AuthorizationScope
 	}
 	if patch.BucketID != nil {
 		row.BucketID = *patch.BucketID
@@ -1407,6 +1482,7 @@ func isVisibilityTighter(prev, next string) bool {
 func patchHasField(req PatchRequest) bool {
 	return req.Visibility != nil ||
 		req.ChatSessionID != nil ||
+		req.AuthorizationScope != nil ||
 		req.BucketName != nil ||
 		req.Filename != nil ||
 		req.ExpiresAtSet

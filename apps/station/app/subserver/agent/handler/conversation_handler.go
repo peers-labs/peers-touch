@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -266,9 +267,15 @@ func (h *ConversationHandlers) HandleListMessages(ctx context.Context, req serve
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
 	}
+	messageItems, err := messagesToJSON(messages)
+	if err != nil {
+		logger.Errorf(ctx, "failed to decode persisted Agent message attachments: conversation_id=%s err=%v", input.ConversationID, err)
+		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": "failed to decode persisted message attachments"})
+		return nil
+	}
 	writeJSON(resp, http.StatusOK, map[string]any{
 		"ok":          true,
-		"messages":    messagesToJSON(messages),
+		"messages":    messageItems,
 		"next_cursor": nextCursor,
 		"has_more":    hasMore,
 	})
@@ -400,7 +407,7 @@ func conversationsToJSON(convs []*domain.Conversation) []map[string]any {
 	return out
 }
 
-func messagesToJSON(msgs []*domain.Message) []map[string]any {
+func messagesToJSON(msgs []*domain.Message) ([]map[string]any, error) {
 	out := make([]map[string]any, 0, len(msgs))
 	for _, m := range msgs {
 		item := map[string]any{
@@ -425,6 +432,34 @@ func messagesToJSON(msgs []*domain.Message) []map[string]any {
 		if len(m.MetadataJSON) > 0 {
 			item["metadata_json"] = string(m.MetadataJSON)
 		}
+		if len(m.AttachmentsJSON) > 0 {
+			var attachments []*model.AgentAttachmentRef
+			if err := json.Unmarshal(m.AttachmentsJSON, &attachments); err != nil {
+				return nil, err
+			}
+			attachmentItems := make([]map[string]any, 0, len(attachments))
+			for _, attachment := range attachments {
+				if attachment == nil {
+					continue
+				}
+				expiresAt := ""
+				if attachment.GetExpiresAt() != nil && attachment.GetExpiresAt().IsValid() {
+					expiresAt = attachment.GetExpiresAt().AsTime().UTC().Format(time.RFC3339Nano)
+				}
+				attachmentItems = append(attachmentItems, map[string]any{
+					"attachment_id":         attachment.GetAttachmentId(),
+					"object_ref":            attachment.GetObjectRef(),
+					"mime_type":             attachment.GetMimeType(),
+					"size_bytes":            attachment.GetSizeBytes(),
+					"checksum":              attachment.GetChecksum(),
+					"filename":              attachment.GetFilename(),
+					"authorization_scope":   attachment.GetAuthorizationScope(),
+					"expires_at":            expiresAt,
+					"extracted_content_ref": attachment.GetExtractedContentRef(),
+				})
+			}
+			item["attachments"] = attachmentItems
+		}
 		if m.BranchID != "" {
 			item["branch_id"] = m.BranchID
 		}
@@ -436,7 +471,7 @@ func messagesToJSON(msgs []*domain.Message) []map[string]any {
 		}
 		out = append(out, item)
 	}
-	return out
+	return out, nil
 }
 
 func mustParseInt64(s string, def int64) int64 {

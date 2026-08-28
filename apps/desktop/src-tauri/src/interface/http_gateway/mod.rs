@@ -64,9 +64,7 @@ use crate::application::tts as app_tts;
 
 // Actor & chat modules use station_client + proto directly
 use crate::infrastructure::station_client;
-use crate::interface::tauri_commands::oss::{
-    safe_temp_filename, validate_oss_upload_scope, OssUploadAttachmentBytesInput,
-};
+use crate::interface::tauri_commands::oss::{safe_temp_filename, OssUploadAttachmentBytesInput};
 use crate::model;
 use prost::Message;
 use reqwest::Method;
@@ -763,18 +761,6 @@ fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> 
         ));
     }
 
-    let vis = input.visibility.trim().to_ascii_lowercase();
-    let (bucket, visibility, chat_sid) = match validate_oss_upload_scope(
-        input.bucket.as_str(),
-        vis.as_str(),
-        &input.chat_session_id,
-    ) {
-        Ok(scope) => scope,
-        Err(error) => return to_json(error),
-    };
-    let bucket = bucket.to_string();
-    let visibility = visibility.to_string();
-    let chat_sid = chat_sid.map(str::to_string);
     let filename = safe_temp_filename(input.filename.as_str());
     let mime_override = input.mime_type.trim().to_string();
     let temp_path = std::env::temp_dir().join(format!("peers-agent-{}-{}", Ulid::new(), filename));
@@ -788,21 +774,37 @@ fn dispatch_oss_upload_agent_attachment_bytes(args: Value, state: &AppState) -> 
     }
     let cleanup = app_oss::TempFileCleanup::new(temp_path.clone(), "HTTP Agent attachment");
 
-    let result = app_oss::upload_attachment_with_mime(
+    let result = app_oss::upload_agent_attachment(
         temp_path.to_string_lossy().as_ref(),
         &token,
-        "agent",
-        bucket.as_str(),
-        visibility.as_str(),
-        chat_sid.as_deref(),
-        if mime_override.is_empty() {
-            None
-        } else {
-            Some(mime_override.as_str())
-        },
+        &input.conversation_id,
+        &filename,
+        mime_override.as_str(),
     );
     cleanup.remove_now();
     to_json(result)
+}
+
+fn dispatch_oss_resolve_url(args: Value, state: &AppState) -> Value {
+    let token = match token_from_state(state) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let actor_id = match actor_id_from_state(state).filter(|value| !value.trim().is_empty()) {
+        Some(value) => value,
+        None => return to_json(unauthorized_error()),
+    };
+    let uri = string_arg(&args, "uri", "uri");
+    to_json(app_oss::oss_resolve_url(&uri, &token, &actor_id))
+}
+
+fn dispatch_oss_delete_file(args: Value, state: &AppState) -> Value {
+    let token = match token_from_state(state) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
+    let key = string_arg(&args, "key", "key");
+    to_json(app_oss::oss_delete_file(&token, &key))
 }
 
 /// Debug HTTP gateway: resolve session token from the legacy global session lock.
@@ -2079,6 +2081,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         "oss_upload_agent_attachment_bytes" => {
             dispatch_oss_upload_agent_attachment_bytes(args, state)
         }
+        "oss_resolve_url" => dispatch_oss_resolve_url(args, state),
+        "oss_delete_file" => dispatch_oss_delete_file(args, state),
 
         // =================================================================
         // Actor (state-dependent, proto-based)

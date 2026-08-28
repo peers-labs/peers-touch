@@ -908,9 +908,14 @@
       ],
       "when": {
         "paths": [
-          "apps/station/app/subserver/agent/**/workspace_oss*",
+          "model/domain/agent/agent.proto",
+          "apps/station/app/subserver/agent/**/attachment_admission*",
           "apps/station/app/subserver/agent/**/runtime_admission*",
-          "apps/desktop/src/components/agent/**/Attachment*"
+          "apps/station/app/subserver/agent/**/turn_*",
+          "apps/station/app/subserver/oss/service/file_service.go",
+          "apps/desktop/src/services/agentAttachments.ts",
+          "apps/desktop/src/components/composer/*Attachment*",
+          "apps/desktop/src/components/composer/useAgentAttachmentDrafts.ts"
         ]
       },
       "require": [

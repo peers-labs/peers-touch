@@ -1,56 +1,44 @@
-import { encryptClientMediaBlobChunked } from '@peers-touch/client-media-security';
-
 import {
   api,
-  type ChatAttachmentInput,
-  type OssAttachmentUploaded,
+  type AgentAttachmentRefInput,
 } from './desktop_api';
-import { registerOssAttachmentObjectUrl } from './ossAttachmentUrlCache';
 
 export interface AgentAttachmentScope {
   conversationId: string;
 }
 
-function uploadedToAgentAttachment(
-  uploaded: OssAttachmentUploaded,
-  file: File,
-  encryption: Awaited<ReturnType<typeof encryptClientMediaBlobChunked>>['descriptor'],
-): ChatAttachmentInput {
-  return {
-    cid: uploaded.cid,
-    filename: file.name || uploaded.filename,
-    mime_type: file.type || uploaded.mime_type || 'application/octet-stream',
-    size: file.size || uploaded.size,
-    thumbnail_cid: '',
-    visibility: uploaded.visibility ?? 'private',
-    encryption_suite: encryption.suite,
-    encryption_key_b64: encryption.keyB64,
-    encryption_nonce_b64: encryption.nonceB64,
-    plaintext_sha256_b64: encryption.plaintextSha256B64,
-    ciphertext_sha256_b64: encryption.ciphertextSha256B64,
-    plaintext_size: encryption.plaintextSize,
-    ciphertext_size: Number(uploaded.size || encryption.ciphertextSize),
-    chunking: encryption.chunking,
-    chunk_size: encryption.chunkSize,
-    chunk_count: encryption.chunkCount,
-    tag_size: encryption.tagSize,
-    nonce_strategy: encryption.nonceStrategy,
-  };
+const AGENT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+
+function requirePortableConversationId(conversationId: string): string {
+  const normalized = conversationId.trim();
+  if (!normalized || normalized.startsWith('draft:')) {
+    throw new Error('agent.errors.attachmentRejected');
+  }
+  return normalized;
 }
 
 export async function uploadAgentAttachmentFile(
   scope: AgentAttachmentScope,
   file: File,
-): Promise<ChatAttachmentInput> {
-  const encrypted = await encryptClientMediaBlobChunked(file);
-  const uploaded = await api.ossUploadAgentAttachmentBytes({
+): Promise<AgentAttachmentRefInput> {
+  const conversationId = requirePortableConversationId(scope.conversationId);
+  if (
+    file.size <= 0
+    || file.size > AGENT_ATTACHMENT_MAX_BYTES
+    || !['image/png', 'application/pdf'].includes(file.type)
+  ) {
+    throw new Error('agent.errors.attachmentRejected');
+  }
+  return api.ossUploadAgentAttachmentBytes({
     filename: file.name,
-    mime_type: 'application/octet-stream',
-    bytes: Array.from(new Uint8Array(await encrypted.encryptedBlob.arrayBuffer())),
-    bucket: 'agent',
-    visibility: 'private',
-    chat_session_id: scope.conversationId,
+    mime_type: file.type || 'application/octet-stream',
+    bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
+    conversation_id: conversationId,
   });
-  registerOssAttachmentObjectUrl(uploaded.cid, encrypted.encryptedBlob);
-  return uploadedToAgentAttachment(uploaded, file, encrypted.descriptor);
+}
+
+export async function deleteAgentAttachment(
+  attachment: AgentAttachmentRefInput,
+): Promise<void> {
+  await api.ossDeleteAgentAttachment(attachment.object_ref);
 }

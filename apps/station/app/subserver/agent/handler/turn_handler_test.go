@@ -46,6 +46,33 @@ func (r *fakeStreamResponse) WriteHeader(status int) {
 	r.status = status
 }
 
+func TestDecodeExecuteTurnRequestAcceptsProtoTimestampAttachment(t *testing.T) {
+	var request model.ExecuteTurnRequest
+	err := decodeExecuteTurnRequest([]byte(`{
+		"conversation_id":"conversation-1",
+		"agent_id":"agent-1",
+		"user_input":"inspect",
+		"attachments":[{
+			"attachment_id":"attachment-1",
+			"object_ref":"oss:cas/01/object",
+			"mime_type":"image/png",
+			"size_bytes":"8",
+			"checksum":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"filename":"image.png",
+			"authorization_scope":"conversation:conversation-1",
+			"expires_at":"2026-08-29T00:00:00Z"
+		}]
+	}`), &request)
+	if err != nil {
+		t.Fatalf("decode ExecuteTurnRequest: %v", err)
+	}
+	if len(request.GetAttachments()) != 1 ||
+		request.GetAttachments()[0].GetExpiresAt() == nil ||
+		request.GetAttachments()[0].GetExpiresAt().AsTime().UTC().Format(time.RFC3339) != "2026-08-29T00:00:00Z" {
+		t.Fatalf("attachment timestamp was not decoded: %+v", request.GetAttachments())
+	}
+}
+
 func (r *fakeStreamResponse) Status() int {
 	return r.status
 }

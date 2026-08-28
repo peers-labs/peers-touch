@@ -107,10 +107,11 @@ func (s *ossSubServer) handleFileDelete(w http.ResponseWriter, r *http.Request) 
 // send `null` (clear) vs an RFC3339 stamp; the absent key leaves
 // the column alone.
 type patchRequestBody struct {
-	Visibility    *string `json:"visibility,omitempty"`
-	ChatSessionID *string `json:"chat_session_id,omitempty"`
-	Bucket        *string `json:"bucket,omitempty"`
-	Filename      *string `json:"filename,omitempty"`
+	Visibility         *string `json:"visibility,omitempty"`
+	ChatSessionID      *string `json:"chat_session_id,omitempty"`
+	AuthorizationScope *string `json:"authorization_scope,omitempty"`
+	Bucket             *string `json:"bucket,omitempty"`
+	Filename           *string `json:"filename,omitempty"`
 	// ExpiresAtSet is the explicit "did the client send the key?"
 	// marker we set after JSON unmarshal — captured during a
 	// second decode pass into a raw map. JSON itself cannot
@@ -204,11 +205,12 @@ func (s *ossSubServer) handleFilePatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := service.PatchRequest{
-		Visibility:    body.Visibility,
-		ChatSessionID: body.ChatSessionID,
-		BucketName:    body.Bucket,
-		Filename:      body.Filename,
-		ExpiresAtSet:  body.ExpiresAtSet,
+		Visibility:         body.Visibility,
+		ChatSessionID:      body.ChatSessionID,
+		AuthorizationScope: body.AuthorizationScope,
+		BucketName:         body.Bucket,
+		Filename:           body.Filename,
+		ExpiresAtSet:       body.ExpiresAtSet,
 	}
 	if body.ExpiresAtSet && body.ExpiresAt != nil {
 		t, perr := time.Parse(time.RFC3339, *body.ExpiresAt)
@@ -238,14 +240,15 @@ func (s *ossSubServer) handleFilePatch(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	resp := map[string]any{
-		"key":             res.Meta.Key,
-		"visibility":      res.Meta.Visibility,
-		"chat_session_id": res.Meta.ChatSessionID,
-		"bucket_id":       res.Meta.BucketID,
-		"filename":        res.Meta.Name,
-		"expires_at":      res.Meta.ExpiresAt,
-		"updated_at":      res.Meta.UpdatedAt,
-		"fields_changed":  res.FieldsChanged,
+		"key":                 res.Meta.Key,
+		"visibility":          res.Meta.Visibility,
+		"chat_session_id":     res.Meta.ChatSessionID,
+		"authorization_scope": res.Meta.AuthorizationScope,
+		"bucket_id":           res.Meta.BucketID,
+		"filename":            res.Meta.Name,
+		"expires_at":          res.Meta.ExpiresAt,
+		"updated_at":          res.Meta.UpdatedAt,
+		"fields_changed":      res.FieldsChanged,
 	}
 	if res.CapabilityVersion != "" {
 		resp["capability_version"] = res.CapabilityVersion
@@ -424,6 +427,9 @@ func (s *ossSubServer) mapLifecycleServiceError(ctx context.Context, w http.Resp
 	case errors.Is(err, service.ErrInvalidVisibility):
 		stub := &ossdb.FileMeta{Key: key}
 		s.writeLifecycleError(ctx, w, stub, http.StatusBadRequest, lifecycleReasonInvalidVisibility, action, err.Error())
+	case errors.Is(err, service.ErrInvalidAuthorizationScope):
+		stub := &ossdb.FileMeta{Key: key}
+		s.writeLifecycleError(ctx, w, stub, http.StatusBadRequest, lifecycleReasonBadRequest, action, err.Error())
 	case errors.Is(err, service.ErrChatSessionRequired):
 		stub := &ossdb.FileMeta{Key: key}
 		s.writeLifecycleError(ctx, w, stub, http.StatusBadRequest, lifecycleReasonChatSessionMissing, action, err.Error())

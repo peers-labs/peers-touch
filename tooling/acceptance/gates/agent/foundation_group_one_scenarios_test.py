@@ -8,6 +8,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
+    evaluate_as_f05,
     evaluate_as_f10,
 )
 
@@ -117,6 +118,99 @@ def valid_as_f10_capture(platform: str = "desktop_app") -> dict[str, object]:
             "resultDelta": 0,
             "continuationDelta": 0,
             "desktopFallbackDelta": 0,
+        },
+    }
+
+
+def valid_as_f05_capture() -> dict[str, object]:
+    png = {
+        "attachmentId": "att-png",
+        "objectRef": "oss:cas/fixture/opaque-png",
+        "mimeType": "image/png",
+        "sizeBytes": 68,
+        "checksum": "sha256:png",
+        "filename": "fixture.png",
+        "authorizationScope": "conversation:conversation-1",
+        "expiresAt": "2026-08-29T00:00:00Z",
+    }
+    pdf = {
+        "attachmentId": "att-pdf",
+        "objectRef": "oss:cas/fixture/opaque-pdf",
+        "mimeType": "application/pdf",
+        "sizeBytes": 45,
+        "checksum": "sha256:pdf",
+        "filename": "fixture.pdf",
+        "authorizationScope": "conversation:conversation-1",
+        "expiresAt": "2026-08-29T00:00:00Z",
+    }
+    return {
+        "validFiles": {
+            "png": {
+                **png,
+                "modelDisposition": "omitted",
+                "modelVisible": False,
+                "omissionReason": "selected_model_has_no_image_input",
+                "ledgerDecision": 3,
+            },
+            "pdf": {
+                **pdf,
+                "modelDisposition": "omitted",
+                "modelVisible": False,
+                "omissionReason": "selected_model_has_no_file_input",
+                "ledgerDecision": 3,
+            },
+        },
+        "persistence": {
+            "beforeRestart": [png, pdf],
+            "afterRestart": [pdf, png],
+            "projectionReadback": [png, pdf],
+            "contextSegmentAttachmentIds": ["att-pdf", "att-png"],
+        },
+        "uploadRecovery": {
+            "failedUpload": {
+                "errorCode": "CONTEXT_ATTACHMENT_REJECTED",
+                "retriedAttachmentId": "att-retried",
+                "retriedChecksum": "sha256:retry",
+            },
+            "removal": {
+                "removedAttachmentId": "att-failed",
+                "removedObjectUnavailable": True,
+                "siblingIdsBefore": ["att-png", "att-pdf"],
+                "siblingIdsAfter": ["att-pdf", "att-png"],
+                "siblingChecksumsBefore": ["sha256:png", "sha256:pdf"],
+                "siblingChecksumsAfter": ["sha256:png", "sha256:pdf"],
+            },
+        },
+        "rejections": {
+            "oversized": {
+                "accepted": False,
+                "errorCode": "CONTEXT_ATTACHMENT_REJECTED",
+                "turnDelta": 0,
+                "providerExecutionDelta": 0,
+                "messageDelta": 0,
+            },
+            "unsupported": {
+                "accepted": False,
+                "errorCode": "CONTEXT_ATTACHMENT_REJECTED",
+                "turnDelta": 0,
+                "providerExecutionDelta": 0,
+                "messageDelta": 0,
+            },
+            "unauthorized": {
+                "accepted": False,
+                "errorCode": "CONTEXT_ATTACHMENT_REJECTED",
+                "turnDelta": 0,
+                "providerExecutionDelta": 0,
+                "messageDelta": 0,
+            },
+        },
+        "references": [png, pdf],
+        "authorizedDownload": {
+            "attachmentId": "att-pdf",
+            "authorized": True,
+            "downloaded": True,
+            "expectedChecksum": "sha256:pdf",
+            "actualChecksum": "sha256:pdf",
         },
     }
 
@@ -330,6 +424,84 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "authorityLineagePersisted",
         ):
             evaluate_as_f04(capture, platform="browser")
+
+    def test_as_f05_accepts_complete_attachment_facts(self) -> None:
+        assertions = evaluate_as_f05(valid_as_f05_capture())
+
+        self.assertEqual(len(assertions), 10)
+        self.assertTrue(all(assertions.values()))
+
+    def test_as_f05_accepts_explicit_model_omission(self) -> None:
+        capture = valid_as_f05_capture()
+        valid_files = capture["validFiles"]
+        assert isinstance(valid_files, dict)
+        for fact in valid_files.values():
+            assert isinstance(fact, dict)
+            fact["modelDisposition"] = "omitted"
+            fact["modelVisible"] = False
+            fact["omissionReason"] = "selected_model_has_no_file_input"
+            fact["ledgerDecision"] = 3
+
+        assertions = evaluate_as_f05(capture)
+        self.assertTrue(assertions["validPngHandled"])
+        self.assertTrue(assertions["validPdfHandled"])
+
+    def test_as_f05_rejects_provider_execution_for_invalid_attachment(self) -> None:
+        capture = valid_as_f05_capture()
+        rejections = capture["rejections"]
+        assert isinstance(rejections, dict)
+        oversized = rejections["oversized"]
+        assert isinstance(oversized, dict)
+        oversized["providerExecutionDelta"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "oversizedRejectedBeforeProvider",
+        ):
+            evaluate_as_f05(capture)
+
+    def test_as_f05_rejects_local_path_reference(self) -> None:
+        capture = valid_as_f05_capture()
+        references = capture["references"]
+        assert isinstance(references, list)
+        references[0]["objectRef"] = "/Users/example/fixture.png"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "opaque authorized reference",
+        ):
+            evaluate_as_f05(capture)
+
+    def test_as_f05_rejects_restart_metadata_drift(self) -> None:
+        capture = copy.deepcopy(valid_as_f05_capture())
+        persistence = capture["persistence"]
+        assert isinstance(persistence, dict)
+        after_restart = persistence["afterRestart"]
+        assert isinstance(after_restart, list)
+        after_restart[0] = {
+            **after_restart[0],
+            "checksum": "sha256:changed",
+        }
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "metadataRestartReadback",
+        ):
+            evaluate_as_f05(capture)
+
+    def test_as_f05_rejects_sibling_loss_after_failed_upload_removal(self) -> None:
+        capture = valid_as_f05_capture()
+        recovery = capture["uploadRecovery"]
+        assert isinstance(recovery, dict)
+        removal = recovery["removal"]
+        assert isinstance(removal, dict)
+        removal["siblingIdsAfter"] = ["att-png"]
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "failedUploadRemovalPreservedSiblings",
+        ):
+            evaluate_as_f05(capture)
 
     def test_as_f02_accepts_complete_production_facts(self) -> None:
         assertions = evaluate_as_f02(valid_capture())

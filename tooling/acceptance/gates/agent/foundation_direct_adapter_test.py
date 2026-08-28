@@ -267,7 +267,7 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
             "direct-runtime group is not implemented",
         ):
             self.adapter().observe_desktop_native(
-                runtime_tuple("AS-F05")
+                runtime_tuple("AS-F06")
             )
 
     def test_missing_required_assertion_fails_closed(self) -> None:

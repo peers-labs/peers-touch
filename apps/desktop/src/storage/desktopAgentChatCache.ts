@@ -1,6 +1,6 @@
 import { createAgentChatCache, type AgentChatCache, type CachedAgentConversation, type CachedAgentMessage } from '@peers-touch/client-chat-core';
 import { createDesktopClientStorageRuntime } from './desktopClientStorage';
-import { api } from '../services/desktop_api';
+import { api, type AgentAttachmentRefInput } from '../services/desktop_api';
 
 let cacheInstance: AgentChatCache | null = null;
 
@@ -78,6 +78,7 @@ function toCachedMessage(message: {
   reasoning_json?: string;
   tool_calls_json?: string;
   metadata_json?: string;
+  attachments?: AgentAttachmentRefInput[];
   created_at: string;
   updated_at: string;
 }): CachedAgentMessage {
@@ -94,6 +95,17 @@ function toCachedMessage(message: {
     reasoningJson: message.reasoning_json,
     toolCallsJson: message.tool_calls_json,
     metadataJson: message.metadata_json,
+    attachments: message.attachments?.map((attachment) => ({
+      attachmentId: attachment.attachment_id,
+      objectRef: attachment.object_ref,
+      mimeType: attachment.mime_type,
+      sizeBytes: attachment.size_bytes,
+      checksum: attachment.checksum,
+      filename: attachment.filename,
+      authorizationScope: attachment.authorization_scope,
+      expiresAt: attachment.expires_at,
+      extractedContentRef: attachment.extracted_content_ref,
+    })),
     createdAt: message.created_at,
     updatedAt: message.updated_at,
   };

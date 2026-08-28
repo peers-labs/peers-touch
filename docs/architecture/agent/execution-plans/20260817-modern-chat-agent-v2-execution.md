@@ -2473,7 +2473,35 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Expected**: Valid opaque refs progress to ready/attached/consumed or explicit omitted; valid siblings survive one failure.
 - **Failure variant**: Invalid/unauthorized resources reject before provider call and never expose local paths.
 - **Evidence**: Composer DOM, object/resource rows, model-visible trace, zero provider execution for rejected refs.
-- **Status**: pending
+- **Status**: in progress. Source inventory after AS-F04 proof found that the
+  Desktop composer uploads encrypted legacy `ChatAttachmentInput`, while the
+  active `ExecuteTurnRequest` silently drops it and Station persists no
+  attachment provenance. The accepted C08 closure requires:
+  1. actor-private, Station-readable OSS upload for Agent inputs;
+  2. portable `AgentAttachmentRef` on the canonical Turn request;
+  3. pre-provider owner/expiry/checksum/MIME/count/byte/model admission;
+  4. attachment metadata on the user message and an attributed
+     `CONTEXT_SEGMENT_TYPE_ATTACHMENT` ledger segment;
+  5. provider-native consumption when the selected model proves image/file
+     input, otherwise explicit attributed omission before provider assembly;
+  6. restart/download readback and explicit object cleanup;
+  7. source-backed Browser/Desktop Harness facts and independent oracle.
+  Raw paths, client encryption keys, arbitrary URLs, silent omission, and an
+  Acceptance-only attachment endpoint are forbidden.
+- **Implementation checkpoint (2026-08-28)**: the canonical Turn request now
+  carries `AgentAttachmentRef`; Desktop uploads PNG/PDF bytes into an
+  actor-private `personal` OSS object bound immutably to the preallocated
+  conversation scope; Station validates owner, scope, expiry, content
+  signature, MIME, size, checksum, count, and byte budget before Turn
+  persistence. Message/cache readback preserves attachment metadata, the
+  ContextLedger records explicit model omission when binary provider mapping is
+  unavailable, Browser and Native use the same upload/resolve/delete product
+  commands, and queued expiry plus idempotent replay fail closed without
+  provider execution. The AS-F05 Harness now records Station/message/ledger,
+  real upload retry and object deletion, provider-call deltas, DOM attachment
+  visibility, authorized download checksum, and verified object cleanup. Static,
+  unit, and structural checks pass; source-matching runtime proof remains
+  `UNPROVEN` until profile `two` is deployed and the Foundation Gate reruns.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

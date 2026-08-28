@@ -4,11 +4,12 @@ import { Flexbox } from 'react-layout-kit';
 import { ActionIcon } from '@lobehub/ui';
 import { Dropdown, Input, theme } from 'antd';
 import type { MenuProps } from 'antd';
-import { ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Square, X } from 'lucide-react';
+import { ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, Search, Slash, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import { useMentionStore } from '../store/mentions';
+import { AttachmentStage } from './composer/AttachmentStage';
 import { useAgentAttachmentDrafts } from './composer/useAgentAttachmentDrafts';
 import {
   modelMenuIconStyle,
@@ -76,9 +77,11 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     drafts,
     readyAttachments,
     uploading,
+    failed,
     addFiles,
     clearDrafts,
     removeDraft,
+    retryDraft,
   } = useAgentAttachmentDrafts({
     conversationId: currentSessionKey,
     disabled: isStreaming,
@@ -125,24 +128,26 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
   const toComposerAttachments = useCallback((): ChatComposerAttachment[] =>
     readyAttachments.map((attachment) => ({
-      cid: attachment.cid,
+      cid: attachment.object_ref,
       filename: attachment.filename,
       mime_type: attachment.mime_type,
-      size: attachment.size,
+      size: attachment.size_bytes,
       attachment,
     })),
   [readyAttachments]);
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if ((!text && readyAttachments.length === 0) || isStreaming || uploading) return;
-    const accepted = sendMessage(text, toComposerAttachments());
-    if (!accepted) return;
-    setInput('');
-    clearDrafts();
-    clearMentions();
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [input, readyAttachments.length, isStreaming, uploading, sendMessage, toComposerAttachments, clearDrafts, clearMentions]);
+    if ((!text && readyAttachments.length === 0) || isStreaming || uploading || failed) return;
+    sendMessage(text, toComposerAttachments(), {
+      onAccepted: () => {
+        setInput('');
+        clearDrafts(false);
+        clearMentions();
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      },
+    });
+  }, [input, readyAttachments.length, isStreaming, uploading, failed, sendMessage, toComposerAttachments, clearDrafts, clearMentions]);
 
   // Scan the draft for "@" triggers whenever it changes, driving the popup.
   const handleInputChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -202,7 +207,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     availableModels.find((model) => model.id === currentModelId && (!selectedProviderId || model.provider_id === selectedProviderId)) ||
     availableModels.find((model) => model.id === currentModelId);
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
-  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading;
+  const sendDisabled = (!input.trim() && readyAttachments.length === 0) || isStreaming || uploading || failed;
 
   const modelDisplayName = modelInfo?.display_name || modelInfo?.id || currentModelId;
   const modelLabel = modelInfo
@@ -316,42 +321,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         gap: 8,
       }}
     >
-      {drafts.length > 0 && (
-        <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-          {drafts.map((draft) => (
-            <Flexbox
-              key={draft.id}
-              horizontal
-              align="center"
-              gap={6}
-              style={{
-                maxWidth: 220,
-                padding: '4px 8px 4px 10px',
-                borderRadius: 10,
-                background: token.colorFillQuaternary,
-                opacity: draft.status === 'uploading' ? 0.6 : 1,
-              }}
-            >
-              {draft.previewUrl ? (
-                <img
-                  src={draft.previewUrl}
-                  alt={draft.name}
-                  style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'cover' }}
-                />
-              ) : null}
-              <span style={{ fontSize: 12, color: token.colorTextSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {draft.name}
-              </span>
-              <ActionIcon
-                icon={X}
-                size="small"
-                title={t('chat.input.attachmentRemove')}
-                onClick={() => removeDraft(draft.id)}
-              />
-            </Flexbox>
-          ))}
-        </Flexbox>
-      )}
+      <AttachmentStage drafts={drafts} onRemove={removeDraft} onRetry={retryDraft} />
 
       {readinessErrorKey && (
         <div style={{ color: token.colorError, fontSize: 12 }}>

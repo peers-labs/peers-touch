@@ -29,8 +29,9 @@ const (
 )
 
 type TurnAdmissionService struct {
-	db  *gorm.DB
-	now func() time.Time
+	db                  *gorm.DB
+	now                 func() time.Time
+	attachmentPreflight func(context.Context, string, *model.ExecuteTurnRequest) error
 }
 
 type AdmittedTurn struct {
@@ -54,6 +55,12 @@ func newTurnAdmissionServiceWithDB(db *gorm.DB) *TurnAdmissionService {
 		db:  db,
 		now: func() time.Time { return time.Now().UTC() },
 	}
+}
+
+func (s *TurnAdmissionService) SetAttachmentPreflight(
+	preflight func(context.Context, string, *model.ExecuteTurnRequest) error,
+) {
+	s.attachmentPreflight = preflight
 }
 
 func (s *TurnAdmissionService) Admit(
@@ -89,6 +96,37 @@ func (s *TurnAdmissionService) Admit(
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
+	}
+	var existing *model.TurnAdmission
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		conversation, lockErr := lockAdmissionConversation(
+			tx,
+			actorID,
+			request.GetConversationId(),
+			request.GetAgentId(),
+		)
+		if lockErr != nil {
+			return lockErr
+		}
+		replay, replayErr := findAdmissionReplay(
+			tx,
+			conversation,
+			request.GetClientIdempotencyKey(),
+			payloadHash,
+		)
+		existing = replay
+		return replayErr
+	})
+	if err != nil || existing != nil {
+		return existing, err
+	}
+	if len(request.GetAttachments()) > 0 {
+		if s.attachmentPreflight == nil {
+			return nil, attachmentRejected("attachment admission is unavailable")
+		}
+		if err := s.attachmentPreflight(ctx, actorID, request); err != nil {
+			return nil, err
+		}
 	}
 
 	var admission *model.TurnAdmission
@@ -368,6 +406,7 @@ func (s *TurnAdmissionService) AdmitNext(
 	}
 	now := s.now()
 	var admitted *AdmittedTurn
+	var rejected error
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		conversation, lockErr := lockAdmissionConversation(tx, actorID, conversationID, "")
 		if lockErr != nil {
@@ -403,6 +442,28 @@ func (s *TurnAdmissionService) AdmitNext(
 		var request model.ExecuteTurnRequest
 		if decodeErr := proto.Unmarshal(entry.RequestPayload, &request); decodeErr != nil {
 			return admissionInternal("decode queued turn request", decodeErr)
+		}
+		if len(request.GetAttachments()) > 0 {
+			if s.attachmentPreflight == nil {
+				rejected = attachmentRejected("attachment admission is unavailable")
+			} else {
+				rejected = s.attachmentPreflight(ctx, actorID, &request)
+			}
+			if rejected != nil {
+				entry.Status = queueStatusCancelled
+				entry.CancelledAt = &now
+				entry.UpdatedAt = now
+				if updateErr := tx.Save(&entry).Error; updateErr != nil {
+					return admissionInternal("reject invalid queued attachment", updateErr)
+				}
+				return tx.Model(conversation).Updates(map[string]interface{}{
+					"queued_turn_count": gorm.Expr(
+						"CASE WHEN queued_turn_count > 0 THEN queued_turn_count - 1 ELSE 0 END",
+					),
+					"version":    conversation.Version + 1,
+					"updated_at": now,
+				}).Error
+			}
 		}
 		key := entry.ClientIdempotencyKey
 		turn := &persistence.AgentTurn{
@@ -448,6 +509,9 @@ func (s *TurnAdmissionService) AdmitNext(
 	})
 	if err != nil {
 		return nil, err
+	}
+	if rejected != nil {
+		return nil, rejected
 	}
 	return admitted, nil
 }

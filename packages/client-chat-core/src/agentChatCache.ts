@@ -19,6 +19,18 @@ import type { DomainCacheRepository } from '@peers-touch/client-storage';
 
 export type AgentRole = 'system' | 'user' | 'assistant' | 'tool';
 
+export interface CachedAgentAttachment {
+  readonly attachmentId: string;
+  readonly objectRef: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+  readonly checksum: string;
+  readonly filename: string;
+  readonly authorizationScope: string;
+  readonly expiresAt: string;
+  readonly extractedContentRef: string;
+}
+
 export interface CachedAgentConversation {
   readonly conversationId: string;
   readonly agentId: string;
@@ -49,6 +61,7 @@ export interface CachedAgentMessage {
   readonly reasoningJson?: string;
   readonly toolCallsJson?: string;
   readonly metadataJson?: string;
+  readonly attachments?: readonly CachedAgentAttachment[];
   readonly createdAt: string;
   readonly updatedAt: string;
 }

@@ -55,6 +55,7 @@ export function ChatComposer({
     addFiles,
     clearDrafts,
     removeDraft,
+    retryDraft,
   } = useAgentAttachmentDrafts({
     conversationId: currentSessionKey,
     disabled: isStreaming,
@@ -86,10 +87,10 @@ export function ChatComposer({
   // Convert ready attachments to the ChatComposerAttachment shape expected by store
   const toComposerAttachments = useCallback((): ChatComposerAttachment[] =>
     readyAttachments.map((attachment) => ({
-      cid: attachment.cid,
+      cid: attachment.object_ref,
       filename: attachment.filename,
       mime_type: attachment.mime_type,
-      size: attachment.size,
+      size: attachment.size_bytes,
       attachment,
     })),
   [readyAttachments]);
@@ -98,13 +99,15 @@ export function ChatComposer({
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if ((!text && readyAttachments.length === 0) || isStreaming || uploading) return;
-    const accepted = sendMessage(text, toComposerAttachments());
-    if (!accepted) return;
-    setInput('');
-    clearDrafts();
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [input, readyAttachments.length, isStreaming, uploading, sendMessage, toComposerAttachments, clearDrafts]);
+    if ((!text && readyAttachments.length === 0) || isStreaming || uploading || failed) return;
+    sendMessage(text, toComposerAttachments(), {
+      onAccepted: () => {
+        setInput('');
+        clearDrafts(false);
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      },
+    });
+  }, [input, readyAttachments.length, isStreaming, uploading, failed, sendMessage, toComposerAttachments, clearDrafts]);
 
   // Insert text at end of textarea (used by slash action)
   const insertText = useCallback((text: string) => {
@@ -145,7 +148,7 @@ export function ChatComposer({
         gap: 8,
       }}
     >
-      <AttachmentStage drafts={drafts} onRemove={removeDraft} />
+      <AttachmentStage drafts={drafts} onRemove={removeDraft} onRetry={retryDraft} />
 
       {readinessErrorKey && (
         <div style={{ color: token.colorError, fontSize: 12 }}>

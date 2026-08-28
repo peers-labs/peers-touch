@@ -11,6 +11,28 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestModelInputCapabilitiesRequireExplicitDatabaseFlags(t *testing.T) {
+	tests := []struct {
+		name      string
+		raw       string
+		wantImage bool
+		wantFile  bool
+	}{
+		{name: "chat streaming only", raw: `["chat","streaming"]`},
+		{name: "explicit image and file", raw: `["chat","image","file"]`, wantImage: true, wantFile: true},
+		{name: "explicit map", raw: `{"vision":true,"pdf":true}`, wantImage: true, wantFile: true},
+		{name: "unknown malformed", raw: `{`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			image, file := modelInputCapabilities([]byte(test.raw))
+			if image != test.wantImage || file != test.wantFile {
+				t.Fatalf("capabilities image=%v file=%v, want image=%v file=%v", image, file, test.wantImage, test.wantFile)
+			}
+		})
+	}
+}
+
 func openAdmissionTestDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -231,6 +253,18 @@ func TestRuntimeAdmissionSnapshotIDIsDeterministic(t *testing.T) {
 	}
 	if snap1.SnapshotID != snap2.SnapshotID {
 		t.Fatalf("expected deterministic snapshot IDs, got %s and %s", snap1.SnapshotID, snap2.SnapshotID)
+	}
+}
+
+func TestRuntimeAdmissionSnapshotIDChangesWithInputCapabilities(t *testing.T) {
+	budget := defaultRuntimeBudget(128000)
+	withoutImage := buildCapabilitySnapshot("provider-1", "model-1", 128000, nil, false, false)
+	withImage := buildCapabilitySnapshot("provider-1", "model-1", 128000, nil, true, false)
+
+	first := computeSnapshotID("actor-1", "provider-1", "model-1", withoutImage, budget)
+	second := computeSnapshotID("actor-1", "provider-1", "model-1", withImage, budget)
+	if first == second {
+		t.Fatal("snapshot ID must change when model input capabilities change")
 	}
 }
 

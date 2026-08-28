@@ -28,6 +28,7 @@ import (
 	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	ossservice "github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
@@ -41,6 +42,10 @@ import (
 )
 
 var _ server.Subserver = (*agentSubServer)(nil)
+
+type ossFileServiceProvider interface {
+	FileService() ossservice.FileService
+}
 
 type agentSubServer struct {
 	opts           *Options
@@ -113,6 +118,17 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 
 func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error {
 	if s.turnService != nil {
+		serverOptions := server.GetOptions()
+		if serverOptions != nil {
+			if ossSubserver := serverOptions.SubserverInstances["oss"]; ossSubserver != nil {
+				if provider, ok := ossSubserver.(ossFileServiceProvider); ok {
+					reader, _ := provider.FileService().(ossservice.AttachmentReader)
+					s.turnService.SetAttachmentAdmissionService(
+						service.NewAttachmentAdmissionService(reader),
+					)
+				}
+			}
+		}
 		workerCtx, cancel := context.WithCancel(ctx)
 		s.stopTurnWorker = cancel
 		go s.turnService.RunToolContinuationWorker(workerCtx)
@@ -234,6 +250,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	turnAdmissionSvc := service.NewTurnAdmissionService()
 	turnHandlers.SetAdmissionService(turnAdmissionSvc)
 	turnSvc.SetTurnAdmissionService(turnAdmissionSvc)
+	turnAdmissionSvc.SetAttachmentPreflight(turnSvc.PreflightAttachments)
 	turnQueueHandlers := handler.NewTurnQueueHandlers(turnAdmissionSvc)
 	convHandlers := handler.NewConversationHandlers(convSvc, turnSvc)
 	revisionHandlers := handler.NewRevisionHandlers(service.NewRevisionService(convSvc, turnSvc))

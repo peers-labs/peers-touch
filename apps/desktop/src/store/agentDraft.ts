@@ -27,3 +27,10 @@ export function agentIdFromDraftKey(key: string): string | null {
     return null;
   }
 }
+
+export function conversationIdFromAgentDraftKey(key: string): string | null {
+  if (!isAgentDraftKey(key)) return null;
+  const separator = key.lastIndexOf(':');
+  const conversationId = key.slice(separator + 1).trim();
+  return conversationId || null;
+}
