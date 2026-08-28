@@ -1803,9 +1803,12 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadCurrentUserProfile: async () => {
-    if (!hasAuthenticatedActor()) return;
+    const actorId = currentAuthenticatedActorId();
+    if (!actorId) return;
     try {
       const profile = await api.profileGet();
+      if (currentAuthenticatedActorId() !== actorId) return;
+
       const profileDid = profile?.id?.trim() || null;
       const persistedConversationLocalState =
         loadConversationLocalState(profileDid);
@@ -1825,6 +1828,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ),
       }));
     } catch (error) {
+      if (currentAuthenticatedActorId() !== actorId) return;
       if (isUnauthorizedError(error)) return;
       const message = error instanceof Error ? error.message : String(error);
       set((state) => ({ loadError: state.loadError || message }));
@@ -1834,7 +1838,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadPeerProfile: async (peerDid, force = false) => {
-    if (!hasAuthenticatedActor()) return;
+    const actorId = currentAuthenticatedActorId();
+    if (!actorId) return;
     const did = (peerDid || '').trim();
     if (!did) return;
     const state = get();
@@ -1850,11 +1855,14 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }));
     try {
       const profile = await api.peerProfileGet(did);
+      if (currentAuthenticatedActorId() !== actorId) return;
+
       set((prev) => ({
         peerProfiles: { ...prev.peerProfiles, [did]: profile ?? null },
         peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
       }));
     } catch (error) {
+      if (currentAuthenticatedActorId() !== actorId) return;
       log.warn('socialChat', 'loadPeerProfile failed', { peerDid: did, error });
       set((prev) => ({
         // Cache `null` so the UI stops spinning and falls back to the
@@ -1867,9 +1875,12 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   },
 
   loadFriendRequests: async (status, limit, offset) => {
-    if (!hasAuthenticatedActor()) return;
+    const actorId = currentAuthenticatedActorId();
+    if (!actorId) return;
     try {
       const data = await api.socialFriendRequestList(status, limit, offset);
+      if (currentAuthenticatedActorId() !== actorId) return;
+
       const requests = normalizeFriendRequests(
         (data as Record<string, unknown>)?.requests ?? [],
       );
@@ -1879,6 +1890,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           .map((did) => get().loadPeerProfile(did)),
       );
     } catch {
+      if (currentAuthenticatedActorId() !== actorId) return;
       set({ friendRequests: [] });
     }
   },

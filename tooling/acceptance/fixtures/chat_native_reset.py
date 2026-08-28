@@ -10,11 +10,12 @@ from pathlib import Path
 import re
 import shlex
 import shutil
-import subprocess
 import threading
 import time
 import urllib.parse
 import urllib.request
+
+from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -226,7 +227,7 @@ def _station_version(station_url: str) -> dict[str, object]:
     return value
 
 
-def _remote_command(environment: dict[str, str], command: str) -> str:
+def _remote_transport(environment: dict[str, str]) -> SshTransport:
     host = environment.get("PT_DEPLOY_HOST", "").strip()
     user = environment.get("PT_DEPLOY_USER", "").strip()
     if not host or not user:
@@ -234,21 +235,28 @@ def _remote_command(environment: dict[str, str], command: str) -> str:
             "Chat Acceptance deployment must define PT_DEPLOY_HOST and "
             "PT_DEPLOY_USER"
         )
-    result = subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{user}@{host}",
-            command,
-        ],
+    try:
+        port = int(environment.get("PT_DEPLOY_PORT", "22"))
+    except ValueError as error:
+        raise RuntimeError("PT_DEPLOY_PORT must be a valid SSH port") from error
+    return SshTransport(
+        SshTarget(
+            host=host,
+            user=user,
+            port=port,
+            known_hosts_file=environment.get(
+                "PT_DEPLOY_KNOWN_HOSTS_FILE",
+                "",
+            ).strip(),
+        ),
+    )
+
+
+def _remote_command(environment: dict[str, str], command: str) -> str:
+    result = _remote_transport(environment).run_argv(
+        ["sh", "-lc", command],
+        timeout=30,
         check=True,
-        capture_output=True,
-        text=True,
     )
     return result.stdout.strip()
 
@@ -264,29 +272,11 @@ def _remote_psql(environment: dict[str, str], sql: str) -> str:
         "'psql -At -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" "
         "-d \"$POSTGRES_DB\"'"
     )
-    host = environment.get("PT_DEPLOY_HOST", "").strip()
-    user = environment.get("PT_DEPLOY_USER", "").strip()
-    if not host or not user:
-        raise RuntimeError(
-            "Chat Acceptance deployment must define PT_DEPLOY_HOST and "
-            "PT_DEPLOY_USER"
-        )
-    result = subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{user}@{host}",
-            remote,
-        ],
-        input=sql,
-        text=True,
+    result = _remote_transport(environment).run_argv(
+        ["sh", "-lc", remote],
+        timeout=30,
         check=True,
-        capture_output=True,
+        input_text=sql,
     )
     return result.stdout.strip()
 
@@ -496,12 +486,6 @@ def reset_station_messaging_state(environment_name: str) -> None:
         environment_name,
     )
     verify_disposable_station_runtime(environment)
-    host = environment.get("PT_DEPLOY_HOST", "").strip()
-    user = environment.get("PT_DEPLOY_USER", "").strip()
-    if not host or not user:
-        raise RuntimeError(
-            f"{environment_name} must define PT_DEPLOY_HOST and PT_DEPLOY_USER"
-        )
     container = environment["PT_ACCEPTANCE_POSTGRES_CONTAINER"]
     sql = f"""
 BEGIN;
@@ -602,21 +586,11 @@ COMMIT;
         f"docker exec -i {container} sh -lc "
         "'psql -v ON_ERROR_STOP=1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'"
     )
-    subprocess.run(
-        [
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{user}@{host}",
-            remote,
-        ],
-        input=sql,
-        text=True,
+    _remote_transport(environment).run_argv(
+        ["sh", "-lc", remote],
+        timeout=30,
         check=True,
+        input_text=sql,
     )
 
 

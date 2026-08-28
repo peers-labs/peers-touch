@@ -171,6 +171,7 @@ class SshTransport:
         timeout: float,
         check: bool = False,
         environment: Mapping[str, str] | None = None,
+        input_text: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         if not argv:
             raise ProvisioningError("remote SSH command is required")
@@ -184,6 +185,7 @@ class SshTransport:
             ],
             capture_output=True,
             text=True,
+            input=input_text,
             timeout=timeout,
             check=False,
             env=dict(environment) if environment is not None else None,

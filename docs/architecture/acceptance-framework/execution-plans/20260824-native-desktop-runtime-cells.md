@@ -663,6 +663,34 @@ timeout budgets. Client logical ports must derive from the already resolved
 worktree profile slot; reading the parent process environment again can silently
 fall back to slot zero and collide with unrelated local tunnels.
 
+### 2026-08-28 Final Review Corrections
+
+Independent review of the MP-W13-F Linux candidate found two Acceptance
+infrastructure defects that must close before final evidence:
+
+- destructive Fixture SSH calls bypassed the shared strict-host-verification
+  transport;
+- blocked or provisioning-failure results for a selected runtime cell omitted
+  `runtimeCell`, causing latest-pointer publication to fail instead of
+  preserving `BLOCKED/UNPROVEN`.
+
+The correction reuses `SshTransport` for all destructive remote commands and
+standardizes `runtimeCell` before every result is finalized. Synthetic
+failure-path and transport tests cover both contracts. NDR-W7 remains complete
+for its earlier Linux proof; MP-W13-F requires a new exact-source run after
+these corrections.
+
+The subsequent product-side re-review found that an old actor's in-flight
+Social refresh could still publish after an account switch. That defect is
+owned by the Desktop projection layer, not Acceptance Infra. The Desktop
+correction adds actor fences at runtime stage boundaries and before every
+Social/notification store operation used by the refresh or notification
+mutation flows publishes asynchronous results. Actor transitions also clear
+the actor-scoped Social, notification, and navigation-badge stores before the
+new session is hydrated, and the final refresh stage checks actor identity
+before reconciling badges. Acceptance Infra scope and the NDR-W7 status are
+unchanged.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

@@ -644,6 +644,8 @@ def finalize_gate_result(
         runtime or {},
         secret_values,
     )
+    if runtime_cell:
+        redacted_result["runtimeCell"] = runtime_cell
     leaked_fields = [
         field
         for field, leaked in (
