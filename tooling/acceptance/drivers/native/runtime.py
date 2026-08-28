@@ -72,6 +72,9 @@ class LinuxRuntimeCell(Protocol):
     def binary_identity(self) -> dict[str, str]:
         ...
 
+    def runtime_identity(self) -> dict[str, Any]:
+        ...
+
     def stage_actor_file(
         self,
         actor: str,
@@ -155,6 +158,10 @@ class NativeDesktopRuntimeBinding(ABC):
 
     @abstractmethod
     def binary_identity(self) -> dict[str, str]:
+        ...
+
+    @abstractmethod
+    def runtime_identity(self) -> dict[str, Any]:
         ...
 
     @abstractmethod
@@ -420,6 +427,9 @@ class LinuxNativeDesktopRuntimeBinding(NativeDesktopRuntimeBinding):
     def binary_identity(self) -> dict[str, str]:
         return self._cell.binary_identity()
 
+    def runtime_identity(self) -> dict[str, Any]:
+        return self._cell.runtime_identity()
+
     def finalize_cleanup(
         self,
         sessions: Sequence[TauriSession],
@@ -580,6 +590,33 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 text=True,
                 check=True,
             ).stdout.strip(),
+        }
+
+    def runtime_identity(self) -> dict[str, Any]:
+        from tooling.acceptance.core.evidence_store import (
+            source_identity,
+        )
+
+        source = source_identity(REPO_ROOT)
+        binary = self.binary_identity()
+        return {
+            "artifactKind": "acceptance-runtime-cell-manifest",
+            "cellId": self.cell_id,
+            "gateId": os.environ.get("PT_ACCEPTANCE_GATE_ID", ""),
+            "runId": os.environ.get("PT_ACCEPTANCE_RUN_ID", ""),
+            "state": "LEASED",
+            "platform": {
+                "os": "macos",
+                "isolationKind": "local-process",
+            },
+            "source": {
+                **source,
+                "remoteSourceDigest": source["workspaceDigest"],
+                "remoteCheckoutClean": (
+                    source["workspaceDigest"] == "clean"
+                ),
+                "binarySha256": binary["sha256"],
+            },
         }
 
     def finalize_cleanup(
