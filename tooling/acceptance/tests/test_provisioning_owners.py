@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -24,6 +25,7 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
     _login_session,
     produce_actor_manifest,
+    reset_fixture,
 )
 
 
@@ -269,6 +271,38 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
 
 class ActorFixtureOwnerTests(unittest.TestCase):
+    @patch("tooling.acceptance.fixtures.chat_native_actors.subprocess.run")
+    def test_reset_fixture_uses_package_module(self, run) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+        reset_fixture("chat-native-acceptance", ("alice", "bob"))
+
+        arguments, options = run.call_args
+        self.assertEqual(
+            arguments[0],
+            [
+                sys.executable,
+                "-m",
+                "tooling.acceptance.fixtures.chat_native_reset",
+                "--environment",
+                "chat-native-acceptance",
+                "--accounts",
+                "alice",
+                "bob",
+            ],
+        )
+        self.assertEqual(
+            options["cwd"],
+            Path(__file__).resolve().parents[3],
+        )
+        self.assertEqual(options["timeout"], 120)
+        self.assertFalse(options["check"])
+
     def test_actor_roles_resolve_to_canonical_preset_accounts(self) -> None:
         self.assertEqual(
             ACTOR_ACCOUNTS,

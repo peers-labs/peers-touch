@@ -1042,6 +1042,14 @@ semantics; a static contract test and the real disposable reset both pass. The
 blocked run `20260828T065037835411Z-693543461e6173b5dc81246bdf3d2d13`
 remains `BLOCKED/UNPROVEN` evidence and is not retried in place.
 
+The next exact-source rerun
+`20260828T070243839647Z-82bcce1c9108c30310774de05483c52d`
+found the same file-path execution defect in the actor-manifest provisioning
+caller. `chat_native_actors.reset_fixture` now invokes the reset package as a
+Python module and its owner test verifies the module argv and repository-root
+working directory. The blocked run remains `BLOCKED/UNPROVEN`; a new clean
+candidate is required for product proof.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
