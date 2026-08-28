@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 from tooling.acceptance.core.attestation import (
     produce_station_attestation,
+    source_proto_digest,
     source_workspace_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
@@ -30,6 +31,78 @@ from tooling.acceptance.fixtures.chat_native_actors import (
 
 
 class StationAttestationOwnerTests(unittest.TestCase):
+    def test_proto_digest_uses_only_git_tracked_contract_artifacts(self) -> None:
+        native_git_environment = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
+        }
+        native_git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        root = Path(tempfile.mkdtemp())
+        try:
+            with patch.dict(
+                os.environ,
+                native_git_environment,
+                clear=True,
+            ):
+                subprocess.run(
+                    ["git", "init"],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.email", "acceptance@test.invalid"],
+                    cwd=root,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.name", "Acceptance Test"],
+                    cwd=root,
+                    check=True,
+                )
+                proto = root / "model/domain/test.proto"
+                generated = (
+                    root
+                    / "apps/desktop/src/gen/proto/domain/test_pb.ts"
+                )
+                proto.parent.mkdir(parents=True)
+                generated.parent.mkdir(parents=True)
+                proto.write_text("syntax = \"proto3\";\n", encoding="utf-8")
+                generated.write_text("// generated\n", encoding="utf-8")
+                subprocess.run(
+                    ["git", "add", "model", "apps"],
+                    cwd=root,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", "base"],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
+                baseline = source_proto_digest(root)
+
+                untracked = (
+                    root
+                    / "apps/station/app/subserver/test/model/test.pb.go"
+                )
+                untracked.parent.mkdir(parents=True)
+                untracked.write_text("// generated\n", encoding="utf-8")
+                self.assertEqual(source_proto_digest(root), baseline)
+
+                generated.write_text("// generated changed\n", encoding="utf-8")
+                self.assertNotEqual(source_proto_digest(root), baseline)
+        finally:
+            for attempt in range(20):
+                try:
+                    shutil.rmtree(root)
+                    break
+                except OSError as error:
+                    if error.errno != errno.ENOTEMPTY or attempt == 19:
+                        raise
+                    time.sleep(0.05)
+
     def test_remote_attestation_excludes_only_deployment_bare_repo(self) -> None:
         from tooling.acceptance.core.attestation import _remote_source_identity
 

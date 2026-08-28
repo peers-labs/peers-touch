@@ -851,6 +851,18 @@ budgets. NDR-W1 and MP-W13-F remain `UNPROVEN` until a clean exact-source Linux
 aggregate passes and the downstream validator, Gap Detector, Completion Audit,
 and independent review consume that aggregate.
 
+The first post-correction aggregate
+`20260828T214352092653Z-cab4c1bf2f925400c710755190f4ed30`
+then failed before cell acquisition because `proto-build` created two untracked
+Agent-domain generated files. The environment attestation scanned those
+worktree-only derivatives into `protoDigest`, so the same Git commit produced a
+different digest locally and on the deployed Station. Source attestation now
+hashes only Git-tracked proto sources and generated bindings, while repository
+ignore rules classify new generated bindings as derived outputs. Tracked
+generated changes remain visible to the workspace dirty check. This preserves
+exact-commit identity without allowing a code-generation Gate to invalidate
+later source-bound Gates in the same aggregate.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

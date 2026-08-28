@@ -120,6 +120,8 @@ Manifest identity requirements:
 - `source.workspaceDigest` 覆盖所有可执行源码和手写契约，但不包含自动生成的
   `docs/architecture/acceptance-framework/coverage-report.md`；生成覆盖报告不得使
   刚验证的 source-bound evidence 自身失效。
+- `station.protoDigest` 只覆盖 Git 跟踪的 proto source 与生成绑定；本地 codegen
+  产生但未进入 commit 的派生文件不得改变同一 source commit 的 attestation。
 - `station.liveCommit` 来自 live endpoint，不由本地推断。
 - `station.attestationArtifact` 指向实际 deployment/runtime producer 的输出。
 - `profile.requestedName` 与 `resolvedName` 不一致时状态必须为 `BLOCKED`。

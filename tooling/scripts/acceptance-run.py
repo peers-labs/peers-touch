@@ -636,7 +636,10 @@ def enrich_result_with_run_artifacts(
     if primary is None and result.get("tier") == "env-evidence":
         enriched.setdefault(
             "reason",
-            "Gate exited without a canonical acceptance evidence report",
+            str(
+                result.get("blockedReason")
+                or "Gate exited without a canonical acceptance evidence report"
+            ),
         )
         return enriched
     if primary is None:
