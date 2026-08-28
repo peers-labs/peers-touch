@@ -2641,6 +2641,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   next evidence checkpoint must preserve fail-closed comparison while reporting
   only the differing assertion keys and boolean values so the next run exposes
   the unique owner without leaking scenario payloads or credentials.
+- The exact-source `769de77d5` run
+  `20260828T180708639605Z-a9eb11363775ebc93819074f61a1942a`
+  passed the AS-F02 prefix and reached Browser AS-F05, then failed with
+  `agent.error.replayIncomplete`; cleanup passed. Station facts show attachment
+  admission and explicit omission completed, after which the provider invoked
+  the selected Agent's pre-existing manual `skills_list` binding and left the
+  Turn in `waiting_local_tool`. AS-F05 does not exercise Tool policy. Its
+  fixture must therefore disable the platform Tool binding through the
+  production binding API for the duration of the scenario and restore the
+  exact original binding in cleanup, isolating attachment behavior without
+  prompt steering, mocks, or weakened provider/negative-path assertions.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

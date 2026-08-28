@@ -1285,6 +1285,7 @@ async function foundationResolvedBytes(objectRef: string): Promise<Uint8Array> {
 async function runFoundationF05Scenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
+  platform: string;
   sampleId: string;
 }): Promise<{
   conversationId: string;
@@ -1305,10 +1306,22 @@ async function runFoundationF05Scenario(input: {
     model_name: input.agent.model,
   });
   const uploaded: AgentAttachmentRefInput[] = [];
+  const toolFixture = await foundationToolFixture(agentId, input.platform);
+  const originalToolBinding = toolFixture.binding;
+  let currentToolBinding = originalToolBinding;
   const startedAt = performance.now();
   let scenarioError: unknown = null;
 
   try {
+    if (currentToolBinding?.enabled) {
+      currentToolBinding = await updateFoundationToolPolicy(
+        input.agent,
+        toolFixture,
+        currentToolBinding,
+        currentToolBinding.approvalPolicy,
+        false,
+      );
+    }
     const png = await api.ossUploadAgentAttachmentBytes({
       filename: 'foundation.png',
       mime_type: 'image/png',
@@ -1566,7 +1579,7 @@ async function runFoundationF05Scenario(input: {
     scenarioError = error;
     throw error;
   } finally {
-    const cleanup = await Promise.allSettled(
+    const cleanupTasks: Promise<unknown>[] =
       uploaded.map(async (attachment) => {
         await api.ossDeleteAgentAttachment(attachment.object_ref);
         try {
@@ -1575,8 +1588,24 @@ async function runFoundationF05Scenario(input: {
           return;
         }
         throw new Error('agent.acceptance.foundationAttachmentCleanupFailed');
-      }),
-    );
+      });
+    if (
+      originalToolBinding
+      && currentToolBinding
+      && (
+        currentToolBinding.enabled !== originalToolBinding.enabled
+        || currentToolBinding.approvalPolicy !== originalToolBinding.approvalPolicy
+      )
+    ) {
+      cleanupTasks.push(updateFoundationToolPolicy(
+        input.agent,
+        toolFixture,
+        currentToolBinding,
+        originalToolBinding.approvalPolicy,
+        originalToolBinding.enabled,
+      ));
+    }
+    const cleanup = await Promise.allSettled(cleanupTasks);
     const failed = cleanup.find((result) => result.status === 'rejected');
     if (failed?.status === 'rejected' && scenarioError === null) {
       throw failed.reason;
@@ -3166,6 +3195,7 @@ export function installAcceptanceHarness(): void {
         const scenario = await runFoundationF05Scenario({
           agent,
           capabilitySessionId,
+          platform,
           sampleId,
         });
         preparedConversationId = scenario.conversationId;
