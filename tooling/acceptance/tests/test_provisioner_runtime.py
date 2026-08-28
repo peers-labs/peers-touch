@@ -23,6 +23,10 @@ from tooling.acceptance.provisioners import (
     HomeStationProvisioner,
     get_provisioner,
 )
+from tooling.acceptance.provisioners.local_desktop_gateway import (
+    LocalDesktopGatewayProvisioner,
+    PROVISION_DESKTOP_LOG,
+)
 from tooling.acceptance.provisioners.native_tauri_embedded_webdriver import (
     NativeTauriEmbeddedWebDriverProvisioner,
 )
@@ -190,6 +194,81 @@ class ProfileResolutionTests(unittest.TestCase):
 
 
 class ProvisionerBlockingTests(unittest.TestCase):
+    def test_desktop_gateway_profile_ports_fail_closed(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+
+        for field in (
+            "PT_DESKTOP_APP_GATEWAY_PORT",
+            "PT_DESKTOP_APP_WEB_PORT",
+        ):
+            with self.subTest(field=field), self.assertRaisesRegex(
+                BlockedError,
+                "invalid port",
+            ) as raised:
+                provisioner._profile_ports({field: "not-a-port"}, 0)
+
+            self.assertEqual(
+                raised.exception.resource,
+                "profile:desktop-port",
+            )
+
+    def test_desktop_gateway_timeout_names_external_artifact_logically(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+        process = Mock(pid=1234)
+        process.poll.return_value = None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            external_log = Path(tmpdir) / "run" / PROVISION_DESKTOP_LOG
+            with patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "current_artifact_path",
+                return_value=external_log,
+            ), patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "subprocess.Popen",
+                return_value=process,
+            ), patch.object(
+                provisioner,
+                "_gateway_ready",
+                return_value=False,
+            ), patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "time.monotonic",
+                side_effect=(0, 901),
+            ), patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "os.killpg",
+            ):
+                with self.assertRaises(BlockedError) as raised:
+                    provisioner._start_gateway("http://127.0.0.1:3030")
+                provisioner.cleanup()
+
+        self.assertEqual(
+            raised.exception.resource,
+            "desktop-gateway:http://127.0.0.1:3030",
+        )
+        self.assertIn(PROVISION_DESKTOP_LOG, raised.exception.reason)
+        self.assertNotIn(str(external_log), raised.exception.reason)
+
+    def test_desktop_gateway_does_not_misclassify_unexpected_value_error(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            side_effect=ValueError("unexpected provisioning defect"),
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                "unexpected provisioning defect",
+            ):
+                provisioner.provision("chat-desktop-gateway-e2e")
+
     def test_remote_runtime_cell_skips_local_binary_preflight(self):
         provisioner = NativeTauriEmbeddedWebDriverProvisioner(
             EnvironmentContract(id="native-tauri-embedded-webdriver")
