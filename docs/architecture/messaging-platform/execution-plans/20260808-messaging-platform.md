@@ -1060,6 +1060,49 @@ bounded timeout and still activates it through the native input adapter; it
 does not use a JavaScript click or weaken the clear-cursor assertion. The
 failed run remains `FAILED/UNPROVEN`.
 
+Candidate `110dbbad60db` passed
+`chat-native-product-closure-e2e` on `desktop-linux-native` in run
+`20260828T074608576954Z-cd10745b330bbc28cfb4196887206332`.
+The exact-range receiver Gate then exposed a plan inventory gap:
+`native_two_client_runner.py` still constructed a local Tauri binary and could
+not consume the selected Linux runtime cell. NDR-W6 now includes that runner
+in the existing `NativeDesktopRuntimeBinding` cutover. The two-client actors,
+message and receipt assertions, selectors, timeout, and validator remain
+unchanged; runtime identity, binary identity, and cleanup evidence become
+cell-bound. MP-W13-F remains `UNPROVEN` until the migrated receiver Gate and
+the final audits pass.
+
+Independent review held the first migration candidate because its report and
+validation path were not yet durable enough for receiver proof. The corrected
+Gate publishes its canonical report and validation into the active Evidence
+Store run, accepts only digest-verified same-run `ArtifactRef` evidence, embeds
+the immutable environment manifest, and binds orchestrator, clean Station,
+runtime-cell run, remote clean checkout, image, and binary identities. Failed
+journeys retain the first failed step and structured reverse-order cleanup
+evidence. The W8 aggregate Make entrypoint now passes the selected runtime cell.
+No Direct-message, receipt, actor, selector, ordering, or timeout assertion was
+changed. A new clean commit and Linux Gate run are still required.
+The exact-range Make wrapper now also uses the external Evidence Store instead
+of the removed repository-local `latest-plan.json` path.
+
+The first migrated receiver run
+`20260828T084905253937Z-1291c790a349a9db82599f911b46fd62`
+reached the Linux client but compared the legacy numeric login actor ID with
+the canonical PTID from the actor manifest. The runner now follows the existing
+product Gate contract: authenticate, hydrate the active actor, then compare the
+hydrated canonical PTID. Failed startup is left to the registered reverse-order
+cleanup path, and logout is attempted only for sessions that actually
+authenticated. The failed run remains `FAILED/UNPROVEN`.
+
+The next run reached `conversation.open` and exposed that
+`syncFriendSession` still called the retired `/conversation/messages` path
+after Direct creation had moved to `messaging_create_direct`. The Chat
+Acceptance harness now refreshes the modern local messaging projection, and
+the two actors independently create and verify the same deterministic Direct
+conversation ID before the unchanged DOM delivery assertions begin. The failed
+run `20260828T085732134439Z-30c988bdd7e9f18a9b3e8b2d5bee1ef6`
+remains `FAILED/UNPROVEN`.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

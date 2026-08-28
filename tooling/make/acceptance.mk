@@ -30,8 +30,7 @@
         federation-dashboard-operational-drilldown federation-desktop-gateway-smoke
 
 ACCEPTANCE_RANGE ?= HEAD
-ACCEPTANCE_PLAN ?= tooling/acceptance/reports/latest-plan.json
-ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),--plan $(ACCEPTANCE_PLAN))
+ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan $(PLAN),)
 ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
 CELL ?= desktop-linux-native
 CELL_GATE ?= runtime-cell-preflight
@@ -65,7 +64,9 @@ acceptance-cell-stop:
 	python3 tooling/scripts/acceptance-cell.py stop --cell "$(CELL)"
 
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)"
+	python3 tooling/scripts/acceptance-plan.py \
+		--root tooling/acceptance \
+		--range "$(ACCEPTANCE_RANGE)"
 
 acceptance-run:
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
@@ -86,7 +87,7 @@ acceptance-report:
 	python3 tooling/scripts/acceptance-report.py
 
 acceptance:
-	$(if $(PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)" --output "$(ACCEPTANCE_PLAN)")
+	$(if $(PLAN),,python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)")
 	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 	python3 tooling/scripts/acceptance-report.py
 
@@ -127,7 +128,10 @@ acceptance-chat-native-static:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-visible-static
 
 acceptance-chat-native-two-client:
-	python3 tooling/scripts/acceptance-run.py --gate chat-native-two-client-e2e
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--gate chat-native-two-client-e2e \
+		--runtime-cell "$(RUNTIME_CELL)"
 
 acceptance-chat-native-interactions:
 	python3 tooling/scripts/acceptance-run.py --gate chat-native-interactions-e2e
@@ -154,7 +158,9 @@ acceptance-chat-contact-message-resilience:
 	python3 tooling/scripts/acceptance-run.py --gate chat-contact-message-resilience-e2e
 
 acceptance-chat-native-w8:
-	python3 tooling/scripts/acceptance-run.py \
+	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+		python3 tooling/scripts/acceptance-run.py \
+		--runtime-cell "$(RUNTIME_CELL)" \
 		--gate chat-native-two-client-e2e \
 		--gate chat-native-interactions-e2e \
 		--gate chat-native-typing-e2e \
