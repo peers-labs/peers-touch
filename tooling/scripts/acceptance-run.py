@@ -480,12 +480,36 @@ def enrich_result_with_run_artifacts(
         (
             artifact
             for artifact in artifacts
-            if any(
-                key in artifact
-                for key in ("artifactKind", "status", "completionStatus", "proofStatus")
-            )
+            if artifact.get("artifactKind")
+            == "acceptance-gate-evidence-report"
+            and artifact.get("gateId") == result.get("id")
         ),
-        artifacts[0],
+        None,
+    )
+    if primary is None:
+        primary = next(
+            (
+                artifact
+                for artifact in artifacts
+                if any(
+                    key in artifact
+                    for key in (
+                        "artifactKind",
+                        "status",
+                        "completionStatus",
+                        "proofStatus",
+                    )
+                )
+            ),
+            artifacts[0],
+        )
+    traceability_artifact = next(
+        (
+            artifact
+            for artifact in artifacts
+            if all(key in artifact for key in ("phase", "bom", "spec", "gate"))
+        ),
+        primary,
     )
     enriched["sourceArtifact"] = primary.get("path")
     for source_key, target_key in (
@@ -510,8 +534,8 @@ def enrich_result_with_run_artifacts(
         ("spec", "sourceSpec"),
         ("gate", "sourceGate"),
     ):
-        if source_key in primary:
-            enriched[target_key] = primary[source_key]
+        if source_key in traceability_artifact:
+            enriched[target_key] = traceability_artifact[source_key]
     for key in (
         "details",
         "evidenceDetails",
