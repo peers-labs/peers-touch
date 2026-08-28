@@ -30,7 +30,7 @@
       "description": "Validate that acceptance-run preserves source artifact diagnostics, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata in latest-run evidence."
     },
     "chat-native-visible-static": {
-      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
+      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-cheap",
@@ -52,8 +52,13 @@
     "chat-native-interactions-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_interactions_runner",
       "timeout_seconds": 3600,
-      "environment": "home-station",
-      "provisioner": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run isolated Native Direct and Group clients and prove reply/thread, author-only edit/retract, reaction, pin, read, offline, replay and restart convergence with Station and Engine durable readback."
     },
@@ -73,40 +78,65 @@
     "chat-contact-message-resilience-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.contact_message_resilience_runner",
       "timeout_seconds": 600,
-      "environment": "home-station",
-      "provisioner": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Prove that clicking the contact Message button opens the chat view immediately even when createDirect fails, and the error is presented within the open view."
     },
     "chat-native-typing-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
       "timeout_seconds": 1800,
-      "environment": "home-station",
-      "provisioner": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run isolated Native Direct and Group clients and prove authenticated ephemeral typing start, stop, session switch, disconnect and TTL cleanup without durable lane or history writes."
     },
     "chat-native-multi-device-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_multi_device_runner",
       "timeout_seconds": 1800,
-      "environment": "home-station",
-      "provisioner": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run visible native direct-message acceptance with one recipient actor on two isolated devices."
     },
     "chat-native-recovery-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_recovery_runner",
       "timeout_seconds": 2400,
-      "environment": "home-station",
-      "provisioner": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run visible native reinstall and 24-word recovery history-restore acceptance."
     },
     "chat-native-group-mls-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_group_mls_runner",
       "timeout_seconds": 2400,
-      "environment": "home-station",
-      "provisioner": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run visible native three-device MLS add, send, remove, restart, and recovery acceptance."
     },

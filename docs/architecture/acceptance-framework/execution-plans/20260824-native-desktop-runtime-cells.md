@@ -281,6 +281,16 @@ Deliver:
 - Exact-range receiver proof `native_two_client_runner.py` consumes the same
   `NativeDesktopRuntimeBinding`; it must not retain a local-binary launcher
   path when selected for a remote runtime cell.
+- The remaining Chat Native runners (`interactions`, contact-message
+  resilience, typing, multi-device, recovery, and Group MLS) consume the same
+  binding, immutable runtime manifest, actor manifest, source identity, and
+  reverse cleanup contract.
+- Gate Catalog, individual Make targets, W8, and W11 all carry the explicit
+  runtime-cell selection; no standard entrypoint may silently fall back to a
+  local launcher.
+- Multi-device identity preparation is owned by the runtime binding. Remote
+  cells clone only the declared actor-storage subtree inside the leased cell;
+  the business Gate never accesses a remote filesystem path directly.
 - Existing MP-W13 actors, product actions, selectors, assertions and
   first-failed-boundary behavior remain unchanged.
 - Existing Composer exact-value precondition is preserved and independently
@@ -533,7 +543,7 @@ committed to this plan.
 | NDR-W3 Tauri driver separation | done | pure loopback-only `TauriDriver`; `LocalTauriLauncher` and `ProvisionedTauriLauncher`; composed `TauriSession`; all business callers migrated; Core tests 167/167 PASS; MP-W13 static 34/34 PASS; local Native driver smoke PASS; process/ports/storage/log cleanup PASS; infra validation, plan self-check, coverage report, and skill-check PASS |
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
-| NDR-W6 Chat migration | done | Chat runner receives `NativeDesktopRuntimeBinding`, `TauriSession` and `NativeDesktopAdapter`; local launcher/platform factory dependencies are deleted; required assertions, journey order and 3600-second timeout remain locked; Acceptance Core 230/230, Chat static 38/38 and runner 20/20 PASS |
+| NDR-W6 Chat migration | in progress | Product and receiver runners already consume `NativeDesktopRuntimeBinding`. The remaining six Chat Native runners now have the same runtime-manifest, source identity, Evidence Store, actor-storage, and cleanup contracts; focused static/Infra tests pass, while exact-source Linux Gate evidence is pending. |
 | NDR-W7 Linux MP-W13 proof | done | Unchanged exact-source run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` at `e5b3fd74943cdba46e16c72c415a2031051448b7` passed all 25 product, runtime identity, and cleanup assertions on `desktop-linux-native`. Station live commit matched, the Linux binary SHA-256 was `fd1d4877c5d2279b4ee5515e3ea687f7074ddbcbc72216b4452022dfb3c09d6b`, and Alice2 DOM settings matched authoritative Station state. Gate cleanup released actors, endpoints, ports, processes, and storage. Independent final cell stop returned `CLEANED`; remote container/checkout and allocated local forwards were absent. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
@@ -772,6 +782,44 @@ journey, selectors, ordering, or timeouts. The final candidate must regenerate
 Product, receiver, exact-range, Gap Detector, cleanup, and review evidence after
 this plan update. NDR-W8 macOS and NDR-W9 Windows remain explicitly separate
 and unproven by the Linux result.
+
+### 2026-08-28 NDR-W6 Exact-Range Expansion
+
+The canonical MP-W13-F range selects six additional Chat Native Gates that
+still used the local `home-station` launcher path. NDR-W6 is mechanically
+expanded to migrate those existing journeys without changing their actors,
+selectors, assertions, ordering, or timeout budgets:
+
+- `chat-native-interactions-e2e`
+- `chat-contact-message-resilience-e2e`
+- `chat-native-typing-e2e`
+- `chat-native-multi-device-e2e`
+- `chat-native-recovery-e2e`
+- `chat-native-group-mls-e2e`
+
+All six now publish their canonical report in the current external Evidence
+Store run and use a shared Chat runtime identity validator. Their Gate Catalog
+entries and Make targets require an explicit runtime cell. Multi-device
+identity cloning is implemented by the runtime storage owner, and Station
+readback uses the strict shared SSH transport. The unrelated
+`chat-desktop-gateway-e2e` provisioning blocker is repaired at the concrete
+Provisioner boundary: diagnostics retain the run-relative artifact identity,
+and only actual port parsing failures are classified as
+`profile:desktop-port`.
+
+This expansion remains `UNPROVEN` until all seven environment Gates run on one
+clean candidate and the canonical exact-range Gap Detector, Completion Audit,
+and independent review pass.
+
+Pre-commit rereview found and closed four lifecycle defects without changing
+the product journeys: cleanup now preserves the first product failure while
+recording later cleanup errors; Linux and local actor-storage clones publish
+only through atomic rename and remove temporary state on failure; migrated
+Gate reports cannot override the current Evidence Store run; and explicit
+`acceptance-run --gate` selection resolves the current Gate Catalog instead of
+stale plan commands. Failure-injection and resolved-command tests cover these
+contracts. Runtime proof remains `UNPROVEN` until regenerated from the clean
+candidate.
 
 ## 13. Final Readiness Gate
 

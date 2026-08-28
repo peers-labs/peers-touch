@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 
+from tooling.acceptance.core import GateError
+from tooling.acceptance.gates.chat.contact_message_resilience_runner import (
+    ContactMessageResilienceGate,
+)
 from tooling.acceptance.gates.chat.native_interactions_runner import (
+    NativeInteractionsGate,
     station_mutation_fingerprint,
 )
 
@@ -138,6 +144,56 @@ class NativeInteractionContractsTest(unittest.TestCase):
             )
             self.assertNotIn("time.sleep(", source)
             self.assertNotIn("localhost:18080", source)
+
+    def test_interaction_runner_binds_selected_runtime_cell(self) -> None:
+        source = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+        for required in (
+            "def selected_runtime()",
+            "selected_native_runtime(GATE_ID)",
+            "selected runtime cell requires injected runtime resources",
+            "runtime_binding.cell_id != selected_cell",
+            "self.runtime_binding.create_session(",
+            "self.runtime_binding.expose_orchestrator_endpoint(proxy.url).url",
+            "native_runtime_source_identity(",
+            "self.runtime_binding.finalize_cleanup(",
+            'bool(cleanup.get("processesReleased"))',
+            'bool(cleanup.get("storageReleased"))',
+            '"hydrateActiveActor"',
+        ):
+            self.assertIn(required, source)
+        self.assertIn(
+            "if self.runtime_binding is None:\n"
+            "            return start_authenticated_client(",
+            source,
+        )
+        self.assertIn(
+            "if self.runtime_binding is None:\n"
+            "            try:\n"
+            "                acceptance_station_environment(self.station_url)",
+            source,
+        )
+
+    def test_selected_runtime_rejects_uninjected_gate_construction(self) -> None:
+        previous = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL")
+        os.environ["PT_ACCEPTANCE_RUNTIME_CELL"] = "desktop-linux-native"
+        try:
+            for gate in (
+                NativeInteractionsGate,
+                ContactMessageResilienceGate,
+            ):
+                with self.subTest(gate=gate.__name__):
+                    with self.assertRaisesRegex(
+                        GateError,
+                        "requires injected runtime resources",
+                    ):
+                        gate()
+        finally:
+            if previous is None:
+                os.environ.pop("PT_ACCEPTANCE_RUNTIME_CELL", None)
+            else:
+                os.environ["PT_ACCEPTANCE_RUNTIME_CELL"] = previous
 
     def test_mutation_fingerprint_ignores_receipts_but_tracks_authority_fanout(
         self,
@@ -342,6 +398,36 @@ class ContactMessageResilienceTest(unittest.TestCase):
         self.assertIn(
             "presentError", src[create_direct_pos:catch_block + 200],
             "errors must be presented within the already-open chat view",
+        )
+
+    def test_runner_binds_selected_runtime_cell(self) -> None:
+        source = self.source(
+            "tooling/acceptance/gates/chat/contact_message_resilience_runner.py"
+        )
+        for required in (
+            "def selected_runtime()",
+            "selected_native_runtime(GATE_ID)",
+            "selected runtime cell requires injected runtime resources",
+            "runtime_binding.cell_id != selected_cell",
+            "self.runtime_binding.create_session(",
+            "self.runtime_binding.expose_orchestrator_endpoint(",
+            "native_runtime_source_identity(",
+            "self.runtime_binding.finalize_cleanup(",
+            'bool(cleanup.get("processesReleased"))',
+            'bool(cleanup.get("storageReleased"))',
+            '"hydrateActiveActor"',
+        ):
+            self.assertIn(required, source)
+        self.assertIn(
+            "if self.runtime_binding is None:\n"
+            "            return start_authenticated_client(",
+            source,
+        )
+        self.assertIn(
+            "if self.runtime_binding is None:\n"
+            "            try:\n"
+            "                acceptance_station_environment(self.station_url)",
+            source,
         )
 
     def test_engine_has_stale_enrollment_recovery(self) -> None:

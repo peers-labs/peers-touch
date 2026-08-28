@@ -26,6 +26,9 @@ from tooling.acceptance.core.provisioning import (
 )
 
 
+PROVISION_DESKTOP_LOG = "logs/provision-desktop.log"
+
+
 class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
     environment_id = "local-desktop-gateway"
 
@@ -51,9 +54,9 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
         ):
             return False
 
-    def _start_gateway(self, gateway_url: str, run_id: str) -> None:
+    def _start_gateway(self, gateway_url: str) -> None:
         log_path = current_artifact_path(
-            "logs/provision-desktop.log",
+            PROVISION_DESKTOP_LOG,
             repo_root=REPO_ROOT,
         )
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -101,10 +104,36 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
         raise BlockedError(
             reason=(
                 f"Desktop gateway did not become ready at {gateway_url}; "
-                f"inspect {log_path.relative_to(REPO_ROOT)}"
+                f"inspect Evidence Store artifact {PROVISION_DESKTOP_LOG}"
             ),
             resource=f"desktop-gateway:{gateway_url}",
         )
+
+    def _profile_ports(
+        self,
+        profile_env: dict[str, str],
+        slot: int,
+    ) -> tuple[int, int]:
+        try:
+            return (
+                int(
+                    profile_env.get(
+                        "PT_DESKTOP_APP_GATEWAY_PORT",
+                        str(3030 + slot * 100),
+                    )
+                ),
+                int(
+                    profile_env.get(
+                        "PT_DESKTOP_APP_WEB_PORT",
+                        str(3210 + slot * 100),
+                    )
+                ),
+            )
+        except ValueError as error:
+            raise BlockedError(
+                reason=f"Desktop gateway profile has an invalid port: {error}",
+                resource="profile:desktop-port",
+            ) from error
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -172,17 +201,9 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
 
                 self.register_cleanup("local-station", stop_local_station)
 
-            gateway_port = int(
-                profile_env.get(
-                    "PT_DESKTOP_APP_GATEWAY_PORT",
-                    str(3030 + slot * 100),
-                )
-            )
-            renderer_port = int(
-                profile_env.get(
-                    "PT_DESKTOP_APP_WEB_PORT",
-                    str(3210 + slot * 100),
-                )
+            gateway_port, renderer_port = self._profile_ports(
+                profile_env,
+                slot,
             )
             gateway_url = f"http://127.0.0.1:{gateway_port}"
             attestation = produce_station_attestation(
@@ -205,7 +226,7 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                     resource="source-identity:proto",
                 )
             if not self._gateway_ready(gateway_url):
-                self._start_gateway(gateway_url, manifest.run_id)
+                self._start_gateway(gateway_url)
 
             manifest = dataclasses.replace(
                 manifest,
@@ -233,14 +254,7 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
             )
             self._manifest = manifest
             return self._ready(manifest)
-        except (BlockedError, ValueError) as error:
-            if isinstance(error, BlockedError):
-                blocked = error
-            else:
-                blocked = BlockedError(
-                    reason=f"Desktop gateway profile has an invalid port: {error}",
-                    resource="profile:desktop-port",
-                )
+        except BlockedError as blocked:
             return self._blocked(
                 self._manifest,
                 reason=blocked.reason,

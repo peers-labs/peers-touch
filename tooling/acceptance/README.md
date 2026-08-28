@@ -108,10 +108,11 @@ desktop screenshot probes.
 ### W8 Native Chat Operations
 
 `make acceptance-chat-native-static` runs unit and selector contracts without
-launching a live journey. Live targets are
-`acceptance-chat-native-two-client`, `acceptance-chat-native-multi-device`,
-`acceptance-chat-native-recovery`, and `acceptance-chat-native-group-mls`;
-`acceptance-chat-native-w8` runs all four.
+launching a live journey. Every Native Chat target accepts
+`RUNTIME_CELL=<cell-id>` and routes through `NativeDesktopRuntimeBinding`.
+`acceptance-chat-native-w8` runs the two-client, interactions, typing,
+multi-device, recovery, and Group MLS journeys on the selected cell. Contact
+message resilience has its own runtime-cell-aware target.
 
 ### W11 Closure
 
@@ -122,7 +123,8 @@ six native E2E journeys (two-client, interactions, typing, multi-device,
 recovery, group-MLS), and a mechanical completion-audit that verifies every
 report exists with PASS status before emitting `chat-w11-closure-verdict.json`.
 The gate list is fixed in the plan JSON — there is no AI-driven gate selection.
-Required environment: `CHAT_ACCEPTANCE_RESET=1`, `CHAT_ACCEPTANCE_PASSWORD=1`,
+Invoke it with `RUNTIME_CELL=<cell-id>`. Required environment:
+`CHAT_ACCEPTANCE_RESET=1`, `CHAT_ACCEPTANCE_PASSWORD=1`,
 `CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1`, and a Station whose build commit
 matches the client HEAD.
 
@@ -135,13 +137,13 @@ preserves the pre-created actors, while the login result supplies their canonica
 PTIDs. The runner rejects a live Station whose `/app-meta/version` commit does
 not match the tested client commit.
 
-The remaining multi-device, recovery, and group-MLS runners still require
-`CHAT_NATIVE_STATION_ATTESTATION`, canonical actor PTIDs, pre-created accounts,
-and `CHAT_NATIVE_DEMO_PASSWORD`. Their attestation JSON contains `commit`,
-`"workspaceDigest": "clean"`, and `protoDigest`. The digest covers source
-protos plus Desktop TypeScript and Station Go generated bindings.
-`CHAT_NATIVE_CLIENT_WORKTREES` accepts one worktree path per client, separated
-by commas; one path may be reused for local process-isolation checks.
+All Native Chat runners consume the Provisioner-owned immutable runtime and
+actor manifests. A selected runtime cell fails closed when the manifest,
+source/Station/cell/binary identity chain, actor allocation, or cleanup
+contract is incomplete. Canonical reports and diagnostic files are written to
+the current external Evidence Store run. Multi-device same-actor identity
+preparation is delegated to the runtime storage owner rather than accessing a
+remote filesystem from the business Gate.
 
 ## Desktop Performance Acceptance Logic
 

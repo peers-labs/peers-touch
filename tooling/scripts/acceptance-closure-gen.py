@@ -239,18 +239,20 @@ def generate_plan(contract: dict[str, Any], gate_defs: dict[str, Any]) -> dict[s
     selected_gates = []
     for gid in gate_order:
         gdef = gate_defs[gid]
-        selected_gates.append(
-            {
-                "id": gid,
-                "command": gdef["command"],
-                "timeout_seconds": gdef.get("timeout_seconds", 600),
-                "environment": gdef.get("environment", "local"),
-                "provisioner": gdef.get("provisioner", ""),
-                "tier": gdef.get("tier", "local-evidence"),
-                "description": gdef.get("description", ""),
-                "required_by": [f"closure:{contract['workstream']}"],
-            }
-        )
+        planned_gate = {
+            "id": gid,
+            "command": gdef["command"],
+            "timeout_seconds": gdef.get("timeout_seconds", 600),
+            "environment": gdef.get("environment", "local"),
+            "provisioner": gdef.get("provisioner", ""),
+            "tier": gdef.get("tier", "local-evidence"),
+            "description": gdef.get("description", ""),
+            "required_by": [f"closure:{contract['workstream']}"],
+        }
+        required_cells = gdef.get("requiredRuntimeCells")
+        if required_cells:
+            planned_gate["requiredRuntimeCells"] = required_cells
+        selected_gates.append(planned_gate)
 
     return {
         "version": 1,

@@ -677,6 +677,37 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(gates[1]["command"], "python3 tooling/scripts/desktop-performance-report.py")
         self.assertEqual(gates[1]["timeout_seconds"], 42)
 
+    def test_explicit_gate_uses_current_catalog_not_stale_plan_entry(self) -> None:
+        module = load_module()
+
+        gates = module.resolve_requested_gates(
+            {
+                "selected_gates": [
+                    {
+                        "id": "chat-native-visible-static",
+                        "command": "python3 -m unittest stale_suite",
+                    }
+                ]
+            },
+            {
+                "chat-native-visible-static": {
+                    "command": (
+                        "python3 -m unittest "
+                        "tooling.acceptance.gates.chat."
+                        "native_runtime_cell_runner_test"
+                    ),
+                    "tier": "ci-cheap",
+                }
+            },
+            ["chat-native-visible-static"],
+        )
+
+        self.assertEqual(
+            gates[0]["command"],
+            "python3 -m unittest "
+            "tooling.acceptance.gates.chat.native_runtime_cell_runner_test",
+        )
+
     def test_plan_gate_preserves_required_runtime_cells_from_catalog(self) -> None:
         module = load_module()
 
