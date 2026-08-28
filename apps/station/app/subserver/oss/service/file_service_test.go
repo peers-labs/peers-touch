@@ -176,9 +176,6 @@ func (r *fakeFileRepo) Patch(ctx context.Context, id string, p ossrepo.FilePatch
 		if p.ChatSessionID != nil {
 			m.ChatSessionID = *p.ChatSessionID
 		}
-		if p.AuthorizationScope != nil {
-			m.AuthorizationScope = *p.AuthorizationScope
-		}
 		if p.BucketID != nil {
 			m.BucketID = *p.BucketID
 		}
@@ -1962,42 +1959,6 @@ func TestPatchFile_FilenameAndExpiry(t *testing.T) {
 	}
 	if deps.meta.bumpCount != 0 {
 		t.Errorf("non-tightening patch must not bump cap-version, got %d", deps.meta.bumpCount)
-	}
-}
-
-func TestPatchFile_AuthorizationScopeIsPrivateAndImmutable(t *testing.T) {
-	_, svc := newSvcFull(t, KeyStrategyCAS, "local", nil)
-	body := []byte("scoped attachment")
-	f, h := makePart(t, "scoped.png", body)
-	attr := defaultAttr(testActorA)
-	attr.Visibility = ossmodel.VisibilityPrivate
-	attr.ChatSessionID = ""
-	created, err := svc.SaveFile(context.Background(), attr, f, h)
-	if err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	scope := "conversation:conversation-1"
-	result, err := svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{
-		AuthorizationScope: &scope,
-	})
-	if err != nil {
-		t.Fatalf("set authorization scope: %v", err)
-	}
-	if result.Meta.AuthorizationScope != scope {
-		t.Fatalf("authorization scope = %q, want %q", result.Meta.AuthorizationScope, scope)
-	}
-
-	otherScope := "conversation:conversation-2"
-	if _, err := svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{
-		AuthorizationScope: &otherScope,
-	}); !errors.Is(err, ErrInvalidAuthorizationScope) {
-		t.Fatalf("scope rebinding error = %v, want ErrInvalidAuthorizationScope", err)
-	}
-	if _, err := svc.PatchFile(context.Background(), testActorA, created.Key, PatchRequest{
-		Visibility: ptrStr(ossmodel.VisibilityPublic),
-	}); !errors.Is(err, ErrInvalidAuthorizationScope) {
-		t.Fatalf("scoped object visibility error = %v, want ErrInvalidAuthorizationScope", err)
 	}
 }
 

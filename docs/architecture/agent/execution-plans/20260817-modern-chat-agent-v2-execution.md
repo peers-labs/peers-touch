@@ -2502,6 +2502,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   visibility, authorized download checksum, and verified object cleanup. Static,
   unit, and structural checks pass; source-matching runtime proof remains
   `UNPROVEN` until profile `two` is deployed and the Foundation Gate reruns.
+- The source-matched `d4aa25204` run
+  `20260828T102252894011Z-58d5aa8e6b76058e71c4d38ed6e43d32`
+  reached Browser AS-F05 and failed with `agent.errors.attachmentRejected`;
+  cleanup passed. The root cause was test-object aliasing under actor-scoped
+  CAS: valid, retry, and negative PNG fixtures reused identical bytes, so they
+  resolved to one object. AS-F05 now salts each PNG fixture while preserving
+  valid content signatures. Conversation scope remains a Turn-ref constraint;
+  actor ownership and private visibility remain the OSS authorization boundary,
+  so identical user content can be reused across conversations without
+  rebinding or invalidating an earlier Turn.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

@@ -38,15 +38,14 @@ func TestAttachmentAdmissionAcceptsActorPrivateObject(t *testing.T) {
 	now := time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC)
 	objectExpiry := now.Add(time.Hour)
 	reader := &attachmentMetadataReaderStub{meta: &ossmodel.FileMeta{
-		Key:                "cas/01/object",
-		Name:               "diagram.png",
-		Size:               int64(len(attachmentTestBody)),
-		Mime:               "image/png",
-		Sha256:             attachmentTestChecksum,
-		OwnerActorID:       "actor-1",
-		Visibility:         ossmodel.VisibilityPrivate,
-		AuthorizationScope: "conversation:conversation-1",
-		ExpiresAt:          &objectExpiry,
+		Key:          "cas/01/object",
+		Name:         "diagram.png",
+		Size:         int64(len(attachmentTestBody)),
+		Mime:         "image/png",
+		Sha256:       attachmentTestChecksum,
+		OwnerActorID: "actor-1",
+		Visibility:   ossmodel.VisibilityPrivate,
+		ExpiresAt:    &objectExpiry,
 	}, body: attachmentTestBody}
 	admission := NewAttachmentAdmissionService(reader)
 	admission.now = func() time.Time { return now }
@@ -106,15 +105,14 @@ func TestAttachmentAdmissionRejectsInvalidAuthorityAndMetadata(t *testing.T) {
 	now := time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC)
 	future := now.Add(time.Hour)
 	baseMeta := ossmodel.FileMeta{
-		Key:                "cas/01/object",
-		Name:               "diagram.png",
-		Size:               int64(len(attachmentTestBody)),
-		Mime:               "image/png",
-		Sha256:             attachmentTestChecksum,
-		OwnerActorID:       "actor-1",
-		Visibility:         ossmodel.VisibilityPrivate,
-		AuthorizationScope: "conversation:conversation-1",
-		ExpiresAt:          &future,
+		Key:          "cas/01/object",
+		Name:         "diagram.png",
+		Size:         int64(len(attachmentTestBody)),
+		Mime:         "image/png",
+		Sha256:       attachmentTestChecksum,
+		OwnerActorID: "actor-1",
+		Visibility:   ossmodel.VisibilityPrivate,
+		ExpiresAt:    &future,
 	}
 
 	tests := []struct {
@@ -141,9 +139,6 @@ func TestAttachmentAdmissionRejectsInvalidAuthorityAndMetadata(t *testing.T) {
 		{name: "byte budget", caps: attachmentCapabilities(true, true, 4, uint64(len(attachmentTestBody)-1))},
 		{name: "wrong scope", mutateRef: func(ref *model.AgentAttachmentRef) {
 			ref.AuthorizationScope = "conversation:conversation-2"
-		}},
-		{name: "object scope mismatch", mutateMeta: func(meta *ossmodel.FileMeta) {
-			meta.AuthorizationScope = "conversation:conversation-2"
 		}},
 		{name: "client supplied extraction ref", mutateRef: func(ref *model.AgentAttachmentRef) {
 			ref.ExtractedContentRef = "file:///tmp/extracted.txt"
@@ -190,15 +185,14 @@ func TestAttachmentAdmissionRecordsExplicitModelOmission(t *testing.T) {
 	objectExpiry := now.Add(time.Hour)
 	admission := NewAttachmentAdmissionService(&attachmentMetadataReaderStub{
 		meta: &ossmodel.FileMeta{
-			Key:                "cas/01/object",
-			Name:               "diagram.png",
-			Size:               int64(len(attachmentTestBody)),
-			Mime:               "image/png",
-			Sha256:             attachmentTestChecksum,
-			OwnerActorID:       "actor-1",
-			Visibility:         ossmodel.VisibilityPrivate,
-			AuthorizationScope: "conversation:conversation-1",
-			ExpiresAt:          &objectExpiry,
+			Key:          "cas/01/object",
+			Name:         "diagram.png",
+			Size:         int64(len(attachmentTestBody)),
+			Mime:         "image/png",
+			Sha256:       attachmentTestChecksum,
+			OwnerActorID: "actor-1",
+			Visibility:   ossmodel.VisibilityPrivate,
+			ExpiresAt:    &objectExpiry,
 		},
 		body: attachmentTestBody,
 	})
@@ -231,15 +225,14 @@ func TestAttachmentAdmissionRejectsSpoofedMimeContent(t *testing.T) {
 	objectExpiry := now.Add(time.Hour)
 	admission := NewAttachmentAdmissionService(&attachmentMetadataReaderStub{
 		meta: &ossmodel.FileMeta{
-			Key:                "cas/01/object",
-			Name:               "spoofed.png",
-			Size:               int64(len(body)),
-			Mime:               "image/png",
-			Sha256:             checksum,
-			OwnerActorID:       "actor-1",
-			Visibility:         ossmodel.VisibilityPrivate,
-			AuthorizationScope: "conversation:conversation-1",
-			ExpiresAt:          &objectExpiry,
+			Key:          "cas/01/object",
+			Name:         "spoofed.png",
+			Size:         int64(len(body)),
+			Mime:         "image/png",
+			Sha256:       checksum,
+			OwnerActorID: "actor-1",
+			Visibility:   ossmodel.VisibilityPrivate,
+			ExpiresAt:    &objectExpiry,
 		},
 		body: body,
 	})

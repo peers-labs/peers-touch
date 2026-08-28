@@ -207,11 +207,10 @@ type RestoreResult struct {
 // resolves it to a `bucket_id` so the wire shape stays stable
 // even if the on-disk uuid migrates.
 type PatchRequest struct {
-	Visibility         *string
-	ChatSessionID      *string
-	AuthorizationScope *string
-	BucketName         *string
-	Filename           *string
+	Visibility    *string
+	ChatSessionID *string
+	BucketName    *string
+	Filename      *string
 
 	ExpiresAtSet bool
 	ExpiresAt    *time.Time
@@ -286,9 +285,6 @@ var (
 	// ErrInvalidVisibility is returned when the resolved visibility
 	// is not one of public/chat/private. Handlers translate to 400.
 	ErrInvalidVisibility = errors.New("oss: invalid visibility")
-	// ErrInvalidAuthorizationScope is returned when a private object's
-	// higher-level scope is malformed, mutable, or paired with broader visibility.
-	ErrInvalidAuthorizationScope = errors.New("oss: invalid authorization scope")
 	// ErrChatSessionRequired is returned when visibility=chat and
 	// the request did not supply a chat_session_id. Handlers
 	// translate to HTTP 400.
@@ -1197,21 +1193,6 @@ func (s *fileService) PatchFile(ctx context.Context, ownerActorID, key string, r
 	} else if strings.TrimSpace(newSession) == "" {
 		return nil, ErrChatSessionRequired
 	}
-	newAuthorizationScope := row.AuthorizationScope
-	if req.AuthorizationScope != nil {
-		newAuthorizationScope = strings.TrimSpace(*req.AuthorizationScope)
-		if !strings.HasPrefix(newAuthorizationScope, "conversation:") ||
-			strings.TrimSpace(strings.TrimPrefix(newAuthorizationScope, "conversation:")) == "" {
-			return nil, ErrInvalidAuthorizationScope
-		}
-		if row.AuthorizationScope != "" && newAuthorizationScope != row.AuthorizationScope {
-			return nil, ErrInvalidAuthorizationScope
-		}
-	}
-	if newAuthorizationScope != "" && newVis != ossmodel.VisibilityPrivate {
-		return nil, ErrInvalidAuthorizationScope
-	}
-
 	// --- Stage 2: bucket move (same-actor only) -----------------
 	prevBucket := row.BucketID
 	newBucket := prevBucket
@@ -1272,11 +1253,6 @@ func (s *fileService) PatchFile(ctx context.Context, ownerActorID, key string, r
 			fields = append(fields, "chat_session_id")
 		}
 	}
-	if req.AuthorizationScope != nil {
-		scope := newAuthorizationScope
-		patch.AuthorizationScope = &scope
-		fields = append(fields, "authorization_scope")
-	}
 	if newBucket != prevBucket {
 		b := newBucket
 		patch.BucketID = &b
@@ -1311,9 +1287,6 @@ func (s *fileService) PatchFile(ctx context.Context, ownerActorID, key string, r
 	}
 	if patch.ChatSessionID != nil {
 		row.ChatSessionID = *patch.ChatSessionID
-	}
-	if patch.AuthorizationScope != nil {
-		row.AuthorizationScope = *patch.AuthorizationScope
 	}
 	if patch.BucketID != nil {
 		row.BucketID = *patch.BucketID
@@ -1482,7 +1455,6 @@ func isVisibilityTighter(prev, next string) bool {
 func patchHasField(req PatchRequest) bool {
 	return req.Visibility != nil ||
 		req.ChatSessionID != nil ||
-		req.AuthorizationScope != nil ||
 		req.BucketName != nil ||
 		req.Filename != nil ||
 		req.ExpiresAtSet

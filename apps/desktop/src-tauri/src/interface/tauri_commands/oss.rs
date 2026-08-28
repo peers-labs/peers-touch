@@ -1000,7 +1000,6 @@ pub fn oss_patch_file(
     let body = application_oss::PatchFileBody {
         visibility: input.visibility,
         chat_session_id: input.chat_session_id,
-        authorization_scope: None,
         bucket: input.bucket,
         filename: input.filename,
         expires_at: input.expires_at,

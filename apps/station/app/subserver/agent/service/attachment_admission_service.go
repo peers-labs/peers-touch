@@ -110,7 +110,6 @@ func (s *AttachmentAdmissionService) Admit(
 		}
 		if meta.OwnerActorID != strings.TrimSpace(actorID) ||
 			meta.Visibility != ossmodel.VisibilityPrivate ||
-			strings.TrimSpace(meta.AuthorizationScope) != expectedScope ||
 			meta.DeletedAt != nil {
 			return nil, attachmentRejected("attachment object is unauthorized")
 		}

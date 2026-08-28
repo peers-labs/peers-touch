@@ -1126,6 +1126,13 @@ const FOUNDATION_PDF_BYTES = Array.from(new TextEncoder().encode(
   '%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n',
 ));
 
+function foundationPngBytes(label: string): number[] {
+  return [
+    ...FOUNDATION_PNG_BYTES,
+    ...Array.from(new TextEncoder().encode(`fixture:${label}`)),
+  ];
+}
+
 function attachmentEvidence(
   attachment: AgentAttachmentRefInput,
   ledgerSegment?: Record<string, unknown>,
@@ -1243,7 +1250,7 @@ async function runFoundationF05Scenario(input: {
     const png = await api.ossUploadAgentAttachmentBytes({
       filename: 'foundation.png',
       mime_type: 'image/png',
-      bytes: FOUNDATION_PNG_BYTES,
+      bytes: foundationPngBytes('valid'),
       conversation_id: conversation.conversation_id,
     });
     uploaded.push(png);
@@ -1260,7 +1267,7 @@ async function runFoundationF05Scenario(input: {
       await api.ossUploadAgentAttachmentBytes({
         filename: 'retry.png',
         mime_type: 'image/png',
-        bytes: FOUNDATION_PNG_BYTES,
+        bytes: foundationPngBytes('retry'),
         conversation_id: '',
       });
     } catch (error) {
@@ -1269,7 +1276,7 @@ async function runFoundationF05Scenario(input: {
     const retried = await api.ossUploadAgentAttachmentBytes({
       filename: 'retry.png',
       mime_type: 'image/png',
-      bytes: FOUNDATION_PNG_BYTES,
+      bytes: foundationPngBytes('retry'),
       conversation_id: conversation.conversation_id,
     });
     uploaded.push(retried);
@@ -1371,7 +1378,7 @@ async function runFoundationF05Scenario(input: {
         const uploadedForCase = await api.ossUploadAgentAttachmentBytes({
           filename: `${kind}.png`,
           mime_type: 'image/png',
-          bytes: FOUNDATION_PNG_BYTES,
+          bytes: foundationPngBytes(kind),
           conversation_id: rejectedConversation.conversation_id,
         });
         uploaded.push(uploadedForCase);

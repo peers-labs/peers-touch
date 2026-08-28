@@ -447,7 +447,6 @@ pub fn upload_agent_attachment(
             visibility: Some("private".to_string()),
             bucket: Some("personal".to_string()),
             filename: Some(filename.to_string()),
-            authorization_scope: Some(format!("conversation:{conversation_id}")),
             expires_at: Some(expires_at.clone()),
             ..PatchFileBody::default()
         },
@@ -1021,8 +1020,6 @@ pub struct PatchFileBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub authorization_scope: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bucket: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
@@ -1154,7 +1151,6 @@ pub fn oss_patch_file(token: &str, key: &str, body: &PatchFileBody) -> AppResult
     }
     if body.visibility.is_none()
         && body.chat_session_id.is_none()
-        && body.authorization_scope.is_none()
         && body.bucket.is_none()
         && body.filename.is_none()
         && body.expires_at.is_none()
@@ -1187,12 +1183,6 @@ pub fn oss_patch_file(token: &str, key: &str, body: &PatchFileBody) -> AppResult
     if let Some(v) = body.chat_session_id.as_ref() {
         payload.insert(
             "chat_session_id".to_string(),
-            Value::String(v.trim().to_string()),
-        );
-    }
-    if let Some(v) = body.authorization_scope.as_ref() {
-        payload.insert(
-            "authorization_scope".to_string(),
             Value::String(v.trim().to_string()),
         );
     }

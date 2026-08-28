@@ -54,10 +54,6 @@ type FileMeta struct {
 	// audience. Empty for `public`/`private` rows.
 	ChatSessionID string `json:"chat_session_id,omitempty" gorm:"index;type:varchar(64)"`
 
-	// AuthorizationScope binds private objects used by higher-level runtimes to
-	// the resource scope that minted them (for example, one Agent conversation).
-	AuthorizationScope string `json:"authorization_scope,omitempty" gorm:"index;type:varchar(255)"`
-
 	// ExpiresAt is the wall-clock deadline after which the TTL
 	// sweeper soft-deletes this row. NULL means "no expiry". The
 	// upload path defaults this from `oss_buckets.ttl_days` when

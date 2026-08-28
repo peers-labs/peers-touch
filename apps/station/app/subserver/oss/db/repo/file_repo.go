@@ -149,11 +149,10 @@ type ListByOwnerFilter struct {
 // (`time.Time{}` is itself a legal stamp), so the dedicated
 // `ExpiresAtSet` flag carries the intent.
 type FilePatch struct {
-	Visibility         *string
-	ChatSessionID      *string
-	AuthorizationScope *string
-	BucketID           *string
-	Filename           *string
+	Visibility    *string
+	ChatSessionID *string
+	BucketID      *string
+	Filename      *string
 
 	// ExpiresAtSet must be true for either a "set" or a "clear";
 	// when true and ExpiresAt is nil, the column is set to NULL.
@@ -323,9 +322,6 @@ func (r *fileRepo) Patch(ctx context.Context, id string, patch FilePatch, now ti
 	}
 	if patch.ChatSessionID != nil {
 		updates["chat_session_id"] = *patch.ChatSessionID
-	}
-	if patch.AuthorizationScope != nil {
-		updates["authorization_scope"] = *patch.AuthorizationScope
 	}
 	if patch.BucketID != nil {
 		updates["bucket_id"] = *patch.BucketID
