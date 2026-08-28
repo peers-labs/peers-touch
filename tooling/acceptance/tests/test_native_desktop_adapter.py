@@ -126,6 +126,22 @@ class SyntheticLinuxRuntimeCell:
             "sourceCommit": "abc123",
         }
 
+    def runtime_identity(self) -> dict[str, object]:
+        return {
+            "artifactKind": "acceptance-runtime-cell-manifest",
+            "cellId": "desktop-linux-native",
+            "gateId": "chat-native-product-closure-e2e",
+            "runId": "runtime-cell-run",
+            "state": "LEASED",
+            "source": {
+                "commit": "abc123",
+                "workspaceDigest": "clean",
+                "remoteSourceDigest": "b" * 64,
+                "remoteCheckoutClean": True,
+                "binarySha256": "a" * 64,
+            },
+        }
+
     def stage_actor_file(self, actor: str, source: Path) -> str:
         self.staged_files.append((actor, source))
         return f"/workspace/run/actors/{actor}/fixtures/{source.name}"
@@ -222,6 +238,10 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
         )
         self.assertEqual(cell.launches[0][0], "alice")
         self.assertEqual(binding.binary_identity()["sha256"], "a" * 64)
+        self.assertEqual(
+            binding.runtime_identity()["runId"],
+            "runtime-cell-run",
+        )
         self.assertEqual(
             cell.validations,
             [("chat-native-product-closure-e2e", "abc123")],
