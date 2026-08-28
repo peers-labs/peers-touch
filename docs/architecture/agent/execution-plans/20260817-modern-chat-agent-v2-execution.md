@@ -2661,6 +2661,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   camel/snake evidence-field reader; this is a producer normalization defect,
   not permission to weaken opaque-reference validation. Cleanup passed and the
   Gate remains `PARTIAL / UNPROVEN`.
+- Commit `bdeb9974f` normalized that Harness read through the shared
+  camel/snake evidence-field reader. Its exact-source run
+  `20260828T191401178548Z-8e145a02d8cf03d2811186b546187f71`
+  attested the clean worktree and live Station at `bdeb9974fd93`, but stopped
+  earlier at Browser AS-F03 with
+  `agent.acceptance.progressiveTextMissing`: the external provider emitted no
+  answer-text delta inside the unchanged 60-second cancellation window.
+  Cleanup passed with both clients' processes, ports, storage, sessions, and
+  actor identity released. This failed provider sample does not invalidate the
+  AS-F05 normalization and does not justify treating thinking as answer text or
+  weakening the timeout; the next action is a source-matched rerun of the same
+  product behavior. The Gate remains `PARTIAL / UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
