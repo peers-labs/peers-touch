@@ -11,17 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core.errors import ProvisioningError
-from tooling.acceptance.provisioners.native_desktop_linux import (
-    NativeDesktopLinuxProvisioner,
-)
-
-
-def _provisioner(cell_id: str) -> NativeDesktopLinuxProvisioner:
-    if cell_id != "desktop-linux-native":
-        raise ProvisioningError(
-            f"runtime-cell lifecycle is not implemented for {cell_id!r}"
-        )
-    return NativeDesktopLinuxProvisioner()
+from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 
 
 def main() -> int:
@@ -38,7 +28,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        provisioner = _provisioner(args.cell)
+        provisioner = get_runtime_cell_lifecycle(args.cell)
         if args.action == "ready":
             payload: object = provisioner.ready(args.gate).to_dict()
         elif args.action == "status":

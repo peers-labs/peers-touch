@@ -538,7 +538,7 @@ committed to this plan.
 
 | Workstream | Status | Evidence |
 |---|---|---|
-| NDR-W1 Runtime Cell Core | done | Contract, manifest, matrix aggregation and Gate × cell execution are wired through `gates.yaml` and `acceptance-run.py`; runtime-cell selection fails closed and records explicit cell identity |
+| NDR-W1 Runtime Cell Core | in progress | Contract, manifest and matrix identity are implemented. Runner-owned per-Gate `ready -> Gate -> stop` orchestration and canonical-report selection are implemented with synthetic lifecycle/failure-path coverage; exact-source Linux aggregate evidence is pending. |
 | NDR-W2 SSH + source sync | done | source-sync 16/16 PASS; source-sync/lease/runtime-cell suite 60/60 PASS; Acceptance Core tests 159/159 PASS; strict host-key negative PASS; isolated direct sync transferred one new object on the second commit; isolated central/local sync PASS with cleanup; `make station` held the remote source lease through build/restart/health and passed at exact HEAD `33063a7e15be`; remote checkout/residue clean and leases released |
 | NDR-W3 Tauri driver separation | done | pure loopback-only `TauriDriver`; `LocalTauriLauncher` and `ProvisionedTauriLauncher`; composed `TauriSession`; all business callers migrated; Core tests 167/167 PASS; MP-W13 static 34/34 PASS; local Native driver smoke PASS; process/ports/storage/log cleanup PASS; infra validation, plan self-check, coverage report, and skill-check PASS |
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
@@ -820,6 +820,36 @@ Gate reports cannot override the current Evidence Store run; and explicit
 stale plan commands. Failure-injection and resolved-command tests cover these
 contracts. Runtime proof remains `UNPROVEN` until regenerated from the clean
 candidate.
+
+### 2026-08-29 NDR-W1 Aggregate Lifecycle Correction
+
+The canonical exact-range aggregate exposed that `--runtime-cell` previously
+validated and labeled a selected cell but did not acquire its Gate-bound
+lifecycle. Environment provisioning therefore ran, but each Native Gate
+constructed its runtime binding before the Linux cell had reached `LEASED`.
+Those constructor failures correctly produced no product report; the runner
+then incorrectly promoted the passing Provisioner cleanup report to primary
+Gate evidence.
+
+The generic Acceptance Infra correction:
+
+- resolves runtime-cell lifecycles through one registry shared by
+  `acceptance-cell.py` and `acceptance-run.py`;
+- executes environment provisioning, cell `ready(gateId)`, the unchanged
+  business Gate, cell `stop()`, and environment cleanup in that order;
+- persists the immutable cell manifest in the current Gate run;
+- preserves `BLOCKED/UNPROVEN`, timeout, product failure, and cleanup failure
+  semantics without allowing cleanup evidence to replace a missing canonical
+  Gate report;
+- keeps unsupported cell implementations fail closed; and
+- verifies the lifecycle, current-run manifest ownership, reverse cleanup, and
+  canonical-report selection with synthetic Infra tests.
+
+This corrects the accepted D-13/D-14 implementation inventory. It does not
+change Chat actors, journeys, selectors, assertions, ordering, or timeout
+budgets. NDR-W1 and MP-W13-F remain `UNPROVEN` until a clean exact-source Linux
+aggregate passes and the downstream validator, Gap Detector, Completion Audit,
+and independent review consume that aggregate.
 
 ## 13. Final Readiness Gate
 

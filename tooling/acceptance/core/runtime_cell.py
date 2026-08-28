@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from .errors import ProvisioningError
 from .redaction import redact_value
@@ -49,6 +49,18 @@ class CellProofState(str, Enum):
     UNPROVEN = "UNPROVEN"
     BLOCKED = "BLOCKED"
     FAILED = "FAILED"
+
+
+class RuntimeCellLifecycle(Protocol):
+    """Acquire and release one Gate-bound Native Desktop runtime cell."""
+
+    def ready(self, gate_id: str) -> "RuntimeCellManifest": ...
+
+    def status(self) -> dict[str, Any]: ...
+
+    def logs(self, tail: int = 200) -> str: ...
+
+    def stop(self) -> dict[str, Any]: ...
 
 
 _SUPPORTED_TRANSPORTS = ("ssh", "local")
