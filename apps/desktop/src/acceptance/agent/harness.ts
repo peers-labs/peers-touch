@@ -237,6 +237,14 @@ function evidenceArray(value: unknown, label: string): unknown[] {
   return value;
 }
 
+function optionalEvidenceArray(value: unknown, label: string): unknown[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new Error(`agent.acceptance.${label}Invalid`);
+  }
+  return value;
+}
+
 function evidenceField(
   value: Record<string, unknown>,
   camelCase: string,
@@ -1173,7 +1181,18 @@ async function foundationExecutionSnapshot(
   return {
     turnCount: Number(traces.total ?? traces.entries.length),
     providerCallCount: traces.entries.reduce(
-      (total, entry) => total + (entry.trace?.providerCalls.length ?? 0),
+      (total, entry) => {
+        if (!entry.trace) return total;
+        const trace = evidenceRecord(
+          evidenceValue(entry.trace),
+          'foundationExecutionTrace',
+        );
+        const providerCalls = optionalEvidenceArray(
+          evidenceField(trace, 'providerCalls', 'provider_calls'),
+          'foundationProviderCalls',
+        );
+        return total + providerCalls.length;
+      },
       0,
     ),
   };

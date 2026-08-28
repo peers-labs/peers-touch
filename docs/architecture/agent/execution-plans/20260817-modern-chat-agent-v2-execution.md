@@ -2524,6 +2524,14 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   mask an earlier scenario exception; it now preserves the primary failure so
   the next run reports the exact remaining product/readback assertion while
   still attempting cleanup.
+- The source-matched `c5e82a269` run
+  `20260828T143811340604Z-d070de3e792f3584677bb2b6af31bdbf`
+  preserved the Browser AS-F05 primary failure as
+  `Cannot read properties of undefined (reading 'length')`; Gate execution
+  remained `PARTIAL / UNPROVEN`, while outer cleanup and redaction passed.
+  The failing producer dereferenced an omitted `providerCalls` collection in
+  `foundationExecutionSnapshot`; this is an Acceptance normalization defect,
+  not evidence of provider execution or a Station attachment rejection.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
