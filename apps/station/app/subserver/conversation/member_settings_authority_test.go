@@ -30,6 +30,9 @@ func newSettingsAuthorityTestServer(
 	if err := authority.AutoMigrate(); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.AutoMigrate(&conversationMemberSettingsModel{}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := authority.CreateConversation(
 		context.Background(),
 		&msgdomain.AuthorityConversation{
@@ -53,7 +56,10 @@ func newSettingsAuthorityTestServer(
 	); err != nil {
 		t.Fatal(err)
 	}
-	return &subServer{messagingAuthority: authority}
+	return &subServer{
+		messagingAuthority: authority,
+		memberSettings:     newMemberSettingsStore(db),
+	}
 }
 
 func TestSettingsMembershipUsesMessagingAuthority(t *testing.T) {
@@ -99,5 +105,38 @@ func TestSettingsMembershipRejectsMissingOrInactiveAuthority(t *testing.T) {
 				t.Fatalf("expected HTTP 403, got %v", err)
 			}
 		})
+	}
+}
+
+func TestUpdateMemberSettingsReturnsCommittedStateWhenRealtimeUnavailable(t *testing.T) {
+	subserver := newSettingsAuthorityTestServer(t, true)
+	ctx := coreauth.WithSubject(
+		context.Background(),
+		&coreauth.Subject{ID: "ptid:alice"},
+	)
+	nickname := "Committed nickname"
+	muted := true
+
+	response, err := subserver.handleUpdateMemberSettings(
+		ctx,
+		&updateMemberSettingsRequest{
+			ConversationID: "group-1",
+			Nickname:       &nickname,
+			Muted:          &muted,
+		},
+	)
+	if err != nil {
+		t.Fatalf("committed settings returned an error when realtime was unavailable: %v", err)
+	}
+	if response.Nickname != nickname || !response.Muted || response.AlertEnabled {
+		t.Fatalf("unexpected committed response: %+v", response)
+	}
+
+	persisted, err := subserver.memberSettings.Get(ctx, "group-1", "ptid:alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Nickname != nickname || !persisted.Muted || persisted.AlertEnabled {
+		t.Fatalf("unexpected persisted settings: %+v", persisted)
 	}
 }

@@ -58,6 +58,93 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
             ],
         )
 
+    def test_supplied_plan_cannot_filter_canonical_exact_range_gates(
+        self,
+    ) -> None:
+        report = MODULE.detect(
+            claim="Acceptance plan is complete",
+            paths=["tooling/acceptance/core/provisioner.py"],
+            plan={
+                "changed_paths": [
+                    "tooling/acceptance/core/provisioner.py",
+                ],
+                "selected_gates": ["acceptance-plan-self"],
+            },
+            canonical_plan={
+                "changed_paths": [
+                    "tooling/acceptance/core/provisioner.py",
+                ],
+                "selected_gates": [
+                    "acceptance-plan-self",
+                    "acceptance-runtime-provisioning-self",
+                ],
+            },
+            run={
+                "results": [
+                    proven_result("acceptance-plan-self"),
+                ],
+            },
+            required_gates=[],
+        )
+
+        self.assertEqual(report["proofState"], "UNPROVEN")
+        invalid = next(
+            item
+            for item in report["gaps"]
+            if item["gapType"] == "ACCEPTANCE_GAP_DETECTOR_INPUT_INVALID"
+        )
+        self.assertEqual(
+            invalid["evidence"][0]["missingCanonicalGates"],
+            ["acceptance-runtime-provisioning-self"],
+        )
+
+    def test_supplied_plan_may_add_gates_to_canonical_exact_range(
+        self,
+    ) -> None:
+        report = MODULE.detect(
+            claim="Acceptance plan is complete",
+            paths=["tooling/acceptance/core/provisioner.py"],
+            plan={
+                "changed_paths": [
+                    "tooling/acceptance/core/provisioner.py",
+                ],
+                "selected_gates": [
+                    "acceptance-plan-self",
+                    "acceptance-runtime-provisioning-self",
+                    "manual-review-gate",
+                ],
+            },
+            canonical_plan={
+                "changed_paths": [
+                    "tooling/acceptance/core/provisioner.py",
+                ],
+                "selected_gates": [
+                    "acceptance-plan-self",
+                    "acceptance-runtime-provisioning-self",
+                ],
+            },
+            run={
+                "results": [
+                    proven_result("acceptance-plan-self"),
+                    proven_result("acceptance-runtime-provisioning-self"),
+                    proven_result("manual-review-gate"),
+                ],
+            },
+            required_gates=[],
+        )
+
+        self.assertEqual(report["proofState"], "PROVEN")
+        self.assertEqual(report["gaps"], [])
+
+    def test_canonical_exact_range_plan_uses_acceptance_planner(self) -> None:
+        canonical = MODULE.canonical_plan_for_paths(
+            ["tooling/acceptance/core/provisioner.py"]
+        )
+
+        selected = set(MODULE.gate_entries(canonical))
+        self.assertIn("acceptance-plan-self", selected)
+        self.assertIn("acceptance-runtime-provisioning-self", selected)
+
     def test_proven_local_gate_has_no_gap(self) -> None:
         report = MODULE.detect(
             claim="Acceptance planner remains valid",
