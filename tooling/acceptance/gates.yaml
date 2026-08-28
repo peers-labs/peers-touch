@@ -218,7 +218,7 @@
       "description": "Validate the unified messaging platform ownership, protocol, queue, and crypto contracts."
     },
     "chat-desktop-gateway-e2e": {
-      "command": "python3 tooling/acceptance/gates/chat/desktop_gateway_e2e.py",
+      "command": "python3 -m tooling.acceptance.gates.chat.desktop_gateway_e2e",
       "timeout_seconds": 600,
       "environment": "local-desktop-gateway",
       "provisioner": "local-desktop-gateway",

@@ -343,6 +343,19 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             with self.subTest(suite=suite):
                 self.assertIn(suite, command)
 
+    def test_desktop_gateway_gate_runs_as_repo_module(self) -> None:
+        gates = json.loads(
+            (ROOT / "tooling/acceptance/gates.yaml").read_text(
+                encoding="utf-8"
+            )
+        )["gates"]
+
+        self.assertEqual(
+            gates["chat-desktop-gateway-e2e"]["command"],
+            "python3 -m "
+            "tooling.acceptance.gates.chat.desktop_gateway_e2e",
+        )
+
     def test_station_readback_uses_strict_shared_ssh_transport(self) -> None:
         support = (
             ROOT / "tooling/acceptance/gates/chat/native_support.py"
