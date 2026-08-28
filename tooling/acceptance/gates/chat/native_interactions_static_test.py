@@ -158,6 +158,7 @@ class NativeInteractionContractsTest(unittest.TestCase):
 
         self.assertIn("return async_harness(", retry_submission)
         self.assertNotIn("except Exception", retry_submission)
+        self.assertIn("contentState={content_state}", source)
 
     def test_interaction_runner_binds_selected_runtime_cell(self) -> None:
         source = self.source(
