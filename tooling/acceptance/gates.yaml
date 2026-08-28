@@ -37,10 +37,15 @@
       "description": "Validate native runner fail-closed evidence, MP-W13 no-bypass DOM actions, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey."
     },
     "chat-native-two-client-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_runner && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_entry && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
       "timeout_seconds": 1800,
       "environment": "native-tauri-embedded-webdriver",
       "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext plus DELIVERED receipt visibility."
     },

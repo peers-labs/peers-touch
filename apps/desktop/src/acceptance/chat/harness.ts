@@ -273,11 +273,7 @@ export function installAcceptanceHarness(): void {
     },
 
     async syncFriendSession({ sessionUlid, limit: _limit = 50, maxPages: _maxPages = 1 }: SyncFriendInput) {
-      const social = useSocialChatStore.getState();
-      await imServiceV1.conversation.syncFromStation(sessionUlid, _limit);
-      await social.loadMessages(sessionUlid, 'friend');
-      social.selectSession(sessionUlid);
-      social.setActiveTab('friend');
+      await refreshConversation('friend', sessionUlid);
       const messages = useSocialChatStore.getState().getIMMessages('friend', sessionUlid);
       return {
         sessionUlid,

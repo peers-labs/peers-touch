@@ -278,6 +278,9 @@ Deliver:
 
 - `native_product_closure_runner.py` consumes `TauriDriver` and
   `NativeDesktopAdapter` only.
+- Exact-range receiver proof `native_two_client_runner.py` consumes the same
+  `NativeDesktopRuntimeBinding`; it must not retain a local-binary launcher
+  path when selected for a remote runtime cell.
 - Existing MP-W13 actors, product actions, selectors, assertions and
   first-failed-boundary behavior remain unchanged.
 - Existing Composer exact-value precondition is preserved and independently
@@ -328,6 +331,9 @@ Targets:
 - `tooling/acceptance/drivers/native/linux_x11.py`
 - `tooling/acceptance/drivers/native/runtime.py`
 - `tooling/acceptance/gates/chat/native_product_closure_runner.py`
+- `tooling/acceptance/gates/chat/native_two_client_entry.py`
+- `tooling/acceptance/gates/chat/native_two_client_runner.py`
+- `tooling/acceptance/gates/chat/native_two_client_e2e.py`
 - `tooling/acceptance/images/desktop-linux/remote_control.py`
 - `tooling/acceptance/tests/test_native_desktop_linux.py`
 
@@ -697,6 +703,27 @@ Chat business-Fixture entrypoint mismatch: the reset module was invoked by file
 path even though it imports the shared Acceptance package. The Chat runner now
 uses `python -m tooling.acceptance.fixtures.chat_native_reset`; this is a
 business injection correction and does not alter runtime-cell lifecycle.
+
+Independent review of the exact-range receiver migration then found four
+mechanical NDR-W6 gaps. The Gate still wrote reports under the repository,
+validated evidence by path existence, omitted the full cell manifest from its
+source identity, lost structured cleanup on failed journeys, and the W8
+aggregate target did not pass the selected runtime cell. The correction uses
+the canonical Evidence Store and same-run `ArtifactRef` validation, exposes the
+immutable runtime-cell manifest through `NativeDesktopRuntimeBinding`, records
+the environment/Station/cell/binary identity chain, updates steps and cleanup
+from `finally`, and passes `RUNTIME_CELL` through both Make entrypoints. These
+changes preserve the Chat assertions and only complete the accepted D-11,
+D-13, D-14, and D-16 evidence contracts. The exact-range run also removed the
+obsolete repo-local output from `make acceptance-plan`; its default path now
+publishes and reloads the immutable latest plan through the Evidence Store.
+The first live receiver run also aligned actor startup with the existing
+canonical identity contract by hydrating the active actor after authentication;
+cleanup now owns every started session and only logs out sessions that reached
+authenticated state.
+The following receiver run removed the last legacy conversation sync from the
+Chat harness: both actors now project the same deterministic Direct through the
+current messaging command before receiver-visible delivery begins.
 
 ## 13. Final Readiness Gate
 

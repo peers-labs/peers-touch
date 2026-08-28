@@ -62,8 +62,10 @@
           "apps/station/app/subserver/messaging/subserver.go",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
+          "tooling/acceptance/gates/chat/native_two_client_entry.py",
           "tooling/acceptance/gates/chat/native_two_client_runner.py",
-          "tooling/acceptance/gates/chat/native_two_client_e2e.py"
+          "tooling/acceptance/gates/chat/native_two_client_e2e.py",
+          "tooling/acceptance/gates/chat/native_two_client_e2e_test.py"
         ]
       },
       "require": [
