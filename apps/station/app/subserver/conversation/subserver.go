@@ -97,7 +97,6 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		&conversationModel{},
 		&conversationMemberModel{},
 		&conversationMemberDeviceModel{},
-		&conversationMemberSettingsModel{},
 		&conversationEventModel{},
 		&conversationCommandReceiptModel{},
 		&conversationCommandProposalModel{},
@@ -113,7 +112,11 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	repo := newPostgresConversationRepo(rds)
 	s.repo = repo
 	s.proposalStore = newCommandProposalStore(rds)
-	s.memberSettings = newMemberSettingsStore(rds)
+	memberSettings := newMemberSettingsStore(rds)
+	if err := memberSettings.AutoMigrate(); err != nil {
+		return err
+	}
+	s.memberSettings = memberSettings
 	s.messagingAuthority = msginf.NewAuthorityRepository(rds)
 	s.kpStore = NewKeyPackageStore(rds)
 	if err := s.kpStore.AutoMigrate(); err != nil {

@@ -17,8 +17,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core import (
+    ArtifactRef,
     CredentialRef,
     EnvironmentContract,
+    EvidenceConflict,
     EvidenceStore,
     new_report,
 )
@@ -127,6 +129,149 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(
             latest["result"]["runtimeCell"],
             "desktop-linux-native",
+        )
+
+    def test_provisioner_cleanup_is_immutable_and_traceable(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("synthetic-gate", source={})
+
+            cleanup_ref = module.persist_provisioner_cleanup_result(
+                gate_run=run,
+                gate_id="synthetic-gate",
+                environment="synthetic-environment",
+                provisioner_id="synthetic-environment",
+                cleanup_status="passed",
+                completed_resources=("runtime", "source-lease"),
+                cleanup_error="",
+                secret_values=(),
+            )
+            result = module.standardize_result(
+                {
+                    "id": "synthetic-gate",
+                    "status": "passed",
+                    "cleanupStatus": "passed",
+                    "cleanupArtifact": cleanup_ref,
+                    "sourceArtifact": {"path": "reports/gate.json"},
+                    "sourceArtifactKind": "acceptance-gate-evidence-report",
+                    "sourcePhase": "Runtime Provisioning",
+                    "sourceBom": ["WS2"],
+                    "sourceSpec": ["D-07"],
+                    "sourceGate": "cleanup must be durable",
+                },
+                "/tmp/acceptance-plan.json",
+            )
+            cleanup = store.read_json(ArtifactRef.from_dict(cleanup_ref))
+            with self.assertRaises(EvidenceConflict):
+                module.persist_provisioner_cleanup_result(
+                    gate_run=run,
+                    gate_id="synthetic-gate",
+                    environment="synthetic-environment",
+                    provisioner_id="synthetic-environment",
+                    cleanup_status="failed",
+                    completed_resources=(),
+                    cleanup_error="runtime remained allocated",
+                    secret_values=(),
+                )
+            run.close()
+
+        self.assertEqual(
+            cleanup["artifactKind"],
+            "acceptance-provisioner-cleanup-result",
+        )
+        self.assertEqual(cleanup["status"], "passed")
+        self.assertEqual(
+            cleanup["completedResources"],
+            ["runtime", "source-lease"],
+        )
+        self.assertEqual(result["traceability"]["status"], "complete")
+        self.assertEqual(
+            result["traceability"]["cleanupArtifact"],
+            cleanup_ref,
+        )
+
+    def test_cleanup_failure_requires_cleanup_artifact_traceability(
+        self,
+    ) -> None:
+        module = load_module()
+        result = module.standardize_result(
+            {
+                "id": "synthetic-gate",
+                "status": "failed",
+                "cleanupStatus": "failed",
+                "cleanupError": "runtime remained allocated",
+                "sourceArtifact": {"path": "reports/gate.json"},
+                "sourceArtifactKind": "acceptance-gate-evidence-report",
+                "sourcePhase": "Runtime Provisioning",
+                "sourceBom": ["WS2"],
+                "sourceSpec": ["D-07"],
+                "sourceGate": "cleanup must be durable",
+            },
+            "/tmp/acceptance-plan.json",
+        )
+
+        self.assertEqual(result["completionStatus"], "PARTIAL")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["traceability"]["status"], "missing")
+        self.assertIn(
+            "cleanupArtifact",
+            result["traceability"]["missingFields"],
+        )
+
+    def test_failed_cleanup_artifact_does_not_weaken_failure_semantics(
+        self,
+    ) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("synthetic-gate", source={})
+            cleanup_ref = module.persist_provisioner_cleanup_result(
+                gate_run=run,
+                gate_id="synthetic-gate",
+                environment="synthetic-environment",
+                provisioner_id="synthetic-environment",
+                cleanup_status="failed",
+                completed_resources=("runtime",),
+                cleanup_error="source lease remained allocated",
+                secret_values=(),
+            )
+            cleanup = store.read_json(ArtifactRef.from_dict(cleanup_ref))
+            run.close()
+
+        result = module.standardize_result(
+            {
+                "id": "synthetic-gate",
+                "status": "failed",
+                "cleanupStatus": "failed",
+                "cleanupError": cleanup["error"],
+                "cleanupArtifact": cleanup_ref,
+                "sourceArtifact": {"path": "reports/gate.json"},
+                "sourceArtifactKind": "acceptance-gate-evidence-report",
+                "sourcePhase": "Runtime Provisioning",
+                "sourceBom": ["WS2"],
+                "sourceSpec": ["D-07"],
+                "sourceGate": "cleanup must be durable",
+            },
+            "/tmp/acceptance-plan.json",
+        )
+
+        self.assertEqual(cleanup["status"], "failed")
+        self.assertEqual(cleanup["completionStatus"], "PARTIAL")
+        self.assertEqual(cleanup["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["completionStatus"], "PARTIAL")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["traceability"]["status"], "complete")
+        self.assertEqual(
+            result["traceability"]["cleanupArtifact"],
+            cleanup_ref,
         )
 
     def test_finalize_gate_result_redacts_and_rejects_secret_metadata(

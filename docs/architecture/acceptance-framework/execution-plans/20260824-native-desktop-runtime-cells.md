@@ -744,6 +744,35 @@ and independently sources Phase/BOM/Spec/Gate traceability from a validation
 artifact. The run remains `PARTIAL/UNPROVEN`; a new exact-source aggregate run
 is required.
 
+### 2026-08-28 NDR-W7 Closure Hardening
+
+The source-bound Linux Product run
+`20260828T142622748616Z-bbff7c7eb9e2c2de7bc43b0ef990e94e`
+and receiver run
+`20260828T150121373022Z-051e7bcc11587cb9ccd6d1fc36dc6217`
+both reached `DONE/PROVEN` on candidate `f72f7d95091d`. The Product run bound
+the clean source, disposable Station `18132`, Linux binary, native UI journey,
+and actor cleanup. The receiver run independently proved bidirectional visible
+delivery.
+
+The final independent review identified five runtime/evidence hardening gaps:
+
+- destructive Chat reset must require port `18132` and reject protected ports
+  `18080` and `4445`;
+- Station attestation must use the shared strict known-host SSH transport;
+- a supplied Gap Detector plan must not omit Gates selected by the canonical
+  exact-range planner;
+- outer Provisioner cleanup must be an immutable, traceable artifact;
+- Product proof must validate the complete runtime-cell identity, including
+  cell run, host key, host identity, image, clean remote checkout, source
+  digest, and binary digest equality.
+
+These corrections preserve the NDR ownership boundary and do not alter the Chat
+journey, selectors, ordering, or timeouts. The final candidate must regenerate
+Product, receiver, exact-range, Gap Detector, cleanup, and review evidence after
+this plan update. NDR-W8 macOS and NDR-W9 Windows remain explicitly separate
+and unproven by the Linux result.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

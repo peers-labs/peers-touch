@@ -56,6 +56,41 @@ func newMemberSettingsStore(db *gorm.DB) *memberSettingsStore {
 	return &memberSettingsStore{db: db}
 }
 
+func (s *memberSettingsStore) AutoMigrate() error {
+	if err := s.db.AutoMigrate(&conversationMemberSettingsModel{}); err != nil {
+		return err
+	}
+
+	return s.db.Exec(`
+		INSERT INTO conversation_member_settings (
+			conversation_id,
+			ptid,
+			nickname,
+			muted,
+			pinned,
+			alert_enabled,
+			background,
+			background_image,
+			cleared_at_unix_ms,
+			updated_at
+		)
+		SELECT
+			conversation_id,
+			ptid,
+			nickname,
+			muted,
+			FALSE,
+			CASE WHEN muted THEN FALSE ELSE TRUE END,
+			'default',
+			'',
+			0,
+			joined_at
+		FROM conversation_members
+		WHERE TRUE
+		ON CONFLICT (conversation_id, ptid) DO NOTHING
+	`).Error
+}
+
 func (s *memberSettingsStore) Get(
 	ctx context.Context,
 	conversationID string,

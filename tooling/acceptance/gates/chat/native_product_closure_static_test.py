@@ -11,6 +11,8 @@ from pathlib import Path
 
 from selenium.webdriver.common.by import By
 
+from tooling.acceptance.core import GateError
+from tooling.acceptance.core.evidence import new_report
 from tooling.acceptance.gates.chat.native_product_closure_runner import (
     NativeProductClosureGate,
     VALID_ATTACHMENT_IMAGE_BYTES,
@@ -54,6 +56,45 @@ CREATE_GROUP_MODAL = (
 HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
 
 
+class SyntheticLinuxRuntimeBinding:
+    cell_id = "desktop-linux-native"
+
+    def __init__(self) -> None:
+        self.runtime = {
+            "artifactKind": "acceptance-runtime-cell-manifest",
+            "cellId": self.cell_id,
+            "gateId": "chat-native-product-closure-e2e",
+            "runId": "cell-run-a",
+            "state": "LEASED",
+            "platform": {
+                "os": "linux",
+                "imageDigest": "c" * 64,
+            },
+            "transport": {
+                "hostIdentitySha256": "d" * 64,
+                "hostKeySha256": "e" * 64,
+            },
+            "source": {
+                "commit": "commit-a",
+                "workspaceDigest": "clean",
+                "remoteSourceDigest": "b" * 64,
+                "remoteCheckoutClean": True,
+                "binarySha256": "a" * 64,
+            },
+        }
+        self.binary = {
+            "path": "runtime-cell:desktop-linux-native:cell-run-a:bin",
+            "sha256": "a" * 64,
+            "sourceCommit": "commit-a",
+        }
+
+    def runtime_identity(self) -> dict[str, object]:
+        return self.runtime
+
+    def binary_identity(self) -> dict[str, str]:
+        return self.binary
+
+
 class NativeProductClosureStaticTests(unittest.TestCase):
     def setUp(self) -> None:
         self.source = RUNNER.read_text(encoding="utf-8")
@@ -84,6 +125,69 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.create_group_modal = CREATE_GROUP_MODAL.read_text(encoding="utf-8")
         self.http_gateway = HTTP_GATEWAY.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
+
+    def source_identity_gate(
+        self,
+        runtime_binding: SyntheticLinuxRuntimeBinding,
+    ) -> NativeProductClosureGate:
+        gate = object.__new__(NativeProductClosureGate)
+        gate.manifest = {
+            "source": {
+                "commit": "commit-a",
+                "workspaceDigest": "clean",
+            },
+            "station": {
+                "liveCommit": "commit-a",
+                "workspaceDigest": "clean",
+                "protoDigest": "f" * 64,
+            },
+        }
+        gate.runtime_binding = runtime_binding
+        gate.report = new_report(gate.gate_id)
+        return gate
+
+    def test_source_identity_binds_linux_cell_host_image_and_binary(self) -> None:
+        binding = SyntheticLinuxRuntimeBinding()
+        gate = self.source_identity_gate(binding)
+
+        identity = gate.source_identity()
+
+        self.assertEqual(identity["runtimeCell"], binding.runtime)
+        self.assertEqual(identity["binary"], binding.binary)
+        self.assertEqual(gate.report.runtime["runtimeCellRunId"], "cell-run-a")
+        self.assertTrue(gate.report.assertions[-1].passed)
+
+    def test_source_identity_rejects_incomplete_or_mismatched_runtime(self) -> None:
+        mutations = {
+            "missing cell run": lambda binding: binding.runtime.update(
+                {"runId": ""}
+            ),
+            "missing host identity": lambda binding: binding.runtime[
+                "transport"
+            ].update({"hostIdentitySha256": ""}),
+            "missing image digest": lambda binding: binding.runtime[
+                "platform"
+            ].update({"imageDigest": ""}),
+            "dirty remote checkout": lambda binding: binding.runtime[
+                "source"
+            ].update({"remoteCheckoutClean": False}),
+            "missing remote digest": lambda binding: binding.runtime[
+                "source"
+            ].update({"remoteSourceDigest": ""}),
+            "binary digest mismatch": lambda binding: binding.runtime[
+                "source"
+            ].update({"binarySha256": "9" * 64}),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                binding = SyntheticLinuxRuntimeBinding()
+                mutate(binding)
+                gate = self.source_identity_gate(binding)
+                with self.assertRaisesRegex(
+                    GateError,
+                    "source_build_runtime_identity",
+                ):
+                    gate.source_identity()
 
     def test_native_click_reveal_leaves_visible_target_unchanged(self) -> None:
         element = object()

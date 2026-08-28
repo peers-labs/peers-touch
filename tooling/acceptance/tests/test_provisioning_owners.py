@@ -35,6 +35,11 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            known_hosts = root / "known_hosts"
+            known_hosts.write_text(
+                "station.example ssh-ed25519 test-key\n",
+                encoding="utf-8",
+            )
             environment = (
                 root
                 / ".local"
@@ -49,6 +54,8 @@ class StationAttestationOwnerTests(unittest.TestCase):
                         "PT_DEPLOY_HOST=station.example",
                         "PT_DEPLOY_USER=acceptance",
                         "PT_DEPLOY_PATH=station-three",
+                        "PT_DEPLOY_SSH_PORT=2222",
+                        f"PT_DEPLOY_KNOWN_HOSTS_FILE={known_hosts}",
                     )
                 )
                 + "\n",
@@ -64,7 +71,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 "tooling.acceptance.core.attestation.REPO_ROOT",
                 root,
             ), patch(
-                "tooling.acceptance.core.attestation.subprocess.run",
+                "tooling.acceptance.transports.ssh.subprocess.run",
                 return_value=completed,
             ) as run:
                 identity = _remote_source_identity("station-three")
@@ -73,10 +80,52 @@ class StationAttestationOwnerTests(unittest.TestCase):
             identity,
             ("abcdef123456", "clean", "proto-digest"),
         )
-        remote_command = run.call_args.args[0][-1]
+        command = run.call_args.args[0]
+        remote_command = command[-1]
         self.assertIn("git status --porcelain | sed", remote_command)
         self.assertIn("\\.bare\\.git\\/", remote_command)
         self.assertNotIn("apps/mobile/ios", remote_command)
+        self.assertIn("StrictHostKeyChecking=yes", command)
+        self.assertNotIn("StrictHostKeyChecking=no", command)
+        self.assertIn(f"UserKnownHostsFile={known_hosts}", command)
+        self.assertIn("2222", command)
+        self.assertEqual(run.call_args.kwargs["timeout"], 30)
+        self.assertFalse(run.call_args.kwargs["check"])
+
+    def test_remote_attestation_rejects_invalid_known_hosts_contract(self) -> None:
+        from tooling.acceptance.core.attestation import _remote_source_identity
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = (
+                root
+                / ".local"
+                / "deploy"
+                / "envs"
+                / "station-three.env"
+            )
+            environment.parent.mkdir(parents=True)
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=station.example",
+                        "PT_DEPLOY_USER=acceptance",
+                        "PT_DEPLOY_PATH=station-three",
+                        f"PT_DEPLOY_KNOWN_HOSTS_FILE={root / 'missing-known-hosts'}",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with patch(
+                "tooling.acceptance.core.attestation.REPO_ROOT",
+                root,
+            ), self.assertRaisesRegex(
+                BlockedError,
+                "SSH contract is invalid",
+            ):
+                _remote_source_identity("station-three")
 
     def test_workspace_digest_binds_file_content(self) -> None:
         # The IDE git wrapper writes .git/ai asynchronously; use native Git so

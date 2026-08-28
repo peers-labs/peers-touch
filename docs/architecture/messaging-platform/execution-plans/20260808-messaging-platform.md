@@ -988,7 +988,7 @@ Closure enforcement (deterministic):
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
 | MP-W10-E | reopened by W13 | W05/W10-D | Prior byte-exact Engine evidence remains valid for its recorded runtime, but current product use proves the Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, and count conservation are not closed. W13-E/F must replace the product-proof claim with real UI evidence. |
 | MP-W12 | reopened by W13 (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | Prior authority/Engine interaction evidence remains useful, but current product use proves thread panel, reaction picker, hover toolbar, and complete transcript convergence were bypassed or unasserted. W13-A/B/F must rerun through real Native UI actions. Mobile remains pending W09. |
-| MP-W13 | in progress | W10-E/W12 + Social Runtime Phase 3 | The prior Linux run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` remains valid only for its recorded assertions. Persistent Desktop use exposed missing conversation-list search create/reuse proof and destructive reset sharing with Station Three. MP-W13-F remains `UNPROVEN` until the updated Gate runs against an Acceptance-exclusive disposable Station and the exact-range Gates, Gap Detector, Completion Audit, and independent review pass. |
+| MP-W13 | completed (Linux Desktop) | W10-E/W12 + Social Runtime Phase 3 | The source-bound Linux Product and receiver Gates prove the MP-W13-F visible journey on the disposable `18132` Station, including Direct create/reuse, one-row list identity, localized feedback, settings, attachments, restart, clear/restore, second-device recovery, receiver delivery, and reverse cleanup. The final candidate must retain matching Product/receiver/CI evidence after this plan update; macOS, Windows, and Mobile remain separate platform claims. |
 | MP-W11 | reopened pending W13 | W02-W10/W12/W13 | The previous closure verdict is invalid for full product readiness because its Native evidence did not prove the receiver-visible paths exposed by W13. Rerun only after W13-F passes and stale reports are rejected by source/build/runtime identity. |
 
 The 2026-08-27 persistent Linux Desktop handoff exposed four additional MP-W13-F
@@ -1121,6 +1121,35 @@ because it selected the validation JSON as the primary environment artifact
 instead of the canonical Gate report. The runner now deterministically prefers
 the current Gate's `acceptance-gate-evidence-report` and uses validation only
 for traceability metadata. A new exact-source aggregate run is required.
+
+
+### 2026-08-28 MP-W13-F Linux Closure Audit
+
+The clean candidate `f72f7d95091d` produced source-bound `DONE/PROVEN`
+evidence for both required Linux runtime journeys:
+
+- Product Gate
+  `20260828T142622748616Z-bbff7c7eb9e2c2de7bc43b0ef990e94e`
+  proved Direct search create/reuse with one list row, no forbidden or raw
+  localized feedback, settings/background, attachments, offline and restart
+  recovery, clear/restore, second-device recovery, and actor cleanup.
+- Receiver Gate
+  `20260828T150121373022Z-051e7bcc11587cb9ccd6d1fc36dc6217`
+  proved bidirectional receiver-visible delivery and cleanup.
+- Exact-range CI/static aggregate
+  `20260828T150412143545Z-29c0e91144c9fe905af2deccfe4bade0`
+  passed all eight selected structural and cheap Gates.
+
+Independent review then found closure defects outside the product assertions:
+the disposable reset policy did not hard-reject protected ports, Station
+attestation bypassed strict host-key verification, the Gap Detector accepted
+filtered exact-range plans, outer Provisioner cleanup lacked immutable
+evidence, Product proof omitted the complete runtime-cell identity, and
+member-settings migration/publication semantics were incomplete. The final
+candidate closes those defects without changing product selectors, ordering,
+timeouts, or success assertions. All source-bound runtime and exact-range
+evidence must be regenerated after this documentation update. The external
+Evidence Store remains the source of truth for those final run IDs.
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
