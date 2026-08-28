@@ -382,6 +382,68 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             },
         )
 
+    def test_group_creation_uses_current_production_harness_contract(
+        self,
+    ) -> None:
+        for filename in (
+            "native_interactions_runner.py",
+            "native_typing_runner.py",
+        ):
+            with self.subTest(runner=filename):
+                source = (
+                    ROOT / "tooling/acceptance/gates/chat" / filename
+                ).read_text(encoding="utf-8")
+                tree = ast.parse(source)
+                group_assignment = next(
+                    node
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Assign)
+                    and any(
+                        isinstance(target, ast.Name)
+                        and target.id == "group"
+                        for target in node.targets
+                    )
+                )
+                self.assertIsInstance(group_assignment.value, ast.Call)
+                create_group_call = group_assignment.value
+                self.assertIsInstance(create_group_call.func, ast.Name)
+                self.assertEqual(create_group_call.func.id, "async_harness")
+                self.assertEqual(
+                    ast.literal_eval(create_group_call.args[1]),
+                    "createGroup",
+                )
+                payload = create_group_call.args[2]
+                self.assertIsInstance(payload, ast.Dict)
+                self.assertIn(
+                    "memberDids",
+                    [ast.literal_eval(key) for key in payload.keys],
+                )
+
+                group_id_assignment = next(
+                    node
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Assign)
+                    and any(
+                        isinstance(target, ast.Name)
+                        and target.id == "group_id"
+                        for target in node.targets
+                    )
+                )
+                group_id_getters = [
+                    node
+                    for node in ast.walk(group_id_assignment.value)
+                    if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "get"
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and node.args[0].value == "groupUlid"
+                ]
+                self.assertEqual(
+                    len(group_id_getters),
+                    1,
+                )
+
     def test_multi_device_contract_is_unchanged(self) -> None:
         self.assertEqual(
             self.assignment("multi-device", "CLIENT_PORTS"),

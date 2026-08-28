@@ -2341,15 +2341,18 @@ class NativeInteractionsGate(AcceptanceGate):
             )
             self.assert_condition("direct_client_restart", True)
 
-            group = gateway_command(
+            group = async_harness(
                 self.clients["alice"],
-                "messaging_create_group",
+                "createGroup",
                 {
                     "name": f"acceptance-{time.time_ns()}",
-                    "member_ptids": [self.ptids["bob"], self.ptids["charlie"]],
+                    "memberDids": [
+                        self.ptids["bob"],
+                        self.ptids["charlie"],
+                    ],
                 },
             )
-            group_id = str((group or {}).get("conversation_id") or "")
+            group_id = str((group or {}).get("groupUlid") or "")
             if not group_id:
                 raise GateError("Group creation returned no conversation_id")
             self.conversations["group"] = group_id
