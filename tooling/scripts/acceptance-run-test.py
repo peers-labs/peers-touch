@@ -92,6 +92,43 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(latest["result"]["completionStatus"], "DONE")
         self.assertEqual(latest["result"]["proofStatus"], "PROVEN")
 
+    def test_finalize_gate_result_publishes_blocked_runtime_cell_result(
+        self,
+    ) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("synthetic-gate", source={"commit": "abc123"})
+
+            result = module.finalize_gate_result(
+                {
+                    "id": "synthetic-gate",
+                    "status": "blocked",
+                    "completionStatus": "BLOCKED",
+                    "proofStatus": "UNPROVEN",
+                    "blockedReason": "runtime unavailable",
+                },
+                run,
+                "/tmp/acceptance-plan.json",
+                runtime_cell="desktop-linux-native",
+            )
+            latest = store.latest(
+                "synthetic-gate",
+                runtime_cell="desktop-linux-native",
+            )
+            run.close()
+
+        self.assertEqual(result["runtimeCell"], "desktop-linux-native")
+        self.assertEqual(latest["result"]["completionStatus"], "BLOCKED")
+        self.assertEqual(latest["result"]["proofStatus"], "UNPROVEN")
+        self.assertEqual(
+            latest["result"]["runtimeCell"],
+            "desktop-linux-native",
+        )
+
     def test_finalize_gate_result_redacts_and_rejects_secret_metadata(
         self,
     ) -> None:

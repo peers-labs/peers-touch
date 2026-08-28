@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => ({
   prewarmMessages: vi.fn(),
   bumpChatUnread: vi.fn(),
   clearChatUnread: vi.fn(),
+  reconcileChatBadge: vi.fn(),
 }));
 
 const originalWindow = globalThis.window;
@@ -106,7 +107,7 @@ vi.mock('../store/navigationBadges', () => ({
   useNavigationBadgeStore: {
     getState: () => ({
       chatSurfaceVisible: true,
-      reconcileChatBadge: vi.fn(),
+      reconcileChatBadge: mocks.reconcileChatBadge,
       bumpChatUnread: mocks.bumpChatUnread,
       clearChatUnread: mocks.clearChatUnread,
     }),
@@ -277,6 +278,47 @@ describe('social realtime group membership side effects', () => {
     expect(mocks.prewarmMessages).toHaveBeenCalledTimes(1);
   });
 
+  it('runs a fresh projection refresh after the authenticated actor changes', async () => {
+    const firstProfileLoad = deferred<void>();
+    mocks.authenticatedActorId = 'ptid:peer:alice';
+    mocks.loadCurrentUserProfile.mockImplementationOnce(() => firstProfileLoad.promise);
+
+    const aliceRefresh = refreshSocialProjection('alice bootstrap', true);
+    await vi.waitFor(() => {
+      expect(mocks.loadCurrentUserProfile).toHaveBeenCalledTimes(1);
+    });
+
+    mocks.authenticatedActorId = 'ptid:peer:bob';
+    const bobRefresh = refreshSocialProjection('bob bootstrap', true);
+    expect(mocks.loadCurrentUserProfile).toHaveBeenCalledTimes(1);
+    expect(mocks.loadSessions).not.toHaveBeenCalled();
+
+    firstProfileLoad.resolve();
+    await Promise.all([aliceRefresh, bobRefresh]);
+
+    expect(mocks.loadCurrentUserProfile).toHaveBeenCalledTimes(2);
+    expect(mocks.loadSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not publish a stale badge after the actor changes during final hydration', async () => {
+    const aliceFinalHydration = deferred<void>();
+    mocks.authenticatedActorId = 'ptid:peer:alice';
+    mocks.loadGroupUnreadCounts.mockImplementationOnce(
+      () => aliceFinalHydration.promise,
+    );
+
+    const aliceRefresh = refreshSocialProjection('alice bootstrap', true);
+    await vi.waitFor(() => {
+      expect(mocks.loadGroupUnreadCounts).toHaveBeenCalledTimes(1);
+    });
+
+    mocks.authenticatedActorId = 'ptid:peer:bob';
+    const bobRefresh = refreshSocialProjection('bob bootstrap', true);
+    aliceFinalHydration.resolve();
+    await Promise.all([aliceRefresh, bobRefresh]);
+
+    expect(mocks.reconcileChatBadge).toHaveBeenCalledTimes(1);
+  });
 
   it('continues Station reconciliation when profile hydration fails', async () => {
     mocks.authenticatedActorId = 'ptid:peer:self';
