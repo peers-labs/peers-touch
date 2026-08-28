@@ -127,6 +127,24 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn('"attemptCount"', store)
         self.assertIn('"commandSha256"', store)
 
+    def test_interaction_commands_catch_up_before_target_validation(self) -> None:
+        source = self.source(
+            "apps/desktop/src-tauri/src/messaging/engine.rs"
+        )
+        for method, next_method in (
+            ("pub fn submit_edit(", "pub fn submit_metadata_interaction("),
+            ("pub fn submit_metadata_interaction(", "pub fn submit_read_cursor("),
+        ):
+            method_start = source.index(method)
+            method_end = source.index(next_method, method_start)
+            body = source[method_start:method_end]
+
+            drain = body.index(
+                "self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;"
+            )
+            projection = body.index(".message_projection(conversation_id, message_id)?")
+            self.assertLess(drain, projection)
+
     def test_native_runners_are_observation_bounded_and_source_bound(self) -> None:
         for path in (
             "tooling/acceptance/gates/chat/native_interactions_runner.py",

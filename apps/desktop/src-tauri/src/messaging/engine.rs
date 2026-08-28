@@ -1139,6 +1139,7 @@ impl MessagingEngine {
         {
             return Err("messaging edit intent is incomplete".to_string());
         }
+        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
         let (projection, _) = self
             .store
             .message_projection(conversation_id, message_id)?
@@ -1146,7 +1147,6 @@ impl MessagingEngine {
         if projection.sender_ptid != self.endpoint.ptid {
             return Err("messaging edit target is not authored by this actor".to_string());
         }
-        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
         let plan = self.prepare_send_plan(token, conversation_id)?;
         let conversation_kind = ConversationKind::try_from(plan.conversation_kind)
             .map_err(|_| "messaging edit conversation kind is invalid".to_string())?;
@@ -1205,6 +1205,7 @@ impl MessagingEngine {
         if conversation_id.trim().is_empty() || message_id.trim().is_empty() {
             return Err("messaging interaction target is required".to_string());
         }
+        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
         let (projection, _) = self
             .store
             .message_projection(conversation_id, message_id)?
@@ -1214,7 +1215,6 @@ impl MessagingEngine {
         {
             return Err("messaging retract target is not authored by this actor".to_string());
         }
-        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
         let plan = self.prepare_send_plan(token, conversation_id)?;
         let (local_sequence, local_hash) = self.store.authority_head(conversation_id)?;
         if local_sequence != plan.authority_sequence || local_hash != plan.authority_hash {
