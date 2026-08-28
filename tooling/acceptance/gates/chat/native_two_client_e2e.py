@@ -23,6 +23,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
 
 GATE_ID = "chat-native-two-client-e2e"
 SOURCE_REPORT_PATH = f"reports/{GATE_ID}.json"
+ENVIRONMENT_MANIFEST_PATH = "runtime/environment-manifest.json"
 VALIDATED_REPORT_PATH = "reports/chat-native-two-client-validation.json"
 REQUIRED_STEPS = {
     "station.identity",
@@ -187,9 +188,21 @@ def validate_report(
             "runtime-cell image identity is required",
         )
     manifest = report.get("manifest")
+    manifest_ref = current_artifact_ref(
+        ENVIRONMENT_MANIFEST_PATH,
+        repo_root=REPO_ROOT,
+        media_type="application/json",
+    )
+    require(
+        manifest_ref.workspace_id == source_ref.workspace_id
+        and manifest_ref.gate_id == source_ref.gate_id
+        and manifest_ref.run_id == source_ref.run_id,
+        "environment manifest must belong to the current Gate run",
+    )
+    environment_manifest = store.read_json(manifest_ref)
     require(
         isinstance(manifest, dict)
-        and manifest.get("runId") == source_ref.run_id
+        and manifest == environment_manifest
         and manifest.get("gateId") == GATE_ID
         and manifest.get("source") == orchestrator
         and manifest.get("station") == station,
