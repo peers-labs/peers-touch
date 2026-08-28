@@ -2561,6 +2561,29 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   rejection and bypasses the browser HTTP cache for read-after-delete checks.
   These changes require a new source-matched Foundation run before any AS-F05
   assertion can be promoted.
+- The exact-source `31fa299c1` run
+  `20260828T155949944295Z-9aa010f6ae609e980865f1b1c4223f2d`
+  retained `cleanup: passed` and advanced the unauthorized negative path:
+  `unauthorizedRejectedBeforeProvider` no longer failed. Browser AS-F05 still
+  failed `authorizedDownloadVerified` and
+  `failedUploadRemovalPreservedSiblings`. Both Browser and Native logs record
+  the same bound-station cache miss as `oss network error: builder error`.
+  Profile `two` advertises the capabilities host sentinel `self`; the Desktop
+  cache path currently concatenates that sentinel into `self/sub-oss/file`,
+  which is not an absolute request URL. The architecture contract defines
+  `self` as the bound Station origin, so the next implementation checkpoint
+  must resolve the sentinel at the capabilities boundary and retain independent
+  download, delete, and sibling-preservation assertions. AS-F05 and the full
+  Foundation Gate remain `PARTIAL / UNPROVEN`.
+- The follow-up Desktop checkpoint canonicalizes empty/`self` capability hosts
+  against the origin that was actually queried, preserving foreign Station
+  semantics while unifying bound-Station cache lookup, write, and invalidation.
+  File request URLs are now built with the structured URL API so actor-private
+  downloads cannot degrade into renderer-relative requests. Focused
+  verification passes: 23 OSS cache tests, Desktop TypeScript check, 67
+  Foundation scenario/probe/static tests, Rust `cargo check`, formatting, and
+  `git diff --check`. Runtime proof remains `UNPROVEN` until this checkpoint is
+  committed, deployed, and exercised by a new source-matched Foundation run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

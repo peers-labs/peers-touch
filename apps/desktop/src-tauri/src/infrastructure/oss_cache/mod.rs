@@ -291,6 +291,19 @@ fn normalize_origin(host: &str) -> String {
     host.trim().trim_end_matches('/').to_string()
 }
 
+fn canonical_origin_with_bound(origin: &str, bound_origin: &str) -> String {
+    let normalized = normalize_origin(origin);
+    if normalized.is_empty() || normalized == "self" {
+        normalize_origin(bound_origin)
+    } else {
+        normalized
+    }
+}
+
+fn canonical_bound_origin(origin: &str) -> String {
+    canonical_origin_with_bound(origin, &station_client::station_base_url())
+}
+
 // ── capabilities cache ──────────────────────────────────────────────
 
 static CAPS: OnceLock<RwLock<HashMap<String, OssCapabilities>>> = OnceLock::new();
@@ -301,7 +314,7 @@ fn caps_map() -> &'static RwLock<HashMap<String, OssCapabilities>> {
 
 /// Look up cached capabilities for `origin` without performing any I/O.
 pub fn capabilities_lookup(origin: &str) -> Option<OssCapabilities> {
-    let key = normalize_origin(origin);
+    let key = canonical_bound_origin(origin);
     caps_map().read().ok().and_then(|m| m.get(&key).cloned())
 }
 
@@ -309,7 +322,7 @@ pub fn capabilities_lookup(origin: &str) -> Option<OssCapabilities> {
 /// rotation or when an operator changes `host-override` and we need to
 /// refetch.
 pub fn capabilities_invalidate(origin: &str) {
-    let key = normalize_origin(origin);
+    let key = canonical_bound_origin(origin);
     if let Ok(mut m) = caps_map().write() {
         m.remove(&key);
     }
@@ -324,11 +337,11 @@ pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheErro
     if let Some(cached) = capabilities_lookup(origin) {
         return Ok(cached);
     }
-    let normalized = normalize_origin(origin);
-    if normalized.is_empty() || normalized == "self" {
-        // `self` means "the station this client is bound to" — route
-        // through station_client's configured base.
-        return capabilities_ensure(&station_client::station_base_url());
+    let normalized = canonical_bound_origin(origin);
+    if normalized.is_empty() {
+        return Err(OssCacheError::InvalidUri(
+            "bound station origin is empty".into(),
+        ));
     }
 
     let url = format!("{}/sub-oss/capabilities", normalized);
@@ -336,9 +349,10 @@ pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheErro
     if !resp.status().is_success() {
         return Err(OssCacheError::Network(format!("status {}", resp.status())));
     }
-    let caps: OssCapabilities = resp
+    let mut caps: OssCapabilities = resp
         .json()
         .map_err(|e| OssCacheError::Decode(e.to_string()))?;
+    caps.host = canonical_origin_with_bound(&caps.host, &normalized);
 
     if let Ok(mut m) = caps_map().write() {
         m.insert(normalized.clone(), caps.clone());
@@ -366,7 +380,7 @@ fn cache_path_for(uri: &OssUri) -> Result<PathBuf, OssCacheError> {
     // not collide. The key itself may already contain `/` segments
     // ("2026/04/26/file.png") — those become real subdirectories on
     // disk, which is intentional: the layout is human-debuggable.
-    let origin_segment = sanitize_path_segment(&uri.origin);
+    let origin_segment = sanitize_path_segment(&canonical_bound_origin(&uri.origin));
     Ok(dir.join(origin_segment).join(&uri.key))
 }
 
@@ -438,20 +452,15 @@ pub fn attachment_ensure(
         ));
     }
 
-    let mut url = format!(
-        "{}{}?key={}",
-        caps.host,
-        caps.file_endpoint,
-        urlencode(&uri.key)
-    );
-    if let Some(q) = signed_query {
-        if !q.is_empty() {
-            url.push('&');
-            url.push_str(q.trim_start_matches('&'));
-        }
-    }
+    let url = build_file_url(
+        &caps.host,
+        &caps.file_endpoint,
+        &uri.key,
+        None,
+        signed_query,
+    )?;
 
-    let bytes = http_get_bytes(&url, bearer)?;
+    let bytes = http_get_bytes(url.as_str(), bearer)?;
     write_to_cache(uri, &bytes)
 }
 
@@ -548,14 +557,14 @@ pub fn attachment_ensure_federated(
     // Step 3 — fetch bytes with the peer JWT. We append `&owner=…`
     // so the foreign FileMeta resolution lands on the right row;
     // `lookupFileMeta` honours this query param when present.
-    let url = format!(
-        "{}{}?key={}&owner={}",
-        foreign_caps.host.trim_end_matches('/'),
-        file_endpoint,
-        urlencode(&uri.key),
-        urlencode(home_actor_did),
-    );
-    let bytes = http_get_bytes(&url, Some(token.as_str()))?;
+    let url = build_file_url(
+        &foreign_caps.host,
+        &file_endpoint,
+        &uri.key,
+        Some(home_actor_did),
+        None,
+    )?;
+    let bytes = http_get_bytes(url.as_str(), Some(token.as_str()))?;
 
     // Step 4 — write through the same cache layout as the
     // non-federated path. The renderer cannot distinguish federated
@@ -624,6 +633,39 @@ fn http_get_request(
     req
 }
 
+fn build_file_url(
+    host: &str,
+    file_endpoint: &str,
+    key: &str,
+    owner: Option<&str>,
+    trailing_query: Option<&str>,
+) -> Result<reqwest::Url, OssCacheError> {
+    let canonical_host = canonical_bound_origin(host);
+    let base = reqwest::Url::parse(&canonical_host)
+        .map_err(|e| OssCacheError::Network(format!("invalid OSS host: {e}")))?;
+    let mut url = base
+        .join(file_endpoint)
+        .map_err(|e| OssCacheError::Network(format!("invalid OSS file endpoint: {e}")))?;
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("key", key);
+        if let Some(owner) = owner {
+            query.append_pair("owner", owner);
+        }
+    }
+    if let Some(trailing_query) = trailing_query {
+        let trailing_query = trailing_query.trim_start_matches(['?', '&']);
+        if !trailing_query.is_empty() {
+            let query = match url.query() {
+                Some(existing) => format!("{existing}&{trailing_query}"),
+                None => trailing_query.to_string(),
+            };
+            url.set_query(Some(&query));
+        }
+    }
+    Ok(url)
+}
+
 /// Persist `bytes` to the per-`uri` cache slot and return the path.
 fn write_to_cache(uri: &OssUri, bytes: &[u8]) -> Result<PathBuf, OssCacheError> {
     let dest = cache_path_for(uri)?;
@@ -638,11 +680,8 @@ fn write_to_cache(uri: &OssUri, bytes: &[u8]) -> Result<PathBuf, OssCacheError> 
 /// trailing-slash normalisation. Used by `oss_resolve_url` to
 /// decide between the local and federated download paths.
 pub fn is_bound_station(origin: &str) -> bool {
-    let local = normalize_origin(&station_client::station_base_url());
-    let candidate = normalize_origin(origin);
-    if candidate.is_empty() || candidate == "self" {
-        return true;
-    }
+    let local = canonical_bound_origin("");
+    let candidate = canonical_bound_origin(origin);
     candidate == local
 }
 
@@ -821,26 +860,6 @@ fn prune_empty_dirs(root: &std::path::Path) {
     }
 }
 
-fn urlencode(input: &str) -> String {
-    // Minimal percent-encoding for path segments inside a query value.
-    // We keep `/` because Station's `key` is already a forward-slash
-    // path; both `key=2026/04/26/file.png` and the encoded form work,
-    // but the unencoded form is friendlier in logs.
-    let mut out = String::with_capacity(input.len());
-    for ch in input.chars() {
-        match ch {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' | '/' => out.push(ch),
-            other => {
-                let mut buf = [0u8; 4];
-                for byte in other.encode_utf8(&mut buf).as_bytes() {
-                    out.push_str(&format!("%{byte:02X}"));
-                }
-            }
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -861,6 +880,13 @@ mod tests {
         let uri = OssUri::parse("oss://station.local:9090/key123").unwrap();
         assert_eq!(uri.origin, "station.local:9090");
         assert_eq!(uri.key, "key123");
+    }
+
+    #[test]
+    fn parse_self_origin_preserves_round_trip() {
+        let uri = OssUri::parse("oss://self/attachments/file.png").unwrap();
+        assert_eq!(uri.origin, "self");
+        assert_eq!(uri.to_uri(), "oss://self/attachments/file.png");
     }
 
     #[test]
@@ -887,7 +913,10 @@ mod tests {
     #[test]
     fn parse_bare_key_uses_local_station() {
         let uri = OssUri::parse("2026/04/26/abc.png").unwrap();
-        assert!(!uri.origin.is_empty());
+        assert_eq!(
+            uri.origin,
+            normalize_origin(&station_client::station_base_url())
+        );
         assert_eq!(uri.key, "2026/04/26/abc.png");
     }
 
@@ -897,9 +926,30 @@ mod tests {
     }
 
     #[test]
-    fn urlencode_keeps_slashes_and_safe_chars() {
-        assert_eq!(urlencode("2026/04/26/abc.png"), "2026/04/26/abc.png");
-        assert_eq!(urlencode("a b"), "a%20b");
+    fn canonical_origin_maps_self_and_empty_to_bound_station() {
+        let bound = "https://station.example.test/base/";
+        assert_eq!(
+            canonical_origin_with_bound("self", bound),
+            "https://station.example.test/base"
+        );
+        assert_eq!(
+            canonical_origin_with_bound("", bound),
+            "https://station.example.test/base"
+        );
+        assert_eq!(
+            canonical_origin_with_bound("https://foreign.example.test/", bound),
+            "https://foreign.example.test"
+        );
+    }
+
+    #[test]
+    fn foreign_capabilities_self_resolves_to_queried_origin() {
+        let local_bound = "https://bound.example.test";
+        let foreign_request = "https://foreign.example.test/";
+        let advertised_host = canonical_origin_with_bound("self", foreign_request);
+
+        assert_eq!(advertised_host, "https://foreign.example.test");
+        assert_ne!(advertised_host, local_bound);
     }
 
     // ── attachment_invalidate ──────────────────────────────────────
@@ -959,15 +1009,24 @@ mod tests {
 
     #[test]
     fn attachment_invalidate_preserves_sibling_cache_entries() {
-        let origin = format!("test.invalidate.sibling.{}", ulid::Ulid::new());
+        let scope = ulid::Ulid::new();
         let removed = OssUri {
-            origin: origin.clone(),
-            key: "tmp/removed.bin".to_string(),
+            origin: "self".to_string(),
+            key: format!("tmp/{scope}/removed.bin"),
         };
         let sibling = OssUri {
-            origin,
-            key: "tmp/sibling.bin".to_string(),
+            origin: station_client::station_base_url(),
+            key: format!("tmp/{scope}/sibling.bin"),
         };
+        assert_eq!(
+            cache_path_for(&OssUri {
+                origin: "self".to_string(),
+                key: sibling.key.clone(),
+            })
+            .expect("self cache path"),
+            cache_path_for(&sibling).expect("bound-origin cache path"),
+            "self and the bound Station share one cache namespace"
+        );
         let removed_path = match write_to_cache(&removed, b"removed") {
             Ok(path) => path,
             Err(OssCacheError::Storage(_)) => return,
@@ -987,17 +1046,31 @@ mod tests {
     }
 
     #[test]
-    fn http_get_request_adds_non_empty_bearer_without_affecting_anonymous_reads() {
+    fn absolute_file_get_adds_bearer_without_affecting_anonymous_reads() {
         use reqwest::header::AUTHORIZATION;
 
         let client = reqwest::blocking::Client::new();
-        let authenticated = http_get_request(
-            &client,
-            "http://127.0.0.1/sub-oss/file?key=private",
-            Some("actor-private-token"),
+        let url = build_file_url(
+            "http://127.0.0.1:18080",
+            "/sub-oss/file",
+            "private/a b.png",
+            None,
+            None,
         )
-        .build()
-        .expect("authenticated request should build");
+        .expect("absolute file URL should build");
+        let authenticated = http_get_request(&client, url.as_str(), Some("actor-private-token"))
+            .build()
+            .expect("authenticated request should build");
+        assert_eq!(authenticated.url().scheme(), "http");
+        assert_eq!(authenticated.url().host_str(), Some("127.0.0.1"));
+        assert_eq!(authenticated.url().path(), "/sub-oss/file");
+        assert_eq!(
+            authenticated
+                .url()
+                .query_pairs()
+                .collect::<Vec<(std::borrow::Cow<'_, str>, std::borrow::Cow<'_, str>)>>(),
+            vec![("key".into(), "private/a b.png".into())]
+        );
         assert_eq!(
             authenticated.headers().get(AUTHORIZATION),
             Some(&reqwest::header::HeaderValue::from_static(
