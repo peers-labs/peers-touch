@@ -235,6 +235,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("api.ossDeleteAgentAttachment", self.source)
         self.assertIn("fetch(resolved.url, { cache: 'no-store' })", self.source)
         self.assertIn("attachment = { ...png }", self.source)
+        self.assertIn(
+            "evidenceField(record, 'objectRef', 'object_ref')",
+            self.source,
+        )
         self.assertNotIn(
             "authorization_scope: `conversation:${rejectedConversation.conversation_id}`",
             self.source,

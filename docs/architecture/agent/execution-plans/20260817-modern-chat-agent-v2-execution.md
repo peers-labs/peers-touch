@@ -2652,6 +2652,15 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   production binding API for the duration of the scenario and restore the
   exact original binding in cleanup, isolating attachment behavior without
   prompt steering, mocks, or weakened provider/negative-path assertions.
+- The exact-source `8c5a80fb6` run
+  `20260828T184653499318Z-abd4706acc3781a8f2c809beaf7b4393`
+  passed the AS-F03/AS-F04 prefix and reached Browser AS-F05. The production
+  facts passed the independent oracle, but the Harness self-check reported
+  `opaqueReferencesOnly=false` because it read snake-case `object_ref` from
+  facts produced as camel-case `objectRef`. The Harness must use the shared
+  camel/snake evidence-field reader; this is a producer normalization defect,
+  not permission to weaken opaque-reference validation. Cleanup passed and the
+  Gate remains `PARTIAL / UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

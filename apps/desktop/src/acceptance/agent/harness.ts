@@ -2004,12 +2004,11 @@ function evaluateF05(
     unauthorizedRejectedBeforeProvider: rejected(rejections.unauthorized),
     opaqueReferencesOnly:
       evidenceArray(facts.references, 'foundationF05References').every(
-        (reference) =>
-          typeof evidenceRecord(reference, 'foundationF05Reference').object_ref
-            === 'string'
-          && String(
-            evidenceRecord(reference, 'foundationF05Reference').object_ref,
-          ).startsWith('oss:'),
+        (reference) => {
+          const record = evidenceRecord(reference, 'foundationF05Reference');
+          const objectRef = evidenceField(record, 'objectRef', 'object_ref');
+          return typeof objectRef === 'string' && objectRef.startsWith('oss:');
+        },
       ),
     authorizedDownloadVerified:
       download.authorized === true
