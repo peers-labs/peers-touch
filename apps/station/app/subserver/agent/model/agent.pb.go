@@ -10553,6 +10553,7 @@ type TurnDiagnosticToolFact struct {
 	DuplicateDeliveryCount uint32                 `protobuf:"varint,30,opt,name=duplicate_delivery_count,json=duplicateDeliveryCount,proto3" json:"duplicate_delivery_count,omitempty"`
 	ContinuationId         string                 `protobuf:"bytes,31,opt,name=continuation_id,json=continuationId,proto3" json:"continuation_id,omitempty"`
 	DispatchCommittedAt    *timestamppb.Timestamp `protobuf:"bytes,32,opt,name=dispatch_committed_at,json=dispatchCommittedAt,proto3" json:"dispatch_committed_at,omitempty"`
+	Approved               bool                   `protobuf:"varint,33,opt,name=approved,proto3" json:"approved,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -10809,6 +10810,13 @@ func (x *TurnDiagnosticToolFact) GetDispatchCommittedAt() *timestamppb.Timestamp
 		return x.DispatchCommittedAt
 	}
 	return nil
+}
+
+func (x *TurnDiagnosticToolFact) GetApproved() bool {
+	if x != nil {
+		return x.Approved
+	}
+	return false
 }
 
 type TurnDiagnosticReplay struct {
@@ -14077,7 +14085,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x11parent_message_id\x18\x05 \x01(\tR\x0fparentMessageId\x12.\n" +
 	"\x13replaces_message_id\x18\x06 \x01(\tR\x11replacesMessageId\x129\n" +
 	"\n" +
-	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xc7\v\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xe3\v\n" +
 	"\x16TurnDiagnosticToolFact\x12 \n" +
 	"\ftool_call_id\x18\x01 \x01(\tR\n" +
 	"toolCallId\x12\x1d\n" +
@@ -14119,7 +14127,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x17execution_attempt_count\x18\x1d \x01(\rR\x15executionAttemptCount\x128\n" +
 	"\x18duplicate_delivery_count\x18\x1e \x01(\rR\x16duplicateDeliveryCount\x12'\n" +
 	"\x0fcontinuation_id\x18\x1f \x01(\tR\x0econtinuationId\x12N\n" +
-	"\x15dispatch_committed_at\x18  \x01(\v2\x1a.google.protobuf.TimestampR\x13dispatchCommittedAt\"\xaf\a\n" +
+	"\x15dispatch_committed_at\x18  \x01(\v2\x1a.google.protobuf.TimestampR\x13dispatchCommittedAt\x12\x1a\n" +
+	"\bapproved\x18! \x01(\bR\bapproved\"\xaf\a\n" +
 	"\x14TurnDiagnosticReplay\x12\x17\n" +
 	"\aturn_id\x18\x01 \x01(\tR\x06turnId\x12'\n" +
 	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x19\n" +

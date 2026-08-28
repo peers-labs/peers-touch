@@ -71,19 +71,19 @@ func (s *TurnService) ExportTurnDiagnostics(
 	}
 
 	replay := &model.TurnDiagnosticReplay{
-		TurnId:         turn.ID,
-		ConversationId: turn.ConversationID,
-		AgentId:        turn.AgentID,
-		Status:         diagnosticTurnStatus(turn.Status),
-		TerminalReason: redactDiagnosticText(turn.TerminalReason),
-		Attempts:       attempts,
-		ContextLedgers: contextLedgers,
-		ToolCalls:      toolCalls,
-		Feedback:       feedback,
-		Messages:       messages,
-		StartedAt:      timestamppb.New(turn.StartedAt),
-		GeneratedAt:    timestamppb.New(time.Now().UTC()),
-		Trace:          trace,
+		TurnId:             turn.ID,
+		ConversationId:     turn.ConversationID,
+		AgentId:            turn.AgentID,
+		Status:             diagnosticTurnStatus(turn.Status),
+		TerminalReason:     redactDiagnosticText(turn.TerminalReason),
+		Attempts:           attempts,
+		ContextLedgers:     contextLedgers,
+		ToolCalls:          toolCalls,
+		Feedback:           feedback,
+		Messages:           messages,
+		StartedAt:          timestamppb.New(turn.StartedAt),
+		GeneratedAt:        timestamppb.New(time.Now().UTC()),
+		Trace:              trace,
 		ToolIterations:     uint32(max(turn.ToolIterations, 0)),
 		ToolIterationLimit: uint32(maxToolIterations),
 	}
@@ -329,6 +329,7 @@ func loadDiagnosticToolCalls(
 			ExecutionAttemptCount:  record.ExecutionAttemptCount,
 			DuplicateDeliveryCount: record.DuplicateDeliveryCount,
 			ContinuationId:         continuationByBatch[record.ToolBatchID],
+			Approved:               record.Approved,
 		}
 		if record.DispatchCommittedAt != nil {
 			fact.DispatchCommittedAt = timestamppb.New(*record.DispatchCommittedAt)

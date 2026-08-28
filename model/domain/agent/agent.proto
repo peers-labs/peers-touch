@@ -1304,6 +1304,7 @@ message TurnDiagnosticToolFact {
   uint32 duplicate_delivery_count = 30;
   string continuation_id = 31;
   google.protobuf.Timestamp dispatch_committed_at = 32;
+  bool approved = 33;
 }
 
 message TurnDiagnosticReplay {

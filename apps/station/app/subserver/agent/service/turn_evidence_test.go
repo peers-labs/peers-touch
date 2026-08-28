@@ -325,6 +325,7 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 		replay.ToolCalls[0].GetExecutionClaimId() != "claim-1" ||
 		replay.ToolCalls[0].GetSideEffectReceiptId() != "receipt-1" ||
 		replay.ToolCalls[0].GetContinuationId() != "continuation-1" ||
+		!replay.ToolCalls[0].GetApproved() ||
 		replay.ToolCalls[0].GetExecutionAttemptCount() != 1 ||
 		replay.ToolCalls[0].GetDuplicateDeliveryCount() != 2 ||
 		len(replay.Messages) != 2 ||

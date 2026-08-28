@@ -2196,6 +2196,16 @@ AS-F04 implementation progress (2026-08-28):
   returned `unknown command`. W8a must expose that same Rust application
   command through the Browser gateway; adding Browser-owned decision logic or
   bypassing Rust is forbidden. Cleanup passed; AS-F04 remains `UNPROVEN`.
+- Source-matched rerun
+  `20260828T075719129518Z-8a43827694b3398ceb06297c0c6459f8`
+  proved auto/manual execution exactly once, deny/expiry zero execution, and
+  the 25-iteration runtime loop bound. The independent oracle then rejected
+  `manualApprovalExecutedOnce` because the diagnostic contract omitted the
+  persisted `ToolCall.approved` fact, causing the Harness to classify a
+  successful manual decision as denied. Add that source-backed field
+  proto-first and regenerate Station, Desktop, and Mobile Web contracts;
+  deriving approval from the terminal status is forbidden. Cleanup passed;
+  AS-F04 remains `UNPROVEN`.
 
 **W8a checks**:
 
