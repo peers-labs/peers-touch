@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
@@ -204,5 +205,16 @@ func TestToolSchemaContextSegmentUsesPinnedCapabilityLineage(t *testing.T) {
 		len(segment.SourceRefs) != 1 ||
 		segment.SourceRefs[0] != "capability:tool:skills_list@manifest-version" {
 		t.Fatalf("Tool schema segment = %+v, tokens=%d", segment, tokens)
+	}
+}
+
+func TestTruncateRunesPreservesPersistenceBounds(t *testing.T) {
+	value := "failure:" + strings.Repeat("x", 120)
+	truncated := truncateRunes(value, 100)
+	if len([]rune(truncated)) != 100 {
+		t.Fatalf("bounded failure length = %d, want 100", len([]rune(truncated)))
+	}
+	if got := truncateRunes("短错误", 100); got != "短错误" {
+		t.Fatalf("short unicode failure changed: %q", got)
 	}
 }

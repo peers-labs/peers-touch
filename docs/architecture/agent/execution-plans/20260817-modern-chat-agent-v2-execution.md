@@ -2178,6 +2178,15 @@ AS-F04 implementation progress (2026-08-28):
   ToolCall loop. W8a must close that provider/Turn integration and add focused
   regression coverage before rerunning Foundation; prompt-only steering,
   parsing arbitrary assistant JSON, or relaxing the Harness is forbidden.
+- Source-matched rerun
+  `20260828T073454638216Z-6ae190d3fd51b7504e49b2839c2b77f6`
+  proved the native provider ToolCall reached `tool iteration 1`, then exposed
+  the next persistence defect: the 24-character manifest version was written
+  into `agent_tool_calls.schema_version varchar(20)`, rolling back the
+  ToolBatch transaction. The ToolCall schema must use the same 64-character
+  version bound as the canonical manifest, and terminal failure fields must be
+  bounded independently so an underlying persistence error cannot leave the
+  Turn running. Cleanup passed; AS-F04 remains `UNPROVEN`.
 
 **W8a checks**:
 

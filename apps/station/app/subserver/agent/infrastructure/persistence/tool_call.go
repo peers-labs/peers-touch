@@ -68,7 +68,7 @@ type ToolCall struct {
 	ToolName                    string     `gorm:"not null;type:varchar(200)"`
 	ToolCallID                  string     `gorm:"not null;type:varchar(100);uniqueIndex:idx_actor_tool_call,priority:2"` // LLM tool_call_id
 	CapabilityID                string     `gorm:"not null;type:varchar(200)"`
-	SchemaVersion               string     `gorm:"not null;type:varchar(20);default:'1'"`
+	SchemaVersion               string     `gorm:"not null;type:varchar(64);default:'1'"`
 	ExecutionOwner              string     `gorm:"not null;type:varchar(30);default:'unspecified'"`
 	BoundedArguments            []byte     `gorm:"not null;type:bytea"`
 	ResourceRefs                []byte     `gorm:"not null;type:bytea"`

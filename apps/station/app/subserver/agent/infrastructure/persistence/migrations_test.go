@@ -1,12 +1,29 @@
 package persistence
 
 import (
+	"sync"
 	"testing"
 	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
+
+func TestToolCallSchemaVersionFitsCapabilityManifestVersion(t *testing.T) {
+	parsed, err := schema.Parse(
+		&ToolCall{},
+		&sync.Map{},
+		schema.NamingStrategy{},
+	)
+	if err != nil {
+		t.Fatalf("parse ToolCall schema: %v", err)
+	}
+	field := parsed.LookUpField("SchemaVersion")
+	if field == nil || field.TagSettings["TYPE"] != "varchar(64)" {
+		t.Fatalf("ToolCall schema_version type = %v, want varchar(64)", field)
+	}
+}
 
 func TestMigrateAgentMessagesBackfillsConversationSequences(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:agent-message-migration?mode=memory&cache=shared"), &gorm.Config{})

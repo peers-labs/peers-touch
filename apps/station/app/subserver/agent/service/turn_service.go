@@ -3349,13 +3349,14 @@ func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, ste
 	}
 
 	now := time.Now()
+	boundedReason := truncateRunes(reason, 100)
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&persistence.AgentTurn{}).
 			Where("id = ?", turnID).
 			Updates(map[string]interface{}{
 				"status":          string(domain.TurnStatusFailed),
 				"final_response":  reason,
-				"terminal_reason": reason,
+				"terminal_reason": boundedReason,
 				"ended_at":        now,
 			}).Error; err != nil {
 			return err
@@ -3364,7 +3365,7 @@ func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, ste
 			Where("turn_id = ? AND ended_at IS NULL", turnID).
 			Updates(map[string]interface{}{
 				"status":     string(domain.TurnStatusFailed),
-				"error_code": reason,
+				"error_code": boundedReason,
 				"ended_at":   now,
 			}).Error
 	}); err != nil {
@@ -3385,6 +3386,17 @@ func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, ste
 	}
 
 	return nil
+}
+
+func truncateRunes(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit])
 }
 
 func (s *TurnService) cancelTurn(ctx context.Context, agentID, turnID, taskID, stepID string) error {
