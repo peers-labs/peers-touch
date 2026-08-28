@@ -1245,6 +1245,7 @@ async function runFoundationF05Scenario(input: {
   });
   const uploaded: AgentAttachmentRefInput[] = [];
   const startedAt = performance.now();
+  let scenarioError: unknown = null;
 
   try {
     const png = await api.ossUploadAgentAttachmentBytes({
@@ -1503,6 +1504,9 @@ async function runFoundationF05Scenario(input: {
         },
       },
     };
+  } catch (error) {
+    scenarioError = error;
+    throw error;
   } finally {
     const cleanup = await Promise.allSettled(
       uploaded.map(async (attachment) => {
@@ -1516,7 +1520,9 @@ async function runFoundationF05Scenario(input: {
       }),
     );
     const failed = cleanup.find((result) => result.status === 'rejected');
-    if (failed?.status === 'rejected') throw failed.reason;
+    if (failed?.status === 'rejected' && scenarioError === null) {
+      throw failed.reason;
+    }
   }
 }
 

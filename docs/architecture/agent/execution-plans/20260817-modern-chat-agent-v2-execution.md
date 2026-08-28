@@ -2517,6 +2517,13 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   whose upload path previously left `sha256` empty. Agent attachment integrity
   now requires both random and CAS key strategies to hash and persist uploaded
   bytes; key strategy controls addressing only, never checksum availability.
+- The source-matched `c9aa1e1e2` run reached Browser AS-F05 and reported
+  cleanup failure after product execution. A direct Station probe on the same
+  commit proved upload, pre-admission, explicit omission, ledger event, and
+  provider start. The Harness teardown previously allowed cleanup failure to
+  mask an earlier scenario exception; it now preserves the primary failure so
+  the next run reports the exact remaining product/readback assertion while
+  still attempting cleanup.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
