@@ -45,13 +45,8 @@ def reset_fixture(accounts: tuple[str, ...] = ("alice", "bob")) -> None:
     subprocess.run(
         [
             sys.executable,
-            str(
-                REPO_ROOT
-                / "tooling"
-                / "acceptance"
-                / "fixtures"
-                / "chat_native_reset.py"
-            ),
+            "-m",
+            "tooling.acceptance.fixtures.chat_native_reset",
             "--environment",
             active_deployment_environment(),
             "--accounts",
