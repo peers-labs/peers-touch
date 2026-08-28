@@ -136,7 +136,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             "manifest": {
                 "artifactKind": "acceptance-runtime-manifest",
                 "gateId": self.module.GATE_ID,
-                "runId": self.run.run_id,
+                "runId": "provisioner-run-a",
                 "state": "FIXTURE_READY",
                 "source": source,
                 "station": station,
@@ -188,11 +188,21 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         report: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], ArtifactRef]:
         expected = report or self.valid_report()
+        self.write_environment_manifest(expected)
         self.run.write_json(
             self.module.SOURCE_REPORT_PATH,
             expected,
         )
         return self.module.load_report(self.store)
+
+    def write_environment_manifest(
+        self,
+        report: dict[str, Any],
+    ) -> None:
+        self.run.write_json(
+            self.module.ENVIRONMENT_MANIFEST_PATH,
+            report["manifest"],
+        )
 
     def test_accepts_current_source_bound_report(self) -> None:
         report, source_ref = self.write_report()
@@ -211,8 +221,31 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             "PROVEN",
         )
 
+    def test_rejects_embedded_environment_manifest_substitution(self) -> None:
+        report = self.valid_report()
+        self.run.write_json(
+            self.module.ENVIRONMENT_MANIFEST_PATH,
+            report["manifest"],
+        )
+        report["manifest"]["runId"] = "substituted-provisioner-run"
+        source_ref = self.run.write_json(
+            self.module.SOURCE_REPORT_PATH,
+            report,
+        )
+
+        with self.assertRaisesRegex(
+            self.module.GateError,
+            "embedded environment manifest",
+        ):
+            self.module.validate_report(
+                report,
+                source_ref=source_ref,
+                store=self.store,
+            )
+
     def test_rejects_runtime_substitution_and_dirty_source(self) -> None:
         report = self.valid_report()
+        self.write_environment_manifest(report)
         report["runtime"]["sourceIdentity"]["runtimeCell"][
             "cellId"
         ] = "desktop-macos-native"
@@ -246,6 +279,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
 
     def test_rejects_plain_path_cross_run_and_modified_evidence(self) -> None:
         report = self.valid_report()
+        self.write_environment_manifest(report)
         report["evidence"]["alice-dom"] = "/tmp/alice.html"
         source_ref = self.run.write_json(
             self.module.SOURCE_REPORT_PATH,
@@ -369,6 +403,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         binding.cleanup["portsReleased"] = False
         gate = object.__new__(NativeTwoClientGate)
         gate.runtime_instances = []
+        gate.clients = {}
         gate.client_specs = {}
         gate.runtime_binding = binding
         gate.report = EvidenceReport(
@@ -386,6 +421,47 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             "resources_released",
         )
         self.assertFalse(gate.report.assertions[-1].passed)
+
+    def test_cleanup_exports_remote_log_before_binding_cleanup(self) -> None:
+        log_path = self.root / "alice.log"
+
+        class ExportedLogClient:
+            profile = "alice"
+            gateway_port = 3030
+
+            def __init__(self, path: Path) -> None:
+                self.log_path = path
+
+            def stop(self) -> None:
+                self.log_path.write_text(
+                    "remote native log\n",
+                    encoding="utf-8",
+                )
+
+        client = ExportedLogClient(log_path)
+        gate = object.__new__(NativeTwoClientGate)
+        gate.runtime_instances = [client]
+        gate.authenticated_profiles = set()
+        gate.clients = {"alice": client}
+        gate.client_specs = {}
+        gate.runtime_binding = SyntheticRuntimeBinding()
+        gate.report = EvidenceReport(
+            gate_id=self.module.GATE_ID,
+            status="RUNNING",
+            started_at="2026-08-28T00:00:00Z",
+            duration_ms=0,
+        )
+
+        cleanup = gate.cleanup_clients()
+
+        reference = ArtifactRef.from_dict(
+            gate.report.evidence["alice-app-log"]
+        )
+        self.assertEqual(
+            self.store.resolve(reference).read_text(encoding="utf-8"),
+            "remote native log\n",
+        )
+        self.assertFalse(cleanup["cleanupErrors"])
 
     def test_w8_and_gate_entry_bind_runtime_cell(self) -> None:
         root = Path(__file__).resolve().parents[4]

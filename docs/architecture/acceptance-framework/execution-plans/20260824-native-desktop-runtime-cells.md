@@ -724,6 +724,25 @@ authenticated state.
 The following receiver run removed the last legacy conversation sync from the
 Chat harness: both actors now project the same deterministic Direct through the
 current messaging command before receiver-visible delivery begins.
+Run `20260828T091038659436Z-471b23e7332f1b14a61711e635c9b47c` on
+`e601b35abf92` then passed every receiver assertion and reverse cleanup step,
+but the post-run validator correctly kept the aggregate result
+`PARTIAL/UNPROVEN`. It incorrectly required the Provisioner runtime-manifest
+run ID to equal the independent Evidence Store run ID, and the remote app logs
+were exported only during actor stop after the runner's evidence collection
+point. The correction validates the embedded manifest against the digest-bound
+same-run environment-manifest `ArtifactRef` and persists each actor log after
+remote stop but before runtime binding cleanup deletes temporary logs.
+Exact-source run
+`20260828T092318799925Z-63e2e7ecda28238b1087044d363a730a` on
+`957eeda37608` then produced a passing product report, passing validation,
+both app-log artifacts, and complete cleanup. The generic Acceptance runner
+still downgraded its aggregate because artifact enumeration selected the
+validation artifact before the canonical Gate report. The Infra correction
+now selects the matching `acceptance-gate-evidence-report` as primary evidence
+and independently sources Phase/BOM/Spec/Gate traceability from a validation
+artifact. The run remains `PARTIAL/UNPROVEN`; a new exact-source aggregate run
+is required.
 
 ## 13. Final Readiness Gate
 

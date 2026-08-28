@@ -1103,6 +1103,25 @@ conversation ID before the unchanged DOM delivery assertions begin. The failed
 run `20260828T085732134439Z-30c988bdd7e9f18a9b3e8b2d5bee1ef6`
 remains `FAILED/UNPROVEN`.
 
+Run `20260828T091038659436Z-471b23e7332f1b14a61711e635c9b47c` on
+`e601b35abf92` passed the full bidirectional receiver journey and cleanup, but
+the aggregate Gate remained `PARTIAL/UNPROVEN` because its validator conflated
+the Provisioner runtime-manifest run ID with the Evidence Store run ID. It also
+required actor app-log artifacts that the remote runtime exported only after
+the runner's evidence collection point. The validator now compares the
+embedded manifest with the digest-verified same-run environment artifact, and
+the runner persists remote app logs after actor stop and before temporary-log
+cleanup. A new exact-source run is required.
+
+Run `20260828T092318799925Z-63e2e7ecda28238b1087044d363a730a` on
+`957eeda37608` produced `DONE/PROVEN` product and validation artifacts with
+source-matched Station, Linux cell, binary, actor logs, DOM, screenshots, and
+cleanup. The generic Acceptance aggregate still remained `PARTIAL/UNPROVEN`
+because it selected the validation JSON as the primary environment artifact
+instead of the canonical Gate report. The runner now deterministically prefers
+the current Gate's `acceptance-gate-evidence-report` and uses validation only
+for traceability metadata. A new exact-source aggregate run is required.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
