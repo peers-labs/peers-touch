@@ -113,23 +113,35 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
         self,
         profile_env: dict[str, str],
         slot: int,
+        worktree_id: str = REPO_ROOT.name,
     ) -> tuple[int, int]:
         try:
+            # Keep readiness aligned with desktop-dev.sh's worktree isolation.
+            checksum = subprocess.run(
+                ["cksum"],
+                input=worktree_id,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.split()
+            worktree_offset = int(checksum[0]) % 100
             return (
                 int(
                     profile_env.get(
                         "PT_DESKTOP_APP_GATEWAY_PORT",
                         str(3030 + slot * 100),
                     )
-                ),
+                )
+                + worktree_offset,
                 int(
                     profile_env.get(
                         "PT_DESKTOP_APP_WEB_PORT",
                         str(3210 + slot * 100),
                     )
-                ),
+                )
+                + worktree_offset,
             )
-        except ValueError as error:
+        except (IndexError, ValueError, subprocess.SubprocessError) as error:
             raise BlockedError(
                 reason=f"Desktop gateway profile has an invalid port: {error}",
                 resource="profile:desktop-port",
