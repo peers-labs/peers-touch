@@ -45,6 +45,19 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertNotIn('"charlie": "charlie@p.t"', support)
         self.assertNotIn("CHAT_ACCEPTANCE_PASSWORD", support)
 
+    def test_native_fixture_reset_runs_through_the_package_module(self) -> None:
+        support = self.source(
+            "tooling/acceptance/gates/chat/native_support.py"
+        )
+        self.assertIn(
+            '"tooling.acceptance.fixtures.chat_native_reset"',
+            support,
+        )
+        self.assertNotIn(
+            '"fixtures"\\n                / "chat_native_reset.py"',
+            support,
+        )
+
     def test_native_runners_use_committed_dev_account_fixture(self) -> None:
         for path in (
             "tooling/acceptance/gates/chat/native_two_client_runner.py",

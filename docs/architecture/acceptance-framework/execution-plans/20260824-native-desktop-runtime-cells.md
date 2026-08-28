@@ -691,6 +691,13 @@ new session is hydrated, and the final refresh stage checks actor identity
 before reconciling badges. Acceptance Infra scope and the NDR-W7 status are
 unchanged.
 
+The exact-source MP-W13-F run
+`20260828T065037835411Z-693543461e6173b5dc81246bdf3d2d13` then exposed a
+Chat business-Fixture entrypoint mismatch: the reset module was invoked by file
+path even though it imports the shared Acceptance package. The Chat runner now
+uses `python -m tooling.acceptance.fixtures.chat_native_reset`; this is a
+business injection correction and does not alter runtime-cell lifecycle.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

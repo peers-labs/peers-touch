@@ -1034,6 +1034,14 @@ regression tests preserve Bob's state while Alice's stale responses complete.
 MP-W13-F remains `UNPROVEN` until an exact-source clean candidate passes the
 selected Gates, Gap Detector, Completion Audit, and independent re-review.
 
+The first exact-source rerun on commit `29844f4c3d3d` stopped during Fixture
+provisioning because `native_support.py` executed the reset module by file path
+after that module began importing the shared Acceptance package. The runner now
+invokes `tooling.acceptance.fixtures.chat_native_reset` with Python module
+semantics; a static contract test and the real disposable reset both pass. The
+blocked run `20260828T065037835411Z-693543461e6173b5dc81246bdf3d2d13`
+remains `BLOCKED/UNPROVEN` evidence and is not retried in place.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
