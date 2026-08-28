@@ -34,7 +34,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from tooling.acceptance.core import ProvisioningError, load_runtime_manifest
+from tooling.acceptance.core import (
+    EvidenceReport,
+    ProvisioningError,
+    load_runtime_manifest,
+    new_report,
+)
 
 GATE_ID = "chat-desktop-gateway-e2e"
 
@@ -229,7 +234,7 @@ def wait_alive(gateway: str, seconds: int = 30) -> None:
     raise GateError(f"gateway at {gateway} did not become ready within {seconds}s: {last_err}")
 
 
-def main() -> int:
+def run_gateway_flow(report: EvidenceReport) -> dict[str, Any]:
     base = station_url()
     gateway = gateway_url()
     print("Chat Desktop Gateway E2E (MLS messaging)")
@@ -238,11 +243,13 @@ def main() -> int:
     print(f"gateway={gateway}")
 
     wait_alive(gateway)
+    report.add_assertion("gateway_reachable", True)
     print("[OK] gateway is reachable")
 
     print("[..] configuring station on gateway...")
     gateway_command(gateway, "station_add", {"url": base}, timeout=10)
     gateway_command(gateway, "station_set_active", {"url": base}, timeout=10)
+    report.add_assertion("station_configured", True)
     print("[OK] station configured")
 
     actor_a = signup_and_login(base, "a")
@@ -251,6 +258,7 @@ def main() -> int:
 
     # --- Login B first to publish KeyPackages/PreKeys to station and get PTID ---
     gateway_login(gateway, actor_b, timeout=30)
+    report.add_assertion("actor_b_authenticated", True)
     print(f"[OK] gateway authenticated actor B ptid={actor_b.ptid[:60]}...")
     time.sleep(10)
     gateway_logout(gateway)
@@ -258,6 +266,7 @@ def main() -> int:
 
     # --- Login A via gateway and create direct conversation with B ---
     gateway_login(gateway, actor_a, timeout=30)
+    report.add_assertion("actor_a_authenticated", True)
     print(f"[OK] gateway authenticated actor A ptid={actor_a.ptid[:60]}...")
     time.sleep(8)
 
@@ -266,6 +275,11 @@ def main() -> int:
     }, timeout=30)
     conv_id = create_result.get("conversation_id") or ""
     require(bool(conv_id), f"messaging_create_direct missing conversation_id result={create_result}")
+    report.add_assertion(
+        "direct_conversation_created",
+        True,
+        detail=f"conversation_id={conv_id}",
+    )
     print(f"[OK] direct conversation created: {conv_id}")
     time.sleep(8)
 
@@ -278,6 +292,11 @@ def main() -> int:
     }, timeout=30)
     msg_id = send_result.get("message_id") or ""
     require(bool(msg_id), f"send_message missing message_id result={send_result}")
+    report.add_assertion(
+        "message_sent",
+        True,
+        detail=f"message_id={msg_id}",
+    )
     print(f"[OK] message sent from A: {msg_id}")
     time.sleep(6)
 
@@ -312,6 +331,7 @@ def main() -> int:
         conv_ids = [str(c.get("conversation_id", "")) for c in conversations if isinstance(c, dict)]
         b_has_conv = any(cid == conv_id for cid in conv_ids)
     require(b_has_conv, f"B does not see direct conversation {conv_id} conv_ids={conv_ids}")
+    report.add_assertion("receiver_conversation_hydrated", True)
     print("[OK] B sees the direct conversation with A")
 
     # List messages in the conversation
@@ -345,6 +365,7 @@ def main() -> int:
                 break
 
     require(found, f"B did not receive message '{test_content}' messages={messages[:3]}")
+    report.add_assertion("receiver_message_decrypted", True)
     print(f"[OK] B received and decrypted message: '{test_content}'")
 
     gateway_logout(gateway)
@@ -357,7 +378,30 @@ def main() -> int:
     print(f"  A: {actor_a.email}")
     print(f"  B: {actor_b.email}")
     print("=" * 56)
-    return 0
+    return {
+        "conversationId": conv_id,
+        "messageId": msg_id,
+        "journey": "desktop-gateway-direct-message",
+    }
+
+
+def main() -> int:
+    report = new_report(GATE_ID)
+    started = time.monotonic()
+    try:
+        report.manifest = runtime_manifest()
+        report.station_url = station_url()
+        report.runtime = run_gateway_flow(report)
+        report.status = "PASS"
+        return 0
+    except Exception as error:
+        report.status = "FAIL"
+        report.error = str(error)
+        report.error_type = type(error).__name__
+        raise
+    finally:
+        report.duration_ms = int((time.monotonic() - started) * 1000)
+        report.write()
 
 
 if __name__ == "__main__":
