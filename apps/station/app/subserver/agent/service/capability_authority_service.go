@@ -315,22 +315,27 @@ func (s *CapabilityAuthorityService) StoreReadinessSnapshot(
 			"snapshot_id, ptid, agent_id, created_at and expires_at are required",
 		)
 	}
-	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(snapshot)
+	canonical := proto.Clone(snapshot).(*model.CapabilityReadinessSnapshot)
+	createdAt := snapshot.GetCreatedAt().AsTime().UTC().Truncate(time.Microsecond)
+	expiresAt := snapshot.GetExpiresAt().AsTime().UTC().Truncate(time.Microsecond)
+	canonical.CreatedAt = timestamppb.New(createdAt)
+	canonical.ExpiresAt = timestamppb.New(expiresAt)
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(canonical)
 	if err != nil {
 		return nil, capabilityInternal("failed to encode readiness snapshot", err)
 	}
 	payloadHash := sha256.Sum256(payload)
 	record := &persistence.CapabilityReadinessSnapshot{
-		SnapshotID:  strings.TrimSpace(snapshot.GetSnapshotId()),
-		Ptid:        strings.TrimSpace(snapshot.GetPtid()),
-		AgentID:     strings.TrimSpace(snapshot.GetAgentId()),
+		SnapshotID:  strings.TrimSpace(canonical.GetSnapshotId()),
+		Ptid:        strings.TrimSpace(canonical.GetPtid()),
+		AgentID:     strings.TrimSpace(canonical.GetAgentId()),
 		Payload:     payload,
 		PayloadHash: hex.EncodeToString(payloadHash[:]),
-		CreatedAt:   snapshot.GetCreatedAt().AsTime(),
-		ExpiresAt:   snapshot.GetExpiresAt().AsTime(),
+		CreatedAt:   createdAt,
+		ExpiresAt:   expiresAt,
 	}
 	if err := s.db.WithContext(ctx).Create(record).Error; err == nil {
-		return proto.Clone(snapshot).(*model.CapabilityReadinessSnapshot), nil
+		return canonical, nil
 	}
 	var existing persistence.CapabilityReadinessSnapshot
 	if err := s.db.WithContext(ctx).Where("snapshot_id = ?", record.SnapshotID).

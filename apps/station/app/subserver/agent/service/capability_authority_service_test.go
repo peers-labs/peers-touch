@@ -289,7 +289,7 @@ func TestCapabilityManifestMutationsPublishCatalogInvalidationsOncePerAgent(t *t
 func TestCapabilityReadinessSnapshotIsImmutable(t *testing.T) {
 	service := newCapabilityAuthorityTestService(t, "readiness")
 	ctx := context.Background()
-	now := time.Date(2026, time.August, 27, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.August, 27, 12, 0, 0, 123456789, time.UTC)
 	snapshot := &model.CapabilityReadinessSnapshot{
 		SnapshotId: "readiness-1",
 		Ptid:       "ptid:person:owner",
@@ -297,8 +297,32 @@ func TestCapabilityReadinessSnapshotIsImmutable(t *testing.T) {
 		CreatedAt:  timestamppb.New(now),
 		ExpiresAt:  timestamppb.New(now.Add(time.Minute)),
 	}
-	if _, err := service.StoreReadinessSnapshot(ctx, snapshot); err != nil {
+	stored, err := service.StoreReadinessSnapshot(ctx, snapshot)
+	if err != nil {
 		t.Fatalf("store readiness snapshot: %v", err)
+	}
+	expectedCreatedAt := now.Truncate(time.Microsecond)
+	expectedExpiresAt := now.Add(time.Minute).Truncate(time.Microsecond)
+	if !stored.GetCreatedAt().AsTime().Equal(expectedCreatedAt) ||
+		!stored.GetExpiresAt().AsTime().Equal(expectedExpiresAt) {
+		t.Fatalf(
+			"readiness timestamps were not canonicalized: created=%s expires=%s",
+			stored.GetCreatedAt().AsTime(),
+			stored.GetExpiresAt().AsTime(),
+		)
+	}
+	var record persistence.CapabilityReadinessSnapshot
+	if err := service.db.Where("snapshot_id = ?", snapshot.GetSnapshotId()).
+		First(&record).Error; err != nil {
+		t.Fatalf("load readiness snapshot record: %v", err)
+	}
+	if !record.CreatedAt.Equal(expectedCreatedAt) ||
+		!record.ExpiresAt.Equal(expectedExpiresAt) {
+		t.Fatalf(
+			"readiness record timestamps differ from payload: created=%s expires=%s",
+			record.CreatedAt,
+			record.ExpiresAt,
+		)
 	}
 	if _, err := service.StoreReadinessSnapshot(ctx, snapshot); err != nil {
 		t.Fatalf("replay readiness snapshot: %v", err)
