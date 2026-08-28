@@ -228,50 +228,6 @@ def gateway_read(
     return data
 
 
-# #region debug-point A-D:clear-cursor-restore
-def report_clear_cursor_debug(
-    hypothesis_id: str,
-    message: str,
-    data: dict[str, Any],
-) -> None:
-    env_path = REPO_ROOT / ".dbg" / "clear-cursor-restore.env"
-    if not env_path.exists():
-        return
-    environment = dict(
-        line.split("=", 1)
-        for line in env_path.read_text(encoding="utf-8").splitlines()
-        if "=" in line
-    )
-    endpoint = environment.get("DEBUG_SERVER_URL", "").strip()
-    session_id = environment.get("DEBUG_SESSION_ID", "").strip()
-    if not endpoint or not session_id:
-        return
-    payload = json.dumps(
-        {
-            "sessionId": session_id,
-            "runId": "pre-fix",
-            "hypothesisId": hypothesis_id,
-            "location": "native_product_closure_runner.py:prove_clear_cursor",
-            "msg": f"[DEBUG] {message}",
-            "data": data,
-            "ts": int(time.time() * 1000),
-        },
-        default=str,
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        endpoint,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=2):
-            pass
-    except (OSError, TimeoutError):
-        return
-# #endregion
-
-
 def port_is_free(port: int) -> bool:
     with socket.socket() as probe:
         return probe.connect_ex(("127.0.0.1", port)) != 0
@@ -4131,7 +4087,7 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         self.click("alice", '[data-chat-history-action="restore"]')
         self.click_confirmation("alice")
-        ui_restored = wait_until(
+        wait_until(
             lambda: (
                 value
                 if (value := self.setting_state("alice")).get("clearedAt") == 0
@@ -4140,93 +4096,16 @@ class NativeProductClosureGate(AcceptanceGate):
             "clear cursor restore",
             timeout=60,
         )
-        last_snapshot: dict[str, Any] = {}
-        last_reported_at = 0.0
-        restore_started_at = time.monotonic()
-        restore_attempts = 0
-
-        def exact_restored_transcript() -> list[dict[str, Any]] | None:
-            nonlocal last_snapshot, last_reported_at, restore_attempts
-            restore_attempts += 1
-            alice_transcript = self.transcript("alice")
-            bob_transcript = self.transcript("bob")
-            if alice_transcript and alice_transcript == bob_transcript:
-                # #region debug-point A-D:restore-success
-                report_clear_cursor_debug(
-                    "A-B-C-D",
-                    "restore transcript matched",
-                    {
-                        "attempts": restore_attempts,
-                        "elapsedMs": int(
-                            (time.monotonic() - restore_started_at) * 1000
-                        ),
-                        "transcript": alice_transcript,
-                    },
-                )
-                # #endregion
-                return alice_transcript
-            now = time.monotonic()
-            if now - last_reported_at < 5:
-                return None
-            last_reported_at = now
-            engine = {
-                actor: [
-                    {
-                        "id": str(
-                            message.get("message_ulid")
-                            or message.get("messageUlid")
-                            or message.get("ulid")
-                            or ""
-                        ),
-                        "sequence": int(
-                            message.get("authority_sequence")
-                            or message.get("authoritySequence")
-                            or 0
-                        ),
-                    }
-                    for message in self.engine_messages(actor, group_id)
-                ]
-                for actor in ("alice", "bob")
-            }
-            station = gateway_read(
-                self.clients["alice"],
-                "conversation_get_member_settings",
-                {"conversation_id": group_id},
-            )
-            last_snapshot = {
-                "ui": ui_restored,
-                "station": station,
-                "transcript": {
-                    "alice": alice_transcript,
-                    "bob": bob_transcript,
-                },
-                "engine": engine,
-            }
-            # #region debug-point A-D:restore-snapshot
-            report_clear_cursor_debug(
-                "A-B-C-D",
-                "restore transcript mismatch",
-                last_snapshot,
-            )
-            # #endregion
-            return None
-
-        try:
-            expected = wait_until(
-                exact_restored_transcript,
-                "restored exact transcript",
-                timeout=180,
-            )
-        except GateError:
-            # #region debug-point A-D:restore-timeout
-            self.write_json_evidence("clear-cursor-restore-debug", last_snapshot)
-            report_clear_cursor_debug(
-                "A-B-C-D",
-                "restore transcript timed out",
-                last_snapshot,
-            )
-            # #endregion
-            raise
+        expected = wait_until(
+            lambda: (
+                value
+                if (value := self.transcript("alice"))
+                == self.transcript("bob")
+                else None
+            ),
+            "restored exact transcript",
+            timeout=180,
+        )
         station_restored = gateway_read(
             self.clients["alice"],
             "conversation_get_member_settings",
