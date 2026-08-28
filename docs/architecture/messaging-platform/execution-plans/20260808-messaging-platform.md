@@ -988,7 +988,7 @@ Closure enforcement (deterministic):
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
 | MP-W10-E | reopened by W13 | W05/W10-D | Prior byte-exact Engine evidence remains valid for its recorded runtime, but current product use proves the Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, and count conservation are not closed. W13-E/F must replace the product-proof claim with real UI evidence. |
 | MP-W12 | reopened by W13 (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | Prior authority/Engine interaction evidence remains useful, but current product use proves thread panel, reaction picker, hover toolbar, and complete transcript convergence were bypassed or unasserted. W13-A/B/F must rerun through real Native UI actions. Mobile remains pending W09. |
-| MP-W13 | completed (Linux Desktop) | W10-E/W12 + Social Runtime Phase 3 | The source-bound Linux Product and receiver Gates prove the MP-W13-F visible journey on the disposable `18132` Station, including Direct create/reuse, one-row list identity, localized feedback, settings, attachments, restart, clear/restore, second-device recovery, receiver delivery, and reverse cleanup. The final candidate must retain matching Product/receiver/CI evidence after this plan update; macOS, Windows, and Mobile remain separate platform claims. |
+| MP-W13 | in progress (Linux Desktop) | W10-E/W12 + Social Runtime Phase 3 | Product and receiver journeys passed on the prior clean candidate, but the canonical exact-range plan also selects six legacy Native Gates and the Desktop gateway Gate. Their runtime-cell and Evidence Store closure is implemented but requires new same-source Linux evidence before MP-W13-F can be marked complete. macOS, Windows, and Mobile remain separate platform claims. |
 | MP-W11 | reopened pending W13 | W02-W10/W12/W13 | The previous closure verdict is invalid for full product readiness because its Native evidence did not prove the receiver-visible paths exposed by W13. Rerun only after W13-F passes and stale reports are rejected by source/build/runtime identity. |
 
 The 2026-08-27 persistent Linux Desktop handoff exposed four additional MP-W13-F
@@ -1150,6 +1150,33 @@ candidate closes those defects without changing product selectors, ordering,
 timeouts, or success assertions. All source-bound runtime and exact-range
 evidence must be regenerated after this documentation update. The external
 Evidence Store remains the source of truth for those final run IDs.
+
+The canonical exact-range audit then identified seven remaining environment
+Gates without current-source proof. Six existing Native journeys are being
+migrated from implicit local launch to the accepted Gate x runtime-cell
+contract, with unchanged product assertions:
+
+- `chat-native-interactions-e2e`
+- `chat-contact-message-resilience-e2e`
+- `chat-native-typing-e2e`
+- `chat-native-multi-device-e2e`
+- `chat-native-recovery-e2e`
+- `chat-native-group-mls-e2e`
+
+Their Catalog and Make entrypoints now require an explicit runtime cell, their
+reports use the current external Evidence Store run, and their source identity
+checks share the same Linux host/image/checkout/binary requirements. The
+multi-device Gate delegates same-actor identity-key preparation to the runtime
+storage owner. The seventh Gate, `chat-desktop-gateway-e2e`, no longer treats
+its external provision log as a repository-relative path or misclassifies
+arbitrary provisioning `ValueError`s as port errors. All seven remain
+`UNPROVEN` until executed from the next clean commit.
+
+Pre-commit rereview additionally closed first-failure preservation, fail-clean
+atomic actor-storage cloning on Linux and local macOS, report-path override,
+and stale explicit-Gate command resolution defects. These are lifecycle and
+evidence-integrity corrections only; the existing Chat assertions remain
+unchanged. MP-W13-F remains `UNPROVEN` pending clean-commit runtime evidence.
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 

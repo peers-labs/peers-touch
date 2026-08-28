@@ -97,6 +97,7 @@ class SyntheticLinuxRuntimeCell:
         self.released_endpoints: list[str] = []
         self.staged_files: list[tuple[str, Path]] = []
         self.hashed_files: list[tuple[str, str]] = []
+        self.cloned_storage: list[tuple[str, str, str]] = []
 
     def validate_binding(self, gate_id: str, source_commit: str) -> None:
         self.validations.append((gate_id, source_commit))
@@ -149,6 +150,16 @@ class SyntheticLinuxRuntimeCell:
     def actor_file_sha256(self, actor: str, path: str) -> str:
         self.hashed_files.append((actor, path))
         return "b" * 64
+
+    def clone_actor_storage(
+        self,
+        source_actor: str,
+        target_actor: str,
+        relative_path: str,
+    ) -> None:
+        self.cloned_storage.append(
+            (source_actor, target_actor, relative_path)
+        )
 
     def expose_orchestrator_endpoint(
         self,
@@ -269,6 +280,17 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
             cell.hashed_files,
             [("alice", str(staged))],
         )
+        binding.clone_actor_storage(
+            "bob1",
+            {},
+            "bob2",
+            {},
+            "secure-store/identity-keys",
+        )
+        self.assertEqual(
+            cell.cloned_storage,
+            [("bob1", "bob2", "secure-store/identity-keys")],
+        )
         self.assertFalse(
             binding.request_cooperative_activation(session, (session,))
         )
@@ -316,6 +338,83 @@ class NativeDesktopAdapterContractTests(unittest.TestCase):
                 gate_id="gate",
                 source_commit="abc123",
             )
+
+    def test_local_runtime_binding_clones_actor_storage(self) -> None:
+        binding = object.__new__(LocalMacOSRuntimeBinding)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_root = root / "bob1"
+            target_root = root / "bob2"
+            relative = "secure-store/identity-keys"
+            source = source_root / relative
+            source.mkdir(parents=True)
+            (source / "identity.key").write_bytes(b"identity")
+
+            binding.clone_actor_storage(
+                "bob1",
+                {"storage_root": str(source_root)},
+                "bob2",
+                {"storage_root": str(target_root)},
+                relative,
+            )
+
+            self.assertEqual(
+                (target_root / relative / "identity.key").read_bytes(),
+                b"identity",
+            )
+
+    def test_local_runtime_binding_clone_is_fail_clean(self) -> None:
+        binding = object.__new__(LocalMacOSRuntimeBinding)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_root = root / "bob1"
+            target_root = root / "bob2"
+            source = source_root / "secure-store/identity-keys"
+            source.mkdir(parents=True)
+            (source / "identity.key").write_bytes(b"identity")
+
+            with patch(
+                "tooling.acceptance.drivers.native.runtime.shutil.copytree",
+                side_effect=OSError("copy failed"),
+            ), self.assertRaisesRegex(
+                DriverError,
+                "actor storage clone failed",
+            ):
+                binding.clone_actor_storage(
+                    "bob1",
+                    {"storage_root": str(source_root)},
+                    "bob2",
+                    {"storage_root": str(target_root)},
+                    "secure-store/identity-keys",
+                )
+
+            self.assertFalse(target_root.exists())
+            self.assertEqual(
+                list(root.glob(".bob2.clone-*")),
+                [],
+            )
+
+    def test_local_runtime_binding_clone_rejects_existing_target(self) -> None:
+        binding = object.__new__(LocalMacOSRuntimeBinding)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_root = root / "bob1"
+            target_root = root / "bob2"
+            source = source_root / "secure-store/identity-keys"
+            source.mkdir(parents=True)
+            target_root.mkdir()
+
+            with self.assertRaisesRegex(
+                DriverError,
+                "target already exists",
+            ):
+                binding.clone_actor_storage(
+                    "bob1",
+                    {"storage_root": str(source_root)},
+                    "bob2",
+                    {"storage_root": str(target_root)},
+                    "secure-store/identity-keys",
+                )
 
     def test_remote_linux_adapter_maps_commands_and_typed_results(self) -> None:
         cell = SyntheticLinuxRuntimeCell()
