@@ -13,6 +13,7 @@ Validates two layers:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import subprocess
@@ -111,6 +112,30 @@ def gate_entries(plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
         elif isinstance(entry, dict) and entry.get("id"):
             entries[str(entry["id"])] = entry
     return entries
+
+
+def canonical_plan_for_paths(paths: list[str]) -> dict[str, Any]:
+    planner_path = Path(__file__).with_name("acceptance-plan.py")
+    spec = importlib.util.spec_from_file_location(
+        "acceptance_plan_for_gap_detector",
+        planner_path,
+    )
+    if spec is None or spec.loader is None:
+        raise DetectorError(f"cannot load canonical planner at {planner_path}")
+    planner = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(planner)
+        canonical = planner.plan(
+            REPO_ROOT / "tooling" / "acceptance",
+            paths,
+        )
+    except (Exception, SystemExit) as error:
+        raise DetectorError(
+            f"cannot generate canonical Acceptance plan: {error}"
+        ) from error
+    if not isinstance(canonical, dict):
+        raise DetectorError("canonical Acceptance planner returned a non-object")
+    return canonical
 
 
 def result_entries(run: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -277,6 +302,7 @@ def detect(
     source_commit: str = "",
     workspace_digest: str = "",
     contract: dict[str, Any] | None = None,
+    canonical_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     gaps: list[dict[str, Any]] = []
     selected = gate_entries(plan)
@@ -285,6 +311,41 @@ def detect(
 
     if contract:
         gaps.extend(validate_contract_deliverables(contract, results))
+
+    if canonical_plan is not None:
+        canonical_selected = set(gate_entries(canonical_plan))
+        supplied_selected = set(selected)
+        missing_canonical_gates = sorted(
+            canonical_selected - supplied_selected
+        )
+        if missing_canonical_gates:
+            gaps.append(
+                gap(
+                    gap_type="ACCEPTANCE_GAP_DETECTOR_INPUT_INVALID",
+                    claim=claim,
+                    owner_stage="PLAN",
+                    required_closure=(
+                        "Use an Acceptance plan containing every Gate selected "
+                        "by the canonical planner for the detector's exact git "
+                        "range"
+                    ),
+                    evidence=[
+                        {
+                            "reason": (
+                                "Supplied Acceptance plan filters canonical "
+                                "exact-range Gates"
+                            ),
+                            "missingCanonicalGates": missing_canonical_gates,
+                            "canonicalSelectedGates": sorted(
+                                canonical_selected
+                            ),
+                            "suppliedSelectedGates": sorted(
+                                supplied_selected
+                            ),
+                        }
+                    ],
+                )
+            )
 
     planned_paths = plan.get("changed_paths")
     if isinstance(planned_paths, list):
@@ -539,15 +600,21 @@ def main() -> int:
             if contract_path.exists():
                 contract = _load_contract(contract_path)
         source_commit, workspace_digest = current_source_identity()
+        paths = changed_paths(args.diff_range)
         report = detect(
             claim=args.claim,
-            paths=changed_paths(args.diff_range),
+            paths=paths,
             plan=plan,
             run=run,
             required_gates=args.require_gate,
             source_commit=source_commit,
             workspace_digest=workspace_digest,
             contract=contract,
+            canonical_plan=(
+                canonical_plan_for_paths(paths)
+                if args.plan
+                else None
+            ),
         )
     except DetectorError as error:
         sys.stderr.write(f"acceptance gap detector failed closed: {error}\n")
