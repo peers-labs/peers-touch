@@ -36,9 +36,14 @@ def run_environment(environment: dict[str, str]):
         "PT_ACCEPTANCE_WORKSPACE_ID",
         "PT_ACCEPTANCE_GATE_ID",
         "PT_ACCEPTANCE_RUN_ID",
+        "PT_ACCEPTANCE_RUNTIME_CELL",
     )
     previous = {key: os.environ.get(key) for key in keys}
-    os.environ.update({key: environment[key] for key in keys})
+    for key in keys:
+        if key in environment:
+            os.environ[key] = environment[key]
+        else:
+            os.environ.pop(key, None)
     try:
         yield
     finally:
@@ -279,6 +284,10 @@ def persist_provisioner_cleanup_result(
     completed_resources: tuple[str, ...],
     cleanup_error: str,
     secret_values: tuple[str, ...],
+    runtime_cell: str = "",
+    runtime_cell_cleanup_status: str = "not-required",
+    runtime_cell_cleanup: dict[str, Any] | None = None,
+    runtime_cell_cleanup_error: str = "",
 ) -> dict[str, Any]:
     payload = {
         "artifactKind": "acceptance-provisioner-cleanup-result",
@@ -294,6 +303,10 @@ def persist_provisioner_cleanup_result(
         ),
         "completedResources": list(completed_resources),
         "error": cleanup_error,
+        "runtimeCell": runtime_cell or None,
+        "runtimeCellCleanupStatus": runtime_cell_cleanup_status,
+        "runtimeCellCleanup": runtime_cell_cleanup,
+        "runtimeCellCleanupError": runtime_cell_cleanup_error,
     }
     redacted_payload, _ = redact_runtime_value(payload, secret_values)
     return gate_run.write_json(
@@ -301,6 +314,41 @@ def persist_provisioner_cleanup_result(
         redacted_payload,
         role="provisioner-cleanup",
     ).to_dict()
+
+
+def provision_runtime_cell(
+    *,
+    cell_id: str,
+    gate_id: str,
+    gate_run: Any,
+) -> tuple[Any, dict[str, Any], Path]:
+    from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
+
+    lifecycle = get_runtime_cell_lifecycle(cell_id)
+    acquired = False
+    try:
+        manifest = lifecycle.ready(gate_id)
+        acquired = True
+        payload = manifest.to_dict()
+        manifest_ref = gate_run.write_json(
+            "runtime/runtime-cell-manifest.json",
+            payload,
+            role="runtime-cell-manifest",
+        )
+        payload["_manifest_ref"] = manifest_ref.to_dict()
+        return lifecycle, payload, gate_run.store.resolve(manifest_ref)
+    except BaseException as error:
+        if acquired:
+            try:
+                lifecycle.stop()
+            except Exception as cleanup_error:
+                from tooling.acceptance.core import ProvisioningError
+
+                raise ProvisioningError(
+                    f"runtime-cell provisioning failed ({error}); "
+                    f"cleanup also failed: {cleanup_error}"
+                ) from error
+        raise
 
 
 def provisioning_failure_result(
@@ -336,6 +384,49 @@ def provisioning_failure_result(
             "execution"
         ),
     }
+
+
+def runtime_cell_failure_result(
+    *,
+    gate_id: str,
+    command: str,
+    environment: str,
+    tier: str,
+    runtime_cell: str,
+    error: Exception,
+    duration_seconds: float,
+) -> dict[str, Any]:
+    from tooling.acceptance.core import BlockedError
+    from tooling.acceptance.core.redaction import redact_text
+
+    blocked = isinstance(error, BlockedError)
+    result = {
+        "id": gate_id,
+        "command": command,
+        "environment": environment,
+        "runtimeCell": runtime_cell,
+        "tier": tier,
+        "status": "blocked" if blocked else "failed",
+        "exit_code": None,
+        "duration_seconds": duration_seconds,
+        "completionStatus": "BLOCKED" if blocked else "PARTIAL",
+        "proofStatus": "UNPROVEN",
+        "reason": redact_text(str(error)),
+        "errorType": type(error).__name__,
+        "sourceArtifact": "tooling/acceptance/runtime-cells",
+        "sourceArtifactKind": "acceptance-runtime-cell-contract",
+        "sourcePhase": "Runtime Cell Provisioning",
+        "sourceBom": ["NDR-W1"],
+        "sourceSpec": ["D-13", "D-14"],
+        "sourceGate": (
+            "selected runtime cell must reach LEASED before product Gate "
+            "execution"
+        ),
+    }
+    if blocked:
+        result["blockedReason"] = redact_text(str(error))
+        result["blockedResource"] = f"runtime-cell:{runtime_cell}"
+    return result
 
 
 def load_plan(
@@ -542,6 +633,12 @@ def enrich_result_with_run_artifacts(
         ),
         None,
     )
+    if primary is None and result.get("tier") == "env-evidence":
+        enriched.setdefault(
+            "reason",
+            "Gate exited without a canonical acceptance evidence report",
+        )
+        return enriched
     if primary is None:
         primary = next(
             (
@@ -1148,9 +1245,14 @@ def main() -> int:
             )
             active_gate_run = gate_run
             gate_env = gate_run.subprocess_environment(os.environ.copy())
+            if runtime_cell:
+                gate_env["PT_ACCEPTANCE_RUNTIME_CELL"] = runtime_cell
             provisioner = None
             manifest = None
             manifest_path = None
+            runtime_cell_lifecycle = None
+            runtime_cell_manifest = None
+            runtime_cell_manifest_path = None
             runtime_secrets: tuple[str, ...] = ()
             output_text = ""
             exit_code: int | None = None
@@ -1158,6 +1260,11 @@ def main() -> int:
             cleanup_status = "not-required"
             cleanup_completed_resources: tuple[str, ...] = ()
             cleanup_error = ""
+            environment_cleanup_status = "not-required"
+            environment_cleanup_error = ""
+            runtime_cell_cleanup_status = "not-required"
+            runtime_cell_cleanup: dict[str, Any] | None = None
+            runtime_cell_cleanup_error = ""
             cleanup_artifact: dict[str, Any] | None = None
             result: dict[str, Any] | None = None
             provisioner_id = str(gate.get("provisioner") or "")
@@ -1223,6 +1330,41 @@ def main() -> int:
                             f"state={manifest.get('state')}"
                         )
 
+                if result is None and runtime_cell:
+                    print(f"[CELL PROVISION] {runtime_cell}")
+                    try:
+                        with run_environment(gate_env):
+                            (
+                                runtime_cell_lifecycle,
+                                runtime_cell_manifest,
+                                runtime_cell_manifest_path,
+                            ) = provision_runtime_cell(
+                                cell_id=runtime_cell,
+                                gate_id=gate_id,
+                                gate_run=gate_run,
+                            )
+                    except EvidenceError:
+                        raise
+                    except Exception as error:
+                        output_text = (
+                            "Runtime-cell provisioning failed: "
+                            f"{type(error).__name__}: {error}\n"
+                        )
+                        result = runtime_cell_failure_result(
+                            gate_id=gate_id,
+                            command=command,
+                            environment=environment,
+                            tier=tier,
+                            runtime_cell=runtime_cell,
+                            error=error,
+                            duration_seconds=round(time.time() - started, 3),
+                        )
+                    if result is None and runtime_cell_manifest:
+                        print(
+                            f"[CELL PROVISIONED] {runtime_cell} "
+                            f"state={runtime_cell_manifest.get('state')}"
+                        )
+
                 if result is None:
                     gate_env = gate_run.subprocess_environment(os.environ.copy())
                     gate_env["PT_ACCEPTANCE_CURRENT_RESULTS"] = json.dumps(
@@ -1235,6 +1377,10 @@ def main() -> int:
                         )
                     if runtime_cell:
                         gate_env["PT_ACCEPTANCE_RUNTIME_CELL"] = runtime_cell
+                    if runtime_cell_manifest_path is not None:
+                        gate_env["PT_ACCEPTANCE_RUNTIME_CELL_MANIFEST"] = str(
+                            runtime_cell_manifest_path
+                        )
                     try:
                         completed = subprocess.run(
                             command,
@@ -1258,17 +1404,47 @@ def main() -> int:
                         )
                         output_text += f"\nGate timed out after {timeout} seconds\n"
             finally:
+                if runtime_cell_lifecycle is not None:
+                    try:
+                        with run_environment(gate_env):
+                            runtime_cell_cleanup = (
+                                runtime_cell_lifecycle.stop()
+                            )
+                        runtime_cell_cleanup_status = "passed"
+                    except Exception as error:
+                        runtime_cell_cleanup_status = "failed"
+                        runtime_cell_cleanup_error = str(error)
+                        output_text += (
+                            "\nRuntime-cell cleanup failed: "
+                            f"{error}\n"
+                        )
                 if provisioner is not None:
                     try:
                         with run_environment(gate_run.subprocess_environment(os.environ.copy())):
                             cleanup_completed_resources = provisioner.cleanup()
-                        cleanup_status = "passed"
+                        environment_cleanup_status = "passed"
                     except Exception as error:
-                        cleanup_status = "failed"
-                        cleanup_error = str(error)
+                        environment_cleanup_status = "failed"
+                        environment_cleanup_error = str(error)
                         output_text += f"\nProvisioning cleanup failed: {error}\n"
+                cleanup_failures = tuple(
+                    error
+                    for error in (
+                        runtime_cell_cleanup_error,
+                        environment_cleanup_error,
+                    )
+                    if error
+                )
+                if cleanup_failures:
+                    cleanup_status = "failed"
+                    cleanup_error = "; ".join(cleanup_failures)
+                elif (
+                    runtime_cell_cleanup_status == "passed"
+                    or environment_cleanup_status == "passed"
+                ):
+                    cleanup_status = "passed"
 
-            if provisioner is not None:
+            if provisioner is not None or runtime_cell_lifecycle is not None:
                 cleanup_artifact = persist_provisioner_cleanup_result(
                     gate_run=gate_run,
                     gate_id=gate_id,
@@ -1278,6 +1454,10 @@ def main() -> int:
                     completed_resources=cleanup_completed_resources,
                     cleanup_error=cleanup_error,
                     secret_values=runtime_secrets,
+                    runtime_cell=runtime_cell,
+                    runtime_cell_cleanup_status=runtime_cell_cleanup_status,
+                    runtime_cell_cleanup=runtime_cell_cleanup,
+                    runtime_cell_cleanup_error=runtime_cell_cleanup_error,
                 )
 
             output_text = redact_runtime_text(output_text, runtime_secrets)
@@ -1334,11 +1514,15 @@ def main() -> int:
                 }
                 if manifest:
                     result["manifest"] = manifest
+                if runtime_cell_manifest:
+                    result["runtimeCellManifest"] = runtime_cell_manifest
                 if redacted_artifacts:
                     result["redactedArtifacts"] = redacted_artifacts
             else:
                 result["log"] = log_ref.to_dict()
                 result["cleanupStatus"] = cleanup_status
+                if runtime_cell_manifest:
+                    result["runtimeCellManifest"] = runtime_cell_manifest
             if cleanup_artifact is not None:
                 result["cleanupArtifact"] = cleanup_artifact
             if cleanup_error:
@@ -1346,11 +1530,16 @@ def main() -> int:
                 result["status"] = "failed"
 
             result = enrich_result_with_run_artifacts(result, gate_run)
+            finalized_runtime = dict(manifest or {})
+            if runtime_cell_manifest:
+                finalized_runtime["runtimeCellManifest"] = (
+                    runtime_cell_manifest
+                )
             result = finalize_gate_result(
                 result,
                 gate_run,
                 plan_source,
-                manifest,
+                finalized_runtime,
                 runtime_cell or None,
                 runtime_secrets,
             )

@@ -22,6 +22,7 @@ from tooling.acceptance.core._paths import ENVIRONMENTS_DIR
 from tooling.acceptance.provisioners import (
     HomeStationProvisioner,
     get_provisioner,
+    get_runtime_cell_lifecycle,
 )
 from tooling.acceptance.provisioners.local_desktop_gateway import (
     LocalDesktopGatewayProvisioner,
@@ -48,6 +49,13 @@ class ProvisionerBaseClassTests(unittest.TestCase):
     def test_get_provisioner_unknown_environment(self):
         with self.assertRaisesRegex(ProvisioningError, "no provisioner registered"):
             get_provisioner(EnvironmentContract(id="nonexistent-env"))
+
+    def test_runtime_cell_registry_fails_closed_for_unknown_cell(self):
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "runtime-cell lifecycle is not implemented",
+        ):
+            get_runtime_cell_lifecycle("desktop-unknown-native")
 
     def test_cleanup_runs_in_reverse_order(self):
         provisioner = HomeStationProvisioner(
