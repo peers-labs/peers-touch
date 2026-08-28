@@ -47,6 +47,7 @@ type TurnTrace struct {
 	DelegationResults    []DelegationResult
 	KnowledgeChunks      []KnowledgeChunkReference
 	CapabilitySnapshotID string
+	ToolDefinitionTokens uint64
 }
 
 type TurnUsage struct {

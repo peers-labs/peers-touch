@@ -47,6 +47,7 @@ func TestOpenAIThinkingModePayload(t *testing.T) {
 				test.mode,
 				64,
 				nil,
+				nil,
 			)
 			if err != nil {
 				t.Fatalf("call provider: %v", err)

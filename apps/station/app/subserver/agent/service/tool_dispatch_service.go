@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -2340,6 +2341,12 @@ func commitNewToolResultTx(
 	messageID := generateID("msg")
 	turnID := call.TurnID
 	modelName := batch.Model
+	metadataJSON, err := json.Marshal(map[string]string{
+		"tool_call_id": call.ToolCallID,
+	})
+	if err != nil {
+		return nil, internalToolError("encode tool result message metadata", err)
+	}
 	message := &persistence.AgentMessage{
 		ID:             messageID,
 		ConversationID: batch.ConversationID,
@@ -2348,6 +2355,7 @@ func commitNewToolResultTx(
 		Role:           string(domain.MessageRoleTool),
 		Status:         "completed",
 		Content:        &toolMessage,
+		MetadataJSON:   metadataJSON,
 		Seq:            messageSequence,
 		CreatedAt:      now,
 		UpdatedAt:      now,

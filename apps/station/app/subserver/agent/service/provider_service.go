@@ -35,6 +35,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -79,6 +80,7 @@ type ProviderCallRequest struct {
 	Model           string
 	SystemPrompt    string
 	Messages        []domain.Message
+	Tools           []*domain.ToolDefinition
 	UserID          string
 	ProviderType    string // "ollama", "openai", "anthropic", or empty for auto-detect
 	Effort          string // reasoning effort: "low" | "medium" | "high"
@@ -94,10 +96,17 @@ type ProviderDelta struct {
 	Content string
 }
 
+type ProviderToolCall struct {
+	ID        string
+	Name      string
+	Arguments string
+}
+
 // ProviderCallResponse captures the structured result of an LLM call,
 // including token usage and cache hit status.
 type ProviderCallResponse struct {
 	Content         string
+	ToolCalls       []ProviderToolCall
 	Model           string
 	Provider        string
 	InputTokens     int
@@ -279,6 +288,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 			req.Effort,
 			thinkingMode,
 			maxOutputTokens,
+			req.Tools,
 			req.DeltaSink,
 		)
 	}
@@ -580,6 +590,7 @@ func (s *ProviderService) callOpenAI(
 	effort string,
 	thinkingMode domain.ThinkingMode,
 	maxOutputTokens int,
+	tools []*domain.ToolDefinition,
 	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 
@@ -597,20 +608,32 @@ func (s *ProviderService) callOpenAI(
 		endpointBase += "/v1/chat/completions"
 	}
 
-	// Build message slice with system prompt.
-	apiMessages := make([]map[string]string, 0, len(messages)+1)
+	// Build messages with native assistant tool_calls and tool result linkage.
+	apiMessages := make([]openAIMessage, 0, len(messages)+1)
 	if systemPrompt != "" {
-		apiMessages = append(apiMessages, map[string]string{
-			"role":    "system",
-			"content": systemPrompt,
+		apiMessages = append(apiMessages, openAIMessage{
+			Role:    "system",
+			Content: systemPrompt,
 		})
 	}
-	apiMessages = append(apiMessages, s.toAPIMessages(messages)...)
+	convertedMessages, err := toOpenAIMessages(messages)
+	if err != nil {
+		return nil, err
+	}
+	apiMessages = append(apiMessages, convertedMessages...)
 
 	payload := map[string]any{
 		"model":      model,
 		"messages":   apiMessages,
 		"max_tokens": maxOutputTokens,
+	}
+	openAITools, err := toOpenAITools(tools)
+	if err != nil {
+		return nil, err
+	}
+	if len(openAITools) > 0 {
+		payload["tools"] = openAITools
+		payload["tool_choice"] = "auto"
 	}
 	if thinkingMode != domain.ThinkingModeDisabled &&
 		effort != "" &&
@@ -660,7 +683,8 @@ func (s *ProviderService) callOpenAI(
 	var data struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content   string           `json:"content"`
+				ToolCalls []openAIToolCall `json:"tool_calls"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
@@ -684,8 +708,13 @@ func (s *ProviderService) callOpenAI(
 		content = ""
 	}
 
+	toolCalls, err := providerToolCalls(data.Choices[0].Message.ToolCalls)
+	if err != nil {
+		return nil, err
+	}
 	return &ProviderCallResponse{
 		Content:      content,
+		ToolCalls:    toolCalls,
 		Model:        data.Model,
 		InputTokens:  data.Usage.PromptTokens,
 		OutputTokens: data.Usage.CompletionTokens,
@@ -728,7 +757,10 @@ func (s *ProviderService) callOpenAIStream(
 	var content strings.Builder
 	var model string
 	var finishReason string
+	var sawDone bool
+	toolCalls := make(map[int]*openAIToolCall)
 	scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxResponseBytes))
+	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, ":") {
@@ -739,27 +771,52 @@ func (s *ProviderService) callOpenAIStream(
 		}
 		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if data == "[DONE]" {
+			sawDone = true
 			break
 		}
-		delta, parsedModel, parsedFinishReason, ok := parseOpenAIStreamDelta(data)
-		if parsedModel != "" {
-			model = parsedModel
-		}
-		if parsedFinishReason != "" {
-			finishReason = parsedFinishReason
-		}
-		if !ok || delta.Content == "" {
+		chunk, ok := parseOpenAIStreamChunk(data)
+		if !ok {
 			continue
 		}
-		if delta.Type == "text" {
-			content.WriteString(delta.Content)
+		if chunk.Model != "" {
+			model = chunk.Model
 		}
-		deltaSink(ctx, delta)
+		if chunk.FinishReason != "" {
+			finishReason = chunk.FinishReason
+		}
+		for _, fragment := range chunk.ToolCalls {
+			call := toolCalls[fragment.Index]
+			if call == nil {
+				call = &openAIToolCall{Type: "function"}
+				toolCalls[fragment.Index] = call
+			}
+			if fragment.ID != "" {
+				call.ID = fragment.ID
+			}
+			if fragment.Type != "" {
+				call.Type = fragment.Type
+			}
+			call.Function.Name += fragment.Function.Name
+			call.Function.Arguments += fragment.Function.Arguments
+		}
+		if chunk.Delta.Content != "" {
+			if chunk.Delta.Type == "text" {
+				content.WriteString(chunk.Delta.Content)
+			}
+			deltaSink(ctx, chunk.Delta)
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(content.String()) == "" {
+	if !sawDone && finishReason == "" {
+		return nil, io.ErrUnexpectedEOF
+	}
+	structuredCalls, err := orderedProviderToolCalls(toolCalls)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(content.String()) == "" && len(structuredCalls) == 0 {
 		return &ProviderCallResponse{
 			Content:      "",
 			Model:        model,
@@ -769,6 +826,7 @@ func (s *ProviderService) callOpenAIStream(
 	}
 	return &ProviderCallResponse{
 		Content:      content.String(),
+		ToolCalls:    structuredCalls,
 		Model:        model,
 		FinishReason: finishReason,
 		Streamed:     true,
@@ -776,27 +834,46 @@ func (s *ProviderService) callOpenAIStream(
 }
 
 func parseOpenAIStreamDelta(data string) (ProviderDelta, string, string, bool) {
+	chunk, ok := parseOpenAIStreamChunk(data)
+	return chunk.Delta, chunk.Model, chunk.FinishReason, ok && chunk.Delta.Content != ""
+}
+
+type openAIStreamChunk struct {
+	Delta        ProviderDelta
+	Model        string
+	FinishReason string
+	ToolCalls    []openAIToolCallDelta
+}
+
+func parseOpenAIStreamChunk(data string) (openAIStreamChunk, bool) {
 	var parsed struct {
 		Model   string `json:"model"`
 		Choices []struct {
 			Delta struct {
-				Content          string `json:"content"`
-				ReasoningContent string `json:"reasoning_content"`
+				Content          string                `json:"content"`
+				ReasoningContent string                `json:"reasoning_content"`
+				ToolCalls        []openAIToolCallDelta `json:"tool_calls"`
 			} `json:"delta"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal([]byte(data), &parsed); err != nil || len(parsed.Choices) == 0 {
-		return ProviderDelta{}, "", "", false
+		return openAIStreamChunk{}, false
 	}
 	choice := parsed.Choices[0]
+	chunk := openAIStreamChunk{
+		Model:        parsed.Model,
+		FinishReason: choice.FinishReason,
+		ToolCalls:    choice.Delta.ToolCalls,
+	}
 	if choice.Delta.ReasoningContent != "" {
-		return ProviderDelta{Type: "thinking", Content: choice.Delta.ReasoningContent}, parsed.Model, choice.FinishReason, true
+		chunk.Delta = ProviderDelta{Type: "thinking", Content: choice.Delta.ReasoningContent}
+		return chunk, true
 	}
 	if choice.Delta.Content != "" {
-		return ProviderDelta{Type: "text", Content: choice.Delta.Content}, parsed.Model, choice.FinishReason, true
+		chunk.Delta = ProviderDelta{Type: "text", Content: choice.Delta.Content}
 	}
-	return ProviderDelta{}, parsed.Model, choice.FinishReason, false
+	return chunk, true
 }
 
 // ---------------------------------------------------------------------------
@@ -1067,6 +1144,140 @@ func (s *ProviderService) toAPIMessages(messages []domain.Message) []map[string]
 	}
 
 	return out
+}
+
+type openAIFunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type openAIToolCall struct {
+	ID       string             `json:"id"`
+	Type     string             `json:"type"`
+	Function openAIFunctionCall `json:"function"`
+}
+
+type openAIToolCallDelta struct {
+	Index    int                `json:"index"`
+	ID       string             `json:"id"`
+	Type     string             `json:"type"`
+	Function openAIFunctionCall `json:"function"`
+}
+
+type openAIMessage struct {
+	Role       string           `json:"role"`
+	Content    string           `json:"content,omitempty"`
+	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+}
+
+type openAIFunctionDefinition struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+type openAIToolDefinition struct {
+	Type     string                   `json:"type"`
+	Function openAIFunctionDefinition `json:"function"`
+}
+
+func toOpenAITools(definitions []*domain.ToolDefinition) ([]openAIToolDefinition, error) {
+	tools := make([]openAIToolDefinition, 0, len(definitions))
+	for _, definition := range definitions {
+		if definition == nil || strings.TrimSpace(definition.Name) == "" {
+			return nil, fmt.Errorf("openai tool definition requires a name")
+		}
+		schema := bytes.TrimSpace(definition.JSONSchema)
+		if len(schema) == 0 || !json.Valid(schema) || schema[0] != '{' {
+			return nil, fmt.Errorf("openai tool %q has an invalid parameters schema", definition.Name)
+		}
+		tools = append(tools, openAIToolDefinition{
+			Type: "function",
+			Function: openAIFunctionDefinition{
+				Name:        definition.Name,
+				Description: definition.Description,
+				Parameters:  append(json.RawMessage(nil), schema...),
+			},
+		})
+	}
+	return tools, nil
+}
+
+func toOpenAIMessages(messages []domain.Message) ([]openAIMessage, error) {
+	out := make([]openAIMessage, 0, len(messages))
+	for _, message := range messages {
+		apiMessage := openAIMessage{Role: string(message.Role), Content: message.Content}
+		switch message.Role {
+		case domain.MessageRoleSystem, domain.MessageRoleUser, domain.MessageRoleAssistant:
+		case domain.MessageRoleTool:
+			var metadata struct {
+				ToolCallID string `json:"tool_call_id"`
+			}
+			if err := json.Unmarshal(message.MetadataJSON, &metadata); err != nil ||
+				strings.TrimSpace(metadata.ToolCallID) == "" {
+				return nil, fmt.Errorf("openai tool result message requires tool_call_id")
+			}
+			apiMessage.ToolCallID = metadata.ToolCallID
+		default:
+			apiMessage.Role = "user"
+		}
+		if len(message.ToolCallsJSON) > 0 {
+			if message.Role != domain.MessageRoleAssistant {
+				return nil, fmt.Errorf("openai tool_calls require an assistant message")
+			}
+			if err := json.Unmarshal(message.ToolCallsJSON, &apiMessage.ToolCalls); err != nil {
+				return nil, fmt.Errorf("decode assistant tool_calls: %w", err)
+			}
+			if len(apiMessage.ToolCalls) == 0 {
+				return nil, fmt.Errorf("assistant tool_calls cannot be empty")
+			}
+		}
+		if strings.TrimSpace(apiMessage.Content) == "" && len(apiMessage.ToolCalls) == 0 {
+			continue
+		}
+		out = append(out, apiMessage)
+	}
+	return out, nil
+}
+
+func providerToolCalls(calls []openAIToolCall) ([]ProviderToolCall, error) {
+	out := make([]ProviderToolCall, 0, len(calls))
+	for _, call := range calls {
+		if call.Type != "" && call.Type != "function" {
+			return nil, fmt.Errorf("openai ToolCall %q has unsupported type %q", call.ID, call.Type)
+		}
+		if strings.TrimSpace(call.ID) == "" ||
+			strings.TrimSpace(call.Function.Name) == "" {
+			return nil, fmt.Errorf("openai ToolCall requires id and function name")
+		}
+		arguments := strings.TrimSpace(call.Function.Arguments)
+		if arguments == "" {
+			arguments = "{}"
+		}
+		if !json.Valid([]byte(arguments)) {
+			return nil, fmt.Errorf("openai ToolCall %q has invalid arguments", call.ID)
+		}
+		out = append(out, ProviderToolCall{
+			ID:        strings.TrimSpace(call.ID),
+			Name:      call.Function.Name,
+			Arguments: arguments,
+		})
+	}
+	return out, nil
+}
+
+func orderedProviderToolCalls(calls map[int]*openAIToolCall) ([]ProviderToolCall, error) {
+	indexes := make([]int, 0, len(calls))
+	for index := range calls {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	ordered := make([]openAIToolCall, 0, len(indexes))
+	for _, index := range indexes {
+		ordered = append(ordered, *calls[index])
+	}
+	return providerToolCalls(ordered)
 }
 
 // toAnthropicMessages converts domain messages to Anthropic's content-block

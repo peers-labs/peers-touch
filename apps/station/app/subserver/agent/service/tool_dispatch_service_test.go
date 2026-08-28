@@ -1669,7 +1669,12 @@ func TestTurnServiceProcessToolCallsPausesAfterDurableDispatch(t *testing.T) {
 		t.Fatalf("load turn capability authority: %v", err)
 	}
 	config.AuthorizedCapabilities = authorized
-	response := `<tool_call>{"name":"local_file_read","arguments":{"resource_ref":"resource-1"}}</tool_call>`
+	response := ""
+	providerToolCalls := []ProviderToolCall{{
+		ID:        "provider-call-1",
+		Name:      "local_file_read",
+		Arguments: `{"resource_ref":"resource-1"}`,
+	}}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
@@ -1681,6 +1686,7 @@ func TestTurnServiceProcessToolCallsPausesAfterDurableDispatch(t *testing.T) {
 		"system prompt",
 		nil,
 		&response,
+		providerToolCalls,
 		0,
 	)
 	if err != nil {
@@ -1705,6 +1711,21 @@ func TestTurnServiceProcessToolCallsPausesAfterDurableDispatch(t *testing.T) {
 		call.BindingID != "binding-turn-service" ||
 		call.ReadinessSnapID != proposal.ReadinessSnapshotID {
 		t.Fatalf("turn tool call lost capability authority lineage: %+v", call)
+	}
+	var assistantMessage persistence.AgentMessage
+	if err := fixture.db.
+		Where("turn_id = ? AND role = ?", proposal.TurnID, string(domain.MessageRoleAssistant)).
+		First(&assistantMessage).Error; err != nil {
+		t.Fatalf("load assistant ToolCall message: %v", err)
+	}
+	var persistedCalls []openAIToolCall
+	if err := json.Unmarshal(assistantMessage.ToolCallsJSON, &persistedCalls); err != nil {
+		t.Fatalf("decode assistant ToolCalls: %v", err)
+	}
+	if len(persistedCalls) != 1 ||
+		persistedCalls[0].ID != call.ToolCallID ||
+		persistedCalls[0].Function.Name != "local_file_read" {
+		t.Fatalf("assistant ToolCall linkage = %+v, call=%+v", persistedCalls, call)
 	}
 }
 
@@ -1785,6 +1806,19 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 	); err != nil || !response.GetAccepted() || response.GetContinuationId() == "" {
 		t.Fatalf("submit applied receipt: response=%+v err=%v", response, err)
 	}
+	var toolMessage persistence.AgentMessage
+	if err := fixture.db.
+		Where("turn_id = ? AND role = ?", turn.ID, string(domain.MessageRoleTool)).
+		First(&toolMessage).Error; err != nil {
+		t.Fatalf("load persisted tool result message: %v", err)
+	}
+	var toolMetadata map[string]string
+	if err := json.Unmarshal(toolMessage.MetadataJSON, &toolMetadata); err != nil {
+		t.Fatalf("decode tool result metadata: %v", err)
+	}
+	if toolMetadata["tool_call_id"] != authority.Calls[0].ToolCallID {
+		t.Fatalf("tool result linkage = %#v", toolMetadata)
+	}
 
 	providerCalls := 0
 	resumedThinkingMode := domain.ThinkingMode("")
@@ -1798,10 +1832,15 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 			_ *domain.TurnTrace,
 			_ string,
 			_ []domain.Message,
-		) (string, []domain.ProviderCallRecord, bool, error) {
+		) (string, []ProviderToolCall, []domain.ProviderCallRecord, bool, error) {
 			providerCalls++
 			resumedThinkingMode = config.ThinkingMode
-			return `<tool_call>{"name":"local_file_read","arguments":{"resource_ref":"resource-2"}}</tool_call>`,
+			return "",
+				[]ProviderToolCall{{
+					ID:        "provider-call-2",
+					Name:      "local_file_read",
+					Arguments: `{"resource_ref":"resource-2"}`,
+				}},
 				[]domain.ProviderCallRecord{{Provider: "provider-1", Model: "model-1"}},
 				false,
 				nil

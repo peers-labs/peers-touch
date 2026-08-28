@@ -141,7 +141,7 @@ type continuationProviderCall func(
 	*domain.TurnTrace,
 	string,
 	[]domain.Message,
-) (string, []domain.ProviderCallRecord, bool, error)
+) (string, []ProviderToolCall, []domain.ProviderCallRecord, bool, error)
 
 // ---------------------------------------------------------------------------
 // TurnService
@@ -835,8 +835,25 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		}
 	}
 
+	toolDefinitions := s.toolDefinitions(config.AvailableTools)
+	toolSchemaSegment, toolDefinitionTokens, err := toolSchemaContextSegment(
+		config.AuthorizedCapabilities,
+		toolDefinitions,
+	)
+	if err != nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"build authorized Tool schema context",
+			err,
+		)
+	}
+	trace.ToolDefinitionTokens = toolDefinitionTokens
+
 	// Step 6 — Check / run compression.
-	estimatedTokens := s.compression.EstimateTokens(messages)
+	estimatedTokens := s.compression.EstimateTokens(messages) +
+		assemblyResult.InjectedTokens +
+		int(toolDefinitionTokens)
 	shouldCompress := s.compression.ShouldCompress(estimatedTokens, config.ContextWindowSize)
 
 	logger.Infof(ctx, "compression check: turn_id=%s tokens=%d window=%d should_compress=%v",
@@ -847,6 +864,12 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		if err != nil {
 			return nil, err
 		}
+	}
+	if toolSchemaSegment != nil {
+		assemblyResult.Segments = append(
+			assemblyResult.Segments,
+			*toolSchemaSegment,
+		)
 	}
 
 	// Persist ContextLedger to TurnAttempt (MCA-D04).
@@ -873,7 +896,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		Type:  "progress",
 		Stage: "provider_call_started",
 	})
-	assistantResponse, providerCalls, streamed, err := s.providerCallWithRetry(
+	assistantResponse, providerToolCalls, providerCalls, streamed, err := s.providerCallWithRetry(
 		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages,
 	)
 	trace.ProviderCalls = providerCalls
@@ -910,7 +933,15 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 
 	// Step 8 — Tool call iteration loop.
 	toolIterations, paused, err := s.processToolCalls(
-		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages, &assistantResponse, 0,
+		ctx,
+		config,
+		turnID,
+		trace,
+		assemblyResult.SystemPrompt,
+		messages,
+		&assistantResponse,
+		providerToolCalls,
+		0,
 	)
 	if usageErr := s.persistAttemptUsage(ctx, turnID, config.AttemptID, trace); usageErr != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist turn usage")
@@ -960,7 +991,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		}, nil
 	}
 
-	assistantResponse = stripToolCallMarkup(assistantResponse)
+	assistantResponse = strings.TrimSpace(assistantResponse)
 	return s.finishTurnExecution(
 		ctx,
 		config,
@@ -1321,7 +1352,7 @@ func (s *TurnService) providerCallWithRetry(
 	trace *domain.TurnTrace,
 	systemPrompt string,
 	messages []domain.Message,
-) (string, []domain.ProviderCallRecord, bool, error) {
+) (string, []ProviderToolCall, []domain.ProviderCallRecord, bool, error) {
 
 	maxRetries := config.MaxRetries
 	if maxRetries <= 0 {
@@ -1329,6 +1360,13 @@ func (s *TurnService) providerCallWithRetry(
 	}
 
 	var providerCalls []domain.ProviderCallRecord
+	var toolDefinitions []*domain.ToolDefinition
+	if s.toolRegistry != nil {
+		toolDefinitions = s.toolRegistry.Definitions(config.AvailableTools)
+	}
+	if trace.ToolDefinitionTokens == 0 {
+		trace.ToolDefinitionTokens = estimateToolDefinitionTokens(toolDefinitions)
+	}
 
 	// Recover any cooled-down credentials before starting the retry loop.
 	if recovered, _ := s.credentialPool.RecoverCooledDown(ctx); recovered > 0 {
@@ -1342,19 +1380,19 @@ func (s *TurnService) providerCallWithRetry(
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if err := ctx.Err(); err != nil {
-			return "", providerCalls, false, err
+			return "", nil, providerCalls, false, err
 		}
 
 		providerID := strings.TrimSpace(config.Provider)
 		if providerID == "" {
-			return "", providerCalls, false, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			return "", nil, providerCalls, false, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 				"provider is required in turn config", nil)
 		}
 
 		// Turn-time revalidation: verify provider and model are valid before execution.
 		if attempt == 0 {
 			if revalErr := s.revalidateProviderState(ctx, config.ActorID, providerID, config.Model); revalErr != nil {
-				return "", providerCalls, false, revalErr
+				return "", nil, providerCalls, false, revalErr
 			}
 		}
 
@@ -1366,10 +1404,10 @@ func (s *TurnService) providerCallWithRetry(
 
 			// If no credential is available on a retry, it's fatal.
 			if attempt > 0 {
-				return "", providerCalls, false, errcode.New(errcode.AgentCredentialFailed,
+				return "", nil, providerCalls, false, errcode.New(errcode.AgentCredentialFailed,
 					http.StatusServiceUnavailable, "no credentials available after rotation", leaseErr)
 			}
-			return "", providerCalls, false, leaseErr
+			return "", nil, providerCalls, false, leaseErr
 		}
 
 		logger.Infof(ctx, "credential leased: turn_id=%s attempt=%d credential_id=%s",
@@ -1382,6 +1420,7 @@ func (s *TurnService) providerCallWithRetry(
 			Model:        config.Model,
 			SystemPrompt: systemPrompt,
 			Messages:     messages,
+			Tools:        toolDefinitions,
 			ProviderType: config.Provider,
 			Effort:       config.Effort,
 			ThinkingMode: config.ThinkingMode,
@@ -1396,7 +1435,7 @@ func (s *TurnService) providerCallWithRetry(
 
 		callDuration := time.Since(callStart)
 		if err := ctx.Err(); err != nil {
-			return "", providerCalls, false, err
+			return "", nil, providerCalls, false, err
 		}
 
 		// Build provider call record for trace regardless of outcome.
@@ -1424,7 +1463,7 @@ func (s *TurnService) providerCallWithRetry(
 		if callErr == nil && resp != nil {
 			logger.Infof(ctx, "provider call success: turn_id=%s attempt=%d model=%s input=%d output=%d latency=%s",
 				turnID, attempt, resp.Model, resp.InputTokens, resp.OutputTokens, callDuration)
-			return resp.Content, providerCalls, resp.Streamed, nil
+			return resp.Content, resp.ToolCalls, providerCalls, resp.Streamed, nil
 		}
 
 		// Error classification and recovery decision.
@@ -1479,13 +1518,83 @@ func (s *TurnService) providerCallWithRetry(
 
 		// Non-retryable errors terminate the loop immediately.
 		if !classified.Retryable && !classified.ShouldCompress && !classified.ShouldRotateCredential && !classified.ShouldFallback {
-			return "", providerCalls, false, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
+			return "", nil, providerCalls, false, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 				fmt.Sprintf("non-retryable provider error: %s", classified.Reason.String()), callErr)
 		}
 	}
 
-	return "", providerCalls, false, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
+	return "", nil, providerCalls, false, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 		fmt.Sprintf("provider call exhausted %d retries", maxRetries), nil)
+}
+
+func estimateToolDefinitionTokens(definitions []*domain.ToolDefinition) uint64 {
+	var bytes int
+	for _, definition := range definitions {
+		if definition == nil {
+			continue
+		}
+		bytes += len(definition.Name)
+		bytes += len(definition.Description)
+		bytes += len(definition.JSONSchema)
+	}
+	if bytes == 0 {
+		return 0
+	}
+	return uint64((bytes + 3) / 4)
+}
+
+func (s *TurnService) toolDefinitions(names []string) []*domain.ToolDefinition {
+	if s.toolRegistry == nil {
+		return nil
+	}
+	return s.toolRegistry.Definitions(names)
+}
+
+func toolSchemaContextSegment(
+	authorized *AuthorizedCapabilitySet,
+	definitions []*domain.ToolDefinition,
+) (*ContextSegment, uint64, error) {
+	tools, err := toOpenAITools(definitions)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(tools) == 0 {
+		return nil, 0, nil
+	}
+	if authorized == nil {
+		return nil, 0, fmt.Errorf("authorized capability set is required")
+	}
+	encoded, err := json.Marshal(tools)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encode Tool schemas: %w", err)
+	}
+	sourceRefs := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		capability, ok := authorized.Tool(definition.Name)
+		if !ok {
+			return nil, 0, fmt.Errorf(
+				"Tool schema %q is not authorized by the pinned snapshot",
+				definition.Name,
+			)
+		}
+		sourceRefs = append(
+			sourceRefs,
+			fmt.Sprintf(
+				"capability:%s@%s",
+				capability.Manifest.GetCapabilityId(),
+				capability.Manifest.GetVersion(),
+			),
+		)
+	}
+	tokens := uint64((len(encoded) + 3) / 4)
+	return &ContextSegment{
+		Type:            model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_TOOL_SCHEMA,
+		Content:         string(encoded),
+		SourceRefs:      sourceRefs,
+		ContentHash:     sha256Hex(string(encoded)),
+		EstimatedTokens: int(tokens),
+		Decision:        model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+	}, tokens, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1516,12 +1625,20 @@ func (s *TurnService) processToolCalls(
 	systemPrompt string,
 	messages []domain.Message,
 	responsePtr *string,
+	providerToolCalls []ProviderToolCall,
 	startingIterations int,
 ) (int, bool, error) {
 	iterations := startingIterations
 
 	for iterations < maxToolIterations {
-		toolCalls := s.parseToolCalls(*responsePtr)
+		toolCalls := make([]toolCallEntry, 0, len(providerToolCalls))
+		for _, call := range providerToolCalls {
+			toolCalls = append(toolCalls, toolCallEntry{
+				ProviderCallID: call.ID,
+				ToolName:       call.Name,
+				Arguments:      call.Arguments,
+			})
+		}
 		if len(toolCalls) == 0 {
 			break
 		}
@@ -1529,13 +1646,30 @@ func (s *TurnService) processToolCalls(
 		iterations++
 		logger.Infof(ctx, "tool iteration %d: turn_id=%s tool_count=%d", iterations, turnID, len(toolCalls))
 
-		if err := s.persistMessage(
+		toolBatchID := stableToolBatchID(turnID, config.AttemptID, iterations)
+		for index := range toolCalls {
+			toolCalls[index].ProviderCallID = stableToolCallID(
+				toolBatchID,
+				index,
+				toolCalls[index],
+			)
+		}
+		toolCallsJSON, err := marshalProviderToolCalls(toolCalls)
+		if err != nil {
+			return iterations, false, fmt.Errorf("encode assistant ToolCalls: %w", err)
+		}
+		if err := s.persistMessageRecord(
 			ctx,
 			config.ConversationID,
 			turnID,
 			string(domain.MessageRoleAssistant),
 			*responsePtr,
 			config.Model,
+			toolCallsJSON,
+			nil,
+			"",
+			"",
+			"",
 		); err != nil {
 			return iterations, false, fmt.Errorf("persist assistant tool-call message: %w", err)
 		}
@@ -1545,11 +1679,11 @@ func (s *TurnService) processToolCalls(
 			TurnID:         turnID,
 			Role:           domain.MessageRoleAssistant,
 			Content:        *responsePtr,
+			ToolCallsJSON:  toolCallsJSON,
 			CreatedAt:      time.Now(),
 			UpdatedAt:      time.Now(),
 		})
 
-		toolBatchID := stableToolBatchID(turnID, config.AttemptID, iterations)
 		proposals := make([]AuthorizedToolProposal, 0, len(toolCalls))
 
 		for index, tc := range toolCalls {
@@ -1617,7 +1751,6 @@ func (s *TurnService) processToolCalls(
 
 	if iterations >= maxToolIterations {
 		logger.Warnf(ctx, "tool iteration hard limit reached: turn_id=%s iterations=%d", turnID, iterations)
-		*responsePtr = stripToolCallMarkup(*responsePtr)
 	}
 
 	return iterations, false, nil
@@ -2024,7 +2157,7 @@ func (s *TurnService) ResumeReadyToolContinuation(
 	if providerCall == nil {
 		providerCall = s.providerCallWithRetry
 	}
-	nextResponse, providerCalls, _, callErr := providerCall(
+	nextResponse, providerToolCalls, providerCalls, _, callErr := providerCall(
 		ctx,
 		config,
 		batch.TurnID,
@@ -2060,6 +2193,7 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		batch.SystemPrompt,
 		messages,
 		&nextResponse,
+		providerToolCalls,
 		int(batch.Iteration),
 	)
 	if usageErr := s.persistAttemptUsage(ctx, batch.TurnID, batch.AttemptID, trace); usageErr != nil {
@@ -2094,7 +2228,7 @@ func (s *TurnService) ResumeReadyToolContinuation(
 			Iteration: toolIterations,
 		})
 	} else {
-		nextResponse = stripToolCallMarkup(nextResponse)
+		nextResponse = strings.TrimSpace(nextResponse)
 		if _, err := s.finishTurnExecution(
 			ctx,
 			config,
@@ -2234,14 +2368,29 @@ func (s *TurnService) recordToolOutcome(
 		Duration:  duration,
 	})
 	toolMessage := fmt.Sprintf("[%s] %s", tc.ToolName, resultContent)
+	toolCallID := strings.TrimSpace(tc.ProviderCallID)
+	if toolCallID == "" {
+		toolCallID = callID
+	}
+	metadataJSON, err := json.Marshal(map[string]string{
+		"tool_call_id": toolCallID,
+	})
+	if err != nil {
+		return fmt.Errorf("encode tool result metadata: %w", err)
+	}
 	if persist {
-		if err := s.persistMessage(
+		if err := s.persistMessageRecord(
 			ctx,
 			config.ConversationID,
 			turnID,
 			string(domain.MessageRoleTool),
 			toolMessage,
 			config.Model,
+			nil,
+			metadataJSON,
+			"",
+			"",
+			"",
 		); err != nil {
 			return fmt.Errorf("persist tool message %s: %w", tc.ToolName, err)
 		}
@@ -2253,6 +2402,7 @@ func (s *TurnService) recordToolOutcome(
 		TurnID:         turnID,
 		Role:           domain.MessageRoleTool,
 		Content:        toolMessage,
+		MetadataJSON:   metadataJSON,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	})
@@ -2447,203 +2597,35 @@ func (s *TurnService) executeDelegation(
 // ---------------------------------------------------------------------------
 
 type toolCallEntry struct {
-	ToolName  string
-	Arguments string
+	ProviderCallID string
+	ToolName       string
+	Arguments      string
 }
 
-func (s *TurnService) parseToolCalls(response string) []toolCallEntry {
-	var calls []toolCallEntry
-	calls = append(calls, parseToolCallsJSON(response)...)
-	calls = append(calls, parseToolCallsArk(response)...)
-	calls = append(calls, parseToolCallsSeedXML(response)...)
-	return calls
-}
-
-func parseToolCallsJSON(response string) []toolCallEntry {
-	var calls []toolCallEntry
-	const openTag = "<tool_call>"
-	const closeTag = "</tool_call>"
-	remaining := response
-	for {
-		openIdx := indexOf(remaining, openTag)
-		if openIdx < 0 {
-			break
+func marshalProviderToolCalls(calls []toolCallEntry) (json.RawMessage, error) {
+	encoded := make([]openAIToolCall, 0, len(calls))
+	for _, call := range calls {
+		if strings.TrimSpace(call.ProviderCallID) == "" ||
+			strings.TrimSpace(call.ToolName) == "" {
+			return nil, fmt.Errorf("provider ToolCall requires id and name")
 		}
-		closeRelIdx := indexOf(remaining[openIdx:], closeTag)
-		if closeRelIdx < 0 {
-			break
+		arguments := strings.TrimSpace(call.Arguments)
+		if arguments == "" {
+			arguments = "{}"
 		}
-		jsonStr := strings.TrimSpace(remaining[openIdx+len(openTag) : openIdx+closeRelIdx])
-		var parsed struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
+		if !json.Valid([]byte(arguments)) {
+			return nil, fmt.Errorf("provider ToolCall %q has invalid arguments", call.ToolName)
 		}
-		if err := json.Unmarshal([]byte(jsonStr), &parsed); err == nil && parsed.Name != "" {
-			args := string(parsed.Arguments)
-			if args == "" {
-				args = "{}"
-			}
-			calls = append(calls, toolCallEntry{ToolName: parsed.Name, Arguments: args})
-		}
-		remaining = remaining[openIdx+closeRelIdx+len(closeTag):]
+		encoded = append(encoded, openAIToolCall{
+			ID:   call.ProviderCallID,
+			Type: "function",
+			Function: openAIFunctionCall{
+				Name:      call.ToolName,
+				Arguments: arguments,
+			},
+		})
 	}
-	return calls
-}
-
-func parseToolCallsArk(response string) []toolCallEntry {
-	var calls []toolCallEntry
-	const openTag = "<|FunctionCallBegin|>"
-	const closeTag = "<|FunctionCallEnd|>"
-	remaining := response
-	for {
-		openIdx := indexOf(remaining, openTag)
-		if openIdx < 0 {
-			break
-		}
-		closeRelIdx := indexOf(remaining[openIdx:], closeTag)
-		if closeRelIdx < 0 {
-			break
-		}
-		jsonStr := strings.TrimSpace(remaining[openIdx+len(openTag) : openIdx+closeRelIdx])
-		var arkCalls []struct {
-			Name       string          `json:"name"`
-			Parameters json.RawMessage `json:"parameters"`
-		}
-		if err := json.Unmarshal([]byte(jsonStr), &arkCalls); err == nil {
-			for _, ac := range arkCalls {
-				if ac.Name != "" {
-					args := string(ac.Parameters)
-					if args == "" {
-						args = "{}"
-					}
-					calls = append(calls, toolCallEntry{ToolName: ac.Name, Arguments: args})
-				}
-			}
-		}
-		remaining = remaining[openIdx+closeRelIdx+len(closeTag):]
-	}
-	return calls
-}
-
-func parseToolCallsSeedXML(response string) []toolCallEntry {
-	var calls []toolCallEntry
-	const openTag = "<seed:tool_call>"
-	const closeTag = "</seed:tool_call>"
-	remaining := response
-	for {
-		openIdx := indexOf(remaining, openTag)
-		if openIdx < 0 {
-			break
-		}
-		closeRelIdx := indexOf(remaining[openIdx:], closeTag)
-		if closeRelIdx < 0 {
-			break
-		}
-		block := remaining[openIdx+len(openTag) : openIdx+closeRelIdx]
-		funcOpen := "<function name=\""
-		fIdx := indexOf(block, funcOpen)
-		if fIdx >= 0 {
-			afterFunc := block[fIdx+len(funcOpen):]
-			endQuote := indexOf(afterFunc, "\"")
-			if endQuote > 0 {
-				funcName := afterFunc[:endQuote]
-				funcBodyStart := afterFunc[endQuote+1:]
-				funcClose := "</function>"
-				fcIdx := indexOf(funcBodyStart, funcClose)
-				if fcIdx >= 0 {
-					funcBody := funcBodyStart[:fcIdx]
-					params := parseSeedXMLParams(funcBody)
-					argsJSON, _ := json.Marshal(params)
-					if funcName != "" {
-						calls = append(calls, toolCallEntry{ToolName: funcName, Arguments: string(argsJSON)})
-					}
-				}
-			}
-		}
-		remaining = remaining[openIdx+closeRelIdx+len(closeTag):]
-	}
-	return calls
-}
-
-func parseSeedXMLParams(body string) map[string]string {
-	params := make(map[string]string)
-	remaining := body
-	pClose := "</parameter>"
-	for {
-		pOpenTag := "<parameter name=\""
-		pIdx := indexOf(remaining, pOpenTag)
-		if pIdx < 0 {
-			break
-		}
-		afterParam := remaining[pIdx+len(pOpenTag):]
-		endQuote := indexOf(afterParam, "\"")
-		if endQuote < 0 {
-			break
-		}
-		paramName := afterParam[:endQuote]
-		afterQuote := afterParam[endQuote+1:]
-		pClOffset := indexOf(afterQuote, pClose)
-		if pClOffset < 0 {
-			break
-		}
-		paramVal := strings.TrimSpace(afterQuote[:pClOffset])
-		if paramName != "" {
-			params[paramName] = paramVal
-		}
-		remaining = afterQuote[pClOffset+len(pClose):]
-	}
-	return params
-}
-
-func stripToolCallMarkup(response string) string {
-	cleaned := response
-	for {
-		openIdx := indexOf(cleaned, "<|FunctionCallBegin|>")
-		if openIdx < 0 {
-			break
-		}
-		closeRelIdx := indexOf(cleaned[openIdx:], "<|FunctionCallEnd|>")
-		if closeRelIdx < 0 {
-			cleaned = cleaned[:openIdx]
-			break
-		}
-		cleaned = cleaned[:openIdx] + cleaned[openIdx+closeRelIdx+len("<|FunctionCallEnd|>"):]
-	}
-	for {
-		openIdx := indexOf(cleaned, "<tool_call>")
-		if openIdx < 0 {
-			break
-		}
-		closeRelIdx := indexOf(cleaned[openIdx:], "</tool_call>")
-		if closeRelIdx < 0 {
-			cleaned = cleaned[:openIdx]
-			break
-		}
-		cleaned = cleaned[:openIdx] + cleaned[openIdx+closeRelIdx+len("</tool_call>"):]
-	}
-	for {
-		openIdx := indexOf(cleaned, "<seed:tool_call>")
-		if openIdx < 0 {
-			break
-		}
-		closeRelIdx := indexOf(cleaned[openIdx:], "</seed:tool_call>")
-		if closeRelIdx < 0 {
-			cleaned = cleaned[:openIdx]
-			break
-		}
-		cleaned = cleaned[:openIdx] + cleaned[openIdx+closeRelIdx+len("</seed:tool_call>"):]
-	}
-	return strings.TrimSpace(cleaned)
-}
-
-// indexOf returns the index of substr in s, or -1 if not found.
-func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
+	return json.Marshal(encoded)
 }
 
 // ---------------------------------------------------------------------------
@@ -2739,6 +2721,34 @@ func (s *TurnService) persistMessageWithLineage(
 	parentMessageID string,
 	replacesMessageID string,
 ) error {
+	return s.persistMessageRecord(
+		ctx,
+		conversationID,
+		turnID,
+		role,
+		content,
+		modelName,
+		nil,
+		nil,
+		branchID,
+		parentMessageID,
+		replacesMessageID,
+	)
+}
+
+func (s *TurnService) persistMessageRecord(
+	ctx context.Context,
+	conversationID string,
+	turnID string,
+	role string,
+	content string,
+	modelName string,
+	toolCallsJSON json.RawMessage,
+	metadataJSON json.RawMessage,
+	branchID string,
+	parentMessageID string,
+	replacesMessageID string,
+) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
@@ -2754,6 +2764,12 @@ func (s *TurnService) persistMessageWithLineage(
 		Content:        &content,
 		CreatedAt:      now,
 		UpdatedAt:      now,
+	}
+	if len(toolCallsJSON) > 0 {
+		msg.ToolCallsJSON = append(json.RawMessage(nil), toolCallsJSON...)
+	}
+	if len(metadataJSON) > 0 {
+		msg.MetadataJSON = append(json.RawMessage(nil), metadataJSON...)
 	}
 	if modelName != "" {
 		msg.ModelName = &modelName
@@ -2951,9 +2967,10 @@ func (s *TurnService) persistAttemptUsage(
 	}
 
 	usage := domain.TurnUsage{
-		TurnID:        turnID,
-		AttemptID:     attemptID,
-		ToolCallCount: uint32(len(trace.ToolCalls)),
+		TurnID:               turnID,
+		AttemptID:            attemptID,
+		ToolDefinitionTokens: trace.ToolDefinitionTokens,
+		ToolCallCount:        uint32(len(trace.ToolCalls)),
 	}
 	for _, call := range trace.ProviderCalls {
 		usage.InputTokens += uint64(max(call.InputTokens, 0))

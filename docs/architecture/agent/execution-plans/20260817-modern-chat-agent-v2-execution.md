@@ -2166,6 +2166,18 @@ AS-F04 implementation progress (2026-08-28):
   exhaustion, Station diagnostic replay, and Desktop ToolCall-keyed side-effect
   counters. AS-F04 and the complete Foundation Gate remain `UNPROVEN` until the
   source-matched profile `two` run passes.
+- Source-matched run
+  `20260828T065046273691Z-4d541aa9882e857cff44a2f6aa5838ac`
+  reached Browser AS-F04 after AS-F01 through AS-F03 passed, then timed out on
+  the auto case. Station readback showed the Turn completed with
+  `tool_iterations=0`, no ToolCall/ToolBatch/continuation rows, and
+  `ToolDefinitionTokens=0`, while its pinned readiness snapshot contained the
+  READY `skills_list` binding. The root cause is therefore the Station
+  provider boundary: authorized Tool schemas are not passed to the provider
+  and structured provider ToolCalls are not preserved for the governed
+  ToolCall loop. W8a must close that provider/Turn integration and add focused
+  regression coverage before rerunning Foundation; prompt-only steering,
+  parsing arbitrary assistant JSON, or relaxing the Harness is forbidden.
 
 **W8a checks**:
 
