@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
@@ -214,8 +215,13 @@ def assert_group_one_capture(
         if value is not None
     }
     if normalized_assertions != normalized_evaluated:
+        mismatches = _assertion_mismatch_diagnostics(
+            normalized_assertions,
+            normalized_evaluated,
+        )
         raise GroupOneProbeError(
-            f"{probe_input.cell} assertions do not match production scenario facts"
+            f"{probe_input.cell} assertions do not match production scenario facts: "
+            f"mismatches={mismatches}"
         )
     deferred_capture = {
         key for key, value in dict(assertions).items() if value is None
@@ -224,8 +230,33 @@ def assert_group_one_capture(
         key for key, value in evaluated.items() if value is None
     }
     if deferred_capture != deferred_evaluated:
+        mismatches = _assertion_mismatch_diagnostics(
+            {key: None for key in deferred_capture},
+            {key: None for key in deferred_evaluated},
+        )
         raise GroupOneProbeError(
             f"{probe_input.cell} deferred keys mismatch: "
-            f"capture={sorted(deferred_capture)}, "
-            f"evaluated={sorted(deferred_evaluated)}"
+            f"mismatches={mismatches}"
         )
+
+
+def _assertion_mismatch_diagnostics(
+    capture: Mapping[str, Any],
+    evaluated: Mapping[str, Any],
+) -> str:
+    mismatches = [
+        {
+            "key": key,
+            "capture": _redacted_assertion_value(capture.get(key)),
+            "evaluated": _redacted_assertion_value(evaluated.get(key)),
+        }
+        for key in sorted(set(capture) | set(evaluated))
+        if key not in capture
+        or key not in evaluated
+        or capture[key] != evaluated[key]
+    ]
+    return json.dumps(mismatches, sort_keys=True, separators=(",", ":"))
+
+
+def _redacted_assertion_value(value: Any) -> bool | None:
+    return value if isinstance(value, bool) else None

@@ -286,17 +286,60 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         ) -> dict[str, Any]:
             result = scenario_capture(client, probe)
             if probe.cell == "AS-F05":
+                result["scenarioFacts"]["diagnosticSecret"] = "must-not-leak"
                 result["assertions"] = {
                     **result["assertions"],
                     "authorizedDownloadVerified": False,
+                    "failedUploadRemovalPreservedSiblings": False,
                 }
             return result
 
-        with self.assertRaisesRegex(
-            GroupOneProbeError,
-            "AS-F05 assertions do not match production scenario facts",
-        ):
+        with self.assertRaises(GroupOneProbeError) as raised:
             runner.collect(mismatched)
+
+        self.assertEqual(
+            str(raised.exception),
+            "AS-F05 assertions do not match production scenario facts: "
+            'mismatches=[{"capture":false,"evaluated":true,'
+            '"key":"authorizedDownloadVerified"},'
+            '{"capture":false,"evaluated":true,'
+            '"key":"failedUploadRemovalPreservedSiblings"}]',
+        )
+        self.assertNotIn("must-not-leak", str(raised.exception))
+
+    def test_deferred_assertion_key_mismatch_remains_fail_closed(self) -> None:
+        runner = FoundationGroupOneProbeRunner(
+            desktop_native=RecordingHarnessClient(),
+            browser=RecordingHarnessClient(),
+        )
+
+        def mismatched(
+            client: RecordingHarnessClient,
+            probe: Any,
+        ) -> dict[str, Any]:
+            result = scenario_capture(client, probe)
+            if probe.cell == "AS-F10":
+                facts = result["scenarioFacts"]
+                facts["rejections"]["unsupported"] = {
+                    "availability": "unavailable",
+                    "unavailable_reason": "NO_PRODUCTION_CAPABILITY_ENDPOINT",
+                }
+                result["assertions"] = evaluate_as_f10(
+                    facts,
+                    platform=probe.platform,
+                )
+                result["assertions"].pop("unsupportedRejected")
+            return result
+
+        with self.assertRaises(GroupOneProbeError) as raised:
+            runner.collect(mismatched)
+
+        self.assertEqual(
+            str(raised.exception),
+            "AS-F10 deferred keys mismatch: "
+            'mismatches=[{"capture":null,"evaluated":null,'
+            '"key":"unsupportedRejected"}]',
+        )
 
     def test_as_f10_accepts_deferred_assertions_when_consistent(self) -> None:
         runner = FoundationGroupOneProbeRunner(

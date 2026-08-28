@@ -2584,6 +2584,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Foundation scenario/probe/static tests, Rust `cargo check`, formatting, and
   `git diff --check`. Runtime proof remains `UNPROVEN` until this checkpoint is
   committed, deployed, and exercised by a new source-matched Foundation run.
+- The source-matched `e5ffbd366` run
+  `20260828T163131562645Z-91391916156a9a8624bc58875b5d17ce`
+  no longer reported the two explicit download/sibling product-fact failures.
+  It stopped at Browser AS-F05 because the Harness assertion map differed from
+  the independent Python oracle, but the probe emitted only a generic mismatch
+  and the all-or-nothing producer did not persist the underlying facts.
+  Execution remained `PARTIAL / UNPROVEN`; cleanup and redaction passed. The
+  next evidence checkpoint must preserve fail-closed comparison while reporting
+  only the differing assertion keys and boolean values so the next run exposes
+  the unique owner without leaking scenario payloads or credentials.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
