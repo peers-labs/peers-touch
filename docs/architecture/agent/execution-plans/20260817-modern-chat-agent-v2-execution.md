@@ -249,8 +249,8 @@ Parallel policy:
 | W4 MCP Lifecycle | pending | G-F + W3 + W6 invocation join |
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
-| W8a Capability/ToolCall Cutover | in progress: MCA-D15K K1-K5 and AS-F04 implementation/scoped verification complete; source-matched runtime proof pending | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | blocked | W8a |
+| W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
+| G-F Complete Foundation Gate | in progress: AS-F01 through AS-F04 pass; AS-F05 is the first failing cell | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2206,6 +2206,13 @@ AS-F04 implementation progress (2026-08-28):
   proto-first and regenerate Station, Desktop, and Mobile Web contracts;
   deriving approval from the terminal status is forbidden. Cleanup passed;
   AS-F04 remains `UNPROVEN`.
+- Source-matched run
+  `20260828T081151162769Z-b7abdf91b97410ddd1022b4da264a2ad`
+  passed AS-F04 for Browser and Desktop through the independent oracle. It
+  proved auto/manual execution exactly once, deny/expiry zero execution,
+  duplicate replay identity, durable authority lineage, and the exact
+  25-iteration loop bound. The complete Gate then advanced to AS-F05 and
+  failed closed because that direct-runtime group is not implemented.
 
 **W8a checks**:
 
@@ -2457,7 +2464,8 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   required receipt/batch lineage. An Acceptance-only proposal endpoint, mutable
   deny map, synthetic executor result, or deferred assertion reported as passed
   is forbidden. The tuple remains `UNPROVEN` until W8a and the complete G-F run.
-- **Status**: pending
+- **Status**: source-matched Browser/Desktop runtime proof passed in
+  `20260828T081151162769Z-b7abdf91b97410ddd1022b4da264a2ad`
 
 ### AS-F05 Attachment And Resource Admission
 - **Precondition**: Valid PNG/PDF plus oversized, unsupported, unauthorized, and failed-upload fixtures.
