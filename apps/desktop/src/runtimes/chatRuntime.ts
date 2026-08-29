@@ -77,6 +77,7 @@ let installed = false;
 let actorId: string | null = null;
 let actorBootstrapSequence = 0;
 let unsubscribeStream: (() => void) | null = null;
+let unsubscribeRecoveryRetry: (() => void) | null = null;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let persistence:
   | ReturnType<typeof createDesktopClientStorageRuntime>['repositories']['runtimeProjection']
@@ -660,6 +661,10 @@ export const chatRuntime: RuntimeDescriptor = {
     if (installed) return;
     installed = true;
     unsubscribeStream = eventBus.subscribe(EVENT.AGENT_TURN_STREAM_EVENT, consumeLiveEvent);
+    unsubscribeRecoveryRetry = eventBus.subscribe(
+      EVENT.AGENT_TURN_RECOVERY_RETRY_REQUESTED,
+      ({ conversationId }) => retryAgentTurnRecovery(conversationId),
+    );
     installTimer();
   },
   teardown() {
@@ -668,6 +673,8 @@ export const chatRuntime: RuntimeDescriptor = {
     actorBootstrapSequence += 1;
     unsubscribeStream?.();
     unsubscribeStream = null;
+    unsubscribeRecoveryRetry?.();
+    unsubscribeRecoveryRetry = null;
     if (reconcileTimer) clearInterval(reconcileTimer);
     reconcileTimer = null;
     for (const conversationId of recoverySubscriptions.keys()) {

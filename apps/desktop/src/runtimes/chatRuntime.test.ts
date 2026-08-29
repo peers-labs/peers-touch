@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../kernel/events', () => ({
   EVENT: {
     AGENT_TURN_STREAM_EVENT: 'agent:turn-stream-event',
+    AGENT_TURN_RECOVERY_RETRY_REQUESTED: 'agent:turn-recovery-retry-requested',
   },
   eventBus: {
     publish: (type: string, payload: unknown) => {
@@ -108,7 +109,6 @@ import {
   chatRuntime,
   flushAgentTurnRecoveryPersistence,
   reloadAgentTurnSnapshot,
-  retryAgentTurnRecovery,
 } from './chatRuntime';
 
 function activeTurn(overrides: Partial<ActiveAgentTurnRecovery> = {}): ActiveAgentTurnRecovery {
@@ -332,7 +332,9 @@ describe('chatRuntime Agent turn recovery', () => {
       recoveryEpoch: failed.recoveryEpoch,
     });
 
-    retryAgentTurnRecovery('conversation-1');
+    eventBus.publish(EVENT.AGENT_TURN_RECOVERY_RETRY_REQUESTED, {
+      conversationId: 'conversation-1',
+    });
 
     expect(mocks.replayInputs).toHaveLength(2);
     expect(useAgentTurnRecoveryStore.getState().active['conversation-1']).toMatchObject({

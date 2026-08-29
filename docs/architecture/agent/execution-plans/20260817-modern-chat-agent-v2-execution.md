@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `c457f884f` passed AS-F06 transition ordering and stale-revision proof in run `20260829T113329057061Z-0c78e4730bbb54bdac17ccd146f2d318`; replay equality is the sole remaining product assertion and now emits bounded source diagnostics; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `7a7442012` again exposed the intermittent explicit-retry dispatch race in run `20260829T115504602448Z-81b5706495f784694d505c6097c642f6`; recovery retry is now synchronously dispatched to its owning runtime through the kernel event bus and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3119,6 +3119,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   error; deletion is now recognized as idempotent success before archive.
   Bounded replay diagnostics were extended without changing any predicate.
   AS-F06 and G-F remain `UNPROVEN`.
+- Checkpoint `7a74420126d78a851a52b62d3d91a4f5214bba46` was deployed
+  exact-source to profile `two`. Run
+  `20260829T115504602448Z-81b5706495f784694d505c6097c642f6`
+  again timed out waiting for the explicit retry action to advance the recovery
+  epoch; cleanup and redaction passed. This repeated independently after
+  periodic failed-state retries were disabled, isolating the remaining race to
+  the chat store's fire-and-forget dynamic import. The local correction routes
+  the user command synchronously through the typed kernel event bus to the
+  already-installed `chatRuntime`, preserving runtime ownership and removing
+  delayed command acceptance. AS-F06 and G-F remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

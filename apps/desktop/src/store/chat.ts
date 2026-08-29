@@ -1,4 +1,5 @@
 import { createDesktopStore } from './createDesktopStore';
+import { EVENT, eventBus } from '../kernel/events';
 import { log } from '../utils/logger';
 import i18n, { resolveI18nValue } from '../i18n/index';
 import {
@@ -1190,8 +1191,8 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   retryTurnRecovery: (conversationId) => {
     const key = conversationId || get().currentSessionKey;
-    void import('../runtimes/chatRuntime').then(({ retryAgentTurnRecovery }) => {
-      retryAgentTurnRecovery(key);
+    eventBus.publish(EVENT.AGENT_TURN_RECOVERY_RETRY_REQUESTED, {
+      conversationId: key,
     });
   },
 
