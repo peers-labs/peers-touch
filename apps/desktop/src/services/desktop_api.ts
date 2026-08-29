@@ -350,19 +350,24 @@ function publishSessionRevoked(payload: SessionRevokedPayload) {
 }
 
 function extractSessionRevoked(error?: RustCommandError): SessionRevokedPayload | null {
-  const details = error?.details as any;
-  const reasonFromDetails = typeof details?.reason === 'string' ? details.reason : undefined;
-  if (error?.code !== 'UNAUTHORIZED') return null;
-  if (typeof details?.code === 'string' && details.code === 'session_revoked') {
-    return {
-      reason: (reasonFromDetails as any) || 'unknown',
-      raw: typeof details?.raw === 'string' ? details.raw : undefined,
-      device_type: typeof details?.device_type === 'string' ? details.device_type : undefined,
-    };
-  }
+  const details = error?.details;
+  if (
+    error?.code !== 'UNAUTHORIZED'
+    || details?.code !== 'session_revoked'
+  ) return null;
+
+  const reason = details.reason;
+  const normalizedReason =
+    reason === 'expired'
+    || reason === 'kicked'
+    || reason === 'not_found'
+      ? reason
+      : 'unknown';
+
   return {
-    reason: (reasonFromDetails as any) || 'expired',
-    raw: error.message,
+    reason: normalizedReason,
+    raw: typeof details?.raw === 'string' ? details.raw : undefined,
+    device_type: typeof details?.device_type === 'string' ? details.device_type : undefined,
   };
 }
 

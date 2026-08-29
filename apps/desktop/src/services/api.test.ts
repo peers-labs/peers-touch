@@ -11,6 +11,8 @@ import {
   streamAgentTurnReplay,
   toAgentTurnReplayWireInput,
 } from './desktop_api'
+import { eventBus } from '../kernel/events/bus'
+import { EVENT } from '../kernel/events/catalog'
 import {
   DissolveGroupResponseSchema,
   TransferGroupOwnershipResponseSchema,
@@ -60,6 +62,44 @@ describe('api.health', () => {
   it('throws on HTTP error', async () => {
     vi.mocked(invoke).mockRejectedValue(new Error('db down'))
     await expect(api.health()).rejects.toThrow('db down')
+  })
+
+  it('does not revoke the local session for an unrelated unauthorized response', async () => {
+    const publish = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined)
+    vi.mocked(invoke).mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'invalid federation token audience',
+        details: { code: 'federation_token_invalid' },
+      },
+    })
+
+    await expect(api.health()).rejects.toThrow('invalid federation token audience')
+    expect(publish).not.toHaveBeenCalledWith(
+      EVENT.AUTH_SESSION_REVOKED,
+      expect.anything(),
+    )
+  })
+
+  it('revokes the local session only for an explicit session_revoked response', async () => {
+    const publish = vi.spyOn(eventBus, 'publish').mockImplementation(() => undefined)
+    vi.mocked(invoke).mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'session revoked',
+        details: { code: 'session_revoked', reason: 'expired' },
+      },
+    })
+
+    await expect(api.health()).rejects.toThrow('session revoked')
+    expect(publish).toHaveBeenCalledWith(
+      EVENT.AUTH_SESSION_REVOKED,
+      expect.objectContaining({
+        reason: 'expired',
+      }),
+    )
   })
 })
 

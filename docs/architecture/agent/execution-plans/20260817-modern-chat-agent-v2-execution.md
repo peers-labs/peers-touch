@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-17 | **Updated**: 2026-08-28
+> **Created**: 2026-08-17 | **Updated**: 2026-08-30
 > **Owner**: Peers-Touch Agent Team
 > **Plan gate**: `OWNER_APPROVED_EXECUTION`
 > **Entry gate**: Owner accepted MCA-D19A/D19B/D19C into the main Goal G1 task on 2026-08-22
@@ -3372,6 +3372,23 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   preserves the active phase, cursor, failure key hash, and observed transition
   sequence on timeout so the remaining Browser recovery state divergence is
   source-backed.
+- Diagnostic checkpoint `1367e61e4785a0ba564787c0b0dc1adc947930c5`
+  was deployed exact-source to profile `two`. Run
+  `20260829T204902023757Z-147bdf0c389a7de40dab7e242e447a74`
+  reached `CONNECTION_LOST -> RECONNECTING -> REPLAYING -> RECONCILING ->
+  CONNECTED`, then timed out with both the active recovery record and
+  authenticated session projection missing. The immutable result is
+  `PARTIAL / UNPROVEN`; cleanup and redaction passed. Station runtime evidence
+  identified an unrelated federation-token `UNAUTHORIZED` response during the
+  recovery window. Desktop had treated every `UNAUTHORIZED` command result as
+  local session revocation, so the identity lifecycle tore down the
+  authenticated runtime and its recovery projection. The Desktop command
+  boundary now publishes `AUTH_SESSION_REVOKED` only when the response carries
+  the explicit typed detail `code=session_revoked`; other authorization
+  failures remain command-local. Desktop check, 400 tests with one unrelated
+  skip, 65 focused recovery/API tests, 47 Foundation static tests, and
+  `git diff --check` pass. AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending
+  checkpoint deployment and exact-source verification.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
