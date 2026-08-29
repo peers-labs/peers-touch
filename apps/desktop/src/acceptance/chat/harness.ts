@@ -1,14 +1,7 @@
-import { invoke } from '@tauri-apps/api/core';
-import { getBootTrace } from '../../kernel/boot';
-import { EVENT } from '../../kernel/events';
-import { eventDebugBuffer } from '../../kernel/events/debug';
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { refreshSocialProjection } from '../../services/socialRealtime';
-import {
-  api,
-  getAcceptanceAuthCommandDebugEvents,
-} from '../../services/desktop_api';
-import type { GroupChatFederatedActorInput, RustCommandResult } from '../../services/desktop_api';
+import { api } from '../../services/desktop_api';
+import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
 import { useSessionStore } from '../../store/session';
@@ -423,113 +416,6 @@ export function installAcceptanceHarness(): void {
       await refreshConversation(kind, conversationId);
       return interactionProjection(kind, conversationId, messageId);
     },
-
-    // #region debug-point P,Q,R:identity-boot-state
-    async debugIdentityLifecycleState() {
-      const { phase, lifecycle } = identityRuntime.getSnapshot();
-      const session = useSessionStore.getState();
-      const authCommandEvents = getAcceptanceAuthCommandDebugEvents();
-      const criticalAuthRequestIds = new Set(
-        authCommandEvents
-          .filter(event => (
-            event.command === 'auth_restore_session'
-            || event.event === 'revoked'
-          ))
-          .map(event => event.requestId),
-      );
-      const relevantEventTypes = new Set<string>([
-        EVENT.AUTH_IDENTITY_CHANGED,
-        EVENT.AUTH_SESSION_REVOKED,
-        EVENT.REALTIME_CONNECTION_STATE,
-      ]);
-      return {
-        phaseKind: phase.kind,
-        phaseReason: 'reason' in phase ? phase.reason : null,
-        phaseSource: 'source' in phase ? phase.source : null,
-        readiness: 'readiness' in phase ? phase.readiness : null,
-        lifecycleState: lifecycle.state,
-        lifecycleAuthenticated: lifecycle.authenticated,
-        dataReady: lifecycle.dataReady,
-        sessionAuthenticated: session.authenticated,
-        sessionRestoring: session.restoring,
-        actorId: session.currentUser?.actorId ?? null,
-        bootTrace: getBootTrace().map(entry => ({
-          phase: entry.phase,
-          finished: entry.finishedAt !== undefined,
-        })),
-        eventTrace: eventDebugBuffer.list()
-          .filter(entry => relevantEventTypes.has(entry.type))
-          .slice(-12)
-          .map(entry => {
-            const payload = (
-              entry.payload
-              && typeof entry.payload === 'object'
-            )
-              ? entry.payload as Record<string, unknown>
-              : {};
-            return {
-              type: entry.type,
-              timestampMs: entry.timestamp_ms,
-              reason: typeof payload.reason === 'string'
-                ? payload.reason
-                : null,
-              connected: typeof payload.connected === 'boolean'
-                ? payload.connected
-                : null,
-              hasRaw: typeof payload.raw === 'string',
-            };
-          }),
-        authCommandTrace: authCommandEvents.filter(
-          event => criticalAuthRequestIds.has(event.requestId),
-        ),
-      };
-    },
-    // #endregion
-
-    // #region debug-point A,B,D:interaction-projection-state
-    async debugInteractionProjectionState({
-      conversationId,
-      kind,
-      messageId,
-    }: MessageInteractionInput) {
-      const actorId = activeActorId();
-      const snapshot = () => {
-        const social = useSocialChatStore.getState();
-        const rawMessages = social.messages[conversationId] ?? [];
-        const mappedMessages = social.getIMMessages(kind, conversationId);
-        return {
-          activeTab: social.activeTab,
-          activeSessionUlid: social.activeSessionUlid,
-          activeGroupUlid: social.activeGroupUlid,
-          rawMessageIds: rawMessages.map(message => message.ulid),
-          mappedMessageIds: mappedMessages.map(message => message.id),
-          target: interactionProjection(kind, conversationId, messageId),
-        };
-      };
-      const before = snapshot();
-      await refreshConversation(kind, conversationId);
-      const apiMessages = actorId
-        ? await imServiceV1.messaging.listMessages(conversationId)
-        : [];
-      const nativeResponse = actorId
-        ? await invoke<RustCommandResult<{
-            messages: Array<{ message_id: string }>;
-            debug_context?: Record<string, string>;
-          }>>('messaging_list_messages', {
-            input: { conversation_id: conversationId },
-          })
-        : null;
-      return {
-        actorId,
-        authenticated: useSessionStore.getState().authenticated,
-        apiMessageIds: apiMessages.map(message => message.messageId),
-        nativeMessageIds: nativeResponse?.data?.messages.map(message => message.message_id) ?? [],
-        nativeRuntimeContext: nativeResponse?.data?.debug_context ?? null,
-        before,
-        after: snapshot(),
-      };
-    },
-    // #endregion
 
     async openInteractionThread({
       conversationId,

@@ -959,7 +959,7 @@ pub fn messaging_list_messages(
             None,
         );
     }
-    let (account_id, _, engine) = match active_engine(state.inner(), &window) {
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
         Ok(value) => value,
         Err(error) => return error,
     };
@@ -967,7 +967,7 @@ pub fn messaging_list_messages(
         Ok(messages) => messages,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    let mut payload = json!({
+    AppResult::success(json!({
         "messages": messages.into_iter().map(|message| json!({
             "event_id": message.event_id,
             "event_sequence": message.event_sequence,
@@ -996,23 +996,7 @@ pub fn messaging_list_messages(
             "pinned_at_unix_ms": message.pinned_at_unix_ms,
             "read_by_ptids": message.read_by_ptids,
         })).collect::<Vec<_>>()
-    });
-    // #region debug-point B,F:tauri-messaging-runtime-context
-    #[cfg(feature = "acceptance-webdriver")]
-    if let Some(object) = payload.as_object_mut() {
-        object.insert(
-            "debug_context".to_string(),
-            json!({
-                "account_id": account_id,
-                "endpoint_device_id": engine.endpoint().device_id,
-                "engine_profile_id": engine.profile_id(),
-                "process_id": std::process::id(),
-                "window_label": window.label(),
-            }),
-        );
-    }
-    // #endregion
-    AppResult::success(payload)
+    }))
 }
 
 #[tauri::command]
