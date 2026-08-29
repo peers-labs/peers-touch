@@ -497,9 +497,18 @@ function consumeLiveEvent(payload: AgentTurnStreamEventPayload): void {
   void persistActiveRecords();
 }
 
-function reconcileActiveTurns(reason: string): void {
+function reconcileActiveTurns(
+  reason: string,
+  preservedFailedConversations: ReadonlySet<string> = new Set(),
+): void {
   for (const record of Object.values(activeRecords())) {
-    if (record.phase === 'RECOVERY_FAILED' && reason !== 'bootstrap') {
+    if (
+      record.phase === 'RECOVERY_FAILED'
+      && (
+        reason !== 'bootstrap'
+        || preservedFailedConversations.has(record.conversationId)
+      )
+    ) {
       continue;
     }
     recoverTurn(record, reason);
@@ -661,6 +670,11 @@ export const chatRuntime: RuntimeDescriptor = {
       : nextActorId;
     actorId = recoveryActorId;
     useAgentTurnRecoveryStore.getState().beginActor(recoveryActorId);
+    const preservedFailedConversations = new Set(
+      Object.values(activeRecords())
+        .filter((record) => record.phase === 'RECOVERY_FAILED')
+        .map((record) => record.conversationId),
+    );
     const repository = createDesktopClientStorageRuntime({
       ptid: recoveryActorId,
     }).repositories.runtimeProjection;
@@ -680,7 +694,7 @@ export const chatRuntime: RuntimeDescriptor = {
         recoveryActorId,
         parsePersistedAgentTurnRecoveries(recoveryActorId, persisted),
       );
-    reconcileActiveTurns('bootstrap');
+    reconcileActiveTurns('bootstrap', preservedFailedConversations);
   },
   async reconcile(reason) {
     reconcileActiveTurns(reason);

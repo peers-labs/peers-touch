@@ -341,6 +341,47 @@ describe('chatRuntime Agent turn recovery', () => {
     });
   });
 
+  it('preserves an in-memory failed recovery across same-actor bootstrap', async () => {
+    mocks.readValue.mockResolvedValueOnce({});
+    await chatRuntime.bootstrap('ptid:person:alice');
+    const basePayload = {
+      streamId: 'stream-1',
+      streamGeneration: 10,
+      ptid: 'ptid:person:alice',
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      timestampMs: 500,
+    };
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      ...basePayload,
+      event: 'connected',
+      data: { turnId: 'turn-1', seq: 1 },
+    });
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      ...basePayload,
+      event: 'connection_lost',
+      data: { turnId: 'turn-1', seq: 1, recoveryHandoff: true },
+    });
+    mocks.replayOnErrors[0](new Error('station unavailable'));
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active['conversation-1'].phase)
+        .toBe('RECOVERY_FAILED');
+    });
+    const failed =
+      useAgentTurnRecoveryStore.getState().active['conversation-1'];
+    mocks.readValue.mockResolvedValueOnce({
+      'conversation-1': failed,
+    });
+
+    await chatRuntime.bootstrap('ptid:person:alice');
+
+    expect(mocks.replayInputs).toHaveLength(1);
+    expect(useAgentTurnRecoveryStore.getState().active['conversation-1']).toMatchObject({
+      phase: 'RECOVERY_FAILED',
+      recoveryEpoch: failed.recoveryEpoch,
+    });
+  });
+
   it('publishes source-bound replay metadata without making it a second state input', async () => {
     mocks.readValue.mockResolvedValueOnce({ 'conversation-1': activeTurn() });
     const observed: unknown[] = [];

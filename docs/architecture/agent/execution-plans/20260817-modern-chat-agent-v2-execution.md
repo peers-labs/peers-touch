@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `5b209dae2` crossed the AS-F06 replay-sequence assertion in run `20260829T084348162275Z-9b1c6a0eca3e4218374db827330366f9`; the current first failure is the outage-time retry action not advancing the recovery epoch before timeout; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `862c8bae3` proved the AS-F06 explicit retry in run `20260829T090209403567Z-83f2593a786eee363fe009af8fa9040e`; same-process re-auth then consumed the failed recovery target before explicit durable reload, which awaits a runtime-owner correction; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3038,6 +3038,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   bootstrap recovery after process restart. Desktop check and all 393 tests
   pass; exact-source runtime proof is pending. AS-F06 and G-F remain
   `UNPROVEN`.
+- Checkpoint `862c8bae3d76f200a87b0a36bc527f329dcd4e82` was deployed
+  exact-source to profile `two`. Run
+  `20260829T090209403567Z-83f2593a786eee363fe009af8fa9040e`
+  proved the explicit retry (`recoveryEpoch` 1 to 2, resulting phase
+  `RECOVERY_FAILED`) and then failed with
+  `AS_F06_DURABLE_RELOAD_TARGET_MISSING`; cleanup and redaction passed.
+  Station-restart re-auth bootstrapped the same actor while its failed record
+  was still present in memory, and bootstrap reconciliation treated that
+  existing user-action state like a newly hydrated process-restart record.
+  The runtime must preserve same-process failed records while still
+  automatically reconciling failed records newly loaded into a fresh process.
+  AS-F06 and G-F remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
