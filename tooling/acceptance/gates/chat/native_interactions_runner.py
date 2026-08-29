@@ -1992,24 +1992,99 @@ class NativeInteractionsGate(AcceptanceGate):
             self.message_ids[f"{claim_kind}.thread.nested"],
         ]
         for actor in members:
+            restart_observation_count = 0
+
             def _sync_and_dom(actor: str = actor) -> dict[str, Any] | None:
+                nonlocal restart_observation_count
+                restart_observation_count += 1
+                sync_error = ""
                 try:
                     self.sync(actor, kind, conversation_id)
-                except Exception:
-                    return None
-                return (
+                except Exception as error:
+                    sync_error = f"{type(error).__name__}: {error}"
+                snapshot = message_dom_snapshot(
+                    self.clients[actor],
+                    message_id,
+                )
+                terminal_snapshot = (
                     snapshot
                     if (
-                        snapshot := message_dom_snapshot(
-                            self.clients[actor],
-                            message_id,
-                        )
+                        snapshot
                     )
                     and snapshot.get("retracted") == "true"
                     and snapshot.get("pinned") is False
                     and len(snapshot.get("reactions") or []) == 0
                     else None
                 )
+                if restart_observation_count == 1 or (
+                    terminal_snapshot is None
+                    and restart_observation_count % 20 == 0
+                ):
+                    # #region debug-point G,H,I,J,K:restart-convergence-sample
+                    try:
+                        gateway_messages = gateway_command(
+                            self.clients[actor],
+                            "messaging_list_messages",
+                            {"conversation_id": conversation_id},
+                        )
+                        rust_messages = gateway_messages.get("messages", [])
+                        harness_state = async_harness(
+                            self.clients[actor],
+                            "debugInteractionProjectionState",
+                            {
+                                "conversationId": conversation_id,
+                                "kind": kind,
+                                "messageId": message_id,
+                            },
+                        )
+                        report_interaction_projection_debug(
+                            "G,H,I,J,K",
+                            "native_interactions_runner:restart-convergence-sample",
+                            {
+                                "actor": actor,
+                                "kind": claim_kind,
+                                "conversationId": conversation_id,
+                                "messageId": message_id,
+                                "attempt": restart_observation_count,
+                                "syncError": sync_error,
+                                "rustMessageIds": [
+                                    item.get("message_id")
+                                    for item in rust_messages
+                                    if isinstance(item, dict)
+                                ],
+                                "gatewayRuntimeContext": gateway_messages.get(
+                                    "debug_context"
+                                ),
+                                "harnessState": harness_state,
+                                "dom": snapshot,
+                                "engine": self.engine_snapshot(
+                                    actor,
+                                    conversation_id,
+                                    message_id,
+                                ),
+                                "station": station_readback(
+                                    self.station_url,
+                                    conversation_id,
+                                    message_id,
+                                ),
+                            },
+                        )
+                    except Exception as error:
+                        report_interaction_projection_debug(
+                            "G,H,I,J,K",
+                            "native_interactions_runner:restart-convergence-sample-error",
+                            {
+                                "actor": actor,
+                                "kind": claim_kind,
+                                "messageId": message_id,
+                                "attempt": restart_observation_count,
+                                "syncError": sync_error,
+                                "errorType": type(error).__name__,
+                                "error": str(error),
+                            },
+                        )
+                    # #endregion
+                return terminal_snapshot
 
             wait_until(
                 _sync_and_dom,
