@@ -5455,7 +5455,21 @@ export function installAcceptanceHarness(): void {
         if (!activeResult.events.some((event) =>
           event.event === 'cancelled'
           || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
-          throw new Error('agent.acceptance.foundationActiveTurnCancelMissing');
+          const recovery = useAgentTurnRecoveryStore.getState()
+            .active[conversation.conversation_id];
+          throw new Error(
+            'agent.acceptance.foundationActiveTurnCancelMissing:'
+            + stableJson({
+              resultOk: activeResult.ok,
+              resultError: activeResult.error,
+              events: activeResult.events.map((event) => ({
+                eventType: event.event,
+                sequence: Number(event.data.seq ?? 0),
+              })),
+              recoveryPhase: recovery?.phase ?? 'MISSING',
+              recoveryCursor: recovery?.cursor ?? 0,
+            }),
+          );
         }
         turnDurationMs = performance.now() - activeStartedAt;
         preparedTurnId = activeTurnId;

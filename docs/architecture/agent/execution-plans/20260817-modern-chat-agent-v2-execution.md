@@ -3320,6 +3320,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   subsequent Station-authored `cancelled` SSE event as the terminal proof.
   AS-F02, AS-F06, and G-F remain `PARTIAL / UNPROVEN` pending focused
   verification, checkpoint deployment, and another exact-source run.
+- Checkpoint `ce5d07bde480400c548e7bc245b2106decf95e23` was deployed
+  exact-source to profile `two`. Run
+  `20260829T191337629969Z-231166391ba17c798964f5b15faf5b5a`
+  again stopped at Browser AS-F02
+  `agent.acceptance.foundationActiveTurnCancelMissing` after the full
+  observation deadline; cleanup and redaction passed. This proves the
+  source-bound replay observer alone did not restore the missing terminal.
+  The next diagnostic records only event types, durable sequences, result
+  state, and recovery phase/cursor so the next run can distinguish a missing
+  handoff, cleared recovery record, stalled replay, or absent terminal
+  delivery without exposing actor or content data.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
