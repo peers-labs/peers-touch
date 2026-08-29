@@ -9,11 +9,7 @@ pub fn init_initiator(session_id: &str, sk: &[u8; 32], peer_dh: [u8; 32]) -> DrS
     messaging_core::crypto::double_ratchet::init_initiator(session_id, sk, peer_dh)
 }
 
-pub fn init_responder(
-    session_id: &str,
-    sk: &[u8; 32],
-    self_priv: [u8; 32],
-) -> DrSessionState {
+pub fn init_responder(session_id: &str, sk: &[u8; 32], self_priv: [u8; 32]) -> DrSessionState {
     messaging_core::crypto::double_ratchet::init_responder(session_id, sk, self_priv)
 }
 

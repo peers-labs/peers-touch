@@ -152,7 +152,11 @@ pub fn conversation_create_direct(
         Some(&body),
     ) {
         Ok(resp) => {
-            let conv_id = resp.get("conversation").and_then(|c| c.get("conversation_id")).and_then(|v| v.as_str()).unwrap_or("?");
+            let conv_id = resp
+                .get("conversation")
+                .and_then(|c| c.get("conversation_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             tracing::info!(conversation_id = %conv_id, "conversation_create_direct: success");
             AppResult::success(resp)
         }
@@ -535,7 +539,8 @@ pub fn conversation_list(state: State<'_, Arc<AppState>>, window: Window) -> App
     };
     match station_client::request_json_auth(Method::GET, "/conversation/list", &token, None, None) {
         Ok(resp) => {
-            let count = resp.get("conversations")
+            let count = resp
+                .get("conversations")
                 .and_then(|v| v.as_array())
                 .map(|a| a.len())
                 .unwrap_or(0);

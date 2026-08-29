@@ -320,47 +320,133 @@ class EvidenceStoreTests(unittest.TestCase):
         )
         self.assertFalse((run.run_dir.parent / "latest.json").exists())
 
-    def test_registered_artifact_digest_can_refresh_after_redaction(
+    def test_registered_artifact_is_redacted_before_hashing(
         self,
     ) -> None:
         run = self.store.begin_run("unit-gate", source={})
+        run.configure_redaction(("resolved-secret-value",))
         reference = run.write_bytes(
             "evidence/binary.bin",
             b"\x00resolved-secret-value",
             role="binary",
         )
-        self.store.resolve(reference).write_bytes(b"\x00[REDACTED]")
 
-        run.refresh_redacted_artifacts(["evidence/binary.bin"])
         collected = run.collect_existing_artifacts()
         run.finalize(result={"status": "failed"})
         run.close()
 
-        self.assertNotEqual(collected["binary"].sha256, reference.sha256)
+        self.assertEqual(collected["binary"], reference)
         self.assertEqual(
             self.store.resolve(collected["binary"]).read_bytes(),
             b"\x00[REDACTED]",
         )
 
-    def test_registered_artifact_can_be_removed_after_path_redaction(
+    def test_registered_artifact_path_rejects_resolved_credentials(
         self,
     ) -> None:
         run = self.store.begin_run("unit-gate", source={})
-        reference = run.write_bytes(
-            "evidence/resolved-secret-value.txt",
-            b"safe",
-            role="secret-path",
-        )
-        self.store.resolve(reference).unlink()
+        run.configure_redaction(("resolved-secret-value",))
 
-        run.refresh_redacted_artifacts(
-            ["evidence/resolved-secret-value.txt"]
-        )
-        collected = run.collect_existing_artifacts()
-        run.finalize(result={"status": "failed"})
+        with self.assertRaisesRegex(
+            EvidenceManifestInvalid,
+            "path contains a resolved credential",
+        ):
+            run.write_bytes(
+                "evidence/resolved-secret-value.txt",
+                b"safe",
+                role="secret-path",
+            )
         run.close()
 
-        self.assertNotIn("secret-path", collected)
+    def test_current_artifact_is_redacted_before_role_registration(self) -> None:
+        run = self.store.begin_run("unit-gate", source={})
+        run.configure_redaction(("resolved-secret-value",))
+        environment = run.subprocess_environment()
+
+        with patch.dict(os.environ, environment, clear=True):
+            target = write_current_artifact(
+                "evidence/value.txt",
+                b"password=resolved-secret-value",
+                repo_root=self.worktree,
+            )
+            reference = current_artifact_ref(
+                "evidence/value.txt",
+                repo_root=self.worktree,
+            )
+
+        self.assertEqual(target.read_text(encoding="utf-8"), "password=[REDACTED]")
+        self.assertEqual(self.store.resolve(reference), target)
+        run.close()
+
+    def test_json_artifact_redacts_short_sensitive_value_before_write(self) -> None:
+        run = self.store.begin_run("unit-gate", source={})
+
+        reference = run.write_bytes(
+            "evidence/credentials.json",
+            b'{"password":"1"}',
+            media_type="application/json",
+        )
+
+        self.assertEqual(
+            self.store.read_json(reference),
+            {"password": "[REDACTED]"},
+        )
+        run.close()
+
+    def test_json_artifact_recursively_redacts_nested_sensitive_keys(self) -> None:
+        run = self.store.begin_run("unit-gate", source={})
+
+        reference = run.write_bytes(
+            "evidence/nested.json",
+            json.dumps(
+                {
+                    "actors": [
+                        {
+                            "profile": {
+                                "sessionToken": "nested-token",
+                            }
+                        }
+                    ],
+                    "safe": "visible",
+                }
+            ).encode("utf-8"),
+            media_type="application/json",
+        )
+
+        self.assertEqual(
+            self.store.read_json(reference),
+            {
+                "actors": [
+                    {
+                        "profile": {
+                            "sessionToken": "[REDACTED]",
+                        }
+                    }
+                ],
+                "safe": "visible",
+            },
+        )
+        run.close()
+
+    def test_manifest_is_redacted_before_final_write(self) -> None:
+        run = self.store.begin_run("unit-gate", source={})
+        run.configure_redaction(("resolved-secret-value",))
+
+        manifest = run.finalize(
+            result={
+                "status": "failed",
+                "reason": "credential=resolved-secret-value",
+            },
+            runtime={"detail": "resolved-secret-value"},
+        )
+        run.close()
+
+        serialized = (run.run_dir / "manifest.json").read_text(
+            encoding="utf-8",
+        )
+        self.assertNotIn("resolved-secret-value", serialized)
+        self.assertEqual(manifest["result"]["reason"], "credential=[REDACTED]")
+        self.assertEqual(manifest["runtime"]["detail"], "[REDACTED]")
 
     def test_runtime_cell_pointer_mismatch_fails_closed(self) -> None:
         run = self.store.begin_run("unit-gate", source={"commit": "abc"})
