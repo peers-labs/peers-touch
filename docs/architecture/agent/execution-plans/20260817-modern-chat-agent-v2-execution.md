@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source diagnostic checkpoint `f3b8e80b6` identified `AS_F06_DURABLE_RELOAD_TARGET_MISSING` after client restart in run `20260829T074412796991Z-af4768a65c8d79e50af3ae60b3a560ca`; recovery persistence now has an explicit flush barrier before restart and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `dfc7ee6f9` confirmed automatic recovery consumes the active record after client restart in run `20260829T080520107058Z-238e25cc3794f452b3502748be51d02a`; terminal reconciliation now persists message status before the client-restart proof and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3000,6 +3000,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   before returning control to the restart coordinator. A focused runtime test
   verifies that the flushed record contains the failed phase and Turn identity.
   AS-F06 and G-F remain `UNPROVEN` pending another exact-source run.
+- Checkpoint `dfc7ee6f9654fb23e7e336f848d6e8fec8d10667` was deployed
+  exact-source to profile `two`. Run
+  `20260829T080520107058Z-238e25cc3794f452b3502748be51d02a`
+  still reported `AS_F06_DURABLE_RELOAD_TARGET_MISSING` after client restart;
+  cleanup passed. The flushed failed record was present before restart, but
+  boot-time automatic replay correctly consumed the terminal snapshot and
+  removed it before the explicit reload probe. The preceding terminal
+  reconciliation updated only in-memory chat state, while the cursor-based
+  message cache could retain the earlier `pending` status for the same message
+  sequence. The local correction returns durable reload to the authenticated
+  pre-client-restart position and upserts the authoritative terminal status
+  into the local message cache before clearing recovery state. The subsequent
+  client restart must therefore reload the terminal projection without keeping
+  a completed recovery record alive. AS-F06 and G-F remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

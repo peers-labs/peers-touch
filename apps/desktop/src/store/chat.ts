@@ -1140,7 +1140,20 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   },
 
   reconcileRecoveredTurn: async (conversationId, turnId, terminal) => {
-    const synced = await agentChatCache.syncConversation(conversationId);
+    let synced = await agentChatCache.syncConversation(conversationId);
+    if (terminal) {
+      const assistant = [...synced]
+        .reverse()
+        .find((message) => message.role === 'assistant' && message.turnId === turnId);
+      if (assistant) {
+        await agentChatCache.upsertMessage({
+          ...assistant,
+          status: terminal.status,
+          updatedAt: new Date().toISOString(),
+        });
+        synced = await agentChatCache.getMessages(conversationId);
+      }
+    }
     const operation = get().operations[conversationId];
     if (operation?.turnId !== turnId) return;
     const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
