@@ -308,6 +308,84 @@ describe('Agent turn stream completion', () => {
       })
     })
   })
+
+  it('stops forwarding buffered Browser frames after transport disconnect', async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    })
+    vi.stubGlobal('window', browserWindow)
+    ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+      'http://127.0.0.1:3030'
+    let requestCount = 0
+    let replayInput: Record<string, unknown> | null = null
+    mockFetch.mockImplementation((_url, init) => {
+      requestCount += 1
+      const signal = (init as RequestInit).signal
+      if (requestCount > 1) {
+        replayInput = JSON.parse(String((init as RequestInit).body || '{}'))
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            reject(new DOMException('replay cancelled', 'AbortError'))
+          }, { once: true })
+        })
+      }
+      const body = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          streamController.enqueue(new TextEncoder().encode(
+            'event: text\ndata: {"turnId":"turn-1","conversationId":"conversation-1","seq":1,"text":"first"}\n\n'
+            + 'event: text\ndata: {"turnId":"turn-1","conversationId":"conversation-1","seq":2,"text":"buffered"}\n\n',
+          ))
+        },
+      })
+      return Promise.resolve(new Response(body, {
+        status: 200,
+        headers: { 'x-agent-turn-id': 'turn-1' },
+      }))
+    })
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'agent_cancel_turn',
+        status: JSON.stringify({ turn_id: 'turn-1', status: 'cancelled' }),
+      },
+    })
+    const events: Array<{ event: string; data: Record<string, unknown> }> = []
+    let controller!: ReturnType<typeof streamAgentTurn>
+    controller = streamAgentTurn(
+      {
+        client_idempotency_key: 'request-browser-buffer-boundary',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'hello',
+      },
+      (event) => {
+        events.push(event)
+        if (event.event === 'text' && event.data.seq === 1) {
+          controller.disconnectTransport()
+        }
+      },
+      vi.fn(),
+      vi.fn(),
+      'ptid:person:owner',
+    )
+
+    await vi.waitFor(() => {
+      expect(events.some((event) => event.event === 'connection_lost')).toBe(true)
+    })
+    await vi.waitFor(() => expect(requestCount).toBe(2))
+    expect(
+      events
+        .filter((event) => event.event === 'text')
+        .map((event) => event.data.seq),
+    ).toEqual([1])
+    expect(replayInput).toEqual({
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-1',
+      afterSequence: 1,
+    })
+    controller.abort()
+  })
 })
 
 describe('api.startAgentTurnReplayStream', () => {

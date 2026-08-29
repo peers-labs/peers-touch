@@ -6111,6 +6111,10 @@ async function consumeAgentSSE(
         }
       }
       terminal = onFrame({ event: event as StreamEvent['event'], data }) || terminal;
+      if (signal.aborted) {
+        await reader.cancel();
+        return terminal;
+      }
       if (terminal) {
         await reader.cancel();
         return true;

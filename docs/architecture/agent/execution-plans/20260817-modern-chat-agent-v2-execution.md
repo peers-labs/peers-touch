@@ -3234,6 +3234,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   123 focused Foundation tests, Agent Acceptance validation, and
   `git diff --check` pass. This is implementation evidence only; AS-F06 and G-F
   remain `UNPROVEN` until the next exact-source runtime Gate.
+- Checkpoint `e8ce6e4255ca4542e24c82446a5fa73403351783` was deployed
+  exact-source to profile `two`. Run
+  `20260829T163549824710Z-d8c03adb9cbc70c4d96e33fb98dce2c5`
+  crossed AS-F06 preparation and passed transition ordering, terminal
+  projection equality, prefix preservation, stale generation/revision/terminal
+  rejection, cleanup, and redaction. Its only failed assertion was
+  `replayAfterAcknowledgedCursor`: the fault cursor was `3`, independent
+  Station readback returned `4..119`, but Browser replay evidence began at
+  `32`. Source inspection showed that `consumeAgentSSE` checked transport abort
+  only before `reader.read()` and continued forwarding complete frames from the
+  already-decoded live chunk after `disconnectTransport()`. The decoder now
+  stops immediately after the callback that aborts its transport, and a focused
+  Browser regression proves buffered sequence `2` is not delivered after the
+  sequence `1` boundary and replay requests `afterSequence: 1`. The strict
+  replay oracle remains unchanged. AS-F06 and G-F remain `UNPROVEN` pending
+  another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
