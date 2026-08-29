@@ -569,6 +569,78 @@ async function deleteFoundationConversation(
   throw new Error('agent.acceptance.foundationConversationDeleteConflict');
 }
 
+async function cancelFoundationQueuedTurns(
+  conversationId: string,
+): Promise<Awaited<ReturnType<typeof api.cancelQueuedAgentTurn>> | null> {
+  const idempotencyKeys = new Map<string, string>();
+  let firstCancellation: Awaited<
+    ReturnType<typeof api.cancelQueuedAgentTurn>
+  > | null = null;
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const queue = await api.listAgentTurnQueue(conversationId);
+    if (queue.entries.length === 0) return firstCancellation;
+
+    let expectedVersion = queue.conversation_version;
+    let retryRequired = false;
+    for (const entry of queue.entries) {
+      const idempotencyKey = idempotencyKeys.get(entry.queue_entry_id)
+        ?? crypto.randomUUID();
+      idempotencyKeys.set(entry.queue_entry_id, idempotencyKey);
+      try {
+        const cancellation = await api.cancelQueuedAgentTurn({
+          conversation_id: conversationId,
+          queue_entry_id: entry.queue_entry_id,
+          idempotency_key: idempotencyKey,
+          expected_conversation_version: expectedVersion,
+        });
+        firstCancellation ??= cancellation;
+        expectedVersion = cancellation.conversation_version;
+      } catch (error) {
+        if (observedErrorCode(error) !== 'VERSION_CONFLICT') throw error;
+        retryRequired = true;
+        break;
+      }
+    }
+    if (!retryRequired) continue;
+  }
+  throw new Error('agent.acceptance.foundationQueueCancellationConflict');
+}
+
+async function cleanupStaleFoundationQueueConversations(
+  agentId: string,
+): Promise<void> {
+  const conversations = await api.listAgentConversations(agentId, {
+    page: 1,
+    pageSize: 200,
+  });
+  const stale = conversations.filter((conversation) =>
+    conversation.title.startsWith('Foundation queue '));
+
+  for (const conversation of stale) {
+    try {
+      await cancelFoundationQueuedTurns(conversation.conversation_id);
+      const messages = await api.listAgentConversationMessages({
+        conversation_id: conversation.conversation_id,
+        limit: 200,
+      });
+      const turnIds = Array.from(new Set(
+        messages.messages
+          .map((message) => message.turn_id)
+          .filter((turnId): turnId is string => Boolean(turnId)),
+      ));
+      for (const turnId of turnIds.reverse()) {
+        await api.cancelAgentTurn(turnId);
+      }
+      await deleteFoundationConversation(conversation.conversation_id);
+    } catch (error) {
+      throw new Error(
+        `CLEANUP_FAILED:${observedErrorCode(error)}`,
+      );
+    }
+  }
+}
+
 function selectedAgent() {
   const state = useAgentStore.getState();
   return state.agents.find((agent) => agent.name === state.selectedAgent)
@@ -4987,6 +5059,7 @@ export function installAcceptanceHarness(): void {
       }
 
       if (cell === 'AS-F02') {
+        await cleanupStaleFoundationQueueConversations(agentId);
         const conversation = await api.createAgentConversation({
           agent_id: agentId,
           title: `Foundation queue ${sampleId}`,
@@ -5119,22 +5192,9 @@ export function installAcceptanceHarness(): void {
           queueAtCapacity.conversation_version,
         );
 
-        let cancellation: Awaited<ReturnType<typeof api.cancelQueuedAgentTurn>>
-          | null = null;
-        for (const entry of queueAtCapacity.entries) {
-          const queue = await api.listAgentTurnQueue(conversation.conversation_id);
-          const current = queue.entries.find(
-            (candidate) => candidate.queue_entry_id === entry.queue_entry_id,
-          );
-          if (!current) continue;
-          const result = await api.cancelQueuedAgentTurn({
-            conversation_id: conversation.conversation_id,
-            queue_entry_id: current.queue_entry_id,
-            idempotency_key: crypto.randomUUID(),
-            expected_conversation_version: queue.conversation_version,
-          });
-          cancellation ??= result;
-        }
+        const cancellation = await cancelFoundationQueuedTurns(
+          conversation.conversation_id,
+        );
 
         await api.cancelAgentTurn(activeTurnId);
         const activeResult = await active.result;

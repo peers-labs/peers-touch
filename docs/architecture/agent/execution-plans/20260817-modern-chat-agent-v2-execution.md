@@ -2799,6 +2799,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   restores bindings immediately after the immutable Turn snapshot is admitted,
   and makes cleanup cancel the Turn before version-safe conversation deletion.
   AS-F06 and G-F remain `UNPROVEN` pending another exact-source run.
+- Checkpoint `b0cec10a36c6513e45904c5620d4e91d9eb78333` was deployed
+  exact-source to profile `two`. Run
+  `20260829T030451243761Z-d74a92305247f4e92186bffffa9383c7`
+  failed at Browser AS-F02 while cancelling the fourth queued entry: the first
+  three cancellations committed, then a `list -> cancel` optimistic-concurrency
+  window returned `409`, leaving five pending entries and one waiting Turn even
+  though framework cleanup passed. The local correction chains the
+  `conversation_version` returned by each successful cancellation and
+  refreshes only on explicit version conflicts. Before creating a new AS-F02
+  fixture, it also removes stale `Foundation queue` conversations through the
+  production queue-cancel, Turn-cancel, and permanent-delete APIs, failing as
+  `CLEANUP_FAILED` if residue cannot be removed. AS-F02, AS-F06, and G-F remain
+  `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
