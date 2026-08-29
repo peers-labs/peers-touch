@@ -863,6 +863,21 @@ generated changes remain visible to the workspace dirty check. This preserves
 exact-commit identity without allowing a code-generation Gate to invalidate
 later source-bound Gates in the same aggregate.
 
+The clean aggregate
+`20260828T215129732499Z-90c1e42259dc905e86b4f1798cab1750`
+then exercised all selected Gates and proved the corrected per-Gate cell
+lifecycle. Six of seven environment Gates passed; every cell and Provisioner
+cleanup passed. `chat-native-interactions-e2e` remained `PARTIAL/UNPROVEN`
+because a newly committed sender message could be receiver-visible before the
+sender Engine consumed its own authority event. The interaction command path
+validated the target projection before its bounded preflight drain, so edit
+could fail with `messaging edit target projection is unavailable`. The Engine
+now drains before target validation for edit and metadata interactions. Focused
+Linux run `20260828T235312023024Z-7035474534fefd51fcffa339de3a1432`
+passed all Direct and Group interaction assertions with complete cleanup. Final
+NDR-W1 and MP-W13-F proof still requires a same-source full aggregate after this
+plan update.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
