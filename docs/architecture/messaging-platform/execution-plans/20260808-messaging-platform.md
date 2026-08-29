@@ -1317,6 +1317,14 @@ cleanup completed. The next candidate adds only the missing
 `local-desktop-gateway` provisioning link and must rerun the unchanged Gate
 assertions against explicitly bound disposable Station `18132`.
 
+The aggregate attempt at `7e1d321fc149e436feab6772e0f894bd0c8b6835`
+also remained `UNPROVEN`: orphaned run-scoped SSH forwards blocked Native
+client isolation, and the Desktop Gateway Provisioner bypassed first-write
+redaction by streaming its process log directly into the immutable run
+directory. The stale local forwards were released after ownership
+verification. The Provisioner now stages process output outside the run and
+persists it once through the canonical Evidence Store writer before audit.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

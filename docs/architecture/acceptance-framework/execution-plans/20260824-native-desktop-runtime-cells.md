@@ -1037,6 +1037,19 @@ Station `18132`, export `CHAT_ACCEPTANCE_RESET=1`, and provision the Federation
 Gateway smoke through `local-desktop-gateway`. These are execution wiring
 corrections under D-07 and do not alter product assertions.
 
+The next aggregate attempt at `7e1d321fc149e436feab6772e0f894bd0c8b6835`
+confirmed Station source identity at `18132`, but still produced no product
+proof. Native preflight found three orphaned run-scoped SSH forwards occupying
+the slot-2 client ports and failed closed; those parentless processes were
+identified by worktree cwd and released without touching protected ports.
+The Desktop Gateway reached `FIXTURE_READY`, then the Evidence Store rejected
+`logs/provision-desktop.log` because the Provisioner had streamed raw process
+output directly into the immutable run directory. The correction now stages
+that process log in a private temporary file and persists it exactly once
+through `write_current_artifact`, so credential redaction occurs before the
+first durable Evidence Store write. NDR-W7 remains `PARTIAL/UNPROVEN` pending a
+clean candidate and full rerun.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
