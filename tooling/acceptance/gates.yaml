@@ -223,7 +223,7 @@
       "environment": "local-desktop-gateway",
       "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
-      "description": "Run a real Desktop HTTP gateway flow proving MLS/E2EE direct conversation creation, message delivery, hydration, and decryption."
+      "description": "Run a real Desktop HTTP gateway flow proving atomic multi-account identity transitions, JWT-bound PIN unlock, legacy PIN fail-closed behavior, and MLS/E2EE direct conversation delivery."
     },
     "chat-federated-browser-prereq": {
       "command": "python3 tooling/acceptance/gates/chat/federated_browser_prereq.py",
