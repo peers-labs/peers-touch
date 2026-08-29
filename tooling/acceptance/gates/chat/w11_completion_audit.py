@@ -19,6 +19,8 @@ import os
 import sys
 from pathlib import Path
 
+from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
 REPORTS_DIR = REPO_ROOT / "tooling" / "acceptance" / "reports"
 MANIFEST_PATH = Path(
@@ -63,6 +65,38 @@ def load_report(path: Path) -> dict:
         raise AssertionError(f"report unreadable: {path.relative_to(REPO_ROOT)}: {exc}")
 
 
+def load_latest_gate_report(store: EvidenceStore, gate_id: str) -> dict | None:
+    runtime_cell = (
+        "desktop-linux-native"
+        if gate_id.startswith("chat-native-") and gate_id.endswith("-e2e")
+        else None
+    )
+    manifest = store.latest(gate_id, runtime_cell=runtime_cell)
+    result = manifest.get("result")
+    if not isinstance(result, dict) or result.get("status") != "passed":
+        status = result.get("status") if isinstance(result, dict) else None
+        raise AssertionError(f"{gate_id}: latest Gate status is {status!r}, expected 'passed'")
+    if result.get("completionStatus") != "DONE":
+        raise AssertionError(
+            f"{gate_id}: latest Gate completionStatus is "
+            f"{result.get('completionStatus')!r}, expected 'DONE'"
+        )
+    if result.get("proofStatus") != "PROVEN":
+        raise AssertionError(
+            f"{gate_id}: latest Gate proofStatus is "
+            f"{result.get('proofStatus')!r}, expected 'PROVEN'"
+        )
+
+    for evidence in result.get("evidenceArtifacts", []):
+        if (
+            isinstance(evidence, dict)
+            and evidence.get("artifactKind") == "acceptance-gate-evidence-report"
+        ):
+            reference = ArtifactRef.from_dict(evidence.get("path", {}))
+            return store.read_json(reference)
+    return None
+
+
 def check_report_status(report: dict, label: str) -> list[str]:
     errors: list[str] = []
     status = report.get("status")
@@ -90,6 +124,7 @@ def gate_report_filename(gate_id: str) -> str:
 
 def main() -> int:
     manifest = load_manifest()
+    store = EvidenceStore.from_environment(repo_root=REPO_ROOT, worktree=REPO_ROOT)
     targets = manifest.get("scan_targets", {})
     errors: list[str] = []
     passed_reports: list[str] = []
@@ -112,70 +147,25 @@ def main() -> int:
                 required_gates.add(gid)
 
     for gate_id in sorted(scan_gates_needed):
-        report_path = REPORTS_DIR / f"{gate_id}.json"
-        if not report_path.exists():
-            result_path = REPORTS_DIR / "run.json"
-            if result_path.exists():
-                run = load_report(result_path)
-                found = False
-                for r in run.get("results", []):
-                    if r.get("id") == gate_id and r.get("status") == "passed":
-                        found = True
-                        break
-                if not found:
-                    errors.append(f"scan gate {gate_id!r} did not pass")
-            else:
-                errors.append(f"scan gate report missing: {gate_id}")
-        else:
-            report = load_report(report_path)
-            errors.extend(check_report_status(report, gate_id))
+        try:
+            latest = store.latest(gate_id)
+            result = latest.get("result")
+            if not isinstance(result, dict) or result.get("status") != "passed":
+                status = result.get("status") if isinstance(result, dict) else None
+                errors.append(f"scan gate {gate_id!r} status is {status!r}")
+        except Exception as exc:
+            errors.append(f"scan gate {gate_id!r} evidence unavailable: {exc}")
 
     for gate_id in sorted(required_gates):
         if gate_id == "chat-w11-completion-audit":
             continue
-        if "native" in gate_id:
-            filename = gate_id.replace("-e2e", "-run") + ".json"
-        else:
-            filename = gate_id + ".json"
-        path = REPORTS_DIR / filename
-        if path.exists():
-            try:
-                report = load_report(path)
-                passed_reports.append(f"{filename} ({gate_id})")
-                errors.extend(check_report_status(report, gate_id))
-            except AssertionError as exc:
-                errors.append(str(exc))
-            continue
-
-        result_path = REPORTS_DIR / "run.json"
-        if result_path.exists():
-            try:
-                run = load_report(result_path)
-                found = False
-                for r in run.get("results", []):
-                    if r.get("id") == gate_id and r.get("status") == "passed":
-                        found = True
-                        passed_reports.append(f"run.json:{gate_id}")
-                        break
-                if not found:
-                    errors.append(f"required gate {gate_id!r} did not pass")
-            except AssertionError as exc:
-                errors.append(str(exc))
-        else:
-            errors.append(f"report missing: {path.relative_to(REPO_ROOT)}")
-
-    validation_path = REPORTS_DIR / "chat-native-two-client-validation.json"
-    if validation_path.exists():
         try:
-            data = json.loads(validation_path.read_text(encoding="utf-8"))
-            if data.get("status") != "pass":
-                errors.append(f"validation status is {data.get('status')!r}, expected 'pass'")
-            if data.get("completionStatus") != "DONE":
-                errors.append(f"validation completionStatus is {data.get('completionStatus')!r}")
-            if data.get("proofStatus") != "PROVEN":
-                errors.append(f"validation proofStatus is {data.get('proofStatus')!r}")
-        except (OSError, json.JSONDecodeError) as exc:
-            errors.append(f"validation unreadable: {exc}")
+            report = load_latest_gate_report(store, gate_id)
+            passed_reports.append(f"evidence-store:{gate_id}")
+            if report is not None:
+                errors.extend(check_report_status(report, gate_id))
+        except Exception as exc:
+            errors.append(str(exc))
 
     if errors:
         print("FAIL: W11 completion audit found gaps:")
