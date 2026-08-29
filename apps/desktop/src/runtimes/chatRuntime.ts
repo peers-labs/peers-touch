@@ -22,7 +22,6 @@ import { log } from '../utils/logger';
 
 const RECOVERY_STORAGE_KEY = 'agent-turn-recovery';
 const RECOVERY_RECONCILE_INTERVAL_MS = 15_000;
-const AUTHORITATIVE_SNAPSHOT_CURSOR = Number.MAX_SAFE_INTEGER;
 const RECOVERY_PHASES = new Set<AgentTurnRecoveryPhase>([
   'CONNECTED',
   'CONNECTION_LOST',
@@ -277,10 +276,26 @@ function loadAuthoritativeTurnSnapshot(
       {
         conversation_id: record.conversationId,
         turn_id: record.turnId,
-        after_seq: AUTHORITATIVE_SNAPSHOT_CURSOR,
+        after_seq: record.cursor,
       },
       (event) => {
-        if (event.event !== 'snapshot') return;
+        if (event.event !== 'snapshot') {
+          if (event.sourceDelivery) {
+            eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+              streamId: record.streamId,
+              streamGeneration: record.streamGeneration,
+              ptid: record.actorId,
+              conversationId: record.conversationId,
+              agentId: record.agentId,
+              event: event.event,
+              data: event.data,
+              timestampMs: Date.now(),
+              sourceDelivery: event.sourceDelivery,
+              deliveryOnly: true,
+            } as SourceBoundReplayDelivery);
+          }
+          return;
+        }
         try {
           finish(parseAuthoritativeTurnSnapshot(record, event));
         } catch (error) {

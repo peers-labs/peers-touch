@@ -496,8 +496,26 @@ describe('chatRuntime Agent turn recovery', () => {
     expect(mocks.replayInputs).toEqual([{
       conversation_id: 'conversation-1',
       turn_id: 'turn-1',
-      after_seq: Number.MAX_SAFE_INTEGER,
+      after_seq: 4,
     }]);
+    const terminalData = {
+      turnId: 'turn-1',
+      conversationId: 'conversation-1',
+      seq: 5,
+      error: 'station_restart_interrupted',
+    };
+    mocks.replayOnEvents[0]({
+      event: 'error',
+      data: terminalData,
+      sourceDelivery: {
+        transport: 'station-sse',
+        ptid: 'ptid:person:alice',
+        conversationId: 'conversation-1',
+        turnId: 'turn-1',
+        sequence: 5,
+        rawPayload: { eventType: 'error', data: terminalData },
+      },
+    });
     mocks.replayOnEvents[0](stationSnapshot({
         turnId: 'turn-1',
         conversationId: 'conversation-1',
@@ -529,6 +547,15 @@ describe('chatRuntime Agent turn recovery', () => {
       expect.objectContaining({ event: 'connected' }),
     );
     expect(observed).toContainEqual(expect.objectContaining({
+      deliveryOnly: true,
+      sourceDelivery: expect.objectContaining({
+        transport: 'station-sse',
+        turnId: 'turn-1',
+        sequence: 5,
+      }),
+    }));
+    expect(observed).toContainEqual(expect.objectContaining({
+      event: 'error',
       deliveryOnly: true,
       sourceDelivery: expect.objectContaining({
         transport: 'station-sse',

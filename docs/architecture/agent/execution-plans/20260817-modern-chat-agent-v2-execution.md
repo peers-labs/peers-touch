@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `a2f5c706d` reached the complete Browser AS-F06 oracle in run `20260829T091643210639Z-ff78e0b4fc83cf58eff6f89b1fb3c447`; transition ordering, replay-delivery deduplication, deterministic stale revision, and cleanup convergence are locally corrected; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `52caeb68f` reached Browser AS-F06 final probe in clean run `20260829T102930918349Z-6c131acdb12621e339778b72c6057d7e`; explicit durable reload now requests post-cursor event rows before its authoritative snapshot, and cleanup diagnostics are strengthened; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3079,6 +3079,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   proof field, so the replay recorder now excludes snapshots from persisted
   event-sequence equality while retaining conflict detection for repeated
   persisted events. AS-F06 and G-F remain `UNPROVEN`.
+- Two accidentally overlapping `52caeb68f` runs were stopped and excluded from
+  evidence because they shared profile `two`; all owned client processes and
+  ports were released before retrying. The subsequent clean serial run
+  `20260829T102930918349Z-6c131acdb12621e339778b72c6057d7e`
+  stopped at `foundationF06ReplaySequencesMissing`; cleanup also failed to
+  archive the prepared conversation. The explicit snapshot loader requested
+  `after_seq = MAX_SAFE_INTEGER`, so it could publish the synthesized snapshot
+  but could not expose the persisted post-cursor terminal event to the
+  independent replay recorder. The local correction requests from the durable
+  recovery cursor, publishes returned event rows as observation-only
+  deliveries, and still applies only the authoritative snapshot to projection
+  state. Cleanup now retries only while the conversation remains readable and
+  reports its normalized deletion code on exhaustion. AS-F06 and G-F remain
+  `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

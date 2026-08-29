@@ -596,7 +596,11 @@ async function deleteFoundationConversation(
       const code = observedErrorCode(error);
       if (code.includes('AGENT_4004')) return code;
       if (code !== 'VERSION_CONFLICT' && code !== 'ACTIVE_DEPENDENCY') {
-        throw error;
+        try {
+          await api.getAgentConversation(conversationId);
+        } catch {
+          throw error;
+        }
       }
       await new Promise((resolve) => window.setTimeout(resolve, 250));
     }
@@ -2815,7 +2819,7 @@ async function cleanupFoundationF06Scenario(input: {
     const detail = cleanupError instanceof Error
       ? cleanupError.message
       : 'agent.acceptance.foundationCleanupVerificationFailed';
-    throw new Error(`CLEANUP_FAILED:${detail}`);
+    throw new Error(`CLEANUP_FAILED:${deletionErrorCode}:${detail}`);
   }
   return {
     cleanupComplete,
