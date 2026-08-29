@@ -133,6 +133,9 @@ def set_composer(client: TauriSession, value: str, *, blur: bool = False) -> Non
 
 class NativeTypingGate(AcceptanceGate):
     gate_id = GATE_ID
+    phase = "MP-W12"
+    bom = ("MP-G16",)
+    spec = ("AS-W12-06",)
     report_path = REPORT_PATH
     evidence_dir = (
         REPORT_PATH.parent / "chat-native-typing-evidence"

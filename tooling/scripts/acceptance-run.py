@@ -744,7 +744,10 @@ def result_traceability(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("cleanupStatus") in {"passed", "failed"}:
         required_fields.append("cleanupArtifact")
     missing = [key for key in required_fields if key not in result]
-    incomplete = result_is_incomplete(result)
+    requires_traceability = (
+        result_is_incomplete(result)
+        or result.get("tier") == "env-evidence"
+    )
     if not missing:
         status = "complete"
         reason = (
@@ -753,9 +756,12 @@ def result_traceability(result: dict[str, Any]) -> dict[str, Any]:
         )
         if "cleanupArtifact" in required_fields:
             reason += " and immutable provisioner cleanup evidence"
-    elif incomplete:
+    elif requires_traceability:
         status = "missing"
-        reason = "incomplete acceptance result is missing source artifact Phase/BOM/Spec/Gate traceability"
+        reason = (
+            "environment or incomplete acceptance result is missing source "
+            "artifact Phase/BOM/Spec/Gate traceability"
+        )
     else:
         status = "not-required"
         reason = "passed static/local gate does not emit a source evidence artifact"
@@ -785,6 +791,7 @@ def standardize_result(result: dict[str, Any], plan_path: Any) -> dict[str, Any]
     environment_proof = standardized.get("tier") == "env-evidence"
     evidence_status = str(standardized.get("evidenceStatus") or "").lower()
     runtime_manifest = standardized.get("manifest")
+    traceability = result_traceability(standardized)
     environment_evidence_valid = (
         not environment_proof
         or (
@@ -796,6 +803,7 @@ def standardize_result(result: dict[str, Any], plan_path: Any) -> dict[str, Any]
             and isinstance(runtime_manifest, dict)
             and runtime_manifest.get("state") == "FIXTURE_READY"
             and bool(runtime_manifest.get("runId"))
+            and traceability.get("status") == "complete"
         )
     )
     if status == "passed" and environment_evidence_valid:
@@ -812,7 +820,7 @@ def standardize_result(result: dict[str, Any], plan_path: Any) -> dict[str, Any]
         else:
             standardized["completionStatus"] = "PARTIAL"
             standardized["proofStatus"] = "UNPROVEN"
-    standardized["traceability"] = result_traceability(standardized)
+    standardized["traceability"] = traceability
     return standardized
 
 

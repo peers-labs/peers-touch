@@ -223,6 +223,15 @@ def station_readback(
 
 class NativeInteractionsGate(AcceptanceGate):
     gate_id = GATE_ID
+    phase = "MP-W12"
+    bom = ("MP-G15",)
+    spec = (
+        "AS-W12-01",
+        "AS-W12-02",
+        "AS-W12-03",
+        "AS-W12-04",
+        "AS-W12-05",
+    )
     report_path = REPORT_PATH
     evidence_dir = (
         REPORT_PATH.parent / "chat-native-interactions-evidence"

@@ -878,6 +878,27 @@ passed all Direct and Group interaction assertions with complete cleanup. Final
 NDR-W1 and MP-W13-F proof still requires a same-source full aggregate after this
 plan update.
 
+### 2026-08-29 Environment Evidence Traceability Correction
+
+The subsequent same-source aggregate
+`20260829T000748292834Z-3cdc5c9684fc2b2719e4a9f0595a52f9`
+executed all 17 selected Gates successfully on commit `d84076b40412`, but final
+Quality Evidence exposed a generic contract mismatch. Eight environment Gate
+reports omitted independent `phase` / `bom` / `spec` metadata. The aggregate
+incorrectly classified those complete product results as traceability
+`not-required`, while Quality Evidence correctly refused to consume them as
+review proof.
+
+The Infra correction now requires complete Phase/BOM/Spec/Gate traceability
+before any environment result can become `DONE/PROVEN`; missing metadata forces
+the result and aggregate to `PARTIAL/UNPROVEN`. `EvidenceReport` exposes generic
+traceability fields, while each Chat Gate supplies its own existing plan and
+specification IDs. Quality Evidence reports product and environment gaps to
+`pt-github-review` without treating reviewer-owned judgments as evidence-pipeline
+failures. The immutable aggregate above remains historical execution evidence,
+not final review proof. NDR-W1 and NDR-W6 remain in progress until a new clean
+candidate reproduces the full aggregate with complete traceability.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
