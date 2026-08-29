@@ -407,13 +407,17 @@ class FoundationF06Coordinator:
                 {"scenarioKey": self._scenario_key(probe_input)},
                 timeout=remaining,
             )
+            retry = result.get("retry") if isinstance(result, Mapping) else None
             if (
                 not isinstance(result, Mapping)
                 or result.get("activeFailureObserved") is not True
+                or result.get("blocker")
+                or not isinstance(retry, Mapping)
+                or retry.get("observed") is not True
             ):
                 raise ScenarioRunnerError(
-                    f"AS-F06 recovery failure was not observed for "
-                    f"{self._scenario_key(probe_input)}"
+                    f"AS-F06 recovery failure proof is invalid for "
+                    f"{self._scenario_key(probe_input)}: {result!r}"
                 )
 
         def exercise_durable_reloads(operation_deadline: float) -> None:

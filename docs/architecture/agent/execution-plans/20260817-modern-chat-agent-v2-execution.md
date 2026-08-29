@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `2b0b7ff9d` exposed nondeterministic AS-F06 batch preparation in run `20260829T043023680453Z-c1380cde93d76b3d0e076d85c05366e6`; each tuple now owns a local `prepare -> outage -> recovery -> reload -> completion` cycle and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `648d818b5` isolated each AS-F06 outage cycle, and run `20260829T044956654767Z-0460304fe03b3e35ef52ba44baddd08f` exposed an unpersisted recovery identity mismatch; the producer now fails at that primary proof and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2876,6 +2876,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   evidence, or synthesizing transport failure. The 96 focused
   Foundation/native static tests and `git diff --check` pass. AS-F06 and G-F
   remain `UNPROVEN` pending another exact-source run.
+- Checkpoint `648d818b5ae1181635e8976b5bee79648adee4d5` was deployed
+  exact-source to profile `two`. Run
+  `20260829T044956654767Z-0460304fe03b3e35ef52ba44baddd08f`
+  completed the first tuple's outage and reached durable reload, but again
+  reported `foundationF06ObservedRecoveryFailureMissing`; cleanup passed. Code
+  inspection showed this path can only follow the recovery identity-mismatch
+  early return: it claimed `activeFailureObserved=true` without persisting its
+  blocker/retry evidence, and the Python coordinator accepted that incomplete
+  result. The local correction persists every early-return evidence record and
+  requires empty blocker plus an observed retry before Station restart. This
+  preserves fail-closed ordering and will expose the underlying identity fact
+  directly on the next exact-source run. AS-F06 and G-F remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

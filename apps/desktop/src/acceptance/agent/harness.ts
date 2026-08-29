@@ -2560,13 +2560,15 @@ async function observeFoundationRecoveryFailure(
         !== 'completed',
   };
   if (!active || active.phase !== 'RECOVERY_FAILED') {
-    return {
+    const evidence = {
       ...base,
       blocker: 'AS_F06_ACTIVE_RECOVERY_FAILURE_NOT_OBSERVED',
       activeFailureObserved: false,
       retry: { invoked: false, observed: false },
       durableReload: { invoked: false, observed: false },
     };
+    await updateFoundationF06RecoveryFailure(handoff.scenarioKey, evidence);
+    return evidence;
   }
   if (
     !authenticatedPtid
@@ -2575,13 +2577,15 @@ async function observeFoundationRecoveryFailure(
     || active.streamId !== handoff.streamId
     || active.streamGeneration !== handoff.streamGeneration
   ) {
-    return {
+    const evidence = {
       ...base,
       blocker: 'AS_F06_ACTIVE_RECOVERY_IDENTITY_MISMATCH',
       activeFailureObserved: true,
       retry: { invoked: false, observed: false },
       durableReload: { invoked: false, observed: false },
     };
+    await updateFoundationF06RecoveryFailure(handoff.scenarioKey, evidence);
+    return evidence;
   }
 
   const retryEpochBefore = active.recoveryEpoch;

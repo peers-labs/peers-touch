@@ -99,7 +99,11 @@ class F06HarnessClient:
             }
         if method == "foundationF06ObserveFailure":
             self.failure_calls.append(request)
-            return {"activeFailureObserved": True}
+            return {
+                "activeFailureObserved": True,
+                "blocker": "",
+                "retry": {"observed": True},
+            }
         if method == "foundationF06DurableReload":
             self.reload_calls.append(request)
             return {"durableReload": {"observed": True}}
