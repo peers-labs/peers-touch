@@ -6929,7 +6929,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                             "debug_context".to_string(),
                             json!({
                                 "account_id": account_id,
+                                "endpoint_device_id": engine.endpoint().device_id,
                                 "engine_profile_id": engine.profile_id(),
+                                "process_id": std::process::id(),
                                 "session_kind": "legacy-process-global",
                             }),
                         );
