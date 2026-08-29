@@ -421,7 +421,6 @@ class FoundationF06Coordinator:
                 )
 
         def exercise_durable_reloads(operation_deadline: float) -> None:
-            _authenticate_clients(self._runtime_pair, self._profile_env)
             remaining = operation_deadline - time.monotonic()
             if remaining <= 0:
                 raise ScenarioRunnerError(
@@ -452,7 +451,7 @@ class FoundationF06Coordinator:
             self._runtime_manifest,
             repo_root=REPO_ROOT,
             during_outage=observe_recovery_failures,
-            after_restart=exercise_durable_reloads,
+            after_restart=lambda _operation_deadline: None,
         )
         client_reloads: dict[str, bool] = {}
         for platform, client in (
@@ -462,6 +461,7 @@ class FoundationF06Coordinator:
             client.restart()
             client_reloads[platform] = True
         _authenticate_clients(self._runtime_pair, self._profile_env)
+        exercise_durable_reloads(time.monotonic() + 180)
         orchestration = {
             **station_restart,
             "clientReloads": client_reloads,

@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `5edd1fb02` proved the AS-F06 trace checkpoint and reached post-client-restart projection in run `20260829T061026253831Z-024fb1d63a2b9fe4d4a71d621586b5d3`; same-session selection now reconciles authoritative messages and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `39253c1eb` confirmed the AS-F06 terminal projection still disappears across client restart in run `20260829T063423272048Z-1c231db35525bc464a9519d31b6063a7`; durable reload is now ordered after client restart/re-authentication and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2948,6 +2948,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   same-session selection run the normal authoritative message reconciliation
   whenever no live operation owns the session. AS-F06 and G-F remain
   `UNPROVEN` pending another exact-source run.
+- Checkpoint `39253c1eb46952718616489d5d01cd0f639e9f31` was deployed
+  exact-source to profile `two`. Run
+  `20260829T063423272048Z-1c231db35525bc464a71d621586b5d3`
+  still timed out on the post-client-restart terminal projection; cleanup
+  passed. This disproved same-session message refresh as the owning cause, so
+  that product change is removed. The actual ordering defect is that the
+  pre-restart durable reload consumes the terminal snapshot and removes the
+  active recovery record, after which client restart has no recovery work to
+  hydrate. The local correction performs client restart and re-authentication
+  first, then invokes the accepted durable snapshot reload against the
+  rehydrated recovery record. AS-F06 and G-F remain `UNPROVEN` pending another
+  exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

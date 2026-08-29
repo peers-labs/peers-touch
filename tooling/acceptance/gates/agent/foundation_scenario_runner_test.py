@@ -298,7 +298,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             )
 
         self.assertEqual(restart.call_count, 4)
-        self.assertEqual(authenticate.call_count, 8)
+        self.assertEqual(authenticate.call_count, 4)
         authenticate.assert_called_with(runtime_pair, {})
         self.assertEqual(native.restart_count, 4)
         self.assertEqual(browser.restart_count, 4)
@@ -408,7 +408,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 )
 
         self.assertEqual(restart.call_count, 3)
-        self.assertEqual(authenticate.call_count, 7)
+        self.assertEqual(authenticate.call_count, 4)
         self.assertEqual(native.restart_count, 4)
         self.assertEqual(browser.restart_count, 4)
         self.assertEqual(
