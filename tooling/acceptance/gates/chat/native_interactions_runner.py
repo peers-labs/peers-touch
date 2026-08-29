@@ -1697,11 +1697,12 @@ class NativeInteractionsGate(AcceptanceGate):
                 ):
                     # #region debug-point A,B,C,D:sender-projection-sample
                     try:
-                        rust_messages = gateway_command(
+                        gateway_messages = gateway_command(
                             self.clients["alice"],
                             "messaging_list_messages",
                             {"conversation_id": conversation_id},
-                        ).get("messages", [])
+                        )
+                        rust_messages = gateway_messages.get("messages", [])
                         harness_state = async_harness(
                             self.clients["alice"],
                             "debugInteractionProjectionState",
@@ -1726,6 +1727,9 @@ class NativeInteractionsGate(AcceptanceGate):
                                     for item in rust_messages
                                     if isinstance(item, dict)
                                 ],
+                                "gatewayRuntimeContext": gateway_messages.get(
+                                    "debug_context"
+                                ),
                                 "harnessState": harness_state,
                                 "dom": message_dom_snapshot(
                                     self.clients["alice"],
