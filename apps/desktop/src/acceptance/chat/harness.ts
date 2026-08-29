@@ -423,6 +423,7 @@ export function installAcceptanceHarness(): void {
       kind,
       messageId,
     }: MessageInteractionInput) {
+      const actorId = activeActorId();
       const snapshot = () => {
         const social = useSocialChatStore.getState();
         const rawMessages = social.messages[conversationId] ?? [];
@@ -438,7 +439,16 @@ export function installAcceptanceHarness(): void {
       };
       const before = snapshot();
       await refreshConversation(kind, conversationId);
-      return { before, after: snapshot() };
+      const apiMessages = actorId
+        ? await imServiceV1.messaging.listMessages(conversationId)
+        : [];
+      return {
+        actorId,
+        authenticated: useSessionStore.getState().authenticated,
+        apiMessageIds: apiMessages.map(message => message.messageId),
+        before,
+        after: snapshot(),
+      };
     },
     // #endregion
 
