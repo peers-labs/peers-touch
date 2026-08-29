@@ -29,9 +29,12 @@
 | M | The refreshed client is left on an unauthenticated or boot surface, so neither primary navigation nor the Chat page can mount. | High | Low | Pending post-refresh shell-state evidence. |
 | N | The authenticated shell mounts, but route restoration fails to expose the Chat navigation target or page host. | Medium | Low | Pending route/navigation/page-host evidence. |
 | O | WebKitGTK returns from `refresh()` before replacing the old document, so Harness readiness accepts the stale pre-refresh Harness and the real reload unmounts the shell afterward. | High | Low | Rejected: `timeOrigin` changed before `refresh()` returned and the new document installed a new Harness. |
-| P | The new renderer remains in `resolvingSession` because session restoration does not settle after the Station restart. | High | Low | Pending Identity lifecycle phase evidence. |
-| Q | Session restoration fails and moves the new renderer to the account gate after the Station restart. | Medium | Low | Pending Identity lifecycle phase and session evidence. |
-| R | Identity reaches authenticated `ready`, but the ReadyView or critical runtime/page host fails to mount. | Medium | Low | Pending Identity lifecycle phase and shell evidence. |
+| P | The new renderer remains in `resolvingSession` because session restoration does not settle after the Station restart. | High | Low | Rejected: Identity completed boot and entered `accountGate`. |
+| Q | Session restoration fails and moves the new renderer to the account gate after the Station restart. | Medium | Low | Confirmed in part: Identity enters `accountGate(reason=revoked)` while the session store remains authenticated. Revocation source is pending. |
+| R | Identity reaches authenticated `ready`, but the ReadyView or critical runtime/page host fails to mount. | Medium | Low | Rejected: Identity lifecycle is explicitly `onboarding`, not `ready`. |
+| S | A cross-window identity-change event classifies the renderer's own actor as a same-actor takeover during reload. | Medium | Low | Pending ordered Identity event-buffer evidence. |
+| T | The Rust event-stream reconnect reports a stale token as session-revoked after Station restart and kicks the current renderer. | High | Low | Pending revocation reason/raw and realtime connection-state evidence. |
+| U | A normal frontend API request maps an `UNAUTHORIZED` response to session-revoked during boot reconciliation. | Medium | Low | Pending revocation payload raw marker and event ordering. |
 
 ## Log Evidence
 - Pre-fix Gate run `20260829T023644548452Z-8983d0bd277b21b69d93e766da7eaa4e` failed after 120 seconds.
@@ -64,6 +67,9 @@
 - Document-generation run `20260829T054430720564Z-10477eb87619b1b4cf39db4b225385e8` on commit `bab2f3ef3f20c16986dd0e611caf4a874c981555` reproduced the same reload timeout.
 - Debug lines 5-9 show Alice's `performance.timeOrigin` changed from `1787982484902` before refresh to `1787982965530` when `refresh()` returned. The new document reported navigation type `reload`, installed a new Acceptance Harness, and remained without primary navigation or Chat layout. This rejects hypothesis O.
 - The next observation must read the canonical Identity lifecycle and session projections from the Acceptance-only Harness to distinguish a stuck session restore (P), an auth-gate transition (Q), and an authenticated shell-mount failure (R).
+- Identity-phase run `20260829T055940751863Z-0e0fb6a7d487253013b1665e89e57b49` on commit `0397280c26289c64fa3eff1858f6314504c70185` reproduced the same timeout after all prior Direct and Group assertions passed.
+- Debug line 5 shows Bob was `authenticated/ready` before refresh with a complete Boot trace. Lines 7-9 show the new renderer completed shell, Identity, first-paint, and critical-runtime phases but settled in `accountGate(reason=revoked)`, while `sessionAuthenticated=true`, `sessionRestoring=false`, and the actor ID remained populated.
+- This rejects P and R and confirms the Q transition. The contradictory Identity/session projections prove that page navigation is downstream of a revocation event, not the owner of the failure. The next observation must identify whether the revocation came from cross-window identity handling (S), Rust stream reconnect (T), or an ordinary API response (U).
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
@@ -84,6 +90,7 @@ focused Gate exposed a later Station-restart convergence failure. That boundary
 must be diagnosed independently before the debugging session can be confirmed
 fixed. The document-generation evidence proves WebKitGTK completed document
 replacement before returning from `refresh()`, so stale Harness readiness is
-not the cause. The remaining boundary is inside the new renderer's
-Identity/Boot pipeline. The next instrumentation reads the canonical Identity
-phase and session projection without changing lifecycle behavior.
+not the cause. The Identity evidence proves the new renderer receives a
+session-revoked transition after restoring the same still-authenticated actor.
+The next instrumentation reads the existing event debug buffer to identify the
+revocation publisher without changing lifecycle behavior.
