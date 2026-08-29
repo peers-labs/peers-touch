@@ -36,10 +36,13 @@ impl MessagingLifecycleWorker {
             Condvar::new(),
         ));
         let thread_state = state.clone();
+        let cycle_state = state.clone();
         let handle = thread::Builder::new()
             .name(format!("messaging:{}", engine.profile_id()))
             .spawn(move || {
-                lifecycle_loop(thread_state, move |token| run_cycle(&engine, token));
+                lifecycle_loop(thread_state, move |token| {
+                    run_cycle(&engine, token, &cycle_state)
+                });
             })
             .map_err(|error| format!("start messaging lifecycle worker: {error}"))?;
         Ok(Self {
@@ -74,6 +77,22 @@ impl MessagingLifecycleWorker {
             return Err("messaging lifecycle worker is stopped".to_string());
         }
         Ok(state.token.clone())
+    }
+
+    pub fn is_active(&self) -> Result<bool, String> {
+        let handle_running = self
+            .handle
+            .as_ref()
+            .map(|handle| !handle.is_finished())
+            .unwrap_or(false);
+        if !handle_running {
+            return Ok(false);
+        }
+        self.state
+            .0
+            .lock()
+            .map(|state| !state.stopped)
+            .map_err(|_| "messaging lifecycle state lock poisoned".to_string())
     }
 
     pub fn wake(&self) -> Result<(), String> {
@@ -119,6 +138,12 @@ impl MessagingLifecycleWorker {
         handle
             .join()
             .map_err(|_| "messaging lifecycle worker panicked".to_string())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn terminate_for_test(&mut self) -> Result<(), String> {
+        self.request_stop()?;
+        self.join()
     }
 }
 
@@ -169,52 +194,68 @@ where
     }
 }
 
-fn run_cycle(engine: &MessagingEngine, token: &str) -> Result<(), String> {
+fn run_cycle(
+    engine: &MessagingEngine,
+    token: &str,
+    lifecycle_state: &Arc<(Mutex<LifecycleState>, Condvar)>,
+) -> Result<(), String> {
     let mut failures = Vec::new();
-    if let Err(error) = engine.enroll_pending_device(token, "Desktop".to_string()) {
-        failures.push(format!("enrollment: {error}"));
+    macro_rules! run_step {
+        ($label:literal, $operation:expr) => {{
+            ensure_cycle_active(lifecycle_state)?;
+            if let Err(error) = $operation {
+                failures.push(format!("{}: {error}", $label));
+            }
+            ensure_cycle_active(lifecycle_state)?;
+        }};
     }
-    if let Err(error) = engine.publish_prekeys(token) {
-        failures.push(format!("prekeys: {error}"));
-    }
-    if let Err(error) = engine.publish_mls_key_packages(token) {
-        failures.push(format!("MLS KeyPackages: {error}"));
-    }
-    if let Err(error) = engine.resume_membership_intent_once(token) {
-        failures.push(format!("membership intent: {error}"));
-    }
-    if let Err(error) = engine.resume_attachment_upload_once(token, super::engine::now_unix_ms()) {
-        failures.push(format!("attachment upload: {error}"));
-    }
-    if let Err(error) = engine.cleanup_completed_attachment_sources() {
-        failures.push(format!("attachment source cleanup: {error}"));
-    }
-    if let Err(error) = engine.resume_attachment_download_once(token, super::engine::now_unix_ms())
-    {
-        failures.push(format!("attachment download: {error}"));
-    }
-    if let Err(error) = engine.resume_message_draft_once(token, super::engine::now_unix_ms()) {
-        failures.push(format!("message draft: {error}"));
-    }
-    if let Err(error) = engine.dispatch_command_once(
-        token,
-        super::engine::now_unix_ms(),
-        CommandRetryPolicy {
-            initial_delay_ms: 1_000,
-            maximum_delay_ms: 300_000,
-        },
-    ) {
-        failures.push(format!("command dispatch: {error}"));
-    }
-    if let Err(error) = hydrate_projections_from_station(engine, token) {
-        failures.push(format!("projection hydration: {error}"));
-    }
-    if let Err(error) = engine.drain_once(token, DRAIN_BATCH_LIMIT) {
-        failures.push(format!("queue drain: {error}"));
-    }
-    if let Err(error) = engine.dispatch_delivery_receipt_once(token) {
-        failures.push(format!("delivery receipt dispatch: {error}"));
-    }
+
+    run_step!(
+        "enrollment",
+        engine.enroll_pending_device(token, "Desktop".to_string())
+    );
+    run_step!("prekeys", engine.publish_prekeys(token));
+    run_step!("MLS KeyPackages", engine.publish_mls_key_packages(token));
+    run_step!(
+        "membership intent",
+        engine.resume_membership_intent_once(token)
+    );
+    run_step!(
+        "attachment upload",
+        engine.resume_attachment_upload_once(token, super::engine::now_unix_ms())
+    );
+    run_step!(
+        "attachment source cleanup",
+        engine.cleanup_completed_attachment_sources()
+    );
+    run_step!(
+        "attachment download",
+        engine.resume_attachment_download_once(token, super::engine::now_unix_ms())
+    );
+    run_step!(
+        "message draft",
+        engine.resume_message_draft_once(token, super::engine::now_unix_ms())
+    );
+    run_step!(
+        "command dispatch",
+        engine.dispatch_command_once(
+            token,
+            super::engine::now_unix_ms(),
+            CommandRetryPolicy {
+                initial_delay_ms: 1_000,
+                maximum_delay_ms: 300_000,
+            },
+        )
+    );
+    run_step!(
+        "projection hydration",
+        hydrate_projections_from_station(engine, token)
+    );
+    run_step!("queue drain", engine.drain_once(token, DRAIN_BATCH_LIMIT));
+    run_step!(
+        "delivery receipt dispatch",
+        engine.dispatch_delivery_receipt_once(token)
+    );
     if failures.is_empty() {
         Ok(())
     } else {
@@ -223,6 +264,20 @@ fn run_cycle(engine: &MessagingEngine, token: &str) -> Result<(), String> {
             tracing::info!("device enrollment reset; re-enrollment will occur on next cycle");
         }
         Err(combined)
+    }
+}
+
+fn ensure_cycle_active(
+    lifecycle_state: &Arc<(Mutex<LifecycleState>, Condvar)>,
+) -> Result<(), String> {
+    let state = lifecycle_state
+        .0
+        .lock()
+        .map_err(|_| "messaging lifecycle state lock poisoned".to_string())?;
+    if state.stopped {
+        Err("messaging lifecycle cycle cancelled".to_string())
+    } else {
+        Ok(())
     }
 }
 

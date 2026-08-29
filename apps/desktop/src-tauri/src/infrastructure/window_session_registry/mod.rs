@@ -120,6 +120,23 @@ impl WindowSessionRegistry {
         map.remove(window_label)
     }
 
+    pub fn try_unbind_actor(&self, actor_id: &str) -> Result<Vec<ActiveSession>, String> {
+        let mut map = self
+            .inner
+            .write()
+            .map_err(|_| "window session registry write lock poisoned".to_string())?;
+        let labels = map
+            .iter()
+            .filter_map(|(label, session)| {
+                (session.actor.actor_id == actor_id).then(|| label.clone())
+            })
+            .collect::<Vec<_>>();
+        Ok(labels
+            .into_iter()
+            .filter_map(|label| map.remove(&label))
+            .collect())
+    }
+
     /// Remove every window session during a process-wide Station cutover.
     pub fn clear(&self) -> Vec<ActiveSession> {
         let mut map = self
