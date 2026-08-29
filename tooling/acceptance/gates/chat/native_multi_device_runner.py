@@ -73,6 +73,9 @@ def selected_runtime() -> tuple[
 
 class NativeMultiDeviceGate(AcceptanceGate):
     gate_id = GATE_ID
+    phase = "MP-W07"
+    bom = ("MP-G05", "MP-G06")
+    spec = ("chat-native-visible-clients",)
     report_path = REPORT_PATH
     evidence_dir = (
         REPORT_PATH.parent / "chat-native-multi-device-evidence"

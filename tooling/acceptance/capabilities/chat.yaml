@@ -34,8 +34,7 @@
           "Static contract checks preserve one messaging owner and one client crypto lifecycle"
         ],
         "unproven_scope": [
-          "PostgreSQL-backed multi-node chat persistence recovery",
-          "End-to-end user message send and receive through Desktop UI"
+          "PostgreSQL-backed multi-node chat persistence recovery"
         ]
       }
     },
@@ -68,8 +67,7 @@
           "Desktop messaging lifecycle and chat projection compile together"
         ],
         "unproven_scope": [
-          "Live delivery across two running Desktop clients",
-          "Reconnect, backoff and missed-event replay under network failure"
+          "Transport backoff and missed-event replay under injected network failure remain unproven; Linux offline, duplicate-replay and restart convergence are proven by G15 and MP-W13"
         ]
       }
     },
@@ -100,10 +98,7 @@
           "Desktop chat pages, components, store and service APIs type-check together",
           "Chat visible surface keeps compile-time contract with the Desktop messaging bridge"
         ],
-        "unproven_scope": [
-          "DOM-level Desktop chat page assertions",
-          "Human-visible message send/read/recall/edit workflow"
-        ]
+        "unproven_scope": []
       }
     },
     {
@@ -187,10 +182,11 @@
           "chat-native-group-mls-e2e"
         ],
         "proven_scope": [
-          "Only successful live runs with complete current source-bound reports prove W8 journeys"
+          "Only successful live runs with complete current source-bound reports prove W8 journeys",
+          "W8 two-client, multi-device, recovery and Group MLS journeys are proven on desktop-linux-native"
         ],
         "unproven_scope": [
-          "W8 remains unproven until all four environment-evidence gates pass"
+          "W8 remains unproven on desktop-macos-native and desktop-windows-native until all four environment-evidence gates pass in each cell"
         ]
       }
     },
@@ -228,11 +224,12 @@
         "proven_by": ["chat-native-interactions-e2e"],
         "proven_scope": [
           "Proto, Station, Engine and Desktop interaction contracts compile and pass their declared structural gates",
-          "Registry changes select the dedicated interaction Native Gate"
+          "Registry changes select the dedicated interaction Native Gate",
+          "Direct and Group reply, thread, edit, retract, reaction, pin and read are proven on desktop-linux-native",
+          "Pending edit/reply timeout and exact retry convergence are proven on desktop-linux-native"
         ],
         "unproven_scope": [
-          "Direct and Group reply, thread, edit, retract, reaction, pin and read remain unproven until the dedicated source-bound Native Gate passes",
-          "Pending edit/reply timeout and exact retry convergence remains unproven until the dedicated G15 assertion passes",
+          "Direct and Group interaction parity remains unproven on desktop-macos-native and desktop-windows-native",
           "Mobile interaction parity remains unproven until MP-W09 Native cells pass"
         ]
       }
@@ -278,10 +275,11 @@
           "Only the source-bound Native Gate with real DOM actions, restart and cleanup proves MP-W13",
           "The Native Gate rejects raw auth, chat or common i18n keys in visible Alice and Bob UI",
           "The Native Gate creates and reopens one Direct through the visible conversation-list search result and proves stable conversation identity",
-          "Destructive Chat Fixture reset is bound to an isolated disposable Station, Compose project and PostgreSQL volume"
+          "Destructive Chat Fixture reset is bound to an isolated disposable Station, Compose project and PostgreSQL volume",
+          "MP-W13 product closure is proven on desktop-linux-native"
         ],
         "unproven_scope": [
-          "MP-W13 remains unproven until chat-native-product-closure-e2e passes",
+          "MP-W13 product closure remains unproven on desktop-macos-native and desktop-windows-native",
           "Mobile product parity remains outside this Desktop Gate"
         ]
       }
@@ -316,11 +314,11 @@
         "proven_by": ["chat-native-typing-e2e"],
         "proven_scope": [
           "Station and Desktop typing contracts compile and pass their declared structural gates",
-          "Registry changes select the dedicated typing Native Gate"
+          "Registry changes select the dedicated typing Native Gate",
+          "Direct and Group typing start, stop, send, blur, session-switch, disconnect, TTL, removed-member and revoked-device behavior is proven on desktop-linux-native"
         ],
         "unproven_scope": [
-          "Direct start, stop, session-switch, disconnect and TTL behavior remains unproven",
-          "Group start, stop, send, blur, session-switch, disconnect, TTL, removed-member and revoked-device behavior remains unproven until G16 passes",
+          "Direct and Group typing parity remains unproven on desktop-macos-native and desktop-windows-native",
           "Mobile typing parity remains unproven until MP-W09 Native cells pass"
         ]
       }

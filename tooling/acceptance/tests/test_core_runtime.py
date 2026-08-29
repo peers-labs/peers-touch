@@ -148,6 +148,20 @@ class EvidenceSchemaTests(unittest.TestCase):
         self.assertEqual(d["proofStatus"], "PROVEN")
         self.assertTrue(d["sampleEmissionAllowed"])
 
+    def test_report_serializes_declared_traceability(self):
+        report = new_report(
+            "environment-gate",
+            phase="workstream",
+            bom=("GATE-01",),
+            spec=("feature-contract",),
+        )
+
+        serialized = report.to_dict()
+
+        self.assertEqual(serialized["phase"], "workstream")
+        self.assertEqual(serialized["bom"], ["GATE-01"])
+        self.assertEqual(serialized["spec"], ["feature-contract"])
+
     def test_report_writes_valid_json(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             report = new_report("unit-test-gate")
