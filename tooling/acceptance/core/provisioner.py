@@ -57,6 +57,10 @@ class EnvironmentProvisioner(ABC):
         self._manifest: RuntimeManifest | None = None
         self._cleanup_handlers: list[tuple[str, Callable[[], None]]] = []
         self._resolved_credential_values: tuple[str, ...] = ()
+        self._prepared_credentials: (
+            tuple[tuple[str, ...], dict[str, str]] | None
+        ) = None
+        self._credential_preparation_error: Exception | None = None
 
     @abstractmethod
     def provision(self, gate_id: str) -> RuntimeManifest:
@@ -83,6 +87,22 @@ class EnvironmentProvisioner(ABC):
     def resolved_credential_values(self) -> tuple[str, ...]:
         """Return in-memory values resolved by this provisioner instance."""
         return self._resolved_credential_values
+
+    def prepare_credentials(
+        self,
+    ) -> tuple[tuple[str, ...], dict[str, str]]:
+        """Resolve credentials once, before any runtime artifact is written."""
+        if self._credential_preparation_error is not None:
+            raise self._credential_preparation_error
+        if self._prepared_credentials is None:
+            try:
+                refs, values = self._resolve_credentials()
+            except Exception as error:
+                self._credential_preparation_error = error
+                raise
+            self._prepared_credentials = (refs, dict(values))
+        refs, values = self._prepared_credentials
+        return refs, dict(values)
 
     def _remember_resolved_credentials(
         self,

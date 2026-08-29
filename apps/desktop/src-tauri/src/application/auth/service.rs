@@ -5,6 +5,7 @@ use crate::contracts::{
 use crate::domain::auth::session::{
     from_station_response, validate_login_input, validate_token, AuthDomainError, AuthSession,
 };
+use crate::domain::identity::{ActiveSession, ActorRef};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::session_store::{PersistedSession, SessionSource};
 use crate::infrastructure::session_vault::{self, SessionVaultError};
@@ -12,6 +13,74 @@ use crate::infrastructure::station_client;
 use crate::model::actor::ActorProfile;
 use crate::state::{AppState, SessionState};
 use serde_json::{json, Value};
+use std::sync::MutexGuard;
+
+pub(crate) struct PreparedAuthSession {
+    pub payload: AuthSessionPayload,
+    pub account_id: String,
+    pub actor_id: String,
+    pub token: String,
+}
+
+impl PreparedAuthSession {
+    pub fn active_session(&self, window_label: &str) -> ActiveSession {
+        let mut actor = ActorRef::new_person(self.actor_id.clone());
+        actor.ptid = self.payload.ptid.clone().unwrap_or_default();
+        ActiveSession::new(
+            window_label,
+            self.account_id.clone(),
+            actor,
+            self.token.clone(),
+        )
+    }
+
+    fn legacy_session_state(&self) -> SessionState {
+        SessionState {
+            actor_id: Some(self.actor_id.clone()),
+            token: Some(self.token.clone()),
+            account_id: Some(self.account_id.clone()),
+        }
+    }
+}
+
+type PreparedAuthResult = Result<PreparedAuthSession, AppResult<AuthSessionPayload>>;
+
+pub(crate) fn validate_pin_session_token(
+    account_id: &str,
+    persisted_account_id: &str,
+    persisted_actor_id: Option<&str>,
+    token: &str,
+) -> Result<AuthSession, AppResult<AuthSessionPayload>> {
+    if persisted_account_id != account_id {
+        return Err(unauthorized(
+            "encrypted session does not belong to the selected account",
+            json!({
+                "command": "account_unlock",
+                "reason": "account_blob_mismatch"
+            }),
+        ));
+    }
+    let session = validate_token(token).map_err(map_domain_error)?;
+    if session.actor_id.trim().is_empty() {
+        return Err(unauthorized(
+            "unlocked token has no actor subject",
+            json!({
+                "command": "account_unlock",
+                "reason": "actor_missing"
+            }),
+        ));
+    }
+    if persisted_actor_id.is_some_and(|actor_id| actor_id != session.actor_id) {
+        return Err(unauthorized(
+            "unlocked token does not belong to the persisted session actor",
+            json!({
+                "command": "account_unlock",
+                "reason": "account_actor_mismatch"
+            }),
+        ));
+    }
+    Ok(session)
+}
 
 pub(crate) fn takeover_station_session_token(
     token: &str,
@@ -95,13 +164,9 @@ pub(crate) fn canonical_ptid_for_token(token: &str) -> Option<String> {
             return Some(profile.id);
         }
     }
-    if let Ok(resp) = station_client::request_json(
-        reqwest::Method::GET,
-        "/actor/profile",
-        token,
-        None,
-        None,
-    ) {
+    if let Ok(resp) =
+        station_client::request_json(reqwest::Method::GET, "/actor/profile", token, None, None)
+    {
         if let Some(network_id) = resp
             .get("data")
             .and_then(|d| d.get("peers_touch"))
@@ -112,7 +177,11 @@ pub(crate) fn canonical_ptid_for_token(token: &str) -> Option<String> {
                 return Some(network_id.to_string());
             }
         }
-        if let Some(id) = resp.get("data").and_then(|d| d.get("id")).and_then(|v| v.as_str()) {
+        if let Some(id) = resp
+            .get("data")
+            .and_then(|d| d.get("id"))
+            .and_then(|v| v.as_str())
+        {
             if id.starts_with("ptid:") {
                 return Some(id.to_string());
             }
@@ -155,6 +224,37 @@ pub(crate) fn deactivate_messaging_profile(
     state.messaging_engines.deactivate(account_id).map(|_| ())
 }
 
+fn commit_legacy_prepared_session(
+    state: &AppState,
+    prepared: PreparedAuthSession,
+) -> AppResult<AuthSessionPayload> {
+    if let Err(error) = activate_messaging_profile(
+        state,
+        &prepared.account_id,
+        &prepared.actor_id,
+        &prepared.token,
+    ) {
+        tracing::warn!(
+            account_id = %prepared.account_id,
+            actor_id = %prepared.actor_id,
+            error = %error,
+            "HTTP Gateway session retained while durable messaging activation awaits retry"
+        );
+    }
+    let mut mirror = match state.session.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to update legacy session mirror",
+                None,
+            )
+        }
+    };
+    *mirror = prepared.legacy_session_state();
+    AppResult::success(prepared.payload)
+}
+
 /// Performs a no-auth POST to a Station access endpoint and returns the
 /// `data` envelope object. Network and unexpected-shape failures map to a
 /// typed `AppResult` error generic over the caller's payload type.
@@ -176,9 +276,17 @@ fn access_post<T: serde::Serialize>(
                     409 => ErrorCode::Conflict,
                     _ => ErrorCode::InternalError,
                 };
-                AppResult::fail(code, format!("{}: {}", context, error.message), error.details)
+                AppResult::fail(
+                    code,
+                    format!("{}: {}", context, error.message),
+                    error.details,
+                )
             }
-            _ => AppResult::fail(err_code, format!("{}: {}", context, error.message), error.details),
+            _ => AppResult::fail(
+                err_code,
+                format!("{}: {}", context, error.message),
+                error.details,
+            ),
         }
     })?;
     resp.get("data").cloned().ok_or_else(|| {
@@ -348,47 +456,92 @@ pub fn access_submit_login(
     input: AccessSubmitLoginInput,
     state: &AppState,
 ) -> AppResult<AuthSessionPayload> {
+    let transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
+    match prepare_access_submit_login_during_transition(input, state, &transition) {
+        Ok(prepared) => commit_legacy_prepared_session(state, prepared),
+        Err(error) => error,
+    }
+}
+
+pub(crate) fn prepare_access_submit_login_during_transition(
+    input: AccessSubmitLoginInput,
+    state: &AppState,
+    transition: &MutexGuard<'_, ()>,
+) -> PreparedAuthResult {
     if let Err(error) = validate_login_input(&input.account, &input.password) {
-        return map_domain_error(error);
+        return Err(map_domain_error(error));
     }
     let data = match submit_login_gate(&input.attempt_id, &input.account, &input.password) {
         Ok(data) => data,
-        Err(error) => return error,
+        Err(error) => return Err(error),
     };
-    finish_login(data, state, "access_submit_login")
+    prepare_login_during_transition(data, state, "access_submit_login", transition)
 }
 
 pub fn auth_login(input: AuthLoginInput, state: &AppState) -> AppResult<AuthSessionPayload> {
+    let transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
+    match prepare_auth_login_during_transition(input, state, &transition) {
+        Ok(prepared) => commit_legacy_prepared_session(state, prepared),
+        Err(error) => error,
+    }
+}
+
+pub(crate) fn prepare_auth_login_during_transition(
+    input: AuthLoginInput,
+    state: &AppState,
+    transition: &MutexGuard<'_, ()>,
+) -> PreparedAuthResult {
     if let Err(error) = validate_login_input(&input.account, &input.password) {
-        return map_domain_error(error);
+        return Err(map_domain_error(error));
     }
 
     let attempt = match start_access_attempt::<AuthSessionPayload>() {
         Ok(decision) => decision,
         Err(error) => {
-            let should_fallback = error.error.as_ref().is_some_and(|e| e.code == ErrorCode::NotFound);
+            let should_fallback = error
+                .error
+                .as_ref()
+                .is_some_and(|e| e.code == ErrorCode::NotFound);
             if should_fallback {
                 tracing::info!(
                     "access-gate endpoint not found (404), falling back to direct /actor/login"
                 );
-                return direct_login_fallback(&input.account, &input.password, state);
+                return direct_login_fallback(&input.account, &input.password, state, transition);
             }
-            return error;
+            return Err(error);
         }
     };
     let attempt_id = string_field(&attempt, "attempt_id", "attemptId");
     if attempt_id.is_empty() {
-        return AppResult::fail(
+        return Err(AppResult::fail(
             ErrorCode::InternalError,
             "Access gate start failed: station did not return an attempt",
             Some(attempt),
-        );
+        ));
     }
     let data = match submit_login_gate(&attempt_id, &input.account, &input.password) {
         Ok(data) => data,
-        Err(error) => return error,
+        Err(error) => return Err(error),
     };
-    finish_login(data, state, "auth_login")
+    prepare_login_during_transition(data, state, "auth_login", transition)
 }
 
 /// Fallback for Stations that do not implement the access-gate flow.
@@ -397,7 +550,8 @@ fn direct_login_fallback(
     account: &str,
     password: &str,
     state: &AppState,
-) -> AppResult<AuthSessionPayload> {
+    transition: &MutexGuard<'_, ()>,
+) -> PreparedAuthResult {
     let body = json!({
         "email": account,
         "password": password,
@@ -406,40 +560,45 @@ fn direct_login_fallback(
     let resp = match station_client::post_json_no_auth("/actor/login", body) {
         Ok(resp) => resp,
         Err(error) => {
-            return AppResult::fail(
+            return Err(AppResult::fail(
                 ErrorCode::Unauthorized,
                 format!("Direct login failed: {}", error),
                 None,
-            );
+            ));
         }
     };
     let data = match resp.get("data").cloned() {
         Some(data) => data,
         None => {
-            return AppResult::fail(
+            return Err(AppResult::fail(
                 ErrorCode::Unauthorized,
                 "Direct login failed: unexpected response from station",
                 Some(resp),
-            );
+            ));
         }
     };
-    finish_login(data, state, "auth_login_direct")
+    prepare_login_during_transition(data, state, "auth_login_direct", transition)
 }
 
 /// Land a granted login: extract the token + actor identity, persist the
 /// session, download the avatar, and return the rich auth payload. Shared by
 /// the one-shot `auth_login` and the interactive `access_submit_login`.
-fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthSessionPayload> {
+fn prepare_login_during_transition(
+    data: Value,
+    state: &AppState,
+    command: &str,
+    _transition: &MutexGuard<'_, ()>,
+) -> PreparedAuthResult {
     let tokens = value_field(&data, "tokens", "tokens")
         .cloned()
         .unwrap_or(Value::Null);
     let token = string_field(&tokens, "access_token", "accessToken");
     if token.is_empty() {
-        return AppResult::fail(
+        return Err(AppResult::fail(
             ErrorCode::Unauthorized,
             "Login failed: no token in response",
             None,
-        );
+        ));
     }
 
     // Extract actor identity from the station response
@@ -483,9 +642,6 @@ fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthS
 
     let access_token = token.clone();
     let session = from_station_response(actor_id.clone(), token);
-    if let Err(error) = write_session(state, &session) {
-        return error;
-    }
 
     let account_id = match crate::infrastructure::auth_identity::upsert_password(
         &actor_id,
@@ -499,20 +655,17 @@ fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthS
     ) {
         Ok(account_id) => account_id,
         Err(reason) => {
-            return AppResult::fail(
+            return Err(AppResult::fail(
                 ErrorCode::InternalError,
                 format!("Failed to persist account identity: {reason}"),
                 None,
-            )
+            ))
         }
     };
-    if let Ok(mut guard) = state.session.lock() {
-        guard.account_id = Some(account_id.clone());
-    }
     if let Err(error) =
         persist_session_if_unprotected(&account_id, &session, SessionSource::Password)
     {
-        return error;
+        return Err(error);
     }
     // Download avatar to local cache immediately so the account picker shows
     // the correct image on next app start without waiting for sync_user_profile.
@@ -526,50 +679,62 @@ fn finish_login(data: Value, state: &AppState, command: &str) -> AppResult<AuthS
 
     // Mark session as restorable (will be encrypted once PIN is set)
     mark_account_has_session(&account_id, &session.token);
-    if let Err(error) =
-        activate_messaging_profile(state, &account_id, &session.actor_id, &session.token)
-    {
-        tracing::warn!(
-            account_id = %account_id,
-            actor_id = %session.actor_id,
-            error = %error,
-            "authenticated session retained while durable messaging activation awaits retry"
-        );
-    }
-
-    AppResult::success(AuthSessionPayload {
-        command: command.to_string(),
-        status: "authenticated".to_string(),
-        actor_id: Some(actor_id),
-        ptid: canonical_ptid_for_token(&access_token),
-        name: Some(name),
-        email: Some(email_str),
-        avatar_url: Some(avatar),
-        avatar_local_path,
-        login_method: Some("password".to_string()),
+    let ptid = canonical_ptid_for_token(&access_token);
+    Ok(PreparedAuthSession {
+        payload: AuthSessionPayload {
+            command: command.to_string(),
+            status: "authenticated".to_string(),
+            actor_id: Some(actor_id.clone()),
+            ptid,
+            name: Some(name),
+            email: Some(email_str),
+            avatar_url: Some(avatar),
+            avatar_local_path,
+            login_method: Some("password".to_string()),
+        },
+        account_id,
+        actor_id,
+        token: session.token,
     })
 }
 
 pub fn auth_logout(state: &AppState) -> AppResult<AuthSessionPayload> {
-    // Clear encrypted session for the active account
-    let active_account_id = crate::infrastructure::auth_identity::read_state()
-        .ok()
-        .and_then(|s| s.active_account_id);
-    if let Some(ref account_id) = active_account_id {
+    let transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
+    auth_logout_during_transition(state, &transition, None)
+}
+
+pub(crate) fn auth_logout_during_transition(
+    state: &AppState,
+    _transition: &MutexGuard<'_, ()>,
+    committed_session: Option<SessionState>,
+) -> AppResult<AuthSessionPayload> {
+    let target_session = match committed_session {
+        Some(session) => session,
+        None => match read_session(state) {
+            Ok(session) => session,
+            Err(error) => return error,
+        },
+    };
+    if let Some(ref account_id) = target_session.account_id {
         let _ = crate::infrastructure::auth_identity::clear_account_session(account_id);
         if let Err(error) = deactivate_messaging_profile(state, account_id) {
             tracing::warn!(account_id = %account_id, error = %error, "failed to deactivate messaging profile");
         }
+        session_vault::purge_raw_session_for_account(account_id);
+    } else if let Some(ref actor_id) = target_session.actor_id {
+        session_vault::purge_raw_session_for_actor(actor_id);
     }
 
-    let bound_actor = state.session.lock().ok().and_then(|g| g.actor_id.clone());
-    if let Some(ref acc) = active_account_id {
-        session_vault::purge_raw_session_for_account(acc);
-    } else if let Some(ref aid) = bound_actor {
-        session_vault::purge_raw_session_for_actor(aid);
-    }
-
-    if let Err(error) = clear_session(state) {
+    if let Err(error) = clear_session_if_matches(state, &target_session) {
         return error;
     }
     AppResult::success(AuthSessionPayload {
@@ -598,30 +763,65 @@ pub(crate) fn detach_for_station_switch(
 }
 
 pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
+    let transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
+    match prepare_auth_restore_session_during_transition(state, &transition) {
+        Ok(prepared) => commit_legacy_prepared_session(state, prepared),
+        Err(error) => error,
+    }
+}
+
+pub(crate) fn prepare_auth_restore_session_during_transition(
+    state: &AppState,
+    transition: &MutexGuard<'_, ()>,
+) -> PreparedAuthResult {
+    let selected_account = session_vault::active_account_id();
+    prepare_auth_restore_session_for_account_during_transition(
+        state,
+        transition,
+        selected_account.as_deref(),
+    )
+}
+
+pub(crate) fn prepare_auth_restore_session_for_account_during_transition(
+    state: &AppState,
+    _transition: &MutexGuard<'_, ()>,
+    selected_account: Option<&str>,
+) -> PreparedAuthResult {
     let mut snapshot = match read_session(state) {
         Ok(snapshot) => snapshot,
-        Err(error) => return error,
+        Err(error) => return Err(error),
     };
+    if !session_belongs_to_selected_account(&snapshot, selected_account) {
+        snapshot = SessionState::default();
+    }
     let mut loaded_from_persistent_store = false;
     if snapshot.token.is_none() {
-        let active_account = session_vault::active_account_id();
-        if active_account
-            .as_deref()
+        if selected_account
             .map(session_vault::account_requires_pin)
             .unwrap_or(false)
         {
-            if let Some(account_id) = active_account.as_deref() {
+            if let Some(account_id) = selected_account {
                 session_vault::purge_raw_session_for_account(account_id);
             }
-            return unauthorized(
+            return Err(unauthorized(
                 "pin required",
                 json!({ "command": "auth_restore_session", "reason": "pin_required" }),
-            );
+            ));
         }
 
-        if let Some(blob) = match load_raw_session_for_account(&active_account) {
+        let selected_account = selected_account.map(str::to_string);
+        if let Some(blob) = match load_raw_session_for_account(&selected_account) {
             Ok(blob) => blob,
-            Err(error) => return error,
+            Err(error) => return Err(error),
         } {
             if let Some(ref mem) = snapshot.actor_id {
                 if mem != &blob.actor_id {
@@ -635,40 +835,75 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
             snapshot = SessionState {
                 actor_id: Some(blob.actor_id),
                 token: Some(blob.token),
-                account_id: None,
+                account_id: selected_account.clone(),
             };
             loaded_from_persistent_store = true;
         }
     }
 
     // Restore only from memory or disk. No OAuth bridge fallback.
+    let committed_snapshot = snapshot.clone();
+    let restored_actor_id = snapshot.actor_id.clone();
+    let restored_account_id = snapshot.account_id.clone();
     let token = match snapshot.token {
         Some(token) => token,
         None => {
-            return unauthorized(
+            return Err(unauthorized(
                 "missing session",
                 json!({ "command": "auth_restore_session", "reason": "session_missing" }),
-            )
+            ))
         }
+    };
+    let Some(expected_actor_id) = restored_actor_id else {
+        let _ = clear_session_if_matches(state, &committed_snapshot);
+        return Err(unauthorized(
+            "restored session has no committed actor",
+            json!({
+                "command": "auth_restore_session",
+                "reason": "actor_missing"
+            }),
+        ));
+    };
+    let Some(account_id) = restored_account_id.or_else(|| selected_account.map(str::to_string))
+    else {
+        let _ = clear_session_if_matches(state, &committed_snapshot);
+        return Err(unauthorized(
+            "restored session has no committed account",
+            json!({
+                "command": "auth_restore_session",
+                "reason": "account_missing"
+            }),
+        ));
     };
     let initial_session = match validate_token(&token) {
         Ok(session) => session,
         Err(error) => {
-            let _ = clear_session(state);
-            return map_domain_error(error);
+            let _ = clear_session_if_matches(state, &committed_snapshot);
+            return Err(map_domain_error(error));
         }
     };
+    if initial_session.actor_id != expected_actor_id {
+        let _ = clear_session_if_matches(state, &committed_snapshot);
+        session_vault::purge_raw_session_for_account(&account_id);
+        return Err(unauthorized(
+            "restored token does not belong to the committed session actor",
+            json!({
+                "command": "auth_restore_session",
+                "reason": "account_actor_mismatch"
+            }),
+        ));
+    }
     if let Err(error) = verify_session_with_station(&token) {
-        let _ = clear_session(state);
-        return error;
+        let _ = clear_session_if_matches(state, &committed_snapshot);
+        return Err(error);
     }
     let token = if loaded_from_persistent_store {
         match takeover_station_session_token(&token) {
             Ok(token) => token,
             Err(error) => {
-                let _ = clear_session(state);
+                let _ = clear_session_if_matches(state, &committed_snapshot);
                 session_vault::purge_raw_session_for_actor(&initial_session.actor_id);
-                return session_takeover_failed(error, None, None);
+                return Err(session_takeover_failed(error, None, None));
             }
         }
     } else {
@@ -677,31 +912,26 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
     let session = match validate_token(&token) {
         Ok(session) => session,
         Err(error) => {
-            let _ = clear_session(state);
+            let _ = clear_session_if_matches(state, &committed_snapshot);
             session_vault::purge_raw_session_for_actor(&initial_session.actor_id);
-            return map_domain_error(error);
+            return Err(map_domain_error(error));
         }
     };
-    let account_id = session_vault::active_account_id().unwrap_or_else(|| {
-        crate::infrastructure::local_scope::account_id_for_password_actor(&session.actor_id)
-    });
-    if let Err(error) = write_session_for_account(state, &session, &account_id) {
-        return error;
+    if session.actor_id != expected_actor_id {
+        let _ = clear_session_if_matches(state, &committed_snapshot);
+        session_vault::purge_raw_session_for_account(&account_id);
+        return Err(unauthorized(
+            "rotated token changed the committed session actor",
+            json!({
+                "command": "auth_restore_session",
+                "reason": "rotated_actor_mismatch"
+            }),
+        ));
     }
     if let Err(error) =
         persist_session_if_unprotected(&account_id, &session, SessionSource::Password)
     {
-        return error;
-    }
-    if let Err(error) =
-        activate_messaging_profile(state, &account_id, &session.actor_id, &session.token)
-    {
-        tracing::warn!(
-            account_id = %account_id,
-            actor_id = %session.actor_id,
-            error = %error,
-            "restored session retained while durable messaging activation awaits retry"
-        );
+        return Err(error);
     }
     let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
     let (p_name, p_email, p_avatar, p_local_avatar, p_method) = match &profile {
@@ -714,16 +944,23 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
         ),
         None => (None, None, None, None, None),
     };
-    AppResult::success(AuthSessionPayload {
-        command: "auth_restore_session".to_string(),
-        status: "restored".to_string(),
-        actor_id: Some(session.actor_id.clone()),
-        ptid: canonical_ptid_for_token(&session.token),
-        name: p_name,
-        email: p_email,
-        avatar_url: p_avatar,
-        avatar_local_path: p_local_avatar,
-        login_method: p_method,
+    let actor_id = session.actor_id.clone();
+    let token = session.token.clone();
+    Ok(PreparedAuthSession {
+        payload: AuthSessionPayload {
+            command: "auth_restore_session".to_string(),
+            status: "restored".to_string(),
+            actor_id: Some(actor_id.clone()),
+            ptid: canonical_ptid_for_token(&token),
+            name: p_name,
+            email: p_email,
+            avatar_url: p_avatar,
+            avatar_local_path: p_local_avatar,
+            login_method: p_method,
+        },
+        account_id,
+        actor_id,
+        token,
     })
 }
 
@@ -731,41 +968,76 @@ pub fn auth_validate_token(
     input: AuthValidateTokenInput,
     state: &AppState,
 ) -> AppResult<AuthSessionPayload> {
+    let transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
+    auth_validate_token_during_transition(input, state, &transition, None)
+}
+
+pub(crate) fn auth_validate_token_during_transition(
+    input: AuthValidateTokenInput,
+    state: &AppState,
+    _transition: &MutexGuard<'_, ()>,
+    committed_session: Option<SessionState>,
+) -> AppResult<AuthSessionPayload> {
+    let snapshot = match committed_session {
+        Some(session) => session,
+        None => match read_session(state) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return error,
+        },
+    };
     let token = match input.token {
         Some(token) if !token.trim().is_empty() => token,
-        _ => {
-            let snapshot = match read_session(state) {
-                Ok(snapshot) => snapshot,
-                Err(error) => return error,
-            };
-            match snapshot.token {
-                Some(token) if !token.trim().is_empty() => token,
-                _ => {
-                    return unauthorized(
-                        "missing token",
-                        json!({ "command": "auth_validate_token", "reason": "token_missing" }),
-                    )
-                }
+        _ => match snapshot.token.clone() {
+            Some(token) if !token.trim().is_empty() => token,
+            _ => {
+                return unauthorized(
+                    "missing token",
+                    json!({ "command": "auth_validate_token", "reason": "token_missing" }),
+                )
             }
-        }
+        },
     };
     let session = match validate_token(&token) {
         Ok(session) => session,
         Err(error) => {
-            let _ = clear_session(state);
+            let _ = clear_session_if_matches(state, &snapshot);
             return map_domain_error(error);
         }
     };
     if let Err(error) = verify_session_with_station(&token) {
-        let _ = clear_session(state);
+        let _ = clear_session_if_matches(state, &snapshot);
         return error;
     }
-    if let Err(error) = write_session(state, &session) {
+    if snapshot.actor_id.as_deref() != Some(session.actor_id.as_str()) {
+        return unauthorized(
+            "validated token does not belong to the committed session actor",
+            json!({
+                "command": "auth_validate_token",
+                "reason": "account_actor_mismatch"
+            }),
+        );
+    };
+    let Some(account_id) = snapshot.account_id else {
+        return unauthorized(
+            "validated token has no committed account",
+            json!({
+                "command": "auth_validate_token",
+                "reason": "account_missing"
+            }),
+        );
+    };
+    if let Err(error) = write_session_for_account(state, &session, &account_id) {
         return error;
     }
-    let account_id = session_vault::active_account_id().unwrap_or_else(|| {
-        crate::infrastructure::local_scope::account_id_for_password_actor(&session.actor_id)
-    });
     if let Err(error) =
         persist_session_if_unprotected(&account_id, &session, SessionSource::Password)
     {
@@ -809,13 +1081,6 @@ fn read_session(state: &AppState) -> Result<SessionState, AppResult<AuthSessionP
     })
 }
 
-fn write_session(
-    state: &AppState,
-    session: &AuthSession,
-) -> Result<(), AppResult<AuthSessionPayload>> {
-    write_session_with_account(state, session, None)
-}
-
 fn write_session_for_account(
     state: &AppState,
     session: &AuthSession,
@@ -823,14 +1088,6 @@ fn write_session_for_account(
 ) -> Result<(), AppResult<AuthSessionPayload>> {
     // The Tauri wrapper reads this tuple immediately afterward to replace the
     // window binding, so a rotated token must never be committed without its account.
-    write_session_with_account(state, session, Some(account_id))
-}
-
-fn write_session_with_account(
-    state: &AppState,
-    session: &AuthSession,
-    account_id: Option<&str>,
-) -> Result<(), AppResult<AuthSessionPayload>> {
     let mut guard = state.session.lock().map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
@@ -838,7 +1095,7 @@ fn write_session_with_account(
             None,
         )
     })?;
-    apply_session_identity(&mut guard, session, account_id);
+    apply_session_identity(&mut guard, session, Some(account_id));
     Ok(())
 }
 
@@ -854,6 +1111,15 @@ fn apply_session_identity(
     }
 }
 
+fn session_belongs_to_selected_account(
+    session: &SessionState,
+    selected_account_id: Option<&str>,
+) -> bool {
+    selected_account_id
+        .map(|account_id| session.account_id.as_deref() == Some(account_id))
+        .unwrap_or(true)
+}
+
 fn clear_session(state: &AppState) -> Result<(), AppResult<AuthSessionPayload>> {
     let mut guard = state.session.lock().map_err(|_| {
         AppResult::fail(
@@ -865,6 +1131,26 @@ fn clear_session(state: &AppState) -> Result<(), AppResult<AuthSessionPayload>> 
     guard.actor_id = None;
     guard.token = None;
     guard.account_id = None;
+    Ok(())
+}
+
+fn clear_session_if_matches(
+    state: &AppState,
+    expected: &SessionState,
+) -> Result<(), AppResult<AuthSessionPayload>> {
+    let mut guard = state.session.lock().map_err(|_| {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            "Failed to access session state",
+            None,
+        )
+    })?;
+    if guard.account_id == expected.account_id
+        && guard.actor_id == expected.actor_id
+        && guard.token == expected.token
+    {
+        *guard = SessionState::default();
+    }
     Ok(())
 }
 
@@ -946,74 +1232,104 @@ fn mark_account_has_session(account_id: &str, _token: &str) {
 /// Load a Station JWT persisted for the **active** account (OAuth bridge) and
 /// mirror it into `AppState` for the BFF.
 pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload> {
-    let active_account = session_vault::active_account_id();
-    if active_account
-        .as_deref()
-        .map(session_vault::account_requires_pin)
-        .unwrap_or(false)
-    {
-        if let Some(account_id) = active_account.as_deref() {
-            session_vault::purge_raw_session_for_account(account_id);
+    let transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
         }
-        return unauthorized(
-            "pin required",
-            json!({ "command": "ensure_station_session", "reason": "pin_required" }),
-        );
-    }
-
-    let Some(account_id) = active_account.clone() else {
+    };
+    let Some(account_id) = session_vault::active_account_id() else {
         return AppResult::fail(
             ErrorCode::NotFound,
             "No station session found to restore",
             None,
         );
     };
+    match prepare_station_session_for_account_during_transition(
+        state,
+        &transition,
+        &account_id,
+        None,
+    ) {
+        Ok(prepared) => commit_legacy_prepared_session(state, prepared),
+        Err(error) => error,
+    }
+}
+
+pub(crate) fn prepare_station_session_for_account_during_transition(
+    state: &AppState,
+    _transition: &MutexGuard<'_, ()>,
+    account_id: &str,
+    expected_actor_id: Option<&str>,
+) -> PreparedAuthResult {
+    if session_vault::account_requires_pin(account_id) {
+        session_vault::purge_raw_session_for_account(account_id);
+        return Err(unauthorized(
+            "pin required",
+            json!({ "command": "ensure_station_session", "reason": "pin_required" }),
+        ));
+    }
 
     let blob = match session_vault::load_raw_session_for_account(
-        &account_id,
+        account_id,
         Some(SessionSource::OauthBridge),
     ) {
         Ok(Some(b)) => b,
         Ok(None) => {
-            return AppResult::fail(
+            return Err(AppResult::fail(
                 ErrorCode::NotFound,
                 "No station session found to restore",
                 None,
-            )
+            ))
         }
         Err(SessionVaultError::PinRequired { .. }) => {
-            return unauthorized(
+            return Err(unauthorized(
                 "pin required",
                 json!({ "command": "ensure_station_session", "reason": "pin_required" }),
-            )
+            ))
         }
-        Err(error) => return session_vault_to_app(error),
+        Err(error) => return Err(session_vault_to_app(error)),
     };
 
     let actor_id = blob.actor_id;
     let token = blob.token;
+    if expected_actor_id.is_some_and(|expected| expected != actor_id) {
+        return Err(unauthorized(
+            "OAuth loopback actor does not match persisted session",
+            json!({
+                "command": "ensure_station_session",
+                "reason": "loopback_actor_mismatch"
+            }),
+        ));
+    }
+    let session = match validate_token(&token) {
+        Ok(session) => session,
+        Err(error) => {
+            session_vault::purge_raw_session_for_account(account_id);
+            return Err(map_domain_error(error));
+        }
+    };
+    if session.actor_id != actor_id {
+        session_vault::purge_raw_session_for_account(account_id);
+        return Err(unauthorized(
+            "OAuth token does not belong to the persisted session actor",
+            json!({
+                "command": "ensure_station_session",
+                "reason": "account_actor_mismatch"
+            }),
+        ));
+    }
     if let Err(error) = verify_session_with_station(&token) {
-        let _ = clear_session(state);
-        return error;
-    }
-    let session = from_station_response(actor_id.clone(), token);
-    if let Err(error) = write_session_for_account(state, &session, &account_id) {
-        return error;
+        return Err(error);
     }
     if let Err(error) =
-        persist_session_if_unprotected(&account_id, &session, SessionSource::OauthBridge)
+        persist_session_if_unprotected(account_id, &session, SessionSource::OauthBridge)
     {
-        return error;
-    }
-    if let Err(error) =
-        activate_messaging_profile(state, &account_id, &session.actor_id, &session.token)
-    {
-        tracing::warn!(
-            account_id = %account_id,
-            actor_id = %session.actor_id,
-            error = %error,
-            "OAuth session retained while durable messaging activation awaits retry"
-        );
+        return Err(error);
     }
 
     let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&actor_id);
@@ -1027,26 +1343,29 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         None => (None, None, None, None),
     };
 
-    if let Ok(id_state) = crate::infrastructure::auth_identity::read_state() {
-        if let Some(active_id) = &id_state.active_account_id {
-            mark_account_has_session(active_id, &session.token);
-        }
-    }
+    mark_account_has_session(account_id, &session.token);
 
-    AppResult::success(AuthSessionPayload {
-        command: "ensure_station_session".to_string(),
-        status: "authenticated".to_string(),
-        actor_id: Some(actor_id),
-        ptid: canonical_ptid_for_token(&session.token),
-        name: p_name,
-        email: p_email,
-        avatar_url: p_avatar,
-        avatar_local_path: p_local_avatar,
-        login_method: Some("oauth".to_string()),
+    Ok(PreparedAuthSession {
+        payload: AuthSessionPayload {
+            command: "ensure_station_session".to_string(),
+            status: "authenticated".to_string(),
+            actor_id: Some(actor_id.clone()),
+            ptid: canonical_ptid_for_token(&session.token),
+            name: p_name,
+            email: p_email,
+            avatar_url: p_avatar,
+            avatar_local_path: p_local_avatar,
+            login_method: Some("oauth".to_string()),
+        },
+        account_id: account_id.to_string(),
+        actor_id,
+        token: session.token,
     })
 }
 
-fn verify_session_with_station(token: &str) -> Result<(), AppResult<AuthSessionPayload>> {
+pub(crate) fn verify_session_with_station(
+    token: &str,
+) -> Result<(), AppResult<AuthSessionPayload>> {
     station_client::request_peers_proto_no_body::<ActorProfile>(
         reqwest::Method::GET,
         "/actor/profile",
@@ -1059,9 +1378,12 @@ fn verify_session_with_station(token: &str) -> Result<(), AppResult<AuthSessionP
 
 #[cfg(test)]
 mod tests {
-    use super::apply_session_identity;
+    use super::{
+        apply_session_identity, session_belongs_to_selected_account, validate_pin_session_token,
+    };
     use crate::domain::auth::session::AuthSession;
     use crate::state::SessionState;
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 
     fn session(actor_id: &str, token: &str) -> AuthSession {
         AuthSession {
@@ -1069,6 +1391,18 @@ mod tests {
             token: token.to_string(),
             expires_at: 0,
         }
+    }
+
+    fn jwt_for_actor(actor_id: &str) -> String {
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(
+            serde_json::json!({
+                "subject_id": actor_id,
+                "exp": u64::MAX,
+            })
+            .to_string(),
+        );
+        format!("{header}.{payload}.signature")
     }
 
     #[test]
@@ -1106,5 +1440,40 @@ mod tests {
             target.account_id.as_deref(),
             Some("station:account-current"),
         );
+    }
+
+    #[test]
+    fn restore_rejects_in_memory_session_owned_by_previous_account() {
+        let previous = SessionState {
+            actor_id: Some("actor-old".to_string()),
+            token: Some("token-old".to_string()),
+            account_id: Some("station:account-old".to_string()),
+        };
+
+        assert!(!session_belongs_to_selected_account(
+            &previous,
+            Some("station:account-new"),
+        ));
+        assert!(session_belongs_to_selected_account(
+            &previous,
+            Some("station:account-old"),
+        ));
+    }
+
+    #[test]
+    fn pin_unlock_uses_jwt_actor_when_oauth_provider_user_differs() {
+        let account_id = "station:scope:github:provider-user-123";
+        let token = jwt_for_actor("ptid:v1:actor:canonical-456");
+
+        let session = validate_pin_session_token(
+            account_id,
+            account_id,
+            Some("ptid:v1:actor:canonical-456"),
+            &token,
+        )
+        .expect("JWT actor should be authoritative");
+
+        assert_eq!(session.actor_id, "ptid:v1:actor:canonical-456");
+        assert_ne!(session.actor_id, "provider-user-123");
     }
 }

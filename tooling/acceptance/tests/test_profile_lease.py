@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -14,6 +15,7 @@ from tooling.acceptance.core.lease import (
     ProfileLeaseUnavailable,
     RemoteGitSourceLease,
     RemoteGitSourceLeaseUnavailable,
+    _remote_git_source_lease_release_script,
     _remote_git_source_lease_script,
 )
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
@@ -153,6 +155,143 @@ class RemoteGitSourceLeaseTests(unittest.TestCase):
         self.assertNotIn("StrictHostKeyChecking=no", command)
         self.assertIn("UserKnownHostsFile=" + known_hosts.name, command)
         self.assertIn("2222", command)
+
+    def test_persistent_remote_lease_has_cross_process_release_protocol(self) -> None:
+        acquire = _remote_git_source_lease_script(
+            "station-three",
+            "runtime-cell:linux:run-a",
+            persistent=True,
+            expires_at_epoch=4102444800,
+        )
+        release = _remote_git_source_lease_release_script(
+            "station-three",
+            "runtime-cell:linux:run-a",
+        )
+
+        self.assertIn("os.fork()", acquire)
+        self.assertIn("READY:{child_pid}", acquire)
+        self.assertIn("while time.time() < expires_at", acquire)
+        self.assertIn("lease-process-mismatch", release)
+        self.assertIn("os.kill(pid, signal.SIGTERM)", release)
+
+    @patch("tooling.acceptance.core.lease.subprocess.run")
+    def test_attached_persistent_remote_lease_releases_by_owner(
+        self,
+        run: MagicMock,
+    ) -> None:
+        run.return_value.returncode = 0
+        run.return_value.stdout = "RELEASED\n"
+        run.return_value.stderr = ""
+        lease = RemoteGitSourceLease(
+            "station-three",
+            "runtime-cell:linux:run-a",
+            host="station.example",
+            user="acceptance",
+            deploy_path="station-three",
+            persistent=True,
+        )
+        lease.attach_persistent()
+
+        lease.release()
+
+        self.assertFalse(lease._acquired)
+        command = run.call_args.args[0]
+        self.assertIn("runtime-cell:linux:run-a", command[-1])
+        self.assertIn("station-three", command[-1])
+
+    def test_persistent_remote_script_holds_lock_after_launcher_exits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            environment = {**os.environ, "HOME": directory}
+            owner = "runtime-cell:linux:run-a"
+            acquired = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    _remote_git_source_lease_script(
+                        "station-three",
+                        owner,
+                        persistent=True,
+                        expires_at_epoch=int(time.time()) + 2,
+                    ),
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            self.assertEqual(acquired.returncode, 0, acquired.stderr)
+            self.assertRegex(acquired.stdout.strip(), r"^READY:\d+$")
+
+            competing = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    _remote_git_source_lease_script(
+                        "station-three",
+                        "second-owner",
+                    ),
+                ],
+                env=environment,
+                input="",
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            self.assertEqual(competing.returncode, 73)
+            self.assertIn(
+                f"BLOCKED:lease-held:{owner}",
+                competing.stdout,
+            )
+
+            time.sleep(3)
+            replacement = self._start_lease(directory, "replacement-owner")
+            self._release_process(replacement)
+
+    def test_persistent_remote_script_releases_by_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            environment = {**os.environ, "HOME": directory}
+            owner = "runtime-cell:linux:run-release"
+            acquired = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    _remote_git_source_lease_script(
+                        "station-three",
+                        owner,
+                        persistent=True,
+                        expires_at_epoch=int(time.time()) + 60,
+                    ),
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            self.assertEqual(acquired.returncode, 0, acquired.stderr)
+
+            released = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    _remote_git_source_lease_release_script(
+                        "station-three",
+                        owner,
+                    ),
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            self.assertEqual(released.returncode, 0, released.stdout)
+            self.assertIn("RELEASED", released.stdout)
+
+            replacement = self._start_lease(directory, "replacement-owner")
+            self._release_process(replacement)
 
     def _start_lease(
         self,

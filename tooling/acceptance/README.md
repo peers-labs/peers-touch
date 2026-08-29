@@ -97,6 +97,9 @@ remote absolute path. `ready` requires a clean Git worktree and synchronizes
 only Git objects before the remote image and Desktop build.
 Profiles may select HTTPS mirrors for the base image, Node distribution,
 rustup, and the Cargo registry; immutable image/toolchain pins remain enforced.
+Aggregate execution retains the remote source lease from synchronization
+through Gate execution and releases it last during cell teardown, so
+Gate-time native adapter imports cannot drift from the attested binary.
 
 The remote controller is copied into the run directory before its detached
 reaper starts. Cleanup retains ownership metadata and reports
@@ -117,13 +120,16 @@ message resilience has its own runtime-cell-aware target.
 ### W11 Closure
 
 `make acceptance-chat-w11` runs the fixed W11 closure plan
-(`tooling/acceptance/plans/chat-w11-closure.json`) — 10 gates in sequence:
-forbidden-path scan, duplicate-implementation scan, visible-static checks, all
-six native E2E journeys (two-client, interactions, typing, multi-device,
-recovery, group-MLS), and a mechanical completion-audit that verifies every
-report exists with PASS status before emitting `chat-w11-closure-verdict.json`.
+(`tooling/acceptance/plans/chat-w11-closure.json`) — 11 gates in sequence:
+forbidden-path scan, duplicate-implementation scan, visible-static checks, the
+Product Closure journey, all six W8 native E2E journeys (two-client,
+interactions, typing, multi-device, recovery, group-MLS), and a mechanical
+completion-audit. The audit requires current-source `DONE/PROVEN` evidence for
+the declared `desktop-linux-native` claim and emits the closure verdict through
+the external Evidence Store under role `closure-verdict`.
 The gate list is fixed in the plan JSON — there is no AI-driven gate selection.
-Invoke it with `RUNTIME_CELL=<cell-id>`. Required environment:
+This closure intentionally proves Linux only; macOS and Windows remain
+separate, explicit claims. Required environment:
 `CHAT_ACCEPTANCE_RESET=1`, `CHAT_ACCEPTANCE_PASSWORD=1`,
 `CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1`, and a Station whose build commit
 matches the client HEAD.
