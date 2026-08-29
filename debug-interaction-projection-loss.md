@@ -35,6 +35,7 @@
 | S | A cross-window identity-change event classifies the renderer's own actor as a same-actor takeover during reload. | Medium | Low | Pending ordered Identity event-buffer evidence. |
 | T | The Rust event-stream reconnect reports a stale token as session-revoked after Station restart and kicks the current renderer. | High | Low | Pending revocation reason/raw and realtime connection-state evidence. |
 | U | A normal frontend API request maps an `UNAUTHORIZED` response to session-revoked during boot reconciliation. | Medium | Low | Pending revocation payload raw marker and event ordering. |
+| V | Renderer restore rotates a persisted token while boot requests using the previous token are still in flight; their late `kicked` responses demote the newly restored session. | High | Low | Pending command-level start/result ordering from the Acceptance-only API timeline. |
 
 ## Log Evidence
 - Pre-fix Gate run `20260829T023644548452Z-8983d0bd277b21b69d93e766da7eaa4e` failed after 120 seconds.
@@ -70,6 +71,9 @@
 - Identity-phase run `20260829T055940751863Z-0e0fb6a7d487253013b1665e89e57b49` on commit `0397280c26289c64fa3eff1858f6314504c70185` reproduced the same timeout after all prior Direct and Group assertions passed.
 - Debug line 5 shows Bob was `authenticated/ready` before refresh with a complete Boot trace. Lines 7-9 show the new renderer completed shell, Identity, first-paint, and critical-runtime phases but settled in `accountGate(reason=revoked)`, while `sessionAuthenticated=true`, `sessionRestoring=false`, and the actor ID remained populated.
 - This rejects P and R and confirms the Q transition. The contradictory Identity/session projections prove that page navigation is downstream of a revocation event, not the owner of the failure. The next observation must identify whether the revocation came from cross-window identity handling (S), Rust stream reconnect (T), or an ordinary API response (U).
+- Revocation-source run `20260829T061657728986Z-173aece1545ddbc27ff5e3a389608d1b` on commit `c25bc1826b62a568e6f42f3ff5ea1d1c44fb67da` reproduced the same timeout.
+- Debug lines 7-9 contain repeated `auth.session_revoked` events with `reason=kicked` and `hasRaw=true`. There is no preceding realtime disconnect/revocation event in the new document. This rejects S and T and confirms U: ordinary Tauri API command results publish the revocation.
+- Station `actor_sessions` readback after cleanup shows the failed actor received a new active session at the reload boundary while its immediately previous session was marked `kicked`. The next bounded API timeline must prove whether `auth_restore_session` succeeds before stale old-token command responses publish those revocations (V).
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
@@ -92,5 +96,6 @@ fixed. The document-generation evidence proves WebKitGTK completed document
 replacement before returning from `refresh()`, so stale Harness readiness is
 not the cause. The Identity evidence proves the new renderer receives a
 session-revoked transition after restoring the same still-authenticated actor.
-The next instrumentation reads the existing event debug buffer to identify the
-revocation publisher without changing lifecycle behavior.
+The event evidence identifies ordinary API response handling as the publisher.
+The next instrumentation records command-only request ordering to determine
+whether stale old-token responses arrive after successful session rotation.
