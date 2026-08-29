@@ -201,7 +201,6 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "acceptance-chat-native-recovery",
             "acceptance-chat-native-group-mls",
             "acceptance-chat-contact-message-resilience",
-            "acceptance-chat-w11",
         )
         for target in targets:
             with self.subTest(target=target):
@@ -394,6 +393,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
     def test_desktop_gateway_gate_publishes_typed_evidence(self) -> None:
         report = Mock()
         report.status = "RUNNING"
+        report.runtime = {}
         manifest = {
             "gateId": "chat-desktop-gateway-e2e",
             "station": {"url": "http://station.example:18132"},
@@ -403,9 +403,8 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "messageId": "message-1",
         }
 
-        with patch.object(
-            desktop_gateway_e2e,
-            "new_report",
+        with patch(
+            "tooling.acceptance.core.gate.new_report",
             return_value=report,
         ) as report_factory, patch.object(
             desktop_gateway_e2e,
@@ -417,8 +416,15 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             return_value="http://station.example:18132",
         ), patch.object(
             desktop_gateway_e2e,
+            "gateway_url",
+            return_value="http://127.0.0.1:3030",
+        ), patch.object(
+            desktop_gateway_e2e,
             "run_gateway_flow",
             return_value=runtime,
+        ), patch.object(
+            desktop_gateway_e2e,
+            "gateway_logout",
         ):
             self.assertEqual(desktop_gateway_e2e.main(), 0)
 
@@ -426,7 +432,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertEqual(report.station_url, "http://station.example:18132")
         self.assertEqual(report.runtime, runtime)
         self.assertEqual(report.status, "PASS")
-        report.write.assert_called_once_with()
+        report.write.assert_called_once_with(None)
         report_factory.assert_called_once_with(
             "chat-desktop-gateway-e2e",
             phase="MP-W03",

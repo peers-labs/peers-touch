@@ -544,7 +544,7 @@ committed to this plan.
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | in progress | Product and receiver runners already consume `NativeDesktopRuntimeBinding`. The remaining six Chat Native runners now have the same runtime-manifest, source identity, Evidence Store, actor-storage, and cleanup contracts; focused static/Infra tests pass, while exact-source Linux Gate evidence is pending. |
-| NDR-W7 Linux MP-W13 proof | done | Unchanged exact-source run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` at `e5b3fd74943cdba46e16c72c415a2031051448b7` passed all 25 product, runtime identity, and cleanup assertions on `desktop-linux-native`. Station live commit matched, the Linux binary SHA-256 was `fd1d4877c5d2279b4ee5515e3ea687f7074ddbcbc72216b4452022dfb3c09d6b`, and Alice2 DOM settings matched authoritative Station state. Gate cleanup released actors, endpoints, ports, processes, and storage. Independent final cell stop returned `CLEANED`; remote container/checkout and allocated local forwards were absent. |
+| NDR-W7 Linux MP-W13 proof | reopened / in progress | Historical exact-source run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` at `e5b3fd74943cdba46e16c72c415a2031051448b7` passed all 25 product, runtime identity, and cleanup assertions on `desktop-linux-native`. That proof remains valid only for its recorded source. The working-tree HTTP Gateway/PIN identity closure passes focused checks and independent blocker review; NDR-W7 remains `PARTIAL/UNPROVEN` until the resulting clean commit passes a new exact-source aggregate. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
@@ -662,8 +662,9 @@ The proof binds:
 
 The required independent final stop returned `CLEANED`. Remote inspection found
 no acceptance cell container or retained run checkout, and every allocated
-local forward was released. This closes NDR-W7 for Linux only; NDR-W8 macOS and
-NDR-W9 Windows remain separate platform proofs.
+local forward was released. This historical run closed NDR-W7 for its recorded
+Linux source only; later identity and evidence changes reopened current-source
+proof. NDR-W8 macOS and NDR-W9 Windows remain separate platform proofs.
 
 The later MP-W13-F rerun at source commit `708266d4bb61` exposed a runtime
 isolation defect when a persistent Desktop on the Linux host already owned the
@@ -692,9 +693,9 @@ infrastructure defects that must close before final evidence:
 
 The correction reuses `SshTransport` for all destructive remote commands and
 standardizes `runtimeCell` before every result is finalized. Synthetic
-failure-path and transport tests cover both contracts. NDR-W7 remains complete
-for its earlier Linux proof; MP-W13-F requires a new exact-source run after
-these corrections.
+failure-path and transport tests cover both contracts. The earlier NDR-W7 Linux
+proof remains historical source-scoped evidence; current-source NDR-W7 and
+MP-W13-F require a new exact-source run after these corrections.
 
 The subsequent product-side re-review found that an old actor's in-flight
 Social refresh could still publish after an account switch. That defect is
@@ -704,8 +705,8 @@ Social/notification store operation used by the refresh or notification
 mutation flows publishes asynchronous results. Actor transitions also clear
 the actor-scoped Social, notification, and navigation-badge stores before the
 new session is hydrated, and the final refresh stage checks actor identity
-before reconciling badges. Acceptance Infra scope and the NDR-W7 status are
-unchanged.
+before reconciling badges. Acceptance Infra scope is unchanged; the prior
+NDR-W7 result remains historical rather than current-source proof.
 
 The exact-source MP-W13-F run
 `20260828T065037835411Z-693543461e6173b5dc81246bdf3d2d13` then exposed a
@@ -949,7 +950,8 @@ D-13/D-14, Desktop identity, and MP-W11/MP-W13 contracts. It does not add a new
 product journey or architecture boundary. Linux remains the only runtime claim
 in this closure; macOS and Windows remain explicitly `UNPROVEN`.
 
-The closure implementation now:
+The closure implementation at candidate
+`63655081df751593f8724a5f345a9f8efebae0e2` now:
 
 - holds the remote Git source lock in a TTL-bounded remote lease process, stores
   its owner in both `PREPARING` and final `LEASED` state, and lets a later
@@ -960,15 +962,69 @@ The closure implementation now:
 - binds every W11 native report to the runner-owned runtime-cell manifest plus
   the current source, binary digest, Linux host/image attestation, Gate, run,
   workspace, and claimed runtime cell; and
-- serializes account switch, PIN unlock, restore, session commit, window
-  binding, and Messaging Engine activation through one identity transition.
+- serializes the Tauri account switch, PIN unlock, restore, session commit,
+  window binding, and Messaging Engine activation through one identity
+  transition.
 
 Focused verification passes: Acceptance tests `309/309`, runner tests `47/47`,
 closure-generator tests `2/2`, Desktop tests `364/364` with one unrelated
-environment test skipped, Desktop check/build, and Rust auth tests `5/5`.
-Independent final blocker review reports no findings on the corrected surfaces.
-These results qualify the candidate for a new clean exact-range Linux
-aggregate; they do not replace that product proof.
+environment test skipped, Desktop check/build, and Rust auth tests `7/7`.
+Subsequent final review found three remaining P1 identity gaps, so this
+candidate remains `PARTIAL/UNPROVEN`:
+
+- HTTP Gateway `account_switch` updates the durable active account without
+  atomically restoring and committing the matching JWT, legacy mirror, and
+  Messaging Engine profile;
+- HTTP Gateway PIN unlock derives the actor from the local account identifier
+  instead of the Station JWT subject; and
+- legacy encrypted PIN sessions without a persisted actor binding are accepted
+  instead of failing closed and requiring login.
+
+The closure must route HTTP Gateway switch and unlock through the same prepared
+identity tuple and fail-closed commit semantics as the Tauri path. Acceptance
+must cover concurrent multi-account switch, an OAuth
+`provider_user_id != actor_id` fixture, a missing persisted actor binding, and
+rollback that preserves the prior active account/JWT/runtime tuple. A new clean
+exact-range Linux aggregate may start only after those checks and independent
+blocker review pass; focused checks do not replace that product proof.
+
+The working-tree closure after `63655081df751593f8724a5f345a9f8efebae0e2`
+now:
+
+- commits the account, JWT actor, legacy mirror, durable identity selection,
+  window binding, and Messaging Engine profile from one prepared tuple;
+- prepares the Engine before identity commit, starts its worker only after the
+  identity projections commit, and rolls both layers back on activation
+  failure;
+- invalidates revoked actor windows, mirrors, durable sessions, raw sessions,
+  event streams, and workers immediately after Station takeover;
+- derives OAuth PIN identity from the rotated JWT subject and rejects legacy
+  encrypted sessions without a persisted actor binding;
+- proves deterministic lock contention, token-fingerprint equality,
+  provider-user/actor divergence, commit-scoped durable-write rollback across
+  different accounts, and run-scoped fixture cleanup in
+  `chat-desktop-gateway-e2e`;
+- replaces terminated Messaging lifecycle workers before activation can
+  succeed and excludes inactive workers from identity readback; and
+- preserves structured `secretScan` evidence metadata through canonical
+  schema validation while continuing to redact credential values and rejecting
+  malformed scan metadata.
+
+Focused verification passes: Desktop check, `364/364` tests with one unrelated
+environment test skipped, Desktop production build, Rust auth service `8/8`,
+Tauri auth `4/4`, auth identity `1/1`, lifecycle `1/1`, HTTP Gateway `4/4`
+with one environment test ignored, Chat Native static Gate, Chat structural
+validation, Acceptance runner `48/48`, planner `9/9`, validator `8/8`, Infra
+boundary `8/8`, Gap Detector `18/18`, coverage report `15/15`, and combined
+Provisioner/Evidence Store tests `117/117`. The worker-liveness regression
+passes `2/2` profile-worker tests, and the Acceptance WebDriver feature build
+passes.
+
+Independent final blocker review found no remaining P1 source defect and keeps
+the result on hold only because the working tree has no source-bound runtime
+artifact. NDR-W7 therefore remains `PARTIAL/UNPROVEN` until these changes are
+committed and that exact commit passes the Linux aggregate and required-proven
+validation.
 
 ## 13. Final Readiness Gate
 

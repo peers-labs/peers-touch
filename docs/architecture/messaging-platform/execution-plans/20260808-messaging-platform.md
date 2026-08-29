@@ -988,7 +988,7 @@ Closure enforcement (deterministic):
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
 | MP-W10-E | reopened by W13 | W05/W10-D | Prior byte-exact Engine evidence remains valid for its recorded runtime, but current product use proves the Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, and count conservation are not closed. W13-E/F must replace the product-proof claim with real UI evidence. |
 | MP-W12 | reopened by W13 (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | Prior authority/Engine interaction evidence remains useful, but current product use proves thread panel, reaction picker, hover toolbar, and complete transcript convergence were bypassed or unasserted. W13-A/B/F must rerun through real Native UI actions. Mobile remains pending W09. |
-| MP-W13 | in progress (Linux Desktop) | W10-E/W12 + Social Runtime Phase 3 | Product and receiver journeys passed on the prior clean candidate, but the canonical exact-range plan also selects six legacy Native Gates and the Desktop gateway Gate. Their runtime-cell and Evidence Store closure is implemented but requires new same-source Linux evidence before MP-W13-F can be marked complete. macOS, Windows, and Mobile remain separate platform claims. |
+| MP-W13 | in progress (Linux Desktop), `PARTIAL/UNPROVEN` | W10-E/W12 + Social Runtime Phase 3 | Product and receiver journeys passed on a prior clean candidate. The working-tree HTTP Gateway/PIN identity closure passes focused checks and independent blocker review, but MP-W13 still requires a clean commit and a new same-source Linux aggregate across the canonical exact range. macOS, Windows, and Mobile remain separate platform claims. |
 | MP-W11 | reopened pending W13 | W02-W10/W12/W13 | The previous closure verdict is invalid for full product readiness because its Native evidence did not prove the receiver-visible paths exposed by W13. Rerun only after W13-F passes and stale reports are rejected by source/build/runtime identity. |
 
 The 2026-08-27 persistent Linux Desktop handoff exposed four additional MP-W13-F
@@ -1244,9 +1244,10 @@ Before rerunning MP-W13-F and MP-W11 closure:
 These corrections preserve the accepted journey and all existing product
 assertions. They do not claim macOS or Windows parity.
 
-The candidate now closes those review findings. PIN unlock, account switch,
-restore, session commit, window binding, and Messaging Engine activation share
-one transition boundary across Tauri and HTTP Gateway paths. W11 requires the
+Candidate `63655081df751593f8724a5f345a9f8efebae0e2` closes the W11 evidence,
+redaction, and remote source lease findings. The Tauri identity path also uses
+one transition boundary for PIN unlock, account switch, restore, session
+commit, window binding, and Messaging Engine activation. W11 requires the
 Product Closure Gate and validates each native report against the runner-owned
 runtime-cell manifest, current clean source, binary digest, Linux host/image
 attestation, Gate, run, workspace, and `desktop-linux-native` claim. Evidence
@@ -1255,10 +1256,58 @@ scanning is read-only and includes role metadata. The remote source lease
 survives a standalone `ready` process, is owner-released by a later `stop`, and
 expires on the runtime-cell TTL.
 
-Focused code and framework checks pass, and independent blocker review reports
-no findings. MP-W13-F remains `UNPROVEN` until this candidate is committed,
-deployed to disposable Station `18132`, and passes the new exact-range Linux
-aggregate plus final Gap Detector and Completion Audit.
+Final review keeps MP-W13-F at `PARTIAL/UNPROVEN` because the HTTP Gateway
+identity path still has three P1 gaps:
+
+- `account_switch` can commit `active_account_id` without the target account's
+  restored JWT and Messaging Engine profile;
+- PIN unlock derives its actor from `account_id`, which is invalid when an
+  OAuth `provider_user_id` differs from the Station JWT subject; and
+- legacy PIN records without a persisted actor binding do not fail closed.
+
+The remaining closure must make HTTP switch and unlock commit one prepared
+account/JWT/actor/runtime tuple with rollback on failure. Injected-account
+Acceptance must prove concurrent multi-account switching, provider-user/actor
+divergence, legacy actor omission rejection, and preservation of the previous
+tuple after a failed transition. The corrected candidate must then pass
+focused checks, independent blocker review, deployment to disposable Station
+`18132`, the exact-range Linux aggregate, required-proven validation, Gap
+Detector, and Completion Audit.
+
+The working-tree closure now commits one prepared account/JWT/actor/runtime
+tuple across HTTP and Tauri entrypoints. Messaging Engine creation is separated
+from worker activation so no worker starts before durable and runtime identity
+commit. Post-takeover failure invalidates every local projection for the
+revoked actor instead of restoring stale state. OAuth PIN unlock uses the
+rotated JWT subject, and legacy encrypted sessions without an actor binding
+fail closed.
+
+The updated `chat-desktop-gateway-e2e` Gate uses Provisioner-owned disposable
+actors and run-scoped storage. It verifies concurrent server-side lock
+contention, account/actor/token-fingerprint/Engine equality,
+`provider_user_id != actor_id`, missing-actor rejection, real durable-write
+failure at the identity commit boundary during a cross-account transition,
+tuple rollback, and registered cleanup before destructive mutation. Terminated
+Messaging lifecycle workers are replaced before activation succeeds and are
+excluded from identity readback. The Evidence Store preserves structured
+`secretScan` metadata through strict schema validation while retaining
+credential-value redaction.
+
+Focused verification passes: Desktop check, `364/364` tests with one unrelated
+environment test skipped, Desktop production build, Rust auth service `8/8`,
+Tauri auth `4/4`, auth identity `1/1`, lifecycle `1/1`, HTTP Gateway `4/4`
+with one environment test ignored, Chat Native static Gate, Chat structural
+validation, Acceptance runner `48/48`, planner `9/9`, validator `8/8`, Infra
+boundary `8/8`, Gap Detector `18/18`, coverage report `15/15`, and combined
+Provisioner/Evidence Store tests `117/117`. The worker-liveness regression
+passes `2/2` profile-worker tests, and the Acceptance WebDriver feature build
+passes.
+
+Independent final blocker review found no remaining P1 source defect. Its only
+blocker is the absence of a source-bound runtime artifact for the uncommitted
+implementation, so MP-W13 remains `PARTIAL/UNPROVEN` until a clean commit passes
+the Linux aggregate, required-proven validation, Gap Detector, Completion
+Audit, and `review-submit`.
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 

@@ -3,11 +3,14 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shutil
 import signal
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import (
@@ -24,6 +27,11 @@ from tooling.acceptance.core.provisioning import (
     ProvisioningState,
     RuntimeManifest,
 )
+from tooling.acceptance.fixtures.chat_native_actors import (
+    produce_actor_manifest,
+    reset_fixture,
+    verify_reset_target,
+)
 
 
 PROVISION_DESKTOP_LOG = "logs/provision-desktop.log"
@@ -34,6 +42,13 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
 
     def __init__(self, contract: EnvironmentContract) -> None:
         super().__init__(contract)
+
+    def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
+        return self._remember_resolved_credentials(
+            ("fixture:apps/station/app/conf/actor.yml#preset_users",),
+            {},
+            sensitive=False,
+        )
 
     def _gateway_ready(self, gateway_url: str) -> bool:
         request = urllib.request.Request(
@@ -54,16 +69,33 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
         ):
             return False
 
-    def _start_gateway(self, gateway_url: str) -> None:
+    def _start_gateway(self, gateway_url: str, storage_root: Path) -> None:
+        storage_root.mkdir(parents=True, exist_ok=False)
+
+        def remove_storage() -> None:
+            if storage_root.exists():
+                shutil.rmtree(storage_root)
+            if storage_root.exists():
+                raise RuntimeError(
+                    f"Desktop storage cleanup did not remove {storage_root.name}"
+                )
+
+        self.register_cleanup(
+            f"desktop-storage:{storage_root.name}",
+            remove_storage,
+        )
         log_path = current_artifact_path(
             PROVISION_DESKTOP_LOG,
             repo_root=REPO_ROOT,
         )
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_handle = log_path.open("a", encoding="utf-8")
+        environment = dict(os.environ)
+        environment["PEERS_STORAGE_ROOT"] = str(storage_root)
         process = subprocess.Popen(
             ["make", "desktop"],
             cwd=REPO_ROOT,
+            env=environment,
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             text=True,
@@ -151,10 +183,18 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
         self._manifest = self._new_base_manifest(gate_id)
         try:
             profile_name, _, slot, profile_env = self._resolve_active_profile()
+            deployment_environment = (
+                profile_env.get("PT_STATION_DEPLOY_ENV", "").strip()
+                or profile_name
+            )
             manifest = self._preflighted(
                 self._manifest,
                 profile_name=profile_name,
                 slot=slot,
+            )
+            self.acquire_profile_lease(
+                deployment_environment,
+                f"acceptance:{gate_id}:{manifest.run_id}",
             )
             station_url = profile_env.get("PT_STATION_URL", "").rstrip("/")
             health_url = profile_env.get("PT_STATION_HEALTH_URL", "")
@@ -218,6 +258,17 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                 slot,
             )
             gateway_url = f"http://127.0.0.1:{gateway_port}"
+            if self._gateway_ready(gateway_url):
+                raise BlockedError(
+                    reason=(
+                        "Desktop gateway port is already owned by a process "
+                        "outside this Acceptance run"
+                    ),
+                    resource=f"desktop-gateway:{gateway_url}",
+                )
+            storage_root = Path(tempfile.gettempdir()) / (
+                f"pt-desktop-gateway-{manifest.run_id}"
+            )
             attestation = produce_station_attestation(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
@@ -237,8 +288,68 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                     reason="Station and client proto digests do not match",
                     resource="source-identity:proto",
                 )
-            if not self._gateway_ready(gateway_url):
-                self._start_gateway(gateway_url)
+
+            actor_ref = None
+            credential_refs: tuple[str, ...] = ()
+            if gate_id == "chat-desktop-gateway-e2e":
+                credential_refs, _ = self.prepare_credentials()
+                fixture = next(
+                    (
+                        item
+                        for item in self.contract.fixtures
+                        if item.id == "chat-native-actors"
+                    ),
+                    None,
+                )
+                if fixture is None:
+                    raise BlockedError(
+                        reason=(
+                            "local-desktop-gateway contract is missing "
+                            "chat-native-actors fixture"
+                        ),
+                        resource="fixture:chat-native-actors",
+                    )
+                authorization_ref = (
+                    fixture.authorization_ref or "env:CHAT_ACCEPTANCE_RESET"
+                )
+                authorization_name = (
+                    authorization_ref[4:]
+                    if authorization_ref.startswith("env:")
+                    else authorization_ref
+                )
+                reset_authorized = (
+                    not fixture.authorization_required
+                    or os.environ.get(authorization_name) == "1"
+                )
+                if not reset_authorized:
+                    raise BlockedError(
+                        reason=(
+                            "Chat native actor reset requires "
+                            f"{authorization_name}=1 against the approved "
+                            "disposable Station"
+                        ),
+                        resource=f"fixture-authorization:{authorization_name}",
+                    )
+                verify_reset_target(station_url, deployment_environment)
+                self.register_cleanup(
+                    "fixture:chat-native-actors",
+                    lambda: reset_fixture(
+                        deployment_environment,
+                        ("alice", "bob"),
+                    ),
+                )
+                _, _, actor_ref = produce_actor_manifest(
+                    environment_id=self.environment_id,
+                    run_id=manifest.run_id,
+                    station_url=station_url,
+                    deployment_environment=deployment_environment,
+                    roles=("alice", "bob"),
+                    credential_ref=(
+                        credential_refs[0] if credential_refs else ""
+                    ),
+                    reset_authorized=reset_authorized,
+                )
+            self._start_gateway(gateway_url, storage_root)
 
             manifest = dataclasses.replace(
                 manifest,
@@ -253,15 +364,11 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                         renderer_port=renderer_port,
                         webdriver_port=0,
                         profile=profile_name,
-                        storage_root=str(
-                            REPO_ROOT
-                            / ".local"
-                            / "dev"
-                            / "storage"
-                            / profile_name
-                        ),
+                        storage_root=str(storage_root),
                     ),
                 ),
+                actor_manifest_ref=actor_ref,
+                credential_refs=credential_refs,
                 cleanup_resources=self.contract.cleanup.resources,
             )
             self._manifest = manifest

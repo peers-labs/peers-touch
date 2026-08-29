@@ -48,7 +48,7 @@ pub struct AccountIdentity {
 pub struct UnlockedAccountSession {
     pub token: String,
     pub account_id: String,
-    pub actor_id: Option<String>,
+    pub actor_id: String,
 }
 
 fn token_actor_id(token: &str) -> Result<String, String> {
@@ -58,6 +58,16 @@ fn token_actor_id(token: &str) -> Result<String, String> {
         return Err("session token is missing its actor subject".to_string());
     }
     Ok(session.actor_id)
+}
+
+fn encrypted_session_actor_id(
+    encrypted: &EncryptedSession,
+) -> Result<String, pin_lock::PinVerifyError> {
+    let actor_id = encrypted.actor_id.trim();
+    if actor_id.is_empty() {
+        return Err(pin_lock::PinVerifyError::ActorBindingMissing);
+    }
+    Ok(actor_id.to_string())
 }
 
 pub fn account_identity_path() -> Result<PathBuf, String> {
@@ -161,15 +171,14 @@ fn unix_to_rfc3339(sec: i64) -> String {
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
 }
 
-/// Persist a password-login identity into `identities.json`, mirroring what
-/// `upsert_oauth` does for OAuth providers.  Sets the account as active and
-/// returns the canonical station-scoped `account_id`.
-pub fn upsert_password(
+/// Prepare a password-login identity update for the coordinated auth commit.
+/// No durable state changes until the caller commits the returned state.
+pub fn prepare_password_upsert(
     actor_id: &str,
     name: &str,
     email: &str,
     avatar_url: Option<&str>,
-) -> Result<String, String> {
+) -> Result<(String, AccountIdentityState), String> {
     let mut state = read_state()?;
     let account_id = local_scope::account_id_for_password_actor(actor_id);
     let now = unix_to_rfc3339(chrono_like_now_unix());
@@ -203,8 +212,7 @@ pub fn upsert_password(
         });
     }
     state.active_account_id = Some(account_id.clone());
-    write_state(&state)?;
-    Ok(account_id)
+    Ok((account_id, state))
 }
 
 /// Look up an account profile by `actor_id`.
@@ -364,8 +372,8 @@ pub fn unlock_account_session(
 
     pin_lock::verify_pin(pin, protection)?;
 
-    // Persist updated failure counters (reset on success)
-    let _ = write_state(&state);
+    // Persist updated failure counters (reset on success).
+    write_state(&state).map_err(pin_lock::PinVerifyError::Internal)?;
 
     // Re-read for decryption (ownership was moved)
     let state = read_state().map_err(|e| pin_lock::PinVerifyError::Internal(e))?;
@@ -384,6 +392,7 @@ pub fn unlock_account_session(
             "encrypted session account does not match the selected account".to_string(),
         ));
     }
+    let actor_id = encrypted_session_actor_id(encrypted)?;
 
     let enc_salt = account
         .pin_protection
@@ -396,7 +405,7 @@ pub fn unlock_account_session(
     Ok(UnlockedAccountSession {
         token,
         account_id: encrypted.account_id.clone(),
-        actor_id: (!encrypted.actor_id.trim().is_empty()).then(|| encrypted.actor_id.clone()),
+        actor_id,
     })
 }
 
@@ -433,6 +442,9 @@ pub fn remove_account_pin(account_id: &str, pin: &str) -> Result<(), String> {
             }
             pin_lock::PinVerifyError::LockedOut { remaining_secs } => {
                 format!("account locked, retry in {remaining_secs}s")
+            }
+            pin_lock::PinVerifyError::ActorBindingMissing => {
+                "encrypted session has no persisted actor binding".to_string()
             }
             pin_lock::PinVerifyError::Internal(msg) => msg,
         })?;
@@ -535,4 +547,28 @@ fn extract_jwt_exp(token: &str) -> Option<u64> {
     let decoded = URL_SAFE_NO_PAD.decode(payload_b64).ok()?;
     let v: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
     v.get("exp").and_then(|e| e.as_u64())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encrypted_session_actor_id;
+    use crate::domain::pin_lock::EncryptedSession;
+
+    #[test]
+    fn legacy_encrypted_session_without_actor_binding_requires_login() {
+        let encrypted: EncryptedSession = serde_json::from_value(serde_json::json!({
+            "ciphertext": "00",
+            "nonce": "00",
+            "account_id": "station:scope:oauth:provider-user"
+        }))
+        .expect("legacy encrypted session should deserialize");
+
+        let error = encrypted_session_actor_id(&encrypted)
+            .expect_err("legacy encrypted session must fail closed");
+
+        assert!(matches!(
+            error,
+            crate::domain::pin_lock::PinVerifyError::ActorBindingMissing
+        ));
+    }
 }

@@ -54,7 +54,10 @@ This creates a two-way proof:
   Station messaging packages, native selector contract, and Desktop gateway E2E
   gates before requiring latest evidence for the managed domain profile.
 - `make acceptance-chat-desktop-gateway` requires a running Desktop HTTP gateway
-  and proves the client-owned E2EE create, send, hydrate, and decrypt flow.
+  and consumes the Provisioner-owned disposable Alice/Bob actor manifest. It
+  proves atomic account/JWT/Messaging Engine transitions, JWT-bound OAuth PIN
+  unlock, legacy PIN actor-binding rejection, and the client-owned E2EE create,
+  send, hydrate, and decrypt flow.
 - `make acceptance-station-dashboard-domain-validation` runs the Station Dashboard gates and then requires latest evidence for the managed domain profile.
 - `make acceptance-coverage-report` writes
   `docs/architecture/acceptance-framework/coverage-report.md` from canonical

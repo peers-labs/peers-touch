@@ -196,6 +196,7 @@ pub fn account_fingerprint(account_id: &str) -> String {
 pub enum PinVerifyError {
     WrongPin { attempts_remaining: u32 },
     LockedOut { remaining_secs: u64 },
+    ActorBindingMissing,
     Internal(String),
 }
 
@@ -207,6 +208,9 @@ impl std::fmt::Display for PinVerifyError {
             }
             PinVerifyError::LockedOut { remaining_secs } => {
                 write!(f, "account locked, retry in {remaining_secs}s")
+            }
+            PinVerifyError::ActorBindingMissing => {
+                write!(f, "encrypted session has no persisted actor binding")
             }
             PinVerifyError::Internal(msg) => write!(f, "internal error: {msg}"),
         }

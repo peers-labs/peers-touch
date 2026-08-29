@@ -98,7 +98,7 @@ pub fn account_switch(
             )
         }
     };
-    let mut identity_state = match crate::infrastructure::auth_identity::read_state() {
+    let identity_state = match crate::infrastructure::auth_identity::read_state() {
         Ok(identity_state) => identity_state,
         Err(error) => {
             return AppResult::fail(ErrorCode::InternalError, error, None);
@@ -117,13 +117,18 @@ pub fn account_switch(
         Some(&input.id),
     ) {
         Ok(prepared) => {
-            identity_state.active_account_id = Some(input.id);
+            let identity_state = match crate::infrastructure::auth_identity::read_state() {
+                Ok(identity_state) => identity_state,
+                Err(error) => {
+                    return AppResult::fail(ErrorCode::InternalError, error, None);
+                }
+            };
+            let prepared = prepared.with_active_identity_state(identity_state);
             crate::interface::tauri_commands::auth::commit_tauri_session_with_identity_state(
                 state.inner(),
                 &app,
                 &window,
                 prepared,
-                Some(identity_state),
             )
         }
         Err(error) => error,
@@ -324,6 +329,20 @@ pub fn account_unlock(
             );
         }
     };
+    if let Err(error) = auth_service::invalidate_revoked_actor_runtime(
+        state.inner(),
+        &initial_session.actor_id,
+        &account_id_clone,
+    ) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to invalidate superseded actor runtime: {error}"),
+            Some(serde_json::json!({
+                "command": "account_unlock",
+                "reason": "revoked_runtime_cleanup_failed"
+            })),
+        );
+    }
 
     let session = match auth_service::validate_pin_session_token(
         &account_id_clone,
@@ -378,19 +397,20 @@ pub fn account_unlock(
         account_id: account_id_clone.clone(),
         actor_id: actor_id.clone(),
         token,
+        revoked_previous_actor_sessions: true,
+        identity_state: None,
     };
-    let mut identity_state = match crate::infrastructure::auth_identity::read_state() {
+    let identity_state = match crate::infrastructure::auth_identity::read_state() {
         Ok(identity_state) => identity_state,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    identity_state.active_account_id = Some(account_id_clone);
+    let prepared = prepared.with_active_identity_state(identity_state);
     let unlock_payload =
         crate::interface::tauri_commands::auth::commit_tauri_session_with_identity_state(
             state.inner(),
             &app,
             &window,
             prepared,
-            Some(identity_state),
         );
     if !unlock_payload.ok {
         return unlock_payload;

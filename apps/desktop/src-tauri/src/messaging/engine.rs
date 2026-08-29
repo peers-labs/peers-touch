@@ -1726,12 +1726,52 @@ impl EngineRegistry {
             .lock()
             .map_err(|_| "messaging worker registry lock poisoned".to_string())?;
         if let Some(worker) = workers.get(profile_id) {
-            return worker.refresh_token(token);
+            if worker.is_active()? {
+                worker.refresh_token(token.clone())?;
+                if worker.is_active()? {
+                    return Ok(());
+                }
+            }
+        }
+        if let Some(worker) = workers.remove(profile_id) {
+            if let Err(error) = worker.stop() {
+                tracing::warn!(
+                    profile_id,
+                    error = %error,
+                    "replacing terminated messaging lifecycle worker"
+                );
+            }
         }
         workers.insert(
             profile_id.to_string(),
             MessagingLifecycleWorker::start(engine, token)?,
         );
+        Ok(())
+    }
+
+    pub fn profile_worker_token(&self, profile_id: &str) -> Result<Option<String>, String> {
+        let workers = self
+            .workers
+            .lock()
+            .map_err(|_| "messaging worker registry lock poisoned".to_string())?;
+        let Some(worker) = workers.get(profile_id) else {
+            return Ok(None);
+        };
+        if !worker.is_active()? {
+            return Ok(None);
+        }
+        worker.token().map(Some)
+    }
+
+    pub fn deactivate_profile_worker(&self, profile_id: &str) -> Result<(), String> {
+        let worker = self
+            .workers
+            .lock()
+            .map_err(|_| "messaging worker registry lock poisoned".to_string())?
+            .remove(profile_id);
+        if let Some(worker) = worker {
+            worker.stop()?;
+        }
         Ok(())
     }
 
@@ -2514,6 +2554,98 @@ mod tests {
         let registered = registry.get("alice-profile").unwrap().unwrap();
         assert!(Arc::ptr_eq(&engine, &registered));
         assert!(registry.wake_profile("alice-profile").is_ok());
+        registry.deactivate("alice-profile").unwrap();
+    }
+
+    #[test]
+    fn profile_worker_token_can_be_restored_without_removing_engine() {
+        let registry = EngineRegistry::default();
+        let engine = Arc::new(
+            MessagingEngine::from_profile_store(
+                "alice-profile".to_string(),
+                "ptid:alice".to_string(),
+                [17; 32],
+                3,
+                Arc::new(MessagingStore::in_memory().unwrap()),
+            )
+            .unwrap(),
+        );
+        registry
+            .engines
+            .lock()
+            .unwrap()
+            .insert("alice-profile".to_string(), engine.clone());
+        registry
+            .activate_profile_worker("alice-profile", "token-old".to_string())
+            .unwrap();
+        registry
+            .activate_profile_worker("alice-profile", "token-new".to_string())
+            .unwrap();
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            Some("token-new".to_string())
+        );
+
+        registry
+            .activate_profile_worker("alice-profile", "token-old".to_string())
+            .unwrap();
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            Some("token-old".to_string())
+        );
+        registry.deactivate_profile_worker("alice-profile").unwrap();
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            None
+        );
+        assert!(Arc::ptr_eq(
+            &engine,
+            &registry.get("alice-profile").unwrap().unwrap()
+        ));
+        registry.deactivate("alice-profile").unwrap();
+    }
+
+    #[test]
+    fn terminated_profile_worker_is_restarted_before_activation_succeeds() {
+        let registry = EngineRegistry::default();
+        let engine = Arc::new(
+            MessagingEngine::from_profile_store(
+                "alice-profile".to_string(),
+                "ptid:alice".to_string(),
+                [17; 32],
+                3,
+                Arc::new(MessagingStore::in_memory().unwrap()),
+            )
+            .unwrap(),
+        );
+        registry
+            .engines
+            .lock()
+            .unwrap()
+            .insert("alice-profile".to_string(), engine);
+        registry
+            .activate_profile_worker("alice-profile", "token-old".to_string())
+            .unwrap();
+        registry
+            .workers
+            .lock()
+            .unwrap()
+            .get_mut("alice-profile")
+            .unwrap()
+            .terminate_for_test()
+            .unwrap();
+
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            None
+        );
+        registry
+            .activate_profile_worker("alice-profile", "token-new".to_string())
+            .unwrap();
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            Some("token-new".to_string())
+        );
         registry.deactivate("alice-profile").unwrap();
     }
 }
