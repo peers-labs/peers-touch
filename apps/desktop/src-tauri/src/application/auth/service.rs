@@ -682,12 +682,12 @@ pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
             return map_domain_error(error);
         }
     };
-    if let Err(error) = write_session(state, &session) {
-        return error;
-    }
     let account_id = session_vault::active_account_id().unwrap_or_else(|| {
         crate::infrastructure::local_scope::account_id_for_password_actor(&session.actor_id)
     });
+    if let Err(error) = write_session_for_account(state, &session, &account_id) {
+        return error;
+    }
     if let Err(error) =
         persist_session_if_unprotected(&account_id, &session, SessionSource::Password)
     {
@@ -813,6 +813,24 @@ fn write_session(
     state: &AppState,
     session: &AuthSession,
 ) -> Result<(), AppResult<AuthSessionPayload>> {
+    write_session_with_account(state, session, None)
+}
+
+fn write_session_for_account(
+    state: &AppState,
+    session: &AuthSession,
+    account_id: &str,
+) -> Result<(), AppResult<AuthSessionPayload>> {
+    // The Tauri wrapper reads this tuple immediately afterward to replace the
+    // window binding, so a rotated token must never be committed without its account.
+    write_session_with_account(state, session, Some(account_id))
+}
+
+fn write_session_with_account(
+    state: &AppState,
+    session: &AuthSession,
+    account_id: Option<&str>,
+) -> Result<(), AppResult<AuthSessionPayload>> {
     let mut guard = state.session.lock().map_err(|_| {
         AppResult::fail(
             ErrorCode::InternalError,
@@ -820,9 +838,20 @@ fn write_session(
             None,
         )
     })?;
-    guard.actor_id = Some(session.actor_id.clone());
-    guard.token = Some(session.token.clone());
+    apply_session_identity(&mut guard, session, account_id);
     Ok(())
+}
+
+fn apply_session_identity(
+    target: &mut SessionState,
+    session: &AuthSession,
+    account_id: Option<&str>,
+) {
+    target.actor_id = Some(session.actor_id.clone());
+    target.token = Some(session.token.clone());
+    if let Some(account_id) = account_id {
+        target.account_id = Some(account_id.to_string());
+    }
 }
 
 fn clear_session(state: &AppState) -> Result<(), AppResult<AuthSessionPayload>> {
@@ -968,12 +997,9 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         return error;
     }
     let session = from_station_response(actor_id.clone(), token);
-    if let Err(error) = write_session(state, &session) {
+    if let Err(error) = write_session_for_account(state, &session, &account_id) {
         return error;
     }
-    let account_id = session_vault::active_account_id().unwrap_or_else(|| {
-        crate::infrastructure::local_scope::account_id_for_password_actor(&session.actor_id)
-    });
     if let Err(error) =
         persist_session_if_unprotected(&account_id, &session, SessionSource::OauthBridge)
     {
@@ -1029,4 +1055,56 @@ fn verify_session_with_station(token: &str) -> Result<(), AppResult<AuthSessionP
     )
     .map(|_| ())
     .map_err(|error| error.into_app_result("Session validation failed"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_session_identity;
+    use crate::domain::auth::session::AuthSession;
+    use crate::state::SessionState;
+
+    fn session(actor_id: &str, token: &str) -> AuthSession {
+        AuthSession {
+            actor_id: actor_id.to_string(),
+            token: token.to_string(),
+            expires_at: 0,
+        }
+    }
+
+    #[test]
+    fn restored_session_commits_account_with_rotated_token() {
+        let mut target = SessionState::default();
+
+        apply_session_identity(
+            &mut target,
+            &session("actor-new", "token-new"),
+            Some("station:account-new"),
+        );
+
+        assert_eq!(target.actor_id.as_deref(), Some("actor-new"));
+        assert_eq!(target.token.as_deref(), Some("token-new"));
+        assert_eq!(target.account_id.as_deref(), Some("station:account-new"));
+    }
+
+    #[test]
+    fn token_validation_preserves_committed_account() {
+        let mut target = SessionState {
+            actor_id: Some("actor-old".to_string()),
+            token: Some("token-old".to_string()),
+            account_id: Some("station:account-current".to_string()),
+        };
+
+        apply_session_identity(
+            &mut target,
+            &session("actor-current", "token-current"),
+            None,
+        );
+
+        assert_eq!(target.actor_id.as_deref(), Some("actor-current"));
+        assert_eq!(target.token.as_deref(), Some("token-current"));
+        assert_eq!(
+            target.account_id.as_deref(),
+            Some("station:account-current"),
+        );
+    }
 }
