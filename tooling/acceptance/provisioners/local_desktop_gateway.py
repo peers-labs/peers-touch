@@ -69,6 +69,45 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
         ):
             return False
 
+    def _ensure_desktop_runtime_is_unowned(
+        self,
+        profile_env: dict[str, str],
+    ) -> None:
+        profile_name = profile_env.get("PT_DEV_PROFILE", "").strip()
+        if not profile_name:
+            raise BlockedError(
+                reason="Active profile is missing PT_DEV_PROFILE",
+                resource="profile:PT_DEV_PROFILE",
+            )
+        runtime_profile = f"{profile_name}-app"
+        for process_kind in ("rust", "vite"):
+            pid_path = Path(tempfile.gettempdir()) / (
+                f"peers-touch-desktop-{process_kind}-{runtime_profile}-"
+                f"{REPO_ROOT.name}.pid"
+            )
+            if not pid_path.exists():
+                continue
+            try:
+                process_id = int(pid_path.read_text(encoding="utf-8").strip())
+                os.kill(process_id, 0)
+            except ProcessLookupError:
+                continue
+            except (OSError, ValueError) as error:
+                raise BlockedError(
+                    reason=(
+                        "Cannot verify ownership of an existing Desktop "
+                        f"{process_kind} process: {error}"
+                    ),
+                    resource=f"desktop-process:{pid_path.name}",
+                ) from error
+            raise BlockedError(
+                reason=(
+                    "Desktop runtime already exists outside this Acceptance "
+                    "run; stop it explicitly or select an isolated profile"
+                ),
+                resource=f"desktop-process:{process_id}",
+            )
+
     def _start_gateway(self, gateway_url: str, storage_root: Path) -> None:
         storage_root.mkdir(parents=True, exist_ok=False)
 
@@ -94,6 +133,8 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
         log_path = Path(log_handle.name)
         environment = dict(os.environ)
         environment["PEERS_STORAGE_ROOT"] = str(storage_root)
+        environment["PT_DESKTOP_E2E"] = "true"
+        environment["TAURI_WEBDRIVER_PORT"] = "0"
         try:
             process = subprocess.Popen(
                 ["make", "desktop"],
@@ -292,6 +333,7 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                     ),
                     resource=f"desktop-gateway:{gateway_url}",
                 )
+            self._ensure_desktop_runtime_is_unowned(profile_env)
             storage_root = Path(tempfile.gettempdir()) / (
                 f"pt-desktop-gateway-{manifest.run_id}"
             )
