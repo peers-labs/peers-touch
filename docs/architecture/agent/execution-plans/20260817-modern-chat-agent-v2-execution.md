@@ -3266,6 +3266,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   fabricating `cancelling`. Scoped Station tests, Desktop check/tests, Tauri
   library check, 125 focused Foundation tests, and `git diff --check` pass.
   AS-F03, AS-F06, and G-F remain `UNPROVEN` pending the next exact-source run.
+- Checkpoint `d8b0b5557dcc45c7dd2d2664fda447561e0ce704` was deployed
+  exact-source to profile `two`. Run
+  `20260829T172414332992Z-f6c75fd5f181b61b31c113c0c44e2261`
+  first failed at Browser AS-F02 because that earlier consumer still expected
+  the removed Desktop-fabricated `cancelling` value. Station correctly returned
+  its durable `cancelled` status through the new passthrough; cleanup and
+  redaction passed. AS-F02 now consumes the same Station-authored terminal
+  status as AS-F03. This is the mechanical completion of the cancellation
+  response cutover, not a Gate relaxation. AS-F02, AS-F03, AS-F06, and G-F
+  remain `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
