@@ -428,6 +428,15 @@ export function installAcceptanceHarness(): void {
     async debugIdentityLifecycleState() {
       const { phase, lifecycle } = identityRuntime.getSnapshot();
       const session = useSessionStore.getState();
+      const authCommandEvents = getAcceptanceAuthCommandDebugEvents();
+      const criticalAuthRequestIds = new Set(
+        authCommandEvents
+          .filter(event => (
+            event.command === 'auth_restore_session'
+            || event.event === 'revoked'
+          ))
+          .map(event => event.requestId),
+      );
       const relevantEventTypes = new Set<string>([
         EVENT.AUTH_IDENTITY_CHANGED,
         EVENT.AUTH_SESSION_REVOKED,
@@ -470,7 +479,9 @@ export function installAcceptanceHarness(): void {
               hasRaw: typeof payload.raw === 'string',
             };
           }),
-        authCommandTrace: getAcceptanceAuthCommandDebugEvents().slice(-60),
+        authCommandTrace: authCommandEvents.filter(
+          event => criticalAuthRequestIds.has(event.requestId),
+        ),
       };
     },
     // #endregion
