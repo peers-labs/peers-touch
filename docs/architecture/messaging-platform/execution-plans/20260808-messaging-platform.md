@@ -1325,6 +1325,15 @@ directory. The stale local forwards were released after ownership
 verification. The Provisioner now stages process output outside the run and
 persists it once through the canonical Evidence Store writer before audit.
 
+The next candidate run at `682af3e96fc5a926e018ccbcb2d629df404ac8cd`
+remained `UNPROVEN` because the disposable Station host exhausted its root
+filesystem before Fixture reset. A whole-disk audit identified and removed
+only 41.4 GB of reclaimable Docker build cache, preserving running containers
+and volumes. The run also exposed a remaining D-07 wiring defect: Federation
+Gateway smoke used caller-supplied ports instead of its Provisioner-owned
+Runtime Manifest. The Gate now derives the Gateway, renderer, and Station
+endpoints from that manifest; its product assertions are unchanged.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
