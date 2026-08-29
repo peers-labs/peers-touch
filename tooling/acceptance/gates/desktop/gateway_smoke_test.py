@@ -6,10 +6,23 @@ from __future__ import annotations
 import unittest
 
 from tooling.acceptance.core import GateError
-from tooling.acceptance.gates.desktop.gateway_smoke import runtime_endpoints
+from tooling.acceptance.gates.desktop.gateway_smoke import (
+    DesktopGatewaySmokeGate,
+    runtime_endpoints,
+)
 
 
 class RuntimeEndpointsTests(unittest.TestCase):
+    def test_declares_federation_traceability(self) -> None:
+        gate = DesktopGatewaySmokeGate()
+
+        self.assertEqual(gate.report.phase, "WS-6")
+        self.assertEqual(
+            gate.report.bom,
+            ["desktop-federation-context-surface"],
+        )
+        self.assertEqual(gate.report.spec, ["desktop-federation-surfaces"])
+
     def test_resolves_endpoints_from_provisioned_runtime(self) -> None:
         target_url, gateway_url, station_url = runtime_endpoints(
             {

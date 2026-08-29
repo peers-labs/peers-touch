@@ -1366,6 +1366,18 @@ exact-source proof. The Provisioner now enables the Acceptance-only commit
 failure path while binding its unused WebDriver listener to an ephemeral port,
 and it refuses to replace an existing worktree/profile Desktop process.
 
+The next clean-source aggregate
+`20260829T203439484372Z-7c6fba9d9db5ce018b758a5e207fe73a` at
+`d5b76eaf953504e0b599682a68472ccff04601f0` passed all 10 selected Gates and
+all cleanup checks against disposable Station `18132`. Its canonical status is
+still `PARTIAL/UNPROVEN`: `federation-desktop-gateway-smoke` omitted the
+Phase/BOM/Spec traceability required for environment proof. The Gate now binds
+its existing Federation Phase 1 `WS-6` workstream,
+`desktop-federation-context-surface` capability, and
+`desktop-federation-surfaces` Feature. MP-W13-F remains open until that
+correction is committed and a new exact-source aggregate plus all final review
+gates pass.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
