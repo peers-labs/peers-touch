@@ -25,6 +25,7 @@
 | I | Station restart loses or fails to replay the authoritative terminal interaction state. | Medium | Low | Pending Station readback comparison. |
 | J | Bob's page reload restores the wrong conversation selection, so the Engine is correct while the queried store or DOM points elsewhere. | Medium | Low | Pending Harness active-tab/conversation comparison. |
 | K | Bob's authentication/session becomes invalid after Station restart, preventing projection refresh. | Medium | Low | Pending authenticated actor and sync-error comparison. |
+| L | The post-reload virtual timeline mounts only the viewport tail, leaving the terminal base message off-DOM even though it remains in the active conversation store. | High | Low | Pending rendered-row and scroll-geometry evidence. |
 
 ## Log Evidence
 - Pre-fix Gate run `20260829T023644548452Z-8983d0bd277b21b69d93e766da7eaa4e` failed after 120 seconds.
@@ -44,6 +45,9 @@
 - Post-fix debug lines 1-4 prove both Direct and Group retry-wait samples now keep identical Gateway/Tauri `account_id`, `engine_profile_id`, `endpoint_device_id`, and `process_id`. Both paths returned seven messages, populated raw/mapped frontend stores, and retained the original visible DOM message.
 - The unchanged `pending_interaction_timeout_retry` assertion passed, so the original projection-loss boundary did not reproduce.
 - The same Gate later failed at a distinct boundary: `timed out waiting for bob direct terminal state after Station restart`. All assertions through Group retry/offline recovery passed, runtime cleanup passed, and Provisioner/runtime-cell cleanup reached `CLEANED`. The run remains `PARTIAL / UNPROVEN`.
+- Restart-instrumented run `20260829T043303965616Z-093fbc4a15f98cf7de3df4917651e02b` reproduced the later boundary as `timed out waiting for alice direct terminal state after Station restart`.
+- Debug lines 5-12 show 140 bounded Alice samples with no sync error. Station retained the terminal event; Engine consumption count remained 32; Gateway and Tauri returned eight messages through the same account/profile/device/PID; raw and mapped stores contained the target with `retracted=true`; active tab and conversation were correct. Only `data-message-ulid=<target>` was absent from DOM.
+- This rejects G, H, I, J, and K for the observed Alice failure. The remaining distinction is whether the virtualized timeline mounted other viewport rows while the target was offscreen, or whether the complete timeline surface failed to render.
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
