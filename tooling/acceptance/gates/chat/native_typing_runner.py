@@ -293,7 +293,12 @@ class NativeTypingGate(AcceptanceGate):
         )
         enter_chat_page(client)
 
-    def start_injected_client(self, actor: str) -> None:
+    def start_injected_client(
+        self,
+        actor: str,
+        *,
+        restore_session: bool = False,
+    ) -> None:
         if self.runtime_binding is None:
             raise GateError("Native Desktop runtime binding is required")
         spec = self.client_specs[actor]
@@ -310,37 +315,42 @@ class NativeTypingGate(AcceptanceGate):
         client.start()
         self.register_driver(client)
         client.wait_for_acceptance_harness(30)
-        configure_station(client, self.station_url)
-        with StationDriver(
-            f"http://127.0.0.1:{client.gateway_port}"
-        ) as station:
-            station.auth_logout()
-        account_ref = str(
-            self.actor_specs[actor].get("accountRef") or ""
-        )
-        account = account_ref.removeprefix("station-account:")
-        login = async_harness(
-            client,
-            "loginWithPassword",
-            {"account": account, "password": DEV_ACCOUNT_PASSWORD},
-            timeout=30,
-        )
-        if not (login or {}).get("authenticated"):
-            raise GateError(f"{actor} login did not authenticate")
-        self.authenticated_profiles.add(client.profile)
-        hydration = async_harness(
-            client,
-            "hydrateActiveActor",
-            {},
-            timeout=30,
-        )
-        ptid = str((hydration or {}).get("actorId") or "")
         expected_ptid = str(self.actor_specs[actor].get("ptid") or "")
-        if ptid != expected_ptid:
-            raise GateError(
-                f"{actor} login identity mismatch: "
-                f"expected={expected_ptid} actual={ptid}"
+        if restore_session:
+            device = self.wait_for_realtime_device(client, expected_ptid)
+            ptid = expected_ptid
+        else:
+            configure_station(client, self.station_url)
+            with StationDriver(
+                f"http://127.0.0.1:{client.gateway_port}"
+            ) as station:
+                station.auth_logout()
+            account_ref = str(
+                self.actor_specs[actor].get("accountRef") or ""
             )
+            account = account_ref.removeprefix("station-account:")
+            login = async_harness(
+                client,
+                "loginWithPassword",
+                {"account": account, "password": DEV_ACCOUNT_PASSWORD},
+                timeout=30,
+            )
+            if not (login or {}).get("authenticated"):
+                raise GateError(f"{actor} login did not authenticate")
+            hydration = async_harness(
+                client,
+                "hydrateActiveActor",
+                {},
+                timeout=30,
+            )
+            ptid = str((hydration or {}).get("actorId") or "")
+            if ptid != expected_ptid:
+                raise GateError(
+                    f"{actor} login identity mismatch: "
+                    f"expected={expected_ptid} actual={ptid}"
+                )
+            device = self.wait_for_realtime_device(client, expected_ptid)
+        self.authenticated_profiles.add(client.profile)
         if not client.get_current_url().startswith("tauri://localhost"):
             raise GateError(
                 f"{actor} is not running in native Tauri WebView: "
@@ -348,7 +358,6 @@ class NativeTypingGate(AcceptanceGate):
             )
         self.clients[actor] = client
         self.ptids[actor] = ptid
-        device = async_harness(client, "getRealtimeDevice", {})
         device_id = str((device or {}).get("deviceId") or "")
         if not device_id:
             raise GateError(f"{actor}: messaging device ID is missing")
@@ -365,6 +374,30 @@ class NativeTypingGate(AcceptanceGate):
             )
         )
         enter_chat_page(client)
+
+    def wait_for_realtime_device(
+        self,
+        client: TauriSession,
+        expected_ptid: str,
+    ) -> dict[str, Any]:
+        return wait_until(
+            lambda: (
+                device
+                if (
+                    device := async_harness(
+                        client,
+                        "getRealtimeDevice",
+                        {},
+                        timeout=10,
+                    )
+                )
+                and str(device.get("actorId") or "") == expected_ptid
+                and str(device.get("deviceId") or "")
+                else None
+            ),
+            f"restored identity {expected_ptid}",
+            timeout=60,
+        )
 
     def verify_fixture_ready(self) -> bool:
         verify_runtime_fixture_ready(
@@ -399,14 +432,7 @@ class NativeTypingGate(AcceptanceGate):
         if self.runtime_binding is None:
             stop_client(client)
             return
-        try:
-            with StationDriver(
-                f"http://127.0.0.1:{client.gateway_port}"
-            ) as station:
-                station.auth_logout()
-            self.authenticated_profiles.discard(client.profile)
-        finally:
-            client.stop(preserve_state=True)
+        client.stop(preserve_state=True)
 
     def restart_client(self, actor: str, context: str) -> None:
         previous_ptid = self.ptids[actor]
@@ -432,11 +458,15 @@ class NativeTypingGate(AcceptanceGate):
             if ptid != previous_ptid:
                 raise GateError(identity_error)
         else:
-            self.start_injected_client(actor)
+            self.start_injected_client(actor, restore_session=True)
             if self.ptids[actor] != previous_ptid:
                 raise GateError(identity_error)
         replacement = self.clients[actor]
-        device = async_harness(replacement, "getRealtimeDevice", {})
+        device = (
+            self.wait_for_realtime_device(replacement, previous_ptid)
+            if self.runtime_binding is not None
+            else async_harness(replacement, "getRealtimeDevice", {})
+        )
         if str((device or {}).get("deviceId") or "") != previous_device:
             raise GateError(device_error)
         enter_chat_page(replacement)
