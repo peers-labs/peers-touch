@@ -432,6 +432,8 @@ class NativeInteractionsGate(AcceptanceGate):
     def create_authenticated_client(
         self,
         actor: str,
+        *,
+        restore_session: bool = False,
     ) -> tuple[TauriSession, str]:
         if self.runtime_binding is None:
             return start_authenticated_client(
@@ -452,40 +454,44 @@ class NativeInteractionsGate(AcceptanceGate):
         client.start()
         try:
             client.wait_for_acceptance_harness(30)
-            configure_station(client, self.station_url)
-            with StationDriver(
-                f"http://127.0.0.1:{client.gateway_port}"
-            ) as station:
-                station.auth_logout()
-            account_ref = str(
-                self.actor_specs[actor].get("accountRef") or ""
-            )
-            login = async_harness(
-                client,
-                "loginWithPassword",
-                {
-                    "account": account_ref.removeprefix("station-account:"),
-                    "password": DEV_ACCOUNT_PASSWORD,
-                },
-                timeout=30,
-            )
-            if not (login or {}).get("authenticated"):
-                raise GateError(f"{actor} login did not authenticate")
-            hydration = async_harness(
-                client,
-                "hydrateActiveActor",
-                {},
-                timeout=30,
-            )
-            ptid = str((hydration or {}).get("actorId") or "")
             expected_ptid = str(
                 self.actor_specs[actor].get("ptid") or ""
             )
-            if ptid != expected_ptid:
-                raise GateError(
-                    f"{actor} login identity mismatch: "
-                    f"expected={expected_ptid} actual={ptid}"
+            if restore_session:
+                self.wait_for_realtime_device(client, expected_ptid)
+                ptid = expected_ptid
+            else:
+                configure_station(client, self.station_url)
+                with StationDriver(
+                    f"http://127.0.0.1:{client.gateway_port}"
+                ) as station:
+                    station.auth_logout()
+                account_ref = str(
+                    self.actor_specs[actor].get("accountRef") or ""
                 )
+                login = async_harness(
+                    client,
+                    "loginWithPassword",
+                    {
+                        "account": account_ref.removeprefix("station-account:"),
+                        "password": DEV_ACCOUNT_PASSWORD,
+                    },
+                    timeout=30,
+                )
+                if not (login or {}).get("authenticated"):
+                    raise GateError(f"{actor} login did not authenticate")
+                hydration = async_harness(
+                    client,
+                    "hydrateActiveActor",
+                    {},
+                    timeout=30,
+                )
+                ptid = str((hydration or {}).get("actorId") or "")
+                if ptid != expected_ptid:
+                    raise GateError(
+                        f"{actor} login identity mismatch: "
+                        f"expected={expected_ptid} actual={ptid}"
+                    )
             if not client.get_current_url().startswith("tauri://localhost"):
                 raise GateError(
                     f"{actor} is not running in native Tauri WebView: "
@@ -495,6 +501,30 @@ class NativeInteractionsGate(AcceptanceGate):
         except Exception:
             client.stop()
             raise
+
+    def wait_for_realtime_device(
+        self,
+        client: TauriSession,
+        expected_ptid: str,
+    ) -> dict[str, Any]:
+        return wait_until(
+            lambda: (
+                device
+                if (
+                    device := async_harness(
+                        client,
+                        "getRealtimeDevice",
+                        {},
+                        timeout=10,
+                    )
+                )
+                and str(device.get("actorId") or "") == expected_ptid
+                and str(device.get("deviceId") or "")
+                else None
+            ),
+            f"restored identity {expected_ptid}",
+            timeout=60,
+        )
 
     def drain(self, actor: str) -> None:
         try:
@@ -1835,11 +1865,18 @@ class NativeInteractionsGate(AcceptanceGate):
     ) -> None:
         if stop_existing:
             self.stop_client_for_restart(actor)
-        client, ptid = self.create_authenticated_client(actor)
+        client, ptid = self.create_authenticated_client(
+            actor,
+            restore_session=self.runtime_binding is not None,
+        )
         self.register_driver(client)
         if ptid != self.ptids[actor]:
             raise GateError(f"{actor} identity changed across client restart")
-        device = async_harness(client, "getRealtimeDevice", {})
+        device = (
+            self.wait_for_realtime_device(client, ptid)
+            if self.runtime_binding is not None
+            else async_harness(client, "getRealtimeDevice", {})
+        )
         device_id = str((device or {}).get("deviceId") or "")
         if device_id != self.device_ids[actor]:
             raise GateError(f"{actor} device changed across client restart")
@@ -1852,13 +1889,7 @@ class NativeInteractionsGate(AcceptanceGate):
         if self.runtime_binding is None:
             stop_client(client)
             return
-        try:
-            with StationDriver(
-                f"http://127.0.0.1:{client.gateway_port}"
-            ) as station:
-                station.auth_logout()
-        finally:
-            client.stop(preserve_state=True)
+        client.stop(preserve_state=True)
 
     def prove_restart_convergence(
         self,
