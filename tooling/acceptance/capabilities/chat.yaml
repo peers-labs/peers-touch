@@ -42,11 +42,20 @@
       "id": "chat-realtime-contract",
       "domain": "chat",
       "direction": "acceptance_validates_product",
-      "features": ["chat-realtime-delivery"],
-      "required_gates": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"],
+      "features": [
+        "chat-realtime-delivery",
+        "chat-desktop-gateway-message-flow"
+      ],
+      "required_gates": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-desktop-gateway-e2e"
+      ],
       "synthetic_paths": [
         "apps/station/app/subserver/messaging/**",
         "apps/station/app/subserver/envelope/**",
+        "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
         "apps/desktop/src-tauri/src/messaging/**",
         "apps/desktop/src/services/socialRealtime.ts"
       ],
@@ -61,10 +70,16 @@
           "/messaging/queue/claim",
           "/messaging/queue/ack"
         ],
-        "proven_by": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"],
+        "proven_by": [
+          "station-messaging-unit",
+          "messaging-platform-contract",
+          "desktop-check",
+          "chat-desktop-gateway-e2e"
+        ],
         "proven_scope": [
           "Station messaging queue and envelope packages compile and pass tests",
-          "Desktop messaging lifecycle and chat projection compile together"
+          "Desktop messaging lifecycle and chat projection compile together",
+          "The Desktop HTTP gateway keeps account selection, JWT actor, and Messaging Engine activation in one fail-closed identity transition"
         ],
         "unproven_scope": [
           "Transport backoff and missed-event replay under injected network failure remain unproven; Linux offline, duplicate-replay and restart convergence are proven by G15 and MP-W13"
