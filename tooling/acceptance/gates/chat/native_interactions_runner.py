@@ -2419,10 +2419,29 @@ class NativeInteractionsGate(AcceptanceGate):
                         "probeError": str(error),
                     }
 
+            def identity_state() -> dict[str, Any]:
+                try:
+                    value = async_harness(
+                        client,
+                        "debugIdentityLifecycleState",
+                        {},
+                        timeout=5,
+                    )
+                    return value if isinstance(value, dict) else {}
+                except Exception as error:
+                    return {
+                        "probeErrorType": type(error).__name__,
+                        "probeError": str(error),
+                    }
+
             report_interaction_projection_debug(
-                "O",
+                "O,P,Q,R",
                 "native_interactions_runner:pre-refresh-document",
-                {"actor": actor, "document": document_state()},
+                {
+                    "actor": actor,
+                    "document": document_state(),
+                    "identity": identity_state(),
+                },
             )
             client.driver.refresh()
             report_interaction_projection_debug(
@@ -2432,33 +2451,46 @@ class NativeInteractionsGate(AcceptanceGate):
             )
             client.wait_for_acceptance_harness(30)
             report_interaction_projection_debug(
-                "O",
+                "O,P,Q,R",
                 "native_interactions_runner:post-harness-document",
-                {"actor": actor, "document": document_state()},
+                {
+                    "actor": actor,
+                    "document": document_state(),
+                    "identity": identity_state(),
+                },
             )
             report_interaction_projection_debug(
-                "M,N,O",
+                "M,N,O,P,Q,R",
                 "native_interactions_runner:post-restart-shell-before-navigation",
-                {"actor": actor, "shell": document_state()},
+                {
+                    "actor": actor,
+                    "shell": document_state(),
+                    "identity": identity_state(),
+                },
             )
             try:
                 enter_chat_page(client)
             except Exception as error:
                 report_interaction_projection_debug(
-                    "M,N,O",
+                    "M,N,O,P,Q,R",
                     "native_interactions_runner:post-restart-shell-navigation-error",
                     {
                         "actor": actor,
                         "shell": document_state(),
+                        "identity": identity_state(),
                         "errorType": type(error).__name__,
                         "error": str(error),
                     },
                 )
                 raise
             report_interaction_projection_debug(
-                "M,N,O",
+                "M,N,O,P,Q,R",
                 "native_interactions_runner:post-restart-shell-ready",
-                {"actor": actor, "shell": document_state()},
+                {
+                    "actor": actor,
+                    "shell": document_state(),
+                    "identity": identity_state(),
+                },
             )
             # #endregion
 

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { getBootTrace } from '../../kernel/boot';
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { refreshSocialProjection } from '../../services/socialRealtime';
 import { api } from '../../services/desktop_api';
@@ -417,6 +418,29 @@ export function installAcceptanceHarness(): void {
       await refreshConversation(kind, conversationId);
       return interactionProjection(kind, conversationId, messageId);
     },
+
+    // #region debug-point P,Q,R:identity-boot-state
+    async debugIdentityLifecycleState() {
+      const { phase, lifecycle } = identityRuntime.getSnapshot();
+      const session = useSessionStore.getState();
+      return {
+        phaseKind: phase.kind,
+        phaseReason: 'reason' in phase ? phase.reason : null,
+        phaseSource: 'source' in phase ? phase.source : null,
+        readiness: 'readiness' in phase ? phase.readiness : null,
+        lifecycleState: lifecycle.state,
+        lifecycleAuthenticated: lifecycle.authenticated,
+        dataReady: lifecycle.dataReady,
+        sessionAuthenticated: session.authenticated,
+        sessionRestoring: session.restoring,
+        actorId: session.currentUser?.actorId ?? null,
+        bootTrace: getBootTrace().map(entry => ({
+          phase: entry.phase,
+          finished: entry.finishedAt !== undefined,
+        })),
+      };
+    },
+    // #endregion
 
     // #region debug-point A,B,D:interaction-projection-state
     async debugInteractionProjectionState({
