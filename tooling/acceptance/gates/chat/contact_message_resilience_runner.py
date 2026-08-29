@@ -64,6 +64,9 @@ def selected_runtime() -> tuple[
 
 class ContactMessageResilienceGate(AcceptanceGate):
     gate_id = GATE_ID
+    phase = "MP-W13-F"
+    bom = ("MP-W13-F",)
+    spec = ("chat-product-closure",)
     report_path = REPORT_PATH
     evidence_dir = (
         REPORT_PATH.parent / "chat-contact-message-resilience-evidence"

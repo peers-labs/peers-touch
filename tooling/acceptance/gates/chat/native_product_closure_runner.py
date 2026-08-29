@@ -253,6 +253,16 @@ def native_input_event_cursor(
 
 class NativeProductClosureGate(AcceptanceGate):
     gate_id = GATE_ID
+    phase = "MP-W13-F"
+    bom = ("MP-W13-A", "MP-W13-B", "MP-W13-C", "MP-W13-D", "MP-W13-E", "MP-W13-F")
+    spec = (
+        "AS-W13-01",
+        "AS-W13-02",
+        "AS-W13-03",
+        "AS-W13-04",
+        "AS-W13-05",
+        "AS-W13-06",
+    )
 
     def __init__(
         self,
