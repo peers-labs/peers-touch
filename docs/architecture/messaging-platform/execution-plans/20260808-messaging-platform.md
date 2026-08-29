@@ -1178,6 +1178,19 @@ and stale explicit-Gate command resolution defects. These are lifecycle and
 evidence-integrity corrections only; the existing Chat assertions remain
 unchanged. MP-W13-F remains `UNPROVEN` pending clean-commit runtime evidence.
 
+The first runner-owned runtime-cell aggregate
+`20260828T215129732499Z-90c1e42259dc905e86b4f1798cab1750`
+passed six of seven environment Gates and all selected local/structural Gates.
+`chat-native-interactions-e2e` exposed a sender-side catch-up race: a message
+could be visible to the receiver while the sender had not yet consumed its own
+authority event, and interaction submission validated the local committed
+projection before running its preflight drain. The Desktop Messaging Engine now
+drains before edit and metadata target validation. Focused Linux run
+`20260828T235312023024Z-7035474534fefd51fcffa339de3a1432`
+passed the unchanged Direct and Group interaction journey, including timeout
+retry, authority/Engine/DOM convergence, and resource cleanup. MP-W13-F remains
+`UNPROVEN` until the final same-source aggregate and downstream audits pass.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
