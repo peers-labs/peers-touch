@@ -1309,6 +1309,14 @@ implementation, so MP-W13 remains `PARTIAL/UNPROVEN` until a clean commit passes
 the Linux aggregate, required-proven validation, Gap Detector, Completion
 Audit, and `review-submit`.
 
+The first aggregate attempt at `14e04370851f48847daf1dacfa53395286227ebf`
+produced no product proof: Native and Desktop Gateway provisioning failed
+closed because reset authorization was not exported, and the selected
+Federation Gateway smoke lacked its declared environment Provisioner. The cell
+cleanup completed. The next candidate adds only the missing
+`local-desktop-gateway` provisioning link and must rerun the unchanged Gate
+assertions against explicitly bound disposable Station `18132`.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

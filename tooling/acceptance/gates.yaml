@@ -293,6 +293,7 @@
       "command": "python3 tooling/acceptance/gates/desktop/gateway_smoke.py",
       "timeout_seconds": 600,
       "environment": "local-desktop-gateway",
+      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Validate Desktop gateway active Station and collect render diagnostics."
     },
