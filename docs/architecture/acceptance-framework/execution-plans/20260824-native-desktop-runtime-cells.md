@@ -1050,6 +1050,17 @@ through `write_current_artifact`, so credential redaction occurs before the
 first durable Evidence Store write. NDR-W7 remains `PARTIAL/UNPROVEN` pending a
 clean candidate and full rerun.
 
+The first aggregate attempt after that writer correction, at
+`682af3e96fc5a926e018ccbcb2d629df404ac8cd`, was blocked by the disposable
+Station host root filesystem reaching 100% usage. Whole-disk inspection
+attributed 82 GB of 85 GB under `/var` to Docker, including 41.4 GB of fully
+reclaimable build cache. Only that build cache was pruned; running containers,
+images, volumes, and database data were preserved, and root usage returned to
+57%. The same run also proved that the Federation Gateway smoke must derive its
+Gateway, renderer, and Station endpoints from the Provisioner-owned Runtime
+Manifest instead of caller-supplied defaults. No product proof is claimed from
+this blocked run.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
