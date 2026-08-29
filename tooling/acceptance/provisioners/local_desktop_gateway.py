@@ -19,7 +19,7 @@ from tooling.acceptance.core.attestation import (
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
-from tooling.acceptance.core.evidence_store import current_artifact_path
+from tooling.acceptance.core.evidence_store import write_current_artifact
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import (
     ClientRuntime,
@@ -84,23 +84,49 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
             f"desktop-storage:{storage_root.name}",
             remove_storage,
         )
-        log_path = current_artifact_path(
-            PROVISION_DESKTOP_LOG,
-            repo_root=REPO_ROOT,
+        log_handle = tempfile.NamedTemporaryFile(
+            mode="w+",
+            encoding="utf-8",
+            prefix="pt-provision-desktop-",
+            suffix=".log",
+            delete=False,
         )
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_handle = log_path.open("a", encoding="utf-8")
+        log_path = Path(log_handle.name)
         environment = dict(os.environ)
         environment["PEERS_STORAGE_ROOT"] = str(storage_root)
-        process = subprocess.Popen(
-            ["make", "desktop"],
-            cwd=REPO_ROOT,
-            env=environment,
-            stdout=log_handle,
-            stderr=subprocess.STDOUT,
-            text=True,
-            start_new_session=True,
-        )
+        try:
+            process = subprocess.Popen(
+                ["make", "desktop"],
+                cwd=REPO_ROOT,
+                env=environment,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                text=True,
+                start_new_session=True,
+            )
+        except BaseException:
+            log_handle.close()
+            log_path.unlink(missing_ok=True)
+            raise
+
+        log_persisted = False
+
+        def persist_log() -> None:
+            nonlocal log_persisted
+            if log_persisted:
+                return
+            if not log_handle.closed:
+                log_handle.flush()
+                log_handle.close()
+            try:
+                write_current_artifact(
+                    PROVISION_DESKTOP_LOG,
+                    log_path.read_bytes(),
+                    repo_root=REPO_ROOT,
+                )
+                log_persisted = True
+            finally:
+                log_path.unlink(missing_ok=True)
 
         def stop_desktop() -> None:
             try:
@@ -116,7 +142,7 @@ class LocalDesktopGatewayProvisioner(EnvironmentProvisioner):
                     pass
                 process.wait(timeout=5)
             finally:
-                log_handle.close()
+                persist_log()
 
         self.register_cleanup(f"desktop-process:{process.pid}", stop_desktop)
         deadline = time.monotonic() + 900
