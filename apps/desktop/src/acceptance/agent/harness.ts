@@ -230,6 +230,21 @@ function writeFoundationF06Handoff(value: FoundationF06Handoff): void {
   window.localStorage.setItem(FOUNDATION_F06_STORAGE_KEY, JSON.stringify(handoffs));
 }
 
+async function updateFoundationF06RecoveryFailure(
+  scenarioKey: string,
+  evidence: Record<string, unknown>,
+): Promise<void> {
+  foundationF06ReplayRecording = foundationF06ReplayRecording.then(() => {
+    const current = readFoundationF06Handoff(scenarioKey);
+    if (!current) {
+      throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
+    }
+    current.recoveryFailure = evidence;
+    writeFoundationF06Handoff(current);
+  });
+  await foundationF06ReplayRecording;
+}
+
 function removeFoundationF06Handoff(scenarioKey: string): void {
   const handoffs = readFoundationF06Handoffs();
   delete handoffs[scenarioKey];
@@ -2614,16 +2629,17 @@ async function observeFoundationRecoveryFailure(
     },
     durableReload: { invoked: false, observed: false },
   };
-  handoff.recoveryFailure = evidence;
-  writeFoundationF06Handoff(handoff);
+  await updateFoundationF06RecoveryFailure(handoff.scenarioKey, evidence);
   return evidence;
 }
 
 async function exerciseFoundationDurableReload(
   handoff: FoundationF06Handoff,
 ): Promise<Record<string, unknown>> {
+  await foundationF06ReplayRecording;
+  const currentHandoff = readFoundationF06Handoff(handoff.scenarioKey);
   const prior = evidenceRecord(
-    handoff.recoveryFailure,
+    currentHandoff?.recoveryFailure,
     'foundationF06ObservedRecoveryFailure',
   );
   const authenticatedPtid =
@@ -2644,8 +2660,7 @@ async function exerciseFoundationDurableReload(
       blocker: 'AS_F06_DURABLE_RELOAD_TARGET_MISSING',
       durableReload: { invoked: false, observed: false },
     };
-    handoff.recoveryFailure = evidence;
-    writeFoundationF06Handoff(handoff);
+    await updateFoundationF06RecoveryFailure(handoff.scenarioKey, evidence);
     return evidence;
   }
 
@@ -2703,8 +2718,7 @@ async function exerciseFoundationDurableReload(
       },
     },
   };
-  handoff.recoveryFailure = evidence;
-  writeFoundationF06Handoff(handoff);
+  await updateFoundationF06RecoveryFailure(handoff.scenarioKey, evidence);
   return evidence;
 }
 

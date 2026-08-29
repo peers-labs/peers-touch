@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `72d07e291` reached AS-F06, but run `20260829T033240508585Z-98a80c68e781d200d212c3fcafc9dc94` showed a crashed Station can leave the Browser SSE reader pending without publishing `connection_lost`; a transport-only Browser/Native disconnect contract is locally verified and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `434469698` closed the AS-F06 transport hang and reached post-restart durable reload in run `20260829T040641993969Z-89b3b4e2546ff51716c0739ca4cb8532`; a Harness handoff write-order race is locally corrected and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2850,6 +2850,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   static tests, Agent Domain validation, Rust formatting, and
   `git diff --check` pass. AS-F06 and G-F remain `UNPROVEN` pending checkpoint
   commit, exact-source profile `two` deployment, and a new Foundation run.
+- Checkpoint `4344696983aff53a8edb8056396c88620f4b8e4c` was deployed
+  exact-source to profile `two`. Run
+  `20260829T040641993969Z-89b3b4e2546ff51716c0739ca4cb8532`
+  crossed the prior failure: all outage callbacks observed bounded recovery
+  failure, Station restarted successfully, and execution advanced to Browser
+  durable reload. It then failed closed with
+  `agent.acceptance.foundationF06ObservedRecoveryFailureMissing`; cleanup
+  passed. The source-backed cause is a Harness write-order race: an asynchronous
+  replay-delivery recorder can read the handoff before recovery failure is
+  attached and later overwrite the entire localStorage record. The local
+  correction serializes recovery-failure persistence through the same replay
+  recording ledger and merges into the latest handoff before every write.
+  AS-F06 and G-F remain `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
