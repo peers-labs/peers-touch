@@ -5348,7 +5348,7 @@ export function installAcceptanceHarness(): void {
               tokenUsage,
               'toolDefinitionTokens',
               'tool_definition_tokens',
-            ) ?? -1,
+            ) ?? 0,
           );
         }
       }

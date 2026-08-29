@@ -2755,6 +2755,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   compare-and-refresh retry only for that explicit version conflict; all other
   errors remain fail-closed. AS-F02, AS-F03, and G-F remain `UNPROVEN` pending
   another exact-source run.
+- Checkpoint `b0c7deed32ee17c4a348d944dab26d61cec66f43` was deployed
+  exact-source to profile `two`. Run
+  `20260829T020528435564Z-3fc2fbd357dfec397023698978ae8375`
+  advanced through AS-F02 and produced an AS-F03 Turn with 44 ordered text
+  events, zero thinking events, one cancelled terminal event, a durable trace,
+  and `tool_definition_tokens=0`; cleanup passed. The independent oracle still
+  rejected `progressiveEventsSequenced` because Proto3 JSON omitted the
+  zero-valued scalar and the Harness interpreted absence as `-1`. The local
+  correction uses the generated Proto3 default of zero after proving the typed
+  Attempt usage object exists. AS-F03 and G-F remain `UNPROVEN` pending another
+  exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
