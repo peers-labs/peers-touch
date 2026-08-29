@@ -3389,6 +3389,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   skip, 65 focused recovery/API tests, 47 Foundation static tests, and
   `git diff --check` pass. AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending
   checkpoint deployment and exact-source verification.
+- Checkpoint `ddc01f9939e465fac18c82d9c78082e3acb40a98` was deployed
+  exact-source to profile `two`. Run
+  `20260829T211516341470Z-bded0cbd9862cbe09dc0273d73bf3a2a`
+  reached Browser AS-F06 and then failed closed before its destructive Station
+  restart because `PT_AGENT_V2_ALLOW_STATION_RESTART=1` was not present in the
+  runner environment. The immutable result is `PARTIAL / UNPROVEN`; cleanup,
+  redaction, runtime storage removal, and release of ports `3130`, `3131`,
+  `3310`, `3311`, `4445`, and `4446` passed. This is an execution-environment
+  precondition failure, not product proof. The next serial run must retain the
+  same Gate and set the explicit restart authorization required by AS-F06.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
