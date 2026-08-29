@@ -318,8 +318,7 @@ function installFoundationF06Observation(): void {
         const rawPayload = evidenceValue(
           sourceDelivery.rawPayload,
         ) as FoundationF06ReplayDelivery['rawPayload'];
-        current.replayedSequences.push(sourceDelivery.sequence);
-        current.replayDeliveries.push({
+        const replayDelivery: FoundationF06ReplayDelivery = {
           eventType: sourceDelivery.rawPayload.eventType,
           sequence: sourceDelivery.sequence,
           streamId: payload.streamId,
@@ -333,7 +332,20 @@ function installFoundationF06Observation(): void {
           sourceEventType: sourceDelivery.rawPayload.eventType,
           rawPayload,
           payloadHash: await sha256Hex(stableJson(rawPayload)),
-        });
+        };
+        const existingDelivery = current.replayDeliveries.find(
+          (delivery) => delivery.sequence === sourceDelivery.sequence,
+        );
+        if (existingDelivery) {
+          if (existingDelivery.payloadHash !== replayDelivery.payloadHash) {
+            throw new Error(
+              'agent.acceptance.foundationRecoverySequencePayloadConflict',
+            );
+          }
+          return;
+        }
+        current.replayedSequences.push(sourceDelivery.sequence);
+        current.replayDeliveries.push(replayDelivery);
       }
       writeFoundationF06Handoff(current);
     });
@@ -570,7 +582,7 @@ async function observeFoundationActiveDependency(
 async function deleteFoundationConversation(
   conversationId: string,
 ): Promise<string> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
     try {
       const conversation = await api.getAgentConversation(conversationId);
       await api.archiveAgentConversation(
@@ -582,10 +594,13 @@ async function deleteFoundationConversation(
     } catch (error) {
       const code = observedErrorCode(error);
       if (code.includes('AGENT_4004')) return code;
-      if (code !== 'VERSION_CONFLICT') throw error;
+      if (code !== 'VERSION_CONFLICT' && code !== 'ACTIVE_DEPENDENCY') {
+        throw error;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
     }
   }
-  throw new Error('agent.acceptance.foundationConversationDeleteConflict');
+  throw new Error('agent.acceptance.foundationConversationDeleteBlocked');
 }
 
 async function cancelFoundationQueuedTurns(
@@ -2759,6 +2774,7 @@ async function cleanupFoundationF06Scenario(input: {
     if (input.turnId) {
       await api.cancelAgentTurn(input.turnId);
     }
+    await cancelFoundationQueuedTurns(input.conversationId);
     deletionErrorCode = await deleteFoundationConversation(input.conversationId);
   } catch (error) {
     deletionErrorCode = observedErrorCode(error);
@@ -2923,10 +2939,16 @@ async function runFoundationF06Complete(
     || 'unknown';
 
   let staleRevisionError = '';
+  const staleRevisionBase = stationSnapshot.conversation.version;
+  await api.updateAgentConversation({
+    conversation_id: handoff.conversationId,
+    expected_version: staleRevisionBase,
+    title: stationSnapshot.conversation.title,
+  });
   try {
     await api.updateAgentConversation({
       conversation_id: handoff.conversationId,
-      expected_version: handoff.conversationRevision,
+      expected_version: staleRevisionBase,
       title: stationSnapshot.conversation.title,
     });
   } catch (error) {
@@ -3096,7 +3118,7 @@ async function runFoundationF06Complete(
       },
       recoveryFailure,
       staleRevision: {
-        rejected: staleRevisionError.includes('AGENT_4009'),
+        rejected: staleRevisionError === 'VERSION_CONFLICT',
         errorCodeHash: await sha256Hex(staleRevisionError),
       },
       sideEffects: {

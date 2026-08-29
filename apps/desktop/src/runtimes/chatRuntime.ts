@@ -563,6 +563,26 @@ export async function reloadAgentTurnSnapshot(
     if (!current) {
       throw new Error('chat.agentTurnRecovery.reloadTargetChanged');
     }
+    const reconciling = transition(
+      current,
+      'RECONCILING',
+      'reconciling',
+      {
+        reason: 'user-snapshot-reload',
+        status: snapshot.status,
+      },
+    );
+    if (!reconciling) {
+      throw new Error('chat.agentTurnRecovery.reloadTargetChanged');
+    }
+    const connected = transition(reconciling, 'CONNECTED', 'connected', {
+      reason: 'user-snapshot-reload',
+      status: snapshot.status,
+    });
+    if (!connected) {
+      throw new Error('chat.agentTurnRecovery.reloadTargetChanged');
+    }
+    current = connected;
     const payload: AgentTurnStreamEventPayload = {
       streamId: current.streamId,
       streamGeneration: current.streamGeneration,
@@ -604,25 +624,6 @@ export async function reloadAgentTurnSnapshot(
     }
     if (!reduction.record) {
       throw new Error('chat.agentTurnRecovery.snapshotRejected');
-    }
-    const reconciling = transition(
-      reduction.record,
-      'RECONCILING',
-      'reconciling',
-      {
-        reason: 'user-snapshot-reload',
-        status: snapshot.status,
-      },
-    );
-    if (!reconciling) {
-      throw new Error('chat.agentTurnRecovery.reloadTargetChanged');
-    }
-    const connected = transition(reconciling, 'CONNECTED', 'connected', {
-      reason: 'user-snapshot-reload',
-      status: snapshot.status,
-    });
-    if (!connected) {
-      throw new Error('chat.agentTurnRecovery.reloadTargetChanged');
     }
     return result;
   } catch (error) {

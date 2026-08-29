@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `862c8bae3` proved the AS-F06 explicit retry in run `20260829T090209403567Z-83f2593a786eee363fe009af8fa9040e`; same-process re-auth then consumed the failed recovery target before explicit durable reload, which awaits a runtime-owner correction; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `a2f5c706d` reached the complete Browser AS-F06 oracle in run `20260829T091643210639Z-ff78e0b4fc83cf58eff6f89b1fb3c447`; transition ordering, replay-delivery deduplication, deterministic stale revision, and cleanup convergence are locally corrected; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3050,6 +3050,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   The runtime must preserve same-process failed records while still
   automatically reconciling failed records newly loaded into a fresh process.
   AS-F06 and G-F remain `UNPROVEN`.
+- Checkpoint `a2f5c706d7305a34ac1493755f4dbae69504a811` was deployed
+  exact-source to profile `two`. Run
+  `20260829T091643210639Z-ff78e0b4fc83cf58eff6f89b1fb3c447`
+  crossed retry, same-process re-auth, durable reload, and client restart, then
+  reached the complete Browser AS-F06 oracle. It failed
+  `exactRecoveryTransitionOrdering`, `replayAfterAcknowledgedCursor`, and
+  `staleGenerationAndRevisionRejected`; cleanup also found an active
+  conversation dependency. The local correction makes explicit terminal
+  snapshot reload emit the same `RECONCILING -> CONNECTED` phases as automatic
+  replay, deduplicates identical source-sequence deliveries while rejecting
+  conflicting payloads, creates a real competing conversation update before
+  asserting stale-version rejection, and performs bounded cancel/queue
+  convergence before deletion. Desktop check, all 394 Desktop tests,
+  production build, 35 Group One oracle tests, 10 scenario-runner tests, 40
+  native static tests, and `git diff --check` pass. The broad legacy
+  `unittest discover` suite is not a valid current gate because it still
+  references migrated files and historical symbols. AS-F06 and G-F remain
+  `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

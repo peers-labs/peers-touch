@@ -1090,8 +1090,24 @@ def evaluate_as_f06(
     }
     failed = sorted(key for key, passed in assertions.items() if not passed)
     if failed:
+        diagnostics = {
+            "phases": phases,
+            "afterCursor": after_cursor,
+            "replaySequences": replay_sequences,
+            "replayDeliverySequences": replay_delivery_sequences,
+            "staleGeneration": stale_generation,
+            "activeGeneration": active_generation,
+            "staleGenerationRejected": idempotence.get(
+                "staleGenerationRejected"
+            ),
+            "staleTerminalRejected": idempotence.get(
+                "staleTerminalRejected"
+            ),
+            "staleRevisionRejected": stale_revision.get("rejected"),
+        }
         raise GroupOneScenarioError(
-            f"AS-F06 production facts failed assertions: {failed}"
+            "AS-F06 production facts failed assertions: "
+            f"{failed}; diagnostics={json.dumps(diagnostics, sort_keys=True)}"
         )
     return assertions
 

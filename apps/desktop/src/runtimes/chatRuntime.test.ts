@@ -490,6 +490,7 @@ describe('chatRuntime Agent turn recovery', () => {
     mocks.replayInputs.length = 0;
     mocks.replayOnEvents.length = 0;
     mocks.replayOnErrors.length = 0;
+    mocks.applyRecoveredTurnEvent.mockClear();
 
     const reload = reloadAgentTurnSnapshot('conversation-1');
     expect(mocks.replayInputs).toEqual([{
@@ -515,6 +516,18 @@ describe('chatRuntime Agent turn recovery', () => {
       expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
     });
     expect(mocks.replayControllers[0].signal.aborted).toBe(true);
+    expect(mocks.applyRecoveredTurnEvent).toHaveBeenCalledWith(
+      'conversation-1',
+      'agent-1',
+      'turn-1',
+      expect.objectContaining({ event: 'reconciling' }),
+    );
+    expect(mocks.applyRecoveredTurnEvent).toHaveBeenCalledWith(
+      'conversation-1',
+      'agent-1',
+      'turn-1',
+      expect.objectContaining({ event: 'connected' }),
+    );
     expect(observed).toContainEqual(expect.objectContaining({
       deliveryOnly: true,
       sourceDelivery: expect.objectContaining({
