@@ -551,6 +551,44 @@ fn token_from_state(state: &AppState) -> Result<String, Value> {
     Ok(token)
 }
 
+fn bind_http_gateway_session(state: &AppState, payload: &AuthSessionPayload) {
+    let Some(actor_id) = payload
+        .actor_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        tracing::warn!("http_gateway: session binding skipped because actor_id is missing");
+        return;
+    };
+    let Some(token) = http_gateway_bearer_token(state) else {
+        tracing::warn!("http_gateway: session binding skipped because token is missing");
+        return;
+    };
+
+    let mut actor = crate::domain::identity::ActorRef::new_person(actor_id.to_string());
+    actor.ptid = payload.ptid.clone().unwrap_or_default();
+    let account_id = crate::infrastructure::auth_identity::find_account_id_by_actor_id(actor_id)
+        .unwrap_or_else(|| {
+            crate::infrastructure::local_scope::account_id_for_password_actor(actor_id)
+        });
+    if let Err(error) = app_auth::activate_messaging_profile(state, &account_id, actor_id, &token) {
+        tracing::warn!(
+            account_id = %account_id,
+            actor_id = %actor_id,
+            error = %error,
+            "http_gateway: session retained while messaging profile activation awaits retry"
+        );
+    }
+    state
+        .sessions
+        .bind_exclusive(crate::domain::identity::ActiveSession::new(
+            "http-gateway",
+            account_id,
+            actor,
+            token,
+        ));
+}
+
 fn proxy_authenticated_station_json(
     state: &AppState,
     method: reqwest::Method,
@@ -2177,53 +2215,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 input.device_type = Some("desktop-browser".to_string());
             }
             let result = app_auth::auth_login(input, state);
-            if result.ok {
-                if let Some(ref data) = result.data {
-                    if let Some(ref actor_id) = data.actor_id {
-                        if !actor_id.is_empty() {
-                            let token = state
-                                .session
-                                .lock()
-                                .ok()
-                                .and_then(|g| g.token.clone())
-                                .unwrap_or_default();
-                            if !token.is_empty() {
-                                let mut actor =
-                                    crate::domain::identity::ActorRef::new_person(actor_id.clone());
-                                actor.ptid = data.ptid.clone().unwrap_or_default();
-                                let account_id =
-                                    crate::infrastructure::auth_identity::find_account_id_by_actor_id(actor_id)
-                                        .unwrap_or_else(|| {
-                                            crate::infrastructure::local_scope::account_id_for_password_actor(actor_id)
-                                        });
-                                if let Err(error) = app_auth::activate_messaging_profile(
-                                    state,
-                                    &account_id,
-                                    actor_id,
-                                    &token,
-                                ) {
-                                    tracing::warn!(
-                                        account_id = %account_id,
-                                        error = %error,
-                                        "http_gateway: messaging profile activation failed"
-                                    );
-                                }
-                                state.sessions.bind_exclusive(
-                                    crate::domain::identity::ActiveSession::new(
-                                        "http-gateway",
-                                        account_id.clone(),
-                                        actor,
-                                        token,
-                                    ),
-                                );
-                                tracing::info!(
-                                    account_id = %account_id,
-                                    "http_gateway: auth_login session bound to WindowSessionRegistry"
-                                );
-                            }
-                        }
-                    }
-                }
+            if let Some(data) = result.data.as_ref().filter(|_| result.ok) {
+                bind_http_gateway_session(state, data);
             }
             to_json(result)
         }
@@ -2249,7 +2242,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             to_json(app_auth::access_submit_login(input, state))
         }
         "auth_logout" => to_json(app_auth::auth_logout(state)),
-        "auth_restore_session" => to_json(app_auth::auth_restore_session(state)),
+        "auth_restore_session" => {
+            let result = app_auth::auth_restore_session_for_device(state, "desktop-browser");
+            if let Some(data) = result.data.as_ref().filter(|_| result.ok) {
+                bind_http_gateway_session(state, data);
+            }
+            to_json(result)
+        }
         "auth_validate_token" => {
             let input = match parse_args::<AuthValidateTokenInput>(args) {
                 Ok(v) => v,
@@ -8490,6 +8489,32 @@ mod tests {
                 .and_then(Value::as_str),
             Some("UNAUTHORIZED")
         );
+    }
+
+    #[test]
+    fn restored_http_gateway_session_rebinds_the_gateway_window() {
+        let state = test_state("restored-session-binding");
+        let payload = AuthSessionPayload {
+            command: "auth_restore_session".to_string(),
+            status: "restored".to_string(),
+            actor_id: Some("actor-http-gateway-test".to_string()),
+            ptid: Some("ptid:http-gateway-test".to_string()),
+            name: None,
+            email: None,
+            avatar_url: None,
+            avatar_local_path: None,
+            login_method: Some("password".to_string()),
+        };
+
+        bind_http_gateway_session(&state, &payload);
+
+        let session = state
+            .sessions
+            .get("http-gateway")
+            .expect("restored gateway session should be bound");
+        assert_eq!(session.actor.actor_id, "actor-http-gateway-test");
+        assert_eq!(session.actor.ptid, "ptid:http-gateway-test");
+        assert_eq!(session.jwt, "token-http-gateway-test");
     }
 
     #[test]

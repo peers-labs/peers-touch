@@ -3433,6 +3433,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   One hundred five focused Foundation tests and `git diff --check` pass.
   AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending checkpoint deployment and
   exact-source verification.
+- Checkpoint `726d60b3a290cb119aff52d799d909c22b10e996` was deployed
+  exact-source to profile `two`. Run
+  `20260829T221837893958Z-96c5aa4db5fcd50232dad4b2af6320b7`
+  kept the Station restart and current Browser tuple isolated, then failed
+  after the Browser process restart because the renderer reported a ready
+  identity while both local and Station capability-session readback returned
+  `authentication required`. The immutable result is `PARTIAL / UNPROVEN`;
+  cleanup and redaction passed. Browser session restore reused the native
+  `desktop-native` takeover identity and the HTTP Gateway restore branch did
+  not rebuild its `http-gateway` window-session binding, unlike the native
+  Tauri command. Session restore now accepts the caller's device type, the
+  Browser Gateway requests `desktop-browser`, and successful one-shot Browser
+  login and restore use one shared binding function. The focused HTTP Gateway
+  binding test, Rust compilation, 105 focused Foundation tests, and `git diff
+  --check` pass. AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending checkpoint
+  deployment and exact-source verification.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
