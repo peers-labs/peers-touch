@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `87d4a1d51` reached AS-F06 replay comparison in run `20260829T082413336824Z-03fecb99e765dafeebe53458ef456359`; explicit durable reload now publishes its source-bound delivery for independent recording and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `5b209dae2` crossed the AS-F06 replay-sequence assertion in run `20260829T084348162275Z-9b1c6a0eca3e4218374db827330366f9`; the current first failure is the outage-time retry action not advancing the recovery epoch before timeout; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3025,6 +3025,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   evidence recorder. The local correction publishes that same source delivery
   without making it a second state input. Cleanup failure remains open for the
   next source-backed run. AS-F06 and G-F remain `UNPROVEN`.
+- Checkpoint `5b209dae2dd347dbfa2f0ffa62a435001c79c873` was deployed
+  exact-source to profile `two`. Run
+  `20260829T084348162275Z-9b1c6a0eca3e4218374db827330366f9`
+  crossed the prior replay-sequence failure and stopped at Browser AS-F06 while
+  waiting for the explicit retry action to advance `recoveryEpoch`; outer
+  cleanup and redaction passed. The owning runtime's periodic reconciliation
+  retried `RECOVERY_FAILED` records automatically, racing the explicit recovery
+  action even though the product state contract makes retry and durable reload
+  user-owned exits from that phase. The local correction keeps failed records
+  quiescent during same-session periodic reconciliation while preserving
+  bootstrap recovery after process restart. Desktop check and all 393 tests
+  pass; exact-source runtime proof is pending. AS-F06 and G-F remain
+  `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

@@ -499,6 +499,9 @@ function consumeLiveEvent(payload: AgentTurnStreamEventPayload): void {
 
 function reconcileActiveTurns(reason: string): void {
   for (const record of Object.values(activeRecords())) {
+    if (record.phase === 'RECOVERY_FAILED' && reason !== 'bootstrap') {
+      continue;
+    }
     recoverTurn(record, reason);
   }
 }
