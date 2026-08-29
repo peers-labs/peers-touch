@@ -5028,6 +5028,14 @@ func (s *TurnService) cancelTurnWithResult(
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 				Where("id = ?", turnID).
 				First(&turn).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errcode.New(
+						errcode.AgentNotFound,
+						http.StatusNotFound,
+						"turn not found",
+						err,
+					)
+				}
 				return err
 			}
 			if expectedPtid != "" {

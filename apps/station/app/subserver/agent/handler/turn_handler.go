@@ -564,9 +564,7 @@ func (h *TurnHandlers) HandleCancelTurn(ctx context.Context, req server.Request,
 	}
 	status, err := h.turnService.RequestCancelTurn(ctx, subjectActorID(ctx), input.TurnID)
 	if err != nil {
-		resp.WriteHeader(404)
-		_, _ = resp.Write([]byte(`{"ok":false,"error":"turn not found"}`))
-		return nil
+		return toHandlerError(err)
 	}
 	out, _ := json.Marshal(map[string]any{"ok": true, "turn_id": input.TurnID, "status": status})
 	_, _ = resp.Write(out)

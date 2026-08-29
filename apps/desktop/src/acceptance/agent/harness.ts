@@ -5533,6 +5533,23 @@ export function installAcceptanceHarness(): void {
           await useChatStore.getState().selectSession(conversation.conversation_id);
 
           const startedAt = performance.now();
+          let cancellationRequested = false;
+          let resolveCancellation!: (value: {
+            turnId: string;
+            result: Promise<{
+              response: Awaited<ReturnType<typeof api.cancelAgentTurn>> | null;
+              error: unknown;
+            }>;
+          }) => void;
+          const cancellation = new Promise<{
+            turnId: string;
+            result: Promise<{
+              response: Awaited<ReturnType<typeof api.cancelAgentTurn>> | null;
+              error: unknown;
+            }>;
+          }>((resolve) => {
+            resolveCancellation = resolve;
+          });
           const observed = startObservedFoundationTurn({
             conversationId: conversation.conversation_id,
             agentId,
@@ -5544,25 +5561,38 @@ export function installAcceptanceHarness(): void {
             thinkingMode: 'disabled',
             clientCapabilitySessionId:
               capabilitySessions.selectedStationSession?.session_id,
+            onEvent: (event, events) => {
+              if (cancellationRequested || event.event !== 'text') return;
+              const turnId = observedTurnId(events);
+              if (!turnId) return;
+              cancellationRequested = true;
+              preparedTurnId = turnId;
+              const result = api.cancelAgentTurn(turnId).then(
+                (response) => ({ response, error: null }),
+                (error: unknown) => ({ response: null, error }),
+              );
+              resolveCancellation({ turnId, result });
+            },
           });
-          await observed.firstEvent;
-          const textDeadline = Date.now() + 60_000;
-          while (
-            !observed.events.some((event) => event.event === 'text')
-            && Date.now() < textDeadline
-          ) {
-            await new Promise((resolve) => setTimeout(resolve, 50));
+          const cancellationAttempt = await Promise.race([
+            cancellation,
+            observed.result.then((result) => {
+              throw new Error(
+                result.error || 'agent.acceptance.progressiveTextMissing',
+              );
+            }),
+          ]);
+          preparedTurnId = cancellationAttempt.turnId;
+          const cancellationResult = await cancellationAttempt.result;
+          if (cancellationResult.error) throw cancellationResult.error;
+          const activeCancellation = cancellationResult.response;
+          if (!activeCancellation) {
+            throw new Error('agent.acceptance.foundationActiveTurnCancelMissing');
           }
-          if (!observed.events.some((event) => event.event === 'text')) {
+          if (String(activeCancellation.status).toLowerCase() !== 'cancelled') {
             observed.controller.abort();
-            throw new Error('agent.acceptance.progressiveTextMissing');
+            throw new Error('agent.acceptance.foundationActiveTurnCancelRejected');
           }
-          preparedTurnId = observedTurnId(observed.events);
-          if (!preparedTurnId) {
-            observed.controller.abort();
-            throw new Error('agent.acceptance.foundationTurnIdMissing');
-          }
-          await api.cancelAgentTurn(preparedTurnId);
           const result = await observed.result;
           turnDurationMs = performance.now() - startedAt;
           const normalizedEvents = result.events

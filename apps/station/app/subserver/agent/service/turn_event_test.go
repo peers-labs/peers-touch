@@ -1048,6 +1048,25 @@ func TestRequestCancelWaitingToolPersistsCancelledEvent(t *testing.T) {
 	}
 }
 
+func TestRequestCancelMissingTurnReturnsTypedNotFound(t *testing.T) {
+	openConversationAuthorityDB(t, "cancel_missing_turn")
+	svc := TurnService{convService: NewConversationService()}
+
+	_, err := svc.RequestCancelTurn(
+		context.Background(),
+		"actor_1",
+		"missing_turn",
+	)
+	var businessError *errcode.BizError
+	if !errors.As(err, &businessError) {
+		t.Fatalf("cancel missing turn error = %T %v, want BizError", err, err)
+	}
+	if businessError.Code != errcode.AgentNotFound ||
+		businessError.HTTPStatus != http.StatusNotFound {
+		t.Fatalf("cancel missing turn error = %+v, want typed not found", businessError)
+	}
+}
+
 func TestRequestCancelDoesNotSignalBeforeDurableCommit(t *testing.T) {
 	db := openConversationAuthorityDB(t, "cancel_crash_order")
 	now := time.Now()

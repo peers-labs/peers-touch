@@ -323,11 +323,8 @@ pub fn cancel_agent_turn(turn_id: &str, token: &str) -> AppResult<StubPayload> {
         None,
         Some(&json!({ "turn_id": turn_id })),
     ) {
-        Ok(_) => success_payload(
-            "agent_cancel_turn",
-            json!({ "turn_id": turn_id, "status": "cancelling" }),
-        ),
-        Err(error) => error.into_app_result("Failed to cancel Agent turn"),
+        Ok(result) => success_payload("agent_cancel_turn", result),
+        Err(error) => error.into_app_result("agent.turnCancelFailed"),
     }
 }
 

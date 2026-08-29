@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `3fbbc5268` exhausted three AS-F06 preparation retries and disproved probabilistic reprovisioning; the Harness now linearizes active-record validation, cursor freeze, handoff publication, and transport disconnect in one non-yielding event callback, with complete evidence published only after pending observations drain; proof remains UNPROVEN pending checkpoint deployment | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `e8ce6e425` crossed AS-F06 preparation and exposed post-disconnect buffered Browser delivery; checkpoint `88bcd7264` fixed that boundary but the next exact-source run first failed at AS-F03 cancellation before reaching AS-F06; callback-bound cancel and authoritative typed cancellation propagation are locally verified; proof remains UNPROVEN pending deployment | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3250,6 +3250,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   sequence `1` boundary and replay requests `afterSequence: 1`. The strict
   replay oracle remains unchanged. AS-F06 and G-F remain `UNPROVEN` pending
   another exact-source run.
+- Checkpoint `88bcd726466f728b09c0d5f32fddc997a40b16fc` was deployed
+  exact-source to profile `two`. Run
+  `20260829T170040764634Z-f27353434f9dd45826422b2bada42926`
+  stopped earlier at Browser AS-F03 `zh-CN / sample-001` when the Harness
+  polled after the first text frame and the production cancel request returned
+  the generic Desktop error `Failed to cancel Agent turn`; exact-source
+  attestation, cleanup, and redaction passed. Reconciliation found two related
+  defects: the polling interval left a provider-terminal race, and the
+  Station/Desktop cancellation adapters erased the authoritative outcome.
+  AS-F03 now initiates exactly one production cancel request synchronously from
+  the first text callback. Station maps a genuinely missing/foreign Turn to
+  typed `AGENT_4004` while preserving internal persistence failures, and
+  Desktop Rust returns the Station-authored terminal status rather than
+  fabricating `cancelling`. Scoped Station tests, Desktop check/tests, Tauri
+  library check, 125 focused Foundation tests, and `git diff --check` pass.
+  AS-F03, AS-F06, and G-F remain `UNPROVEN` pending the next exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

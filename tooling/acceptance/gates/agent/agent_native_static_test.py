@@ -370,6 +370,18 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "max_tool_calls: FOUNDATION_LOOP_MAX_TOOL_CALLS",
             self.source,
         )
+
+    def test_cancel_turn_preserves_station_terminal_status(self) -> None:
+        agent_turn = DESKTOP_AGENT_TURN.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'Ok(result) => success_payload("agent_cancel_turn", result)',
+            agent_turn,
+        )
+        self.assertNotIn(
+            'json!({ "turn_id": turn_id, "status": "cancelling" })',
+            agent_turn,
+        )
         self.assertIn("FOUNDATION_LOOP_MAX_TOOL_CALLS = 2", self.source)
         self.assertIn("max_tool_calls_exhausted", self.source)
 
@@ -447,6 +459,20 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("await api.cancelAgentTurn(activeTurnId)", source)
         self.assertIn("event.event === 'cancelled'", source)
         self.assertIn("preparedTurnId = activeTurnId", source)
+
+    def test_group_one_progressive_cancel_starts_in_text_callback(self) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        start = source.index("if (cell === 'AS-F03')")
+        end = source.index("if (cell === 'AS-F04')", start)
+        scenario = source[start:end]
+
+        self.assertIn("onEvent: (event, events)", scenario)
+        self.assertIn("event.event !== 'text'", scenario)
+        self.assertIn("api.cancelAgentTurn(turnId)", scenario)
+        self.assertIn("resolveCancellation({ turnId, result })", scenario)
+        self.assertIn("toLowerCase() !== 'cancelled'", scenario)
+        self.assertNotIn("setTimeout(resolve, 50)", scenario)
+        self.assertNotIn("disconnectTransport()", scenario)
 
     def test_group_one_controller_uses_manifest_bound_client_modes(self) -> None:
         source = FOUNDATION_RUNTIME_CLIENT.read_text(encoding="utf-8")
