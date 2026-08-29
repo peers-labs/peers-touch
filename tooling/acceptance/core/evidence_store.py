@@ -70,6 +70,52 @@ def _redaction_values(
     return tuple(values)
 
 
+def _redact_secret_scan(
+    value: Mapping[str, Any],
+    secret_values: tuple[str, ...],
+) -> dict[str, Any]:
+    expected_fields = {
+        "status",
+        "scannedHighEntropyValues",
+        "scannedCredentialValues",
+        "redactedArtifacts",
+    }
+    if set(value) != expected_fields:
+        raise EvidenceManifestInvalid(
+            "secretScan must contain only the canonical scan fields"
+        )
+    status = value.get("status")
+    high_entropy_count = value.get("scannedHighEntropyValues")
+    credential_count = value.get("scannedCredentialValues")
+    redacted_artifacts = value.get("redactedArtifacts")
+    if status not in {"passed", "failed"}:
+        raise EvidenceManifestInvalid("secretScan status is invalid")
+    for field, count in (
+        ("scannedHighEntropyValues", high_entropy_count),
+        ("scannedCredentialValues", credential_count),
+    ):
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise EvidenceManifestInvalid(
+                f"secretScan {field} must be a non-negative integer"
+            )
+    if (
+        not isinstance(redacted_artifacts, list)
+        or any(not isinstance(item, str) for item in redacted_artifacts)
+    ):
+        raise EvidenceManifestInvalid(
+            "secretScan redactedArtifacts must be a string array"
+        )
+    return {
+        "status": status,
+        "scannedHighEntropyValues": high_entropy_count,
+        "scannedCredentialValues": credential_count,
+        "redactedArtifacts": redact_value_with_values(
+            redacted_artifacts,
+            secret_values,
+        ),
+    }
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
@@ -1213,13 +1259,16 @@ class RunHandle:
                 raise EvidenceConflict("run can only be finalized once")
             self.state = "FINALIZING"
             completed_at = _utc_now()
-            redacted_result = redact_value(dict(result))
-            secret_scan = result.get("secretScan")
-            if isinstance(secret_scan, Mapping):
-                redacted_result["secretScan"] = {
-                    key: redact_value(value)
-                    for key, value in secret_scan.items()
-                }
+            raw_result = dict(result)
+            secret_scan = raw_result.pop("secretScan", None)
+            redacted_secret_scan = (
+                _redact_secret_scan(secret_scan, self._redaction_values)
+                if isinstance(secret_scan, Mapping)
+                else None
+            )
+            if secret_scan is not None and redacted_secret_scan is None:
+                raise EvidenceManifestInvalid("secretScan must be an object")
+            redacted_result = redact_value(raw_result)
             manifest = {
                 "artifactKind": "acceptance-run-manifest",
                 "schemaVersion": 1,
@@ -1250,6 +1299,17 @@ class RunHandle:
                 self._redaction_values,
             )
             manifest = json.loads(encoded)
+            if redacted_secret_scan is not None:
+                manifest["result"]["secretScan"] = redacted_secret_scan
+                encoded = (
+                    json.dumps(
+                        manifest,
+                        indent=2,
+                        sort_keys=True,
+                        default=str,
+                    )
+                    + "\n"
+                ).encode("utf-8")
             target = self.run_dir / "manifest.json"
             _atomic_write(target, encoded, path_role="run-manifest")
             self._manifest_ref = ArtifactRef(
