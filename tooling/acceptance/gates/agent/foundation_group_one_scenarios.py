@@ -976,6 +976,7 @@ def evaluate_as_f06(
             and recovery_failure.get("activeFailureObserved") is True
             and recovery_failure.get("expectedActorPtidHash")
             == recovery_failure.get("observedActorPtidHash")
+            and recovery_failure.get("sessionActorMatches") is True
             and recovery_failure.get("expectedTurnId")
             == recovery_failure.get("observedTurnId")
             and recovery_failure.get("expectedStreamId")

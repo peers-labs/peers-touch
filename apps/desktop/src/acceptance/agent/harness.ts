@@ -2541,11 +2541,15 @@ async function observeFoundationRecoveryFailure(
     || useSessionStore.getState().currentUser?.actorId.trim()
     || '';
   const active = useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
+  const recoveryActorPtid = active?.actorId ?? '';
   const base = {
     expectedActorPtidHash: handoff.actorPtidHash,
-    observedActorPtidHash: authenticatedPtid
-      ? await sha256Hex(authenticatedPtid)
+    observedActorPtidHash: recoveryActorPtid
+      ? await sha256Hex(recoveryActorPtid)
       : '',
+    sessionProjectionAvailable: Boolean(authenticatedPtid),
+    sessionActorMatches:
+      !authenticatedPtid || authenticatedPtid === recoveryActorPtid,
     expectedTurnId: handoff.turnId,
     observedTurnId: active?.turnId ?? '',
     expectedStreamId: handoff.streamId,
@@ -2571,8 +2575,8 @@ async function observeFoundationRecoveryFailure(
     return evidence;
   }
   if (
-    !authenticatedPtid
-    || active.actorId !== authenticatedPtid
+    active.actorId !== handoff.actorPtid
+    || (authenticatedPtid && active.actorId !== authenticatedPtid)
     || active.turnId !== handoff.turnId
     || active.streamId !== handoff.streamId
     || active.streamGeneration !== handoff.streamGeneration
@@ -2653,8 +2657,8 @@ async function exerciseFoundationDurableReload(
   const active = useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
   if (
     !active
-    || !authenticatedPtid
-    || active.actorId !== authenticatedPtid
+    || active.actorId !== handoff.actorPtid
+    || (authenticatedPtid && active.actorId !== authenticatedPtid)
     || active.turnId !== handoff.turnId
     || active.streamId !== handoff.streamId
     || active.streamGeneration !== handoff.streamGeneration

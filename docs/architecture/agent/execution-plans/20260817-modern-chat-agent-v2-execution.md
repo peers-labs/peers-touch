@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `648d818b5` isolated each AS-F06 outage cycle, and run `20260829T044956654767Z-0460304fe03b3e35ef52ba44baddd08f` exposed an unpersisted recovery identity mismatch; the producer now fails at that primary proof and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `af8fc11dc` exposed that outage-time session projection loss was incorrectly treated as recovery identity loss in run `20260829T050459651702Z-43df5f11c2e7611a8e4ad1edc1084ca0`; recovery identity is now verified from its durable PTID-fenced record and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2888,6 +2888,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   requires empty blocker plus an observed retry before Station restart. This
   preserves fail-closed ordering and will expose the underlying identity fact
   directly on the next exact-source run. AS-F06 and G-F remain `UNPROVEN`.
+- Checkpoint `af8fc11dc697995fcd07e1f29e0570325088ad64` was deployed
+  exact-source to profile `two`. Run
+  `20260829T050459651702Z-43df5f11c2e7611a8e4ad1edc1084ca0`
+  failed at the newly exposed Browser AS-F06 primary blocker
+  `AS_F06_ACTIVE_RECOVERY_IDENTITY_MISMATCH`; cleanup passed. The captured
+  recovery record matched the expected Turn, stream, generation, and
+  `RECOVERY_FAILED` phase, while only the transient `sessionStore.currentUser`
+  projection was absent during Station outage. The local correction verifies
+  actor ownership from the durable PTID-fenced recovery record and additionally
+  requires any available session projection to match; durable reload follows
+  the same ownership rule. The independent oracle now requires the explicit
+  session-match fact. AS-F06 and G-F remain `UNPROVEN` pending another
+  exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

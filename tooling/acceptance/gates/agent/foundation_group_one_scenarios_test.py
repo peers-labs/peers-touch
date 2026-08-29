@@ -344,6 +344,8 @@ def valid_as_f06_capture(
             "activeFailureObserved": True,
             "expectedActorPtidHash": "b" * 64,
             "observedActorPtidHash": "b" * 64,
+            "sessionProjectionAvailable": False,
+            "sessionActorMatches": True,
             "expectedTurnId": "turn-1",
             "observedTurnId": "turn-1",
             "expectedStreamId": "stream-1",
@@ -686,6 +688,7 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
     ) -> None:
         for key, value in (
             ("observedActorPtidHash", "e" * 64),
+            ("sessionActorMatches", False),
             ("observedStreamId", "stream-forged"),
             ("observedStreamGeneration", 8),
         ):
