@@ -288,7 +288,13 @@ def configure_station(client: TauriSession, station_url: str) -> None:
 
 
 def enter_chat_page(client: TauriSession) -> None:
-    if client.get_current_url().endswith("#/chat"):
+    def chat_surface_ready(driver: Any) -> bool:
+        return (
+            driver.current_url.endswith("#/chat")
+            and bool(driver.find_elements(By.CSS_SELECTOR, "[data-social-chat-layout]"))
+        )
+
+    if chat_surface_ready(client.driver):
         return
     WebDriverWait(client.driver, 20).until(
         lambda driver: driver.find_element(
@@ -298,7 +304,7 @@ def enter_chat_page(client: TauriSession) -> None:
         )
     ).click()
     WebDriverWait(client.driver, 20).until(
-        lambda driver: driver.current_url.endswith("#/chat")
+        chat_surface_ready
     )
 
 
