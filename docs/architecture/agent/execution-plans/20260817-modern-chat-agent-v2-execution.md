@@ -2744,6 +2744,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `TurnAttempt.usage` field. Cleanup passed. The local producer correction now
   reads the last Attempt's generated usage contract; AS-F03 and G-F remain
   `UNPROVEN` pending another exact-source run.
+- Checkpoint `a845fe02139774aec735d807ece8e98b9b445847` was deployed
+  exact-source to profile `two`. Run
+  `20260829T015708712723Z-d7c21cf6c5e8850880998066a7e22485`
+  failed at Browser AS-F02 `deletePolicyEnforced`; cleanup passed. Station
+  evidence showed the active Turn remained non-terminal when permanent delete
+  was attempted, but its provider transition advanced the conversation version
+  after the queue snapshot, so the probe observed `AGENT_4009` before reaching
+  `ACTIVE_DEPENDENCY`. The local producer now performs a bounded
+  compare-and-refresh retry only for that explicit version conflict; all other
+  errors remain fail-closed. AS-F02, AS-F03, and G-F remain `UNPROVEN` pending
+  another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

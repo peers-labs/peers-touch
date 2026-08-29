@@ -481,6 +481,12 @@ function observedErrorCode(error: unknown): string {
     if (serializedDetails.includes('ACTIVE_DEPENDENCY')) {
       return 'ACTIVE_DEPENDENCY';
     }
+    if (
+      serializedDetails.includes('AGENT_4009')
+      || (error as { code?: string }).code === 'CONFLICT'
+    ) {
+      return 'VERSION_CONFLICT';
+    }
     if (serializedDetails.includes('AGENT_4001')) {
       return 'INVALID_REQUEST';
     }
@@ -493,6 +499,9 @@ function observedErrorCode(error: unknown): string {
     return 'ADMISSION_QUEUE_FULL';
   }
   if (message.includes('ACTIVE_DEPENDENCY')) return 'ACTIVE_DEPENDENCY';
+  if (message.includes('AGENT_4009') || message.includes('CONFLICT')) {
+    return 'VERSION_CONFLICT';
+  }
   if (message.includes('AGENT_4001') || message.includes('required')) {
     return 'INVALID_REQUEST';
   }
@@ -503,6 +512,31 @@ function observedErrorCode(error: unknown): string {
     return 'CONTEXT_ATTACHMENT_REJECTED';
   }
   return message;
+}
+
+async function observeFoundationActiveDependency(
+  conversationId: string,
+  initialVersion: number,
+): Promise<string> {
+  let expectedVersion = initialVersion;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await api.archiveAgentConversation(
+        conversationId,
+        expectedVersion,
+        true,
+      );
+      return '';
+    } catch (error) {
+      const code = observedErrorCode(error);
+      if (code === 'ACTIVE_DEPENDENCY') return code;
+      if (code !== 'VERSION_CONFLICT') return code;
+      expectedVersion = (
+        await api.getAgentConversation(conversationId)
+      ).version;
+    }
+  }
+  return 'VERSION_CONFLICT';
 }
 
 function selectedAgent() {
@@ -4986,17 +5020,10 @@ export function installAcceptanceHarness(): void {
         }
         await useChatStore.getState().syncTurnQueue(conversation.conversation_id);
         const queueReceiver = foundationDomSnapshot();
-        const deleteVersion = queueAtCapacity.conversation_version;
-        let activeDependencyError = '';
-        try {
-          await api.archiveAgentConversation(
-            conversation.conversation_id,
-            deleteVersion,
-            true,
-          );
-        } catch (error) {
-          activeDependencyError = observedErrorCode(error);
-        }
+        const activeDependencyError = await observeFoundationActiveDependency(
+          conversation.conversation_id,
+          queueAtCapacity.conversation_version,
+        );
 
         let cancellation: Awaited<ReturnType<typeof api.cancelQueuedAgentTurn>>
           | null = null;
