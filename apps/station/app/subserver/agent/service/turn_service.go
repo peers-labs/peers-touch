@@ -36,6 +36,8 @@
 //   and retried (turn_retried).
 // 2026-08-28 — Route every post-admission event and context preparation
 //   failure through the durable Turn lifecycle settlement authority.
+// 2026-08-29 — Allow the current execution generation to finalize usage after
+//   durable user cancellation without admitting superseded terminal writes.
 
 package service
 
@@ -4214,10 +4216,25 @@ func (s *TurnService) persistAttemptUsage(
 			err,
 		)
 	}
-	result := db.WithContext(ctx).
+	attemptUpdate := db.WithContext(ctx).
 		Model(&persistence.TurnAttempt{}).
-		Where("id = ? AND turn_id = ? AND ended_at IS NULL", attemptID, turnID).
-		Update("usage_json", encoded)
+		Where("id = ? AND turn_id = ?", attemptID, turnID)
+	unlockOwnership := func() {}
+	if _, executionOwned := ctx.Value(turnExecutionOwnershipContextKey{}).(turnExecutionOwnership); executionOwned {
+		unlockOwnership, err = s.lockTurnExecutionOwnership(ctx, turnID)
+		if err != nil {
+			return err
+		}
+		attemptUpdate = attemptUpdate.Where(
+			"ended_at IS NULL OR (status = ? AND ended_at IS NOT NULL)",
+			string(domain.TurnStatusCancelled),
+		)
+	} else {
+		attemptUpdate = attemptUpdate.Where("ended_at IS NULL")
+	}
+	defer unlockOwnership()
+
+	result := attemptUpdate.Update("usage_json", encoded)
 	if result.Error != nil {
 		return errcode.New(
 			errcode.AgentInternal,

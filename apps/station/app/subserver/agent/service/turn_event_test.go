@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -1127,5 +1128,144 @@ func TestRequestCancelReturnsDurableTerminalWinner(t *testing.T) {
 	}
 	if cancelledEvents != 0 {
 		t.Fatalf("completed winner produced %d cancellation events", cancelledEvents)
+	}
+}
+
+func TestRequestCancelAllowsCurrentExecutionToFinalizeUsageAndTrace(t *testing.T) {
+	db := openConversationAuthorityDB(t, "cancelled_execution_usage_trace")
+	if err := db.AutoMigrate(
+		&persistence.ToolCall{},
+		&persistence.ToolBatch{},
+		&persistence.TurnTrace{},
+	); err != nil {
+		t.Fatalf("migrate cancellation finalization dependencies: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Conversation{
+		ID: "conv_cancel_usage", AgentID: "agent_1", Ptid: "actor_1",
+		Title: "Cancelled usage", Status: "active", CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&persistence.AgentTurn{
+		ID: "turn_cancel_usage", ConversationID: "conv_cancel_usage",
+		AgentID: "agent_1", Status: string(domain.TurnStatusRunning), StartedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&persistence.TurnAttempt{
+		ID: "attempt_cancel_usage", TurnID: "turn_cancel_usage", AttemptIndex: 1,
+		Status: string(domain.TurnStatusRunning), StartedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	svc := TurnService{convService: NewConversationService()}
+	executionCtx, release := svc.RegisterTurn(context.Background(), "turn_cancel_usage")
+	defer release()
+
+	status, err := svc.RequestCancelTurn(context.Background(), "actor_1", "turn_cancel_usage")
+	if err != nil {
+		t.Fatalf("request cancellation: %v", err)
+	}
+	if status != string(domain.TurnStatusCancelled) {
+		t.Fatalf("cancel status = %q, want cancelled", status)
+	}
+	if !errors.Is(context.Cause(executionCtx), errExplicitUserCancellation) {
+		t.Fatalf("execution cancellation cause = %v", context.Cause(executionCtx))
+	}
+
+	trace := &domain.TurnTrace{
+		TraceID: "trace_cancel_usage",
+		TurnID:  "turn_cancel_usage",
+		ProviderCalls: []domain.ProviderCallRecord{{
+			Provider:     "provider_1",
+			Model:        "model_1",
+			InputTokens:  13,
+			OutputTokens: 5,
+		}},
+	}
+	terminalCtx := context.WithoutCancel(executionCtx)
+	if err := svc.persistAttemptUsage(
+		terminalCtx,
+		"turn_cancel_usage",
+		"attempt_cancel_usage",
+		trace,
+	); err != nil {
+		t.Fatalf("finalize cancelled attempt usage: %v", err)
+	}
+	if err := svc.saveTurnTrace(terminalCtx, trace); err != nil {
+		t.Fatalf("persist cancelled turn trace: %v", err)
+	}
+
+	var turn persistence.AgentTurn
+	if err := db.First(&turn, "id = ?", "turn_cancel_usage").Error; err != nil {
+		t.Fatal(err)
+	}
+	if turn.Status != string(domain.TurnStatusCancelled) || turn.EndedAt == nil {
+		t.Fatalf("turn cancellation was not durable: %+v", turn)
+	}
+	var attempt persistence.TurnAttempt
+	if err := db.First(&attempt, "id = ?", "attempt_cancel_usage").Error; err != nil {
+		t.Fatal(err)
+	}
+	if attempt.Status != string(domain.TurnStatusCancelled) || attempt.EndedAt == nil {
+		t.Fatalf("attempt cancellation was not durable: %+v", attempt)
+	}
+	var usage domain.TurnUsage
+	if err := json.Unmarshal(attempt.UsageJSON, &usage); err != nil {
+		t.Fatalf("decode cancelled attempt usage: %v", err)
+	}
+	if usage.InputTokens != 13 || usage.OutputTokens != 5 || usage.ProviderCallCount != 1 {
+		t.Fatalf("cancelled attempt usage = %+v", usage)
+	}
+	var cancelledEvents int64
+	if err := db.Model(&persistence.TurnEvent{}).
+		Where(
+			"turn_id = ? AND attempt_id = ? AND event_type = ?",
+			turn.ID,
+			attempt.ID,
+			"cancelled",
+		).
+		Count(&cancelledEvents).Error; err != nil {
+		t.Fatal(err)
+	}
+	if cancelledEvents != 1 {
+		t.Fatalf("cancelled event count = %d, want 1", cancelledEvents)
+	}
+	var traces int64
+	if err := db.Model(&persistence.TurnTrace{}).
+		Where("turn_id = ?", turn.ID).
+		Count(&traces).Error; err != nil {
+		t.Fatal(err)
+	}
+	if traces != 1 {
+		t.Fatalf("turn trace count = %d, want 1", traces)
+	}
+
+	_, releaseReplacement := svc.RegisterTurn(context.Background(), turn.ID)
+	defer releaseReplacement()
+	staleTrace := &domain.TurnTrace{
+		TurnID: turn.ID,
+		ProviderCalls: []domain.ProviderCallRecord{{
+			InputTokens: 999,
+		}},
+	}
+	if err := svc.persistAttemptUsage(
+		terminalCtx,
+		turn.ID,
+		attempt.ID,
+		staleTrace,
+	); !errors.Is(err, errTurnExecutionSuperseded) {
+		t.Fatalf("superseded usage finalization error = %v, want generation fence", err)
+	}
+	if err := db.First(&attempt, "id = ?", attempt.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(attempt.UsageJSON, &usage); err != nil {
+		t.Fatalf("decode usage after superseded write: %v", err)
+	}
+	if usage.InputTokens != 13 {
+		t.Fatalf("superseded execution overwrote usage: %+v", usage)
 	}
 }

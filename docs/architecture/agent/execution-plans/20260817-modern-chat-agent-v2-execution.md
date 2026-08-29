@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: AS-F01 through AS-F05 source-matched diagnostic pass; AS-F06 implementation checkpoint is locally verified and awaits exact-source runtime proof | W8a |
+| G-F Complete Foundation Gate | in progress: AS-F06 implementation checkpoint `1aebfd3bd` is deployed exact-source; run `20260829T005514635679Z-15d1bb8f377ed2e1101bf019636808ee` regressed at Browser AS-F02 because the durably cancelled active Turn had no trace; cleanup passed and proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2696,6 +2696,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   and `git diff --check`. This is implementation evidence only: AS-F06 and G-F
   remain `UNPROVEN` until the checkpoint is committed, deployed to profile
   `two`, and the source-matched Gate advances past AS-F06.
+- Commit `1aebfd3bd4d8d86faeeaf0e1bc3dd62db4d62b30` was deployed to profile
+  `two` with clean source and Station workspace digests. The exact-source run
+  `20260829T005514635679Z-15d1bb8f377ed2e1101bf019636808ee`
+  stopped at `foundation-browser-direct / AS-F02 / en / single /
+  sample-001`: the active Turn was durably `cancelled`, its Attempt and 83
+  ordered events were present, and cleanup passed, but
+  `agent_turn_traces` had no row for that Turn and the production trace API
+  returned `404`. Two completed sibling Turns from the same run retained
+  readable traces, excluding a general trace query or ownership failure.
+  Root-cause analysis found that durable cancellation correctly ended the
+  Attempt before signalling its execution, after which the execution-owned
+  usage checkpoint rejected the terminal Attempt and returned before saving
+  its trace. The local fix permits only the current execution generation to
+  finalize usage on that same cancelled Attempt and rejects a superseded
+  generation. Agent/OSS package tests, the focused cancellation race tests, Go
+  style, and `git diff --check` pass. This remains implementation evidence:
+  AS-F02, AS-F06, and G-F are `UNPROVEN` until a new exact-source deployment
+  and Gate run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
