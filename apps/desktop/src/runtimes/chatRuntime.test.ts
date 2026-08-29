@@ -384,6 +384,8 @@ describe('chatRuntime Agent turn recovery', () => {
   });
 
   it('reloads the Station Turn snapshot from the durable replay path', async () => {
+    const observed: unknown[] = [];
+    eventBus.subscribe(EVENT.AGENT_TURN_STREAM_EVENT, (payload) => observed.push(payload));
     mocks.readValue.mockResolvedValueOnce({
       'conversation-1': activeTurn({
         phase: 'RECOVERY_FAILED',
@@ -425,6 +427,14 @@ describe('chatRuntime Agent turn recovery', () => {
       expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
     });
     expect(mocks.replayControllers[0].signal.aborted).toBe(true);
+    expect(observed).toContainEqual(expect.objectContaining({
+      deliveryOnly: true,
+      sourceDelivery: expect.objectContaining({
+        transport: 'station-sse',
+        turnId: 'turn-1',
+        sequence: 5,
+      }),
+    }));
     expect(result).toMatchObject({
       source: 'station-snapshot-reconcile',
       actorId: 'ptid:person:alice',

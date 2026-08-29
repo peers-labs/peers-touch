@@ -561,6 +561,11 @@ export async function reloadAgentTurnSnapshot(
       data: snapshot.event.data,
       timestampMs: Date.now(),
     };
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      ...payload,
+      sourceDelivery: snapshot.sourceDelivery,
+      deliveryOnly: true,
+    } as SourceBoundReplayDelivery);
     const reduction = useAgentTurnRecoveryStore
       .getState()
       .consume(current.actorId, payload);

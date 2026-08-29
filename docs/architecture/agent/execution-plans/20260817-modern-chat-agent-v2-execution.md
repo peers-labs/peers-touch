@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `dfc7ee6f9` confirmed automatic recovery consumes the active record after client restart in run `20260829T080520107058Z-238e25cc3794f452b3502748be51d02a`; terminal reconciliation now persists message status before the client-restart proof and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `87d4a1d51` reached AS-F06 replay comparison in run `20260829T082413336824Z-03fecb99e765dafeebe53458ef456359`; explicit durable reload now publishes its source-bound delivery for independent recording and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3014,6 +3014,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   into the local message cache before clearing recovery state. The subsequent
   client restart must therefore reload the terminal projection without keeping
   a completed recovery record alive. AS-F06 and G-F remain `UNPROVEN`.
+- Checkpoint `87d4a1d513b56ff20bedc81641c37f415247ea58` was deployed
+  exact-source to profile `two`. Run
+  `20260829T082413336824Z-03fecb99e765dafeebe53458ef456359`
+  crossed terminal projection and failed at
+  `agent.acceptance.foundationF06ReplaySequencesMissing`; cleanup also failed
+  to archive the prepared conversation. The replay snapshot used by explicit
+  durable reload carried source-bound delivery metadata but, unlike automatic
+  replay, did not publish the observation-only delivery event consumed by the
+  evidence recorder. The local correction publishes that same source delivery
+  without making it a second state input. Cleanup failure remains open for the
+  next source-backed run. AS-F06 and G-F remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
