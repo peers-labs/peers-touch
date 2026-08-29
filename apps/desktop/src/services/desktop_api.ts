@@ -6050,6 +6050,7 @@ function isHttpGatewayMode() {
 
 export const AGENT_REPLAY_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000] as const;
 const AGENT_REPLAY_CATCHUP_TIMEOUT_MS = 30_000;
+export const AGENT_SSE_IDLE_TIMEOUT_MS = 30_000;
 const AGENT_REPLAY_CONTROL_EVENTS = new Set([
   'reconnecting',
   'replaying',
@@ -6090,7 +6091,17 @@ async function consumeAgentSSE(
   let buffer = '';
   let terminal = false;
   while (!signal.aborted) {
-    const { done, value } = await reader.read();
+    let timeout: ReturnType<typeof globalThis.setTimeout> | undefined;
+    const idleTimeout = new Promise<never>((_resolve, reject) => {
+      timeout = globalThis.setTimeout(() => {
+        reject(new Error('agent.error.streamIdleTimeout'));
+        void reader.cancel();
+      }, AGENT_SSE_IDLE_TIMEOUT_MS);
+    });
+    const { done, value } = await Promise.race([reader.read(), idleTimeout])
+      .finally(() => {
+        if (timeout !== undefined) globalThis.clearTimeout(timeout);
+      });
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     let boundary = buffer.indexOf('\n\n');

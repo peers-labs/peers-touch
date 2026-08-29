@@ -3352,6 +3352,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   prevents a different Turn's terminal from clearing the current record.
   AS-F02, AS-F06, and G-F remain `PARTIAL / UNPROVEN` pending focused
   verification, checkpoint deployment, and another exact-source run.
+- Checkpoint `e4261920d3defe35e763d1e07f6af17b27047131` was deployed
+  exact-source to profile `two`. Run
+  `20260829T194542519419Z-8f651e9683e0fbd11574820df699798c`
+  passed the Browser AS-F02 prefix and returned to AS-F06, where the recovery
+  remained connected to a pre-outage replay tail and did not reach
+  `RECOVERY_FAILED` within the bounded outage; cleanup and redaction passed.
+  Station emits SSE heartbeat bytes every 15 seconds, so the shared Browser SSE
+  reader now enforces a 30-second no-byte deadline. A dead live or replay tail
+  therefore enters the existing bounded retry/failure path instead of hanging
+  indefinitely. AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending checkpoint
+  deployment and exact-source verification.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

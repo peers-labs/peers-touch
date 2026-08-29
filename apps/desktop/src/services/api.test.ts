@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { create, toBinary } from '@bufbuild/protobuf'
 import {
   AGENT_REPLAY_RETRY_DELAYS_MS,
+  AGENT_SSE_IDLE_TIMEOUT_MS,
   api,
   classifyAgentTurnTerminalEvent,
   createAgentTurnSourceDelivery,
@@ -388,6 +389,51 @@ describe('api.startAgentTurnReplayStream', () => {
   it('keeps the Browser replay retry schedule aligned with the native transport', () => {
     expect(AGENT_REPLAY_RETRY_DELAYS_MS).toEqual([500, 1_000, 2_000, 4_000, 8_000])
     expect(AGENT_REPLAY_RETRY_DELAYS_MS.length + 1).toBe(6)
+  })
+
+  it('fails a Browser replay when the Station SSE tail stops producing heartbeats', async () => {
+    vi.useFakeTimers()
+    try {
+      const browserWindow = Object.assign(new EventTarget(), {
+        setTimeout: globalThis.setTimeout.bind(globalThis),
+        clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      })
+      vi.stubGlobal('window', browserWindow)
+      ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+        'http://127.0.0.1:3030'
+      mockFetch.mockImplementation(() => Promise.resolve(new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(
+              'event: catchup_done\ndata: {"turnId":"turn-1","conversationId":"conversation-1","seq":4}\n\n',
+            ))
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+      )))
+      const onError = vi.fn()
+
+      streamAgentTurnReplay(
+        {
+          conversation_id: 'conversation-1',
+          turn_id: 'turn-1',
+          after_seq: 4,
+        },
+        vi.fn(),
+        onError,
+        'ptid:person:owner',
+      )
+
+      await vi.advanceTimersByTimeAsync(
+        AGENT_SSE_IDLE_TIMEOUT_MS * (AGENT_REPLAY_RETRY_DELAYS_MS.length + 1)
+        + AGENT_REPLAY_RETRY_DELAYS_MS.reduce((total, delay) => total + delay, 0),
+      )
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'agent.error.streamIdleTimeout' }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('serializes the replay cursor with the canonical protojson field name', () => {
