@@ -28,7 +28,10 @@
 | L | The post-reload virtual timeline mounts only the viewport tail, leaving the terminal base message off-DOM even though it remains in the active conversation store. | High | Low | Rejected: the scroll container and every message row are absent, not merely the target row. |
 | M | The refreshed client is left on an unauthenticated or boot surface, so neither primary navigation nor the Chat page can mount. | High | Low | Pending post-refresh shell-state evidence. |
 | N | The authenticated shell mounts, but route restoration fails to expose the Chat navigation target or page host. | Medium | Low | Pending route/navigation/page-host evidence. |
-| O | WebKitGTK returns from `refresh()` before replacing the old document, so Harness readiness accepts the stale pre-refresh Harness and the real reload unmounts the shell afterward. | High | Low | Pending pre-refresh versus post-return `performance.timeOrigin` evidence. |
+| O | WebKitGTK returns from `refresh()` before replacing the old document, so Harness readiness accepts the stale pre-refresh Harness and the real reload unmounts the shell afterward. | High | Low | Rejected: `timeOrigin` changed before `refresh()` returned and the new document installed a new Harness. |
+| P | The new renderer remains in `resolvingSession` because session restoration does not settle after the Station restart. | High | Low | Pending Identity lifecycle phase evidence. |
+| Q | Session restoration fails and moves the new renderer to the account gate after the Station restart. | Medium | Low | Pending Identity lifecycle phase and session evidence. |
+| R | Identity reaches authenticated `ready`, but the ReadyView or critical runtime/page host fails to mount. | Medium | Low | Pending Identity lifecycle phase and shell evidence. |
 
 ## Log Evidence
 - Pre-fix Gate run `20260829T023644548452Z-8983d0bd277b21b69d93e766da7eaa4e` failed after 120 seconds.
@@ -58,6 +61,9 @@
 - Debug line 5 observed Bob immediately after `refresh()` and Harness readiness with the authenticated Chat shell still mounted: `chatLayoutCount=1`, `chatNavCount=1`, `primaryNavCount=11`, `loginSurfaceCount=0`.
 - Debug line 6 observed the same `tauri://localhost#/chat` URL 20 seconds later with `chatLayoutCount=0`, `chatNavCount=0`, `primaryNavCount=0`, and `loginSurfaceCount=0`. This rejects a stable unauthenticated surface (M) and a stable authenticated-shell route failure (N); the shell transitioned after it had already been accepted as ready.
 - The run preserved source/Station/runtime-cell/binary identity and completed both Gate cleanup and outer Provisioner cleanup. It remains `PARTIAL / UNPROVEN`.
+- Document-generation run `20260829T054430720564Z-10477eb87619b1b4cf39db4b225385e8` on commit `bab2f3ef3f20c16986dd0e611caf4a874c981555` reproduced the same reload timeout.
+- Debug lines 5-9 show Alice's `performance.timeOrigin` changed from `1787982484902` before refresh to `1787982965530` when `refresh()` returned. The new document reported navigation type `reload`, installed a new Acceptance Harness, and remained without primary navigation or Chat layout. This rejects hypothesis O.
+- The next observation must read the canonical Identity lifecycle and session projections from the Acceptance-only Harness to distinguish a stuck session restore (P), an auth-gate transition (Q), and an authenticated shell-mount failure (R).
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
@@ -76,8 +82,8 @@ The post-fix evidence confirms that the account-inheritance fix closes the
 original retry-wait projection split. Cleanup is still blocked because the
 focused Gate exposed a later Station-restart convergence failure. That boundary
 must be diagnosed independently before the debugging session can be confirmed
-fixed. The latest evidence localizes the remaining failure to an unstable
-post-refresh document/shell readiness boundary. The next instrumentation
-compares document generations before refresh, immediately after the WebDriver
-command returns, and after Harness readiness to determine whether the old
-Harness is being accepted before WebKitGTK completes document replacement.
+fixed. The document-generation evidence proves WebKitGTK completed document
+replacement before returning from `refresh()`, so stale Harness readiness is
+not the cause. The remaining boundary is inside the new renderer's
+Identity/Boot pipeline. The next instrumentation reads the canonical Identity
+phase and session projection without changing lifecycle behavior.
