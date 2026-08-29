@@ -81,6 +81,11 @@ interface ObservedFoundationTurn {
   result: Promise<ObservedFoundationTurnResult>;
 }
 
+interface FoundationCapabilityIsolation {
+  disabledBindingCount: number;
+  readyCapabilityCount: number;
+}
+
 interface FoundationF06Transition {
   phase: string;
   sequence: number;
@@ -137,6 +142,7 @@ interface FoundationF06Handoff {
   transitions: FoundationF06Transition[];
   replayedSequences: number[];
   replayDeliveries: FoundationF06ReplayDelivery[];
+  toolIsolation: FoundationCapabilityIsolation;
   recoveryFailure?: Record<string, unknown>;
   preparedAt: string;
 }
@@ -198,6 +204,9 @@ function readFoundationF06Handoffs(): Record<string, FoundationF06Handoff> {
         || !Array.isArray(value.transitions)
         || !Array.isArray(value.replayedSequences)
         || !Array.isArray(value.replayDeliveries)
+        || !value.toolIsolation
+        || !Number.isSafeInteger(value.toolIsolation.disabledBindingCount)
+        || !Number.isSafeInteger(value.toolIsolation.readyCapabilityCount)
         || typeof value.preparedAt !== 'string'
       ) {
         return {};
@@ -537,6 +546,27 @@ async function observeFoundationActiveDependency(
     }
   }
   return 'VERSION_CONFLICT';
+}
+
+async function deleteFoundationConversation(
+  conversationId: string,
+): Promise<string> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const conversation = await api.getAgentConversation(conversationId);
+      await api.archiveAgentConversation(
+        conversationId,
+        conversation.version,
+        true,
+      );
+      return '';
+    } catch (error) {
+      const code = observedErrorCode(error);
+      if (code.includes('AGENT_4004')) return code;
+      if (code !== 'VERSION_CONFLICT') throw error;
+    }
+  }
+  throw new Error('agent.acceptance.foundationConversationDeleteConflict');
 }
 
 function selectedAgent() {
@@ -1052,6 +1082,64 @@ async function updateFoundationCapabilityBindingEnabled(
     approvalPolicy: binding.approvalPolicy,
     expectedAgentVersion: agent.version,
   }, binding.revision, crypto.randomUUID());
+}
+
+async function withFoundationCapabilitiesDisabled<T>(
+  agent: NonNullable<ReturnType<typeof selectedAgent>>,
+  capabilitySessionId: string,
+  operation: (isolation: FoundationCapabilityIsolation) => Promise<T>,
+): Promise<T> {
+  const agentId = agent.id || agent.name;
+  const originalBindings = (
+    await api.listAgentCapabilityBindings(agentId)
+  ).filter((binding) => binding.enabled && !binding.tombstonedAt);
+  const disabledBindings: AgentCapabilityBinding[] = [];
+  let operationError: unknown = null;
+
+  try {
+    for (const binding of originalBindings) {
+      disabledBindings.push(
+        await updateFoundationCapabilityBindingEnabled(agent, binding, false),
+      );
+    }
+    const isolatedReadiness = await api.getAgentCapabilityReadiness({
+      agent_id: agentId,
+      client_capability_session_id: capabilitySessionId,
+    });
+    const readyCapabilityCount = isolatedReadiness.capabilities.filter(
+      (capability) => capability.state === CapabilityReadinessState.READY,
+    ).length;
+    if (readyCapabilityCount !== 0) {
+      throw new Error(
+        'agent.acceptance.foundationProgressiveToolIsolationFailed',
+      );
+    }
+    return await operation({
+      disabledBindingCount: disabledBindings.length,
+      readyCapabilityCount,
+    });
+  } catch (error) {
+    operationError = error;
+    throw error;
+  } finally {
+    const restoration = await Promise.allSettled(
+      disabledBindings.reverse().map((binding) =>
+        updateFoundationCapabilityBindingEnabled(agent, binding, true)),
+    );
+    const cleanupFailure = restoration.find(
+      (result) => result.status === 'rejected',
+    );
+    if (cleanupFailure?.status === 'rejected') {
+      const primaryCode = operationError === null
+        ? 'none'
+        : observedErrorCode(operationError);
+      throw new Error(
+        'agent.acceptance.foundationCapabilityBindingRestoreFailed'
+        + `: primary=${primaryCode}`
+        + ` cleanup=${observedErrorCode(cleanupFailure.reason)}`,
+      );
+    }
+  }
 }
 
 async function startFoundationToolTurn(input: {
@@ -2083,11 +2171,16 @@ async function runFoundationF06Prepare(input: {
     model_name: input.agent.model,
   });
   try {
-    return await prepareFoundationF06Conversation(
-      input,
-      conversation,
-      agentId,
-      scenarioStartedAt,
+    return await withFoundationCapabilitiesDisabled(
+      input.agent,
+      input.capabilitySessionId,
+      (toolIsolation) => prepareFoundationF06Conversation(
+        input,
+        conversation,
+        agentId,
+        scenarioStartedAt,
+        toolIsolation,
+      ),
     );
   } catch (error) {
     const turnId = useAgentTurnRecoveryStore.getState()
@@ -2121,6 +2214,7 @@ async function prepareFoundationF06Conversation(
   conversation: Awaited<ReturnType<typeof api.createAgentConversation>>,
   agentId: string,
   scenarioStartedAt: string,
+  toolIsolation: FoundationCapabilityIsolation,
 ): Promise<FoundationF06Handoff> {
   await useChatStore.getState().selectSession(conversation.conversation_id);
 
@@ -2318,6 +2412,7 @@ async function prepareFoundationF06Conversation(
     transitions: [],
     replayedSequences: [],
     replayDeliveries: [],
+    toolIsolation,
     preparedAt: scenarioStartedAt,
   };
   writeFoundationF06Handoff(handoff);
@@ -2546,12 +2641,10 @@ async function cleanupFoundationF06Scenario(input: {
   let cleanupError: unknown = null;
   let deletionErrorCode = '';
   try {
-    const conversation = await api.getAgentConversation(input.conversationId);
-    await api.archiveAgentConversation(
-      input.conversationId,
-      conversation.version,
-      true,
-    );
+    if (input.turnId) {
+      await api.cancelAgentTurn(input.turnId);
+    }
+    deletionErrorCode = await deleteFoundationConversation(input.conversationId);
   } catch (error) {
     deletionErrorCode = observedErrorCode(error);
     if (!deletionErrorCode.includes('AGENT_4004')) {
@@ -2806,6 +2899,7 @@ async function runFoundationF06Complete(
         locale: handoff.locale,
         sampleId: handoff.sampleId,
       },
+      toolIsolation: handoff.toolIsolation,
       handoff: {
         conversationId: handoff.conversationId,
         turnId: handoff.turnId,
@@ -5144,37 +5238,15 @@ export function installAcceptanceHarness(): void {
       }
 
       if (cell === 'AS-F03') {
-        const originalBindings = (
-          await api.listAgentCapabilityBindings(agentId)
-        ).filter((binding) => binding.enabled && !binding.tombstonedAt);
-        const disabledBindings: AgentCapabilityBinding[] = [];
-        let scenarioError: unknown = null;
-
-        try {
-          for (const binding of originalBindings) {
-            disabledBindings.push(
-              await updateFoundationCapabilityBindingEnabled(
-                agent,
-                binding,
-                false,
-              ),
-            );
-          }
-          const isolatedReadiness = await api.getAgentCapabilityReadiness({
-            agent_id: agentId,
-            client_capability_session_id:
-              capabilitySessions.selectedStationSession?.session_id,
-          });
-          const readyCapabilityCount = isolatedReadiness.capabilities.filter(
-            (capability) =>
-              capability.state === CapabilityReadinessState.READY,
-          ).length;
-          if (readyCapabilityCount !== 0) {
-            throw new Error(
-              'agent.acceptance.foundationProgressiveToolIsolationFailed',
-            );
-          }
-
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        await withFoundationCapabilitiesDisabled(
+          agent,
+          capabilitySessionId,
+          async (toolIsolation) => {
           const conversation = await api.createAgentConversation({
             agent_id: agentId,
             title: `Foundation stream ${sampleId}`,
@@ -5234,38 +5306,10 @@ export function installAcceptanceHarness(): void {
           scenarioFacts = {
             events: normalizedEvents,
             sawTextBeforeCancel: true,
-            toolIsolation: {
-              disabledBindingCount: disabledBindings.length,
-              readyCapabilityCount,
-            },
+            toolIsolation,
           };
-        } catch (error) {
-          scenarioError = error;
-          throw error;
-        } finally {
-          const restoration = await Promise.allSettled(
-            disabledBindings.reverse().map((binding, index) =>
-              updateFoundationCapabilityBindingEnabled(
-                agent,
-                binding,
-                originalBindings[originalBindings.length - 1 - index]?.enabled
-                  ?? true,
-              )),
-          );
-          const cleanupFailure = restoration.find(
-            (result) => result.status === 'rejected',
-          );
-          if (cleanupFailure?.status === 'rejected') {
-            const primaryCode = scenarioError === null
-              ? 'none'
-              : observedErrorCode(scenarioError);
-            throw new Error(
-              'agent.acceptance.foundationCapabilityBindingRestoreFailed'
-              + `: primary=${primaryCode}`
-              + ` cleanup=${observedErrorCode(cleanupFailure.reason)}`,
-            );
-          }
-        }
+          },
+        );
       }
 
       if (cell === 'AS-F04') {

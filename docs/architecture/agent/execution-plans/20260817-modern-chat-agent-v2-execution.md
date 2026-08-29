@@ -2787,6 +2787,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   from AS-F03's durable sequence oracle. Product progress/text/terminal events
   remain mandatory and duplicate durable sequences still fail. Cleanup passed;
   AS-F03 and G-F remain `UNPROVEN` pending another exact-source run.
+- Checkpoint `31e7bb855f6f5fca785c2bb5ca516577860511d2` was deployed
+  exact-source to profile `two`. Run
+  `20260829T022611072017Z-3b3ea1d707f9d1a22b046c642e2e7c29`
+  passed the Browser AS-F01-AS-F05 prefix and reached AS-F06. AS-F06 prepare
+  then selected the inherited `skills_list` binding instead of producing the
+  required mutation-source text cursor, and partial-prepare cleanup attempted
+  permanent deletion before cancelling the active Turn. The local correction
+  reuses the production capability-binding isolation around each AS-F06
+  admission, records the zero-READY-capability fact in the persisted handoff,
+  restores bindings immediately after the immutable Turn snapshot is admitted,
+  and makes cleanup cancel the Turn before version-safe conversation deletion.
+  AS-F06 and G-F remain `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

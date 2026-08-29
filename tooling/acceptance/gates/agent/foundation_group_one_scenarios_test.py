@@ -278,6 +278,10 @@ def valid_as_f06_capture(
             "locale": locale,
             "sampleId": sample_id,
         },
+        "toolIsolation": {
+            "disabledBindingCount": 1,
+            "readyCapabilityCount": 0,
+        },
         "handoff": {
             "conversationId": "conversation-1",
             "turnId": "turn-1",
@@ -567,6 +571,23 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
     def test_as_f06_rejects_tuple_attribution_mutation(self) -> None:
         capture = valid_as_f06_capture()
         capture["scope"]["locale"] = "zh-CN"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "exactRuntimeAttribution",
+        ):
+            evaluate_as_f06(
+                capture,
+                platform="desktop_app",
+                locale="en",
+                sample_id="sample-001",
+            )
+
+    def test_as_f06_rejects_ready_capability_during_recovery_probe(self) -> None:
+        capture = valid_as_f06_capture()
+        isolation = capture["toolIsolation"]
+        assert isinstance(isolation, dict)
+        isolation["readyCapabilityCount"] = 1
 
         with self.assertRaisesRegex(
             GroupOneScenarioError,

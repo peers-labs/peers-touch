@@ -646,6 +646,11 @@ def evaluate_as_f06(
     sample_id: str,
 ) -> dict[str, bool]:
     scope = _mapping(capture, "scope", scenario="AS-F06")
+    tool_isolation = _mapping(
+        capture,
+        "toolIsolation",
+        scenario="AS-F06",
+    )
     handoff = _mapping(capture, "handoff", scenario="AS-F06")
     transitions = _list(capture, "transitions", scenario="AS-F06")
     replay = _mapping(capture, "replay", scenario="AS-F06")
@@ -883,6 +888,11 @@ def evaluate_as_f06(
                     scenario="AS-F06",
                 )
             )
+            and _nonnegative_int(
+                tool_isolation,
+                "readyCapabilityCount",
+                scenario="AS-F06",
+            ) == 0
         ),
         "exactRecoveryTransitionOrdering": (
             all(position >= 0 for position in phase_positions)
