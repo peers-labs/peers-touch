@@ -386,7 +386,12 @@ def run_gateway_flow(report: EvidenceReport) -> dict[str, Any]:
 
 
 def main() -> int:
-    report = new_report(GATE_ID)
+    report = new_report(
+        GATE_ID,
+        phase="MP-W03",
+        bom=("MP-G01", "MP-G02", "MP-G03", "MP-G04"),
+        spec=("chat-desktop-gateway-message-flow",),
+    )
     started = time.monotonic()
     try:
         report.manifest = runtime_manifest()

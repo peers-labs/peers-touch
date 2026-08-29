@@ -138,7 +138,7 @@ class ReadinessTests(unittest.TestCase):
             },
         )
 
-    def test_only_blocking_unproven_scope_creates_readiness_gap(self) -> None:
+    def test_unproven_scope_is_handed_to_review(self) -> None:
         evidence = {
             "route": {"ok": True},
             "knowledge": {"ok": True},
@@ -159,8 +159,9 @@ class ReadinessTests(unittest.TestCase):
 
         gaps = MODULE.evidence_gaps(evidence)
 
-        self.assertEqual(len(gaps["blocking"]), 1)
-        self.assertEqual(gaps["blocking"][0]["impact"], "framework self-proof missing")
+        self.assertEqual(gaps["blocking"], [])
+        self.assertEqual(len(gaps["review"]), 1)
+        self.assertEqual(gaps["review"][0]["impact"], "framework self-proof missing")
         self.assertEqual(gaps["deferred"], [])
 
     def test_ci_mode_defers_environment_gates_and_unproven_scope(self) -> None:
@@ -191,12 +192,14 @@ class ReadinessTests(unittest.TestCase):
         gaps = MODULE.evidence_gaps(evidence, ci_mode=True)
 
         self.assertEqual(gaps["blocking"], [])
-        self.assertEqual(len(gaps["deferred"]), 2)
+        self.assertEqual(len(gaps["review"]), 1)
+        self.assertEqual(len(gaps["deferred"]), 1)
+        review_kinds = {g["kind"] for g in gaps["review"]}
         deferred_kinds = {g["kind"] for g in gaps["deferred"]}
-        self.assertIn("unproven-product-scope:1", deferred_kinds)
+        self.assertIn("unproven-product-scope:1", review_kinds)
         self.assertIn("environment-gate:chat-native-e2e", deferred_kinds)
 
-    def test_local_mode_blocks_environment_gates(self) -> None:
+    def test_local_mode_hands_environment_gates_to_review(self) -> None:
         evidence = {
             "route": {"ok": True},
             "knowledge": {"ok": True},
@@ -223,10 +226,11 @@ class ReadinessTests(unittest.TestCase):
 
         gaps = MODULE.evidence_gaps(evidence, ci_mode=False)
 
-        self.assertEqual(len(gaps["blocking"]), 1)
-        self.assertEqual(gaps["blocking"][0]["kind"], "environment-gate:chat-native-e2e")
+        self.assertEqual(gaps["blocking"], [])
+        self.assertEqual(len(gaps["review"]), 1)
+        self.assertEqual(gaps["review"][0]["kind"], "environment-gate:chat-native-e2e")
 
-    def test_evidence_gaps_block_review_readiness(self) -> None:
+    def test_only_pipeline_failures_block_review_readiness(self) -> None:
         healthy = {"ok": True}
         self.assertFalse(
             MODULE.is_ready_for_github_review(
@@ -320,6 +324,41 @@ class ReadinessTests(unittest.TestCase):
             "traceability": {"status": "complete"},
             "sourceArtifact": {"path": "reports/native.json"},
             "sourceArtifactKind": "forged-kind",
+            "evidenceGateId": "native",
+            "manifest": {
+                "state": "FIXTURE_READY",
+                "source": {
+                    "commit": "current-head",
+                    "workspaceDigest": "clean",
+                },
+            },
+        }
+
+        self.assertFalse(
+            MODULE.gate_result_is_proven(
+                gate,
+                result,
+                "current-head",
+            )
+        )
+
+    def test_environment_evidence_with_not_required_traceability_is_unproven(
+        self,
+    ) -> None:
+        gate = {
+            "id": "native",
+            "tier": "env-evidence",
+            "provisioner": "home-station",
+        }
+        result = {
+            "id": "native",
+            "status": "passed",
+            "completionStatus": "DONE",
+            "proofStatus": "PROVEN",
+            "timedOut": False,
+            "traceability": {"status": "not-required"},
+            "sourceArtifact": {"path": "reports/native.json"},
+            "sourceArtifactKind": "acceptance-gate-evidence-report",
             "evidenceGateId": "native",
             "manifest": {
                 "state": "FIXTURE_READY",
