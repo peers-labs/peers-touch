@@ -1102,6 +1102,13 @@ def evaluate_as_f06(
             "replayPayloadHashesValid": replay_payload_hashes_valid,
             "replaySourceMatches": replay_source_matches,
             "sourceIdentityValid": source_identity_valid,
+            "terminalProjection": {
+                "stationStatus": terminal.get("stationStatus"),
+                "clientStatus": terminal.get("clientStatus"),
+                "stationHash": terminal.get("stationHash"),
+                "clientHash": terminal.get("clientHash"),
+                "prefixPreserved": terminal.get("prefixPreserved"),
+            },
             "deliveryStreamMatches": all(
                 delivery.get("streamId") == handoff.get("streamId")
                 and delivery.get("streamGeneration")

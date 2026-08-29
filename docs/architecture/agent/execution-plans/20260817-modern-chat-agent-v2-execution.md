@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `38d813cce` showed the AS-F06 handoff cursor was frozen before live streaming stopped; fault injection now freezes the latest acknowledged runtime cursor and resets pre-fault observations before disconnect; proof remains UNPROVEN pending another exact-source run | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `2e986fd12` passed AS-F06 transition ordering and replay source equality; `terminalProjectionEqualsStation` is the sole remaining assertion and now emits bounded status/hash/prefix diagnostics; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3185,6 +3185,15 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   observations before disconnect, aligning both ordering and replay equality
   with the actual injected recovery boundary. AS-F06 and G-F remain
   `UNPROVEN`.
+- Checkpoint `2e986fd12e751817c7231182c54b2d87d6d1cbe0` was deployed
+  exact-source to profile `two`. Run
+  `20260829T141946571190Z-b812720034d45701ed2a6657c74a69d2`
+  passed AS-F06 transition ordering and exact replay equality with fault cursor
+  `130` and matching client/Station sequence `131`; cleanup and redaction
+  passed. Its sole remaining assertion was
+  `terminalProjectionEqualsStation`. Bounded diagnostics now expose the
+  Station/client terminal statuses, projection hashes, and prefix-preservation
+  result without changing the predicate. AS-F06 and G-F remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
