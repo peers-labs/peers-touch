@@ -699,8 +699,7 @@ pub(crate) fn auth_restore_session_for_device(
         }
     };
     if let Err(error) = verify_session_with_station(&token) {
-        let _ = clear_session(state);
-        return error;
+        return handle_session_verification_failure(state, error);
     }
     let token = if loaded_from_persistent_store {
         match takeover_station_session_token_for_device(&token, device_type) {
@@ -797,8 +796,7 @@ pub fn auth_validate_token(
         }
     };
     if let Err(error) = verify_session_with_station(&token) {
-        let _ = clear_session(state);
-        return error;
+        return handle_session_verification_failure(state, error);
     }
     if let Err(error) = write_session(state, &session) {
         return error;
@@ -1004,8 +1002,7 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
     let actor_id = blob.actor_id;
     let token = blob.token;
     if let Err(error) = verify_session_with_station(&token) {
-        let _ = clear_session(state);
-        return error;
+        return handle_session_verification_failure(state, error);
     }
     let session = from_station_response(actor_id.clone(), token);
     if let Err(error) = write_session(state, &session) {
@@ -1060,7 +1057,7 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
     })
 }
 
-fn verify_session_with_station(token: &str) -> Result<(), AppResult<AuthSessionPayload>> {
+fn verify_session_with_station(token: &str) -> Result<(), station_client::StationClientError> {
     station_client::request_peers_proto_no_body::<ActorProfile>(
         reqwest::Method::GET,
         "/actor/profile",
@@ -1068,5 +1065,124 @@ fn verify_session_with_station(token: &str) -> Result<(), AppResult<AuthSessionP
         None,
     )
     .map(|_| ())
-    .map_err(|error| error.into_app_result("Session validation failed"))
+}
+
+fn station_verification_rejects_session(error: &station_client::StationClientError) -> bool {
+    matches!(
+        &error.kind,
+        station_client::StationClientErrorKind::SessionRevoked
+            | station_client::StationClientErrorKind::HttpStatus(401)
+    )
+}
+
+fn handle_session_verification_failure(
+    state: &AppState,
+    error: station_client::StationClientError,
+) -> AppResult<AuthSessionPayload> {
+    if station_verification_rejects_session(&error) {
+        let _ = clear_session(state);
+    } else {
+        tracing::warn!(
+            error_kind = ?error.kind,
+            "session validation unavailable; retaining local session"
+        );
+    }
+    error.into_app_result("Session validation failed")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infrastructure::i18n::I18nService;
+    use crate::infrastructure::storage::{StorageKind, StorageLayout};
+    use std::collections::HashMap;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_state(name: &str) -> (AppState, std::path::PathBuf) {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("auth-service-{name}-{stamp}"));
+        let mut dirs = HashMap::new();
+        for kind in [
+            StorageKind::Config,
+            StorageKind::Data,
+            StorageKind::Cache,
+            StorageKind::Logs,
+            StorageKind::Runtime,
+            StorageKind::Temp,
+        ] {
+            let path = root.join(kind.as_str());
+            std::fs::create_dir_all(&path).expect("test storage directory should be created");
+            dirs.insert(kind, path);
+        }
+        let config_dir = dirs
+            .get(&StorageKind::Config)
+            .expect("test config directory should exist")
+            .clone();
+        let state = AppState::new(
+            StorageLayout {
+                app_name: format!("auth-service-{name}"),
+                root_source: "test".to_string(),
+                root: root.clone(),
+                dirs,
+            },
+            I18nService::new(&config_dir),
+        );
+        let mut session = state.session.lock().expect("session should lock");
+        session.actor_id = Some("actor-test".to_string());
+        session.token = Some("token-test".to_string());
+        drop(session);
+        (state, root)
+    }
+
+    #[test]
+    fn transient_station_failure_preserves_local_session() {
+        let (state, root) = test_state("network");
+        let error = station_client::StationClientError::new(
+            station_client::StationClientErrorKind::Network,
+            "station unavailable",
+            None,
+        );
+
+        let result = handle_session_verification_failure(&state, error);
+
+        assert!(!result.ok);
+        let session = state.session.lock().expect("session should lock");
+        assert_eq!(session.actor_id.as_deref(), Some("actor-test"));
+        assert_eq!(session.token.as_deref(), Some("token-test"));
+        drop(session);
+        drop(state);
+        std::fs::remove_dir_all(root).expect("test storage should be removed");
+    }
+
+    #[test]
+    fn explicit_session_rejection_clears_local_session() {
+        let (state, root) = test_state("revoked");
+        let revoked = station_client::StationClientError::session_revoked(
+            r#"{"code":"session_revoked","reason":"kicked"}"#,
+        );
+
+        let result = handle_session_verification_failure(&state, revoked);
+
+        assert!(!result.ok);
+        let session = state.session.lock().expect("session should lock");
+        assert!(session.actor_id.is_none());
+        assert!(session.token.is_none());
+        drop(session);
+        drop(state);
+        std::fs::remove_dir_all(root).expect("test storage should be removed");
+    }
+
+    #[test]
+    fn unauthorized_station_response_rejects_local_session() {
+        let error = station_client::StationClientError::new(
+            station_client::StationClientErrorKind::HttpStatus(401),
+            "unauthorized",
+            None,
+        );
+
+        assert!(station_verification_rejects_session(&error));
+    }
 }

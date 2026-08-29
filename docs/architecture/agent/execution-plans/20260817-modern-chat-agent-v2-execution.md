@@ -3467,6 +3467,26 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   tests, and `git diff --check` pass. AS-F06 and G-F remain
   `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source
   verification.
+- Checkpoint `7fb5fd9e2f45893745d3e9ef6766dd51d9fbed99` was deployed
+  exact-source to profile `two`. Run
+  `20260829T231244057538Z-65617cc2d2068d85bf23420f21e01c0b`
+  again reached Browser AS-F06. During the Station outage, the visible-page
+  liveness probe called `auth_validate_token`; the Rust auth service cleared
+  `AppState.session` for the resulting transient Station network error while
+  the Web session projection remained authenticated and `ready`. The
+  after-restart callback therefore failed capability-session polling before
+  Browser process restart: both local and Station readbacks returned
+  `authentication required`. The immutable result is `PARTIAL / UNPROVEN`,
+  while cleanup and redaction passed. Local source, Station live source, and
+  evidence source all matched `7fb5fd9e2`, and all owned runtime ports were
+  released. The local correction retains session authority for transient
+  Station transport/decode/server failures and clears it only for local JWT
+  rejection, explicit `session_revoked`, or HTTP 401. The policy is shared by
+  restore, validation, and OAuth session verification. Three focused Rust auth
+  tests, Rust library check, Desktop typecheck, 104 focused Foundation tests,
+  targeted formatting, and `git diff --check` pass. AS-F06 and G-F remain
+  `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source
+  verification.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
