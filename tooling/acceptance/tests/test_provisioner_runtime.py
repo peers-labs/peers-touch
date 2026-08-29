@@ -309,12 +309,18 @@ class ProvisionerBlockingTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             external_log = Path(tmpdir) / "run" / PROVISION_DESKTOP_LOG
+            temporary_log = Path(tmpdir) / "desktop-process.log"
+            log_handle = temporary_log.open("w+", encoding="utf-8")
             storage_root = Path(tmpdir) / "desktop-storage"
             with patch(
                 "tooling.acceptance.provisioners.local_desktop_gateway."
-                "current_artifact_path",
-                return_value=external_log,
+                "tempfile.NamedTemporaryFile",
+                return_value=log_handle,
             ), patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "write_current_artifact",
+                return_value=external_log,
+            ) as write_artifact, patch(
                 "tooling.acceptance.provisioners.local_desktop_gateway."
                 "subprocess.Popen",
                 return_value=process,
@@ -337,6 +343,12 @@ class ProvisionerBlockingTests(unittest.TestCase):
                     )
                 provisioner.cleanup()
             self.assertFalse(storage_root.exists())
+            self.assertFalse(temporary_log.exists())
+            write_artifact.assert_called_once()
+            self.assertEqual(
+                write_artifact.call_args.args[:2],
+                (PROVISION_DESKTOP_LOG, b""),
+            )
 
         self.assertEqual(
             raised.exception.resource,
