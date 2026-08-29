@@ -35,7 +35,7 @@
 | S | A cross-window identity-change event classifies the renderer's own actor as a same-actor takeover during reload. | Medium | Low | Pending ordered Identity event-buffer evidence. |
 | T | The Rust event-stream reconnect reports a stale token as session-revoked after Station restart and kicks the current renderer. | High | Low | Pending revocation reason/raw and realtime connection-state evidence. |
 | U | A normal frontend API request maps an `UNAUTHORIZED` response to session-revoked during boot reconciliation. | Medium | Low | Pending revocation payload raw marker and event ordering. |
-| V | Renderer restore rotates a persisted token while boot requests using the previous token are still in flight; their late `kicked` responses demote the newly restored session. | High | Low | Pending command-level start/result ordering from the Acceptance-only API timeline. |
+| V | Renderer restore rotates a persisted token while boot requests using the previous token are still in flight; their late `kicked` responses demote the newly restored session. | High | Low | Partially confirmed: old and new documents emit ordinary API revocations around restore, but the first bounded trace dropped the `auth_restore_session` request itself. Pending one targeted ordering run. |
 
 ## Log Evidence
 - Pre-fix Gate run `20260829T023644548452Z-8983d0bd277b21b69d93e766da7eaa4e` failed after 120 seconds.
@@ -74,6 +74,10 @@
 - Revocation-source run `20260829T061657728986Z-173aece1545ddbc27ff5e3a389608d1b` on commit `c25bc1826b62a568e6f42f3ff5ea1d1c44fb67da` reproduced the same timeout.
 - Debug lines 7-9 contain repeated `auth.session_revoked` events with `reason=kicked` and `hasRaw=true`. There is no preceding realtime disconnect/revocation event in the new document. This rejects S and T and confirms U: ordinary Tauri API command results publish the revocation.
 - Station `actor_sessions` readback after cleanup shows the failed actor received a new active session at the reload boundary while its immediately previous session was marked `kicked`. The next bounded API timeline must prove whether `auth_restore_session` succeeds before stale old-token command responses publish those revocations (V).
+- Command-timeline run `20260829T065513223615Z-f5f4bdcbe89fc34c2360f5a93d8022d8` on commit `f68d5b3e87694a4ca7e91e3a5017c0cba71c66d1` reproduced `clients.reload_after_station_restart` after 28 Direct and Group assertions passed.
+- Debug line 10 shows Alice's old document remained authenticated until `auth_validate_token` request 511 emitted `token_missing` immediately after Station restart. Lines 12-14 show the replacement document retained the actor in the session store but entered `accountGate(reason=revoked)` after `notification_list`, three `peer_profile_get` requests, and `social_friend_request_list` emitted `kicked`.
+- Charlie's replacement document restored to `authenticated/ready` in lines 7-9. This proves the failure is an actor-local session ordering race rather than a global Station or renderer-reload failure.
+- The first timeline returned only the latest 60 events, which omitted the replacement document's initial `auth_restore_session` request. The next probe retains only `auth_restore_session` and request IDs that emit `revoked`, preserving their paired start/result events from the full bounded buffer.
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
