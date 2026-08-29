@@ -81,6 +81,9 @@ def selected_runtime() -> tuple[
 
 class NativeRecoveryGate(AcceptanceGate):
     gate_id = "chat-native-recovery-e2e"
+    phase = "MP-W08"
+    bom = ("MP-G07", "MP-G08", "MP-G12")
+    spec = ("chat-native-visible-clients",)
     report_path = REPORT_PATH
     evidence_dir = (
         REPORT_PATH.parent / "chat-native-recovery-evidence"

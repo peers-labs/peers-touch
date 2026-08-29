@@ -1191,6 +1191,22 @@ passed the unchanged Direct and Group interaction journey, including timeout
 retry, authority/Engine/DOM convergence, and resource cleanup. MP-W13-F remains
 `UNPROVEN` until the final same-source aggregate and downstream audits pass.
 
+The same-source aggregate
+`20260829T000748292834Z-3cdc5c9684fc2b2719e4a9f0595a52f9`
+then executed all 17 selected Gates successfully on commit `d84076b40412`.
+Quality review found that eight environment reports lacked independent
+Phase/BOM/Spec metadata even though their canonical product reports, runtime
+identity, and cleanup evidence were present. The generic runner had incorrectly
+treated that omission as traceability `not-required`; the run is therefore
+retained as historical execution evidence but not accepted as final review
+proof. The runner now fails closed for this case, and the affected Chat reports
+declare their existing MP workstream, Gate, scenario, and Feature identifiers.
+The Chat capability graph also records the Linux-proven journeys separately
+from macOS, Windows, Mobile, multi-node persistence, receipt aggregation, and
+injected-network backoff scope that remains unproven. MP-W13-F stays
+`UNPROVEN` until the corrected clean candidate, Completion Audit, and
+independent review pass.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

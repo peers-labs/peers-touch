@@ -81,6 +81,9 @@ def selected_runtime() -> tuple[
 
 class NativeGroupMlsGate(AcceptanceGate):
     gate_id = "chat-native-group-mls-e2e"
+    phase = "MP-W07"
+    bom = ("MP-G05", "MP-G06", "MP-G09")
+    spec = ("chat-native-visible-clients",)
     report_path = REPORT_PATH
     evidence_dir = (
         REPORT_PATH.parent / "chat-native-group-mls-evidence"

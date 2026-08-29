@@ -679,6 +679,10 @@ class AcceptanceRunTest(unittest.TestCase):
                 "sourceArtifact": {"path": "reports/environment-gate.json"},
                 "sourceArtifactKind": "acceptance-gate-evidence-report",
                 "evidenceGateId": "environment-gate",
+                "sourcePhase": "environment-proof",
+                "sourceBom": ["ENV-01"],
+                "sourceSpec": ["environment-runtime"],
+                "sourceGate": "environment-gate",
                 "manifest": {
                     "state": "FIXTURE_READY",
                     "runId": "runtime-run",
@@ -713,7 +717,7 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(result["completionStatus"], "PARTIAL")
         self.assertEqual(result["proofStatus"], "UNPROVEN")
 
-    def test_evidence_report_supplies_typed_environment_proof(self) -> None:
+    def test_environment_report_without_phase_bom_spec_is_unproven(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -749,8 +753,13 @@ class AcceptanceRunTest(unittest.TestCase):
         )
         self.assertEqual(result["evidenceStatus"], "PASS")
         self.assertEqual(result["evidenceGateId"], "environment-gate")
-        self.assertEqual(result["completionStatus"], "DONE")
-        self.assertEqual(result["proofStatus"], "PROVEN")
+        self.assertEqual(result["completionStatus"], "PARTIAL")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["traceability"]["status"], "missing")
+        self.assertEqual(
+            result["traceability"]["missingFields"],
+            ["sourcePhase", "sourceBom", "sourceSpec"],
+        )
 
     def test_validation_artifact_does_not_replace_environment_report(
         self,
