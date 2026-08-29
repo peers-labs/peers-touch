@@ -380,13 +380,10 @@ mod tests {
         CryptoEndpoint as SessionEndpoint, DirectSession, DirectSessionKey,
     };
     use crate::messaging::private_content::test_attachment_metadata;
-    use crate::messaging::{
-        AttachmentTransferRecord, DirectSendCommit, PendingSenderProjection,
-    };
+    use crate::messaging::{AttachmentTransferRecord, DirectSendCommit, PendingSenderProjection};
     use crate::model::chat::{
         AttachmentPlaintextMetadata, AttachmentTransferState, ConversationEvent,
-        DeviceEventDelivery, EncryptedObjectDescriptor, MessageCommittedFact,
-        MessagingContentKind,
+        DeviceEventDelivery, EncryptedObjectDescriptor, MessageCommittedFact, MessagingContentKind,
     };
     use sha2::{Digest, Sha256};
 

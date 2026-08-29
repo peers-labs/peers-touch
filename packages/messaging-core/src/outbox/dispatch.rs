@@ -2,10 +2,18 @@ use crate::proto::chat::PrepareMessagingSendResponse;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandSubmitFailure {
-    Retryable { code: String },
-    StaleDeliveryPlan { current_plan: PrepareMessagingSendResponse },
-    StaleAuthorityPlan { expired: bool },
-    Terminal { code: String },
+    Retryable {
+        code: String,
+    },
+    StaleDeliveryPlan {
+        current_plan: PrepareMessagingSendResponse,
+    },
+    StaleAuthorityPlan {
+        expired: bool,
+    },
+    Terminal {
+        code: String,
+    },
 }
 
 pub trait CommandTransport: Send + Sync {
@@ -67,11 +75,25 @@ pub trait OutboxStore: Send + Sync {
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandDispatchProgress {
     Idle,
-    Submitted { command_id: String },
-    RetryScheduled { command_id: String, next_attempt_at_unix_ms: i64 },
-    Failed { command_id: String, code: String },
-    StaleDeliveryPlan { command_id: String, current_plan: PrepareMessagingSendResponse },
-    StaleAuthorityPlan { command_id: String, expired: bool },
+    Submitted {
+        command_id: String,
+    },
+    RetryScheduled {
+        command_id: String,
+        next_attempt_at_unix_ms: i64,
+    },
+    Failed {
+        command_id: String,
+        code: String,
+    },
+    StaleDeliveryPlan {
+        command_id: String,
+        current_plan: PrepareMessagingSendResponse,
+    },
+    StaleAuthorityPlan {
+        command_id: String,
+        expired: bool,
+    },
 }
 
 pub struct CommandOutboxWorker<T: CommandTransport, S: OutboxStore> {
@@ -194,7 +216,9 @@ mod tests {
 
     impl InMemoryOutbox {
         fn new() -> Self {
-            Self { commands: Mutex::new(Vec::new()) }
+            Self {
+                commands: Mutex::new(Vec::new()),
+            }
         }
 
         fn insert(&self, id: &str, bytes: &[u8]) {
@@ -222,7 +246,12 @@ mod tests {
                 }))
         }
 
-        fn mark_command_submitted(&self, id: &str, _bytes: &[u8], _attempt: u32) -> Result<(), String> {
+        fn mark_command_submitted(
+            &self,
+            id: &str,
+            _bytes: &[u8],
+            _attempt: u32,
+        ) -> Result<(), String> {
             let mut commands = self.commands.lock().unwrap();
             if let Some((_, status)) = commands.iter_mut().find(|(e, _)| e.command_id == id) {
                 *status = "submitted".to_string();
@@ -230,7 +259,14 @@ mod tests {
             Ok(())
         }
 
-        fn mark_command_retry(&self, id: &str, _bytes: &[u8], attempt: u32, _next: i64, _code: &str) -> Result<(), String> {
+        fn mark_command_retry(
+            &self,
+            id: &str,
+            _bytes: &[u8],
+            attempt: u32,
+            _next: i64,
+            _code: &str,
+        ) -> Result<(), String> {
             let mut commands = self.commands.lock().unwrap();
             if let Some((entry, _)) = commands.iter_mut().find(|(e, _)| e.command_id == id) {
                 entry.attempt_count = attempt + 1;
@@ -238,7 +274,13 @@ mod tests {
             Ok(())
         }
 
-        fn mark_command_failed(&self, id: &str, _bytes: &[u8], _attempt: u32, _code: &str) -> Result<(), String> {
+        fn mark_command_failed(
+            &self,
+            id: &str,
+            _bytes: &[u8],
+            _attempt: u32,
+            _code: &str,
+        ) -> Result<(), String> {
             let mut commands = self.commands.lock().unwrap();
             if let Some((_, status)) = commands.iter_mut().find(|(e, _)| e.command_id == id) {
                 *status = "failed".to_string();
@@ -246,7 +288,12 @@ mod tests {
             Ok(())
         }
 
-        fn mark_command_superseded(&self, id: &str, _bytes: &[u8], _attempt: u32) -> Result<(), String> {
+        fn mark_command_superseded(
+            &self,
+            id: &str,
+            _bytes: &[u8],
+            _attempt: u32,
+        ) -> Result<(), String> {
             let mut commands = self.commands.lock().unwrap();
             if let Some((_, status)) = commands.iter_mut().find(|(e, _)| e.command_id == id) {
                 *status = "superseded".to_string();
@@ -261,12 +308,20 @@ mod tests {
         store.insert("cmd-1", b"encrypted payload");
         let worker = CommandOutboxWorker::new(
             store,
-            RecordingTransport { outcomes: Mutex::new(VecDeque::from([Ok(())])) },
-            CommandRetryPolicy { initial_delay_ms: 10, maximum_delay_ms: 100 },
-        ).unwrap();
+            RecordingTransport {
+                outcomes: Mutex::new(VecDeque::from([Ok(())])),
+            },
+            CommandRetryPolicy {
+                initial_delay_ms: 10,
+                maximum_delay_ms: 100,
+            },
+        )
+        .unwrap();
         assert_eq!(
             worker.dispatch_once(100).unwrap(),
-            CommandDispatchProgress::Submitted { command_id: "cmd-1".to_string() }
+            CommandDispatchProgress::Submitted {
+                command_id: "cmd-1".to_string()
+            }
         );
     }
 
@@ -277,12 +332,16 @@ mod tests {
         let worker = CommandOutboxWorker::new(
             store,
             RecordingTransport {
-                outcomes: Mutex::new(VecDeque::from([
-                    Err(CommandSubmitFailure::Retryable { code: "timeout".to_string() }),
-                ])),
+                outcomes: Mutex::new(VecDeque::from([Err(CommandSubmitFailure::Retryable {
+                    code: "timeout".to_string(),
+                })])),
             },
-            CommandRetryPolicy { initial_delay_ms: 10, maximum_delay_ms: 5000 },
-        ).unwrap();
+            CommandRetryPolicy {
+                initial_delay_ms: 10,
+                maximum_delay_ms: 5000,
+            },
+        )
+        .unwrap();
         assert_eq!(
             worker.dispatch_once(1000).unwrap(),
             CommandDispatchProgress::RetryScheduled {
@@ -299,12 +358,16 @@ mod tests {
         let worker = CommandOutboxWorker::new(
             store,
             RecordingTransport {
-                outcomes: Mutex::new(VecDeque::from([
-                    Err(CommandSubmitFailure::Terminal { code: "forbidden".to_string() }),
-                ])),
+                outcomes: Mutex::new(VecDeque::from([Err(CommandSubmitFailure::Terminal {
+                    code: "forbidden".to_string(),
+                })])),
             },
-            CommandRetryPolicy { initial_delay_ms: 10, maximum_delay_ms: 100 },
-        ).unwrap();
+            CommandRetryPolicy {
+                initial_delay_ms: 10,
+                maximum_delay_ms: 100,
+            },
+        )
+        .unwrap();
         assert_eq!(
             worker.dispatch_once(100).unwrap(),
             CommandDispatchProgress::Failed {
@@ -319,9 +382,18 @@ mod tests {
         let store = InMemoryOutbox::new();
         let worker = CommandOutboxWorker::new(
             store,
-            RecordingTransport { outcomes: Mutex::new(VecDeque::new()) },
-            CommandRetryPolicy { initial_delay_ms: 10, maximum_delay_ms: 100 },
-        ).unwrap();
-        assert_eq!(worker.dispatch_once(100).unwrap(), CommandDispatchProgress::Idle);
+            RecordingTransport {
+                outcomes: Mutex::new(VecDeque::new()),
+            },
+            CommandRetryPolicy {
+                initial_delay_ms: 10,
+                maximum_delay_ms: 100,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            worker.dispatch_once(100).unwrap(),
+            CommandDispatchProgress::Idle
+        );
     }
 }

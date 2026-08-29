@@ -922,6 +922,54 @@ removed, and focused Desktop, Rust, and static checks passed. NDR-W1 and NDR-W6
 remain in progress until the resulting clean commit passes a new exact-range
 aggregate.
 
+### 2026-08-29 Final Review Closure Slice
+
+Independent review of clean candidate
+`f00bfdde35675a206fb80490180149a9c28fd464` rejected the final readiness claim
+before the 20-Gate aggregate completed. The interrupted Product Closure cell
+was stopped through its registered lifecycle and reached `CLEANED`; its partial
+run is diagnostic evidence only.
+
+The accepted architecture remains unchanged. Four implementation gaps must
+close before another final aggregate:
+
+- retain the Linux remote Git source lease through Gate execution and release
+  it last during cell teardown, because Gate-time native adapter imports still
+  consume the mounted checkout;
+- redact runtime artifacts before their first Evidence Store write and make the
+  post-run secret scan read-only; registered artifacts and role metadata must
+  never be rewritten;
+- make the W11 audit consume current-source, runtime-cell-scoped immutable
+  evidence and emit its verdict through the Evidence Store; and
+- serialize Desktop account selection and session restoration so a rotated
+  token cannot be committed or bound under a concurrently selected account.
+
+This is a mechanical execution-plan amendment for already accepted D-11,
+D-13/D-14, Desktop identity, and MP-W11/MP-W13 contracts. It does not add a new
+product journey or architecture boundary. Linux remains the only runtime claim
+in this closure; macOS and Windows remain explicitly `UNPROVEN`.
+
+The closure implementation now:
+
+- holds the remote Git source lock in a TTL-bounded remote lease process, stores
+  its owner in both `PREPARING` and final `LEASED` state, and lets a later
+  `stop` process release that exact owner;
+- applies resolved-credential redaction before every artifact and final
+  manifest write, scans role metadata read-only, and discards any run that
+  bypasses the canonical writer;
+- binds every W11 native report to the runner-owned runtime-cell manifest plus
+  the current source, binary digest, Linux host/image attestation, Gate, run,
+  workspace, and claimed runtime cell; and
+- serializes account switch, PIN unlock, restore, session commit, window
+  binding, and Messaging Engine activation through one identity transition.
+
+Focused verification passes: Acceptance tests `309/309`, runner tests `47/47`,
+closure-generator tests `2/2`, Desktop tests `364/364` with one unrelated
+environment test skipped, Desktop check/build, and Rust auth tests `5/5`.
+Independent final blocker review reports no findings on the corrected surfaces.
+These results qualify the candidate for a new clean exact-range Linux
+aggregate; they do not replace that product proof.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

@@ -3130,8 +3130,8 @@ export const api = {
   authValidateToken: (input: AuthValidateTokenInput) =>
     invokeAuthCommand<AuthValidateTokenInput>('auth_validate_token', input),
 
-  ensureStationSession: () =>
-    invokeAuthCommand<void>('ensure_station_session'),
+  ensureStationSession: (sessionId: string) =>
+    invokeAuthCommand<OAuthLoopbackPollInput>('ensure_station_session', { session_id: sessionId }),
 
   settingsGet: (input: SettingsGetInput) =>
     invokeRustCommand<SettingsGetInput, SettingsGetPayload>('settings_get', input),
@@ -3852,7 +3852,7 @@ export const api = {
     invokeRustDataFromStatus<void, { account: AccountIdentity | null }>('account_get_active').then((r) => r.account),
 
   accountSwitch: (id: string) =>
-    invokeRustDataFromStatus<AccountIdInput, { ok: boolean }>('account_switch', { id }),
+    invokeAuthCommand<AccountIdInput>('account_switch', { id }),
 
   accountUpsertOAuth: (input: AccountUpsertOAuthInput) =>
     invokeRustDataFromStatus<AccountUpsertOAuthInput, { ok: boolean; active_account_id: string }>('account_upsert_oauth', input),
@@ -4439,6 +4439,8 @@ export const api = {
       status: 'pending' | 'completed' | 'failed' | 'expired';
       callback_url?: string;
       error?: string;
+      account_id?: string;
+      actor_id?: string;
     }>(
       'oauth2_poll_loopback',
       { session_id: sessionId },

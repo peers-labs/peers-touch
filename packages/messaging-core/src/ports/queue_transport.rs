@@ -1,11 +1,7 @@
 use crate::contracts::DeviceId;
 
 pub trait QueueTransport: Send + Sync {
-    fn drain(
-        &self,
-        device_id: &DeviceId,
-        batch_limit: u32,
-    ) -> Result<DrainResult, TransportError>;
+    fn drain(&self, device_id: &DeviceId, batch_limit: u32) -> Result<DrainResult, TransportError>;
 
     fn ack(&self, device_id: &DeviceId, inbox_item_id: &str) -> Result<(), TransportError>;
 
