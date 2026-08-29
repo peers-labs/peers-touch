@@ -14,7 +14,10 @@ import {
   type AgentTurnSourceDelivery,
   type AgentTurnStreamController,
 } from '../../services/desktop_api';
-import type { AgentTurnSnapshotReloadResult } from '../../runtimes/chatRuntime';
+import {
+  flushAgentTurnRecoveryPersistence,
+  type AgentTurnSnapshotReloadResult,
+} from '../../runtimes/chatRuntime';
 import { useAgentStore } from '../../store/agent';
 import { useAgentTurnRecoveryStore } from '../../store/agentTurnRecovery';
 import { useChatStore } from '../../store/chat';
@@ -2616,6 +2619,7 @@ async function observeFoundationRecoveryFailure(
     'Foundation AS-F06 retry failure under bounded outage',
     120_000,
   );
+  await flushAgentTurnRecoveryPersistence();
   const afterRetry =
     useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
   const evidence = {

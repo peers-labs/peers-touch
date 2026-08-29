@@ -104,7 +104,11 @@ vi.mock('../utils/logger', () => ({
   },
 }));
 
-import { chatRuntime, reloadAgentTurnSnapshot } from './chatRuntime';
+import {
+  chatRuntime,
+  flushAgentTurnRecoveryPersistence,
+  reloadAgentTurnSnapshot,
+} from './chatRuntime';
 
 function activeTurn(overrides: Partial<ActiveAgentTurnRecovery> = {}): ActiveAgentTurnRecovery {
   return {
@@ -248,6 +252,46 @@ describe('chatRuntime Agent turn recovery', () => {
     });
 
     expect(mocks.replayOnEvents).toHaveLength(1);
+  });
+
+  it('flushes the current recovery phase before a client restart', async () => {
+    mocks.readValue.mockResolvedValueOnce({});
+    await chatRuntime.bootstrap('ptid:person:alice');
+    const basePayload = {
+      streamId: 'stream-1',
+      streamGeneration: 10,
+      ptid: 'ptid:person:alice',
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      timestampMs: 500,
+    };
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      ...basePayload,
+      event: 'connected',
+      data: { turnId: 'turn-1', seq: 1 },
+    });
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      ...basePayload,
+      event: 'connection_lost',
+      data: { turnId: 'turn-1', seq: 1, recoveryHandoff: true },
+    });
+    mocks.replayOnErrors[0](new Error('station unavailable'));
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active['conversation-1'].phase)
+        .toBe('RECOVERY_FAILED');
+    });
+
+    await flushAgentTurnRecoveryPersistence();
+
+    expect(mocks.write).toHaveBeenLastCalledWith(
+      'agent-turn-recovery',
+      expect.objectContaining({
+        'conversation-1': expect.objectContaining({
+          phase: 'RECOVERY_FAILED',
+          turnId: 'turn-1',
+        }),
+      }),
+    );
   });
 
   it('publishes source-bound replay metadata without making it a second state input', async () => {

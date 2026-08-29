@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `879fde9c2` reached AS-F06 post-client-restart durable reload in run `20260829T072540143604Z-a5b0d4fdaffd78d716811aab395d4f84`, where the result reported `observed=false`; redacted field diagnostics are added without changing the assertion; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source diagnostic checkpoint `f3b8e80b6` identified `AS_F06_DURABLE_RELOAD_TARGET_MISSING` after client restart in run `20260829T074412796991Z-af4768a65c8d79e50af3ae60b3a560ca`; recovery persistence now has an explicit flush barrier before restart and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2988,6 +2988,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   passed. The local diagnostic change includes the redacted reload result in
   the coordinator error without weakening the predicate. AS-F06 and G-F remain
   `UNPROVEN`.
+- Diagnostic checkpoint `f3b8e80b63eefdd41185570561fb989933463175`
+  was deployed exact-source to profile `two`. Run
+  `20260829T074412796991Z-af4768a65c8d79e50af3ae60b3a560ca`
+  identified the exact post-restart blocker as
+  `AS_F06_DURABLE_RELOAD_TARGET_MISSING`; cleanup passed. The in-memory
+  `RECOVERY_FAILED` phase was observable before its asynchronous recovery-store
+  write necessarily completed, so immediate client restart could race and
+  hydrate no active record. The local correction exposes the runtime's
+  persistence chain and makes the outage observer await a current-state flush
+  before returning control to the restart coordinator. A focused runtime test
+  verifies that the flushed record contains the failed phase and Turn identity.
+  AS-F06 and G-F remain `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

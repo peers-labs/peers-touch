@@ -137,6 +137,10 @@ function persistActiveRecords(): Promise<void> {
   return persistenceChain;
 }
 
+export function flushAgentTurnRecoveryPersistence(): Promise<void> {
+  return persistActiveRecords();
+}
+
 function streamEvent(
   record: ActiveAgentTurnRecovery,
   event: string,
@@ -329,6 +333,7 @@ async function failRecovery(
       error: String(snapshotError),
     });
   }
+  await persistActiveRecords();
 }
 
 async function consumeRecoveryEvent(
