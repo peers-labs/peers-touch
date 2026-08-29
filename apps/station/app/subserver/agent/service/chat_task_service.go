@@ -18,6 +18,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -29,6 +31,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -232,8 +235,22 @@ func (s *ChatTaskService) FinishChatStep(ctx context.Context, taskID, stepID, tu
 		TaskID:       taskID,
 		CreatedAt:    now,
 	}
+	transitioned := false
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&persistence.ExecutionStep{}).Where("step_id = ?", stepID).
+		var step persistence.ExecutionStep
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("step_id = ? AND task_id = ?", stepID, taskID).
+			First(&step).Error; err != nil {
+			return err
+		}
+		if step.Status == int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED) {
+			return nil
+		}
+		if step.Status != int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
+			return errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "chat step is already terminal", nil)
+		}
+		transitioned = true
+		if err := tx.Model(&step).
 			Updates(map[string]interface{}{
 				"status":         int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED),
 				"turn_id":        strings.TrimSpace(turnID),
@@ -267,6 +284,9 @@ func (s *ChatTaskService) FinishChatStep(ctx context.Context, taskID, stepID, tu
 	}); err != nil {
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to finish chat step", err)
 	}
+	if !transitioned {
+		return nil
+	}
 
 	s.eventWriter.Publish(ctx, "", string(domain.EventTypeCollaborationNodeCompleted), map[string]interface{}{
 		"task_id":        taskID,
@@ -292,8 +312,22 @@ func (s *ChatTaskService) FailChatStep(ctx context.Context, taskID, stepID, reas
 	}
 
 	now := time.Now()
+	transitioned := false
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&persistence.ExecutionStep{}).Where("step_id = ?", stepID).
+		var step persistence.ExecutionStep
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("step_id = ? AND task_id = ?", stepID, taskID).
+			First(&step).Error; err != nil {
+			return err
+		}
+		if step.Status == int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED) {
+			return nil
+		}
+		if step.Status != int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
+			return errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "chat step is already terminal", nil)
+		}
+		transitioned = true
+		if err := tx.Model(&step).
 			Updates(map[string]interface{}{
 				"status":         int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED),
 				"result_summary": strings.TrimSpace(reason),
@@ -305,6 +339,9 @@ func (s *ChatTaskService) FailChatStep(ctx context.Context, taskID, stepID, reas
 	}); err != nil {
 		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to fail chat step", err)
 	}
+	if !transitioned {
+		return nil
+	}
 
 	s.eventWriter.Publish(ctx, "", string(domain.EventTypeCollaborationNodeFailed), map[string]interface{}{
 		"task_id": taskID,
@@ -315,26 +352,30 @@ func (s *ChatTaskService) FailChatStep(ctx context.Context, taskID, stepID, reas
 	return nil
 }
 
-// RecoverRunningChatTasks reclaims chat steps left RUNNING by a previous process.
-// A step with an open ToolBatch or durable ToolContinuation remains RUNNING for
-// the continuation worker. Other interrupted provider work still fails closed
-// and is never replayed.
-func (s *ChatTaskService) RecoverRunningChatTasks(ctx context.Context) {
+// RecoverRunningChatTasks settles Chat steps left RUNNING by a previous process.
+// A step with durable tool continuation remains RUNNING for its recovery worker.
+// Plain direct-model work is interrupted atomically across its Turn, attempt,
+// step, lease, and replayable terminal events; it is never provider-replayed.
+func (s *ChatTaskService) RecoverRunningChatTasks(ctx context.Context) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
-		logger.Errorf(ctx, "chat task recovery skipped: %v", err)
-		return
+		return fmt.Errorf("open chat task recovery database: %w", err)
 	}
 
 	var steps []persistence.ExecutionStep
-	if err := db.WithContext(ctx).
-		Where("status = ?", int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING)).
+	if err := db.WithContext(ctx).Table("agent_execution_steps AS step").
+		Select("step.*").
+		Joins("JOIN agent_task_runs AS task ON task.task_id = step.task_id").
+		Where(
+			"step.status = ? AND task.surface = ?",
+			int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+			int32(model.TaskSurface_TASK_SURFACE_CHAT),
+		).
 		Find(&steps).Error; err != nil {
-		logger.Errorf(ctx, "chat task recovery query failed: %v", err)
-		return
+		return fmt.Errorf("list running chat steps for recovery: %w", err)
 	}
 	if len(steps) == 0 {
-		return
+		return nil
 	}
 
 	logger.Warnf(ctx, "chat task recovery: reclaiming %d interrupted steps", len(steps))
@@ -350,19 +391,274 @@ func (s *ChatTaskService) RecoverRunningChatTasks(ctx context.Context) {
 				[]string{
 					persistence.ToolContinuationStatusReady,
 					persistence.ToolContinuationStatusClaimed,
+					persistence.ToolContinuationStatusReconciliationRequired,
 				},
 			).
 			Count(&recoverableCount).Error; err != nil {
-			logger.Errorf(ctx, "chat task recovery continuation query failed for step_id=%s: %v", steps[i].StepID, err)
-			continue
+			return fmt.Errorf(
+				"inspect durable continuation for chat step %s: %w",
+				steps[i].StepID,
+				err,
+			)
 		}
 		if recoverableCount > 0 {
 			continue
 		}
-		if err := s.FailChatStep(ctx, steps[i].TaskID, steps[i].StepID, "interrupted by station restart"); err != nil {
-			logger.Errorf(ctx, "chat task recovery failed for step_id=%s: %v", steps[i].StepID, err)
+		if err := s.settleInterruptedChatStep(ctx, db, &steps[i]); err != nil {
+			return fmt.Errorf("settle interrupted chat step %s: %w", steps[i].StepID, err)
 		}
 	}
+
+	return nil
+}
+
+func (s *ChatTaskService) settleInterruptedChatStep(
+	ctx context.Context,
+	db *gorm.DB,
+	step *persistence.ExecutionStep,
+) error {
+	const reason = "station_restart_interrupted"
+
+	now := time.Now().UTC()
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task persistence.TaskRun
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(
+				"task_id = ? AND surface = ?",
+				step.TaskID,
+				int32(model.TaskSurface_TASK_SURFACE_CHAT),
+			).
+			First(&task).Error; err != nil {
+			return err
+		}
+		var conversation persistence.Conversation
+		if err := tx.Where(
+			"id = ? AND ptid = ?",
+			task.ConversationID,
+			task.OwnerActorID,
+		).First(&conversation).Error; err != nil {
+			return fmt.Errorf("load actor-owned chat conversation: %w", err)
+		}
+
+		turnID := strings.TrimSpace(step.TurnID)
+		if turnID == "" {
+			var candidates []persistence.AgentTurn
+			if err := tx.Where(
+				"conversation_id = ? AND agent_id = ? AND status = ?",
+				task.ConversationID,
+				step.AgentID,
+				string(domain.TurnStatusRunning),
+			).Order("started_at DESC").Limit(2).Find(&candidates).Error; err != nil {
+				return err
+			}
+			if len(candidates) != 1 {
+				return fmt.Errorf(
+					"running chat step has no unambiguous turn: task_id=%s candidates=%d",
+					step.TaskID,
+					len(candidates),
+				)
+			}
+			turnID = candidates[0].ID
+		}
+
+		var turn persistence.AgentTurn
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where(
+				"id = ? AND conversation_id = ? AND agent_id = ?",
+				turnID,
+				task.ConversationID,
+				step.AgentID,
+			).
+			First(&turn).Error; err != nil {
+			return err
+		}
+
+		var attempt persistence.TurnAttempt
+		attemptErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("turn_id = ? AND ended_at IS NULL", turn.ID).
+			Order("attempt_index DESC").
+			First(&attempt).Error
+		if attemptErr != nil && attemptErr != gorm.ErrRecordNotFound {
+			return attemptErr
+		}
+		if attemptErr == gorm.ErrRecordNotFound {
+			latestErr := tx.Where("turn_id = ?", turn.ID).
+				Order("attempt_index DESC").
+				First(&attempt).Error
+			if latestErr != nil && latestErr != gorm.ErrRecordNotFound {
+				return latestErr
+			}
+			if latestErr == gorm.ErrRecordNotFound {
+				attempt = persistence.TurnAttempt{
+					ID:           generateID("attempt"),
+					TurnID:       turn.ID,
+					AttemptIndex: 1,
+					Status:       string(domain.TurnStatusRunning),
+					StartedAt:    turn.StartedAt,
+				}
+				if err := tx.Create(&attempt).Error; err != nil {
+					return err
+				}
+			}
+		}
+		terminalStatus := domain.TurnStatus(turn.Status)
+		reasonCode := strings.TrimSpace(turn.TerminalReason)
+		eventType := "error"
+		stepStatus := model.TaskNodeStatus_TASK_NODE_STATUS_FAILED
+		taskEventType := string(domain.EventTypeCollaborationNodeFailed)
+		messageStatus := string(domain.TurnStatusInterrupted)
+		resultSummary := reason
+		if terminalStatus == domain.TurnStatusRunning ||
+			terminalStatus == domain.TurnStatusWaitingLocalTool {
+			terminalStatus = domain.TurnStatusInterrupted
+			reasonCode = reason
+			if err := tx.Model(&turn).
+				Where("status IN ?", []string{
+					string(domain.TurnStatusRunning),
+					string(domain.TurnStatusWaitingLocalTool),
+				}).
+				Updates(map[string]interface{}{
+					"status":          string(domain.TurnStatusInterrupted),
+					"terminal_reason": reason,
+					"ended_at":        now,
+				}).Error; err != nil {
+				return err
+			}
+		} else {
+			switch terminalStatus {
+			case domain.TurnStatusCompleted:
+				eventType = "done"
+				stepStatus = model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED
+				taskEventType = string(domain.EventTypeCollaborationNodeCompleted)
+				messageStatus = "completed"
+				resultSummary = stringValue(turn.FinalResponse)
+			case domain.TurnStatusCancelled:
+				eventType = "cancelled"
+				messageStatus = string(domain.TurnStatusCancelled)
+			case domain.TurnStatusFailed:
+				messageStatus = string(domain.TurnStatusFailed)
+			case domain.TurnStatusInterrupted:
+			default:
+				return nil
+			}
+			if reasonCode == "" {
+				reasonCode = string(terminalStatus)
+			}
+		}
+		if attempt.EndedAt == nil {
+			if err := tx.Model(&attempt).
+				Where("ended_at IS NULL").
+				Updates(map[string]interface{}{
+					"status":     string(terminalStatus),
+					"error_code": reasonCode,
+					"ended_at":   now,
+				}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&persistence.AgentMessage{}).
+			Where("turn_id = ? AND role = ? AND status = ?", turn.ID, string(domain.MessageRoleAssistant), "pending").
+			Updates(map[string]interface{}{
+				"status":     messageStatus,
+				"updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&persistence.ExecutionStep{}).
+			Where(
+				"step_id = ? AND task_id = ? AND status = ?",
+				step.StepID,
+				step.TaskID,
+				int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+			).
+			Updates(map[string]interface{}{
+				"turn_id":        turn.ID,
+				"status":         int32(stepStatus),
+				"result_summary": resultSummary,
+				"ended_at":       now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := s.releaseLeaseTx(tx, step.StepID, now); err != nil {
+			return err
+		}
+
+		var terminalEventCount int64
+		if err := tx.Model(&persistence.TurnEvent{}).
+			Where(
+				"turn_id = ? AND attempt_id = ? AND event_type IN ?",
+				turn.ID,
+				attempt.ID,
+				[]string{"done", "error", "cancelled"},
+			).
+			Count(&terminalEventCount).Error; err != nil {
+			return err
+		}
+		if terminalEventCount == 0 {
+			var maxSequence struct{ MaxSequence int64 }
+			if err := tx.Model(&persistence.TurnEvent{}).
+				Where("turn_id = ?", turn.ID).
+				Select("COALESCE(MAX(event_seq), 0) AS max_sequence").
+				Scan(&maxSequence).Error; err != nil {
+				return err
+			}
+			eventPayload, err := json.Marshal(TurnEvent{
+				Type:           eventType,
+				TurnID:         turn.ID,
+				AttemptID:      attempt.ID,
+				ConversationID: turn.ConversationID,
+				AgentID:        turn.AgentID,
+				Stage:          reasonCode,
+				Error:          reasonCode,
+			})
+			if err != nil {
+				return err
+			}
+			if err := tx.Create(&persistence.TurnEvent{
+				ID:             generateID("tevt"),
+				ConversationID: turn.ConversationID,
+				TurnID:         turn.ID,
+				AttemptID:      attempt.ID,
+				EventSeq:       maxSequence.MaxSequence + 1,
+				EventType:      eventType,
+				Payload:        string(eventPayload),
+				CreatedAt:      now,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		var taskEventCount int64
+		if err := tx.Model(&persistence.TaskEvent{}).
+			Where(
+				"task_id = ? AND step_id = ? AND turn_id = ? AND event_type = ?",
+				step.TaskID,
+				step.StepID,
+				turn.ID,
+				int32(taskEventTypeForDomainEvent(taskEventType)),
+			).
+			Count(&taskEventCount).Error; err != nil {
+			return err
+		}
+		if taskEventCount == 0 {
+			_, err := s.eventWriter.appendTx(
+				ctx,
+				tx,
+				"",
+				step.TaskID,
+				step.StepID,
+				turn.ID,
+				taskEventType,
+				map[string]interface{}{
+					"task_id": step.TaskID,
+					"step_id": step.StepID,
+					"turn_id": turn.ID,
+					"reason":  reasonCode,
+				},
+			)
+			return err
+		}
+		return nil
+	})
 }
 
 func (s *ChatTaskService) releaseLeaseTx(tx *gorm.DB, stepID string, now time.Time) error {

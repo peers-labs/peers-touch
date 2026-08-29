@@ -21,6 +21,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -48,14 +49,14 @@ type ossFileServiceProvider interface {
 }
 
 type agentSubServer struct {
-	opts           *Options
-	addrs          []string
-	status         server.Status
-	jwtWrapper     server.Wrapper
-	turnService    *service.TurnService
-	stopTurnWorker context.CancelFunc
-	deviceKeys     *touchactor.DeviceStore
-	agentDB        *gorm.DB
+	opts            *Options
+	addrs           []string
+	status          server.Status
+	jwtWrapper      server.Wrapper
+	turnService     *service.TurnService
+	chatTaskService *service.ChatTaskService
+	deviceKeys      *touchactor.DeviceStore
+	agentDB         *gorm.DB
 }
 
 func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -117,6 +118,18 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 }
 
 func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error {
+	workerCtx := ctx
+	if s.turnService != nil {
+		workerCtx = s.turnService.SetExecutionLifecycle(ctx)
+	}
+	if s.chatTaskService != nil {
+		if err := s.chatTaskService.RecoverRunningChatTasks(workerCtx); err != nil {
+			if s.turnService != nil {
+				_ = s.turnService.StopExecutionLifecycle(context.Background())
+			}
+			return err
+		}
+	}
 	if s.turnService != nil {
 		serverOptions := server.GetOptions()
 		if serverOptions != nil {
@@ -129,19 +142,23 @@ func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error
 				}
 			}
 		}
-		workerCtx, cancel := context.WithCancel(ctx)
-		s.stopTurnWorker = cancel
-		go s.turnService.RunToolContinuationWorker(workerCtx)
-		go s.turnService.RunTurnQueueWorker(workerCtx)
+		if !s.turnService.RunExecutionWorker(s.turnService.RunToolContinuationWorker) ||
+			!s.turnService.RunExecutionWorker(s.turnService.RunTurnQueueWorker) {
+			_ = s.turnService.StopExecutionLifecycle(context.Background())
+			return fmt.Errorf("start Agent execution workers: lifecycle is stopping")
+		}
 	}
 	s.status = server.StatusRunning
 	return nil
 }
 
 func (s *agentSubServer) Stop(ctx context.Context) error {
-	if s.stopTurnWorker != nil {
-		s.stopTurnWorker()
-		s.stopTurnWorker = nil
+	s.status = server.StatusStopping
+	if s.turnService != nil {
+		if err := s.turnService.StopExecutionLifecycle(ctx); err != nil {
+			s.status = server.StatusError
+			return err
+		}
 	}
 	s.status = server.StatusStopped
 	return nil
@@ -317,7 +334,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	turnSvc.SetCapabilityReadiness(capabilityReadinessSvc)
 	turnSvc.SetChatTaskService(chatTaskSvc)
 	s.turnService = turnSvc
-	chatTaskSvc.RecoverRunningChatTasks(context.Background())
+	s.chatTaskService = chatTaskSvc
 
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),

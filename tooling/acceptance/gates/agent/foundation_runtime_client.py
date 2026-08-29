@@ -265,9 +265,22 @@ class FoundationRuntimeClient:
             script_timeout=timeout,
         )
 
-    def stop(self) -> dict[str, Any]:
+    def restart(self) -> None:
+        result = self._stop_runtime(logout=False, remove_storage=False)
+        if result["status"] != "clean":
+            raise FoundationClientError(
+                f"{self.spec.runtime} restart cleanup failed: {result['failures']}"
+            )
+        self.start()
+
+    def _stop_runtime(
+        self,
+        *,
+        logout: bool,
+        remove_storage: bool,
+    ) -> dict[str, Any]:
         failures: list[str] = []
-        if self.driver is not None:
+        if logout and self.driver is not None:
             try:
                 self.harness("logout", timeout=30)
             except Exception as error:  # noqa: BLE001 - cleanup records failure.
@@ -296,7 +309,8 @@ class FoundationRuntimeClient:
             self.log_handle.flush()
             self.log_handle.close()
             self.log_handle = None
-        shutil.rmtree(self.spec.storage_root, ignore_errors=True)
+        if remove_storage:
+            shutil.rmtree(self.spec.storage_root, ignore_errors=True)
         ports = {
             "gateway": not port_open(self.spec.gateway_port),
             "renderer": not port_open(self.spec.renderer_port),
@@ -304,14 +318,26 @@ class FoundationRuntimeClient:
         }
         if not all(ports.values()):
             failures.append(f"ports still listening: {ports}")
-        if self.spec.storage_root.exists():
+        if remove_storage and self.spec.storage_root.exists():
             failures.append(f"storage remains: {self.spec.storage_root}")
         return {
             "status": "clean" if not failures else "failed",
             "portsReleased": ports,
-            "storageReleased": not self.spec.storage_root.exists(),
+            "storageReleased": (
+                not self.spec.storage_root.exists()
+                if remove_storage
+                else None
+            ),
+            "storagePreserved": (
+                self.spec.storage_root.exists()
+                if not remove_storage
+                else None
+            ),
             "failures": failures,
         }
+
+    def stop(self) -> dict[str, Any]:
+        return self._stop_runtime(logout=True, remove_storage=True)
 
 
 class FoundationRuntimePair:

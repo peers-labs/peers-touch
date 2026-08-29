@@ -1896,8 +1896,206 @@ func TestTurnServiceResumeReadyToolContinuation(t *testing.T) {
 	}
 }
 
+func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	if err := fixture.db.AutoMigrate(&persistence.TaskRun{}); err != nil {
+		t.Fatalf("migrate chat task run: %v", err)
+	}
+
+	authority := fixture.authorizedProposal(
+		t,
+		"lifecycle-cancel",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+	)
+	authority.TaskID = "task-lifecycle-cancel"
+	authority.StepID = "step-lifecycle-cancel"
+	conversation := &persistence.Conversation{
+		ID:        authority.ConversationID,
+		AgentID:   authority.AgentID,
+		Ptid:      fixture.actorID,
+		Title:     "Lifecycle cancellation",
+		Status:    "active",
+		CreatedAt: fixture.now,
+		UpdatedAt: fixture.now,
+	}
+	userInput := "continue"
+	turn := &persistence.AgentTurn{
+		ID:             authority.TurnID,
+		ConversationID: authority.ConversationID,
+		AgentID:        authority.AgentID,
+		UserInput:      &userInput,
+		Status:         string(domain.TurnStatusWaitingLocalTool),
+		StartedAt:      fixture.now,
+	}
+	runtimeSnapshot, err := persistence.MarshalRuntimeSnapshot(&model.RuntimeSnapshot{
+		Budget: &model.RuntimeBudget{MaxToolCalls: 7, MaxIdenticalToolCalls: 2},
+	})
+	if err != nil {
+		t.Fatalf("encode runtime snapshot: %v", err)
+	}
+	attempt := &persistence.TurnAttempt{
+		ID:                  authority.AttemptID,
+		TurnID:              authority.TurnID,
+		AttemptIndex:        1,
+		Status:              string(domain.TurnStatusWaitingLocalTool),
+		ReadinessSnapshotID: authority.ReadinessSnapshotID,
+		RuntimeSnapshot:     runtimeSnapshot,
+		StartedAt:           fixture.now,
+	}
+	task := &persistence.TaskRun{
+		TaskID:         authority.TaskID,
+		Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
+		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		OwnerActorID:   fixture.actorID,
+		ConversationID: authority.ConversationID,
+		CreatedAt:      fixture.now,
+		StartedAt:      fixture.now,
+		UpdatedAt:      fixture.now,
+	}
+	step := &persistence.ExecutionStep{
+		StepID:    authority.StepID,
+		TaskID:    authority.TaskID,
+		AgentID:   authority.AgentID,
+		TurnID:    authority.TurnID,
+		Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+		StartedAt: fixture.now,
+	}
+	for name, record := range map[string]interface{}{
+		"conversation": conversation,
+		"turn":         turn,
+		"attempt":      attempt,
+		"task":         task,
+		"step":         step,
+	} {
+		if err := fixture.db.Create(record).Error; err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+	if _, err := fixture.service.ProposeAuthorizedBatch(
+		context.Background(),
+		authority,
+	); err != nil {
+		t.Fatalf("propose governed tool call: %v", err)
+	}
+	envelope := fixture.pullSingleEnvelope(t)
+	prepared := receiptForEnvelope(
+		envelope,
+		1,
+		model.ClientCapabilityReceiptStatus_CLIENT_CAPABILITY_RECEIPT_STATUS_PREPARED,
+	)
+	if response, err := fixture.service.SubmitReceipt(
+		context.Background(),
+		fixture.actorID,
+		fixture.deviceID,
+		fixture.signedReceiptRequest(t, prepared),
+	); err != nil || !response.GetAccepted() {
+		t.Fatalf("submit prepared receipt: response=%+v err=%v", response, err)
+	}
+	applied := receiptForEnvelope(
+		envelope,
+		2,
+		model.ClientCapabilityReceiptStatus_CLIENT_CAPABILITY_RECEIPT_STATUS_APPLIED,
+	)
+	applied.ResultId = "result-lifecycle-cancel"
+	applied.BoundedResult = []byte(`{"ok":true}`)
+	if response, err := fixture.service.SubmitReceipt(
+		context.Background(),
+		fixture.actorID,
+		fixture.deviceID,
+		fixture.signedReceiptRequest(t, applied),
+	); err != nil || !response.GetAccepted() || response.GetContinuationId() == "" {
+		t.Fatalf("submit applied receipt: response=%+v err=%v", response, err)
+	}
+
+	providerStarted := make(chan struct{})
+	service := &TurnService{
+		toolDispatch: fixture.service,
+		nudgeState:   domain.NewNudgeState(),
+		resumeProviderCall: func(
+			ctx context.Context,
+			_ *TurnConfig,
+			_ string,
+			_ *domain.TurnTrace,
+			_ string,
+			_ []domain.Message,
+		) (string, []ProviderToolCall, []domain.ProviderCallRecord, bool, error) {
+			close(providerStarted)
+			<-ctx.Done()
+			return "", nil, nil, false, ctx.Err()
+		},
+	}
+	service.SetExecutionLifecycle(context.Background())
+	result := make(chan error, 1)
+	if !service.RunExecutionWorker(func(ctx context.Context) {
+		_, err := service.ResumeReadyToolContinuation(ctx, time.Minute)
+		result <- err
+	}) {
+		t.Fatal("continuation worker was rejected before shutdown")
+	}
+	<-providerStarted
+	stopCtx, cancelStop := context.WithTimeout(context.Background(), time.Second)
+	defer cancelStop()
+	if err := service.StopExecutionLifecycle(stopCtx); err != nil {
+		t.Fatalf("stop execution lifecycle: %v", err)
+	}
+	if err := <-result; err == nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("resume cancellation error = %v, want context cancellation", err)
+	}
+
+	var continuation persistence.ToolContinuation
+	if err := fixture.db.First(
+		&continuation,
+		"tool_batch_id = ?",
+		authority.ToolBatchID,
+	).Error; err != nil {
+		t.Fatalf("reload cancelled continuation: %v", err)
+	}
+	if continuation.Status != persistence.ToolContinuationStatusClaimed ||
+		!continuation.ProviderRequestEmitted ||
+		continuation.CompletedAt != nil {
+		t.Fatalf("lifecycle cancellation consumed continuation: %+v", continuation)
+	}
+	var persistedTurn persistence.AgentTurn
+	if err := fixture.db.First(&persistedTurn, "id = ?", authority.TurnID).Error; err != nil {
+		t.Fatalf("reload turn: %v", err)
+	}
+	if persistedTurn.Status != string(domain.TurnStatusWaitingLocalTool) ||
+		persistedTurn.EndedAt != nil {
+		t.Fatalf("lifecycle cancellation terminally settled turn: %+v", persistedTurn)
+	}
+
+	fixture.service.now = func() time.Time {
+		return fixture.now.Add(2 * time.Minute)
+	}
+	if err := fixture.service.ReconcileExpiredContinuations(context.Background()); err != nil {
+		t.Fatalf("reconcile cancelled continuation: %v", err)
+	}
+	if err := fixture.db.First(&continuation, "id = ?", continuation.ID).Error; err != nil {
+		t.Fatalf("reload reconciled continuation: %v", err)
+	}
+	if continuation.Status != persistence.ToolContinuationStatusReconciliationRequired {
+		t.Fatalf("continuation status = %q, want reconciliation_required", continuation.Status)
+	}
+	if err := NewChatTaskService(nil).RecoverRunningChatTasks(context.Background()); err != nil {
+		t.Fatalf("recover chat task with reconciliable continuation: %v", err)
+	}
+	var persistedStep persistence.ExecutionStep
+	if err := fixture.db.First(&persistedStep, "step_id = ?", authority.StepID).Error; err != nil {
+		t.Fatalf("reload recoverable step: %v", err)
+	}
+	if persistedStep.Status != int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) ||
+		persistedStep.EndedAt != nil {
+		t.Fatalf("recovery consumed reconciliable step: %+v", persistedStep)
+	}
+}
+
 func TestChatTaskServicePreservesDurableToolContinuation(t *testing.T) {
 	fixture := newToolDispatchFixture(t)
+	if err := fixture.db.AutoMigrate(&persistence.TaskRun{}); err != nil {
+		t.Fatalf("migrate chat task runs: %v", err)
+	}
 	steps := []*persistence.ExecutionStep{
 		{
 			StepID:    "step-waiting-receipt",
@@ -1913,6 +2111,48 @@ func TestChatTaskServicePreservesDurableToolContinuation(t *testing.T) {
 			Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
 			StartedAt: fixture.now,
 		},
+		{
+			StepID:    "step-reconciliation-required",
+			TaskID:    "task-reconciliation-required",
+			AgentID:   "agent-1",
+			Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+			StartedAt: fixture.now,
+		},
+	}
+	tasks := []*persistence.TaskRun{
+		{
+			TaskID:         steps[0].TaskID,
+			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
+			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+			OwnerActorID:   fixture.actorID,
+			ConversationID: "conversation-waiting-receipt",
+			CreatedAt:      fixture.now,
+			StartedAt:      fixture.now,
+			UpdatedAt:      fixture.now,
+		},
+		{
+			TaskID:         steps[1].TaskID,
+			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
+			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+			OwnerActorID:   fixture.actorID,
+			ConversationID: "conversation-ready-continuation",
+			CreatedAt:      fixture.now,
+			StartedAt:      fixture.now,
+			UpdatedAt:      fixture.now,
+		},
+		{
+			TaskID:         steps[2].TaskID,
+			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
+			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+			OwnerActorID:   fixture.actorID,
+			ConversationID: "conversation-reconciliation-required",
+			CreatedAt:      fixture.now,
+			StartedAt:      fixture.now,
+			UpdatedAt:      fixture.now,
+		},
+	}
+	if err := fixture.db.Create(&tasks).Error; err != nil {
+		t.Fatalf("seed chat tasks: %v", err)
 	}
 	if err := fixture.db.Create(&steps).Error; err != nil {
 		t.Fatalf("seed running chat steps: %v", err)
@@ -1954,6 +2194,24 @@ func TestChatTaskServicePreservesDurableToolContinuation(t *testing.T) {
 			CreatedAt:           fixture.now,
 			UpdatedAt:           fixture.now,
 		},
+		{
+			ID:                  "batch-reconciliation-required",
+			ActorID:             fixture.actorID,
+			TurnID:              "turn-reconciliation-required",
+			AttemptID:           "attempt-reconciliation-required",
+			ConversationID:      "conversation-reconciliation-required",
+			AgentID:             "agent-1",
+			Provider:            "provider-1",
+			Model:               "model-1",
+			SystemPrompt:        "system",
+			Iteration:           1,
+			StepID:              steps[2].StepID,
+			CapabilitySessionID: fixture.session.GetCapabilitySessionId(),
+			ExpectedCallCount:   1,
+			Status:              persistence.ToolBatchStatusReadyForContinuation,
+			CreatedAt:           fixture.now,
+			UpdatedAt:           fixture.now,
+		},
 	}
 	if err := fixture.db.Create(&batches).Error; err != nil {
 		t.Fatalf("seed recoverable tool batches: %v", err)
@@ -1969,9 +2227,22 @@ func TestChatTaskServicePreservesDurableToolContinuation(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed recoverable continuation: %v", err)
 	}
+	if err := fixture.db.Create(&persistence.ToolContinuation{
+		ID:          "continuation-reconciliation-required",
+		TurnID:      batches[2].TurnID,
+		AttemptID:   batches[2].AttemptID,
+		ToolBatchID: batches[2].ID,
+		Status:      persistence.ToolContinuationStatusReconciliationRequired,
+		CreatedAt:   fixture.now,
+		UpdatedAt:   fixture.now,
+	}).Error; err != nil {
+		t.Fatalf("seed reconciliation-required continuation: %v", err)
+	}
 
 	service := NewChatTaskService(nil)
-	service.RecoverRunningChatTasks(context.Background())
+	if err := service.RecoverRunningChatTasks(context.Background()); err != nil {
+		t.Fatalf("recover running chat tasks: %v", err)
+	}
 
 	for _, step := range steps {
 		var reloaded persistence.ExecutionStep

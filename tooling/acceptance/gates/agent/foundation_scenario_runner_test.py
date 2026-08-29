@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from tooling.acceptance.gates.agent import foundation_scenario_runner
@@ -17,9 +19,11 @@ from tooling.acceptance.gates.agent.foundation_group_one_probe import (
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f04,
+    evaluate_as_f06,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_as_f04_capture,
+    valid_as_f06_capture,
 )
 
 
@@ -50,6 +54,82 @@ class DirectProbeHarnessClient:
         )
         if self.mismatch:
             result["assertions"]["denialExecutedZero"] = False
+        return result
+
+
+class F06HarnessClient:
+    def __init__(
+        self,
+        platform: str,
+        *,
+        cleanup_log: list[str] | None = None,
+        fail_prepare_at: int | None = None,
+    ) -> None:
+        self.platform = platform
+        self.cleanup_log = cleanup_log
+        self.fail_prepare_at = fail_prepare_at
+        self.restart_count = 0
+        self.prepare_calls: list[dict[str, object]] = []
+        self.failure_calls: list[dict[str, object]] = []
+        self.reload_calls: list[dict[str, object]] = []
+        self.complete_calls: list[dict[str, object]] = []
+        self.cleanup_calls: list[dict[str, object]] = []
+
+    def restart(self) -> None:
+        self.restart_count += 1
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        del timeout
+        request = payload or {}
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method == "foundationF06Prepare":
+            self.prepare_calls.append(request)
+            if self.fail_prepare_at == len(self.prepare_calls):
+                raise RuntimeError("prepare failed")
+            suffix = f"{self.platform}-{len(self.prepare_calls)}"
+            return {
+                "conversationId": f"conversation-{suffix}",
+                "turnId": f"turn-{suffix}",
+            }
+        if method == "foundationF06ObserveFailure":
+            self.failure_calls.append(request)
+            return {"activeFailureObserved": True}
+        if method == "foundationF06DurableReload":
+            self.reload_calls.append(request)
+            return {"durableReload": {"observed": True}}
+        if method == "foundationF06Cleanup":
+            self.cleanup_calls.append(request)
+            if self.cleanup_log is not None:
+                self.cleanup_log.append(str(request["scenarioKey"]))
+            return {"cleanupComplete": True}
+        if method != "foundationDirectProbe":
+            raise AssertionError(f"unexpected method: {method}")
+        self.complete_calls.append(request)
+        probe = DirectRuntimeProbeInput(
+            platform=str(request["platform"]),
+            locale=str(request["locale"]),
+            cell=str(request["cell"]),
+            sample_id=str(request["sampleId"]),
+        )
+        result = capture(probe)
+        facts = valid_as_f06_capture(
+            probe.platform,
+            probe.locale,
+            probe.sample_id,
+        )
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_as_f06(
+            facts,
+            platform=probe.platform,
+            locale=probe.locale,
+            sample_id=probe.sample_id,
+        )
         return result
 
 
@@ -166,6 +246,149 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             foundation_scenario_runner._make_direct_probe(
                 DirectProbeHarnessClient(mismatch=True)
             )(probe_input)
+
+    def test_as_f06_prepares_all_tuples_around_one_shared_restart(self) -> None:
+        native = F06HarnessClient("desktop_app")
+        browser = F06HarnessClient("browser")
+        runtime_pair = SimpleNamespace(native=native, browser=browser)
+        coordinator = foundation_scenario_runner.FoundationF06Coordinator(
+            runtime_pair,
+            {"profile": {"resolvedName": "two"}},
+            {},
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            f06_coordinator=coordinator,
+        )
+
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "restart_foundation_station",
+                side_effect=lambda *_args, **kwargs: (
+                    kwargs["during_outage"](time.monotonic() + 165),
+                    kwargs["after_restart"](time.monotonic() + 180),
+                    {"containerId": "container"},
+                )[-1],
+            ) as restart,
+            patch.object(
+                foundation_scenario_runner,
+                "_authenticate_clients",
+            ) as authenticate,
+        ):
+            first = probe(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="AS-F06",
+                    sample_id="sample-001",
+                )
+            )
+            second = probe(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="zh-CN",
+                    cell="AS-F06",
+                    sample_id="sample-001",
+                )
+            )
+
+        restart.assert_called_once()
+        authenticate.assert_called_once_with(runtime_pair, {})
+        self.assertEqual(native.restart_count, 1)
+        self.assertEqual(browser.restart_count, 1)
+        self.assertEqual(len(native.prepare_calls), 2)
+        self.assertEqual(len(browser.prepare_calls), 2)
+        self.assertEqual(len(native.failure_calls), 2)
+        self.assertEqual(len(browser.failure_calls), 2)
+        self.assertEqual(len(native.reload_calls), 2)
+        self.assertEqual(len(browser.reload_calls), 2)
+        self.assertEqual(len(native.complete_calls), 2)
+        self.assertEqual(len(browser.complete_calls), 2)
+        self.assertEqual(len(native.cleanup_calls), 2)
+        self.assertEqual(len(browser.cleanup_calls), 2)
+        self.assertEqual(
+            first["scenarioFacts"]["scope"]["locale"],
+            "en",
+        )
+        self.assertEqual(
+            second["scenarioFacts"]["scope"]["locale"],
+            "zh-CN",
+        )
+        self.assertNotEqual(
+            native.prepare_calls[0]["scenarioKey"],
+            native.prepare_calls[1]["scenarioKey"],
+        )
+
+    def test_as_f06_cleans_prepared_tuples_in_reverse_order_on_failure(
+        self,
+    ) -> None:
+        cleanup_log: list[str] = []
+        native = F06HarnessClient("desktop_app", cleanup_log=cleanup_log)
+        browser = F06HarnessClient("browser", cleanup_log=cleanup_log)
+        coordinator = foundation_scenario_runner.FoundationF06Coordinator(
+            SimpleNamespace(native=native, browser=browser),
+            {"profile": {"resolvedName": "two"}},
+            {},
+        )
+
+        with patch.object(
+            foundation_scenario_runner,
+            "restart_foundation_station",
+            side_effect=RuntimeError("outage failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "outage failed"):
+                coordinator.capture(
+                    DirectRuntimeProbeInput(
+                        platform="browser",
+                        locale="en",
+                        cell="AS-F06",
+                        sample_id="sample-001",
+                    )
+                )
+
+        self.assertEqual(
+            cleanup_log,
+            [
+                "desktop_app|zh-CN|AS-F06|sample-001",
+                "desktop_app|en|AS-F06|sample-001",
+                "browser|zh-CN|AS-F06|sample-001",
+                "browser|en|AS-F06|sample-001",
+            ],
+        )
+
+    def test_as_f06_cleans_prior_tuples_when_prepare_fails(self) -> None:
+        cleanup_log: list[str] = []
+        native = F06HarnessClient(
+            "desktop_app",
+            cleanup_log=cleanup_log,
+            fail_prepare_at=2,
+        )
+        browser = F06HarnessClient("browser", cleanup_log=cleanup_log)
+        coordinator = foundation_scenario_runner.FoundationF06Coordinator(
+            SimpleNamespace(native=native, browser=browser),
+            {"profile": {"resolvedName": "two"}},
+            {},
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "prepare failed"):
+            coordinator.capture(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="AS-F06",
+                    sample_id="sample-001",
+                )
+            )
+
+        self.assertEqual(
+            cleanup_log,
+            [
+                "desktop_app|en|AS-F06|sample-001",
+                "browser|zh-CN|AS-F06|sample-001",
+                "browser|en|AS-F06|sample-001",
+            ],
+        )
 
 
 if __name__ == "__main__":

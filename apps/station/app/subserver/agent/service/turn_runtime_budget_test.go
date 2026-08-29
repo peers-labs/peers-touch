@@ -4,12 +4,32 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestWallTimeDeadlineRetainsTypedBudgetExhaustion(t *testing.T) {
+	ctx, cancel := withRuntimeBudgetDeadline(
+		context.Background(),
+		&model.RuntimeBudget{WallTimeMs: 25},
+		time.Now().Add(-time.Second),
+	)
+	defer cancel()
+	<-ctx.Done()
+
+	err := executionContextError(ctx)
+	var budgetErr *errcode.BizError
+	if !errors.As(err, &budgetErr) ||
+		budgetErr.Code != errcode.AgentToolBudgetExhausted ||
+		budgetErr.Message != wallTimeExhaustedReason ||
+		!budgetErr.Payload.GetTerminal() {
+		t.Fatalf("wall-time deadline lost typed budget exhaustion: %#v", err)
+	}
+}
 
 func TestProcessToolCallsRejectsTotalBudgetBeforeDispatch(t *testing.T) {
 	assertToolBatchRejectedBeforeDispatch(

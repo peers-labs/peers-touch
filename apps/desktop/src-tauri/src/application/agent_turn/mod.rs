@@ -23,21 +23,177 @@ use crate::contracts::{
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
 use crate::model::agent;
+use futures_lite::StreamExt;
 use prost::Message;
-use reqwest::blocking::Client;
+use reqwest::blocking::Client as BlockingClient;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-use reqwest::Method;
+use reqwest::{Client, Method};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::io::{BufRead, BufReader, Read};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::future::Future;
+use std::io::{BufRead, Read};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
+use tokio::sync::watch;
 
 const AGENT_TURN_STREAM_EVENT: &str = "agent:turn-stream-event";
 const AGENT_REPLAY_BACKOFF_MS: [u64; 5] = [500, 1_000, 2_000, 4_000, 8_000];
+const AGENT_STREAM_ADMISSION_TIMEOUT: Duration = Duration::from_secs(30);
+
+struct ReplayStreamRegistration {
+    generation: u64,
+    cancel: watch::Sender<bool>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct AgentStreamKey {
+    window_label: String,
+    ptid: String,
+    stream_id: String,
+}
+
+pub struct ReplayCancellation {
+    key: AgentStreamKey,
+    generation: u64,
+    receiver: watch::Receiver<bool>,
+}
+
+struct LiveStreamRegistration {
+    generation: u64,
+    cancel: watch::Sender<bool>,
+}
+
+pub struct LiveStreamCancellation {
+    key: AgentStreamKey,
+    generation: u64,
+    receiver: watch::Receiver<bool>,
+}
+
+fn replay_stream_registry() -> &'static Mutex<HashMap<AgentStreamKey, ReplayStreamRegistration>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<AgentStreamKey, ReplayStreamRegistration>>> =
+        OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn live_stream_registry() -> &'static Mutex<HashMap<AgentStreamKey, LiveStreamRegistration>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<AgentStreamKey, LiveStreamRegistration>>> =
+        OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn stream_key(window_label: &str, ptid: &str, stream_id: &str) -> AgentStreamKey {
+    AgentStreamKey {
+        window_label: window_label.to_string(),
+        ptid: ptid.to_string(),
+        stream_id: stream_id.to_string(),
+    }
+}
+
+pub fn register_agent_turn_replay_stream(
+    window_label: &str,
+    ptid: &str,
+    stream_id: &str,
+) -> ReplayCancellation {
+    static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+    let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+    let (cancel, receiver) = watch::channel(false);
+    let key = stream_key(window_label, ptid, stream_id);
+    if let Ok(mut registry) = replay_stream_registry().lock() {
+        let previous_key = registry
+            .keys()
+            .find(|candidate| {
+                candidate.window_label == window_label && candidate.stream_id == stream_id
+            })
+            .cloned();
+        if let Some(previous) = previous_key.and_then(|key| registry.remove(&key)) {
+            let _ = previous.cancel.send(true);
+        }
+        registry.insert(key.clone(), ReplayStreamRegistration { generation, cancel });
+    }
+    ReplayCancellation {
+        key,
+        generation,
+        receiver,
+    }
+}
+
+pub fn cancel_agent_turn_replay_stream(window_label: &str, stream_id: &str) {
+    if let Ok(mut registry) = replay_stream_registry().lock() {
+        let key = registry
+            .keys()
+            .find(|key| key.window_label == window_label && key.stream_id == stream_id)
+            .cloned();
+        if let Some(registration) = key.and_then(|key| registry.remove(&key)) {
+            let _ = registration.cancel.send(true);
+        }
+    }
+}
+
+fn unregister_agent_turn_replay_stream(key: &AgentStreamKey, generation: u64) {
+    if let Ok(mut registry) = replay_stream_registry().lock() {
+        if registry
+            .get(key)
+            .is_some_and(|registration| registration.generation == generation)
+        {
+            registry.remove(key);
+        }
+    }
+}
+
+pub fn register_agent_turn_live_stream(
+    window_label: &str,
+    ptid: &str,
+    stream_id: &str,
+) -> LiveStreamCancellation {
+    static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+    let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+    let (cancel, receiver) = watch::channel(false);
+    let key = stream_key(window_label, ptid, stream_id);
+    if let Ok(mut registry) = live_stream_registry().lock() {
+        let previous_key = registry
+            .keys()
+            .find(|candidate| {
+                candidate.window_label == window_label && candidate.stream_id == stream_id
+            })
+            .cloned();
+        if let Some(previous) = previous_key.and_then(|key| registry.remove(&key)) {
+            let _ = previous.cancel.send(true);
+        }
+        registry.insert(key.clone(), LiveStreamRegistration { generation, cancel });
+    }
+    LiveStreamCancellation {
+        key,
+        generation,
+        receiver,
+    }
+}
+
+pub fn cancel_agent_turn_live_stream(window_label: &str, stream_id: &str) {
+    if let Ok(mut registry) = live_stream_registry().lock() {
+        let key = registry
+            .keys()
+            .find(|key| key.window_label == window_label && key.stream_id == stream_id)
+            .cloned();
+        if let Some(registration) = key.and_then(|key| registry.remove(&key)) {
+            let _ = registration.cancel.send(true);
+        }
+    }
+}
+
+fn unregister_agent_turn_live_stream(key: &AgentStreamKey, generation: u64) {
+    if let Ok(mut registry) = live_stream_registry().lock() {
+        if registry
+            .get(key)
+            .is_some_and(|registration| registration.generation == generation)
+        {
+            registry.remove(key);
+        }
+    }
+}
 pub fn submit_tool_decision(
     input: AgentToolDecisionIntentInput,
     token: &str,
@@ -152,6 +308,7 @@ pub fn cancel_agent_turn(turn_id: &str, token: &str) -> AppResult<StubPayload> {
 #[serde(rename_all = "camelCase")]
 struct AgentTurnStreamEventPayload {
     stream_id: String,
+    ptid: String,
     event: String,
     data: Value,
 }
@@ -211,7 +368,7 @@ fn collect_turn_text_via_stream(body: &Value, token: &str) -> Result<(String, St
         station_client::station_base_url(),
         "/sub-agent/agent/turn/stream"
     );
-    let client = Client::builder()
+    let client = BlockingClient::builder()
         .timeout(Duration::from_secs(120))
         .build()
         .map_err(|error| format!("failed to create Station stream client: {error}"))?;
@@ -485,32 +642,78 @@ pub fn agent_execute_turn_stream(
     stream_id: String,
     mut input: AgentExecuteTurnInput,
     token: String,
-    _actor_id: String,
-    cancel_flag: Arc<AtomicBool>,
+    ptid: String,
+    mut cancellation: LiveStreamCancellation,
 ) {
     let provider = input.provider.as_deref().unwrap_or("").trim().to_string();
-    if let Err(error) = apply_resolved_agent_workspace(&mut input) {
-        emit_resolved_error(&app, &stream_id, &provider, &error);
-        return;
-    }
-
-    if input.available_tools.is_none() {
-        if let Ok(tool_entries) = tools::tools_list_entries() {
-            input.available_tools = Some(tool_entries);
+    let window_label = cancellation.key.window_label.clone();
+    let result = match apply_resolved_agent_workspace(&mut input) {
+        Err(error) => Err(error),
+        Ok(()) => {
+            if input.available_tools.is_none() {
+                if let Ok(tool_entries) = tools::tools_list_entries() {
+                    input.available_tools = Some(tool_entries);
+                }
+            }
+            let body = build_turn_request_body(input, true);
+            tauri::async_runtime::block_on(stream_station_turn(
+                &app,
+                &window_label,
+                &stream_id,
+                &body,
+                &token,
+                &ptid,
+                &mut cancellation.receiver,
+                provider.as_str(),
+            ))
         }
-    }
-    let body = build_turn_request_body(input, true);
-    let result = stream_station_turn(
-        &app,
-        &stream_id,
-        &body,
-        &token,
-        &cancel_flag,
-        provider.as_str(),
-    );
+    };
     if let Err(error) = result {
-        emit_resolved_error(&app, &stream_id, &provider, &error);
+        emit_resolved_error_to(&app, &window_label, &stream_id, &ptid, &provider, &error);
     }
+    unregister_agent_turn_live_stream(&cancellation.key, cancellation.generation);
+}
+
+pub async fn agent_replay_turn_stream(
+    app: AppHandle,
+    window_label: String,
+    stream_id: String,
+    token: String,
+    ptid: String,
+    conversation_id: String,
+    turn_id: String,
+    after_sequence: i64,
+    mut cancellation: ReplayCancellation,
+) {
+    if let Err(error) = replay_station_turn_events_with_retry(
+        &app,
+        &window_label,
+        &stream_id,
+        &token,
+        &ptid,
+        &conversation_id,
+        &turn_id,
+        after_sequence,
+        &mut cancellation.receiver,
+    )
+    .await
+    {
+        emit_turn_stream_event_to(
+            &app,
+            &window_label,
+            &stream_id,
+            &ptid,
+            "recovery_failed",
+            json!({
+                "type": "recovery_failed",
+                "error": error,
+                "turnId": turn_id,
+                "conversationId": conversation_id,
+                "seq": after_sequence
+            }),
+        );
+    }
+    unregister_agent_turn_replay_stream(&cancellation.key, cancellation.generation);
 }
 
 fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value {
@@ -567,12 +770,14 @@ fn apply_resolved_agent_workspace(input: &mut AgentExecuteTurnInput) -> Result<(
     Ok(())
 }
 
-fn stream_station_turn(
+async fn stream_station_turn(
     app: &AppHandle,
+    window_label: &str,
     stream_id: &str,
     body: &Value,
     token: &str,
-    cancel_flag: &AtomicBool,
+    ptid: &str,
+    cancellation: &mut watch::Receiver<bool>,
     provider_id: &str,
 ) -> Result<(), String> {
     let effective_provider = body
@@ -586,106 +791,226 @@ fn stream_station_turn(
         "/sub-agent/agent/turn/stream"
     );
     let client = Client::builder()
-        .timeout(Duration::from_secs(120))
+        .connect_timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| format!("failed to create Station stream client: {error}"))?;
     let auth = format!("Bearer {}", token.trim());
-    let mut response = client
-        .post(url)
-        .header(CONTENT_TYPE, "application/json")
-        .header(AUTHORIZATION, auth)
-        .header("Accept", "text/event-stream")
-        .json(body)
-        .send()
-        .map_err(|error| format!("Station turn stream request failed: {error}"))?;
-
+    let (response, cancellation_requested_during_admission) = await_stream_admission(
+        client
+            .post(url)
+            .header(CONTENT_TYPE, "application/json")
+            .header(AUTHORIZATION, auth)
+            .header("Accept", "text/event-stream")
+            .json(body)
+            .send(),
+        cancellation,
+        AGENT_STREAM_ADMISSION_TIMEOUT,
+    )
+    .await?;
+    let response =
+        response.map_err(|error| format!("Station turn stream request failed: {error}"))?;
+    let admitted_turn_id = response
+        .headers()
+        .get("x-agent-turn-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string();
+    if cancellation_requested_during_admission && !admitted_turn_id.is_empty() {
+        return cancel_live_stream_turn(&admitted_turn_id, token);
+    }
     if !response.status().is_success() {
         return Err(format!(
             "Station turn stream returned HTTP {}",
             response.status()
         ));
     }
+    if cancellation_requested_during_admission {
+        return Err("agent.error.streamIdentityMissing".to_string());
+    }
 
     let mut error_emitted = false;
     let mut terminal_received = false;
     let mut last_sequence = 0_i64;
-    let mut turn_id = String::new();
+    let mut turn_id = admitted_turn_id;
     let mut transport_error: Option<String> = None;
     let mut conversation_id = body
         .get("conversation_id")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
-    let mut reader = BufReader::new(response);
+    let mut body = response.bytes_stream();
+    let mut buffer = Vec::new();
     loop {
-        if cancel_flag.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-        let frame = match read_sse_frame(&mut reader) {
-            Ok(frame) => frame,
+        let chunk = match next_stream_item_or_cancel(body.next(), cancellation).await {
+            CancellableStreamItem::Cancelled => {
+                if turn_id.is_empty() {
+                    return Ok(());
+                }
+                return cancel_live_stream_turn(&turn_id, token);
+            }
+            CancellableStreamItem::Item(chunk) => chunk,
+        };
+        let Some(chunk) = chunk else {
+            break;
+        };
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
             Err(error) => {
                 transport_error = Some(format!("failed to read Station turn stream: {error}"));
                 break;
             }
         };
-        if cancel_flag.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-        let Some((event, data)) = frame else {
-            break;
-        };
-        update_turn_cursor(
-            &data,
-            &mut turn_id,
-            &mut conversation_id,
-            &mut last_sequence,
-        );
-        if matches!(event.as_str(), "done" | "error" | "cancelled") {
-            terminal_received = true;
-        }
-        if event == "error" {
-            if error_emitted {
-                continue;
+        buffer.extend_from_slice(&chunk);
+        while let Some((event, data)) = take_sse_frame(&mut buffer)? {
+            update_turn_cursor(
+                &data,
+                &mut turn_id,
+                &mut conversation_id,
+                &mut last_sequence,
+            );
+            if replay_is_cancelled(cancellation) {
+                if turn_id.is_empty() {
+                    return Ok(());
+                }
+                return cancel_live_stream_turn(&turn_id, token);
             }
-            error_emitted = true;
-            let raw = data
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown error");
-            emit_resolved_error(app, stream_id, effective_provider, raw);
-        } else {
-            emit_turn_stream_event(app, stream_id, &event, data);
-        }
-        if terminal_received {
-            return Ok(());
+            if matches!(event.as_str(), "done" | "error" | "cancelled") {
+                terminal_received = true;
+            }
+            if event == "error" {
+                if error_emitted {
+                    continue;
+                }
+                error_emitted = true;
+                let raw = data
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown error");
+                emit_resolved_error_to(app, window_label, stream_id, ptid, effective_provider, raw);
+            } else {
+                emit_turn_stream_event_to(app, window_label, stream_id, ptid, &event, data);
+            }
+            if terminal_received {
+                return Ok(());
+            }
         }
     }
-    if !terminal_received && !cancel_flag.load(Ordering::SeqCst) {
+    if !buffer.is_empty() {
+        let frame = String::from_utf8(buffer)
+            .map_err(|error| format!("Station turn stream returned invalid UTF-8: {error}"))?;
+        if let Some((event, data)) = parse_sse_frame(&frame) {
+            update_turn_cursor(
+                &data,
+                &mut turn_id,
+                &mut conversation_id,
+                &mut last_sequence,
+            );
+            if matches!(event.as_str(), "done" | "error" | "cancelled") {
+                terminal_received = true;
+            }
+            if event == "error" {
+                let raw = data
+                    .get("error")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("Unknown error");
+                emit_resolved_error_to(app, window_label, stream_id, ptid, effective_provider, raw);
+            } else {
+                emit_turn_stream_event_to(app, window_label, stream_id, ptid, &event, data);
+            }
+        }
+    }
+    if !terminal_received && !replay_is_cancelled(cancellation) {
         if (turn_id.is_empty() || conversation_id.is_empty()) && transport_error.is_some() {
             return Err(transport_error.unwrap_or_else(|| {
                 "Station stream closed before turn identity was received".to_string()
             }));
         }
-        emit_turn_stream_event(
+        emit_turn_stream_event_to(
             app,
+            window_label,
             stream_id,
-            "reconciling",
+            ptid,
+            "connection_lost",
             json!({
-                "type": "reconciling",
-                "reason": "station_cursor_replay_required"
+                "type": "connection_lost",
+                "reason": transport_error.unwrap_or_else(|| "station_stream_closed".to_string()),
+                "turnId": turn_id,
+                "conversationId": conversation_id,
+                "seq": last_sequence,
+                "recoveryHandoff": true
             }),
         );
-        replay_station_turn_events_with_retry(
-            app,
-            stream_id,
-            token,
-            &conversation_id,
-            &turn_id,
-            last_sequence,
-            cancel_flag,
-        )?;
     }
     Ok(())
+}
+
+enum CancellableStreamItem<T> {
+    Item(T),
+    Cancelled,
+}
+
+async fn await_stream_admission<F, T>(
+    response: F,
+    cancellation: &mut watch::Receiver<bool>,
+    timeout: Duration,
+) -> Result<(T, bool), String>
+where
+    F: Future<Output = T>,
+{
+    tokio::pin!(response);
+    let deadline = tokio::time::Instant::now() + timeout;
+    let mut cancellation_requested = replay_is_cancelled(cancellation);
+    loop {
+        tokio::select! {
+            output = &mut response => {
+                return Ok((
+                    output,
+                    cancellation_requested || replay_is_cancelled(cancellation),
+                ));
+            }
+            _ = tokio::time::sleep_until(deadline) => {
+                return Err("agent.error.streamAdmissionTimeout".to_string());
+            }
+            changed = cancellation.changed() => {
+                if changed.is_err() || replay_is_cancelled(cancellation) {
+                    cancellation_requested = true;
+                }
+            }
+        }
+    }
+}
+
+async fn next_stream_item_or_cancel<F, T>(
+    item: F,
+    cancellation: &mut watch::Receiver<bool>,
+) -> CancellableStreamItem<T>
+where
+    F: Future<Output = T>,
+{
+    if replay_is_cancelled(cancellation) {
+        return CancellableStreamItem::Cancelled;
+    }
+    tokio::select! {
+        item = item => CancellableStreamItem::Item(item),
+        changed = cancellation.changed() => {
+            let _ = changed;
+            CancellableStreamItem::Cancelled
+        }
+    }
+}
+
+fn cancel_live_stream_turn(turn_id: &str, token: &str) -> Result<(), String> {
+    let result = cancel_agent_turn(turn_id, token);
+    if result.ok {
+        return Ok(());
+    }
+    let message = result
+        .error
+        .map(|error| error.message)
+        .unwrap_or_else(|| "Agent turn cancellation failed".to_string());
+    Err(message)
 }
 
 fn update_turn_cursor(
@@ -719,49 +1044,88 @@ fn update_turn_cursor(
     }
 }
 
-fn replay_station_turn_events_with_retry(
+fn replay_is_cancelled(cancellation: &watch::Receiver<bool>) -> bool {
+    *cancellation.borrow()
+}
+
+async fn wait_for_replay_retry(delay: Duration, cancellation: &mut watch::Receiver<bool>) -> bool {
+    if replay_is_cancelled(cancellation) {
+        return true;
+    }
+    tokio::select! {
+        _ = tokio::time::sleep(delay) => false,
+        changed = cancellation.changed() => {
+            changed.is_err() || replay_is_cancelled(cancellation)
+        }
+    }
+}
+
+async fn replay_station_turn_events_with_retry(
     app: &AppHandle,
+    window_label: &str,
     stream_id: &str,
     token: &str,
+    ptid: &str,
     conversation_id: &str,
     turn_id: &str,
     after_sequence: i64,
-    cancel_flag: &AtomicBool,
+    cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), String> {
     let mut last_error = None;
-    let mut replay_cursor = after_sequence;
     for attempt in 0..=AGENT_REPLAY_BACKOFF_MS.len() {
-        if cancel_flag.load(Ordering::SeqCst) {
+        if replay_is_cancelled(cancellation) {
             return Ok(());
         }
-        if attempt > 0 {
-            let delay_ms = AGENT_REPLAY_BACKOFF_MS[attempt - 1];
-            let mut waited_ms = 0;
-            while waited_ms < delay_ms {
-                if cancel_flag.load(Ordering::SeqCst) {
-                    return Ok(());
-                }
-                let slice_ms = (delay_ms - waited_ms).min(100);
-                std::thread::sleep(Duration::from_millis(slice_ms));
-                waited_ms += slice_ms;
-            }
+        if attempt > 0
+            && wait_for_replay_retry(
+                Duration::from_millis(AGENT_REPLAY_BACKOFF_MS[attempt - 1]),
+                cancellation,
+            )
+            .await
+        {
+            return Ok(());
         }
+        emit_turn_stream_event_to(
+            app,
+            window_label,
+            stream_id,
+            ptid,
+            "reconnecting",
+            json!({
+                "type": "reconnecting",
+                "attempt": attempt + 1,
+                "turnId": turn_id,
+                "conversationId": conversation_id,
+                "seq": after_sequence
+            }),
+        );
+        emit_turn_stream_event_to(
+            app,
+            window_label,
+            stream_id,
+            ptid,
+            "replaying",
+            json!({
+                "type": "replaying",
+                "turnId": turn_id,
+                "conversationId": conversation_id,
+                "seq": after_sequence
+            }),
+        );
         match replay_station_turn_events(
             app,
+            window_label,
             stream_id,
             token,
+            ptid,
             conversation_id,
             turn_id,
-            replay_cursor,
-            cancel_flag,
-        ) {
-            Ok(ReplayOutcome::Terminal) => return Ok(()),
-            Ok(ReplayOutcome::CaughtUp(sequence)) => {
-                replay_cursor = replay_cursor.max(sequence);
-                last_error = Some(format!(
-                    "turn remains non-terminal at replay cursor {replay_cursor}"
-                ));
-            }
+            after_sequence,
+            cancellation,
+        )
+        .await
+        {
+            Ok(ReplayOutcome::Terminal | ReplayOutcome::Cancelled) => return Ok(()),
             Err(error) => last_error = Some(error),
         }
     }
@@ -775,7 +1139,7 @@ fn replay_station_turn_events_with_retry(
 #[derive(Debug, PartialEq, Eq)]
 enum ReplayOutcome {
     Terminal,
-    CaughtUp(i64),
+    Cancelled,
 }
 
 fn replay_event_is_terminal(event: &str, data: &Value) -> bool {
@@ -793,14 +1157,124 @@ fn replay_event_is_terminal(event: &str, data: &Value) -> bool {
     )
 }
 
-fn replay_station_turn_events(
+fn build_replay_request_body(conversation_id: &str, turn_id: &str, after_sequence: i64) -> Value {
+    json!({
+        "conversation_id": conversation_id,
+        "turn_id": turn_id,
+        "afterSequence": after_sequence,
+    })
+}
+
+fn take_sse_frame(buffer: &mut Vec<u8>) -> Result<Option<(String, Value)>, String> {
+    let lf_boundary = buffer.windows(2).position(|window| window == b"\n\n");
+    let crlf_boundary = buffer.windows(4).position(|window| window == b"\r\n\r\n");
+    let boundary = match (lf_boundary, crlf_boundary) {
+        (Some(lf), Some(crlf)) if lf <= crlf => Some((lf, 2)),
+        (Some(_), Some(crlf)) => Some((crlf, 4)),
+        (Some(lf), None) => Some((lf, 2)),
+        (None, Some(crlf)) => Some((crlf, 4)),
+        (None, None) => None,
+    };
+    let Some((index, delimiter_len)) = boundary else {
+        return Ok(None);
+    };
+    let remainder = buffer.split_off(index + delimiter_len);
+    let frame = std::mem::replace(buffer, remainder);
+    let frame = String::from_utf8(frame[..index].to_vec())
+        .map_err(|error| format!("Station turn replay returned invalid UTF-8: {error}"))?;
+    Ok(parse_sse_frame(&frame))
+}
+
+fn emit_replay_event(
     app: &AppHandle,
+    window_label: &str,
+    stream_id: &str,
+    ptid: &str,
+    event: String,
+    data: Value,
+    replay_turn_id: &mut String,
+    replay_conversation_id: &mut String,
+    last_sequence: &mut i64,
+    live_tail_established: &mut bool,
+) -> bool {
+    update_turn_cursor(&data, replay_turn_id, replay_conversation_id, last_sequence);
+    let terminal = replay_event_is_terminal(&event, &data);
+    if event == "snapshot" && terminal && !*live_tail_established {
+        *live_tail_established = true;
+        emit_turn_stream_event_to(
+            app,
+            window_label,
+            stream_id,
+            ptid,
+            "reconciling",
+            json!({
+                "type": "reconciling",
+                "turnId": replay_turn_id,
+                "conversationId": replay_conversation_id,
+                "seq": last_sequence
+            }),
+        );
+        emit_turn_stream_event_to(
+            app,
+            window_label,
+            stream_id,
+            ptid,
+            "connected",
+            json!({
+                "type": "connected",
+                "turnId": replay_turn_id,
+                "conversationId": replay_conversation_id,
+                "seq": last_sequence
+            }),
+        );
+        emit_turn_stream_event_to(app, window_label, stream_id, ptid, &event, data);
+        return true;
+    }
+    if event == "catchup_done" && !*live_tail_established {
+        *live_tail_established = true;
+        emit_turn_stream_event_to(
+            app,
+            window_label,
+            stream_id,
+            ptid,
+            "reconciling",
+            json!({
+                "type": "reconciling",
+                "turnId": replay_turn_id,
+                "conversationId": replay_conversation_id,
+                "seq": last_sequence
+            }),
+        );
+        emit_turn_stream_event_to(app, window_label, stream_id, ptid, &event, data);
+        emit_turn_stream_event_to(
+            app,
+            window_label,
+            stream_id,
+            ptid,
+            "connected",
+            json!({
+                "type": "connected",
+                "turnId": replay_turn_id,
+                "conversationId": replay_conversation_id,
+                "seq": last_sequence
+            }),
+        );
+        return false;
+    }
+    emit_turn_stream_event_to(app, window_label, stream_id, ptid, &event, data);
+    terminal
+}
+
+async fn replay_station_turn_events(
+    app: &AppHandle,
+    window_label: &str,
     stream_id: &str,
     token: &str,
+    ptid: &str,
     conversation_id: &str,
     turn_id: &str,
     after_sequence: i64,
-    cancel_flag: &AtomicBool,
+    cancellation: &mut watch::Receiver<bool>,
 ) -> Result<ReplayOutcome, String> {
     if conversation_id.trim().is_empty() || turn_id.trim().is_empty() {
         return Err("Station stream closed before turn identity was received".to_string());
@@ -811,57 +1285,110 @@ fn replay_station_turn_events(
         "/sub-agent/agent/conversation/events"
     );
     let client = Client::builder()
-        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| format!("failed to create Station replay client: {error}"))?;
-    let response = client
-        .post(url)
-        .header(CONTENT_TYPE, "application/json")
-        .header(AUTHORIZATION, format!("Bearer {}", token.trim()))
-        .header("Accept", "text/event-stream")
-        .json(&json!({
-            "conversation_id": conversation_id,
-            "turn_id": turn_id,
-            "after_seq": after_sequence,
-        }))
-        .send()
-        .map_err(|error| format!("Station turn replay request failed: {error}"))?;
+    let response = match next_stream_item_or_cancel(
+        tokio::time::timeout(
+            AGENT_STREAM_ADMISSION_TIMEOUT,
+            client
+                .post(url)
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, format!("Bearer {}", token.trim()))
+                .header("Accept", "text/event-stream")
+                .json(&build_replay_request_body(
+                    conversation_id,
+                    turn_id,
+                    after_sequence,
+                ))
+                .send(),
+        ),
+        cancellation,
+    )
+    .await
+    {
+        CancellableStreamItem::Cancelled => return Ok(ReplayOutcome::Cancelled),
+        CancellableStreamItem::Item(result) => result
+            .map_err(|_| "Station turn replay admission timed out".to_string())?
+            .map_err(|error| format!("Station turn replay request failed: {error}"))?,
+    };
     if !response.status().is_success() {
         return Err(format!(
             "Station turn replay returned HTTP {}",
             response.status()
         ));
     }
-    let mut reader = BufReader::new(response);
+    let mut body = response.bytes_stream();
+    let mut buffer = Vec::new();
     let mut last_sequence = after_sequence;
+    let mut live_tail_established = false;
+    let catchup_deadline = tokio::time::Instant::now() + AGENT_STREAM_ADMISSION_TIMEOUT;
     let mut replay_turn_id = turn_id.to_string();
     let mut replay_conversation_id = conversation_id.to_string();
     loop {
-        if cancel_flag.load(Ordering::SeqCst) {
-            return Ok(ReplayOutcome::Terminal);
-        }
-        let Some((event, data)) = read_sse_frame(&mut reader)
-            .map_err(|error| format!("failed to read Station turn replay: {error}"))?
-        else {
+        let chunk = if live_tail_established {
+            next_stream_item_or_cancel(body.next(), cancellation).await
+        } else {
+            tokio::select! {
+                chunk = next_stream_item_or_cancel(body.next(), cancellation) => chunk,
+                _ = tokio::time::sleep_until(catchup_deadline) => {
+                    return Err("Station turn replay catchup timed out".to_string());
+                }
+            }
+        };
+        let chunk = match chunk {
+            CancellableStreamItem::Cancelled => return Ok(ReplayOutcome::Cancelled),
+            CancellableStreamItem::Item(chunk) => chunk,
+        };
+        let Some(chunk) = chunk else {
             break;
         };
-        update_turn_cursor(
-            &data,
-            &mut replay_turn_id,
-            &mut replay_conversation_id,
-            &mut last_sequence,
-        );
-        let terminal = replay_event_is_terminal(&event, &data);
-        let caught_up = event == "catchup_done";
-        emit_turn_stream_event(app, stream_id, &event, data);
-        if terminal {
-            return Ok(ReplayOutcome::Terminal);
-        }
-        if caught_up {
-            return Ok(ReplayOutcome::CaughtUp(last_sequence));
+        let chunk =
+            chunk.map_err(|error| format!("failed to read Station turn replay: {error}"))?;
+        buffer.extend_from_slice(&chunk);
+        while let Some((event, data)) = take_sse_frame(&mut buffer)? {
+            if emit_replay_event(
+                app,
+                window_label,
+                stream_id,
+                ptid,
+                event,
+                data,
+                &mut replay_turn_id,
+                &mut replay_conversation_id,
+                &mut last_sequence,
+                &mut live_tail_established,
+            ) {
+                return Ok(ReplayOutcome::Terminal);
+            }
         }
     }
-    Err("Station turn replay closed without catchup_done".to_string())
+    if !buffer.is_empty() {
+        let frame = String::from_utf8(buffer)
+            .map_err(|error| format!("Station turn replay returned invalid UTF-8: {error}"))?;
+        if let Some((event, data)) = parse_sse_frame(&frame) {
+            if emit_replay_event(
+                app,
+                window_label,
+                stream_id,
+                ptid,
+                event,
+                data,
+                &mut replay_turn_id,
+                &mut replay_conversation_id,
+                &mut last_sequence,
+                &mut live_tail_established,
+            ) {
+                return Ok(ReplayOutcome::Terminal);
+            }
+        }
+    }
+    let state = if live_tail_established {
+        "after live tail establishment"
+    } else {
+        "before catchup_done"
+    };
+    Err(format!("Station turn replay closed {state}"))
 }
 
 fn read_sse_frame<R: BufRead>(reader: &mut R) -> Result<Option<(String, Value)>, String> {
@@ -947,22 +1474,42 @@ fn extract_station_error_message(raw: &str, details: Option<&Value>) -> String {
     raw.to_string()
 }
 
-fn emit_resolved_error(app: &AppHandle, stream_id: &str, provider_id: &str, raw_error: &str) {
+fn emit_resolved_error_to(
+    app: &AppHandle,
+    window_label: &str,
+    stream_id: &str,
+    ptid: &str,
+    provider_id: &str,
+    raw_error: &str,
+) {
     let wrapped =
         error_resolver::wrap_stream_error(provider_id, ProviderKind::Direct, raw_error, None);
-    emit_turn_stream_event(app, stream_id, "error", wrapped);
+    emit_turn_stream_event_to(app, window_label, stream_id, ptid, "error", wrapped);
 }
 
-pub fn emit_turn_stream_event(app: &AppHandle, stream_id: &str, event: &str, data: Value) {
-    if let Err(error) = app.emit(
+fn emit_turn_stream_event_to(
+    app: &AppHandle,
+    window_label: &str,
+    stream_id: &str,
+    ptid: &str,
+    event: &str,
+    data: Value,
+) {
+    if let Err(error) = app.emit_to(
+        window_label,
         AGENT_TURN_STREAM_EVENT,
         AgentTurnStreamEventPayload {
             stream_id: stream_id.to_string(),
+            ptid: ptid.to_string(),
             event: event.to_string(),
             data,
         },
     ) {
-        tracing::warn!(error = %error, "Failed to emit Agent turn stream event");
+        tracing::warn!(
+            error = %error,
+            window_label,
+            "Failed to emit Agent replay stream event"
+        );
     }
 }
 
@@ -1760,6 +2307,34 @@ mod tests {
     fn replay_backoff_is_bounded() {
         assert_eq!(AGENT_REPLAY_BACKOFF_MS, [500, 1_000, 2_000, 4_000, 8_000]);
         assert_eq!(AGENT_REPLAY_BACKOFF_MS.iter().sum::<u64>(), 15_500);
+        assert_eq!(AGENT_REPLAY_BACKOFF_MS.len() + 1, 6);
+    }
+
+    #[test]
+    fn stream_payload_carries_the_authenticated_ptid() {
+        let payload = AgentTurnStreamEventPayload {
+            stream_id: "stream-1".to_string(),
+            ptid: "ptid:person:alice".to_string(),
+            event: "snapshot".to_string(),
+            data: json!({"status": "completed"}),
+        };
+
+        assert_eq!(
+            serde_json::to_value(payload).unwrap()["ptid"],
+            "ptid:person:alice"
+        );
+    }
+
+    #[test]
+    fn replay_request_uses_the_canonical_protojson_cursor_name() {
+        assert_eq!(
+            build_replay_request_body("conversation-1", "turn-1", 4),
+            json!({
+                "conversation_id": "conversation-1",
+                "turn_id": "turn-1",
+                "afterSequence": 4,
+            }),
+        );
     }
 
     #[test]
@@ -1777,6 +2352,143 @@ mod tests {
             &json!({"status": "completed", "seq": 9}),
         ));
         assert!(replay_event_is_terminal("done", &json!({"seq": 9}),));
+    }
+
+    #[test]
+    fn replay_stream_registration_replaces_and_cancels_the_previous_generation() {
+        let first = register_agent_turn_replay_stream("main", "ptid:person:one", "stream-1");
+        let second = register_agent_turn_replay_stream("main", "ptid:person:one", "stream-1");
+
+        assert!(*first.receiver.borrow());
+        assert!(!*second.receiver.borrow());
+        cancel_agent_turn_replay_stream("main", "stream-1");
+        assert!(*second.receiver.borrow());
+    }
+
+    #[test]
+    fn replay_stream_registration_isolated_by_window_and_actor() {
+        let first = register_agent_turn_replay_stream("main", "ptid:person:one", "shared");
+        let second = register_agent_turn_replay_stream("secondary", "ptid:person:two", "shared");
+
+        cancel_agent_turn_replay_stream("main", "shared");
+
+        assert!(*first.receiver.borrow());
+        assert!(!*second.receiver.borrow());
+        cancel_agent_turn_replay_stream("secondary", "shared");
+    }
+
+    #[test]
+    fn replay_stream_actor_switch_replaces_the_same_window_stream() {
+        let first = register_agent_turn_replay_stream("main", "ptid:person:one", "switched");
+        let second = register_agent_turn_replay_stream("main", "ptid:person:two", "switched");
+
+        assert!(*first.receiver.borrow());
+        assert!(!*second.receiver.borrow());
+        cancel_agent_turn_replay_stream("main", "switched");
+        assert!(*second.receiver.borrow());
+    }
+
+    #[test]
+    fn live_stream_registration_can_be_cancelled_before_turn_identity_arrives() {
+        let mut cancellation =
+            register_agent_turn_live_stream("main", "ptid:person:one", "live-stream-1");
+
+        cancel_agent_turn_live_stream("main", "live-stream-1");
+
+        assert!(*cancellation.receiver.borrow_and_update());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn live_stream_cancellation_unblocks_a_pending_sse_read() {
+        let mut cancellation =
+            register_agent_turn_live_stream("main", "ptid:person:one", "live-stream-pending");
+        cancel_agent_turn_live_stream("main", "live-stream-pending");
+
+        let read = tokio::time::timeout(
+            Duration::from_millis(50),
+            next_stream_item_or_cancel(
+                std::future::pending::<Option<Result<Vec<u8>, String>>>(),
+                &mut cancellation.receiver,
+            ),
+        )
+        .await
+        .expect("cancellation should unblock the pending stream read");
+
+        assert!(matches!(read, CancellableStreamItem::Cancelled));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn live_stream_cancellation_waits_for_admission_identity_before_semantic_cancel() {
+        let mut cancellation =
+            register_agent_turn_live_stream("main", "ptid:person:one", "live-stream-admission");
+        let (admission_sender, admission_receiver) =
+            tokio::sync::oneshot::channel::<&'static str>();
+        let admission = await_stream_admission(
+            async move {
+                admission_receiver
+                    .await
+                    .expect("admission identity source must remain alive")
+            },
+            &mut cancellation.receiver,
+            Duration::from_secs(1),
+        );
+        tokio::pin!(admission);
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), &mut admission)
+                .await
+                .is_err(),
+            "admission should still be pending before cancellation"
+        );
+        cancel_agent_turn_live_stream("main", "live-stream-admission");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), &mut admission)
+                .await
+                .is_err(),
+            "cancellation must not drop the only future carrying X-Agent-Turn-ID"
+        );
+
+        admission_sender
+            .send("turn-admitted")
+            .expect("admission receiver must remain attached");
+        let (turn_id, cancellation_requested) =
+            admission.await.expect("admission identity should arrive");
+
+        assert_eq!(turn_id, "turn-admitted");
+        assert!(cancellation_requested);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn live_stream_admission_is_bounded_when_identity_never_arrives() {
+        let mut cancellation =
+            register_agent_turn_live_stream("main", "ptid:person:one", "live-stream-timeout");
+
+        let result = await_stream_admission(
+            std::future::pending::<()>(),
+            &mut cancellation.receiver,
+            Duration::from_millis(10),
+        )
+        .await;
+
+        assert_eq!(
+            result.expect_err("pending admission must time out"),
+            "agent.error.streamAdmissionTimeout",
+        );
+        cancel_agent_turn_live_stream("main", "live-stream-timeout");
+    }
+
+    #[test]
+    fn live_stream_cancellation_preserves_window_and_actor_ownership() {
+        let mut first = register_agent_turn_live_stream("main", "ptid:person:one", "shared-live");
+        let mut second =
+            register_agent_turn_live_stream("secondary", "ptid:person:two", "shared-live");
+
+        cancel_agent_turn_live_stream("main", "shared-live");
+
+        assert!(*first.receiver.borrow_and_update());
+        assert!(!*second.receiver.borrow());
+        cancel_agent_turn_live_stream("secondary", "shared-live");
+        assert!(*second.receiver.borrow_and_update());
     }
 
     #[test]

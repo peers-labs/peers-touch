@@ -5,12 +5,18 @@ import i18n, { changeLanguage } from '../../i18n';
 import { installDeferredAppRuntimeProjections } from '../../services/appRuntime';
 import {
   api,
+  classifyAgentTurnTerminalEvent,
   streamAgentTurn,
+  streamAgentTurnReplay,
   submitAgentFeedback,
   type AgentAttachmentRefInput,
   type AgentRuntimeBudgetInput,
+  type AgentTurnSourceDelivery,
+  type AgentTurnStreamController,
 } from '../../services/desktop_api';
+import type { AgentTurnSnapshotReloadResult } from '../../runtimes/chatRuntime';
 import { useAgentStore } from '../../store/agent';
+import { useAgentTurnRecoveryStore } from '../../store/agentTurnRecovery';
 import { useChatStore } from '../../store/chat';
 import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
@@ -67,10 +73,315 @@ interface ObservedFoundationTurnResult {
 }
 
 interface ObservedFoundationTurn {
-  controller: AbortController;
+  controller: AgentTurnStreamController;
+  sourcePtid: string;
   events: ObservedFoundationTurnResult['events'];
   firstEvent: Promise<{ event: string; data: Record<string, unknown> }>;
   result: Promise<ObservedFoundationTurnResult>;
+}
+
+interface FoundationF06Transition {
+  phase: string;
+  sequence: number;
+  streamGeneration: number;
+  observedAt: string;
+  terminal: boolean;
+}
+
+interface FoundationF06ReplayDelivery {
+  eventType: string;
+  sequence: number;
+  streamId: string;
+  streamGeneration: number;
+  observedAt: string;
+  sourceTransport: AgentTurnSourceDelivery['transport'];
+  sourcePtidHash: string;
+  sourceConversationId: string;
+  sourceTurnId: string;
+  sourceSequence: number;
+  sourceEventType: string;
+  rawPayload: {
+    eventType: string;
+    data: Record<string, unknown>;
+  };
+  payloadHash: string;
+}
+
+interface FoundationF06Handoff {
+  scenarioKey: string;
+  platform: string;
+  locale: string;
+  sampleId: string;
+  conversationId: string;
+  turnId: string;
+  streamId: string;
+  streamGeneration: number;
+  actorPtid: string;
+  actorPtidHash: string;
+  acknowledgedCursor: number;
+  conversationRevision: number;
+  prefixHash: string;
+  prefixLength: number;
+  duplicateSequence: number;
+  outOfOrderSequence: number;
+  staleGeneration: number;
+  staleGenerationRejected: boolean;
+  staleTerminalRejected: boolean;
+  cursorBeforeMutation: number;
+  cursorAfterMutation: number;
+  projectionBeforeMutationHash: string;
+  projectionAfterMutationHash: string;
+  duplicatePayloadHash: string;
+  outOfOrderPayloadHash: string;
+  transitions: FoundationF06Transition[];
+  replayedSequences: number[];
+  replayDeliveries: FoundationF06ReplayDelivery[];
+  recoveryFailure?: Record<string, unknown>;
+  preparedAt: string;
+}
+
+const FOUNDATION_F06_STORAGE_KEY = 'pt.acceptance.agent.foundation.as-f06';
+const FOUNDATION_F06_PHASE_BY_EVENT: Record<string, string> = {
+  connection_lost: 'CONNECTION_LOST',
+  reconnecting: 'RECONNECTING',
+  replaying: 'REPLAYING',
+  reconciling: 'RECONCILING',
+  connected: 'CONNECTED',
+  recovery_failed: 'RECOVERY_FAILED',
+};
+let foundationF06ObservationInstalled = false;
+let foundationF06ReplayRecording: Promise<void> = Promise.resolve();
+
+function authenticatedFoundationActorPtid(): string {
+  const user = useSessionStore.getState().currentUser;
+  const actorPtid = user?.ptid?.trim() || user?.actorId.trim() || '';
+  if (!actorPtid) {
+    throw new Error('agent.acceptance.authenticatedActorMissing');
+  }
+  return actorPtid;
+}
+
+function readFoundationF06Handoffs(): Record<string, FoundationF06Handoff> {
+  const raw = window.localStorage.getItem(FOUNDATION_F06_STORAGE_KEY);
+  if (!raw) return {};
+  try {
+    const values = JSON.parse(raw) as Record<string, Partial<FoundationF06Handoff>>;
+    if (!values || typeof values !== 'object' || Array.isArray(values)) return {};
+    const handoffs: Record<string, FoundationF06Handoff> = {};
+    for (const [scenarioKey, value] of Object.entries(values)) {
+      if (
+        typeof value.scenarioKey !== 'string'
+        || value.scenarioKey !== scenarioKey
+        || typeof value.platform !== 'string'
+        || typeof value.locale !== 'string'
+        || typeof value.sampleId !== 'string'
+        || typeof value.conversationId !== 'string'
+        || typeof value.turnId !== 'string'
+        || typeof value.streamId !== 'string'
+        || !Number.isSafeInteger(value.streamGeneration)
+        || typeof value.actorPtid !== 'string'
+        || typeof value.actorPtidHash !== 'string'
+        || !Number.isSafeInteger(value.acknowledgedCursor)
+        || !Number.isSafeInteger(value.conversationRevision)
+        || typeof value.prefixHash !== 'string'
+        || !Number.isSafeInteger(value.prefixLength)
+        || !Number.isSafeInteger(value.duplicateSequence)
+        || !Number.isSafeInteger(value.outOfOrderSequence)
+        || !Number.isSafeInteger(value.staleGeneration)
+        || !Number.isSafeInteger(value.cursorBeforeMutation)
+        || !Number.isSafeInteger(value.cursorAfterMutation)
+        || typeof value.projectionBeforeMutationHash !== 'string'
+        || typeof value.projectionAfterMutationHash !== 'string'
+        || typeof value.duplicatePayloadHash !== 'string'
+        || typeof value.outOfOrderPayloadHash !== 'string'
+        || !Array.isArray(value.transitions)
+        || !Array.isArray(value.replayedSequences)
+        || !Array.isArray(value.replayDeliveries)
+        || typeof value.preparedAt !== 'string'
+      ) {
+        return {};
+      }
+      handoffs[scenarioKey] = value as FoundationF06Handoff;
+    }
+    return handoffs;
+  } catch {
+    return {};
+  }
+}
+
+function readFoundationF06Handoff(scenarioKey: string): FoundationF06Handoff | null {
+  return readFoundationF06Handoffs()[scenarioKey] ?? null;
+}
+
+function writeFoundationF06Handoff(value: FoundationF06Handoff): void {
+  const handoffs = readFoundationF06Handoffs();
+  handoffs[value.scenarioKey] = value;
+  window.localStorage.setItem(FOUNDATION_F06_STORAGE_KEY, JSON.stringify(handoffs));
+}
+
+function removeFoundationF06Handoff(scenarioKey: string): void {
+  const handoffs = readFoundationF06Handoffs();
+  delete handoffs[scenarioKey];
+  if (Object.keys(handoffs).length === 0) {
+    window.localStorage.removeItem(FOUNDATION_F06_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(FOUNDATION_F06_STORAGE_KEY, JSON.stringify(handoffs));
+}
+
+function installFoundationF06Observation(): void {
+  if (foundationF06ObservationInstalled) return;
+  foundationF06ObservationInstalled = true;
+  useAgentTurnRecoveryStore.subscribe((state, previousState) => {
+    for (const handoff of Object.values(readFoundationF06Handoffs())) {
+      const current = state.active[handoff.conversationId];
+      const previous = previousState.active[handoff.conversationId];
+      if (
+        !current
+        || current.actorId !== handoff.actorPtid
+        || current.turnId !== handoff.turnId
+        || current.streamId !== handoff.streamId
+        || current.streamGeneration !== handoff.streamGeneration
+        || current.phase === previous?.phase
+      ) {
+        continue;
+      }
+      foundationF06ReplayRecording = foundationF06ReplayRecording.then(() => {
+        const latest = readFoundationF06Handoff(handoff.scenarioKey);
+        if (!latest) return;
+        latest.transitions.push({
+          phase: current.phase,
+          sequence: current.cursor,
+          streamGeneration: current.streamGeneration,
+          observedAt: new Date(current.updatedAt).toISOString(),
+          terminal: false,
+        });
+        writeFoundationF06Handoff(latest);
+      });
+    }
+  });
+  eventBus.subscribe(EVENT.AGENT_TURN_STREAM_EVENT, (payload) => {
+    const observed = payload as typeof payload & {
+      sourceDelivery?: AgentTurnSourceDelivery;
+      deliveryOnly?: boolean;
+    };
+    const sourceDelivery = observed.sourceDelivery;
+    if (observed.deliveryOnly !== true || !sourceDelivery) return;
+    const handoff = Object.values(readFoundationF06Handoffs()).find((candidate) =>
+      sourceDelivery.conversationId === candidate.conversationId
+      && sourceDelivery.turnId === candidate.turnId
+      && sourceDelivery.ptid === candidate.actorPtid
+      && payload.streamId === candidate.streamId
+      && payload.streamGeneration === candidate.streamGeneration);
+    if (!handoff) return;
+    foundationF06ReplayRecording = foundationF06ReplayRecording.then(async () => {
+      const current = readFoundationF06Handoff(handoff.scenarioKey);
+      if (!current) return;
+      const replayStarted = current.transitions.some(
+        (transition) => transition.phase === 'REPLAYING',
+      );
+      if (
+        replayStarted
+        && sourceDelivery.rawPayload.eventType !== 'catchup_done'
+        && Number.isSafeInteger(sourceDelivery.sequence)
+        && sourceDelivery.sequence > current.acknowledgedCursor
+      ) {
+        const rawPayload = evidenceValue(
+          sourceDelivery.rawPayload,
+        ) as FoundationF06ReplayDelivery['rawPayload'];
+        current.replayedSequences.push(sourceDelivery.sequence);
+        current.replayDeliveries.push({
+          eventType: sourceDelivery.rawPayload.eventType,
+          sequence: sourceDelivery.sequence,
+          streamId: payload.streamId,
+          streamGeneration: payload.streamGeneration,
+          observedAt: new Date(payload.timestampMs).toISOString(),
+          sourceTransport: sourceDelivery.transport,
+          sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+          sourceConversationId: sourceDelivery.conversationId,
+          sourceTurnId: sourceDelivery.turnId,
+          sourceSequence: sourceDelivery.sequence,
+          sourceEventType: sourceDelivery.rawPayload.eventType,
+          rawPayload,
+          payloadHash: await sha256Hex(stableJson(rawPayload)),
+        });
+      }
+      writeFoundationF06Handoff(current);
+    });
+  });
+}
+
+async function foundationStationReplayReadback(
+  handoff: FoundationF06Handoff,
+): Promise<FoundationF06ReplayDelivery[]> {
+  const deliveries: FoundationF06ReplayDelivery[] = [];
+  let recording = Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeout = 0;
+    let controller: AbortController | null = null;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      controller?.abort();
+      void recording.then(() => {
+        if (error) reject(error);
+        else resolve(deliveries);
+      }).catch((recordingError) => {
+        reject(recordingError instanceof Error
+          ? recordingError
+          : new Error(String(recordingError)));
+      });
+    };
+    controller = streamAgentTurnReplay({
+      conversation_id: handoff.conversationId,
+      turn_id: handoff.turnId,
+      after_seq: handoff.acknowledgedCursor,
+    }, (event) => {
+      const sourceDelivery = event.sourceDelivery;
+      if (
+        sourceDelivery
+        && sourceDelivery.sequence > handoff.acknowledgedCursor
+        && !FOUNDATION_F06_PHASE_BY_EVENT[event.event]
+        && event.event !== 'catchup_done'
+      ) {
+        const rawPayload = evidenceValue(
+          sourceDelivery.rawPayload,
+        ) as FoundationF06ReplayDelivery['rawPayload'];
+        recording = recording.then(async () => {
+          deliveries.push({
+            eventType: event.event,
+            sequence: sourceDelivery.sequence,
+            streamId: handoff.streamId,
+            streamGeneration: handoff.streamGeneration,
+            observedAt: new Date().toISOString(),
+            sourceTransport: sourceDelivery.transport,
+            sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+            sourceConversationId: sourceDelivery.conversationId,
+            sourceTurnId: sourceDelivery.turnId,
+            sourceSequence: sourceDelivery.sequence,
+            sourceEventType: sourceDelivery.rawPayload.eventType,
+            rawPayload,
+            payloadHash: await sha256Hex(stableJson(rawPayload)),
+          });
+        }).catch((error) => {
+          finish(error instanceof Error ? error : new Error(String(error)));
+        });
+        if (classifyAgentTurnTerminalEvent(event) !== null) finish();
+        return;
+      }
+      if (
+        event.event === 'catchup_done'
+        || classifyAgentTurnTerminalEvent(event) !== null
+      ) {
+        finish();
+      }
+    }, finish, handoff.actorPtid);
+    timeout = window.setTimeout(() => {
+      finish(new Error('agent.acceptance.foundationStationReplayTimeout'));
+    }, 120_000);
+  });
 }
 
 function startObservedFoundationTurn(input: {
@@ -85,8 +396,10 @@ function startObservedFoundationTurn(input: {
   clientCapabilitySessionId?: string;
   attachments?: AgentAttachmentRefInput[];
   requestedBudget?: AgentRuntimeBudgetInput;
+  streamId?: string;
   timeoutMs?: number;
 }): ObservedFoundationTurn {
+  const sourcePtid = authenticatedFoundationActorPtid();
   const events: ObservedFoundationTurnResult['events'] = [];
   let resolveFirstEvent: (
     value: { event: string; data: Record<string, unknown> },
@@ -121,6 +434,7 @@ function startObservedFoundationTurn(input: {
     client_capability_session_id: input.clientCapabilitySessionId,
     attachments: input.attachments,
     requested_budget: input.requestedBudget,
+    stream_id: input.streamId,
   }, (event) => {
     const observed = {
       event: event.event,
@@ -132,12 +446,12 @@ function startObservedFoundationTurn(input: {
       firstEventObserved = true;
       resolveFirstEvent(observed);
     }
-  }, () => finish(true, null), (error) => finish(false, error.message));
+  }, () => finish(true, null), (error) => finish(false, error.message), sourcePtid);
   timeout = window.setTimeout(() => {
     controller.abort();
     finish(false, 'agent.acceptance.turnSubmissionTimeout');
   }, input.timeoutMs ?? 120_000);
-  return { controller, events, firstEvent, result };
+  return { controller, sourcePtid, events, firstEvent, result };
 }
 
 function observedTurnId(
@@ -436,6 +750,93 @@ async function foundationTurnEvidence(
     feedback,
     messages,
   });
+}
+
+function duplicateCount(values: string[]): number {
+  return values.length - new Set(values).size;
+}
+
+async function foundationDurableMutationSnapshot(
+  agentId: string,
+  conversationId: string,
+  turnId: string,
+): Promise<Record<string, unknown>> {
+  const [readback, traces, traceResponse, diagnosticsResponse] = await Promise.all([
+    foundationConversationReadback(conversationId),
+    api.listAgentTurnTraces(agentId, {
+      conversationId,
+      page: 1,
+      pageSize: 200,
+    }),
+    api.getAgentTurnTrace({ turnId }),
+    api.exportAgentTurnDiagnostics(turnId),
+  ]);
+  const traceEntry = evidenceRecord(
+    evidenceValue(traceResponse.entry),
+    'foundationF06TurnTraceEntry',
+  );
+  const turn = evidenceRecord(traceEntry.turn, 'foundationF06Turn');
+  const trace = evidenceRecord(traceEntry.trace, 'foundationF06Trace');
+  const diagnostics = evidenceRecord(
+    evidenceValue(diagnosticsResponse.replay),
+    'foundationF06Diagnostics',
+  );
+  const diagnosticMessages = optionalEvidenceArray(
+    evidenceField(diagnostics, 'messages', 'messages'),
+    'foundationF06DiagnosticMessages',
+  ).map((value) => evidenceRecord(value, 'foundationF06DiagnosticMessage'));
+  const diagnosticTools = optionalEvidenceArray(
+    evidenceField(diagnostics, 'toolCalls', 'tool_calls'),
+    'foundationF06DiagnosticTools',
+  ).map((value) => evidenceRecord(value, 'foundationF06DiagnosticTool'));
+  const messageIds = readback.messages.map((message) => message.messageId);
+  const diagnosticMessageIds = diagnosticMessages.map((message) =>
+    String(evidenceField(message, 'messageId', 'message_id') ?? ''),
+  ).filter(Boolean);
+  const traceIds = traces.entries
+    .filter((entry) => entry.turn?.turnId === turnId)
+    .map((entry) => entry.trace?.traceId ?? '')
+    .filter(Boolean);
+  const sideEffectReceiptIds = diagnosticTools.map((tool) =>
+    String(
+      evidenceField(tool, 'sideEffectReceiptId', 'side_effect_receipt_id') ?? '',
+    ),
+  ).filter(Boolean);
+  const facts = {
+    conversation: {
+      conversationId: readback.conversation.conversation_id,
+      version: readback.conversation.version,
+      status: readback.conversation.status,
+    },
+    turn: {
+      turnId: String(evidenceField(turn, 'turnId', 'turn_id') ?? ''),
+      status: evidenceField(turn, 'status', 'status'),
+      traceId: String(evidenceField(trace, 'traceId', 'trace_id') ?? ''),
+    },
+    messages: {
+      count: messageIds.length,
+      turnCount: readback.messages.filter((message) => message.turnId === turnId).length,
+      duplicateCount: duplicateCount(messageIds),
+      diagnosticCount: diagnosticMessageIds.length,
+      diagnosticDuplicateCount: duplicateCount(diagnosticMessageIds),
+    },
+    traces: {
+      count: traceIds.length,
+      duplicateCount: duplicateCount(traceIds),
+      providerCallCount: optionalEvidenceArray(
+        evidenceField(trace, 'providerCalls', 'provider_calls'),
+        'foundationF06ProviderCalls',
+      ).length,
+    },
+    sideEffects: {
+      count: sideEffectReceiptIds.length,
+      duplicateCount: duplicateCount(sideEffectReceiptIds),
+    },
+  };
+  return {
+    ...facts,
+    sourceHash: await sha256Hex(stableJson(facts)),
+  };
 }
 
 async function waitFor(
@@ -1613,6 +2014,850 @@ async function runFoundationF05Scenario(input: {
   }
 }
 
+async function runFoundationF06Prepare(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  capabilitySessionId: string;
+  scenarioKey: string;
+  platform: string;
+  locale: string;
+  sampleId: string;
+}): Promise<FoundationF06Handoff> {
+  const scenarioStartedAt = new Date().toISOString();
+  removeFoundationF06Handoff(input.scenarioKey);
+  const agentId = input.agent.id || input.agent.name;
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation recovery ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  try {
+    return await prepareFoundationF06Conversation(
+      input,
+      conversation,
+      agentId,
+      scenarioStartedAt,
+    );
+  } catch (error) {
+    const turnId = useAgentTurnRecoveryStore.getState()
+      .active[conversation.conversation_id]?.turnId ?? '';
+    try {
+      await cleanupFoundationF06Scenario({
+        scenarioKey: input.scenarioKey,
+        conversationId: conversation.conversation_id,
+        turnId,
+      });
+    } catch (cleanupError) {
+      const primary = error instanceof Error ? error.message : String(error);
+      const cleanup = cleanupError instanceof Error
+        ? cleanupError.message
+        : String(cleanupError);
+      throw new Error(`CLEANUP_FAILED:${primary}; cleanup=${cleanup}`);
+    }
+    throw error;
+  }
+}
+
+async function prepareFoundationF06Conversation(
+  input: {
+    agent: NonNullable<ReturnType<typeof selectedAgent>>;
+    capabilitySessionId: string;
+    scenarioKey: string;
+    platform: string;
+    locale: string;
+    sampleId: string;
+  },
+  conversation: Awaited<ReturnType<typeof api.createAgentConversation>>,
+  agentId: string,
+  scenarioStartedAt: string,
+): Promise<FoundationF06Handoff> {
+  await useChatStore.getState().selectSession(conversation.conversation_id);
+
+  const streamId = `foundation-f06-${crypto.randomUUID()}`;
+  const idempotencyKey = crypto.randomUUID();
+  const observed = startObservedFoundationTurn({
+    conversationId: conversation.conversation_id,
+    agentId,
+    content:
+      'Write a detailed 2000-word numbered guide to durable event stream recovery.',
+    idempotencyKey,
+    streamId,
+    provider: input.agent.provider || undefined,
+    model: input.agent.model || undefined,
+    thinkingMode: 'disabled',
+    clientCapabilitySessionId: input.capabilitySessionId,
+    timeoutMs: 300_000,
+  });
+  await observed.firstEvent;
+  await waitFor(
+    () => (
+      observed.events.some((event) => (
+        event.event === 'text' && Number(event.data.seq ?? 0) > 0
+      ))
+      && new Set(
+        observed.events
+          .map((event) => Number(event.data.seq ?? 0))
+          .filter((sequence) => Number.isSafeInteger(sequence) && sequence > 0),
+      ).size >= 2
+    ),
+    'Foundation AS-F06 mutation-source cursor',
+    60_000,
+  );
+  const turnId = observedTurnId(observed.events);
+  const acknowledgedCursor = Math.max(
+    ...observed.events.map((event) => Number(event.data.seq ?? 0)),
+  );
+  if (!turnId || acknowledgedCursor <= 0) {
+    observed.controller.abort();
+    throw new Error('agent.acceptance.foundationRecoveryCursorMissing');
+  }
+  if (observed.events.some((event) =>
+    classifyAgentTurnTerminalEvent(event) !== null)) {
+    throw new Error('agent.acceptance.foundationRecoveryTurnAlreadyTerminal');
+  }
+
+  const prefix = observed.events
+    .filter((event) => event.event === 'text')
+    .map((event) => String(event.data.content ?? event.data.text ?? ''))
+    .join('');
+  if (!prefix) {
+    observed.controller.abort();
+    throw new Error('agent.acceptance.foundationRecoveryPrefixMissing');
+  }
+
+  const recoveryStore = useAgentTurnRecoveryStore.getState();
+  const active = recoveryStore.active[conversation.conversation_id];
+  if (
+    !active
+    || active.actorId !== observed.sourcePtid
+    || active.turnId !== turnId
+    || active.streamId !== streamId
+    || active.cursor < acknowledgedCursor
+    || active.streamGeneration !== observed.controller.streamGeneration
+  ) {
+    observed.controller.abort();
+    throw new Error('agent.acceptance.foundationRecoveryRegistrationMissing');
+  }
+  const durableEvents = observed.events
+    .filter((event) => Number(event.data.seq ?? 0) > 0)
+    .sort((left, right) =>
+      Number(left.data.seq ?? 0) - Number(right.data.seq ?? 0));
+  const duplicateSource = [...durableEvents]
+    .reverse()
+    .find((event) => Number(event.data.seq ?? 0) === active.cursor);
+  const outOfOrderSource = [...durableEvents]
+    .reverse()
+    .find((event) => Number(event.data.seq ?? 0) < active.cursor);
+  if (!duplicateSource || !outOfOrderSource) {
+    observed.controller.abort();
+    throw new Error('agent.acceptance.foundationRecoveryMutationSourceMissing');
+  }
+  const chatBefore = useChatStore.getState();
+  const projectionBefore = await sha256Hex(stableJson({
+    operation: chatBefore.operations[conversation.conversation_id]
+      ? {
+          turnId: chatBefore.operations[conversation.conversation_id].turnId,
+          streamGeneration:
+            chatBefore.operations[conversation.conversation_id].streamGeneration,
+          lastEventSeq:
+            chatBefore.operations[conversation.conversation_id].lastEventSeq,
+          status: chatBefore.operations[conversation.conversation_id].status,
+          runState: chatBefore.operations[conversation.conversation_id].runState,
+        }
+      : null,
+    messageCount: chatBefore.messages.length,
+    turnMessages: chatBefore.messages
+      .filter((message) => message.turnId === turnId)
+      .map((message) => ({
+        id: message.id,
+        content: message.content,
+        terminalStatus: message.terminalStatus,
+        toolCalls: message.toolCalls,
+      })),
+    cursor: active.cursor,
+  }));
+  const actorId = observed.sourcePtid;
+  const publishFault = (
+    source: { event: string; data: Record<string, unknown> },
+    streamGeneration: number,
+  ) => eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+    streamId,
+    streamGeneration,
+    ptid: actorId,
+    conversationId: conversation.conversation_id,
+    agentId,
+    event: source.event,
+    data: {
+      ...source.data,
+      turnId,
+      conversationId: conversation.conversation_id,
+    },
+    timestampMs: Date.now(),
+  });
+  publishFault(duplicateSource, active.streamGeneration);
+  publishFault(outOfOrderSource, active.streamGeneration);
+  const staleGeneration = Math.max(1, active.streamGeneration - 1);
+  publishFault(duplicateSource, staleGeneration);
+  publishFault({
+    event: 'done',
+    data: {
+      ...outOfOrderSource.data,
+      seq: Number(outOfOrderSource.data.seq),
+      status: 'completed',
+    },
+  }, active.streamGeneration);
+  const chatAfter = useChatStore.getState();
+  const activeAfterMutation = useAgentTurnRecoveryStore.getState()
+    .active[conversation.conversation_id];
+  const projectionAfter = await sha256Hex(stableJson({
+    operation: chatAfter.operations[conversation.conversation_id]
+      ? {
+          turnId: chatAfter.operations[conversation.conversation_id].turnId,
+          streamGeneration:
+            chatAfter.operations[conversation.conversation_id].streamGeneration,
+          lastEventSeq:
+            chatAfter.operations[conversation.conversation_id].lastEventSeq,
+          status: chatAfter.operations[conversation.conversation_id].status,
+          runState: chatAfter.operations[conversation.conversation_id].runState,
+        }
+      : null,
+    messageCount: chatAfter.messages.length,
+    turnMessages: chatAfter.messages
+      .filter((message) => message.turnId === turnId)
+      .map((message) => ({
+        id: message.id,
+        content: message.content,
+        terminalStatus: message.terminalStatus,
+        toolCalls: message.toolCalls,
+      })),
+    cursor: useAgentTurnRecoveryStore.getState()
+      .active[conversation.conversation_id]?.cursor,
+  }));
+
+  const handoff: FoundationF06Handoff = {
+    scenarioKey: input.scenarioKey,
+    platform: input.platform,
+    locale: input.locale,
+    sampleId: input.sampleId,
+    conversationId: conversation.conversation_id,
+    turnId,
+    streamId,
+    streamGeneration: active.streamGeneration,
+    actorPtid: actorId,
+    actorPtidHash: await sha256Hex(actorId),
+    acknowledgedCursor,
+    conversationRevision: conversation.version,
+    prefixHash: await sha256Hex(prefix),
+    prefixLength: prefix.length,
+    duplicateSequence: Number(duplicateSource.data.seq),
+    outOfOrderSequence: Number(outOfOrderSource.data.seq),
+    staleGeneration,
+    staleGenerationRejected:
+      activeAfterMutation?.streamGeneration === active.streamGeneration,
+    staleTerminalRejected:
+      activeAfterMutation?.turnId === turnId
+      && chatAfter.operations[conversation.conversation_id]?.status
+        !== 'completed',
+    cursorBeforeMutation: active.cursor,
+    cursorAfterMutation: activeAfterMutation?.cursor ?? 0,
+    projectionBeforeMutationHash: projectionBefore,
+    projectionAfterMutationHash: projectionAfter,
+    duplicatePayloadHash: await sha256Hex(stableJson(duplicateSource)),
+    outOfOrderPayloadHash: await sha256Hex(stableJson(outOfOrderSource)),
+    transitions: [],
+    replayedSequences: [],
+    replayDeliveries: [],
+    preparedAt: scenarioStartedAt,
+  };
+  writeFoundationF06Handoff(handoff);
+
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'settings' });
+  await waitFor(
+    () => document.querySelector('[data-pt-agent-composer]')?.getClientRects()
+      .length === 0,
+    'Foundation AS-F06 page switch',
+    30_000,
+  );
+  return handoff;
+}
+
+async function observeFoundationRecoveryFailure(
+  handoff: FoundationF06Handoff,
+): Promise<Record<string, unknown>> {
+  await waitFor(
+    () => useAgentTurnRecoveryStore.getState()
+      .active[handoff.conversationId]?.phase === 'RECOVERY_FAILED',
+    'Foundation AS-F06 active recovery failure',
+    120_000,
+  );
+  const authenticatedPtid =
+    useSessionStore.getState().currentUser?.ptid?.trim()
+    || useSessionStore.getState().currentUser?.actorId.trim()
+    || '';
+  const active = useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
+  const base = {
+    expectedActorPtidHash: handoff.actorPtidHash,
+    observedActorPtidHash: authenticatedPtid
+      ? await sha256Hex(authenticatedPtid)
+      : '',
+    expectedTurnId: handoff.turnId,
+    observedTurnId: active?.turnId ?? '',
+    expectedStreamId: handoff.streamId,
+    observedStreamId: active?.streamId ?? '',
+    expectedStreamGeneration: handoff.streamGeneration,
+    observedStreamGeneration: active?.streamGeneration ?? 0,
+    observedPhase: active?.phase ?? 'MISSING',
+    errorHash: active?.failureKey ? await sha256Hex(active.failureKey) : '',
+    notCompleted:
+      active?.phase === 'RECOVERY_FAILED'
+      && useChatStore.getState().operations[handoff.conversationId]?.status
+        !== 'completed',
+  };
+  if (!active || active.phase !== 'RECOVERY_FAILED') {
+    return {
+      ...base,
+      blocker: 'AS_F06_ACTIVE_RECOVERY_FAILURE_NOT_OBSERVED',
+      activeFailureObserved: false,
+      retry: { invoked: false, observed: false },
+      durableReload: { invoked: false, observed: false },
+    };
+  }
+  if (
+    !authenticatedPtid
+    || active.actorId !== authenticatedPtid
+    || active.turnId !== handoff.turnId
+    || active.streamId !== handoff.streamId
+    || active.streamGeneration !== handoff.streamGeneration
+  ) {
+    return {
+      ...base,
+      blocker: 'AS_F06_ACTIVE_RECOVERY_IDENTITY_MISMATCH',
+      activeFailureObserved: true,
+      retry: { invoked: false, observed: false },
+      durableReload: { invoked: false, observed: false },
+    };
+  }
+
+  const retryEpochBefore = active.recoveryEpoch;
+  useChatStore.getState().retryTurnRecovery(handoff.conversationId);
+  await waitFor(
+    () => {
+      const current =
+        useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
+      return Boolean(current && current.recoveryEpoch > retryEpochBefore);
+    },
+    'Foundation AS-F06 retry action observation',
+    30_000,
+  );
+  await waitFor(
+    () => {
+      const current =
+        useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
+      return Boolean(
+        current
+        && current.recoveryEpoch > retryEpochBefore
+        && current.phase === 'RECOVERY_FAILED',
+      );
+    },
+    'Foundation AS-F06 retry failure under bounded outage',
+    120_000,
+  );
+  const afterRetry =
+    useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
+  const evidence = {
+    ...base,
+    blocker: afterRetry ? '' : 'AS_F06_RETRY_RESULT_NOT_OBSERVED',
+    activeFailureObserved: true,
+    retry: {
+      invoked: true,
+      observed:
+        Boolean(afterRetry)
+        && afterRetry?.actorId === authenticatedPtid
+        && afterRetry.turnId === handoff.turnId
+        && afterRetry.streamId === handoff.streamId
+        && afterRetry.streamGeneration === handoff.streamGeneration
+        && afterRetry.recoveryEpoch > retryEpochBefore,
+      recoveryEpochBefore: retryEpochBefore,
+      recoveryEpochAfter: afterRetry?.recoveryEpoch ?? 0,
+      resultingPhase: afterRetry?.phase ?? 'MISSING',
+    },
+    durableReload: { invoked: false, observed: false },
+  };
+  handoff.recoveryFailure = evidence;
+  writeFoundationF06Handoff(handoff);
+  return evidence;
+}
+
+async function exerciseFoundationDurableReload(
+  handoff: FoundationF06Handoff,
+): Promise<Record<string, unknown>> {
+  const prior = evidenceRecord(
+    handoff.recoveryFailure,
+    'foundationF06ObservedRecoveryFailure',
+  );
+  const authenticatedPtid =
+    useSessionStore.getState().currentUser?.ptid?.trim()
+    || useSessionStore.getState().currentUser?.actorId.trim()
+    || '';
+  const active = useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
+  if (
+    !active
+    || !authenticatedPtid
+    || active.actorId !== authenticatedPtid
+    || active.turnId !== handoff.turnId
+    || active.streamId !== handoff.streamId
+    || active.streamGeneration !== handoff.streamGeneration
+  ) {
+    const evidence = {
+      ...prior,
+      blocker: 'AS_F06_DURABLE_RELOAD_TARGET_MISSING',
+      durableReload: { invoked: false, observed: false },
+    };
+    handoff.recoveryFailure = evidence;
+    writeFoundationF06Handoff(handoff);
+    return evidence;
+  }
+
+  const reloadResult: AgentTurnSnapshotReloadResult =
+    await useChatStore.getState().reloadTurnSnapshot(handoff.conversationId);
+  const sourceDelivery = reloadResult.sourceDelivery;
+  const reloadObserved =
+    reloadResult.source === 'station-snapshot-reconcile'
+    && reloadResult.actorId === authenticatedPtid
+    && reloadResult.conversationId === handoff.conversationId
+    && reloadResult.turnId === handoff.turnId
+    && reloadResult.streamId === handoff.streamId
+    && reloadResult.streamGeneration === handoff.streamGeneration
+    && typeof reloadResult.status === 'string'
+    && reloadResult.status.length > 0
+    && Number.isSafeInteger(reloadResult.sequence)
+    && reloadResult.sequence >= handoff.acknowledgedCursor
+    && sourceDelivery.transport === 'station-sse'
+    && sourceDelivery.ptid === authenticatedPtid
+    && sourceDelivery.conversationId === handoff.conversationId
+    && sourceDelivery.turnId === handoff.turnId
+    && sourceDelivery.sequence === reloadResult.sequence
+    && sourceDelivery.rawPayload.eventType === 'snapshot'
+    && (
+      reloadResult.terminal
+        ? ['completed', 'failed', 'cancelled', 'interrupted'].includes(
+            reloadResult.terminalStatus ?? '',
+          )
+        : reloadResult.terminalStatus === null
+    );
+  const evidence = {
+    ...prior,
+    blocker: reloadObserved ? '' : 'AS_F06_DURABLE_RELOAD_RESULT_NOT_OBSERVED',
+    durableReload: {
+      invoked: true,
+      observed: reloadObserved,
+      source: reloadResult.source,
+      actorPtidHash: await sha256Hex(reloadResult.actorId),
+      conversationId: reloadResult.conversationId,
+      turnId: reloadResult.turnId,
+      streamId: reloadResult.streamId,
+      streamGeneration: reloadResult.streamGeneration,
+      status: reloadResult.status,
+      sequence: reloadResult.sequence,
+      terminal: reloadResult.terminal,
+      terminalStatus: reloadResult.terminalStatus,
+      sourceDelivery: {
+        transport: sourceDelivery.transport,
+        actorPtidHash: await sha256Hex(sourceDelivery.ptid),
+        conversationId: sourceDelivery.conversationId,
+        turnId: sourceDelivery.turnId,
+        sequence: sourceDelivery.sequence,
+        eventType: sourceDelivery.rawPayload.eventType,
+        rawPayloadHash: await sha256Hex(stableJson(sourceDelivery.rawPayload)),
+      },
+    },
+  };
+  handoff.recoveryFailure = evidence;
+  writeFoundationF06Handoff(handoff);
+  return evidence;
+}
+
+async function cleanupFoundationF06Scenario(input: {
+  scenarioKey: string;
+  conversationId: string;
+  turnId: string;
+}): Promise<Record<string, unknown>> {
+  const handoff = readFoundationF06Handoff(input.scenarioKey);
+  if (
+    handoff
+    && (
+      handoff.conversationId !== input.conversationId
+      || handoff.turnId !== input.turnId
+    )
+  ) {
+    throw new Error('agent.acceptance.foundationCleanupIdentityMismatch');
+  }
+  let cleanupError: unknown = null;
+  let deletionErrorCode = '';
+  try {
+    const conversation = await api.getAgentConversation(input.conversationId);
+    await api.archiveAgentConversation(
+      input.conversationId,
+      conversation.version,
+      true,
+    );
+  } catch (error) {
+    deletionErrorCode = observedErrorCode(error);
+    if (!deletionErrorCode.includes('AGENT_4004')) {
+      cleanupError = error;
+    }
+  } finally {
+    useAgentTurnRecoveryStore.getState().clear(
+      input.conversationId,
+      input.turnId,
+    );
+    removeFoundationF06Handoff(input.scenarioKey);
+  }
+
+  let conversationDeleted = false;
+  try {
+    await api.getAgentConversation(input.conversationId);
+  } catch (error) {
+    deletionErrorCode = observedErrorCode(error);
+    conversationDeleted = deletionErrorCode.includes('AGENT_4004');
+    if (!conversationDeleted && cleanupError === null) cleanupError = error;
+  }
+  const handoffCleared = readFoundationF06Handoff(input.scenarioKey) === null;
+  const recoveryRecordCleared =
+    useAgentTurnRecoveryStore.getState().active[input.conversationId] === undefined;
+  const cleanupComplete =
+    conversationDeleted && handoffCleared && recoveryRecordCleared;
+  if (cleanupError !== null || !cleanupComplete) {
+    const detail = cleanupError instanceof Error
+      ? cleanupError.message
+      : 'agent.acceptance.foundationCleanupVerificationFailed';
+    throw new Error(`CLEANUP_FAILED:${detail}`);
+  }
+  return {
+    cleanupComplete,
+    handoffCleared,
+    conversationDeleted,
+    recoveryRecordCleared,
+    deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
+  };
+}
+
+async function runFoundationF06Complete(
+  stationRestart: Record<string, unknown>,
+  input: {
+    scenarioKey: string;
+    platform: string;
+    locale: string;
+    sampleId: string;
+  },
+): Promise<{
+  conversationId: string;
+  turnId: string;
+  durationMs: number;
+  runtimeEvent: {
+    eventType: string;
+    sequence: number;
+    observedAt: string;
+  };
+  facts: Record<string, unknown>;
+}> {
+  const handoff = readFoundationF06Handoff(input.scenarioKey);
+  if (!handoff) {
+    throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
+  }
+  if (
+    handoff.platform !== input.platform
+    || handoff.locale !== input.locale
+    || handoff.sampleId !== input.sampleId
+  ) {
+    throw new Error('agent.acceptance.foundationRecoveryScopeMismatch');
+  }
+  await useChatStore.getState().selectSession(handoff.conversationId);
+
+  await waitFor(
+    () => {
+      const current = readFoundationF06Handoff(input.scenarioKey);
+      return Boolean(
+        current?.transitions.some((transition) =>
+          transition.phase === 'CONNECTED'
+          || transition.phase === 'RECOVERY_FAILED'),
+      );
+    },
+    'Foundation AS-F06 recovery transition',
+    120_000,
+  );
+  const agent = selectedAgent();
+  if (!agent) throw new Error('agent.acceptance.agentMissing');
+  const agentId = agent.id || agent.name;
+  const beforeDurableFacts = await foundationDurableMutationSnapshot(
+    agentId,
+    handoff.conversationId,
+    handoff.turnId,
+  );
+  const recoveryFailure = evidenceRecord(
+    handoff.recoveryFailure,
+    'foundationF06RecoveryFailure',
+  );
+
+  await waitFor(
+    () => {
+      const state = useChatStore.getState();
+      const operation = state.operations[handoff.conversationId];
+      const persistedMessage = [...state.messages]
+        .reverse()
+        .find((message) =>
+          message.role === 'assistant' && message.turnId === handoff.turnId);
+      return Boolean(
+        (
+          operation
+          && ['completed', 'failed', 'cancelled', 'interrupted'].includes(
+            operation.status,
+          )
+        )
+        || (
+          persistedMessage?.terminalStatus
+          && ['completed', 'failed', 'cancelled', 'interrupted'].includes(
+            persistedMessage.terminalStatus,
+          )
+        ),
+      );
+    },
+    'Foundation AS-F06 terminal projection',
+    180_000,
+  );
+  const stationSnapshot = await foundationConversationReadback(
+    handoff.conversationId,
+  );
+  const terminalEvidence = await foundationTurnEvidence(
+    handoff.conversationId,
+    handoff.turnId,
+  );
+  const afterDurableFacts = await foundationDurableMutationSnapshot(
+    agentId,
+    handoff.conversationId,
+    handoff.turnId,
+  );
+  const chatState = useChatStore.getState();
+  const operation = chatState.operations[handoff.conversationId];
+  const projectedAssistant = [...chatState.messages]
+    .reverse()
+    .find((message) =>
+      message.role === 'assistant' && message.turnId === handoff.turnId);
+  const stationAssistant = [...stationSnapshot.messages]
+    .reverse()
+    .find((message) =>
+      message.role === 'assistant' && message.turnId === handoff.turnId);
+  if (!projectedAssistant || !stationAssistant) {
+    throw new Error('agent.acceptance.foundationRecoveryProjectionMissing');
+  }
+  const clientTerminalStatus =
+    operation?.status
+    || projectedAssistant.terminalStatus
+    || 'unknown';
+
+  let staleRevisionError = '';
+  try {
+    await api.updateAgentConversation({
+      conversation_id: handoff.conversationId,
+      expected_version: handoff.conversationRevision,
+      title: stationSnapshot.conversation.title,
+    });
+  } catch (error) {
+    staleRevisionError = observedErrorCode(error);
+  }
+
+  await foundationF06ReplayRecording;
+  const latestHandoff = readFoundationF06Handoff(input.scenarioKey) ?? handoff;
+  const stationReplayDeliveries = await foundationStationReplayReadback(handoff);
+  const replayIdentity = (delivery: FoundationF06ReplayDelivery) => ({
+    eventType: delivery.eventType,
+    sequence: delivery.sequence,
+    sourceTransport: delivery.sourceTransport,
+    sourcePtidHash: delivery.sourcePtidHash,
+    sourceConversationId: delivery.sourceConversationId,
+    sourceTurnId: delivery.sourceTurnId,
+    sourceSequence: delivery.sourceSequence,
+    sourceEventType: delivery.sourceEventType,
+    rawPayload: delivery.rawPayload,
+    payloadHash: delivery.payloadHash,
+  });
+  const replayedEvents = latestHandoff.transitions.filter(
+    (transition) => transition.sequence > handoff.acknowledgedCursor,
+  );
+  const terminalDiagnostics = evidenceRecord(
+    evidenceRecord(terminalEvidence, 'foundationF06TerminalEvidence').diagnostics,
+    'foundationF06TerminalDiagnostics',
+  );
+  const terminalReplay = evidenceRecord(
+    terminalDiagnostics.replay,
+    'foundationF06TerminalReplay',
+  );
+  const terminalStatus = ({
+    [AgentTurnStatus.COMPLETED]: 'completed',
+    [AgentTurnStatus.FAILED]: 'failed',
+    [AgentTurnStatus.CANCELLED]: 'cancelled',
+    [AgentTurnStatus.INTERRUPTED]: 'interrupted',
+  } as Record<number, string>)[Number(terminalReplay.status)] ?? 'unknown';
+  const projectionHash = await sha256Hex(stableJson({
+    turnId: projectedAssistant.turnId,
+    content: projectedAssistant.content,
+  }));
+  const stationHash = await sha256Hex(stableJson({
+    turnId: stationAssistant.turnId,
+    content: stationAssistant.content,
+  }));
+  const runtimeEvent = replayedEvents[replayedEvents.length - 1]
+    ?? latestHandoff.transitions[latestHandoff.transitions.length - 1];
+  if (!runtimeEvent) {
+    throw new Error('agent.acceptance.foundationRecoveryTransitionMissing');
+  }
+  const preparedAtMs = Date.parse(handoff.preparedAt);
+  if (!Number.isFinite(preparedAtMs)) {
+    throw new Error('agent.acceptance.foundationRecoveryStartMissing');
+  }
+  const recoveryRecordCleared =
+    useAgentTurnRecoveryStore.getState().active[handoff.conversationId]
+      === undefined;
+  const duplicateMutationCount = (snapshot: Record<string, unknown>) => {
+    const messages = evidenceRecord(
+      snapshot.messages,
+      'foundationF06DurableMessages',
+    );
+    const traces = evidenceRecord(
+      snapshot.traces,
+      'foundationF06DurableTraces',
+    );
+    return Number(messages.duplicateCount)
+      + Number(messages.diagnosticDuplicateCount)
+      + Number(traces.duplicateCount);
+  };
+  const duplicateSideEffectCount = (snapshot: Record<string, unknown>) =>
+    Number(
+      evidenceRecord(
+        snapshot.sideEffects,
+        'foundationF06DurableSideEffects',
+      ).duplicateCount,
+    );
+
+  return {
+    conversationId: handoff.conversationId,
+    turnId: handoff.turnId,
+    durationMs: Date.now() - preparedAtMs,
+    runtimeEvent: {
+      eventType: runtimeEvent.phase.toLowerCase(),
+      sequence: runtimeEvent.sequence,
+      observedAt: runtimeEvent.observedAt,
+    },
+    facts: {
+      scope: {
+        scenarioKey: handoff.scenarioKey,
+        platform: handoff.platform,
+        locale: handoff.locale,
+        sampleId: handoff.sampleId,
+      },
+      handoff: {
+        conversationId: handoff.conversationId,
+        turnId: handoff.turnId,
+        streamId: handoff.streamId,
+        streamGeneration: handoff.streamGeneration,
+        actorPtidHash: handoff.actorPtidHash,
+        acknowledgedCursor: handoff.acknowledgedCursor,
+        conversationRevision: handoff.conversationRevision,
+        prefixHash: handoff.prefixHash,
+        prefixLength: handoff.prefixLength,
+      },
+      transitions: latestHandoff.transitions,
+      replay: {
+        afterCursor: handoff.acknowledgedCursor,
+        eventSequences: latestHandoff.replayedSequences,
+        deliveries: latestHandoff.replayDeliveries,
+        stationReadbackDeliveries: stationReplayDeliveries,
+        sourceHash: await sha256Hex(stableJson(
+          latestHandoff.replayDeliveries.map(replayIdentity),
+        )),
+        replayHash: await sha256Hex(stableJson(
+          stationReplayDeliveries.map(replayIdentity),
+        )),
+      },
+      idempotence: {
+        duplicateSequence: handoff.duplicateSequence,
+        outOfOrderSequence: handoff.outOfOrderSequence,
+        staleGeneration: handoff.staleGeneration,
+        activeGeneration: handoff.streamGeneration,
+        staleGenerationRejected: handoff.staleGenerationRejected,
+        staleTerminalRejected: handoff.staleTerminalRejected,
+        cursorBeforeMutation: handoff.cursorBeforeMutation,
+        cursorAfterMutation: handoff.cursorAfterMutation,
+        projectionBeforeMutationHash: handoff.projectionBeforeMutationHash,
+        projectionAfterMutationHash: handoff.projectionAfterMutationHash,
+        duplicatePayloadHash: handoff.duplicatePayloadHash,
+        outOfOrderPayloadHash: handoff.outOfOrderPayloadHash,
+      },
+      restartRecovery: {
+        pageSwitched: true,
+        clientReloaded:
+          evidenceRecord(
+            stationRestart.clientReloads,
+            'foundationF06ClientReloads',
+          )[input.platform] === true,
+        stationRestarted:
+          typeof stationRestart.containerId === 'string'
+          && stationRestart.containerId.length > 0
+          && stationRestart.outageObserved === true
+          && stationRestart.beforeStartedAt !== stationRestart.afterStartedAt
+          && stationRestart.beforeCommit === stationRestart.afterCommit,
+        stationRestart,
+      },
+      transportLoss: {
+        observed: latestHandoff.transitions
+          .some((transition) => transition.phase === 'CONNECTION_LOST'),
+        nonTerminal: latestHandoff.transitions
+          .filter((transition) => transition.phase === 'CONNECTION_LOST')
+          .every((transition) => !transition.terminal),
+      },
+      terminalProjection: {
+        stationStatus: terminalStatus,
+        clientStatus: clientTerminalStatus,
+        stationHash,
+        clientHash: projectionHash,
+        prefixPreserved:
+          (stationAssistant.content ?? '').length >= handoff.prefixLength
+          && await sha256Hex(
+            (stationAssistant.content ?? '').slice(0, handoff.prefixLength),
+          ) === handoff.prefixHash,
+      },
+      recoveryFailure,
+      staleRevision: {
+        rejected: staleRevisionError.includes('AGENT_4009'),
+        errorCodeHash: await sha256Hex(staleRevisionError),
+      },
+      sideEffects: {
+        before: beforeDurableFacts,
+        after: afterDurableFacts,
+        duplicateMutationBefore: duplicateMutationCount(beforeDurableFacts),
+        duplicateMutationAfter: duplicateMutationCount(afterDurableFacts),
+        duplicateMutationDelta:
+          duplicateMutationCount(afterDurableFacts)
+          - duplicateMutationCount(beforeDurableFacts),
+        duplicateSideEffectBefore:
+          duplicateSideEffectCount(beforeDurableFacts),
+        duplicateSideEffectAfter:
+          duplicateSideEffectCount(afterDurableFacts),
+        duplicateSideEffectDelta:
+          duplicateSideEffectCount(afterDurableFacts)
+          - duplicateSideEffectCount(beforeDurableFacts),
+      },
+      cleanup: {
+        cleanupComplete: false,
+        handoffCleared: false,
+        conversationDeleted: false,
+        recoveryRecordCleared,
+        deletionErrorCodeHash: '',
+      },
+    },
+  };
+}
+
 interface DirectCellAssertionContext {
   cell: string;
   agent: ReturnType<typeof selectedAgent>;
@@ -1631,6 +2876,8 @@ interface DirectCellAssertionContext {
   lastAssistant: { turnId?: string; content?: string; loading?: boolean; error?: unknown } | undefined;
   scenarioFacts: Record<string, unknown> | null;
   platform: string;
+  locale: string;
+  sampleId: string;
 }
 
 async function buildDirectRuntimeAttestation(
@@ -1876,6 +3123,8 @@ async function evaluateDirectCellAssertions(
       return evaluateF04(ctx);
     case 'AS-F05':
       return evaluateF05(ctx);
+    case 'AS-F06':
+      return evaluateF06(ctx);
     case 'AS-F07':
       return evaluateF07(ctx);
     case 'AS-F08':
@@ -1889,6 +3138,228 @@ async function evaluateDirectCellAssertions(
     default:
       throw new Error(`agent.acceptance.unsupportedFoundationCell:${ctx.cell}`);
   }
+}
+
+async function evaluateF06(
+  ctx: DirectCellAssertionContext,
+): Promise<Record<string, boolean | null>> {
+  const facts = evidenceRecord(ctx.scenarioFacts, 'foundationF06Facts');
+  const transitions = evidenceArray(
+    facts.transitions,
+    'foundationF06Transitions',
+  ).map((value) => evidenceRecord(value, 'foundationF06Transition'));
+  const replay = evidenceRecord(facts.replay, 'foundationF06Replay');
+  const idempotence = evidenceRecord(
+    facts.idempotence,
+    'foundationF06Idempotence',
+  );
+  const restart = evidenceRecord(
+    facts.restartRecovery,
+    'foundationF06RestartRecovery',
+  );
+  const transport = evidenceRecord(
+    facts.transportLoss,
+    'foundationF06TransportLoss',
+  );
+  const terminal = evidenceRecord(
+    facts.terminalProjection,
+    'foundationF06TerminalProjection',
+  );
+  const recoveryFailure = evidenceRecord(
+    facts.recoveryFailure,
+    'foundationF06RecoveryFailure',
+  );
+  const staleRevision = evidenceRecord(
+    facts.staleRevision,
+    'foundationF06StaleRevision',
+  );
+  const sideEffects = evidenceRecord(
+    facts.sideEffects,
+    'foundationF06SideEffects',
+  );
+  const retry = evidenceRecord(
+    recoveryFailure.retry,
+    'foundationF06RecoveryRetry',
+  );
+  const durableReload = evidenceRecord(
+    recoveryFailure.durableReload,
+    'foundationF06RecoveryDurableReload',
+  );
+  const durableReloadDelivery = evidenceRecord(
+    durableReload.sourceDelivery,
+    'foundationF06RecoveryDurableReloadDelivery',
+  );
+  const beforeDurable = evidenceRecord(
+    sideEffects.before,
+    'foundationF06BeforeDurableFacts',
+  );
+  const afterDurable = evidenceRecord(
+    sideEffects.after,
+    'foundationF06AfterDurableFacts',
+  );
+  const cleanup = evidenceRecord(facts.cleanup, 'foundationF06Cleanup');
+  const scope = evidenceRecord(facts.scope, 'foundationF06Scope');
+  const handoff = evidenceRecord(facts.handoff, 'foundationF06Handoff');
+  const phases = transitions.map((transition) => String(transition.phase));
+  const requiredPhases = [
+    'CONNECTION_LOST',
+    'RECONNECTING',
+    'REPLAYING',
+    'RECONCILING',
+    'CONNECTED',
+  ];
+  const phasePositions = requiredPhases.map((phase) => phases.indexOf(phase));
+  const replaySequences = evidenceArray(
+    replay.eventSequences,
+    'foundationF06ReplaySequences',
+  ).map(Number);
+  const replayDeliveries = evidenceArray(
+    replay.deliveries,
+    'foundationF06ReplayDeliveries',
+  ).map((delivery) => evidenceRecord(delivery, 'foundationF06ReplayDelivery'));
+  const replayPayloadHashesValid = (
+    await Promise.all(replayDeliveries.map(async (delivery) => {
+      const rawPayload = evidenceRecord(
+        delivery.rawPayload,
+        'foundationF06ReplayRawPayload',
+      );
+      const rawData = evidenceRecord(
+        rawPayload.data,
+        'foundationF06ReplayRawData',
+      );
+      return (
+        rawPayload.eventType === delivery.eventType
+        && Number(rawData.seq ?? rawData.sequence ?? 0) === Number(delivery.sequence)
+        && typeof delivery.payloadHash === 'string'
+        && delivery.payloadHash
+          === await sha256Hex(stableJson(rawPayload))
+      );
+    }))
+  ).every(Boolean);
+
+  return {
+    exactRuntimeAttribution:
+      scope.platform === ctx.platform
+      && scope.locale === ctx.locale
+      && scope.sampleId === ctx.sampleId
+      && typeof scope.scenarioKey === 'string'
+      && scope.scenarioKey.length > 0,
+    exactRecoveryTransitionOrdering:
+      phasePositions.every((position) => position >= 0)
+      && phasePositions.every((position, index) =>
+        index === 0 || position > phasePositions[index - 1]),
+    replayAfterAcknowledgedCursor:
+      Number(replay.afterCursor) > 0
+      && replaySequences.length > 0
+      && replaySequences.every((sequence) =>
+        Number.isSafeInteger(sequence)
+        && sequence > Number(replay.afterCursor))
+      && replaySequences.every((sequence, index) =>
+        index === 0 || sequence > replaySequences[index - 1])
+      && replayDeliveries.length === replaySequences.length
+      && replayPayloadHashesValid
+      && replayDeliveries.every((delivery, index) =>
+        Number(delivery.sequence) === replaySequences[index]
+        && delivery.streamId === evidenceRecord(
+          facts.handoff,
+          'foundationF06Handoff',
+        ).streamId
+        && Number(delivery.streamGeneration)
+          === Number(idempotence.activeGeneration)),
+    duplicateAndOutOfOrderIdempotent:
+      Number(idempotence.duplicateSequence)
+        === Number(idempotence.cursorBeforeMutation)
+      && Number(idempotence.outOfOrderSequence)
+        < Number(idempotence.cursorBeforeMutation)
+      && Number(idempotence.staleGeneration)
+        < Number(idempotence.activeGeneration)
+      && Number(idempotence.cursorAfterMutation)
+        === Number(idempotence.cursorBeforeMutation)
+      && idempotence.projectionBeforeMutationHash
+        === idempotence.projectionAfterMutationHash
+      && typeof idempotence.duplicatePayloadHash === 'string'
+      && idempotence.duplicatePayloadHash.length === 64
+      && typeof idempotence.outOfOrderPayloadHash === 'string'
+      && idempotence.outOfOrderPayloadHash.length === 64,
+    pageClientAndStationRestartRecovered:
+      restart.pageSwitched === true
+      && restart.clientReloaded === true
+      && restart.stationRestarted === true,
+    transportLossNonTerminal:
+      transport.observed === true
+      && transport.nonTerminal === true,
+    terminalProjectionEqualsStation:
+      terminal.stationHash === terminal.clientHash
+      && terminal.stationStatus === terminal.clientStatus
+      && terminal.prefixPreserved === true,
+    failedOrCancelledNotCompleted:
+      recoveryFailure.notCompleted === true,
+    recoveryFailureRetryAndReload:
+      typeof recoveryFailure.errorHash === 'string'
+      && recoveryFailure.errorHash.length === 64
+      && recoveryFailure.blocker === ''
+      && recoveryFailure.activeFailureObserved === true
+      && recoveryFailure.expectedActorPtidHash
+        === recoveryFailure.observedActorPtidHash
+      && recoveryFailure.expectedTurnId === recoveryFailure.observedTurnId
+      && recoveryFailure.expectedStreamId === recoveryFailure.observedStreamId
+      && recoveryFailure.expectedStreamGeneration
+        === recoveryFailure.observedStreamGeneration
+      && retry.invoked === true
+      && retry.observed === true
+      && Number(retry.recoveryEpochAfter) > Number(retry.recoveryEpochBefore)
+      && durableReload.invoked === true
+      && durableReload.observed === true
+      && durableReload.source === 'station-snapshot-reconcile'
+      && durableReload.actorPtidHash === recoveryFailure.expectedActorPtidHash
+      && durableReload.conversationId === handoff.conversationId
+      && durableReload.turnId === handoff.turnId
+      && durableReload.streamId === handoff.streamId
+      && Number(durableReload.streamGeneration) === Number(handoff.streamGeneration)
+      && Number(durableReload.sequence) >= Number(replay.afterCursor)
+      && durableReloadDelivery.transport === 'station-sse'
+      && durableReloadDelivery.actorPtidHash
+        === recoveryFailure.expectedActorPtidHash
+      && durableReloadDelivery.conversationId === handoff.conversationId
+      && durableReloadDelivery.turnId === handoff.turnId
+      && Number(durableReloadDelivery.sequence) === Number(durableReload.sequence)
+      && durableReloadDelivery.eventType === 'snapshot'
+      && typeof durableReloadDelivery.rawPayloadHash === 'string'
+      && durableReloadDelivery.rawPayloadHash.length === 64
+      && (
+        durableReload.terminal === false
+        || ['completed', 'failed', 'cancelled', 'interrupted'].includes(
+          String(durableReload.terminalStatus),
+        )
+      ),
+    staleGenerationAndRevisionRejected:
+      idempotence.staleGenerationRejected === true
+      && idempotence.staleTerminalRejected === true
+      && staleRevision.rejected === true,
+    zeroDuplicateSideEffects:
+      typeof beforeDurable.sourceHash === 'string'
+      && beforeDurable.sourceHash.length === 64
+      && typeof afterDurable.sourceHash === 'string'
+      && afterDurable.sourceHash.length === 64
+      && Number(sideEffects.duplicateMutationBefore) === 0
+      && Number(sideEffects.duplicateMutationAfter) === 0
+      && Number(sideEffects.duplicateMutationDelta) === 0
+      && Number(sideEffects.duplicateMutationDelta)
+        === Number(sideEffects.duplicateMutationAfter)
+          - Number(sideEffects.duplicateMutationBefore)
+      && Number(sideEffects.duplicateSideEffectBefore) === 0
+      && Number(sideEffects.duplicateSideEffectAfter) === 0
+      && Number(sideEffects.duplicateSideEffectDelta) === 0
+      && Number(sideEffects.duplicateSideEffectDelta)
+        === Number(sideEffects.duplicateSideEffectAfter)
+          - Number(sideEffects.duplicateSideEffectBefore),
+    cleanupComplete:
+      cleanup.handoffCleared === true
+      && cleanup.conversationDeleted === true
+      && cleanup.recoveryRecordCleared === true
+      && typeof cleanup.deletionErrorCodeHash === 'string'
+      && cleanup.deletionErrorCodeHash.length === 64,
+  };
 }
 
 function evaluateF05(
@@ -2349,6 +3820,7 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
 }
 
 export function installAcceptanceHarness(): void {
+  installFoundationF06Observation();
   registerAcceptanceHarness('agent', {
     async getAcceptanceHarnessStatus() {
       // Lightweight probe used by the Foundation scenario runner to confirm
@@ -2847,6 +4319,7 @@ export function installAcceptanceHarness(): void {
         throw new Error('agent.acceptance.queueCapacityExpectationInvalid');
       }
       const agentId = agent.id || agent.name;
+      const sourcePtid = authenticatedFoundationActorPtid();
       await useChatStore.getState().selectSession(conversationId);
       const pendingResults = submissions.map((submission) =>
         new Promise<Record<string, unknown>>((resolve) => {
@@ -2885,7 +4358,7 @@ export function installAcceptanceHarness(): void {
               error: error.message,
               events,
             });
-          });
+          }, sourcePtid);
           timeout = window.setTimeout(() => {
             controller.abort();
             finish({
@@ -3158,16 +4631,89 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async foundationF06Prepare({
+      scenarioKey,
+      platform,
+      locale,
+      sampleId,
+    }: {
+      scenarioKey: string;
+      platform: string;
+      locale: string;
+      sampleId: string;
+    }) {
+      const agent = selectedAgent();
+      if (!agent) throw new Error('agent.acceptance.agentMissing');
+      const capabilitySessions = await waitForCapabilitySessionEvidence();
+      const capabilitySessionId =
+        capabilitySessions.selectedStationSession?.session_id;
+      if (!capabilitySessionId) {
+        throw new Error('agent.acceptance.capabilitySessionUnavailable');
+      }
+      return evidenceValue(await runFoundationF06Prepare({
+        agent,
+        capabilitySessionId,
+        scenarioKey,
+        platform,
+        locale,
+        sampleId,
+      }));
+    },
+
+    async foundationF06ObserveFailure({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      const handoff = readFoundationF06Handoff(scenarioKey);
+      if (!handoff) {
+        throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
+      }
+      return evidenceValue(await observeFoundationRecoveryFailure(handoff));
+    },
+
+    async foundationF06DurableReload({
+      scenarioKey,
+    }: {
+      scenarioKey: string;
+    }) {
+      const handoff = readFoundationF06Handoff(scenarioKey);
+      if (!handoff) {
+        throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
+      }
+      return evidenceValue(await exerciseFoundationDurableReload(handoff));
+    },
+
+    async foundationF06Cleanup({
+      scenarioKey,
+      conversationId,
+      turnId,
+    }: {
+      scenarioKey: string;
+      conversationId: string;
+      turnId: string;
+    }) {
+      return evidenceValue(await cleanupFoundationF06Scenario({
+        scenarioKey,
+        conversationId,
+        turnId,
+      }));
+    },
+
     async foundationDirectProbe({
       platform,
       locale,
       cell,
       sampleId,
+      scenarioKey,
+      stationRestart,
     }: {
       platform: string;
       locale: string;
       cell: string;
       sampleId: string;
+      scenarioKey?: string;
+      stationRestart?: Record<string, unknown>;
     }) {
       const agent = selectedAgent();
       if (!agent) throw new Error('agent.acceptance.agentMissing');
@@ -3184,6 +4730,26 @@ export function installAcceptanceHarness(): void {
       } = { current: null };
       let turnDurationMs: number | null = null;
       let scenarioFacts: Record<string, unknown> | null = null;
+      let preservedReplayReadback:
+        | Awaited<ReturnType<typeof foundationConversationReadback>>
+        | null = null;
+
+      if (cell === 'AS-F06') {
+        if (!stationRestart || !scenarioKey) {
+          throw new Error('agent.acceptance.foundationStationRestartMissing');
+        }
+        const scenario = await runFoundationF06Complete(stationRestart, {
+          scenarioKey,
+          platform,
+          locale,
+          sampleId,
+        });
+        preparedConversationId = scenario.conversationId;
+        preparedTurnId = scenario.turnId;
+        preparedRuntimeEvent.current = scenario.runtimeEvent;
+        turnDurationMs = scenario.durationMs;
+        scenarioFacts = scenario.facts;
+      }
 
       if (cell === 'AS-F05') {
         const capabilitySessionId =
@@ -3206,6 +4772,7 @@ export function installAcceptanceHarness(): void {
       }
 
       if (cell === 'AS-F01') {
+        const sourcePtid = authenticatedFoundationActorPtid();
         const conversation = await api.createAgentConversation({
           agent_id: agentId,
           title: `Foundation ${sampleId}`,
@@ -3260,7 +4827,7 @@ export function installAcceptanceHarness(): void {
           }, (error) => {
             window.clearTimeout(timeout);
             reject(error);
-          });
+          }, sourcePtid);
           timeout = window.setTimeout(() => {
             controller.abort();
             reject(new Error('agent.acceptance.foundationTurnTimeout'));
@@ -3662,6 +5229,37 @@ export function installAcceptanceHarness(): void {
           );
         }
       }
+      if (cell === 'AS-F06' && scenarioFacts && currentConversationId && scenarioKey) {
+        preservedReplayReadback = await foundationConversationReadback(
+          currentConversationId,
+        );
+        const latestConversation = await api.getAgentConversation(
+          currentConversationId,
+        );
+        await api.archiveAgentConversation(
+          currentConversationId,
+          latestConversation.version,
+          true,
+        );
+        let conversationDeleted = false;
+        let deletionErrorCode = '';
+        try {
+          await api.getAgentConversation(currentConversationId);
+        } catch (error) {
+          deletionErrorCode = observedErrorCode(error);
+          conversationDeleted = deletionErrorCode.includes('AGENT_4004');
+        }
+        removeFoundationF06Handoff(scenarioKey);
+        scenarioFacts.cleanup = {
+          ...evidenceRecord(
+            scenarioFacts.cleanup,
+            'foundationF06Cleanup',
+          ),
+          handoffCleared: readFoundationF06Handoff(scenarioKey) === null,
+          conversationDeleted,
+          deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
+        };
+      }
 
       const sessionState = useSessionStore.getState();
       const providerState = useProviderStore.getState();
@@ -3685,6 +5283,8 @@ export function installAcceptanceHarness(): void {
         lastAssistant,
         scenarioFacts,
         platform,
+        locale,
+        sampleId,
       };
       const assertions = await evaluateDirectCellAssertions(assertionContext);
 
@@ -3693,9 +5293,12 @@ export function installAcceptanceHarness(): void {
         assertionContext,
         sampleId,
       );
-      const replayReadback = currentConversationId && conversationReadback
-        ? await foundationConversationReadback(currentConversationId)
-        : null;
+      const replayReadback = preservedReplayReadback
+        ?? (
+          currentConversationId && conversationReadback
+            ? await foundationConversationReadback(currentConversationId)
+            : null
+        );
       const sourceReadbackHash = conversationReadback
         ? await sha256Hex(stableJson(conversationReadback))
         : '';
@@ -3732,7 +5335,8 @@ export function installAcceptanceHarness(): void {
           }
         : { eventId: '', sequence: 0, eventType: '', occurredAt: '' };
 
-      const measurementLimitMs = cell === 'AS-F04' ? 900_000 : 120_000;
+      const measurementLimitMs =
+        cell === 'AS-F04' ? 900_000 : cell === 'AS-F06' ? 300_000 : 120_000;
       const measurementReport: Record<string, unknown> = {
         metric: 'foundation-turn-duration-ms',
         sampleIds: [sampleId],
@@ -3770,7 +5374,24 @@ export function installAcceptanceHarness(): void {
               maximum: 1,
             };
           })()
-        : {
+        : cell === 'AS-F06' && scenarioFacts
+          ? {
+              counterId: String(preparedTurnId ?? ''),
+              count: Number(
+                evidenceRecord(
+                  scenarioFacts.sideEffects,
+                  'foundationF06SideEffects',
+                ).duplicateMutationDelta ?? -1,
+              ) + Number(
+                evidenceRecord(
+                  scenarioFacts.sideEffects,
+                  'foundationF06SideEffects',
+                ).duplicateSideEffectDelta ?? -1,
+              ),
+              maximum: 0,
+              measurements: scenarioFacts.sideEffects,
+            }
+          : {
             counterId: 'pending-turn-queue',
             count: queueEntryCount,
             maximum: 8,
@@ -3782,6 +5403,20 @@ export function installAcceptanceHarness(): void {
         equal: Boolean(sourceReadbackHash) && sourceReadbackHash === replayReadbackHash,
         turnId,
         cell,
+        ...(cell === 'AS-F06' && scenarioFacts
+          ? {
+              oracleFacts: {
+                transitions: scenarioFacts.transitions,
+                replay: scenarioFacts.replay,
+                idempotence: scenarioFacts.idempotence,
+                restartRecovery: scenarioFacts.restartRecovery,
+                transportLoss: scenarioFacts.transportLoss,
+                terminalProjection: scenarioFacts.terminalProjection,
+                recoveryFailure: scenarioFacts.recoveryFailure,
+                staleRevision: scenarioFacts.staleRevision,
+              },
+            }
+          : {}),
       };
 
       const attachmentCleanup = cell === 'AS-F05' && scenarioFacts
@@ -3794,10 +5429,21 @@ export function installAcceptanceHarness(): void {
           )
         : [];
       const cleanup: Record<string, unknown> = {
-        status: cell !== 'AS-F05' || (
-          attachmentCleanup.length > 0
-          && attachmentCleanup.every((entry) =>
-            evidenceRecord(entry, 'foundationF05CleanupEntry').unavailable === true)
+        status: (
+          cell === 'AS-F05'
+            ? attachmentCleanup.length > 0
+              && attachmentCleanup.every((entry) =>
+                evidenceRecord(entry, 'foundationF05CleanupEntry').unavailable === true)
+            : cell === 'AS-F06' && scenarioFacts
+              ? evidenceRecord(
+                  scenarioFacts.cleanup,
+                  'foundationF06Cleanup',
+                ).handoffCleared === true
+                && evidenceRecord(
+                  scenarioFacts.cleanup,
+                  'foundationF06Cleanup',
+                ).conversationDeleted === true
+              : true
         )
           ? 'clean'
           : 'failed',
@@ -3805,6 +5451,9 @@ export function installAcceptanceHarness(): void {
         resourceIdHash: await sha256Hex(
           JSON.stringify({ platform, cell, sampleId }),
         ),
+        ...(cell === 'AS-F06' && scenarioFacts
+          ? { proof: scenarioFacts.cleanup }
+          : {}),
       };
 
       const receiverDomRole: Record<string, unknown> = {

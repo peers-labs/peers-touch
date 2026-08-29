@@ -17,6 +17,7 @@ function operation(): ChatOperation {
     assistantMessageId: 'message-1',
     abortController: new AbortController(),
     startedAt: 1,
+    streamGeneration: 10,
   };
 }
 
@@ -27,7 +28,12 @@ describe('Agent turn event identity projection', () => {
       'conversation-1',
       {
         event: 'text',
-        data: { seq: 3, turnId: 'turn-1', conversationId: 'conversation-1' },
+        data: {
+          seq: 3,
+          turnId: 'turn-1',
+          conversationId: 'conversation-1',
+          streamGeneration: 10,
+        },
       },
     );
 
@@ -44,7 +50,36 @@ describe('Agent turn event identity projection', () => {
     const result = applyOperationEventIdentity(
       { 'conversation-1': current },
       'conversation-1',
-      { event: 'text', data: { seq: 2, turnId: 'turn-1' } },
+      {
+        event: 'text',
+        data: { seq: 2, turnId: 'turn-1', streamGeneration: 10 },
+      },
+    );
+
+    expect(result.accepted).toBe(false);
+    expect(result.operations['conversation-1']).toBe(current);
+  });
+
+  it('never lets an older turn generation overwrite the current turn', () => {
+    const current = {
+      ...operation(),
+      turnId: 'turn-current',
+      lastEventSeq: 2,
+      streamGeneration: 11,
+    };
+    const result = applyOperationEventIdentity(
+      { 'conversation-1': current },
+      'conversation-1',
+      {
+        event: 'snapshot',
+        data: {
+          seq: 99,
+          turnId: 'turn-old',
+          conversationId: 'conversation-1',
+          streamGeneration: 10,
+          status: 'completed',
+        },
+      },
     );
 
     expect(result.accepted).toBe(false);
@@ -88,6 +123,26 @@ describe('Agent turn event identity projection', () => {
     expect(isTerminalEvent(event)).toBe(false);
   });
 
+  it('keeps recovery failure retryable instead of failing the Turn', () => {
+    const current = operation();
+    const event = {
+      event: 'recovery_failed' as const,
+      data: {
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        error: 'agent.turnRecovery.replayFailed',
+      },
+    };
+    const result = applyOperationEventIdentity(
+      { 'conversation-1': current },
+      'conversation-1',
+      event,
+    );
+
+    expect(result.operations['conversation-1'].runState).toBe('recovery_failed');
+    expect(isTerminalEvent(event)).toBe(false);
+  });
+
   it('keeps a replay catch-up marker non-terminal until Station reports a terminal snapshot', () => {
     const message: ChatMessage = {
       id: 'message-1',
@@ -107,6 +162,48 @@ describe('Agent turn event identity projection', () => {
     });
     expect(isTerminalEvent(event)).toBe(false);
   });
+
+  it.each([
+    ['failed', 'provider_failed', 'failed'],
+    ['interrupted', 'station_restart', 'interrupted'],
+    ['cancelled', 'user_cancelled', 'cancelled'],
+  ] as const)(
+    'preserves %s snapshot terminal status and reason',
+    (status, reason, expectedRunState) => {
+      const event = {
+        event: 'snapshot' as const,
+        data: {
+          seq: 5,
+          turnId: 'turn-1',
+          streamGeneration: 10,
+          status,
+          terminal_reason: reason,
+        },
+      };
+      const operationResult = applyOperationEventIdentity(
+        { 'conversation-1': { ...operation(), turnId: 'turn-1' } },
+        'conversation-1',
+        event,
+      );
+      const messageResult = reduceStreamEvent({
+        id: 'message-1',
+        role: 'assistant',
+        content: 'partial',
+        loading: true,
+        timestamp: 1,
+      }, event);
+
+      expect(operationResult.operations['conversation-1']).toMatchObject({
+        runState: expectedRunState,
+        status: expectedRunState,
+      });
+      expect(messageResult).toMatchObject({
+        terminalStatus: status,
+        loading: false,
+      });
+      expect(messageResult.errorDetail).toBe(reason);
+    },
+  );
 
   it('projects queued admission with position and settles the live stream', () => {
     const message: ChatMessage = {

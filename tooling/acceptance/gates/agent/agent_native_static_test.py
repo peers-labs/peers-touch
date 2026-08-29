@@ -279,6 +279,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("FOUNDATION_LOOP_MAX_TOOL_CALLS = 2", self.source)
         self.assertIn("max_tool_calls_exhausted", self.source)
 
+    def test_as_f06_uses_observed_identity_actions_and_durable_deltas(self) -> None:
+        self.assertIn("authenticatedFoundationActorPtid", self.source)
+        self.assertIn(
+            "error.message), sourcePtid);",
+            self.source,
+        )
+        self.assertIn("foundationDurableMutationSnapshot", self.source)
+        self.assertIn("retryTurnRecovery(handoff.conversationId)", self.source)
+        self.assertIn("reloadTurnSnapshot(handoff.conversationId)", self.source)
+        self.assertIn(
+            "AS_F06_ACTIVE_RECOVERY_FAILURE_NOT_OBSERVED",
+            self.source,
+        )
+        self.assertNotIn("durableReloadReached: true", self.source)
+        self.assertNotIn("duplicateDelta: 0", self.source)
+        self.assertNotIn("`${handoff.turnId}-missing`", self.source)
+
     def test_harness_reuses_identity_runtime(self) -> None:
         self.assertIn("identityRuntime", self.source)
         self.assertIn("loginWithPassword", self.source)

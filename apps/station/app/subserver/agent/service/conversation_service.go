@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -17,10 +19,191 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
-type ConversationService struct{}
+const (
+	defaultMaxTurnEventSubscribersPerTurn  = 8
+	defaultMaxTurnEventSubscribersPerActor = 32
+	defaultMaxTurnEventSubscribersGlobal   = 1024
+)
+
+type turnEventSubscriptionLimits struct {
+	perTurn  int
+	perActor int
+	global   int
+}
+
+type turnEventSubscription struct {
+	actorID       string
+	notifications chan struct{}
+}
+
+type ConversationService struct {
+	subscriptionsMu    sync.Mutex
+	subscriptions      map[string]map[*turnEventSubscription]struct{}
+	actorSubscriptions map[string]int
+	subscriptionCount  int
+	subscriptionLimits turnEventSubscriptionLimits
+}
 
 func NewConversationService() *ConversationService {
-	return &ConversationService{}
+	return newConversationServiceWithSubscriptionLimits(turnEventSubscriptionLimits{
+		perTurn:  defaultMaxTurnEventSubscribersPerTurn,
+		perActor: defaultMaxTurnEventSubscribersPerActor,
+		global:   defaultMaxTurnEventSubscribersGlobal,
+	})
+}
+
+func newConversationServiceWithSubscriptionLimits(limits turnEventSubscriptionLimits) *ConversationService {
+	return &ConversationService{
+		subscriptions:      make(map[string]map[*turnEventSubscription]struct{}),
+		actorSubscriptions: make(map[string]int),
+		subscriptionLimits: limits,
+	}
+}
+
+// SubscribeTurnEvents registers an edge-triggered notification before callers
+// replay durable events. The returned boundary is captured while publication
+// is excluded: events committed before it are replayed through the boundary,
+// while events committed after it must notify the installed subscription.
+func (s *ConversationService) SubscribeTurnEvents(
+	ctx context.Context,
+	ptid string,
+	conversationID string,
+	turnID string,
+) (<-chan struct{}, int64, *TurnEventReplayFence, func(), error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, 0, nil, nil, err
+	}
+	ptid = strings.TrimSpace(ptid)
+	conversationID = strings.TrimSpace(conversationID)
+	turnID = strings.TrimSpace(turnID)
+	var count int64
+	if err := db.WithContext(ctx).Table("agent_turns AS turn").
+		Joins("JOIN agent_conversations AS conversation ON conversation.id = turn.conversation_id").
+		Where(
+			"turn.id = ? AND turn.conversation_id = ? AND conversation.ptid = ?",
+			turnID,
+			conversationID,
+			ptid,
+		).
+		Count(&count).Error; err != nil {
+		return nil, 0, nil, nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"authorize turn event subscription",
+			err,
+		)
+	}
+	if count != 1 {
+		return nil, 0, nil, nil, errcode.New(
+			errcode.AgentNotFound,
+			http.StatusNotFound,
+			"turn not found",
+			nil,
+		)
+	}
+
+	key := turnEventSubscriptionKey(conversationID, turnID)
+	s.subscriptionsMu.Lock()
+	defer s.subscriptionsMu.Unlock()
+
+	if s.subscriptions == nil {
+		s.subscriptions = make(map[string]map[*turnEventSubscription]struct{})
+	}
+	if s.actorSubscriptions == nil {
+		s.actorSubscriptions = make(map[string]int)
+	}
+	if s.subscriptionCount >= s.subscriptionLimits.global {
+		return nil, 0, nil, nil, turnEventSubscriptionLimitError("global")
+	}
+	if s.actorSubscriptions[ptid] >= s.subscriptionLimits.perActor {
+		return nil, 0, nil, nil, turnEventSubscriptionLimitError("actor")
+	}
+	if len(s.subscriptions[key]) >= s.subscriptionLimits.perTurn {
+		return nil, 0, nil, nil, turnEventSubscriptionLimitError("turn")
+	}
+
+	fence, err := loadCurrentTurnEventFence(db.WithContext(ctx), turnID)
+	if err != nil {
+		return nil, 0, nil, nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"capture turn event attempt fence",
+			err,
+		)
+	}
+	var boundary struct{ MaxSequence int64 }
+	boundaryQuery := db.WithContext(ctx).Model(&persistence.TurnEvent{}).
+		Where("conversation_id = ? AND turn_id = ?", conversationID, turnID).
+		Select("COALESCE(MAX(event_seq), 0) AS max_sequence")
+	boundaryQuery = applyTurnEventFence(boundaryQuery, "agent_turn_events", fence)
+	if err := boundaryQuery.
+		Scan(&boundary).Error; err != nil {
+		return nil, 0, nil, nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"capture turn event replay boundary",
+			err,
+		)
+	}
+
+	subscription := &turnEventSubscription{
+		actorID:       ptid,
+		notifications: make(chan struct{}, 1),
+	}
+	if s.subscriptions[key] == nil {
+		s.subscriptions[key] = make(map[*turnEventSubscription]struct{})
+	}
+	s.subscriptions[key][subscription] = struct{}{}
+	s.actorSubscriptions[ptid]++
+	s.subscriptionCount++
+
+	var once sync.Once
+	cancel := func() {
+		once.Do(func() {
+			s.subscriptionsMu.Lock()
+			defer s.subscriptionsMu.Unlock()
+
+			if _, exists := s.subscriptions[key][subscription]; !exists {
+				return
+			}
+			delete(s.subscriptions[key], subscription)
+			if len(s.subscriptions[key]) == 0 {
+				delete(s.subscriptions, key)
+			}
+			s.actorSubscriptions[subscription.actorID]--
+			if s.actorSubscriptions[subscription.actorID] == 0 {
+				delete(s.actorSubscriptions, subscription.actorID)
+			}
+			s.subscriptionCount--
+		})
+	}
+	return subscription.notifications, boundary.MaxSequence, fence, cancel, nil
+}
+
+func turnEventSubscriptionLimitError(scope string) error {
+	return errcode.New(
+		errcode.AgentQueueFull,
+		http.StatusTooManyRequests,
+		"turn event subscriber limit exceeded: "+scope,
+		nil,
+	)
+}
+
+func (s *ConversationService) notifyTurnEvent(conversationID string, turnID string) {
+	key := turnEventSubscriptionKey(conversationID, turnID)
+	s.subscriptionsMu.Lock()
+	defer s.subscriptionsMu.Unlock()
+	for subscription := range s.subscriptions[key] {
+		select {
+		case subscription.notifications <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func turnEventSubscriptionKey(conversationID string, turnID string) string {
+	return strings.TrimSpace(conversationID) + "\x00" + strings.TrimSpace(turnID)
 }
 
 func (s *ConversationService) getDB(ctx context.Context) (*gorm.DB, error) {
@@ -532,51 +715,215 @@ func (s *ConversationService) ListMessages(ctx context.Context, ptid, conversati
 }
 
 func (s *ConversationService) PersistTurnEvent(ctx context.Context, conversationID, turnID, eventType string, payload map[string]interface{}) (int64, error) {
+	return s.PersistTurnAttemptEvent(ctx, conversationID, turnID, "", eventType, payload)
+}
+
+func (s *ConversationService) PersistTurnAttemptEvent(
+	ctx context.Context,
+	conversationID string,
+	turnID string,
+	attemptID string,
+	eventType string,
+	payload map[string]interface{},
+) (int64, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return 0, err
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return 0, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to encode turn event",
+			err,
+		)
+	}
 	var seq int64
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var persistErr error
+		seq, persistErr = s.persistTurnEventTx(
+			tx,
+			conversationID,
+			turnID,
+			attemptID,
+			eventType,
+			payloadBytes,
+			time.Now(),
+		)
+		return persistErr
+	}); err != nil {
+		return 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to persist turn event", err)
+	}
+	s.notifyTurnEvent(conversationID, turnID)
+	return seq, nil
+}
+
+func (s *ConversationService) PersistTurnTextEvent(
+	ctx context.Context,
+	conversationID string,
+	turnID string,
+	attemptID string,
+	assistantMessageID string,
+	modelName string,
+	branchID string,
+	parentMessageID string,
+	replacesMessageID string,
+	payload interface{},
+	text string,
+) (int64, string, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return 0, "", err
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return 0, "", errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to encode turn text event", err)
+	}
+	var seq int64
+	persistedAssistantMessageID := strings.TrimSpace(assistantMessageID)
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var turn persistence.AgentTurn
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND conversation_id = ?", turnID, conversationID).
 			First(&turn).Error; err != nil {
-			if err != gorm.ErrRecordNotFound {
-				return err
-			}
-			// conversation_created is emitted before ExecuteTurn inserts its
-			// preallocated turn row. Lock the owning conversation for that
-			// first event; subsequent events lock the turn row.
+			return err
+		}
+		if turn.Status != string(domain.TurnStatusRunning) &&
+			turn.Status != string(domain.TurnStatusWaitingLocalTool) {
+			return errcode.New(
+				errcode.AgentVersionConflict,
+				http.StatusConflict,
+				"terminal turn rejects text projection",
+				nil,
+			)
+		}
+		var persistErr error
+		seq, persistErr = s.persistTurnEventTx(
+			tx,
+			conversationID,
+			turnID,
+			attemptID,
+			"text",
+			payloadBytes,
+			time.Now(),
+		)
+		if persistErr != nil {
+			return persistErr
+		}
+		if persistedAssistantMessageID == "" {
 			var conversation persistence.Conversation
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 				Where("id = ?", conversationID).
 				First(&conversation).Error; err != nil {
 				return err
 			}
+			var maxSeq struct{ MaxSeq int64 }
+			if err := tx.Model(&persistence.AgentMessage{}).
+				Where("conversation_id = ?", conversationID).
+				Select("COALESCE(MAX(seq), 0) AS max_seq").
+				Scan(&maxSeq).Error; err != nil {
+				return err
+			}
+			persistedAssistantMessageID = generateID("msg")
+			effectiveParentID := strings.TrimSpace(parentMessageID)
+			if effectiveParentID == "" {
+				effectiveParentID = conversation.ActiveBranchMessageID
+			}
+			message := persistence.AgentMessage{
+				ID:                persistedAssistantMessageID,
+				ConversationID:    conversationID,
+				TurnID:            optionalString(turnID),
+				ModelName:         optionalString(modelName),
+				Role:              string(domain.MessageRoleAssistant),
+				Status:            "pending",
+				Content:           optionalString(text),
+				Seq:               maxSeq.MaxSeq + 1,
+				BranchID:          optionalString(branchID),
+				ParentMessageID:   optionalString(effectiveParentID),
+				ReplacesMessageID: optionalString(replacesMessageID),
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
+			}
+			if err := tx.Create(&message).Error; err != nil {
+				return err
+			}
+			return tx.Model(&conversation).Updates(map[string]interface{}{
+				"active_branch_message_id": message.ID,
+				"updated_at":               time.Now(),
+				"version":                  gorm.Expr("version + 1"),
+			}).Error
 		}
-		var maxSeq struct{ MaxSeq int64 }
-		if err := tx.Model(&persistence.TurnEvent{}).
-			Where("turn_id = ?", turnID).
-			Select("COALESCE(MAX(event_seq), 0) AS max_seq").
-			Scan(&maxSeq).Error; err != nil {
-			return err
+		result := tx.Model(&persistence.AgentMessage{}).
+			Where(
+				"id = ? AND conversation_id = ? AND turn_id = ? AND role = ? AND status = ?",
+				persistedAssistantMessageID,
+				conversationID,
+				turnID,
+				string(domain.MessageRoleAssistant),
+				"pending",
+			).
+			Update("content", gorm.Expr("COALESCE(content, '') || ?", text))
+		if result.Error != nil {
+			return result.Error
 		}
-		seq = maxSeq.MaxSeq + 1
-		return tx.Create(&persistence.TurnEvent{
-			ID:             generateID("tevt"),
-			ConversationID: conversationID,
-			TurnID:         turnID,
-			EventSeq:       seq,
-			EventType:      eventType,
-			Payload:        string(payloadBytes),
-			CreatedAt:      time.Now(),
-		}).Error
+		if result.RowsAffected != 1 {
+			return errcode.New(
+				errcode.AgentVersionConflict,
+				http.StatusConflict,
+				"pending assistant message changed before text projection",
+				nil,
+			)
+		}
+		return nil
 	}); err != nil {
-		return 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to persist turn event", err)
+		return 0, "", errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to persist turn text projection", err)
 	}
-	return seq, nil
+	s.notifyTurnEvent(conversationID, turnID)
+	return seq, persistedAssistantMessageID, nil
+}
+
+func (s *ConversationService) persistTurnEventTx(
+	tx *gorm.DB,
+	conversationID string,
+	turnID string,
+	attemptID string,
+	eventType string,
+	payload []byte,
+	now time.Time,
+) (int64, error) {
+	var turn persistence.AgentTurn
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND conversation_id = ?", turnID, conversationID).
+		First(&turn).Error; err != nil {
+		if err != gorm.ErrRecordNotFound {
+			return 0, err
+		}
+		var conversation persistence.Conversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", conversationID).
+			First(&conversation).Error; err != nil {
+			return 0, err
+		}
+	}
+	var maxSeq struct{ MaxSeq int64 }
+	if err := tx.Model(&persistence.TurnEvent{}).
+		Where("turn_id = ?", turnID).
+		Select("COALESCE(MAX(event_seq), 0) AS max_seq").
+		Scan(&maxSeq).Error; err != nil {
+		return 0, err
+	}
+	seq := maxSeq.MaxSeq + 1
+	return seq, tx.Create(&persistence.TurnEvent{
+		ID:             generateID("tevt"),
+		ConversationID: conversationID,
+		TurnID:         turnID,
+		AttemptID:      strings.TrimSpace(attemptID),
+		EventSeq:       seq,
+		EventType:      eventType,
+		Payload:        string(payload),
+		CreatedAt:      now,
+	}).Error
 }
 
 func (s *ConversationService) PersistUserMessage(ctx context.Context, conversationID, content, turnID string) (*domain.Message, error) {
@@ -640,6 +987,17 @@ func (s *ConversationService) persistMessage(ctx context.Context, conversationID
 }
 
 func (s *ConversationService) ReplayTurnEvents(ctx context.Context, ptid, conversationID, turnID string, afterSeq int64) ([]*persistence.TurnEvent, error) {
+	return s.ReplayTurnEventsThrough(ctx, ptid, conversationID, turnID, afterSeq, math.MaxInt64)
+}
+
+func (s *ConversationService) ReplayTurnEventsThrough(
+	ctx context.Context,
+	ptid string,
+	conversationID string,
+	turnID string,
+	afterSeq int64,
+	throughSeq int64,
+) ([]*persistence.TurnEvent, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -650,11 +1008,78 @@ func (s *ConversationService) ReplayTurnEvents(ctx context.Context, ptid, conver
 	if ptid == "" || conversationID == "" || turnID == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "ptid, conversation_id, and turn_id are required", nil)
 	}
+	if throughSeq < afterSeq {
+		return []*persistence.TurnEvent{}, nil
+	}
+	fence, err := loadCurrentTurnEventFence(db.WithContext(ctx), turnID)
+	if err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to load current turn attempt fence", err)
+	}
+	return s.replayTurnEventsThroughFence(
+		ctx,
+		ptid,
+		conversationID,
+		turnID,
+		afterSeq,
+		throughSeq,
+		fence,
+	)
+}
+
+func (s *ConversationService) ReplayTurnEventsThroughFence(
+	ctx context.Context,
+	ptid string,
+	conversationID string,
+	turnID string,
+	afterSeq int64,
+	throughSeq int64,
+	fence *TurnEventReplayFence,
+) ([]*persistence.TurnEvent, error) {
+	return s.replayTurnEventsThroughFence(
+		ctx,
+		ptid,
+		conversationID,
+		turnID,
+		afterSeq,
+		throughSeq,
+		fence,
+	)
+}
+
+func (s *ConversationService) replayTurnEventsThroughFence(
+	ctx context.Context,
+	ptid string,
+	conversationID string,
+	turnID string,
+	afterSeq int64,
+	throughSeq int64,
+	fence *TurnEventReplayFence,
+) ([]*persistence.TurnEvent, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ptid = strings.TrimSpace(ptid)
+	conversationID = strings.TrimSpace(conversationID)
+	turnID = strings.TrimSpace(turnID)
+	if ptid == "" || conversationID == "" || turnID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "ptid, conversation_id, and turn_id are required", nil)
+	}
+	if throughSeq < afterSeq {
+		return []*persistence.TurnEvent{}, nil
+	}
 	var rows []persistence.TurnEvent
 	query := db.WithContext(ctx).Table("agent_turn_events AS event").
 		Select("event.*").
 		Joins("JOIN agent_conversations AS conversation ON conversation.id = event.conversation_id").
-		Where("event.conversation_id = ? AND event.turn_id = ? AND conversation.ptid = ?", conversationID, turnID, ptid)
+		Where(
+			"event.conversation_id = ? AND event.turn_id = ? AND event.event_seq <= ? AND conversation.ptid = ?",
+			conversationID,
+			turnID,
+			throughSeq,
+			ptid,
+		)
+	query = applyTurnEventFence(query, "event", fence)
 	if afterSeq > 0 {
 		query = query.Where("event.event_seq > ?", afterSeq)
 	}
@@ -680,6 +1105,60 @@ type TurnEventSnapshot struct {
 }
 
 func (s *ConversationService) GetTurnEventSnapshot(ctx context.Context, ptid, conversationID, turnID string) (*TurnEventSnapshot, error) {
+	return s.GetTurnEventSnapshotAt(ctx, ptid, conversationID, turnID, math.MaxInt64)
+}
+
+func (s *ConversationService) GetTurnEventSnapshotAt(
+	ctx context.Context,
+	ptid string,
+	conversationID string,
+	turnID string,
+	throughSeq int64,
+) (*TurnEventSnapshot, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fence, err := loadCurrentTurnEventFence(db.WithContext(ctx), turnID)
+	if err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to load current turn attempt fence", err)
+	}
+	return s.getTurnEventSnapshotAtFence(
+		ctx,
+		ptid,
+		conversationID,
+		turnID,
+		throughSeq,
+		fence,
+	)
+}
+
+func (s *ConversationService) GetTurnEventSnapshotAtFence(
+	ctx context.Context,
+	ptid string,
+	conversationID string,
+	turnID string,
+	throughSeq int64,
+	fence *TurnEventReplayFence,
+) (*TurnEventSnapshot, error) {
+	return s.getTurnEventSnapshotAtFence(
+		ctx,
+		ptid,
+		conversationID,
+		turnID,
+		throughSeq,
+		fence,
+	)
+}
+
+func (s *ConversationService) getTurnEventSnapshotAtFence(
+	ctx context.Context,
+	ptid string,
+	conversationID string,
+	turnID string,
+	throughSeq int64,
+	fence *TurnEventReplayFence,
+) (*TurnEventSnapshot, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -693,30 +1172,93 @@ func (s *ConversationService) GetTurnEventSnapshot(ctx context.Context, ptid, co
 		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "turn snapshot not found", err)
 	}
 	var maxSeq struct{ MaxSeq int64 }
-	if err := db.WithContext(ctx).Model(&persistence.TurnEvent{}).
-		Where("turn_id = ?", turnID).
+	maxSequenceQuery := db.WithContext(ctx).Model(&persistence.TurnEvent{}).
+		Where("turn_id = ? AND event_seq <= ?", turnID, throughSeq)
+	maxSequenceQuery = applyTurnEventFence(maxSequenceQuery, "agent_turn_events", fence)
+	if err := maxSequenceQuery.
 		Select("COALESCE(MAX(event_seq), 0) AS max_seq").
 		Scan(&maxSeq).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to load turn snapshot cursor", err)
 	}
+	var terminalEventCount int64
+	terminalQuery := db.WithContext(ctx).Model(&persistence.TurnEvent{}).
+		Where(
+			"turn_id = ? AND event_seq <= ? AND event_type IN ?",
+			turnID,
+			maxSeq.MaxSeq,
+			[]string{"done", "error", "cancelled"},
+		)
+	terminalQuery = applyTurnEventFence(terminalQuery, "agent_turn_events", fence)
+	if err := terminalQuery.
+		Count(&terminalEventCount).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to load turn snapshot terminal state", err)
+	}
+	var terminalEvent persistence.TurnEvent
+	if terminalEventCount > 0 {
+		latestTerminalQuery := db.WithContext(ctx).Model(&persistence.TurnEvent{}).
+			Where(
+				"turn_id = ? AND event_seq <= ? AND event_type IN ?",
+				turnID,
+				maxSeq.MaxSeq,
+				[]string{"done", "error", "cancelled"},
+			)
+		latestTerminalQuery = applyTurnEventFence(
+			latestTerminalQuery,
+			"agent_turn_events",
+			fence,
+		)
+		if err := latestTerminalQuery.
+			Order("event_seq DESC").
+			First(&terminalEvent).Error; err != nil {
+			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to load fenced terminal turn event", err)
+		}
+	}
+	status := turn.Status
+	if fence != nil && fence.attemptID != "" {
+		var attempt persistence.TurnAttempt
+		if err := db.WithContext(ctx).
+			Select("status").
+			Where("id = ? AND turn_id = ?", fence.attemptID, turnID).
+			First(&attempt).Error; err != nil {
+			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to load fenced turn attempt status", err)
+		}
+		status = attempt.Status
+	}
+	if terminalEventCount == 0 && isTerminalTurnDomainStatus(domain.TurnStatus(status)) {
+		status = string(domain.TurnStatusRunning)
+	}
 	updatedAt := turn.StartedAt
-	if turn.EndedAt != nil {
-		updatedAt = *turn.EndedAt
+	var lastEvent persistence.TurnEvent
+	if maxSeq.MaxSeq > 0 {
+		lastEventQuery := db.WithContext(ctx).
+			Where("turn_id = ? AND event_seq = ?", turnID, maxSeq.MaxSeq).
+			Model(&persistence.TurnEvent{})
+		lastEventQuery = applyTurnEventFence(lastEventQuery, "agent_turn_events", fence)
+		if err := lastEventQuery.
+			First(&lastEvent).Error; err != nil {
+			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to load turn snapshot timestamp", err)
+		}
+		updatedAt = lastEvent.CreatedAt
 	}
 	snapshot := &TurnEventSnapshot{
 		TurnID:         turn.ID,
 		ConversationID: turn.ConversationID,
 		AgentID:        turn.AgentID,
-		Status:         turn.Status,
+		Status:         status,
 		LastSequence:   maxSeq.MaxSeq,
 		UpdatedAt:      updatedAt,
 	}
-	if turn.FinalResponse != nil {
+	if fence == nil &&
+		terminalEventCount > 0 &&
+		turn.Status == string(domain.TurnStatusCompleted) &&
+		turn.FinalResponse != nil {
 		snapshot.Text = *turn.FinalResponse
 	} else {
 		var textEvents []persistence.TurnEvent
-		if err := db.WithContext(ctx).
-			Where("turn_id = ? AND event_type = ? AND event_seq <= ?", turnID, "text", maxSeq.MaxSeq).
+		textQuery := db.WithContext(ctx).Model(&persistence.TurnEvent{}).
+			Where("turn_id = ? AND event_type = ? AND event_seq <= ?", turnID, "text", maxSeq.MaxSeq)
+		textQuery = applyTurnEventFence(textQuery, "agent_turn_events", fence)
+		if err := textQuery.
 			Order("event_seq ASC").
 			Find(&textEvents).Error; err != nil {
 			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to fold turn snapshot text", err)
@@ -736,10 +1278,75 @@ func (s *ConversationService) GetTurnEventSnapshot(ctx context.Context, ptid, co
 		}
 		snapshot.Text = text.String()
 	}
-	if turn.Status == string(domain.TurnStatusFailed) || turn.Status == string(domain.TurnStatusCancelled) {
-		snapshot.TerminalReason = turn.Status
+	if terminalEventCount > 0 && (status == string(domain.TurnStatusFailed) ||
+		status == string(domain.TurnStatusCancelled) ||
+		status == string(domain.TurnStatusInterrupted)) {
+		if fence == nil {
+			snapshot.TerminalReason = strings.TrimSpace(turn.TerminalReason)
+		} else {
+			var payload map[string]interface{}
+			if err := json.Unmarshal([]byte(terminalEvent.Payload), &payload); err != nil {
+				return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "decode fenced terminal turn event", err)
+			}
+			for _, key := range []string{"terminal_reason", "error", "stage"} {
+				if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+					snapshot.TerminalReason = strings.TrimSpace(value)
+					break
+				}
+			}
+		}
+		if snapshot.TerminalReason == "" {
+			snapshot.TerminalReason = status
+		}
 	}
 	return snapshot, nil
+}
+
+type TurnEventReplayFence struct {
+	attemptID string
+	startedAt time.Time
+}
+
+func loadCurrentTurnEventFence(db *gorm.DB, turnID string) (*TurnEventReplayFence, error) {
+	var attempt persistence.TurnAttempt
+	if err := db.
+		Select("id", "started_at").
+		Where("turn_id = ?", turnID).
+		Order("attempt_index DESC").
+		First(&attempt).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &TurnEventReplayFence{
+		attemptID: strings.TrimSpace(attempt.ID),
+		startedAt: attempt.StartedAt,
+	}, nil
+}
+
+func applyTurnEventFence(query *gorm.DB, table string, fence *TurnEventReplayFence) *gorm.DB {
+	if fence == nil || fence.attemptID == "" {
+		return query
+	}
+	prefix := table + "."
+	return query.Where(
+		"("+prefix+"attempt_id = ? OR ("+prefix+"attempt_id = '' AND "+prefix+"created_at >= ?))",
+		fence.attemptID,
+		fence.startedAt,
+	)
+}
+
+func isTerminalTurnDomainStatus(status domain.TurnStatus) bool {
+	switch status {
+	case domain.TurnStatusCompleted,
+		domain.TurnStatusFailed,
+		domain.TurnStatusCancelled,
+		domain.TurnStatusInterrupted:
+		return true
+	default:
+		return false
+	}
 }
 
 func persistenceConversationToDomain(row *persistence.Conversation) (*domain.Conversation, error) {

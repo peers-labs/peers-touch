@@ -11,6 +11,7 @@ import {
 import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
 import { useAgentTopicStore } from './agentTopics';
+import { currentAuthenticatedActorId } from './session';
 import {
   conversationIdFromAgentDraftKey,
   createAgentDraftKey,
@@ -19,6 +20,7 @@ import {
 import { getDesktopAgentChatCache } from '../storage/desktopAgentChatCache';
 import { toolRuntime } from '../runtimes/toolRuntime';
 import type { CachedAgentConversation, CachedAgentMessage } from '@peers-touch/client-chat-core';
+import type { AgentTurnSnapshotReloadResult } from '../runtimes/chatRuntime';
 import {
   reduceStreamEvent,
   createOperation,
@@ -110,6 +112,11 @@ export interface AgentSendLifecycle {
   onRejected?: () => void;
 }
 
+export interface RecoveredTurnTerminal {
+  status: 'completed' | 'cancelled' | 'failed' | 'interrupted';
+  reason?: string;
+}
+
 export interface ErrorResolutionAction {
   type: 'reauthCli' | 'openProviderSettings' | 'checkConnection';
   cliId?: string;
@@ -134,6 +141,7 @@ export interface ChatMessage {
   model?: string;
   error?: string;
   cancelled?: boolean;
+  terminalStatus?: 'completed' | 'failed' | 'cancelled' | 'interrupted';
   errorDetail?: string;
   resolution?: ErrorResolutionAction | null;
   providerId?: string;
@@ -170,11 +178,16 @@ function cachedConversationToSession(conversation: CachedAgentConversation): Ses
 }
 
 function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
+  const persistedStatus = String(message.status || '').toLowerCase();
+  const terminalStatus = (
+    ['completed', 'failed', 'cancelled', 'interrupted'] as const
+  ).find((status) => status === persistedStatus);
   const chatMessage: ChatMessage = {
     id: message.messageId,
     role: message.role,
     content: message.content,
     contentType: 'text',
+    loading: message.role === 'assistant' && persistedStatus === 'pending',
     timestamp: new Date(message.createdAt).getTime(),
     model: message.modelName,
     turnId: message.turnId,
@@ -196,6 +209,11 @@ function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMessage {
       },
     })),
   };
+  if (message.role === 'assistant' && terminalStatus) {
+    chatMessage.loading = false;
+    chatMessage.terminalStatus = terminalStatus;
+    chatMessage.cancelled = terminalStatus === 'cancelled';
+  }
   if (message.role === 'assistant' && message.reasoningJson) {
     try {
       const reasoning = JSON.parse(message.reasoningJson) as { text?: string; done?: boolean; duration_ms?: number };
@@ -277,7 +295,7 @@ function isOptimisticMessageId(id: string): boolean {
 }
 
 function isInFlightMessage(message: ChatMessage): boolean {
-  return message.loading === true || Boolean(message.error);
+  return message.loading === true || Boolean(message.error) || Boolean(message.terminalStatus);
 }
 
 function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): ChatMessage {
@@ -293,8 +311,7 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     || source.replacedBy
     || source.errorDetail
     || source.resolution;
-  if (!hasCot) return target;
-  return {
+  const merged = hasCot ? {
     ...target,
     toolCalls: target.toolCalls ?? source.toolCalls,
     thinking: target.thinking ?? source.thinking,
@@ -309,23 +326,55 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     error: target.error ?? source.error,
     errorDetail: target.errorDetail ?? source.errorDetail,
     resolution: target.resolution ?? source.resolution,
+  } : target;
+  if (!source.terminalStatus) return merged;
+  return {
+    ...merged,
+    loading: false,
+    cancelled: source.terminalStatus === 'cancelled' || source.cancelled === true,
+    terminalStatus: source.terminalStatus,
+    error: merged.error ?? source.error,
+    errorDetail: merged.errorDetail ?? source.errorDetail,
   };
 }
 
 export function mergeServerMessages(currentMessages: ChatMessage[], serverMessages: ChatMessage[]): ChatMessage[] {
   const currentById = new Map<string, ChatMessage>();
+  const currentAssistantByTurnId = new Map<string, ChatMessage>();
   for (const message of currentMessages) currentById.set(message.id, message);
+  for (const message of currentMessages) {
+    if (message.role === 'assistant' && message.turnId) {
+      currentAssistantByTurnId.set(message.turnId, message);
+    }
+  }
 
   const merged: ChatMessage[] = serverMessages.map((serverMessage) => {
-    const match = currentById.get(serverMessage.id);
+    const match = currentById.get(serverMessage.id)
+      ?? (
+        serverMessage.role === 'assistant' && serverMessage.turnId
+          ? currentAssistantByTurnId.get(serverMessage.turnId)
+          : undefined
+      );
     if (!match) return serverMessage;
     return carryChainOfThoughtFields(serverMessage, match);
   });
 
   const mergedIds = new Set(merged.map((message) => message.id));
+  const mergedAssistantTurnIds = new Set(
+    merged
+      .filter((message) => message.role === 'assistant' && message.turnId)
+      .map((message) => message.turnId as string),
+  );
 
   for (const message of currentMessages) {
     if (mergedIds.has(message.id)) continue;
+    if (
+      message.role === 'assistant'
+      && message.turnId
+      && mergedAssistantTurnIds.has(message.turnId)
+    ) {
+      continue;
+    }
     const isLocalOnly = isOptimisticMessageId(message.id) || isInFlightMessage(message);
     if (!isLocalOnly) continue;
     if (isSupersededByServer(message, merged)) continue;
@@ -504,6 +553,19 @@ interface ChatState {
   reset: () => void;
 
   syncMessages: () => Promise<void>;
+  applyRecoveredTurnEvent: (
+    conversationId: string,
+    agentId: string,
+    turnId: string,
+    event: StreamEvent,
+  ) => void;
+  reconcileRecoveredTurn: (
+    conversationId: string,
+    turnId: string,
+    terminal: RecoveredTurnTerminal | null,
+  ) => Promise<void>;
+  retryTurnRecovery: (conversationId?: string) => void;
+  reloadTurnSnapshot: (conversationId?: string) => Promise<AgentTurnSnapshotReloadResult>;
   syncTurnQueue: (conversationId?: string) => Promise<void>;
   cancelQueuedTurn: (conversationId: string, queueEntryId: string) => Promise<void>;
   setWideScreen: (wide: boolean) => void;
@@ -605,7 +667,41 @@ function reconcileTopicsAfterTurn(sessionKey: string): void {
 function clearOperation(operations: Record<string, ChatOperation>, sessionKey: string): Record<string, ChatOperation> {
   const op = operations[sessionKey];
   if (!op) return operations;
+  if (
+    op.runState === 'failed'
+    || op.runState === 'cancelled'
+    || op.runState === 'interrupted'
+  ) {
+    return operations;
+  }
   return { ...operations, [sessionKey]: completeOperation(op) };
+}
+
+function settleRecoveredOperation(
+  operation: ChatOperation,
+  terminal: RecoveredTurnTerminal,
+): ChatOperation {
+  if (terminal.status === 'completed') return completeOperation(operation);
+  if (terminal.status === 'cancelled') {
+    return {
+      ...cancelOperation(operation),
+      error: terminal.reason ? { message: terminal.reason } : operation.error,
+    };
+  }
+  if (terminal.status === 'interrupted') {
+    return {
+      ...operation,
+      status: 'interrupted',
+      runState: 'interrupted',
+      error: {
+        message: terminal.reason || operation.error?.message || 'agent.error.streamInterrupted',
+      },
+      endedAt: Date.now(),
+    };
+  }
+  return failOperation(operation, {
+    message: terminal.reason || operation.error?.message || 'agent.error.streamFailed',
+  });
 }
 
 function failOperationInMap(operations: Record<string, ChatOperation>, sessionKey: string, error: string): Record<string, ChatOperation> {
@@ -638,7 +734,29 @@ export function applyOperationEventIdentity(
   const operation = operations[sessionKey];
   if (!operation) return { operations, accepted: true };
   const seq = Number(event.data?.seq || 0);
-  if (seq > 0 && (operation.lastEventSeq || 0) >= seq) {
+  const streamGeneration = Number(event.data?.streamGeneration || 0);
+  const currentGeneration = operation.streamGeneration ?? 0;
+  const recoveryControlEvent = [
+    'connection_lost',
+    'reconnecting',
+    'replaying',
+    'reconciling',
+    'connected',
+    'recovery_failed',
+  ].includes(event.event);
+  if (
+    streamGeneration > 0
+    && currentGeneration > 0
+    && streamGeneration < currentGeneration
+  ) {
+    return { operations, accepted: false };
+  }
+  if (
+    seq > 0
+    && (operation.lastEventSeq || 0) >= seq
+    && streamGeneration === currentGeneration
+    && !recoveryControlEvent
+  ) {
     return { operations, accepted: false };
   }
   const turnId =
@@ -653,6 +771,44 @@ export function applyOperationEventIdentity(
       : typeof event.data?.conversation_id === 'string'
         ? event.data.conversation_id
         : operation.conversationId;
+  if (
+    operation.turnId
+    && turnId
+    && operation.turnId !== turnId
+    && streamGeneration <= currentGeneration
+  ) {
+    return { operations, accepted: false };
+  }
+  const snapshotStatus = event.event === 'snapshot'
+    ? String(event.data?.status || '').toLowerCase()
+    : '';
+  const runState = ({
+    connection_lost: 'connection_lost',
+    reconnecting: 'reconnecting',
+    replaying: 'replaying',
+    reconciling: 'reconciling',
+    connected: 'streaming',
+    recovery_failed: 'recovery_failed',
+    done: 'completed',
+    error: 'failed',
+    cancelled: 'cancelled',
+  } as const)[event.event]
+    ?? ({
+      completed: 'completed',
+      failed: 'failed',
+      cancelled: 'cancelled',
+      interrupted: 'interrupted',
+    } as const)[snapshotStatus]
+    ?? operation.runState;
+  const status = runState === 'completed'
+    ? 'completed'
+    : runState === 'failed'
+      ? 'failed'
+      : runState === 'interrupted'
+        ? 'interrupted'
+      : runState === 'cancelled'
+        ? 'cancelled'
+        : operation.status;
   return {
     accepted: true,
     operations: {
@@ -661,9 +817,29 @@ export function applyOperationEventIdentity(
         ...operation,
         turnId,
         conversationId,
+        streamGeneration:
+          streamGeneration > 0 ? streamGeneration : operation.streamGeneration,
         lastEventSeq: seq > 0 ? seq : operation.lastEventSeq,
-        runState:
-          event.event === 'reconciling' ? 'reconciling' : operation.runState,
+        runState,
+        status,
+        endedAt:
+          status === 'completed'
+          || status === 'failed'
+          || status === 'cancelled'
+          || status === 'interrupted'
+            ? operation.endedAt ?? Date.now()
+            : operation.endedAt,
+        error:
+          status === 'failed' || status === 'interrupted'
+            ? {
+                message: String(
+                  event.data?.terminal_reason
+                  || event.data?.error
+                  || operation.error?.message
+                  || 'agent.error.streamFailed',
+                ),
+              }
+            : operation.error,
       },
     },
   };
@@ -886,6 +1062,130 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     } catch (error) {
       log.warn('chat', 'Failed to sync messages; keeping current view', { error: String(error) });
     }
+  },
+
+  applyRecoveredTurnEvent: (conversationId, _agentId, turnId, event) => {
+    set((state) => {
+      const currentOperation = state.operations[conversationId];
+      const assistantMessageId =
+        currentOperation?.assistantMessageId || `recovered-${turnId}`;
+      const operation = currentOperation ?? {
+        ...createOperation({
+          sessionKey: conversationId,
+          type: 'sendMessage',
+          assistantMessageId,
+          abortController: new AbortController(),
+        }),
+        conversationId,
+        turnId,
+        streamGeneration: Number(event.data?.streamGeneration || 0) || undefined,
+      };
+      const operations = {
+        ...state.operations,
+        [conversationId]: operation,
+      };
+      const operationEvent = applyOperationEventIdentity(
+        operations,
+        conversationId,
+        {
+          ...event,
+          data: {
+            ...event.data,
+            turnId,
+            conversationId,
+          },
+        },
+      );
+      if (!operationEvent.accepted) return state;
+
+      const applyTo = (messages: ChatMessage[]): ChatMessage[] => {
+        const existingIndex = messages.findIndex(
+          (message) => message.id === assistantMessageId || message.turnId === turnId,
+        );
+        const existing: ChatMessage = existingIndex >= 0
+          ? messages[existingIndex]
+          : {
+              id: assistantMessageId,
+              role: 'assistant',
+              content: '',
+              loading: true,
+              timestamp: operation.startedAt,
+              turnId,
+            };
+        const projected = {
+          ...applyProjectedStreamEvent(existing, event),
+          turnId,
+        };
+        if (existingIndex < 0) return [...messages, projected];
+        const next = [...messages];
+        next[existingIndex] = projected;
+        return next;
+      };
+      const isCurrent = state.currentSessionKey === conversationId;
+      const buffered = applyTo(
+        state.sessionBuffers[conversationId] || (isCurrent ? state.messages : []),
+      );
+      return {
+        operations: operationEvent.operations,
+        sessionBuffers: {
+          ...state.sessionBuffers,
+          [conversationId]: buffered,
+        },
+        messages: isCurrent ? applyTo(state.messages) : state.messages,
+        isStreaming: isCurrent ? true : state.isStreaming,
+        streamingStartedAt: isCurrent ? operation.startedAt : state.streamingStartedAt,
+        abortController: isCurrent ? operation.abortController : state.abortController,
+      };
+    });
+  },
+
+  reconcileRecoveredTurn: async (conversationId, turnId, terminal) => {
+    const synced = await agentChatCache.syncConversation(conversationId);
+    const operation = get().operations[conversationId];
+    if (operation?.turnId !== turnId) return;
+    const serverMessages = foldToolMessages(synced.map(cachedMessageToChatMessage));
+    set((state) => {
+      const current = state.operations[conversationId];
+      if (current?.turnId !== turnId) return state;
+      const isCurrent = state.currentSessionKey === conversationId;
+      const reconciledBuffer = mergeServerMessages(
+        state.sessionBuffers[conversationId] || [],
+        serverMessages,
+      );
+      return {
+        messages: isCurrent
+          ? mergeServerMessages(state.messages, serverMessages)
+          : state.messages,
+        operations: terminal
+          ? {
+              ...state.operations,
+              [conversationId]: settleRecoveredOperation(current, terminal),
+            }
+          : state.operations,
+        sessionBuffers: terminal
+          ? clearBuffer(state.sessionBuffers, conversationId)
+          : {
+              ...state.sessionBuffers,
+              [conversationId]: reconciledBuffer,
+            },
+        isStreaming: isCurrent && terminal ? false : state.isStreaming,
+        streamingStartedAt: isCurrent && terminal ? null : state.streamingStartedAt,
+        abortController: isCurrent && terminal ? null : state.abortController,
+      };
+    });
+  },
+
+  retryTurnRecovery: (conversationId) => {
+    const key = conversationId || get().currentSessionKey;
+    void import('../runtimes/chatRuntime').then(({ retryAgentTurnRecovery }) => {
+      retryAgentTurnRecovery(key);
+    });
+  },
+
+  reloadTurnSnapshot: async (conversationId) => {
+    const key = conversationId || get().currentSessionKey;
+    const { reloadAgentTurnSnapshot } = await import('../runtimes/chatRuntime');
+    return reloadAgentTurnSnapshot(key);
   },
 
   syncTurnQueue: async (conversationId) => {
@@ -1130,6 +1430,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         });
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
+      currentAuthenticatedActorId() || '',
     );
 
     set((state) => {
@@ -1141,7 +1442,13 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         abortController: controller,
         operations: {
           ...state.operations,
-          [currentSessionKey]: createOperation({ sessionKey: currentSessionKey, type: 'sendMessage', assistantMessageId: assistantId, abortController: controller }),
+          [currentSessionKey]: createOperation({
+            sessionKey: currentSessionKey,
+            type: 'sendMessage',
+            assistantMessageId: assistantId,
+            abortController: controller,
+            streamGeneration: controller.streamGeneration,
+          }),
         },
         sessionBuffers: { ...state.sessionBuffers, [currentSessionKey]: baseMessages },
       };

@@ -13,10 +13,13 @@ import (
 )
 
 type revisionFakeTurnExecutor struct {
-	db      *gorm.DB
-	calls   int
-	configs []TurnConfig
-	err     error
+	db                         *gorm.DB
+	calls                      int
+	configs                    []TurnConfig
+	err                        error
+	observedTurnStatus         string
+	observedAttemptStatus      string
+	observedAssistantMsgStatus string
 }
 
 func (f *revisionFakeTurnExecutor) ExecuteTurn(
@@ -26,6 +29,17 @@ func (f *revisionFakeTurnExecutor) ExecuteTurn(
 ) (*domain.Turn, error) {
 	f.calls++
 	f.configs = append(f.configs, *config)
+	if config.ExistingTurnID != "" {
+		var turn persistence.AgentTurn
+		_ = f.db.First(&turn, "id = ?", config.ExistingTurnID).Error
+		f.observedTurnStatus = turn.Status
+		var attempt persistence.TurnAttempt
+		_ = f.db.First(&attempt, "id = ?", config.AttemptID).Error
+		f.observedAttemptStatus = attempt.Status
+		var assistant persistence.AgentMessage
+		_ = f.db.First(&assistant, "id = ?", config.AssistantMessageID).Error
+		f.observedAssistantMsgStatus = assistant.Status
+	}
 	if f.err != nil {
 		turnID := config.PrecreatedTurnID
 		if turnID == "" {
@@ -38,6 +52,23 @@ func (f *revisionFakeTurnExecutor) ExecuteTurn(
 				"status":   string(domain.TurnStatusFailed),
 				"ended_at": now,
 			}).Error
+		if config.AssistantMessageID != "" {
+			_ = f.db.Model(&persistence.AgentMessage{}).
+				Where("id = ?", config.AssistantMessageID).
+				Updates(map[string]interface{}{
+					"status":     string(domain.TurnStatusFailed),
+					"updated_at": now,
+				}).Error
+		}
+		if config.AttemptID != "" {
+			_ = f.db.Model(&persistence.TurnAttempt{}).
+				Where("id = ?", config.AttemptID).
+				Updates(map[string]interface{}{
+					"status":     string(domain.TurnStatusFailed),
+					"ended_at":   now,
+					"error_code": f.err.Error(),
+				}).Error
+		}
 		return nil, f.err
 	}
 	now := time.Now()
@@ -371,12 +402,100 @@ func TestRetryAddsAttemptUnderSameTurnWithoutBranchMutation(t *testing.T) {
 		executor.configs[0].AssistantMessageID != "assistant-failed" {
 		t.Fatalf("retry executor config=%+v", executor.configs)
 	}
+	if executor.observedTurnStatus != string(domain.TurnStatusRunning) ||
+		executor.observedAttemptStatus != string(domain.TurnStatusRunning) ||
+		executor.observedAssistantMsgStatus != "pending" {
+		t.Fatalf(
+			"retry authority was not atomically admitted before execution: turn=%q attempt=%q assistant=%q",
+			executor.observedTurnStatus,
+			executor.observedAttemptStatus,
+			executor.observedAssistantMsgStatus,
+		)
+	}
 	var messageCount int64
 	if err := db.Model(&persistence.AgentMessage{}).Count(&messageCount).Error; err != nil {
 		t.Fatal(err)
 	}
 	if messageCount != 2 || result.Conversation.ActiveBranchMessageID != "assistant-failed" {
 		t.Fatalf("retry created branch mutation: messages=%d conversation=%+v", messageCount, result.Conversation)
+	}
+}
+
+func TestRetryInterruptedTurnUsesTypedExistingTurnPathAndActorIsolation(t *testing.T) {
+	db := openConversationAuthorityDB(t, "revision_retry_interrupted")
+	migrateRevisionModels(t, db)
+	seedRevisionConversation(t, db)
+	now := time.Now()
+	input := "question"
+	turnID := "turn-interrupted"
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             turnID,
+		ConversationID: "conversation-revision",
+		AgentID:        "agent-1",
+		UserInput:      &input,
+		Status:         string(domain.TurnStatusInterrupted),
+		TerminalReason: "station_restart_interrupted",
+		StartedAt:      now,
+		EndedAt:        &now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&persistence.AgentMessage{}).
+		Where("id = ?", "user-source").
+		Update("turn_id", turnID).Error; err != nil {
+		t.Fatal(err)
+	}
+	parent := "user-source"
+	branch := "branch-interrupted"
+	content := ""
+	if err := db.Create(&persistence.AgentMessage{
+		ID:              "assistant-interrupted",
+		ConversationID:  "conversation-revision",
+		TurnID:          &turnID,
+		Role:            string(domain.MessageRoleAssistant),
+		Status:          string(domain.TurnStatusInterrupted),
+		Content:         &content,
+		Seq:             2,
+		BranchID:        &branch,
+		ParentMessageID: &parent,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&persistence.Conversation{}).
+		Where("id = ?", "conversation-revision").
+		Update("active_branch_message_id", "assistant-interrupted").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	executor := &revisionFakeTurnExecutor{db: db}
+	service := NewRevisionService(NewConversationService(), executor)
+	request := RevisionRequest{
+		Ptid:                        "ptid:person:owner",
+		ConversationID:              "conversation-revision",
+		SourceTurnID:                turnID,
+		IdempotencyKey:              "retry-interrupted",
+		ExpectedConversationVersion: 1,
+	}
+	result, err := service.RetryTurn(context.Background(), request)
+	if err != nil {
+		t.Fatalf("retry interrupted turn: %v", err)
+	}
+	if result.Turn.TurnID != turnID ||
+		result.Attempt.AttemptIndex != 1 ||
+		executor.calls != 1 ||
+		executor.configs[0].ExistingTurnID != turnID {
+		t.Fatalf("interrupted retry did not use existing-turn attempt path: result=%+v config=%+v", result, executor.configs)
+	}
+
+	request.Ptid = "ptid:person:other"
+	request.IdempotencyKey = "retry-interrupted-foreign"
+	request.ExpectedConversationVersion = result.Conversation.Version
+	if _, err := service.RetryTurn(context.Background(), request); err == nil {
+		t.Fatal("foreign actor retried an interrupted turn")
+	} else {
+		requireBizCode(t, err, errcode.AgentNotFound)
 	}
 }
 

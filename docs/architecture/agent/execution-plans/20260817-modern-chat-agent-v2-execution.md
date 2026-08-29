@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: AS-F01 through AS-F04 pass; AS-F05 is the first failing cell | W8a |
+| G-F Complete Foundation Gate | in progress: AS-F01 through AS-F05 source-matched diagnostic pass; AS-F06 implementation checkpoint is locally verified and awaits exact-source runtime proof | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2683,6 +2683,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   diagnostic progress. AS-F06 must now implement the accepted disconnect,
   replay, reconciliation, and stale-revision failure contract through
   production-reachable Browser and Desktop paths before another Gate run.
+- The AS-F06 implementation checkpoint now closes the local product and
+  evidence prerequisites for that rerun: Station owns generation-fenced Turn
+  settlement and attempt-fenced replay/snapshot state; Desktop owns
+  PTID-scoped recovery, bounded/cancellable replay transport, authoritative
+  snapshot reload, and stale terminal rejection; the Foundation producer
+  drives a source-bound Station outage, compares observed raw replay deliveries
+  with an independent Station readback, and performs reverse-order cleanup on
+  success or failure. Local verification passed Station Agent/OSS packages and
+  focused race tests, Desktop typecheck and 389 tests, production build, 18
+  Rust Agent-turn tests, 99 Foundation tests, Agent Domain validation, Go style,
+  and `git diff --check`. This is implementation evidence only: AS-F06 and G-F
+  remain `UNPROVEN` until the checkpoint is committed, deployed to profile
+  `two`, and the source-matched Gate advances past AS-F06.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
@@ -2690,7 +2703,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Expected**: `CONNECTION_LOST -> RECONNECTING -> REPLAYING -> RECONCILING -> CONNECTED`; projection remains idempotent.
 - **Failure variant**: Recovery failure offers retry/snapshot reload and cannot overwrite a newer revision.
 - **Evidence**: App/Browser DOM, cursor/event rows, replay equality, terminal readback.
-- **Status**: pending
+- **Status**: implementation checkpoint locally verified; exact-source runtime proof pending
 
 ### AS-F07 Retry, Regenerate, Edit, And Branch
 - **Precondition**: Completed and failed turns with feedback/usage references.
@@ -2706,7 +2719,9 @@ All statuses start `pending`. Execution records external Evidence Store paths.
 - **Expected**: Turn ten recalls pre-compression facts; ContextLedger identifies the compression source/snapshot, retained facts, exact source IDs, token accounting, and typed truncation/omission deterministically.
 - **Failure variant**: Disabled/unauthorized source is absent; ledger redaction exposes no secrets.
 - **Evidence**: Source-detail DOM, ContextLedger/Turn rows, fixed-answer assertions.
-- **Status**: pending
+- **Status**: pending; before execution, audit the pre-existing compression
+  session split so one Turn cannot span parent/child conversation replay
+  authority
 
 ### AS-F09 Usage, Feedback, And Diagnostic Replay
 - **Precondition**: Terminal turn with context/tool activity.

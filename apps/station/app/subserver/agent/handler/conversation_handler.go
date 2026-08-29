@@ -3,6 +3,8 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type ConversationHandlers struct {
@@ -71,12 +74,6 @@ type messageTranslateRequest struct {
 	Translation string `json:"translation"`
 }
 
-type streamEventsRequest struct {
-	ConversationID string `json:"conversation_id"`
-	TurnID         string `json:"turn_id"`
-	AfterSeq       int64  `json:"after_seq"`
-}
-
 func writeJSON(w server.Response, status int, v interface{}) {
 	w.SetHeader("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -85,10 +82,18 @@ func writeJSON(w server.Response, status int, v interface{}) {
 }
 
 func writeSSEEvent(w server.Response, event string, data interface{}) {
+	_ = writeSSEEventChecked(w, event, data)
+}
+
+func writeSSEEventChecked(w server.Response, event string, data interface{}) error {
 	payload, _ := json.Marshal(data)
-	_, _ = w.Write([]byte("event: " + event + "\n"))
-	_, _ = w.Write([]byte("data: " + string(payload) + "\n\n"))
-	_ = w.Flush()
+	if _, err := w.Write([]byte("event: " + event + "\n")); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte("data: " + string(payload) + "\n\n")); err != nil {
+		return err
+	}
+	return w.Flush()
 }
 
 func (h *ConversationHandlers) HandleListConversations(ctx context.Context, req server.Request, resp server.Response) error {
@@ -306,39 +311,82 @@ func (h *ConversationHandlers) HandleStreamConversationEvents(ctx context.Contex
 	resp.SetHeader("Connection", "keep-alive")
 	resp.SetHeader("X-Accel-Buffering", "no")
 
-	var input streamEventsRequest
-	if err := json.Unmarshal(req.Body(), &input); err != nil {
-		writeSSEEvent(resp, "error", map[string]any{"type": "error", "error": "invalid request"})
+	var input model.StreamTurnEventsRequest
+	if err := decodeStreamTurnEventsRequest(req.Body(), &input); err != nil {
+		writeTurnReplayFailure(resp, "invalid_request", err)
 		return nil
 	}
-	if input.ConversationID == "" || input.TurnID == "" {
-		writeSSEEvent(resp, "error", map[string]any{"type": "error", "error": "conversation_id and turn_id are required"})
+	if input.GetConversationId() == "" || input.GetTurnId() == "" {
+		writeTurnReplayFailure(resp, "invalid_request", fmt.Errorf("conversation_id and turn_id are required"))
+		return nil
+	}
+	if input.GetAfterSequence() > math.MaxInt64 {
+		writeTurnReplayFailure(resp, "invalid_request", fmt.Errorf("after_sequence is out of range"))
 		return nil
 	}
 
-	events, err := h.convService.ReplayTurnEvents(ctx, subjectActorID(ctx), input.ConversationID, input.TurnID, input.AfterSeq)
+	notifications, replayBoundary, replayFence, unsubscribe, err := h.convService.SubscribeTurnEvents(
+		ctx,
+		subjectActorID(ctx),
+		input.GetConversationId(),
+		input.GetTurnId(),
+	)
 	if err != nil {
-		logger.Warnf(ctx, "failed to replay turn events: conv_id=%s err=%v", input.ConversationID, err)
-		writeSSEEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
+		logger.Warnf(ctx, "failed to subscribe turn events: conv_id=%s err=%v", input.GetConversationId(), err)
+		writeTurnReplayFailure(resp, "subscribe_failed", err)
 		return nil
 	}
+	defer unsubscribe()
 
-	lastSequence := input.AfterSeq
-	for _, ev := range events {
-		var payload map[string]any
-		if err := json.Unmarshal([]byte(ev.Payload), &payload); err == nil {
-			payload["seq"] = ev.EventSeq
-			writeSSEEvent(resp, ev.EventType, payload)
-			lastSequence = ev.EventSeq
+	lastSequence := int64(input.GetAfterSequence())
+	replay := func(throughSequence int64) (bool, error) {
+		events, replayErr := h.convService.ReplayTurnEventsThroughFence(
+			ctx,
+			subjectActorID(ctx),
+			input.GetConversationId(),
+			input.GetTurnId(),
+			lastSequence,
+			throughSequence,
+			replayFence,
+		)
+		if replayErr != nil {
+			return false, replayErr
 		}
+		terminal := false
+		for _, ev := range events {
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(ev.Payload), &payload); err != nil {
+				return false, fmt.Errorf("decode persisted turn event seq=%d: %w", ev.EventSeq, err)
+			}
+			payload["seq"] = ev.EventSeq
+			if err := writeSSEEventChecked(resp, ev.EventType, payload); err != nil {
+				return false, err
+			}
+			lastSequence = ev.EventSeq
+			terminal = terminal || isTerminalTurnEvent(ev.EventType)
+		}
+		return terminal, nil
 	}
 
-	snapshot, err := h.convService.GetTurnEventSnapshot(ctx, subjectActorID(ctx), input.ConversationID, input.TurnID)
+	terminal, err := replay(replayBoundary)
 	if err != nil {
-		writeSSEEvent(resp, "error", map[string]any{"type": "error", "error": err.Error()})
+		logger.Warnf(ctx, "failed to replay turn events: conv_id=%s err=%v", input.GetConversationId(), err)
+		writeTurnReplayFailure(resp, "replay_failed", err)
 		return nil
 	}
-	writeSSEEvent(resp, "snapshot", map[string]any{
+	snapshot, err := h.convService.GetTurnEventSnapshotAtFence(
+		ctx,
+		subjectActorID(ctx),
+		input.GetConversationId(),
+		input.GetTurnId(),
+		replayBoundary,
+		replayFence,
+	)
+	if err != nil {
+		writeTurnReplayFailure(resp, "snapshot_failed", err)
+		return nil
+	}
+	if err := writeSSEEventChecked(resp, "snapshot", map[string]any{
 		"type":            "snapshot",
 		"turnId":          snapshot.TurnID,
 		"conversationId":  snapshot.ConversationID,
@@ -348,12 +396,83 @@ func (h *ConversationHandlers) HandleStreamConversationEvents(ctx context.Contex
 		"seq":             snapshot.LastSequence,
 		"terminal_reason": snapshot.TerminalReason,
 		"updated_at":      snapshot.UpdatedAt,
-	})
-	if snapshot.LastSequence > lastSequence {
-		lastSequence = snapshot.LastSequence
+	}); err != nil {
+		return nil
 	}
-	writeSSEEvent(resp, "catchup_done", map[string]any{"type": "catchup_done", "seq": lastSequence})
-	return nil
+	if err := writeSSEEventChecked(resp, "catchup_done", map[string]any{"type": "catchup_done", "seq": lastSequence}); err != nil {
+		return nil
+	}
+	if shouldCloseInitialTurnReplay(terminal, snapshot.Status) {
+		return nil
+	}
+
+	poll := time.NewTicker(time.Second)
+	defer poll.Stop()
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-notifications:
+		case <-poll.C:
+		case <-heartbeat.C:
+			if _, err := resp.Write([]byte(": heartbeat\n\n")); err != nil {
+				return nil
+			}
+			if err := resp.Flush(); err != nil {
+				return nil
+			}
+			continue
+		}
+		terminal, err = replay(math.MaxInt64)
+		if err != nil {
+			logger.Warnf(ctx, "failed to tail turn events: turn_id=%s after_sequence=%d err=%v", input.GetTurnId(), lastSequence, err)
+			writeTurnReplayFailure(resp, "tail_failed", err)
+			return nil
+		}
+		if terminal {
+			return nil
+		}
+	}
+}
+
+func shouldCloseInitialTurnReplay(replayedTerminal bool, snapshotStatus string) bool {
+	return replayedTerminal || isTerminalTurnStatus(snapshotStatus)
+}
+
+func decodeStreamTurnEventsRequest(body []byte, request *model.StreamTurnEventsRequest) error {
+	return (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, request)
+}
+
+func writeTurnReplayFailure(resp server.Response, reason string, err error) {
+	writeSSEEvent(resp, "recovery_failed", map[string]any{
+		"type":      "recovery_failed",
+		"reason":    reason,
+		"retryable": reason != "invalid_request",
+		"error":     err.Error(),
+	})
+}
+
+func isTerminalTurnEvent(eventType string) bool {
+	switch eventType {
+	case "done", "error", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTerminalTurnStatus(status string) bool {
+	switch domain.TurnStatus(status) {
+	case domain.TurnStatusCompleted,
+		domain.TurnStatusFailed,
+		domain.TurnStatusCancelled,
+		domain.TurnStatusInterrupted:
+		return true
+	default:
+		return false
+	}
 }
 
 func conversationToJSON(c *domain.Conversation) map[string]any {

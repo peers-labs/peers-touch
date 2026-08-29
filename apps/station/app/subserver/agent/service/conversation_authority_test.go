@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ func openConversationAuthorityDB(t *testing.T, name string) *gorm.DB {
 		&persistence.Conversation{},
 		&persistence.AgentMessage{},
 		&persistence.AgentTurn{},
+		&persistence.TurnAttempt{},
 		&persistence.TurnEvent{},
 		&persistence.TurnQueueEntry{},
 	); err != nil {
@@ -96,6 +98,670 @@ func TestConversationTurnEventReplayAndSnapshot(t *testing.T) {
 	if snapshot.LastSequence != 2 || snapshot.Text != "hello world" || snapshot.Status != "running" {
 		t.Fatalf("unexpected running snapshot: %+v", snapshot)
 	}
+
+	if _, err := service.PersistTurnEvent(
+		ctx,
+		conversation.ID,
+		"turn-1",
+		"text",
+		map[string]interface{}{"invalid": make(chan struct{})},
+	); err == nil {
+		t.Fatal("unencodable turn event payload must fail before persistence")
+	}
+	var eventCount int64
+	if err := db.Model(&persistence.TurnEvent{}).
+		Where("turn_id = ?", "turn-1").
+		Count(&eventCount).Error; err != nil {
+		t.Fatalf("count turn events after rejected payload: %v", err)
+	}
+	if eventCount != 2 {
+		t.Fatalf("rejected payload changed durable event count: %d", eventCount)
+	}
+}
+
+func TestTurnEventReplayFencesReopenedTurnToCurrentAttempt(t *testing.T) {
+	db := openConversationAuthorityDB(t, "conversation_turn_attempt_replay")
+	ctx := context.Background()
+	service := NewConversationService()
+	owner := "ptid:person:owner"
+	now := time.Now().UTC()
+	conversation := persistence.Conversation{
+		ID: "conversation-retry", AgentID: "agent-1", Ptid: owner,
+		Title: "Retry", Status: "active", CreatedAt: now, UpdatedAt: now,
+	}
+	turn := persistence.AgentTurn{
+		ID: "turn-retry", ConversationID: conversation.ID, AgentID: conversation.AgentID,
+		Status: string(domain.TurnStatusRunning), StartedAt: now.Add(time.Second),
+	}
+	attempts := []persistence.TurnAttempt{
+		{
+			ID: "attempt-1", TurnID: turn.ID, AttemptIndex: 1,
+			Status: string(domain.TurnStatusFailed), StartedAt: now.Add(-time.Second), EndedAt: &now,
+		},
+		{
+			ID: "attempt-2", TurnID: turn.ID, AttemptIndex: 2,
+			Status: string(domain.TurnStatusRunning), StartedAt: now.Add(time.Second),
+		},
+	}
+	if err := db.Create(&conversation).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&turn).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range []struct {
+		attemptID string
+		eventType string
+		payload   map[string]interface{}
+	}{
+		{attemptID: "attempt-1", eventType: "text", payload: map[string]interface{}{"text": "old"}},
+		{attemptID: "attempt-1", eventType: "error", payload: map[string]interface{}{"error": "old failure"}},
+		{attemptID: "attempt-2", eventType: "progress", payload: map[string]interface{}{"stage": "turn_started"}},
+		{attemptID: "attempt-2", eventType: "text", payload: map[string]interface{}{"text": "new"}},
+	} {
+		if _, err := service.PersistTurnAttemptEvent(
+			ctx,
+			conversation.ID,
+			turn.ID,
+			event.attemptID,
+			event.eventType,
+			event.payload,
+		); err != nil {
+			t.Fatalf("persist %s event: %v", event.attemptID, err)
+		}
+	}
+
+	replayed, err := service.ReplayTurnEvents(ctx, owner, conversation.ID, turn.ID, 0)
+	if err != nil {
+		t.Fatalf("replay current attempt: %v", err)
+	}
+	if len(replayed) != 2 ||
+		replayed[0].AttemptID != "attempt-2" ||
+		replayed[1].AttemptID != "attempt-2" ||
+		replayed[1].EventType != "text" {
+		t.Fatalf("replay crossed attempt fence: %+v", replayed)
+	}
+	snapshot, err := service.GetTurnEventSnapshot(ctx, owner, conversation.ID, turn.ID)
+	if err != nil {
+		t.Fatalf("snapshot current attempt: %v", err)
+	}
+	if snapshot.Status != string(domain.TurnStatusRunning) ||
+		snapshot.Text != "new" ||
+		snapshot.LastSequence != replayed[1].EventSeq {
+		t.Fatalf("snapshot crossed attempt fence: %+v", snapshot)
+	}
+	var auditCount int64
+	if err := db.Model(&persistence.TurnEvent{}).
+		Where("turn_id = ?", turn.ID).
+		Count(&auditCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if auditCount != 4 {
+		t.Fatalf("attempt fencing removed audit history: count=%d", auditCount)
+	}
+}
+
+func TestTurnTextEventAndAssistantProjectionCommitAtomically(t *testing.T) {
+	db := openConversationAuthorityDB(t, "conversation_turn_text_projection")
+	ctx := context.Background()
+	service := NewConversationService()
+	now := time.Now().UTC()
+	conversation := persistence.Conversation{
+		ID: "conversation-text", AgentID: "agent-1", Ptid: "ptid:person:owner",
+		Title: "Text projection", Status: "active", CreatedAt: now, UpdatedAt: now,
+	}
+	turn := persistence.AgentTurn{
+		ID: "turn-text", ConversationID: conversation.ID, AgentID: conversation.AgentID,
+		Status: string(domain.TurnStatusRunning), StartedAt: now,
+	}
+	attempt := persistence.TurnAttempt{
+		ID: "attempt-text", TurnID: turn.ID, AttemptIndex: 1,
+		Status: string(domain.TurnStatusRunning), StartedAt: now,
+	}
+	empty := ""
+	message := persistence.AgentMessage{
+		ID: "message-text", ConversationID: conversation.ID, TurnID: &turn.ID,
+		Role: string(domain.MessageRoleAssistant), Status: "pending", Content: &empty,
+		Seq: 1, CreatedAt: now, UpdatedAt: now,
+	}
+	for name, row := range map[string]interface{}{
+		"conversation": &conversation,
+		"turn":         &turn,
+		"attempt":      &attempt,
+		"message":      &message,
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+
+	for _, text := range []string{"hello ", "world"} {
+		if _, _, err := service.PersistTurnTextEvent(
+			ctx,
+			conversation.ID,
+			turn.ID,
+			attempt.ID,
+			message.ID,
+			"model-1",
+			"",
+			"",
+			"",
+			map[string]interface{}{"text": text},
+			text,
+		); err != nil {
+			t.Fatalf("persist text projection: %v", err)
+		}
+	}
+
+	var projected persistence.AgentMessage
+	if err := db.First(&projected, "id = ?", message.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if projected.Content == nil || *projected.Content != "hello world" {
+		t.Fatalf("assistant partial projection = %+v", projected.Content)
+	}
+	var eventCount int64
+	if err := db.Model(&persistence.TurnEvent{}).
+		Where("turn_id = ? AND attempt_id = ? AND event_type = ?", turn.ID, attempt.ID, "text").
+		Count(&eventCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if eventCount != 2 {
+		t.Fatalf("text event count = %d, want 2", eventCount)
+	}
+	lazyTurn := persistence.AgentTurn{
+		ID: "turn-text-lazy", ConversationID: conversation.ID, AgentID: conversation.AgentID,
+		Status: string(domain.TurnStatusRunning), StartedAt: now,
+	}
+	lazyAttempt := persistence.TurnAttempt{
+		ID: "attempt-text-lazy", TurnID: lazyTurn.ID, AttemptIndex: 1,
+		Status: string(domain.TurnStatusRunning), StartedAt: now,
+	}
+	if err := db.Create(&lazyTurn).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&lazyAttempt).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, lazyMessageID, err := service.PersistTurnTextEvent(
+		ctx,
+		conversation.ID,
+		lazyTurn.ID,
+		lazyAttempt.ID,
+		"",
+		"model-1",
+		"",
+		"",
+		"",
+		map[string]interface{}{"text": "partial"},
+		"partial",
+	)
+	if err != nil {
+		t.Fatalf("create lazy assistant projection: %v", err)
+	}
+	var lazyMessage persistence.AgentMessage
+	if err := db.First(&lazyMessage, "id = ?", lazyMessageID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if lazyMessage.Status != "pending" ||
+		lazyMessage.Content == nil ||
+		*lazyMessage.Content != "partial" {
+		t.Fatalf("lazy assistant projection = %+v", lazyMessage)
+	}
+
+	if err := db.Model(&projected).Update("status", "interrupted").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.PersistTurnTextEvent(
+		ctx,
+		conversation.ID,
+		turn.ID,
+		attempt.ID,
+		message.ID,
+		"model-1",
+		"",
+		"",
+		"",
+		map[string]interface{}{"text": "late"},
+		"late",
+	); err == nil {
+		t.Fatal("late text event committed after assistant became terminal")
+	}
+	if err := db.Model(&persistence.TurnEvent{}).
+		Where("turn_id = ? AND attempt_id = ? AND event_type = ?", turn.ID, attempt.ID, "text").
+		Count(&eventCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if eventCount != 2 {
+		t.Fatalf("failed text projection left a durable event: count=%d", eventCount)
+	}
+
+	terminalTurn := persistence.AgentTurn{
+		ID: "turn-text-terminal-without-message", ConversationID: conversation.ID,
+		AgentID: conversation.AgentID, Status: string(domain.TurnStatusCancelled),
+		StartedAt: now, EndedAt: &now,
+	}
+	terminalAttempt := persistence.TurnAttempt{
+		ID: "attempt-text-terminal-without-message", TurnID: terminalTurn.ID,
+		AttemptIndex: 1, Status: string(domain.TurnStatusCancelled),
+		StartedAt: now, EndedAt: &now,
+	}
+	if err := db.Create(&terminalTurn).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&terminalAttempt).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.PersistTurnTextEvent(
+		ctx,
+		conversation.ID,
+		terminalTurn.ID,
+		terminalAttempt.ID,
+		"",
+		"model-1",
+		"",
+		"",
+		"",
+		map[string]interface{}{"text": "late first delta"},
+		"late first delta",
+	); err == nil {
+		t.Fatal("late first text delta created a message after turn cancellation")
+	}
+	var terminalMessageCount int64
+	if err := db.Model(&persistence.AgentMessage{}).
+		Where("turn_id = ?", terminalTurn.ID).
+		Count(&terminalMessageCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if terminalMessageCount != 0 {
+		t.Fatalf("terminal turn created %d assistant messages", terminalMessageCount)
+	}
+}
+
+func TestTurnEventSubscriptionKeepsOneAttemptFenceAcrossRetry(t *testing.T) {
+	db := openConversationAuthorityDB(t, "conversation_turn_subscription_attempt_fence")
+	ctx := context.Background()
+	service := NewConversationService()
+	now := time.Now().UTC()
+	conversation := persistence.Conversation{
+		ID: "conversation-fenced-retry", AgentID: "agent-1", Ptid: "ptid:person:owner",
+		Title: "Fenced retry", Status: "active", CreatedAt: now, UpdatedAt: now,
+	}
+	turn := persistence.AgentTurn{
+		ID: "turn-fenced-retry", ConversationID: conversation.ID, AgentID: conversation.AgentID,
+		Status: string(domain.TurnStatusFailed), StartedAt: now.Add(-time.Minute), EndedAt: &now,
+	}
+	firstAttempt := persistence.TurnAttempt{
+		ID: "attempt-fenced-1", TurnID: turn.ID, AttemptIndex: 1,
+		Status: string(domain.TurnStatusFailed), StartedAt: now.Add(-time.Minute), EndedAt: &now,
+	}
+	if err := db.Create(&conversation).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&turn).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&firstAttempt).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.PersistTurnAttemptEvent(
+		ctx,
+		conversation.ID,
+		turn.ID,
+		firstAttempt.ID,
+		"text",
+		map[string]interface{}{"text": "first attempt partial"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.PersistTurnAttemptEvent(
+		ctx,
+		conversation.ID,
+		turn.ID,
+		firstAttempt.ID,
+		"error",
+		map[string]interface{}{"error": "first attempt failed"},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	_, boundary, fence, unsubscribe, err := service.SubscribeTurnEvents(
+		ctx,
+		conversation.Ptid,
+		conversation.ID,
+		turn.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribe()
+
+	if err := db.Model(&persistence.AgentTurn{}).
+		Where("id = ?", turn.ID).
+		Updates(map[string]interface{}{
+			"status":          string(domain.TurnStatusRunning),
+			"terminal_reason": "",
+			"ended_at":        nil,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	secondAttempt := persistence.TurnAttempt{
+		ID: "attempt-fenced-2", TurnID: turn.ID, AttemptIndex: 2,
+		Status: string(domain.TurnStatusRunning), StartedAt: now.Add(time.Second),
+	}
+	if err := db.Create(&secondAttempt).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.PersistTurnAttemptEvent(
+		ctx,
+		conversation.ID,
+		turn.ID,
+		secondAttempt.ID,
+		"progress",
+		map[string]interface{}{"stage": "retry_started"},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	replayed, err := service.ReplayTurnEventsThroughFence(
+		ctx,
+		conversation.Ptid,
+		conversation.ID,
+		turn.ID,
+		0,
+		boundary,
+		fence,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(replayed) != 2 ||
+		replayed[0].AttemptID != firstAttempt.ID ||
+		replayed[1].AttemptID != firstAttempt.ID ||
+		replayed[1].EventType != "error" {
+		t.Fatalf("subscription replay drifted to retry attempt: %+v", replayed)
+	}
+	snapshot, err := service.GetTurnEventSnapshotAtFence(
+		ctx,
+		conversation.Ptid,
+		conversation.ID,
+		turn.ID,
+		boundary,
+		fence,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Status != string(domain.TurnStatusFailed) ||
+		snapshot.Text != "first attempt partial" ||
+		snapshot.TerminalReason != "first attempt failed" ||
+		snapshot.LastSequence != replayed[1].EventSeq {
+		t.Fatalf("subscription snapshot drifted to retry attempt: %+v", snapshot)
+	}
+}
+
+func TestTurnEventSubscriptionSignalsDurableReplayWithoutLostWindow(t *testing.T) {
+	db := openConversationAuthorityDB(t, "conversation_turn_event_tail")
+	now := time.Now()
+	conversation := persistence.Conversation{
+		ID: "conversation-tail", AgentID: "agent-1", Ptid: "ptid:person:owner",
+		Title: "Tail", Status: "active", CreatedAt: now, UpdatedAt: now,
+	}
+	turn := persistence.AgentTurn{
+		ID: "turn-tail", ConversationID: conversation.ID, AgentID: conversation.AgentID,
+		Status: string(domain.TurnStatusRunning), StartedAt: now,
+	}
+	if err := db.Create(&conversation).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&turn).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewConversationService()
+	notifications, boundary, _, unsubscribe, err := service.SubscribeTurnEvents(
+		context.Background(),
+		conversation.Ptid,
+		conversation.ID,
+		turn.ID,
+	)
+	if err != nil {
+		t.Fatalf("subscribe before replay: %v", err)
+	}
+	defer unsubscribe()
+	if boundary != 0 {
+		t.Fatalf("initial replay boundary = %d, want 0", boundary)
+	}
+	if _, err := service.PersistTurnEvent(
+		context.Background(),
+		conversation.ID,
+		turn.ID,
+		"text",
+		map[string]interface{}{"text": "after-subscribe"},
+	); err != nil {
+		t.Fatalf("persist tail event: %v", err)
+	}
+	select {
+	case <-notifications:
+	case <-time.After(time.Second):
+		t.Fatal("committed turn event did not wake live subscriber")
+	}
+	events, err := service.ReplayTurnEvents(
+		context.Background(),
+		conversation.Ptid,
+		conversation.ID,
+		turn.ID,
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].EventSeq != 1 {
+		t.Fatalf("durable replay after subscribe = %+v", events)
+	}
+}
+
+func TestTurnEventSubscriptionBoundaryDoesNotSkipReplaySnapshotWindow(t *testing.T) {
+	db := openConversationAuthorityDB(t, "conversation_turn_event_boundary")
+	now := time.Now()
+	conversation := persistence.Conversation{
+		ID: "conversation-boundary", AgentID: "agent-1", Ptid: "ptid:person:owner",
+		Title: "Boundary", Status: "active", CreatedAt: now, UpdatedAt: now,
+	}
+	turn := persistence.AgentTurn{
+		ID: "turn-boundary", ConversationID: conversation.ID, AgentID: conversation.AgentID,
+		Status: string(domain.TurnStatusRunning), StartedAt: now,
+	}
+	if err := db.Create(&conversation).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&turn).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewConversationService()
+	if _, err := service.PersistTurnEvent(
+		context.Background(),
+		conversation.ID,
+		turn.ID,
+		"text",
+		map[string]interface{}{"text": "before-boundary"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	notifications, boundary, fence, unsubscribe, err := service.SubscribeTurnEvents(
+		context.Background(),
+		conversation.Ptid,
+		conversation.ID,
+		turn.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribe()
+	if boundary != 1 {
+		t.Fatalf("replay boundary = %d, want 1", boundary)
+	}
+	initial, err := service.ReplayTurnEventsThroughFence(
+		context.Background(),
+		conversation.Ptid,
+		conversation.ID,
+		turn.ID,
+		0,
+		boundary,
+		fence,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(initial) != 1 || initial[0].EventSeq != 1 {
+		t.Fatalf("initial bounded replay = %+v", initial)
+	}
+
+	if _, err := service.PersistTurnEvent(
+		context.Background(),
+		conversation.ID,
+		turn.ID,
+		"text",
+		map[string]interface{}{"text": "-after-replay"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := service.GetTurnEventSnapshotAtFence(
+		context.Background(),
+		conversation.Ptid,
+		conversation.ID,
+		turn.ID,
+		boundary,
+		fence,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.LastSequence != 1 || snapshot.Text != "before-boundary" {
+		t.Fatalf("bounded snapshot advanced over unseen event: %+v", snapshot)
+	}
+	select {
+	case <-notifications:
+	case <-time.After(time.Second):
+		t.Fatal("post-boundary durable event did not notify subscriber")
+	}
+	tail, err := service.ReplayTurnEvents(
+		context.Background(),
+		conversation.Ptid,
+		conversation.ID,
+		turn.ID,
+		boundary,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tail) != 1 || tail[0].EventSeq != 2 {
+		t.Fatalf("post-boundary replay = %+v", tail)
+	}
+}
+
+func TestTurnEventSubscriptionsEnforceTurnActorAndGlobalLimits(t *testing.T) {
+	db := openConversationAuthorityDB(t, "conversation_turn_event_limits")
+	now := time.Now()
+	conversations := []persistence.Conversation{
+		{ID: "conversation-owner-1", AgentID: "agent-1", Ptid: "ptid:person:owner", Title: "Owner 1", Status: "active", CreatedAt: now, UpdatedAt: now},
+		{ID: "conversation-owner-2", AgentID: "agent-1", Ptid: "ptid:person:owner", Title: "Owner 2", Status: "active", CreatedAt: now, UpdatedAt: now},
+		{ID: "conversation-other", AgentID: "agent-1", Ptid: "ptid:person:other", Title: "Other", Status: "active", CreatedAt: now, UpdatedAt: now},
+		{ID: "conversation-third", AgentID: "agent-1", Ptid: "ptid:person:third", Title: "Third", Status: "active", CreatedAt: now, UpdatedAt: now},
+	}
+	turns := []persistence.AgentTurn{
+		{ID: "turn-owner-1", ConversationID: conversations[0].ID, AgentID: "agent-1", Status: string(domain.TurnStatusRunning), StartedAt: now},
+		{ID: "turn-owner-2", ConversationID: conversations[1].ID, AgentID: "agent-1", Status: string(domain.TurnStatusRunning), StartedAt: now},
+		{ID: "turn-other", ConversationID: conversations[2].ID, AgentID: "agent-1", Status: string(domain.TurnStatusRunning), StartedAt: now},
+		{ID: "turn-third", ConversationID: conversations[3].ID, AgentID: "agent-1", Status: string(domain.TurnStatusRunning), StartedAt: now},
+	}
+	if err := db.Create(&conversations).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&turns).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	subscribe := func(
+		t *testing.T,
+		service *ConversationService,
+		actorID string,
+		conversationID string,
+		turnID string,
+	) func() {
+		t.Helper()
+		_, _, _, unsubscribe, err := service.SubscribeTurnEvents(
+			context.Background(),
+			actorID,
+			conversationID,
+			turnID,
+		)
+		if err != nil {
+			t.Fatalf("subscribe %s/%s: %v", actorID, turnID, err)
+		}
+		return unsubscribe
+	}
+
+	t.Run("turn", func(t *testing.T) {
+		service := newConversationServiceWithSubscriptionLimits(turnEventSubscriptionLimits{
+			perTurn: 2, perActor: 4, global: 8,
+		})
+		cancelFirst := subscribe(t, service, conversations[0].Ptid, conversations[0].ID, turns[0].ID)
+		cancelSecond := subscribe(t, service, conversations[0].Ptid, conversations[0].ID, turns[0].ID)
+		defer cancelSecond()
+		if _, _, _, _, err := service.SubscribeTurnEvents(
+			context.Background(),
+			conversations[0].Ptid,
+			conversations[0].ID,
+			turns[0].ID,
+		); err == nil || !strings.Contains(err.Error(), "limit exceeded: turn") {
+			t.Fatalf("turn limit rejection = %v", err)
+		}
+		cancelFirst()
+		cancelReplacement := subscribe(t, service, conversations[0].Ptid, conversations[0].ID, turns[0].ID)
+		cancelReplacement()
+		cancelFirst()
+	})
+
+	t.Run("actor", func(t *testing.T) {
+		service := newConversationServiceWithSubscriptionLimits(turnEventSubscriptionLimits{
+			perTurn: 4, perActor: 2, global: 8,
+		})
+		cancelFirst := subscribe(t, service, conversations[0].Ptid, conversations[0].ID, turns[0].ID)
+		defer cancelFirst()
+		cancelSecond := subscribe(t, service, conversations[1].Ptid, conversations[1].ID, turns[1].ID)
+		defer cancelSecond()
+		if _, _, _, _, err := service.SubscribeTurnEvents(
+			context.Background(),
+			conversations[0].Ptid,
+			conversations[0].ID,
+			turns[0].ID,
+		); err == nil || !strings.Contains(err.Error(), "limit exceeded: actor") {
+			t.Fatalf("actor limit rejection = %v", err)
+		}
+	})
+
+	t.Run("global", func(t *testing.T) {
+		service := newConversationServiceWithSubscriptionLimits(turnEventSubscriptionLimits{
+			perTurn: 4, perActor: 4, global: 2,
+		})
+		cancelFirst := subscribe(t, service, conversations[0].Ptid, conversations[0].ID, turns[0].ID)
+		defer cancelFirst()
+		cancelSecond := subscribe(t, service, conversations[2].Ptid, conversations[2].ID, turns[2].ID)
+		defer cancelSecond()
+		if _, _, _, _, err := service.SubscribeTurnEvents(
+			context.Background(),
+			conversations[3].Ptid,
+			conversations[3].ID,
+			turns[3].ID,
+		); err == nil || !strings.Contains(err.Error(), "limit exceeded: global") {
+			t.Fatalf("global limit rejection = %v", err)
+		}
+	})
 }
 
 func requireBizCode(t *testing.T, err error, code errcode.Code) {

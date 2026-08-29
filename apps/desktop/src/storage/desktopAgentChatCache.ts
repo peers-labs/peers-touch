@@ -71,6 +71,7 @@ function toCachedMessage(message: {
   turn_id?: string;
   model_name?: string;
   role: 'system' | 'user' | 'assistant' | 'tool';
+  status: string;
   content: string;
   seq: number;
   branch_id?: string;
@@ -88,6 +89,7 @@ function toCachedMessage(message: {
     turnId: message.turn_id,
     modelName: message.model_name,
     role: message.role,
+    status: message.status,
     content: message.content,
     seq: message.seq,
     branchId: message.branch_id,

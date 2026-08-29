@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 )
 
 type actorPTIDResolverAdapter struct{}

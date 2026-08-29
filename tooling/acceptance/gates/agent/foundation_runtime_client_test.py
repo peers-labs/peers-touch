@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationClientError,
@@ -127,6 +128,30 @@ class FoundationClientSpecTest(unittest.TestCase):
                     },
                     profile_env={},
                 )
+
+    def test_restart_preserves_storage_and_relaunches_same_client(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = FoundationRuntimeClient(
+                self.spec(root, "browser"),
+                station_url="https://station.example",
+                profile_env={},
+            )
+            with (
+                patch.object(
+                    client,
+                    "_stop_runtime",
+                    return_value={"status": "clean", "failures": []},
+                ) as stop_runtime,
+                patch.object(client, "start") as start,
+            ):
+                client.restart()
+
+        stop_runtime.assert_called_once_with(
+            logout=False,
+            remove_storage=False,
+        )
+        start.assert_called_once_with()
 
     def test_runtime_pair_releases_shared_actor_identity_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

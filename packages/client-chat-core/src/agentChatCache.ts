@@ -54,6 +54,7 @@ export interface CachedAgentMessage {
   readonly turnId?: string;
   readonly modelName?: string;
   readonly role: AgentRole;
+  readonly status?: string;
   readonly content: string;
   readonly seq: number;
   readonly branchId?: string;

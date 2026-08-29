@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -12,6 +14,42 @@ class GroupOneScenarioError(RuntimeError):
 
 
 AS_F04_MAX_TOOL_CALLS = 2
+AS_F06_CONTROL_EVENTS = {
+    "connection_lost",
+    "reconnecting",
+    "replaying",
+    "reconciling",
+    "connected",
+    "recovery_failed",
+    "catchup_done",
+}
+
+
+def _canonical_payload_hash(value: Any) -> str:
+    payload = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _replay_delivery_identity(
+    delivery: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "eventType": delivery.get("eventType"),
+        "sequence": delivery.get("sequence"),
+        "sourceTransport": delivery.get("sourceTransport"),
+        "sourcePtidHash": delivery.get("sourcePtidHash"),
+        "sourceConversationId": delivery.get("sourceConversationId"),
+        "sourceTurnId": delivery.get("sourceTurnId"),
+        "sourceSequence": delivery.get("sourceSequence"),
+        "sourceEventType": delivery.get("sourceEventType"),
+        "rawPayload": delivery.get("rawPayload"),
+        "payloadHash": delivery.get("payloadHash"),
+    }
 
 
 def evaluate_as_f02(capture: Mapping[str, Any]) -> dict[str, bool]:
@@ -572,6 +610,453 @@ def evaluate_as_f05(capture: Mapping[str, Any]) -> dict[str, bool]:
     if failed:
         raise GroupOneScenarioError(
             f"AS-F05 production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
+def evaluate_as_f06(
+    capture: Mapping[str, Any],
+    *,
+    platform: str,
+    locale: str,
+    sample_id: str,
+) -> dict[str, bool]:
+    scope = _mapping(capture, "scope", scenario="AS-F06")
+    handoff = _mapping(capture, "handoff", scenario="AS-F06")
+    transitions = _list(capture, "transitions", scenario="AS-F06")
+    replay = _mapping(capture, "replay", scenario="AS-F06")
+    idempotence = _mapping(capture, "idempotence", scenario="AS-F06")
+    restart = _mapping(capture, "restartRecovery", scenario="AS-F06")
+    restart_attestation = _mapping(
+        restart,
+        "stationRestart",
+        scenario="AS-F06",
+    )
+    transport = _mapping(capture, "transportLoss", scenario="AS-F06")
+    terminal = _mapping(capture, "terminalProjection", scenario="AS-F06")
+    recovery_failure = _mapping(
+        capture,
+        "recoveryFailure",
+        scenario="AS-F06",
+    )
+    recovery_retry = _mapping(
+        recovery_failure,
+        "retry",
+        scenario="AS-F06",
+    )
+    durable_reload = _mapping(
+        recovery_failure,
+        "durableReload",
+        scenario="AS-F06",
+    )
+    durable_reload_delivery = _mapping(
+        durable_reload,
+        "sourceDelivery",
+        scenario="AS-F06",
+    )
+    stale_revision = _mapping(capture, "staleRevision", scenario="AS-F06")
+    side_effects = _mapping(capture, "sideEffects", scenario="AS-F06")
+    before_durable = _mapping(side_effects, "before", scenario="AS-F06")
+    after_durable = _mapping(side_effects, "after", scenario="AS-F06")
+    cleanup = _mapping(capture, "cleanup", scenario="AS-F06")
+
+    phases = [
+        _nonempty_string(transition, "phase", scenario="AS-F06")
+        for transition in transitions
+    ]
+    required_phases = [
+        "CONNECTION_LOST",
+        "RECONNECTING",
+        "REPLAYING",
+        "RECONCILING",
+        "CONNECTED",
+    ]
+    phase_positions = [
+        phases.index(phase) if phase in phases else -1
+        for phase in required_phases
+    ]
+    raw_replay_sequences = replay.get("eventSequences")
+    if (
+        not isinstance(raw_replay_sequences, list)
+        or any(
+            not isinstance(sequence, int)
+            or isinstance(sequence, bool)
+            or sequence <= 0
+            for sequence in raw_replay_sequences
+        )
+    ):
+        raise GroupOneScenarioError(
+            "AS-F06 eventSequences fact is invalid"
+        )
+    replay_sequences = list(raw_replay_sequences)
+    replay_deliveries = [
+        _mapping({"delivery": value}, "delivery", scenario="AS-F06")
+        for value in _list(replay, "deliveries", scenario="AS-F06")
+    ]
+    replay_delivery_sequences = [
+        _positive_int(delivery, "sequence", scenario="AS-F06")
+        for delivery in replay_deliveries
+    ]
+    replay_payloads = [
+        _mapping(delivery, "rawPayload", scenario="AS-F06")
+        for delivery in replay_deliveries
+    ]
+    replay_payload_hashes_valid = all(
+        payload.get("eventType") == delivery.get("eventType")
+        and delivery.get("eventType") not in AS_F06_CONTROL_EVENTS
+        and (
+            _mapping(payload, "data", scenario="AS-F06").get("seq")
+            or _mapping(payload, "data", scenario="AS-F06").get("sequence")
+        )
+        == delivery.get("sequence")
+        and _nonempty_string(
+            delivery,
+            "payloadHash",
+            scenario="AS-F06",
+        )
+        == _canonical_payload_hash(payload)
+        for delivery, payload in zip(
+            replay_deliveries,
+            replay_payloads,
+        )
+    )
+    station_replay_deliveries = [
+        _mapping({"delivery": value}, "delivery", scenario="AS-F06")
+        for value in _list(
+            replay,
+            "stationReadbackDeliveries",
+            scenario="AS-F06",
+        )
+    ]
+    replay_identities = [
+        _replay_delivery_identity(delivery)
+        for delivery in replay_deliveries
+    ]
+    station_replay_identities = [
+        _replay_delivery_identity(delivery)
+        for delivery in station_replay_deliveries
+    ]
+    replay_source_matches = (
+        replay_identities == station_replay_identities
+        and _nonempty_string(replay, "sourceHash", scenario="AS-F06")
+        == _canonical_payload_hash(replay_identities)
+        and _nonempty_string(replay, "replayHash", scenario="AS-F06")
+        == _canonical_payload_hash(station_replay_identities)
+    )
+    source_identity_valid = all(
+        delivery.get("sourceTransport") == "station-sse"
+        and delivery.get("sourcePtidHash") == handoff.get("actorPtidHash")
+        and delivery.get("sourceConversationId")
+        == handoff.get("conversationId")
+        and delivery.get("sourceTurnId") == handoff.get("turnId")
+        and delivery.get("sourceSequence") == delivery.get("sequence")
+        and delivery.get("sourceEventType") == delivery.get("eventType")
+        for delivery in replay_deliveries
+    )
+    after_cursor = _positive_int(replay, "afterCursor", scenario="AS-F06")
+    blocker = recovery_failure.get("blocker")
+    if not isinstance(blocker, str):
+        raise GroupOneScenarioError("AS-F06 blocker fact is invalid")
+    if blocker:
+        raise GroupOneScenarioError(
+            f"AS-F06 recovery failure probe blocked: {blocker}"
+        )
+    error_hash = _nonempty_string(
+        recovery_failure,
+        "errorHash",
+        scenario="AS-F06",
+    )
+    duplicate_sequence = _positive_int(
+        idempotence,
+        "duplicateSequence",
+        scenario="AS-F06",
+    )
+    out_of_order_sequence = _positive_int(
+        idempotence,
+        "outOfOrderSequence",
+        scenario="AS-F06",
+    )
+    stale_generation = _positive_int(
+        idempotence,
+        "staleGeneration",
+        scenario="AS-F06",
+    )
+    active_generation = _positive_int(
+        idempotence,
+        "activeGeneration",
+        scenario="AS-F06",
+    )
+    cursor_before_mutation = _positive_int(
+        idempotence,
+        "cursorBeforeMutation",
+        scenario="AS-F06",
+    )
+    cursor_after_mutation = _positive_int(
+        idempotence,
+        "cursorAfterMutation",
+        scenario="AS-F06",
+    )
+    projection_before_mutation_hash = _nonempty_string(
+        idempotence,
+        "projectionBeforeMutationHash",
+        scenario="AS-F06",
+    )
+    projection_after_mutation_hash = _nonempty_string(
+        idempotence,
+        "projectionAfterMutationHash",
+        scenario="AS-F06",
+    )
+    duplicate_payload_hash = _nonempty_string(
+        idempotence,
+        "duplicatePayloadHash",
+        scenario="AS-F06",
+    )
+    out_of_order_payload_hash = _nonempty_string(
+        idempotence,
+        "outOfOrderPayloadHash",
+        scenario="AS-F06",
+    )
+    duplicate_mutation_before = _nonnegative_int(
+        side_effects,
+        "duplicateMutationBefore",
+        scenario="AS-F06",
+    )
+    duplicate_mutation_after = _nonnegative_int(
+        side_effects,
+        "duplicateMutationAfter",
+        scenario="AS-F06",
+    )
+    duplicate_mutation_delta = _nonnegative_int(
+        side_effects,
+        "duplicateMutationDelta",
+        scenario="AS-F06",
+    )
+    duplicate_side_effect_before = _nonnegative_int(
+        side_effects,
+        "duplicateSideEffectBefore",
+        scenario="AS-F06",
+    )
+    duplicate_side_effect_after = _nonnegative_int(
+        side_effects,
+        "duplicateSideEffectAfter",
+        scenario="AS-F06",
+    )
+    duplicate_side_effect_delta = _nonnegative_int(
+        side_effects,
+        "duplicateSideEffectDelta",
+        scenario="AS-F06",
+    )
+
+    assertions = {
+        "exactRuntimeAttribution": (
+            scope.get("platform") == platform
+            and scope.get("locale") == locale
+            and scope.get("sampleId") == sample_id
+            and bool(
+                _nonempty_string(
+                    scope,
+                    "scenarioKey",
+                    scenario="AS-F06",
+                )
+            )
+        ),
+        "exactRecoveryTransitionOrdering": (
+            all(position >= 0 for position in phase_positions)
+            and phase_positions == sorted(phase_positions)
+        ),
+        "replayAfterAcknowledgedCursor": (
+            bool(replay_sequences)
+            and replay_sequences == sorted(set(replay_sequences))
+            and replay_sequences == replay_delivery_sequences
+            and all(sequence > after_cursor for sequence in replay_sequences)
+            and replay_payload_hashes_valid
+            and replay_source_matches
+            and source_identity_valid
+            and all(
+                delivery.get("streamId") == handoff.get("streamId")
+                and delivery.get("streamGeneration")
+                == handoff.get("streamGeneration")
+                and bool(
+                    _nonempty_string(
+                        delivery,
+                        "eventType",
+                        scenario="AS-F06",
+                    )
+                )
+                for delivery in replay_deliveries
+            )
+        ),
+        "duplicateAndOutOfOrderIdempotent": (
+            duplicate_sequence == cursor_before_mutation
+            and out_of_order_sequence < cursor_before_mutation
+            and stale_generation < active_generation
+            and cursor_after_mutation == cursor_before_mutation
+            and len(projection_before_mutation_hash) == 64
+            and projection_before_mutation_hash
+            == projection_after_mutation_hash
+            and len(duplicate_payload_hash) == 64
+            and len(out_of_order_payload_hash) == 64
+        ),
+        "pageClientAndStationRestartRecovered": (
+            restart.get("pageSwitched") is True
+            and restart.get("clientReloaded") is True
+            and restart.get("stationRestarted") is True
+            and restart_attestation.get("outageObserved") is True
+            and _nonempty_string(
+                restart_attestation,
+                "beforeStartedAt",
+                scenario="AS-F06",
+            )
+            != _nonempty_string(
+                restart_attestation,
+                "afterStartedAt",
+                scenario="AS-F06",
+            )
+            and _nonempty_string(
+                restart_attestation,
+                "beforeCommit",
+                scenario="AS-F06",
+            )
+            == _nonempty_string(
+                restart_attestation,
+                "afterCommit",
+                scenario="AS-F06",
+            )
+        ),
+        "transportLossNonTerminal": (
+            transport.get("observed") is True
+            and transport.get("nonTerminal") is True
+        ),
+        "terminalProjectionEqualsStation": (
+            _nonempty_string(terminal, "stationHash", scenario="AS-F06")
+            == _nonempty_string(terminal, "clientHash", scenario="AS-F06")
+            and terminal.get("stationStatus") == terminal.get("clientStatus")
+            and terminal.get("prefixPreserved") is True
+        ),
+        "failedOrCancelledNotCompleted": (
+            recovery_failure.get("notCompleted") is True
+        ),
+        "recoveryFailureRetryAndReload": (
+            len(error_hash) == 64
+            and blocker == ""
+            and recovery_failure.get("activeFailureObserved") is True
+            and recovery_failure.get("expectedActorPtidHash")
+            == recovery_failure.get("observedActorPtidHash")
+            and recovery_failure.get("expectedTurnId")
+            == recovery_failure.get("observedTurnId")
+            and recovery_failure.get("expectedStreamId")
+            == recovery_failure.get("observedStreamId")
+            and recovery_failure.get("expectedStreamGeneration")
+            == recovery_failure.get("observedStreamGeneration")
+            and recovery_retry.get("invoked") is True
+            and recovery_retry.get("observed") is True
+            and _nonnegative_int(
+                recovery_retry,
+                "recoveryEpochAfter",
+                scenario="AS-F06",
+            )
+            > _nonnegative_int(
+                recovery_retry,
+                "recoveryEpochBefore",
+                scenario="AS-F06",
+            )
+            and durable_reload.get("invoked") is True
+            and durable_reload.get("observed") is True
+            and durable_reload.get("source")
+            == "station-snapshot-reconcile"
+            and durable_reload.get("actorPtidHash")
+            == recovery_failure.get("expectedActorPtidHash")
+            and durable_reload.get("conversationId")
+            == handoff.get("conversationId")
+            and durable_reload.get("turnId") == handoff.get("turnId")
+            and durable_reload.get("streamId") == handoff.get("streamId")
+            and durable_reload.get("streamGeneration")
+            == handoff.get("streamGeneration")
+            and _nonnegative_int(
+                durable_reload,
+                "sequence",
+                scenario="AS-F06",
+            )
+            >= after_cursor
+            and durable_reload_delivery.get("transport") == "station-sse"
+            and durable_reload_delivery.get("actorPtidHash")
+            == recovery_failure.get("expectedActorPtidHash")
+            and durable_reload_delivery.get("conversationId")
+            == handoff.get("conversationId")
+            and durable_reload_delivery.get("turnId")
+            == handoff.get("turnId")
+            and durable_reload_delivery.get("sequence")
+            == durable_reload.get("sequence")
+            and durable_reload_delivery.get("eventType") == "snapshot"
+            and len(
+                _nonempty_string(
+                    durable_reload_delivery,
+                    "rawPayloadHash",
+                    scenario="AS-F06",
+                )
+            )
+            == 64
+            and (
+                durable_reload.get("terminal") is False
+                or (
+                    durable_reload.get("terminal") is True
+                    and durable_reload.get("terminalStatus")
+                    in {"completed", "failed", "cancelled", "interrupted"}
+                )
+            )
+        ),
+        "staleGenerationAndRevisionRejected": (
+            stale_generation < active_generation
+            and idempotence.get("staleGenerationRejected") is True
+            and idempotence.get("staleTerminalRejected") is True
+            and stale_revision.get("rejected") is True
+        ),
+        "zeroDuplicateSideEffects": (
+            len(
+                _nonempty_string(
+                    before_durable,
+                    "sourceHash",
+                    scenario="AS-F06",
+                )
+            )
+            == 64
+            and len(
+                _nonempty_string(
+                    after_durable,
+                    "sourceHash",
+                    scenario="AS-F06",
+                )
+            )
+            == 64
+            and duplicate_mutation_before == 0
+            and duplicate_mutation_after == 0
+            and duplicate_mutation_delta == 0
+            and duplicate_mutation_delta
+            == duplicate_mutation_after - duplicate_mutation_before
+            and duplicate_side_effect_before == 0
+            and duplicate_side_effect_after == 0
+            and duplicate_side_effect_delta == 0
+            and duplicate_side_effect_delta
+            == duplicate_side_effect_after - duplicate_side_effect_before
+        ),
+        "cleanupComplete": (
+            cleanup.get("handoffCleared") is True
+            and cleanup.get("conversationDeleted") is True
+            and cleanup.get("recoveryRecordCleared") is True
+            and len(
+                _nonempty_string(
+                    cleanup,
+                    "deletionErrorCodeHash",
+                    scenario="AS-F06",
+                )
+            )
+            == 64
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"AS-F06 production facts failed assertions: {failed}"
         )
     return assertions
 

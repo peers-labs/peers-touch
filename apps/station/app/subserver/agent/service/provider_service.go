@@ -89,7 +89,7 @@ type ProviderCallRequest struct {
 	DeltaSink       ProviderDeltaSink
 }
 
-type ProviderDeltaSink func(ctx context.Context, delta ProviderDelta)
+type ProviderDeltaSink func(ctx context.Context, delta ProviderDelta) error
 
 type ProviderDelta struct {
 	Type    string
@@ -532,7 +532,9 @@ func (s *ProviderService) callOllamaStream(
 			continue
 		}
 		content.WriteString(delta.Content)
-		deltaSink(ctx, delta)
+		if err := deltaSink(ctx, delta); err != nil {
+			return nil, err
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
@@ -803,7 +805,9 @@ func (s *ProviderService) callOpenAIStream(
 			if chunk.Delta.Type == "text" {
 				content.WriteString(chunk.Delta.Content)
 			}
-			deltaSink(ctx, chunk.Delta)
+			if err := deltaSink(ctx, chunk.Delta); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -1051,7 +1055,9 @@ func (s *ProviderService) callAnthropicStream(
 		if delta.Type == "text" {
 			content.WriteString(delta.Content)
 		}
-		deltaSink(ctx, delta)
+		if err := deltaSink(ctx, delta); err != nil {
+			return nil, err
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err

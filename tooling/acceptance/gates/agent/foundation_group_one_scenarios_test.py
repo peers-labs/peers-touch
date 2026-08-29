@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import unittest
 
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
@@ -9,8 +11,20 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f03,
     evaluate_as_f04,
     evaluate_as_f05,
+    evaluate_as_f06,
     evaluate_as_f10,
 )
+
+
+def canonical_payload_hash(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def valid_capture() -> dict[str, object]:
@@ -215,6 +229,175 @@ def valid_as_f05_capture() -> dict[str, object]:
     }
 
 
+def valid_as_f06_capture(
+    platform: str = "desktop_app",
+    locale: str = "en",
+    sample_id: str = "sample-001",
+) -> dict[str, object]:
+    def replay_delivery(event_type: str, sequence: int) -> dict[str, object]:
+        raw_payload = {
+            "eventType": event_type,
+            "data": {
+                "content": f"chunk-{sequence}",
+                "seq": sequence,
+                "turnId": "turn-1",
+            },
+        }
+        return {
+            "eventType": event_type,
+            "sequence": sequence,
+            "streamId": "stream-1",
+            "streamGeneration": 7,
+            "observedAt": f"2026-08-28T00:00:0{sequence}Z",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "b" * 64,
+            "sourceConversationId": "conversation-1",
+            "sourceTurnId": "turn-1",
+            "sourceSequence": sequence,
+            "sourceEventType": event_type,
+            "rawPayload": raw_payload,
+            "payloadHash": canonical_payload_hash(raw_payload),
+        }
+
+    replay_deliveries = [
+        replay_delivery("text", 3),
+        replay_delivery("snapshot", 4),
+    ]
+    replay_identities = [
+        {
+            key: value
+            for key, value in delivery.items()
+            if key not in {"streamId", "streamGeneration", "observedAt"}
+        }
+        for delivery in replay_deliveries
+    ]
+    return {
+        "scope": {
+            "scenarioKey": f"{platform}|{locale}|AS-F06|{sample_id}",
+            "platform": platform,
+            "locale": locale,
+            "sampleId": sample_id,
+        },
+        "handoff": {
+            "conversationId": "conversation-1",
+            "turnId": "turn-1",
+            "streamId": "stream-1",
+            "streamGeneration": 7,
+            "actorPtidHash": "b" * 64,
+        },
+        "transitions": [
+            {"phase": "CONNECTION_LOST", "sequence": 2},
+            {"phase": "RECONNECTING", "sequence": 2},
+            {"phase": "REPLAYING", "sequence": 2},
+            {"phase": "RECONCILING", "sequence": 4},
+            {"phase": "CONNECTED", "sequence": 4},
+        ],
+        "replay": {
+            "afterCursor": 2,
+            "eventSequences": [3, 4],
+            "deliveries": replay_deliveries,
+            "stationReadbackDeliveries": copy.deepcopy(replay_deliveries),
+            "sourceHash": canonical_payload_hash(replay_identities),
+            "replayHash": canonical_payload_hash(replay_identities),
+        },
+        "idempotence": {
+            "duplicateSequence": 4,
+            "outOfOrderSequence": 3,
+            "staleGeneration": 6,
+            "activeGeneration": 7,
+            "staleGenerationRejected": True,
+            "staleTerminalRejected": True,
+            "cursorBeforeMutation": 4,
+            "cursorAfterMutation": 4,
+            "projectionBeforeMutationHash": "e" * 64,
+            "projectionAfterMutationHash": "e" * 64,
+            "duplicatePayloadHash": "a" * 64,
+            "outOfOrderPayloadHash": "b" * 64,
+        },
+        "restartRecovery": {
+            "pageSwitched": True,
+            "clientReloaded": True,
+            "stationRestarted": True,
+            "stationRestart": {
+                "outageObserved": True,
+                "beforeStartedAt": "2026-08-28T00:00:00Z",
+                "afterStartedAt": "2026-08-28T00:01:00Z",
+                "beforeCommit": "a" * 12,
+                "afterCommit": "a" * 12,
+            },
+        },
+        "transportLoss": {"observed": True, "nonTerminal": True},
+        "terminalProjection": {
+            "stationStatus": "completed",
+            "clientStatus": "completed",
+            "stationHash": "terminal-hash",
+            "clientHash": "terminal-hash",
+            "prefixPreserved": True,
+        },
+        "recoveryFailure": {
+            "errorHash": "a" * 64,
+            "blocker": "",
+            "activeFailureObserved": True,
+            "expectedActorPtidHash": "b" * 64,
+            "observedActorPtidHash": "b" * 64,
+            "expectedTurnId": "turn-1",
+            "observedTurnId": "turn-1",
+            "expectedStreamId": "stream-1",
+            "observedStreamId": "stream-1",
+            "expectedStreamGeneration": 7,
+            "observedStreamGeneration": 7,
+            "notCompleted": True,
+            "retry": {
+                "invoked": True,
+                "observed": True,
+                "recoveryEpochBefore": 1,
+                "recoveryEpochAfter": 2,
+                "resultingPhase": "REPLAYING",
+            },
+            "durableReload": {
+                "invoked": True,
+                "observed": True,
+                "source": "station-snapshot-reconcile",
+                "actorPtidHash": "b" * 64,
+                "conversationId": "conversation-1",
+                "turnId": "turn-1",
+                "streamId": "stream-1",
+                "streamGeneration": 7,
+                "status": "running",
+                "sequence": 4,
+                "terminal": False,
+                "terminalStatus": None,
+                "sourceDelivery": {
+                    "transport": "station-sse",
+                    "actorPtidHash": "b" * 64,
+                    "conversationId": "conversation-1",
+                    "turnId": "turn-1",
+                    "sequence": 4,
+                    "eventType": "snapshot",
+                    "rawPayloadHash": "c" * 64,
+                },
+            },
+        },
+        "staleRevision": {"rejected": True},
+        "sideEffects": {
+            "before": {"sourceHash": "c" * 64},
+            "after": {"sourceHash": "d" * 64},
+            "duplicateMutationBefore": 0,
+            "duplicateMutationAfter": 0,
+            "duplicateMutationDelta": 0,
+            "duplicateSideEffectBefore": 0,
+            "duplicateSideEffectAfter": 0,
+            "duplicateSideEffectDelta": 0,
+        },
+        "cleanup": {
+            "handoffCleared": True,
+            "conversationDeleted": True,
+            "recoveryRecordCleared": True,
+            "deletionErrorCodeHash": "f" * 64,
+        },
+    }
+
+
 def valid_as_f03_capture() -> dict[str, object]:
     return {
         "events": [
@@ -347,6 +530,230 @@ def valid_as_f04_capture(
 
 
 class FoundationGroupOneScenariosTest(unittest.TestCase):
+    def test_as_f06_accepts_source_bound_recovery_facts(self) -> None:
+        assertions = evaluate_as_f06(
+            valid_as_f06_capture(),
+            platform="desktop_app",
+            locale="en",
+            sample_id="sample-001",
+        )
+
+        self.assertEqual(len(assertions), 12)
+        self.assertTrue(all(assertions.values()))
+
+    def test_as_f06_rejects_transition_reordering(self) -> None:
+        capture = valid_as_f06_capture()
+        capture["transitions"][2], capture["transitions"][3] = (
+            capture["transitions"][3],
+            capture["transitions"][2],
+        )
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "exactRecoveryTransitionOrdering",
+        ):
+            evaluate_as_f06(
+                capture,
+                platform="desktop_app",
+                locale="en",
+                sample_id="sample-001",
+            )
+
+    def test_as_f06_rejects_tuple_attribution_mutation(self) -> None:
+        capture = valid_as_f06_capture()
+        capture["scope"]["locale"] = "zh-CN"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "exactRuntimeAttribution",
+        ):
+            evaluate_as_f06(
+                capture,
+                platform="desktop_app",
+                locale="en",
+                sample_id="sample-001",
+            )
+
+    def test_as_f06_rejects_replayed_cursor_and_stale_fence_mutations(
+        self,
+    ) -> None:
+        for mutation, expected in (
+            (
+                lambda capture: capture["replay"].update(
+                    {"eventSequences": [2, 3]}
+                ),
+                "replayAfterAcknowledgedCursor",
+            ),
+            (
+                lambda capture: capture["idempotence"].update(
+                    {"staleGeneration": 7}
+                ),
+                "staleGenerationAndRevisionRejected",
+            ),
+        ):
+            with self.subTest(expected=expected):
+                capture = valid_as_f06_capture()
+                mutation(capture)
+                with self.assertRaisesRegex(GroupOneScenarioError, expected):
+                    evaluate_as_f06(
+                        capture,
+                        platform="desktop_app",
+                        locale="en",
+                        sample_id="sample-001",
+                    )
+
+    def test_as_f06_rejects_control_events_and_unbound_payload_hashes(
+        self,
+    ) -> None:
+        def synthesize_connected_control(delivery: dict[str, object]) -> None:
+            raw_payload = {
+                **delivery["rawPayload"],
+                "eventType": "connected",
+            }
+            delivery.update(
+                {
+                    "eventType": "connected",
+                    "rawPayload": raw_payload,
+                    "payloadHash": canonical_payload_hash(raw_payload),
+                }
+            )
+
+        mutations = (
+            synthesize_connected_control,
+            lambda delivery: delivery["rawPayload"]["data"].update(
+                {"content": "forged"}
+            ),
+            lambda delivery: delivery.update({"payloadHash": "a" * 64}),
+            lambda delivery: delivery.update({"sourcePtidHash": "e" * 64}),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                capture = valid_as_f06_capture()
+                delivery = capture["replay"]["deliveries"][0]
+                mutation(delivery)
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "replayAfterAcknowledgedCursor",
+                ):
+                    evaluate_as_f06(
+                        capture,
+                        platform="desktop_app",
+                        locale="en",
+                        sample_id="sample-001",
+                    )
+
+        capture = valid_as_f06_capture()
+        capture["replay"]["stationReadbackDeliveries"][0]["sourceSequence"] = 9
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "replayAfterAcknowledgedCursor",
+        ):
+            evaluate_as_f06(
+                capture,
+                platform="desktop_app",
+                locale="en",
+                sample_id="sample-001",
+            )
+
+    def test_as_f06_rejects_wrong_recovery_actor_stream_and_generation(
+        self,
+    ) -> None:
+        for key, value in (
+            ("observedActorPtidHash", "e" * 64),
+            ("observedStreamId", "stream-forged"),
+            ("observedStreamGeneration", 8),
+        ):
+            with self.subTest(key=key):
+                capture = valid_as_f06_capture()
+                capture["recoveryFailure"][key] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    "recoveryFailureRetryAndReload",
+                ):
+                    evaluate_as_f06(
+                        capture,
+                        platform="desktop_app",
+                        locale="en",
+                        sample_id="sample-001",
+                    )
+
+    def test_as_f06_rejects_reload_without_source_bound_result(self) -> None:
+        capture = valid_as_f06_capture()
+        capture["recoveryFailure"]["durableReload"].update(
+            {
+                "observed": True,
+                "source": "shared-store-inference",
+            }
+        )
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "recoveryFailureRetryAndReload",
+        ):
+            evaluate_as_f06(
+                capture,
+                platform="desktop_app",
+                locale="en",
+                sample_id="sample-001",
+            )
+
+    def test_as_f06_rejects_forged_recovery_and_duplicate_constants(
+        self,
+    ) -> None:
+        for mutation, expected in (
+            (
+                lambda capture: capture["recoveryFailure"].update(
+                    {
+                        "blocker": (
+                            "AS_F06_ACTIVE_RECOVERY_FAILURE_NOT_OBSERVED"
+                        ),
+                        "activeFailureObserved": False,
+                    }
+                ),
+                "AS_F06_ACTIVE_RECOVERY_FAILURE_NOT_OBSERVED",
+            ),
+            (
+                lambda capture: capture["sideEffects"].update(
+                    {"duplicateMutationDelta": 1}
+                ),
+                "zeroDuplicateSideEffects",
+            ),
+            (
+                lambda capture: capture["sideEffects"].update(
+                    {"duplicateMutationAfter": 1}
+                ),
+                "zeroDuplicateSideEffects",
+            ),
+            (
+                lambda capture: capture["sideEffects"].update(
+                    {"before": {"sourceHash": "forged"}}
+                ),
+                "zeroDuplicateSideEffects",
+            ),
+            (
+                lambda capture: capture["idempotence"].update(
+                    {"cursorAfterMutation": 5}
+                ),
+                "duplicateAndOutOfOrderIdempotent",
+            ),
+            (
+                lambda capture: capture["idempotence"].update(
+                    {"projectionAfterMutationHash": "f" * 64}
+                ),
+                "duplicateAndOutOfOrderIdempotent",
+            ),
+        ):
+            with self.subTest(expected=expected):
+                capture = valid_as_f06_capture()
+                mutation(capture)
+                with self.assertRaisesRegex(GroupOneScenarioError, expected):
+                    evaluate_as_f06(
+                        capture,
+                        platform="desktop_app",
+                        locale="en",
+                        sample_id="sample-001",
+                    )
+
     def test_as_f03_accepts_sequenced_text_then_cancel(self) -> None:
         assertions = evaluate_as_f03(valid_as_f03_capture())
 

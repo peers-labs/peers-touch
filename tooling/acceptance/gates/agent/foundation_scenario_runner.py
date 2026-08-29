@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,6 +49,10 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter import (
 )
 from tooling.acceptance.gates.agent.foundation_group_one_probe import (
     assert_group_one_capture,
+    group_one_tuples,
+)
+from tooling.acceptance.gates.agent.foundation_station_restart import (
+    restart_foundation_station,
 )
 from tooling.acceptance.gates.agent.foundation_d11_adapter import (
     D11FoundationAdapter,
@@ -172,6 +177,8 @@ def _build_client_manifest(runtime_manifest: dict[str, Any]) -> dict[str, Any]:
 
 def _make_direct_probe(
     client: Any,
+    *,
+    f06_coordinator: "FoundationF06Coordinator | None" = None,
 ) -> "Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]":
     """Create a direct-runtime probe that executes via WebDriver harness.
 
@@ -180,6 +187,12 @@ def _make_direct_probe(
     full capture dictionary expected by DirectRuntimeFoundationAdapter.
     """
     def probe(probe_input: DirectRuntimeProbeInput) -> Mapping[str, Any]:
+        if probe_input.cell == "AS-F06":
+            if f06_coordinator is None:
+                raise ScenarioRunnerError(
+                    "AS-F06 direct probe requires restart orchestration"
+                )
+            return f06_coordinator.capture(probe_input)
         result = client.harness(
             "foundationDirectProbe",
             {
@@ -199,6 +212,277 @@ def _make_direct_probe(
         return result
 
     return probe
+
+
+class FoundationF06Coordinator:
+    """Prepare every AS-F06 tuple around one source-bound Station restart."""
+
+    def __init__(
+        self,
+        runtime_pair: FoundationRuntimePair,
+        runtime_manifest: Mapping[str, Any],
+        profile_env: Mapping[str, str],
+    ) -> None:
+        self._runtime_pair = runtime_pair
+        self._runtime_manifest = runtime_manifest
+        self._profile_env = dict(profile_env)
+        self._captures: dict[tuple[str, str, str, str], Mapping[str, Any]] = {}
+        self._executed = False
+
+    @staticmethod
+    def _capture_key(
+        probe_input: DirectRuntimeProbeInput,
+    ) -> tuple[str, str, str, str]:
+        return (
+            probe_input.platform,
+            probe_input.locale,
+            probe_input.cell,
+            probe_input.sample_id,
+        )
+
+    @staticmethod
+    def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
+        return "|".join(
+            (
+                probe_input.platform,
+                probe_input.locale,
+                probe_input.cell,
+                probe_input.sample_id,
+            )
+        )
+
+    def _client(self, platform: str) -> Any:
+        if platform == "desktop_app":
+            return self._runtime_pair.native
+        if platform == "browser":
+            return self._runtime_pair.browser
+        raise ScenarioRunnerError(
+            f"AS-F06 has no direct client for platform {platform}"
+        )
+
+    def _set_locale(
+        self,
+        client: Any,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> None:
+        result = client.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(result, Mapping)
+            or result.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                f"AS-F06 locale did not converge for "
+                f"{self._scenario_key(probe_input)}"
+            )
+
+    def _cleanup_prepared(
+        self,
+        prepared: list[tuple[DirectRuntimeProbeInput, Mapping[str, Any]]],
+    ) -> list[str]:
+        errors: list[str] = []
+        for probe_input, handoff in reversed(prepared):
+            scenario_key = self._scenario_key(probe_input)
+            try:
+                result = self._client(probe_input.platform).harness(
+                    "foundationF06Cleanup",
+                    {
+                        "scenarioKey": scenario_key,
+                        "conversationId": str(
+                            handoff.get("conversationId") or ""
+                        ),
+                        "turnId": str(handoff.get("turnId") or ""),
+                    },
+                    timeout=60,
+                )
+                if (
+                    not isinstance(result, Mapping)
+                    or result.get("cleanupComplete") is not True
+                ):
+                    raise ScenarioRunnerError(
+                        f"cleanup proof is invalid: {result!r}"
+                    )
+            except BaseException as error:
+                errors.append(f"{scenario_key}: {error}")
+        return errors
+
+    def _execute(self) -> None:
+        f06_inputs = tuple(
+            DirectRuntimeProbeInput(
+                platform=runtime_tuple.platform,
+                locale=runtime_tuple.locale,
+                cell=runtime_tuple.cell,
+                sample_id=runtime_tuple.sample_id,
+            )
+            for runtime_tuple in group_one_tuples()
+            if runtime_tuple.cell == "AS-F06"
+        )
+        if len(f06_inputs) != 4:
+            raise ScenarioRunnerError(
+                f"AS-F06 matrix changed: expected 4 tuples, got {len(f06_inputs)}"
+            )
+
+        prepared: list[
+            tuple[DirectRuntimeProbeInput, Mapping[str, Any]]
+        ] = []
+        primary_error: BaseException | None = None
+        try:
+            for probe_input in f06_inputs:
+                client = self._client(probe_input.platform)
+                self._set_locale(client, probe_input)
+                handoff = client.harness(
+                    "foundationF06Prepare",
+                    {
+                        "scenarioKey": self._scenario_key(probe_input),
+                        "platform": probe_input.platform,
+                        "locale": probe_input.locale,
+                        "sampleId": probe_input.sample_id,
+                    },
+                    timeout=300,
+                )
+                if (
+                    not isinstance(handoff, Mapping)
+                    or not str(handoff.get("conversationId") or "")
+                    or not str(handoff.get("turnId") or "")
+                ):
+                    raise ScenarioRunnerError(
+                        f"AS-F06 prepare returned invalid evidence for "
+                        f"{self._scenario_key(probe_input)}"
+                    )
+                prepared.append((probe_input, handoff))
+            self._execute_prepared(f06_inputs)
+        except BaseException as error:
+            primary_error = error
+
+        cleanup_errors = self._cleanup_prepared(prepared)
+        if cleanup_errors:
+            detail = "; ".join(cleanup_errors)
+            if primary_error is not None:
+                raise ScenarioRunnerError(
+                    f"{primary_error}; CLEANUP_FAILED: {detail}"
+                ) from primary_error
+            raise ScenarioRunnerError(f"CLEANUP_FAILED: {detail}")
+        if primary_error is not None:
+            raise primary_error
+        self._executed = True
+
+    def _execute_prepared(
+        self,
+        f06_inputs: tuple[DirectRuntimeProbeInput, ...],
+    ) -> None:
+        def observe_recovery_failures(outage_deadline: float) -> None:
+            for probe_input in f06_inputs:
+                remaining = outage_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ScenarioRunnerError(
+                        "AS-F06 global Station outage deadline expired "
+                        "during recovery-failure callbacks"
+                    )
+                client = self._client(probe_input.platform)
+                result = client.harness(
+                    "foundationF06ObserveFailure",
+                    {"scenarioKey": self._scenario_key(probe_input)},
+                    timeout=remaining,
+                )
+                if (
+                    not isinstance(result, Mapping)
+                    or result.get("activeFailureObserved") is not True
+                ):
+                    raise ScenarioRunnerError(
+                        f"AS-F06 recovery failure was not observed for "
+                        f"{self._scenario_key(probe_input)}"
+                    )
+
+        def exercise_durable_reloads(operation_deadline: float) -> None:
+            for probe_input in f06_inputs:
+                remaining = operation_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ScenarioRunnerError(
+                        "AS-F06 global Station outage deadline expired "
+                        "during durable-reload verification"
+                    )
+                client = self._client(probe_input.platform)
+                result = client.harness(
+                    "foundationF06DurableReload",
+                    {"scenarioKey": self._scenario_key(probe_input)},
+                    timeout=remaining,
+                )
+                durable_reload = (
+                    result.get("durableReload")
+                    if isinstance(result, Mapping)
+                    else None
+                )
+                if (
+                    not isinstance(durable_reload, Mapping)
+                    or durable_reload.get("observed") is not True
+                ):
+                    raise ScenarioRunnerError(
+                        f"AS-F06 durable reload was not observed for "
+                        f"{self._scenario_key(probe_input)}"
+                    )
+
+        station_restart = restart_foundation_station(
+            self._runtime_manifest,
+            repo_root=REPO_ROOT,
+            during_outage=observe_recovery_failures,
+            after_restart=exercise_durable_reloads,
+        )
+        client_reloads: dict[str, bool] = {}
+        for platform, client in (
+            ("desktop_app", self._runtime_pair.native),
+            ("browser", self._runtime_pair.browser),
+        ):
+            client.restart()
+            client_reloads[platform] = True
+        _authenticate_clients(self._runtime_pair, self._profile_env)
+        orchestration = {
+            **station_restart,
+            "clientReloads": client_reloads,
+        }
+
+        for probe_input in f06_inputs:
+            client = self._client(probe_input.platform)
+            self._set_locale(client, probe_input)
+            result = client.harness(
+                "foundationDirectProbe",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "cell": probe_input.cell,
+                    "sampleId": probe_input.sample_id,
+                    "scenarioKey": self._scenario_key(probe_input),
+                    "stationRestart": orchestration,
+                },
+                timeout=300,
+            )
+            if not isinstance(result, Mapping):
+                raise ScenarioRunnerError(
+                    f"AS-F06 completion returned invalid evidence for "
+                    f"{self._scenario_key(probe_input)}"
+                )
+            assert_group_one_capture(probe_input, result)
+            self._captures[self._capture_key(probe_input)] = dict(result)
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        if probe_input.cell != "AS-F06":
+            raise ScenarioRunnerError(
+                f"AS-F06 coordinator received {probe_input.cell}"
+            )
+        if not self._executed:
+            self._execute()
+        capture = self._captures.get(self._capture_key(probe_input))
+        if capture is None:
+            raise ScenarioRunnerError(
+                f"AS-F06 tuple was not prepared: "
+                f"{self._scenario_key(probe_input)}"
+            )
+        return capture
 
 
 def _make_non_advertisement_probe(
@@ -468,15 +752,26 @@ def run_scenario(*, dry_run: bool = False) -> Path:
         _authenticate_clients(runtime_pair, profile_env)
 
         # --- Build adapters ---
+        f06_coordinator = FoundationF06Coordinator(
+            runtime_pair,
+            runtime_manifest,
+            profile_env,
+        )
 
         # 1. Desktop native adapter: real WebDriver probe through native client.
         desktop_native_adapter = DirectRuntimeFoundationAdapter(
-            _make_direct_probe(runtime_pair.native)
+            _make_direct_probe(
+                runtime_pair.native,
+                f06_coordinator=f06_coordinator,
+            )
         )
 
         # 2. Browser adapter: real WebDriver probe through browser client.
         browser_adapter = DirectRuntimeFoundationAdapter(
-            _make_direct_probe(runtime_pair.browser)
+            _make_direct_probe(
+                runtime_pair.browser,
+                f06_coordinator=f06_coordinator,
+            )
         )
 
         # 3. Mobile contract adapter: runs contract test suite (no runtime).

@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { create, toBinary } from '@bufbuild/protobuf'
-import { api, classifyAgentTurnTerminalEvent } from './desktop_api'
+import {
+  AGENT_REPLAY_RETRY_DELAYS_MS,
+  api,
+  classifyAgentTurnTerminalEvent,
+  createAgentTurnSourceDelivery,
+  streamAgentTurn,
+  streamAgentTurnReplay,
+  toAgentTurnReplayWireInput,
+} from './desktop_api'
 import {
   DissolveGroupResponseSchema,
   TransferGroupOwnershipResponseSchema,
@@ -9,13 +17,18 @@ import {
 } from '../gen/proto/domain/chat/group_chat_pb'
 
 const mockFetch = vi.fn()
+const { mockListen } = vi.hoisted(() => ({ mockListen: vi.fn() }))
 vi.stubGlobal('fetch', mockFetch)
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }))
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: mockListen,
+}))
 
 beforeEach(() => {
   mockFetch.mockReset()
+  mockListen.mockReset()
   vi.mocked(invoke).mockReset()
 })
 
@@ -42,8 +55,8 @@ describe('api.health', () => {
 describe('Agent turn stream completion', () => {
   it('does not treat replay catch-up as terminal completion', () => {
     expect(classifyAgentTurnTerminalEvent({ event: 'catchup_done', data: {} })).toBeNull()
-    expect(classifyAgentTurnTerminalEvent({ event: 'done', data: {} })).toBe('complete')
-    expect(classifyAgentTurnTerminalEvent({ event: 'cancelled', data: {} })).toBe('complete')
+    expect(classifyAgentTurnTerminalEvent({ event: 'done', data: {} })).toBe('completed')
+    expect(classifyAgentTurnTerminalEvent({ event: 'cancelled', data: {} })).toBe('cancelled')
   })
 
   it('uses replay snapshot status as the terminal authority', () => {
@@ -54,11 +67,211 @@ describe('Agent turn stream completion', () => {
     expect(classifyAgentTurnTerminalEvent({
       event: 'snapshot',
       data: { status: 'completed' },
-    })).toBe('complete')
+    })).toBe('completed')
     expect(classifyAgentTurnTerminalEvent({
       event: 'snapshot',
       data: { status: 'failed', terminal_reason: 'provider_failed' },
-    })).toBe('error')
+    })).toBe('failed')
+    expect(classifyAgentTurnTerminalEvent({
+      event: 'snapshot',
+      data: { status: 'interrupted', terminal_reason: 'station_restart' },
+    })).toBe('interrupted')
+  })
+
+  it('preserves the Station replay payload before projection aliases are added', () => {
+    const rawData = {
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-1',
+      seq: 7,
+      text: 'source text',
+    }
+
+    const source = createAgentTurnSourceDelivery(
+      'text',
+      rawData,
+      'ptid:person:owner',
+      'fallback-conversation',
+      'fallback-turn',
+    )
+
+    expect(source).toEqual({
+      transport: 'station-sse',
+      ptid: 'ptid:person:owner',
+      conversationId: 'conversation-1',
+      turnId: 'turn-1',
+      sequence: 7,
+      rawPayload: {
+        eventType: 'text',
+        data: rawData,
+      },
+    })
+    expect(source.rawPayload.data).not.toHaveProperty('content')
+    expect(source.rawPayload.data).not.toHaveProperty('streamGeneration')
+  })
+
+  it('does not synthesize source identity from caller fallbacks', () => {
+    const source = createAgentTurnSourceDelivery(
+      'text',
+      { seq: 7, text: 'source text' },
+      'ptid:person:owner',
+      'fallback-conversation',
+      'fallback-turn',
+    )
+
+    expect(source.conversationId).toBe('')
+    expect(source.turnId).toBe('')
+  })
+
+  it('cancels a native transport aborted while its start command is pending', async () => {
+    let resolveStart: (() => void) | undefined
+    let startedStreamId = ''
+    mockListen.mockResolvedValue(() => undefined)
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command === 'agent_execute_turn_stream') {
+        startedStreamId = String((args as { input: { stream_id: string } }).input.stream_id)
+        return new Promise((resolve) => {
+          resolveStart = () => resolve({
+            ok: true,
+            data: {
+              command,
+              status: JSON.stringify({ stream_id: startedStreamId }),
+            },
+          })
+        })
+      }
+      if (command === 'agent_cancel_turn_stream') {
+        return Promise.resolve({
+          ok: true,
+          data: {
+            command,
+            status: JSON.stringify({ stream_id: startedStreamId }),
+          },
+        })
+      }
+      return Promise.reject(new Error(`unexpected command: ${command}`))
+    })
+
+    const controller = streamAgentTurn(
+      {
+        client_idempotency_key: 'request-1',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'hello',
+      },
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      'ptid:person:owner',
+    )
+    await vi.waitFor(() => expect(startedStreamId).not.toBe(''))
+
+    controller.abort()
+    resolveStart?.()
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('agent_cancel_turn_stream', {
+        input: { stream_id: startedStreamId },
+      })
+    })
+  })
+})
+
+describe('api.startAgentTurnReplayStream', () => {
+  it('keeps the Browser replay retry schedule aligned with the native transport', () => {
+    expect(AGENT_REPLAY_RETRY_DELAYS_MS).toEqual([500, 1_000, 2_000, 4_000, 8_000])
+    expect(AGENT_REPLAY_RETRY_DELAYS_MS.length + 1).toBe(6)
+  })
+
+  it('serializes the replay cursor with the canonical protojson field name', () => {
+    expect(toAgentTurnReplayWireInput({
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-1',
+      after_seq: 4,
+    })).toEqual({
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-1',
+      afterSequence: 4,
+    })
+  })
+
+  it('starts replay-then-tail without buffering the live response', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'agent_replay_turn_stream',
+        status: JSON.stringify({
+          stream_id: 'replay-stream-1',
+        }),
+      },
+    })
+
+    const replay = await api.startAgentTurnReplayStream({
+      stream_id: 'replay-stream-1',
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-1',
+      after_seq: 4,
+    })
+
+    expect(replay.stream_id).toBe('replay-stream-1')
+    expect(invoke).toHaveBeenCalledWith('agent_replay_turn_stream', {
+      input: {
+        stream_id: 'replay-stream-1',
+        conversation_id: 'conversation-1',
+        turn_id: 'turn-1',
+        after_seq: 4,
+      },
+    })
+  })
+
+  it('cancels a native replay that was aborted while its start command was pending', async () => {
+    let resolveStart: (() => void) | undefined
+    let startedStreamId = ''
+    mockListen.mockResolvedValue(() => undefined)
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command === 'agent_replay_turn_stream') {
+        startedStreamId = String((args as { input: { stream_id: string } }).input.stream_id)
+        return new Promise((resolve) => {
+          resolveStart = () => resolve({
+            ok: true,
+            data: {
+              command,
+              status: JSON.stringify({ stream_id: startedStreamId }),
+            },
+          })
+        })
+      }
+      if (command === 'agent_cancel_turn_replay_stream') {
+        return Promise.resolve({
+          ok: true,
+          data: {
+            command,
+            status: JSON.stringify({ stream_id: startedStreamId }),
+          },
+        })
+      }
+      return Promise.reject(new Error(`unexpected command: ${command}`))
+    })
+
+    const controller = streamAgentTurnReplay(
+      {
+        conversation_id: 'conversation-1',
+        turn_id: 'turn-1',
+        after_seq: 4,
+      },
+      vi.fn(),
+      vi.fn(),
+      'ptid:person:owner',
+    )
+    await vi.waitFor(() => expect(startedStreamId).not.toBe(''))
+
+    controller.abort()
+    resolveStart?.()
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('agent_cancel_turn_replay_stream', {
+        input: { stream_id: startedStreamId },
+      })
+    })
   })
 })
 

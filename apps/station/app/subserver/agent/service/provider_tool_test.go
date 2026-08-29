@@ -97,7 +97,9 @@ func TestOpenAIStreamAssemblesNativeToolCallFragments(t *testing.T) {
 			Description: "List skills",
 			JSONSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
 		}},
-		func(context.Context, ProviderDelta) {},
+		func(context.Context, ProviderDelta) error {
+			return nil
+		},
 	)
 	if err != nil {
 		t.Fatalf("call provider stream: %v", err)
@@ -133,7 +135,9 @@ func TestOpenAIStreamRejectsTruncatedToolCall(t *testing.T) {
 			Description: "List skills",
 			JSONSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
 		}},
-		func(context.Context, ProviderDelta) {},
+		func(context.Context, ProviderDelta) error {
+			return nil
+		},
 	)
 	if err == nil {
 		t.Fatal("truncated provider ToolCall stream must fail closed")

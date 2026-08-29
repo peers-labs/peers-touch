@@ -1460,7 +1460,7 @@ func capabilityOperationModel(
 		CleanupOutcome:         record.CleanupOutcome,
 		BoundedArguments:       append([]byte{}, record.BoundedArguments...),
 		ExternalIdempotencyKey: record.ExternalIdempotencyKey,
-		DispatchSequence:        record.DispatchSequence,
+		DispatchSequence:       record.DispatchSequence,
 		CreatedAt:              timestamppb.New(record.CreatedAt),
 		UpdatedAt:              timestamppb.New(record.UpdatedAt),
 	}

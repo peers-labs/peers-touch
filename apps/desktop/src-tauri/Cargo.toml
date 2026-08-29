@@ -44,7 +44,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 rfd = "0.15"
-tokio = { version = "1", features = ["rt"] }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 futures-lite = "2"
 ulid = "1.1"
 openmls = { version = "0.8.1", features = ["test-utils"] }

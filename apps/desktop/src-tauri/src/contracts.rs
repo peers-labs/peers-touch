@@ -1029,6 +1029,24 @@ pub struct AgentTurnStreamCancelInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnTransportCancelInput {
+    pub stream_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnReplayStreamInput {
+    pub stream_id: String,
+    pub conversation_id: String,
+    pub turn_id: String,
+    pub after_seq: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnReplayStreamCancelInput {
+    pub stream_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTurnQueueListInput {
     pub conversation_id: String,
 }

@@ -257,10 +257,12 @@ export interface RelationshipChangedPayload {
 
 export interface AgentTurnStreamEventPayload {
   streamId: string;
+  streamGeneration: number;
+  ptid?: string;
   conversationId: string;
   agentId: string;
   event: string;
-  data: Record<string, string>;
+  data: Record<string, unknown>;
   timestampMs: number;
 }
 

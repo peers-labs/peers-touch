@@ -10,14 +10,14 @@ use crate::contracts::{
     AgentTaskStatusInput, AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput,
     AgentThreadCreateInput, AgentThreadListInput, AgentThreadMessagesInput,
     AgentTombstoneMessageInput, AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput,
-    AgentTurnQueueCancelInput, AgentTurnQueueListInput, AgentTurnStreamCancelInput,
-    AgentTurnTraceGetInput, AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput,
+    AgentTurnQueueCancelInput, AgentTurnQueueListInput, AgentTurnReplayStreamCancelInput,
+    AgentTurnReplayStreamInput, AgentTurnStreamCancelInput, AgentTurnTraceGetInput,
+    AgentTurnTraceListInput, AgentTurnTransportCancelInput, StubPayload, TopicCommentCreateInput,
     TopicCommentDeleteInput, TopicCommentListInput,
 };
 use crate::error::AppResult;
 use crate::error::ErrorCode;
 use crate::state::AppState;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::State;
 use tauri::Window;
@@ -48,8 +48,10 @@ pub fn agent_execute_turn_stream(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
+    let ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    if ptid.is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authenticated PTID required", None);
+    }
     let stream_id = input
         .stream_id
         .as_deref()
@@ -57,7 +59,9 @@ pub fn agent_execute_turn_stream(
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| format!("agent-turn-{}", ulid::Ulid::new()));
-    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let window_label = window.label().to_string();
+    let cancellation =
+        application_agent_turn::register_agent_turn_live_stream(&window_label, &ptid, &stream_id);
     let stream_id_for_task = stream_id.clone();
     tauri::async_runtime::spawn_blocking(move || {
         application_agent_turn::agent_execute_turn_stream(
@@ -65,12 +69,28 @@ pub fn agent_execute_turn_stream(
             stream_id_for_task.clone(),
             input,
             token,
-            actor_id,
-            cancel_flag,
+            ptid,
+            cancellation,
         );
     });
     AppResult::success(StubPayload {
         command: "agent_execute_turn_stream".to_string(),
+        status: serde_json::json!({ "stream_id": stream_id }).to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn agent_cancel_turn_stream(
+    input: AgentTurnTransportCancelInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let stream_id = input.stream_id.trim();
+    if stream_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "stream_id is required", None);
+    }
+    application_agent_turn::cancel_agent_turn_live_stream(window.label(), stream_id);
+    AppResult::success(StubPayload {
+        command: "agent_cancel_turn_stream".to_string(),
         status: serde_json::json!({ "stream_id": stream_id }).to_string(),
     })
 }
@@ -83,6 +103,73 @@ pub fn agent_cancel_turn(
 ) -> AppResult<StubPayload> {
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
     application_agent_turn::cancel_agent_turn(&input.turn_id, &token)
+}
+
+#[tauri::command]
+pub fn agent_replay_turn_stream(
+    input: AgentTurnReplayStreamInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    app: tauri::AppHandle,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    let ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    if ptid.is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authenticated PTID required", None);
+    }
+    let stream_id = input.stream_id.trim().to_string();
+    if stream_id.is_empty()
+        || input.conversation_id.trim().is_empty()
+        || input.turn_id.trim().is_empty()
+        || input.after_seq < 0
+    {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "stream_id, conversation_id, turn_id, and a non-negative after_seq are required",
+            None,
+        );
+    }
+    let window_label = window.label().to_string();
+    let cancellation =
+        application_agent_turn::register_agent_turn_replay_stream(&window_label, &ptid, &stream_id);
+    let stream_id_for_task = stream_id.clone();
+    tauri::async_runtime::spawn(async move {
+        application_agent_turn::agent_replay_turn_stream(
+            app,
+            window_label,
+            stream_id_for_task,
+            token,
+            ptid,
+            input.conversation_id,
+            input.turn_id,
+            input.after_seq,
+            cancellation,
+        )
+        .await;
+    });
+    AppResult::success(StubPayload {
+        command: "agent_replay_turn_stream".to_string(),
+        status: serde_json::json!({ "stream_id": stream_id }).to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn agent_cancel_turn_replay_stream(
+    input: AgentTurnReplayStreamCancelInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let stream_id = input.stream_id.trim();
+    if stream_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "stream_id is required", None);
+    }
+    application_agent_turn::cancel_agent_turn_replay_stream(window.label(), stream_id);
+    AppResult::success(StubPayload {
+        command: "agent_cancel_turn_replay_stream".to_string(),
+        status: serde_json::json!({ "stream_id": stream_id }).to_string(),
+    })
 }
 
 #[tauri::command]

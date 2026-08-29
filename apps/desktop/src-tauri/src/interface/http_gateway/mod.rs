@@ -8,7 +8,6 @@
 //
 // 2026-04-09: Initial creation. Full 1:1 mapping of all 237 tauri commands.
 
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
@@ -236,7 +235,6 @@ fn handle_request(mut request: tiny_http::Request, state: &AppState, runtime: &G
         handle_agent_stream_proxy(request, state, "/sub-agent/agent/conversation/events");
         return;
     }
-
     // Read body
     let mut body = String::new();
     if let Err(e) = request.as_reader().read_to_string(&mut body) {
@@ -309,7 +307,7 @@ fn handle_agent_stream_proxy(
         return;
     }
     let client = match reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
+        .connect_timeout(std::time::Duration::from_secs(30))
         .build()
     {
         Ok(client) => client,
@@ -343,15 +341,29 @@ fn handle_agent_stream_proxy(
         }
     };
     let status = upstream.status().as_u16();
+    let turn_id_header = upstream
+        .headers()
+        .get("x-agent-turn-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| format!("X-Agent-Turn-ID: {value}").parse().ok());
+    let mut response_headers = vec![
+        "Content-Type: text/event-stream; charset=utf-8"
+            .parse()
+            .unwrap(),
+        "Cache-Control: no-cache".parse().unwrap(),
+        "Access-Control-Expose-Headers: X-Agent-Turn-ID"
+            .parse()
+            .unwrap(),
+        cors_origin(),
+    ];
+    if let Some(header) = turn_id_header {
+        response_headers.push(header);
+    }
     let response = tiny_http::Response::new(
         tiny_http::StatusCode(status),
-        vec![
-            "Content-Type: text/event-stream; charset=utf-8"
-                .parse()
-                .unwrap(),
-            "Cache-Control: no-cache".parse().unwrap(),
-            cors_origin(),
-        ],
+        response_headers,
         upstream,
         None,
         None,
@@ -3223,7 +3235,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 .filter(|value| !value.is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("agent-turn-{}", Ulid::new()));
-            let cancel_flag = Arc::new(AtomicBool::new(false));
+            let cancellation =
+                app_agent_turn::register_agent_turn_live_stream("http-gateway", "", &stream_id);
             let stream_id_for_task = stream_id.clone();
             let app_for_task = match runtime.app_handle("agent_execute_turn_stream") {
                 Ok(app_handle) => app_handle,
@@ -3236,7 +3249,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     input,
                     token,
                     "".to_string(),
-                    cancel_flag,
+                    cancellation,
                 );
             });
             to_json(AppResult::success(StubPayload {

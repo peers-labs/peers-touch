@@ -66,6 +66,7 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       return {
         ...msg,
         error: errMsg,
+        terminalStatus: 'failed',
         errorDetail: s(d.detail),
         resolution: (d.resolution && typeof d.resolution === 'object' ? d.resolution as ErrorResolutionAction : null),
         providerId: s(d.providerId),
@@ -77,14 +78,27 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       return {
         ...msg,
         cancelled: true,
+        terminalStatus: 'cancelled',
         loading: false,
         lastEventAt: Date.now(),
       };
 
+    case 'connection_lost':
+    case 'reconnecting':
+    case 'replaying':
     case 'reconciling':
+    case 'connected':
       return {
         ...msg,
         loading: true,
+        lastEventAt: Date.now(),
+      };
+
+    case 'recovery_failed':
+      return {
+        ...msg,
+        error: 'chat.agentTurnRecovery.recoveryFailed',
+        loading: false,
         lastEventAt: Date.now(),
       };
 
@@ -113,15 +127,31 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
         lastEventAt: Date.now(),
       };
 
-    case 'snapshot':
+    case 'snapshot': {
+      const status = s(d.status).toLowerCase();
+      const terminalReason = s(d.terminal_reason || d.terminalReason);
+      const terminalStatus = ['completed', 'failed', 'cancelled', 'interrupted'].includes(status)
+        ? status as NonNullable<ChatMessage['terminalStatus']>
+        : msg.terminalStatus;
       return {
         ...msg,
         content: s(d.text) || msg.content,
-        cancelled: s(d.status) === 'cancelled',
-        error: s(d.status) === 'failed' ? s(d.terminal_reason) || msg.error : msg.error,
-        loading: s(d.status) === 'running',
+        cancelled: status === 'cancelled',
+        error:
+          status === 'failed' || status === 'interrupted'
+            ? terminalReason || msg.error
+            : status === 'completed' || status === 'cancelled'
+              ? undefined
+              : msg.error,
+        errorDetail:
+          status === 'failed' || status === 'cancelled' || status === 'interrupted'
+            ? terminalReason || msg.errorDetail
+            : msg.errorDetail,
+        terminalStatus,
+        loading: status === 'running',
         lastEventAt: Date.now(),
       };
+    }
 
     case 'catchup_done':
       return {
@@ -133,6 +163,7 @@ export function reduceStreamEvent(msg: ChatMessage, event: TurnStreamEvent): Cha
       return {
         ...msg,
         loading: false,
+        terminalStatus: 'completed',
         model: s(d.model) || msg.model,
         processDuration: Math.round((Date.now() - msg.timestamp) / 1000),
         followUpSuggestions: Array.isArray(d.suggestions) ? d.suggestions as string[] : undefined,

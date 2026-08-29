@@ -15,11 +15,13 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f03,
     evaluate_as_f04,
     evaluate_as_f05,
+    evaluate_as_f06,
     evaluate_as_f10,
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_as_f04_capture,
     valid_as_f05_capture,
+    valid_as_f06_capture,
 )
 
 
@@ -69,6 +71,20 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
         facts = valid_as_f05_capture()
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_as_f05(facts)
+        return result
+    if probe.cell == "AS-F06":
+        facts = valid_as_f06_capture(
+            probe.platform,
+            probe.locale,
+            probe.sample_id,
+        )
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_as_f06(
+            facts,
+            platform=probe.platform,
+            locale=probe.locale,
+            sample_id=probe.sample_id,
+        )
         return result
     if probe.cell == "AS-F10":
         browser = probe.platform == "browser"
@@ -209,8 +225,8 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         observations = runner.collect(scenario_capture)
 
         self.assertEqual(len(observations), EXPECTED_GROUP_ONE_TUPLES)
-        self.assertEqual(len(desktop.locales), 20)
-        self.assertEqual(len(browser.locales), 20)
+        self.assertEqual(len(desktop.locales), 22)
+        self.assertEqual(len(browser.locales), 22)
         self.assertEqual(set(desktop.locales), {"en", "zh-CN"})
         self.assertEqual(set(browser.locales), {"en", "zh-CN"})
 

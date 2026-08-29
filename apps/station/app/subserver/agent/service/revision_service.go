@@ -13,6 +13,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -134,7 +135,7 @@ func loadRevisionSourceTurnTx(
 	request RevisionRequest,
 ) (*persistence.AgentTurn, error) {
 	var turn persistence.AgentTurn
-	if err := tx.Where(
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
 		"id = ? AND conversation_id = ?",
 		request.SourceTurnID,
 		request.ConversationID,
@@ -147,7 +148,8 @@ func loadRevisionSourceTurnTx(
 			"failed to load source turn", err)
 	}
 	if turn.Status != string(domain.TurnStatusFailed) &&
-		turn.Status != string(domain.TurnStatusCancelled) {
+		turn.Status != string(domain.TurnStatusCancelled) &&
+		turn.Status != string(domain.TurnStatusInterrupted) {
 		return nil, errcode.New(errcode.AgentInvalidSourceState, http.StatusConflict,
 			"source turn is not retryable", nil)
 	}
@@ -243,6 +245,7 @@ func storeRevisionEventTx(
 		ID:             generateID("tevt"),
 		ConversationID: request.ConversationID,
 		TurnID:         admission.TurnID,
+		AttemptID:      admission.AttemptID,
 		EventSeq:       seq,
 		EventType:      "message_revision",
 		Payload:        string(payload),
@@ -303,7 +306,8 @@ func (s *RevisionService) admitAndExecute(
 
 		switch kind {
 		case revisionRetry:
-			if _, err := loadRevisionSourceTurnTx(tx, request); err != nil {
+			sourceTurn, err := loadRevisionSourceTurnTx(tx, request)
+			if err != nil {
 				return err
 			}
 			if err := tx.Where(
@@ -328,6 +332,7 @@ func (s *RevisionService) admitAndExecute(
 			if retryAssistantMessage.ID != "" &&
 				retryAssistantMessage.Status != "failed" &&
 				retryAssistantMessage.Status != "cancelled" &&
+				retryAssistantMessage.Status != "interrupted" &&
 				retryAssistantMessage.Status != "partial" {
 				return errcode.New(errcode.AgentInvalidSourceState, http.StatusConflict,
 					"retry assistant message is not terminal", nil)
@@ -345,6 +350,23 @@ func (s *RevisionService) admitAndExecute(
 				StartedAt:    now,
 			}).Error; err != nil {
 				return err
+			}
+			if err := tx.Model(sourceTurn).Updates(map[string]interface{}{
+				"status":          string(domain.TurnStatusRunning),
+				"started_at":      now,
+				"ended_at":        nil,
+				"final_response":  nil,
+				"terminal_reason": "",
+			}).Error; err != nil {
+				return err
+			}
+			if retryAssistantMessage.ID != "" {
+				if err := tx.Model(&retryAssistantMessage).Updates(map[string]interface{}{
+					"status":     "pending",
+					"updated_at": now,
+				}).Error; err != nil {
+					return err
+				}
 			}
 			admission.AttemptID = attemptID
 		case revisionRegenerate, revisionEditResend:
@@ -512,31 +534,7 @@ func (s *RevisionService) admitAndExecute(
 	}
 	if !replay {
 		if _, err := s.turns.ExecuteTurn(ctx, &config, input); err != nil {
-			if config.AssistantMessageID != "" {
-				_ = db.WithContext(ctx).Model(&persistence.AgentMessage{}).
-					Where("id = ?", config.AssistantMessageID).
-					Updates(map[string]interface{}{"status": "failed", "updated_at": time.Now()}).Error
-			}
-			if admission.AttemptID != "" {
-				now := time.Now()
-				_ = db.WithContext(ctx).Model(&persistence.TurnAttempt{}).
-					Where("id = ?", admission.AttemptID).
-					Updates(map[string]interface{}{
-						"status":     string(domain.TurnStatusFailed),
-						"ended_at":   now,
-						"error_code": err.Error(),
-					}).Error
-			}
 			return nil, err
-		}
-		if admission.AttemptID != "" {
-			now := time.Now()
-			_ = db.WithContext(ctx).Model(&persistence.TurnAttempt{}).
-				Where("id = ?", admission.AttemptID).
-				Updates(map[string]interface{}{
-					"status":   string(domain.TurnStatusCompleted),
-					"ended_at": now,
-				}).Error
 		}
 	}
 	return s.loadRevisionResult(ctx, request.Ptid, request.ConversationID, admission)

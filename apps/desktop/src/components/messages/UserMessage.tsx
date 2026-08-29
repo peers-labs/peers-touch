@@ -234,6 +234,8 @@ export function UserMessage({ message, userAvatar }: UserMessageProps) {
             onDelete: handleDelete,
             onRegenerate: () => { /* Not applicable for user messages */ },
             onRetry: () => { /* Not applicable for user messages */ },
+            onRetryRecovery: () => { /* Not applicable for user messages */ },
+            onReloadSnapshot: () => { /* Not applicable for user messages */ },
             onBranch: handleBranch,
             onContinue: () => { /* Not applicable for user messages */ },
             onDeleteAndRegenerate: () => { /* Not applicable for user messages */ },

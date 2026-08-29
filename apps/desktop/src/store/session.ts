@@ -9,6 +9,7 @@ import { normalizeDecision, type AccessDecision } from '../services/accessGate';
 // TODO(unified-actor): align with AccountIdentity (desktop_api) for cross-layer consistency.
 export interface CurrentUser {
   actorId: string;
+  ptid?: string;
   name: string;
   email: string;
   /** Remote avatar URL. The single piece of avatar state the frontend tracks;
@@ -56,6 +57,7 @@ function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'passwo
   if (!resp.actor_id) return null;
   return {
     actorId: resp.actor_id,
+    ptid: resp.ptid || resp.actor_id,
     name: resp.name || '',
     email: resp.email || '',
     avatarUrl: resp.avatar_url || undefined,
@@ -182,5 +184,5 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
 export function currentAuthenticatedActorId(): string | null {
   const session = useSessionStore.getState();
   if (!session.authenticated) return null;
-  return session.currentUser?.actorId ?? null;
+  return session.currentUser?.ptid || session.currentUser?.actorId || null;
 }

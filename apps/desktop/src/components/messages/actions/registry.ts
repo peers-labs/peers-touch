@@ -9,6 +9,37 @@ export function buildMessageActions(ctx: MessageActionContext): {
   const { message, operation } = ctx;
   const isActive = isActiveOperation(operation);
 
+  if (
+    operation?.runState === 'recovery_failed'
+    && (!message.turnId || message.turnId === operation.turnId)
+  ) {
+    return {
+      primary: [
+        {
+          key: 'retryRecovery',
+          label: 'chat.message.action.retryRecovery',
+          icon: RotateCcw,
+          onClick: ctx.onRetryRecovery,
+        },
+        {
+          key: 'reloadSnapshot',
+          label: 'chat.message.action.reloadSnapshot',
+          icon: RefreshCw,
+          onClick: ctx.onReloadSnapshot,
+        },
+      ],
+      menu: [
+        {
+          key: 'copy',
+          label: 'chat.message.action.copy',
+          icon: Copy,
+          onClick: ctx.onCopy,
+          hidden: !message.content,
+        },
+      ],
+    };
+  }
+
   if (isActive || message.loading) {
     return { primary: [], menu: [] };
   }

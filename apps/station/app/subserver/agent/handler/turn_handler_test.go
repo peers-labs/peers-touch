@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -17,10 +18,12 @@ import (
 )
 
 type fakeStreamResponse struct {
-	headers map[string]string
-	body    bytes.Buffer
-	status  int
-	flushed bool
+	headers  map[string]string
+	body     bytes.Buffer
+	status   int
+	flushed  bool
+	writeErr error
+	flushErr error
 }
 
 func (r *fakeStreamResponse) Header() map[string]string {
@@ -35,12 +38,15 @@ func (r *fakeStreamResponse) SetHeader(key, value string) {
 }
 
 func (r *fakeStreamResponse) Write(data []byte) (int, error) {
+	if r.writeErr != nil {
+		return 0, r.writeErr
+	}
 	return r.body.Write(data)
 }
 
 func (r *fakeStreamResponse) Flush() error {
 	r.flushed = true
-	return nil
+	return r.flushErr
 }
 
 func (r *fakeStreamResponse) WriteHeader(status int) {
@@ -100,6 +106,65 @@ func TestWriteTurnStreamEvent(t *testing.T) {
 	}
 	if !resp.flushed {
 		t.Fatal("expected SSE frame to flush")
+	}
+}
+
+func TestExposeTurnStreamIdentityFlushesDurableTurnID(t *testing.T) {
+	resp := &fakeStreamResponse{}
+
+	if err := exposeTurnStreamIdentity(resp, " turn-1 "); err != nil {
+		t.Fatalf("expose turn stream identity: %v", err)
+	}
+
+	if resp.headers["X-Agent-Turn-ID"] != "turn-1" {
+		t.Fatalf("turn identity header = %q", resp.headers["X-Agent-Turn-ID"])
+	}
+	if !resp.flushed {
+		t.Fatal("turn identity header was not flushed before stream execution")
+	}
+}
+
+func TestExposeTurnStreamIdentityReturnsFlushFailure(t *testing.T) {
+	flushErr := errors.New("client disconnected")
+	resp := &fakeStreamResponse{flushErr: flushErr}
+
+	if err := exposeTurnStreamIdentity(resp, "turn-1"); !errors.Is(err, flushErr) {
+		t.Fatalf("turn identity flush error = %v, want disconnect", err)
+	}
+}
+
+func TestDrainTurnStreamEventsPreservesCommittedTerminalSequence(t *testing.T) {
+	resp := &fakeStreamResponse{}
+	events := make(chan service.TurnEvent, 4)
+	events <- service.TurnEvent{Type: "text", Text: "first", Seq: 1}
+	events <- service.TurnEvent{Type: "text", Text: "second", Seq: 2}
+	events <- service.TurnEvent{Type: "progress", Stage: "settling", Seq: 3}
+	events <- service.TurnEvent{Type: "done", Stage: "turn_completed", Seq: 4}
+	close(events)
+
+	if err := drainTurnStreamEvents(resp, events); err != nil {
+		t.Fatalf("drain queued events: %v", err)
+	}
+	body := resp.body.String()
+	first := strings.Index(body, `"seq":1`)
+	second := strings.Index(body, `"seq":2`)
+	settling := strings.Index(body, `"seq":3`)
+	done := strings.LastIndex(body, "event: done\n")
+	terminalSequence := strings.LastIndex(body, `"seq":4`)
+	if first < 0 || second <= first || settling <= second || done <= settling || terminalSequence <= done {
+		t.Fatalf("queued frames were not drained before terminal frame: %q", body)
+	}
+}
+
+func TestDrainTurnStreamEventsStopsOnDisconnectedClient(t *testing.T) {
+	events := make(chan service.TurnEvent, 1)
+	events <- service.TurnEvent{Type: "text", Text: "unwritable", Seq: 1}
+	close(events)
+	disconnectErr := errors.New("client disconnected")
+	resp := &fakeStreamResponse{writeErr: disconnectErr}
+
+	if err := drainTurnStreamEvents(resp, events); !errors.Is(err, disconnectErr) {
+		t.Fatalf("drain error = %v, want client disconnect", err)
 	}
 }
 

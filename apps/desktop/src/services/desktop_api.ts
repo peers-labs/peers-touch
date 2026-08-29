@@ -2132,6 +2132,7 @@ export interface SettingsGetPayload extends TauriStubPayload {
 
 export interface AuthSessionResponse extends TauriStubPayload {
   actor_id?: string;
+  ptid?: string;
   name?: string;
   email?: string;
   avatar_url?: string;
@@ -2460,8 +2461,42 @@ function createAgentTurnStreamId(): string {
   return `agent-turn-${randomId}`;
 }
 
+let agentTurnStreamGeneration = Date.now();
+
+function nextAgentTurnStreamGeneration(): number {
+  agentTurnStreamGeneration += 1;
+  return agentTurnStreamGeneration;
+}
+
 export interface AgentTurnStreamCancelInput {
   turn_id: string;
+}
+
+export interface AgentTurnTransportCancelInput {
+  stream_id: string;
+}
+
+export interface AgentTurnReplayStreamInput {
+  stream_id: string;
+  conversation_id: string;
+  turn_id: string;
+  after_seq: number;
+}
+
+export interface AgentTurnReplayStreamCancelInput {
+  stream_id: string;
+}
+
+export function toAgentTurnReplayWireInput(input: Omit<AgentTurnReplayStreamInput, 'stream_id'>): {
+  conversation_id: string;
+  turn_id: string;
+  afterSequence: number;
+} {
+  return {
+    conversation_id: input.conversation_id,
+    turn_id: input.turn_id,
+    afterSequence: input.after_seq,
+  };
 }
 
 export interface AgentTurnQueueEntry {
@@ -2714,6 +2749,7 @@ export interface AgentMessage {
   turn_id?: string;
   model_name?: string;
   role: 'system' | 'user' | 'assistant' | 'tool';
+  status: string;
   content: string;
   seq: number;
   branch_id?: string;
@@ -2973,6 +3009,7 @@ export interface StationAgentTaskRow {
 
 export interface AgentTurnStreamPayload {
   streamId: string;
+  ptid: string;
   event: string;
   data: Record<string, unknown>;
 }
@@ -4497,6 +4534,24 @@ export const api = {
       { turn_id: turnId },
     ),
 
+  cancelAgentTurnStream: (streamId: string) =>
+    invokeRustDataFromStatus<AgentTurnTransportCancelInput, { stream_id: string }>(
+      'agent_cancel_turn_stream',
+      { stream_id: streamId },
+    ),
+
+  startAgentTurnReplayStream: (input: AgentTurnReplayStreamInput) =>
+    invokeRustDataFromStatus<AgentTurnReplayStreamInput, { stream_id: string }>(
+      'agent_replay_turn_stream',
+      input,
+    ),
+
+  cancelAgentTurnReplayStream: (streamId: string) =>
+    invokeRustDataFromStatus<AgentTurnReplayStreamCancelInput, { stream_id: string }>(
+      'agent_cancel_turn_replay_stream',
+      { stream_id: streamId },
+    ),
+
   listAgentTurnQueue: (conversationId: string) =>
     invokeRustDataFromStatus<{ conversation_id: string }, AgentTurnQueueListOutput>(
       'agent_turn_queue_list',
@@ -5880,6 +5935,24 @@ export interface NotificationPreferenceData {
 export interface StreamEvent {
   event: string;
   data: Record<string, unknown>;
+  ptid?: string;
+  sourceDelivery?: AgentTurnSourceDelivery;
+}
+
+export interface AgentTurnSourceDelivery {
+  transport: 'station-sse';
+  ptid: string;
+  conversationId: string;
+  turnId: string;
+  sequence: number;
+  rawPayload: {
+    eventType: string;
+    data: Record<string, unknown>;
+  };
+}
+
+export interface AgentTurnStreamController extends AbortController {
+  readonly streamGeneration: number;
 }
 
 export interface ChatImageInput {
@@ -5968,7 +6041,16 @@ function isHttpGatewayMode() {
   return typeof window !== 'undefined' && Boolean((window as any).__PT_GATEWAY_BASE__);
 }
 
-const AGENT_REPLAY_BACKOFF_MS = [500, 1_000, 2_000, 4_000, 8_000] as const;
+export const AGENT_REPLAY_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000] as const;
+const AGENT_REPLAY_CATCHUP_TIMEOUT_MS = 30_000;
+const AGENT_REPLAY_CONTROL_EVENTS = new Set([
+  'reconnecting',
+  'replaying',
+  'reconciling',
+  'connected',
+  'recovery_failed',
+  'catchup_done',
+]);
 
 function waitForAgentReplay(delayMs: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -6034,17 +6116,68 @@ async function consumeAgentSSE(
 
 export function classifyAgentTurnTerminalEvent(
   event: StreamEvent,
-): 'complete' | 'queued' | 'error' | null {
-  if (event.event === 'error') return 'error';
+): 'completed' | 'cancelled' | 'queued' | 'failed' | 'interrupted' | null {
+  if (event.event === 'error') return 'failed';
   if (event.event === 'queued' || event.event === 'admission_replayed') return 'queued';
-  if (event.event === 'done' || event.event === 'cancelled') return 'complete';
+  if (event.event === 'done') return 'completed';
+  if (event.event === 'cancelled') return 'cancelled';
   if (event.event !== 'snapshot') return null;
   const status = String(event.data?.status || '').toLowerCase();
-  if (status === 'failed') return 'error';
-  if (status === 'completed' || status === 'cancelled' || status === 'interrupted') {
-    return 'complete';
-  }
+  if (status === 'failed') return 'failed';
+  if (status === 'interrupted') return 'interrupted';
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'completed') return 'completed';
   return null;
+}
+
+export function createAgentTurnSourceDelivery(
+  event: string,
+  data: Record<string, unknown>,
+  ptid: string,
+  _fallbackConversationId: string,
+  _fallbackTurnId = '',
+): AgentTurnSourceDelivery {
+  const conversationId = String(
+    data.conversationId ?? data.conversation_id ?? '',
+  ).trim();
+  const turnId = String(data.turnId ?? data.turn_id ?? '').trim();
+  const sequence = Number(data.seq ?? data.sequence ?? 0);
+  return {
+    transport: 'station-sse',
+    ptid,
+    conversationId,
+    turnId,
+    sequence: Number.isSafeInteger(sequence) && sequence > 0 ? sequence : 0,
+    rawPayload: {
+      eventType: event,
+      data: { ...data },
+    },
+  };
+}
+
+function publishAgentTurnRuntimeEvent(
+  streamId: string,
+  streamGeneration: number,
+  ptid: string,
+  conversationId: string,
+  agentId: string,
+  event: StreamEvent,
+): void {
+  if (!ptid) return;
+  const payload: AgentTurnStreamEventPayload & {
+    sourceDelivery?: AgentTurnSourceDelivery;
+  } = {
+    streamId,
+    streamGeneration,
+    ptid,
+    conversationId,
+    agentId,
+    event: event.event,
+    data: event.data,
+    timestampMs: Date.now(),
+    sourceDelivery: event.sourceDelivery,
+  };
+  eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, payload);
 }
 
 export function streamAgentTurn(
@@ -6052,8 +6185,15 @@ export function streamAgentTurn(
   onEvent: (event: StreamEvent) => void,
   onDone: () => void,
   onError: (err: Error) => void,
-): AbortController {
-  const controller = new AbortController();
+  sourcePtid = '',
+): AgentTurnStreamController {
+  const controller = new AbortController() as AgentTurnStreamController;
+  const streamId = input.stream_id || createAgentTurnStreamId();
+  const streamGeneration = nextAgentTurnStreamGeneration();
+  Object.defineProperty(controller, 'streamGeneration', {
+    value: streamGeneration,
+    enumerable: true,
+  });
   log.info('api', 'streamAgentTurn started', { conversationId: input.conversation_id, agentId: input.agent_id });
   if (isHttpGatewayMode()) {
     (async () => {
@@ -6062,25 +6202,41 @@ export function streamAgentTurn(
       let lastSequence = 0;
       let settled = false;
       const forward = (event: StreamEvent): boolean => {
-        const seq = Number(event.data?.seq || 0);
+        const projectedEvent: StreamEvent = {
+          ...event,
+          data: { ...event.data, streamGeneration },
+        };
+        const seq = Number(projectedEvent.data?.seq || 0);
         if (Number.isFinite(seq) && seq > lastSequence) lastSequence = seq;
-        const eventTurnId = String(event.data?.turnId || event.data?.turn_id || '');
-        const eventConversationId = String(event.data?.conversationId || event.data?.conversation_id || '');
+        const eventTurnId = String(projectedEvent.data?.turnId || projectedEvent.data?.turn_id || '');
+        const eventConversationId = String(projectedEvent.data?.conversationId || projectedEvent.data?.conversation_id || '');
         if (eventTurnId) turnId = eventTurnId;
         if (eventConversationId) conversationId = eventConversationId;
-        onEvent(event);
-        const terminal = classifyAgentTurnTerminalEvent(event);
-        if (terminal === 'error') {
+        publishAgentTurnRuntimeEvent(
+          streamId,
+          streamGeneration,
+          sourcePtid,
+          conversationId || input.conversation_id,
+          input.agent_id,
+          projectedEvent,
+        );
+        onEvent(projectedEvent);
+        const terminal = classifyAgentTurnTerminalEvent(projectedEvent);
+        if (terminal === 'failed') {
           onError(new Error(String(
-            event.data?.error
-            || event.data?.terminal_reason
+            projectedEvent.data?.error
+            || projectedEvent.data?.terminal_reason
             || 'agent.error.streamFailed',
           )));
           settled = true;
           return true;
         }
-        if (terminal === 'complete' || terminal === 'queued') {
+        if (terminal === 'completed' || terminal === 'cancelled' || terminal === 'queued') {
           onDone();
+          settled = true;
+          return true;
+        }
+        if (terminal === 'interrupted') {
           settled = true;
           return true;
         }
@@ -6101,36 +6257,123 @@ export function streamAgentTurn(
           body: JSON.stringify({ ...input, stream: true }),
           signal: controller.signal,
         });
-        const terminal = await consumeAgentSSE(response, controller.signal, forward);
+        const admittedTurnId = response.headers.get('x-agent-turn-id')?.trim() || '';
+        if (admittedTurnId) turnId = admittedTurnId;
+        if (controller.signal.aborted) {
+          if (turnId) {
+            await api.cancelAgentTurn(turnId);
+          }
+          return;
+        }
+        const terminal = await consumeAgentSSE(
+          response,
+          controller.signal,
+          (event) => forward({
+            ...event,
+            sourceDelivery: createAgentTurnSourceDelivery(
+              event.event,
+              event.data,
+              sourcePtid,
+              conversationId || input.conversation_id,
+              turnId,
+            ),
+          }),
+        );
         if (!terminal && !controller.signal.aborted) {
           if (!turnId || !conversationId) {
             throw new Error('agent.error.streamIdentityMissing');
           }
-          onEvent({ event: 'reconciling', data: { turnId, conversationId, seq: lastSequence } });
+          forward({
+            event: 'connection_lost',
+            data: { turnId, conversationId, seq: lastSequence, reason: 'station_stream_closed' },
+          });
           let replayError: Error | null = null;
-          for (let attempt = 0; attempt <= AGENT_REPLAY_BACKOFF_MS.length; attempt += 1) {
+          for (let attempt = 0; attempt <= AGENT_REPLAY_RETRY_DELAYS_MS.length; attempt += 1) {
             if (attempt > 0) {
-              await waitForAgentReplay(AGENT_REPLAY_BACKOFF_MS[attempt - 1], controller.signal);
+              await waitForAgentReplay(AGENT_REPLAY_RETRY_DELAYS_MS[attempt - 1], controller.signal);
             }
+            const replayController = new AbortController();
+            const abortReplay = () => replayController.abort();
+            if (controller.signal.aborted) abortReplay();
+            else controller.signal.addEventListener('abort', abortReplay, { once: true });
+            const catchupDeadline = globalThis.setTimeout(
+              abortReplay,
+              AGENT_REPLAY_CATCHUP_TIMEOUT_MS,
+            );
             try {
+              forward({
+                event: 'reconnecting',
+                data: { turnId, conversationId, seq: lastSequence, attempt: attempt + 1 },
+              });
               const replay = await fetch(`${gatewayBase}/agent/turn/events`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-                body: JSON.stringify({
+                body: JSON.stringify(toAgentTurnReplayWireInput({
                   conversation_id: conversationId,
                   turn_id: turnId,
                   after_seq: lastSequence,
-                }),
-                signal: controller.signal,
+                })),
+                signal: replayController.signal,
               });
-              const replayTerminal = await consumeAgentSSE(replay, controller.signal, forward);
-              if (replayTerminal || settled) return;
-              replayError = new Error('agent.error.replayIncomplete');
+              forward({
+                event: 'replaying',
+                data: { turnId, conversationId, seq: lastSequence },
+              });
+              let liveTailEstablished = false;
+              const replayTerminal = await consumeAgentSSE(replay, replayController.signal, (frame) => {
+                const sourceFrame: StreamEvent = {
+                  ...frame,
+                  sourceDelivery: AGENT_REPLAY_CONTROL_EVENTS.has(frame.event)
+                    ? undefined
+                    : createAgentTurnSourceDelivery(
+                        frame.event,
+                        frame.data,
+                        sourcePtid,
+                        conversationId,
+                        turnId,
+                      ),
+                };
+                if (frame.event === 'catchup_done' && !liveTailEstablished) {
+                  liveTailEstablished = true;
+                  globalThis.clearTimeout(catchupDeadline);
+                  forward({
+                    event: 'reconciling',
+                    data: { turnId, conversationId, seq: lastSequence },
+                  });
+                  if (forward(sourceFrame)) return true;
+                  return forward({
+                    event: 'connected',
+                    data: { turnId, conversationId, seq: lastSequence },
+                  });
+                }
+                if (classifyAgentTurnTerminalEvent(sourceFrame) !== null) {
+                  globalThis.clearTimeout(catchupDeadline);
+                }
+                return forward(sourceFrame);
+              });
+              if (replayTerminal || settled || controller.signal.aborted) return;
+              replayError = new Error(
+                liveTailEstablished
+                  ? 'agent.error.replayTailClosed'
+                  : 'agent.error.replayIncomplete',
+              );
             } catch (error) {
               replayError = error instanceof Error ? error : new Error(String(error));
+            } finally {
+              globalThis.clearTimeout(catchupDeadline);
+              controller.signal.removeEventListener('abort', abortReplay);
             }
           }
-          throw replayError ?? new Error('agent.error.replayFailed');
+          forward({
+            event: 'recovery_failed',
+            data: {
+              turnId,
+              conversationId,
+              seq: lastSequence,
+              error: replayError?.message || 'agent.error.replayFailed',
+            },
+          });
+          return;
         }
       } catch (err: unknown) {
         if (!controller.signal.aborted && !settled) {
@@ -6143,6 +6386,9 @@ export function streamAgentTurn(
   (async () => {
     let unlistenLive: (() => void) | undefined;
     let settled = false;
+    let startCompleted = false;
+    let transportCancellationSent = false;
+    let capturedTurnId = '';
     const cleanup = () => {
       unlistenLive?.();
       unlistenLive = undefined;
@@ -6152,12 +6398,35 @@ export function streamAgentTurn(
       settled = true;
       cleanup();
     };
+    const cancelTransport = () => {
+      if (!startCompleted || transportCancellationSent) return;
+      transportCancellationSent = true;
+      void api.cancelAgentTurnStream(streamId).catch((error) => {
+        log.warn('api', 'Agent turn transport cancellation failed', {
+          streamId,
+          error: String(error),
+        });
+      });
+    };
+    const cancelSemanticTurn = () => {
+      if (!capturedTurnId) return;
+      void api.cancelAgentTurn(capturedTurnId).catch((error) => {
+        log.warn('api', 'Agent turn cancel failed', {
+          turnId: capturedTurnId,
+          error: String(error),
+        });
+      });
+    };
+    const abortNativeStream = () => {
+      cancelSemanticTurn();
+      cancelTransport();
+      cleanup();
+    };
+    controller.signal.addEventListener('abort', abortNativeStream, { once: true });
     try {
       const { listen } = await import('@tauri-apps/api/event');
-      const streamId = input.stream_id || createAgentTurnStreamId();
       let lastEventSeq = 0;
       let capturedConversationId = input.conversation_id || '';
-      let capturedTurnId = '';
 
       const forwardEvent = (payload: AgentTurnStreamPayload) => {
         const data: Record<string, unknown> = {};
@@ -6189,36 +6458,52 @@ export function streamAgentTurn(
           capturedConversationId = payload.data.conversation_id;
         }
 
-        eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
-          streamId: payload.streamId,
-          conversationId: capturedConversationId || input.conversation_id,
-          agentId: input.agent_id,
+        const event = {
           event: payload.event,
-          data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])),
-          timestampMs: Date.now(),
-        } satisfies AgentTurnStreamEventPayload);
-        onEvent({ event: payload.event, data });
+          data: { ...data, streamGeneration },
+          ptid: payload.ptid,
+        };
+        publishAgentTurnRuntimeEvent(
+          payload.streamId,
+          streamGeneration,
+          payload.ptid || '',
+          capturedConversationId || input.conversation_id,
+          input.agent_id,
+          event,
+        );
+        onEvent(event);
       };
 
       unlistenLive = await listen<AgentTurnStreamPayload>('agent:turn-stream-event', (tauriEvent) => {
         const payload = tauriEvent.payload;
         if (payload.streamId !== streamId) return;
         if (controller.signal.aborted) {
+          const abortedTurnId = typeof payload.data?.turnId === 'string'
+            ? payload.data.turnId
+            : typeof payload.data?.turn_id === 'string'
+              ? payload.data.turn_id
+              : '';
+          if (abortedTurnId) capturedTurnId = abortedTurnId;
+          cancelSemanticTurn();
           unlistenLive?.();
           return;
         }
         forwardEvent(payload);
+        if (payload.event === 'connection_lost' && payload.data?.recoveryHandoff === true) {
+          cleanup();
+          return;
+        }
         const terminal = classifyAgentTurnTerminalEvent({
           event: payload.event,
           data: payload.data || {},
         });
-        if (terminal === 'complete' || terminal === 'queued') {
+        if (terminal === 'completed' || terminal === 'cancelled' || terminal === 'queued') {
           unlistenLive?.();
           unlistenLive = undefined;
           onDone();
           settle();
         }
-        if (terminal === 'error') {
+        if (terminal === 'failed') {
           unlistenLive?.();
           unlistenLive = undefined;
           const data = payload.data || {};
@@ -6233,35 +6518,260 @@ export function streamAgentTurn(
           onError(err);
           settle();
         }
+        if (terminal === 'interrupted') {
+          settle();
+        }
       });
 
+      if (controller.signal.aborted) {
+        cleanup();
+        return;
+      }
       const result = await api.startAgentTurnStream({ ...input, stream_id: streamId });
+      startCompleted = true;
       if (result?.stream_id !== streamId) {
         cleanup();
         throw new Error('agent.error.streamIdMismatch');
       }
       if (controller.signal.aborted) {
-        if (capturedTurnId) {
-          api.cancelAgentTurn(capturedTurnId).catch((error) => {
-            log.warn('api', 'Agent turn cancel failed', { error: String(error) });
-          });
-        }
-        cleanup();
+        abortNativeStream();
         return;
       }
-
-      controller.signal.addEventListener('abort', () => {
-        if (capturedTurnId) {
-          api.cancelAgentTurn(capturedTurnId).catch((error) => {
-            log.warn('api', 'Agent turn cancel failed', { error: String(error) });
-          });
-        }
-        cleanup();
-      }, { once: true });
     } catch (err: unknown) {
       cleanup();
       if (!settled) {
         onError(err instanceof Error ? err : new Error(String(err)));
+      }
+    }
+  })();
+  return controller;
+}
+
+export function streamAgentTurnReplay(
+  input: Omit<AgentTurnReplayStreamInput, 'stream_id'>,
+  onEvent: (event: StreamEvent) => void,
+  onError: (error: Error) => void,
+  sourcePtid = '',
+): AbortController {
+  const controller = new AbortController();
+  const streamId = createAgentTurnStreamId();
+  let catchupEstablished = false;
+  let replayErrorReported = false;
+  const clearCatchupDeadline = () => {
+    globalThis.clearTimeout(catchupDeadline);
+  };
+  const deliverReplayEvent = (event: StreamEvent) => {
+    if (
+      event.event === 'catchup_done'
+      || classifyAgentTurnTerminalEvent(event) !== null
+    ) {
+      catchupEstablished = true;
+      clearCatchupDeadline();
+    }
+    onEvent(event);
+  };
+  const reportReplayError = (error: Error) => {
+    if (replayErrorReported || controller.signal.aborted) return;
+    replayErrorReported = true;
+    clearCatchupDeadline();
+    onError(error);
+  };
+  const catchupDeadline = globalThis.setTimeout(() => {
+    if (catchupEstablished || controller.signal.aborted) return;
+    reportReplayError(new Error('agent.error.replayCatchupTimeout'));
+    controller.abort();
+  }, AGENT_REPLAY_CATCHUP_TIMEOUT_MS);
+  controller.signal.addEventListener('abort', clearCatchupDeadline, { once: true });
+
+  if (isHttpGatewayMode()) {
+    void (async () => {
+      const gatewayBase = String((window as any).__PT_GATEWAY_BASE__ || '');
+      let replayError: Error | null = null;
+      for (let attempt = 0; attempt <= AGENT_REPLAY_RETRY_DELAYS_MS.length; attempt += 1) {
+        try {
+          if (attempt > 0) {
+            await waitForAgentReplay(
+              AGENT_REPLAY_RETRY_DELAYS_MS[attempt - 1],
+              controller.signal,
+            );
+          }
+          deliverReplayEvent({
+            event: 'reconnecting',
+            ptid: sourcePtid,
+            data: {
+              turnId: input.turn_id,
+              conversationId: input.conversation_id,
+              seq: input.after_seq,
+              attempt: attempt + 1,
+            },
+          });
+          const response = await fetch(`${gatewayBase}/agent/turn/events`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+            body: JSON.stringify(toAgentTurnReplayWireInput(input)),
+            signal: controller.signal,
+          });
+          deliverReplayEvent({
+            event: 'replaying',
+            ptid: sourcePtid,
+            data: {
+              turnId: input.turn_id,
+              conversationId: input.conversation_id,
+              seq: input.after_seq,
+            },
+          });
+          let liveTailEstablished = false;
+          const terminal = await consumeAgentSSE(response, controller.signal, (event) => {
+            const sourceEvent: StreamEvent = {
+              ...event,
+              ptid: sourcePtid,
+              sourceDelivery: AGENT_REPLAY_CONTROL_EVENTS.has(event.event)
+                ? undefined
+                : createAgentTurnSourceDelivery(
+                    event.event,
+                    event.data,
+                    sourcePtid,
+                    input.conversation_id,
+                    input.turn_id,
+                  ),
+            };
+            const terminalStatus = classifyAgentTurnTerminalEvent(sourceEvent);
+            if (
+              sourceEvent.event === 'snapshot'
+              && terminalStatus !== null
+              && !liveTailEstablished
+            ) {
+              liveTailEstablished = true;
+              const recoveryData = {
+                turnId: input.turn_id,
+                conversationId: input.conversation_id,
+                seq: sourceEvent.data.seq ?? input.after_seq,
+              };
+              deliverReplayEvent({
+                event: 'reconciling',
+                ptid: sourcePtid,
+                data: recoveryData,
+              });
+              deliverReplayEvent({
+                event: 'connected',
+                ptid: sourcePtid,
+                data: recoveryData,
+              });
+              deliverReplayEvent(sourceEvent);
+              return true;
+            }
+            if (sourceEvent.event === 'catchup_done' && !liveTailEstablished) {
+              liveTailEstablished = true;
+              deliverReplayEvent({
+                event: 'reconciling',
+                ptid: sourcePtid,
+                data: {
+                  turnId: input.turn_id,
+                  conversationId: input.conversation_id,
+                  seq: sourceEvent.data.seq ?? input.after_seq,
+                },
+              });
+              deliverReplayEvent(sourceEvent);
+              deliverReplayEvent({
+                event: 'connected',
+                ptid: sourcePtid,
+                data: {
+                  turnId: input.turn_id,
+                  conversationId: input.conversation_id,
+                  seq: sourceEvent.data.seq ?? input.after_seq,
+                },
+              });
+            } else {
+              deliverReplayEvent(sourceEvent);
+            }
+            return terminalStatus !== null;
+          });
+          if (terminal || controller.signal.aborted) return;
+          replayError = new Error(
+            liveTailEstablished
+              ? 'agent.error.replayTailClosed'
+              : 'agent.error.replayIncomplete',
+          );
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          replayError = error instanceof Error ? error : new Error(String(error));
+        }
+      }
+      if (!controller.signal.aborted) {
+        reportReplayError(replayError ?? new Error('agent.error.replayFailed'));
+      }
+    })();
+    return controller;
+  }
+
+  void (async () => {
+    let unlisten: (() => void) | undefined;
+    let replayStarted = false;
+    let cancellationSent = false;
+    const cleanup = () => {
+      unlisten?.();
+      unlisten = undefined;
+    };
+    const cancelReplay = () => {
+      cleanup();
+      if (!replayStarted || cancellationSent) return;
+      cancellationSent = true;
+      void api.cancelAgentTurnReplayStream(streamId).catch((error) => {
+        log.warn('api', 'Agent turn replay cancellation failed', {
+          streamId,
+          error: String(error),
+        });
+      });
+    };
+    controller.signal.addEventListener('abort', cancelReplay, { once: true });
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      unlisten = await listen<AgentTurnStreamPayload>(
+        'agent:turn-stream-event',
+        (tauriEvent) => {
+          const payload = tauriEvent.payload;
+          if (payload.streamId !== streamId || controller.signal.aborted) return;
+          const event: StreamEvent = {
+            event: payload.event,
+            data: payload.data || {},
+            ptid: payload.ptid,
+            sourceDelivery: AGENT_REPLAY_CONTROL_EVENTS.has(payload.event)
+              ? undefined
+              : createAgentTurnSourceDelivery(
+                  payload.event,
+                  payload.data || {},
+                  payload.ptid || sourcePtid,
+                  input.conversation_id,
+                  input.turn_id,
+                ),
+          };
+          deliverReplayEvent(event);
+          if (
+            classifyAgentTurnTerminalEvent(event) !== null
+            || event.event === 'recovery_failed'
+          ) {
+            cleanup();
+          }
+          if (event.event === 'recovery_failed') {
+            reportReplayError(new Error(String(event.data.error || 'agent.error.replayFailed')));
+          }
+        },
+      );
+      const result = await api.startAgentTurnReplayStream({
+        ...input,
+        stream_id: streamId,
+      });
+      replayStarted = true;
+      if (result.stream_id !== streamId) {
+        throw new Error('agent.error.streamIdMismatch');
+      }
+      if (controller.signal.aborted) {
+        cancelReplay();
+      }
+    } catch (error) {
+      cleanup();
+      if (!controller.signal.aborted) {
+        reportReplayError(error instanceof Error ? error : new Error(String(error)));
       }
     }
   })();

@@ -34,6 +34,8 @@
 // 2026-04-11 — Growth Metrics Integration: injected GrowthMetricsService dependency,
 //   emit RecordEvent on turn completed (turn_completed), failed (turn_failed),
 //   and retried (turn_retried).
+// 2026-08-28 — Route every post-admission event and context preparation
+//   failure through the durable Turn lifecycle settlement authority.
 
 package service
 
@@ -120,6 +122,7 @@ type TurnEvent struct {
 	Type             string `json:"type"`
 	Seq              int64  `json:"seq,omitempty"`
 	TurnID           string `json:"turnId,omitempty"`
+	AttemptID        string `json:"attemptId,omitempty"`
 	ConversationID   string `json:"conversationId,omitempty"`
 	AgentID          string `json:"agentId,omitempty"`
 	Stage            string `json:"stage,omitempty"`
@@ -139,6 +142,32 @@ type TurnEvent struct {
 	Iteration        int    `json:"iteration,omitempty"`
 }
 
+var errTurnEventPersistence = errors.New("turn event persistence failed")
+var errExplicitUserCancellation = errors.New("turn explicitly cancelled by user")
+var errTurnExecutionSuperseded = errors.New("turn execution superseded by a newer registration")
+
+type activeTurnRegistration struct {
+	generation uint64
+	cancel     context.CancelCauseFunc
+}
+
+type turnExecutionOwnership struct {
+	turnID     string
+	generation uint64
+}
+
+type turnExecutionOwnershipContextKey struct{}
+
+type turnCancellationResult struct {
+	Event     TurnEvent
+	Status    string
+	Cancelled bool
+}
+
+func IsTurnEventPersistenceError(err error) bool {
+	return errors.Is(err, errTurnEventPersistence)
+}
+
 type continuationProviderCall func(
 	context.Context,
 	*TurnConfig,
@@ -147,6 +176,59 @@ type continuationProviderCall func(
 	string,
 	[]domain.Message,
 ) (string, []ProviderToolCall, []domain.ProviderCallRecord, bool, error)
+
+type executionLifecycle struct {
+	ctx       context.Context
+	cancel    context.CancelFunc
+	mu        sync.Mutex
+	stopping  bool
+	active    sync.WaitGroup
+	drained   chan struct{}
+	drainOnce sync.Once
+}
+
+func newExecutionLifecycle(parent context.Context) *executionLifecycle {
+	ctx, cancel := context.WithCancel(parent)
+	return &executionLifecycle{
+		ctx:     ctx,
+		cancel:  cancel,
+		drained: make(chan struct{}),
+	}
+}
+
+func (l *executionLifecycle) acquire() (context.Context, func(), bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.stopping || l.ctx.Err() != nil {
+		return l.ctx, func() {}, false
+	}
+	l.active.Add(1)
+
+	var once sync.Once
+	return l.ctx, func() {
+		once.Do(l.active.Done)
+	}, true
+}
+
+func (l *executionLifecycle) stop(ctx context.Context) error {
+	l.mu.Lock()
+	l.stopping = true
+	l.cancel()
+	l.drainOnce.Do(func() {
+		go func() {
+			l.active.Wait()
+			close(l.drained)
+		}()
+	})
+	l.mu.Unlock()
+
+	select {
+	case <-l.drained:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("wait for Agent execution lifecycle shutdown: %w", ctx.Err())
+	}
+}
 
 // ---------------------------------------------------------------------------
 // TurnService
@@ -157,31 +239,33 @@ type continuationProviderCall func(
 // credential lease → provider call → error recovery → tool dispatch →
 // nudge evaluation → persistence.
 type TurnService struct {
-	errorClassifier     *ErrorClassifierService
-	memoryService       *MemoryService
-	skillService        *SkillService
-	promptAssembly      *PromptAssemblyService
-	compression         *CompressionService
-	providerService     *ProviderService
-	credentialPool      *CredentialPoolService
-	delegation          *DelegationService
-	toolRegistry        *ToolRegistryService
-	reviewService       *ReviewService
-	growthMetrics       *GrowthMetricsService
-	convService         *ConversationService
-	nudgeState          *domain.NudgeState
-	liveResumeBroker    *LiveResumeBroker
-	toolDispatch        *ToolDispatchService
-	chatTaskService     *ChatTaskService
-	eventBus            domain.EventBus
-	eventWriter         *TaskEventWriter
-	activeTurns         sync.Mutex
-	activeTurnCancel    map[string]context.CancelFunc
-	admissionResolver   *RuntimeAdmissionResolver
-	capabilityReadiness *CapabilityAuthorityReadinessService
-	turnAdmission       *TurnAdmissionService
-	attachmentAdmission *AttachmentAdmissionService
-	resumeProviderCall  continuationProviderCall
+	errorClassifier      *ErrorClassifierService
+	memoryService        *MemoryService
+	skillService         *SkillService
+	promptAssembly       *PromptAssemblyService
+	compression          *CompressionService
+	providerService      *ProviderService
+	credentialPool       *CredentialPoolService
+	delegation           *DelegationService
+	toolRegistry         *ToolRegistryService
+	reviewService        *ReviewService
+	growthMetrics        *GrowthMetricsService
+	convService          *ConversationService
+	nudgeState           *domain.NudgeState
+	liveResumeBroker     *LiveResumeBroker
+	toolDispatch         *ToolDispatchService
+	chatTaskService      *ChatTaskService
+	eventBus             domain.EventBus
+	eventWriter          *TaskEventWriter
+	activeTurns          sync.Mutex
+	activeTurnCancel     map[string]activeTurnRegistration
+	activeTurnGeneration uint64
+	lifecycle            *executionLifecycle
+	admissionResolver    *RuntimeAdmissionResolver
+	capabilityReadiness  *CapabilityAuthorityReadinessService
+	turnAdmission        *TurnAdmissionService
+	attachmentAdmission  *AttachmentAdmissionService
+	resumeProviderCall   continuationProviderCall
 }
 
 func (s *TurnService) SetAdmissionResolver(r *RuntimeAdmissionResolver) {
@@ -288,7 +372,7 @@ func NewTurnService(
 		convService:      convService,
 		nudgeState:       domain.NewNudgeState(),
 		liveResumeBroker: NewLiveResumeBroker(),
-		activeTurnCancel: make(map[string]context.CancelFunc),
+		activeTurnCancel: make(map[string]activeTurnRegistration),
 	}
 }
 
@@ -299,6 +383,43 @@ func (s *TurnService) SetLiveResumeBroker(broker *LiveResumeBroker) {
 func (s *TurnService) SetEventBus(eventBus domain.EventBus) {
 	s.eventBus = eventBus
 	s.eventWriter = NewTaskEventWriter(eventBus)
+}
+
+// SetExecutionLifecycle binds detached turn execution to the Station
+// subserver lifecycle rather than to an individual transport request.
+func (s *TurnService) SetExecutionLifecycle(ctx context.Context) context.Context {
+	lifecycle := newExecutionLifecycle(ctx)
+	s.activeTurns.Lock()
+	s.lifecycle = lifecycle
+	s.activeTurns.Unlock()
+	return lifecycle.ctx
+}
+
+// RunExecutionWorker registers a long-lived worker with the same shutdown
+// barrier as detached turns. Stop can therefore wait until the worker has
+// returned from any in-flight reconciliation before persistence is torn down.
+func (s *TurnService) RunExecutionWorker(worker func(context.Context)) bool {
+	ctx, release, accepted := s.acquireExecutionLifecycle(context.Background())
+	if !accepted {
+		return false
+	}
+	go func() {
+		defer release()
+		worker(ctx)
+	}()
+	return true
+}
+
+// StopExecutionLifecycle closes lifecycle admission, cancels every registered
+// operation, and waits for workers and detached turns to drain.
+func (s *TurnService) StopExecutionLifecycle(ctx context.Context) error {
+	s.activeTurns.Lock()
+	lifecycle := s.lifecycle
+	s.activeTurns.Unlock()
+	if lifecycle == nil {
+		return nil
+	}
+	return lifecycle.stop(ctx)
 }
 
 func (s *TurnService) RunTurnQueueWorker(ctx context.Context) {
@@ -342,11 +463,14 @@ func (s *TurnService) drainQueuedTurns(ctx context.Context) error {
 		if admitted == nil {
 			continue
 		}
-		go s.executeAdmittedQueuedTurn(
-			context.WithoutCancel(ctx),
-			conversation.ActorID,
-			admitted,
+		turnCtx, releaseTurn := s.RegisterTurn(
+			ctx,
+			admitted.Admission.GetTurnId(),
 		)
+		go func(actorID string, admittedTurn *AdmittedTurn) {
+			defer releaseTurn()
+			s.executeAdmittedQueuedTurn(turnCtx, actorID, admittedTurn)
+		}(conversation.ActorID, admitted)
 	}
 	return nil
 }
@@ -362,14 +486,16 @@ func (s *TurnService) executeAdmittedQueuedTurn(
 	request := admitted.Request
 	config, configErr := s.queuedTurnConfig(actorID, request, admitted.Admission.GetTurnId())
 	if configErr != nil {
-		_ = s.failTurn(
+		if err := s.failTurn(
 			ctx,
 			request.GetAgentId(),
 			admitted.Admission.GetTurnId(),
 			"",
 			"",
 			"failed to decode queued runtime budget",
-		)
+		); err != nil {
+			logger.Errorf(ctx, "failed to settle queued turn after config decode failure: turn_id=%s err=%v", admitted.Admission.GetTurnId(), err)
+		}
 		return
 	}
 	if s.chatTaskService != nil {
@@ -381,14 +507,16 @@ func (s *TurnService) executeAdmittedQueuedTurn(
 			request.GetUserInput(),
 		)
 		if err != nil {
-			_ = s.failTurn(
+			if settleErr := s.failTurn(
 				ctx,
 				request.GetAgentId(),
 				admitted.Admission.GetTurnId(),
 				"",
 				"",
 				"failed to prepare queued chat task",
-			)
+			); settleErr != nil {
+				logger.Errorf(ctx, "failed to settle queued turn after task preparation failure: turn_id=%s err=%v", admitted.Admission.GetTurnId(), settleErr)
+			}
 			return
 		}
 		stepID, err := s.chatTaskService.BeginChatStep(
@@ -398,36 +526,27 @@ func (s *TurnService) executeAdmittedQueuedTurn(
 			request.GetUserInput(),
 		)
 		if err != nil {
-			_ = s.failTurn(
+			if settleErr := s.failTurn(
 				ctx,
 				request.GetAgentId(),
 				admitted.Admission.GetTurnId(),
 				taskID,
 				"",
 				"failed to begin queued chat step",
-			)
+			); settleErr != nil {
+				logger.Errorf(ctx, "failed to settle queued turn after step creation failure: turn_id=%s err=%v", admitted.Admission.GetTurnId(), settleErr)
+			}
 			return
 		}
 		config.TaskID = taskID
 		config.StepID = stepID
 	}
-	turn, err := s.ExecuteTurn(ctx, config, request.GetUserInput())
-	if err != nil {
-		if s.chatTaskService != nil && config.StepID != "" {
-			_ = s.chatTaskService.FailChatStep(ctx, config.TaskID, config.StepID, err.Error())
-		}
-		return
-	}
-	if s.chatTaskService != nil &&
-		config.StepID != "" &&
-		turn != nil &&
-		turn.Status == domain.TurnStatusCompleted {
-		_ = s.chatTaskService.FinishChatStep(
+	if _, err := s.ExecuteTurn(ctx, config, request.GetUserInput()); err != nil {
+		logger.Warnf(
 			ctx,
-			config.TaskID,
-			config.StepID,
-			turn.TurnID,
-			turn.FinalResponse,
+			"queued turn execution settled with error: turn_id=%s err=%v",
+			admitted.Admission.GetTurnId(),
+			err,
 		)
 	}
 }
@@ -603,68 +722,108 @@ func (s *TurnService) cancelActiveTurn(turnID string) bool {
 		return false
 	}
 	s.activeTurns.Lock()
-	cancel := s.activeTurnCancel[turnID]
+	registration, ok := s.activeTurnCancel[turnID]
 	s.activeTurns.Unlock()
-	if cancel == nil {
+	if !ok || registration.cancel == nil {
 		return false
 	}
-	cancel()
+	registration.cancel(errExplicitUserCancellation)
 	return true
 }
 
 func (s *TurnService) RequestCancelTurn(ctx context.Context, ptid, turnID string) (string, error) {
-	db, err := s.getDB(ctx)
+	result, err := s.cancelTurnWithResult(
+		ctx,
+		"",
+		strings.TrimSpace(turnID),
+		"",
+		"",
+		strings.TrimSpace(ptid),
+	)
 	if err != nil {
 		return "", err
 	}
-	var turn persistence.AgentTurn
-	if err := db.WithContext(ctx).Table("agent_turns AS turn").
-		Select("turn.*").
-		Joins("JOIN agent_conversations AS conversation ON conversation.id = turn.conversation_id").
-		Where("turn.id = ? AND conversation.ptid = ?", strings.TrimSpace(turnID), strings.TrimSpace(ptid)).
-		First(&turn).Error; err != nil {
-		return "", errcode.New(errcode.AgentNotFound, http.StatusNotFound, "turn not found", err)
+	if result.Cancelled {
+		s.cancelActiveTurn(turnID)
 	}
-	if turn.Status != string(domain.TurnStatusRunning) &&
-		turn.Status != string(domain.TurnStatusWaitingLocalTool) {
-		return turn.Status, nil
-	}
-	if s.cancelActiveTurn(turn.ID) {
-		return "cancelling", nil
-	}
-	if err := s.cancelTurn(ctx, turn.AgentID, turn.ID, "", ""); err != nil {
-		return "", err
-	}
-	s.emitTurnEvent(ctx, &TurnConfig{
-		AgentID:        turn.AgentID,
-		ConversationID: turn.ConversationID,
-	}, turn.ID, TurnEvent{
-		Type:  "cancelled",
-		Stage: "turn_cancelled",
-	})
-	return string(domain.TurnStatusCancelled), nil
+	return result.Status, nil
 }
 
 func (s *TurnService) RegisterTurn(
 	ctx context.Context,
 	turnID string,
 ) (context.Context, func()) {
-	executionCtx, cancel := context.WithCancel(ctx)
-	s.activeTurns.Lock()
-	if s.activeTurnCancel == nil {
-		s.activeTurnCancel = make(map[string]context.CancelFunc)
+	parent, releaseLifecycle, accepted := s.acquireExecutionLifecycle(ctx)
+	if !accepted {
+		return parent, func() {}
 	}
-	s.activeTurnCancel[turnID] = cancel
+	s.activeTurns.Lock()
+	executionCtx, cancel := context.WithCancelCause(parent)
+	if s.activeTurnCancel == nil {
+		s.activeTurnCancel = make(map[string]activeTurnRegistration)
+	}
+	s.activeTurnGeneration++
+	registration := activeTurnRegistration{
+		generation: s.activeTurnGeneration,
+		cancel:     cancel,
+	}
+	previous, replaced := s.activeTurnCancel[turnID]
+	s.activeTurnCancel[turnID] = registration
 	s.activeTurns.Unlock()
+	if replaced && previous.cancel != nil {
+		previous.cancel(errTurnExecutionSuperseded)
+	}
+	executionCtx = context.WithValue(executionCtx, turnExecutionOwnershipContextKey{}, turnExecutionOwnership{
+		turnID:     turnID,
+		generation: registration.generation,
+	})
 	var once sync.Once
 	return executionCtx, func() {
 		once.Do(func() {
-			cancel()
+			cancel(nil)
 			s.activeTurns.Lock()
-			delete(s.activeTurnCancel, turnID)
+			if current, exists := s.activeTurnCancel[turnID]; exists &&
+				current.generation == registration.generation {
+				delete(s.activeTurnCancel, turnID)
+			}
 			s.activeTurns.Unlock()
+			releaseLifecycle()
 		})
 	}
+}
+
+func (s *TurnService) acquireExecutionLifecycle(
+	fallback context.Context,
+) (context.Context, func(), bool) {
+	s.activeTurns.Lock()
+	lifecycle := s.lifecycle
+	s.activeTurns.Unlock()
+	if lifecycle == nil {
+		return context.WithoutCancel(fallback), func() {}, true
+	}
+	return lifecycle.acquire()
+}
+
+func (s *TurnService) lockTurnExecutionOwnership(
+	ctx context.Context,
+	turnID string,
+) (func(), error) {
+	ownership, fenced := ctx.Value(turnExecutionOwnershipContextKey{}).(turnExecutionOwnership)
+	if !fenced {
+		return func() {}, nil
+	}
+	if ownership.turnID != strings.TrimSpace(turnID) {
+		return func() {}, errTurnExecutionSuperseded
+	}
+
+	s.activeTurns.Lock()
+	current, exists := s.activeTurnCancel[ownership.turnID]
+	if !exists || current.generation != ownership.generation ||
+		errors.Is(context.Cause(ctx), errTurnExecutionSuperseded) {
+		s.activeTurns.Unlock()
+		return func() {}, errTurnExecutionSuperseded
+	}
+	return s.activeTurns.Unlock, nil
 }
 
 func (s *TurnService) AwaitLiveResume(ctx context.Context, taskID, stepID, turnID, interruptID string) (LiveResumeDecision, error) {
@@ -675,8 +834,91 @@ func (s *TurnService) AwaitLiveResume(ctx context.Context, taskID, stepID, turnI
 	return broker.Await(ctx, taskID, stepID, turnID, interruptID)
 }
 
-func (s *TurnService) emitTurnEvent(ctx context.Context, config *TurnConfig, turnID string, event TurnEvent) {
+func (s *TurnService) emitTurnEvent(ctx context.Context, config *TurnConfig, turnID string, event TurnEvent) error {
 	if config == nil {
+		return fmt.Errorf("turn event config is required")
+	}
+	unlockOwnership, err := s.lockTurnExecutionOwnership(ctx, turnID)
+	if err != nil {
+		return err
+	}
+	ownershipLocked := true
+	defer func() {
+		if ownershipLocked {
+			unlockOwnership()
+		}
+	}()
+
+	event.TurnID = turnID
+	if event.ConversationID == "" {
+		event.ConversationID = config.ConversationID
+	}
+	if event.AgentID == "" {
+		event.AgentID = config.AgentID
+	}
+	if event.AttemptID == "" {
+		event.AttemptID = config.AttemptID
+	}
+	if s.convService != nil && event.ConversationID != "" && event.TurnID != "" {
+		payload := map[string]interface{}{}
+		encoded, err := json.Marshal(event)
+		if err != nil {
+			return fmt.Errorf("%w: encode turn_id=%s type=%s: %w", errTurnEventPersistence, event.TurnID, event.Type, err)
+		}
+		if err := json.Unmarshal(encoded, &payload); err != nil {
+			return fmt.Errorf("%w: decode turn_id=%s type=%s: %w", errTurnEventPersistence, event.TurnID, event.Type, err)
+		}
+		var seq int64
+		if event.Type == "text" && event.Text != "" {
+			var assistantMessageID string
+			seq, assistantMessageID, err = s.convService.PersistTurnTextEvent(
+				ctx,
+				event.ConversationID,
+				event.TurnID,
+				event.AttemptID,
+				config.AssistantMessageID,
+				config.Model,
+				config.AssistantBranchID,
+				config.AssistantParentID,
+				config.AssistantReplacesID,
+				payload,
+				event.Text,
+			)
+			if err == nil && config.AssistantMessageID == "" {
+				config.AssistantMessageID = assistantMessageID
+			}
+		} else {
+			seq, err = s.convService.PersistTurnAttemptEvent(
+				ctx,
+				event.ConversationID,
+				event.TurnID,
+				event.AttemptID,
+				event.Type,
+				payload,
+			)
+		}
+		if err != nil {
+			return fmt.Errorf(
+				"%w: turn_id=%s type=%s: %w",
+				errTurnEventPersistence,
+				event.TurnID,
+				event.Type,
+				err,
+			)
+		}
+		event.Seq = seq
+	}
+	unlockOwnership()
+	ownershipLocked = false
+	if config.EventSink != nil {
+		config.EventSink(ctx, event)
+	}
+
+	return nil
+}
+
+func emitLiveTurnEvent(ctx context.Context, config *TurnConfig, turnID string, event TurnEvent) {
+	if config == nil || config.EventSink == nil {
 		return
 	}
 	event.TurnID = turnID
@@ -686,26 +928,133 @@ func (s *TurnService) emitTurnEvent(ctx context.Context, config *TurnConfig, tur
 	if event.AgentID == "" {
 		event.AgentID = config.AgentID
 	}
-	if s.convService != nil && event.ConversationID != "" && event.TurnID != "" {
-		payload := map[string]interface{}{}
-		encoded, _ := json.Marshal(event)
-		_ = json.Unmarshal(encoded, &payload)
-		seq, err := s.convService.PersistTurnEvent(
+	if event.AttemptID == "" {
+		event.AttemptID = config.AttemptID
+	}
+	config.EventSink(ctx, event)
+}
+
+func (s *TurnService) failTurnAfterError(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	reason string,
+	cause error,
+) error {
+	event, err := s.failTurnWithEvent(
+		ctx,
+		config.AgentID,
+		turnID,
+		config.TaskID,
+		config.StepID,
+		reason,
+	)
+	if err != nil {
+		return errors.Join(cause, err)
+	}
+	if event.Seq > 0 {
+		emitLiveTurnEvent(context.WithoutCancel(ctx), config, turnID, event)
+	}
+	return cause
+}
+
+func (s *TurnService) cancelTurnAfterError(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	cause error,
+) error {
+	event, err := s.cancelTurnWithEvent(
+		ctx,
+		config.AgentID,
+		turnID,
+		config.TaskID,
+		config.StepID,
+	)
+	if err != nil {
+		return errors.Join(cause, err)
+	}
+	if event.Seq > 0 {
+		emitLiveTurnEvent(context.WithoutCancel(ctx), config, turnID, event)
+	}
+	return cause
+}
+
+func (s *TurnService) interruptTurnAfterError(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	reason string,
+	cause error,
+) error {
+	event, err := s.interruptTurnWithEvent(
+		ctx,
+		config.AgentID,
+		turnID,
+		config.ConversationID,
+		config.TaskID,
+		config.StepID,
+		reason,
+	)
+	if err != nil {
+		return errors.Join(cause, err)
+	}
+	if event.Seq > 0 {
+		emitLiveTurnEvent(context.WithoutCancel(ctx), config, turnID, event)
+	}
+	return cause
+}
+
+func (s *TurnService) settleAdmittedTurnAfterError(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	reason string,
+	cause error,
+) error {
+	semanticCause := executionContextError(ctx)
+	if semanticCause == nil {
+		semanticCause = cause
+	}
+	returnedCause := cause
+	if returnedCause == nil {
+		returnedCause = semanticCause
+	} else if semanticCause != nil && !errors.Is(returnedCause, semanticCause) {
+		returnedCause = errors.Join(returnedCause, semanticCause)
+	}
+
+	if errors.Is(semanticCause, errTurnExecutionSuperseded) {
+		return returnedCause
+	}
+	if errors.Is(semanticCause, errExplicitUserCancellation) {
+		return s.cancelTurnAfterError(ctx, config, turnID, returnedCause)
+	}
+	if isStationLifecycleCancellation(ctx, semanticCause) {
+		return s.interruptTurnAfterError(
 			ctx,
-			event.ConversationID,
-			event.TurnID,
-			event.Type,
-			payload,
+			config,
+			turnID,
+			"station_lifecycle_interrupted",
+			returnedCause,
 		)
-		if err != nil {
-			logger.Warnf(ctx, "failed to persist turn event: turn_id=%s type=%s err=%v", event.TurnID, event.Type, err)
-		} else {
-			event.Seq = seq
-		}
 	}
-	if config.EventSink != nil {
-		config.EventSink(ctx, event)
+	if budgetReason, exhausted := runtimeBudgetExhaustionReason(semanticCause); exhausted {
+		reason = budgetReason
 	}
+	return s.failTurnAfterError(ctx, config, turnID, reason, returnedCause)
+}
+
+func (s *TurnService) SettleAdmittedTurnAfterError(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	reason string,
+	cause error,
+) error {
+	if config == nil {
+		config = &TurnConfig{}
+	}
+	return s.settleAdmittedTurnAfterError(ctx, config, turnID, reason, cause)
 }
 
 // ---------------------------------------------------------------------------
@@ -745,14 +1094,28 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		ctx, release = s.RegisterTurn(ctx, config.TurnID)
 		defer release()
 	}
+	admittedTurnID := strings.TrimSpace(config.PrecreatedTurnID)
+	if admittedTurnID == "" {
+		admittedTurnID = strings.TrimSpace(config.ExistingTurnID)
+	}
+	settleAdmissionFailure := func(reason string, cause error) error {
+		if admittedTurnID == "" {
+			return cause
+		}
+		return s.settleAdmittedTurnAfterError(ctx, config, admittedTurnID, reason, cause)
+	}
 
 	// Guard: reject turns that exceed the maximum delegation depth to prevent
 	// unbounded recursive delegation chains.
 	// Fix 2026-04-11: delegation depth was never checked, allowing infinite recursion.
 	if config.Depth > domain.MaxDelegationDepth {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+		cause := errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
 			fmt.Sprintf("delegation depth %d exceeds maximum %d", config.Depth, domain.MaxDelegationDepth),
-			nil)
+			nil,
+		)
+		return nil, settleAdmissionFailure("delegation depth rejected", cause)
 	}
 
 	// Resolve agent identity/config defaults from DB when not provided per-turn.
@@ -765,17 +1128,18 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 	thinkingMode, err := normalizeThinkingMode(config.ThinkingMode)
 	if err != nil {
-		return nil, err
+		return nil, settleAdmissionFailure("thinking mode rejected", err)
 	}
 	config.ThinkingMode = thinkingMode
 
 	if s.admissionResolver == nil {
-		return nil, errcode.New(
+		cause := errcode.New(
 			errcode.AgentInvalidSourceState,
 			http.StatusConflict,
 			"runtime admission authority is required",
 			nil,
 		)
+		return nil, settleAdmissionFailure("runtime admission authority is unavailable", cause)
 	}
 	runtimeSnapshot, admitErr := s.admissionResolver.Resolve(
 		ctx,
@@ -784,14 +1148,14 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		config.Model,
 	)
 	if admitErr != nil {
-		return nil, admitErr
+		return nil, settleAdmissionFailure("runtime admission rejected", admitErr)
 	}
 	config.RuntimeBudget, err = effectiveRuntimeBudget(
 		runtimeSnapshot.Budget,
 		config.RequestedBudgetJSON,
 	)
 	if err != nil {
-		return nil, err
+		return nil, settleAdmissionFailure("runtime budget rejected", err)
 	}
 	runtimeSnapshot.Budget = cloneRuntimeBudget(config.RuntimeBudget)
 	admittedAttachments, attachmentErr := s.attachmentAdmission.Admit(
@@ -803,17 +1167,10 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		config.RuntimeBudget,
 	)
 	if attachmentErr != nil {
-		if config.PrecreatedTurnID != "" {
-			_ = s.failTurn(
-				ctx,
-				config.AgentID,
-				config.PrecreatedTurnID,
-				config.TaskID,
-				config.StepID,
-				"attachment admission failed before execution",
-			)
-		}
-		return nil, attachmentErr
+		return nil, settleAdmissionFailure(
+			"attachment admission failed before execution",
+			attachmentErr,
+		)
 	}
 	config.AdmittedAttachments = admittedAttachments
 	config.Attachments = attachmentRefs(admittedAttachments)
@@ -822,13 +1179,39 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	// runtime binding, message, or provider state is persisted.
 	turnRecord, err := s.createOrReopenTurnRecord(ctx, config, userInput)
 	if err != nil {
-		return nil, err
+		return nil, settleAdmissionFailure("failed to establish admitted turn record", err)
 	}
 	turnID := turnRecord.ID
 	if config.AttemptID == "" {
 		config.AttemptID, err = s.ensureInitialTurnAttempt(ctx, turnID)
 		if err != nil {
-			return nil, err
+			return nil, s.settleAdmittedTurnAfterError(
+				ctx,
+				config,
+				turnID,
+				"failed to establish admitted turn attempt",
+				err,
+			)
+		}
+	}
+	ctx, cancelRuntimeBudget := withRuntimeBudgetDeadline(
+		ctx,
+		config.RuntimeBudget,
+		turnRecord.StartedAt,
+	)
+	defer cancelRuntimeBudget()
+	config.ExecutionContext = ctx
+	settleRunningFailure := func(reason string, cause error) error {
+		return s.settleAdmittedTurnAfterError(ctx, config, turnID, reason, cause)
+	}
+	if s.chatTaskService != nil && strings.TrimSpace(config.StepID) != "" {
+		if err := s.chatTaskService.BindChatStepToTurn(
+			ctx,
+			config.TaskID,
+			config.StepID,
+			turnID,
+		); err != nil {
+			return nil, settleRunningFailure("failed to bind chat step to running turn", err)
 		}
 	}
 	trace := &domain.TurnTrace{
@@ -837,12 +1220,13 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	if s.capabilityReadiness == nil {
-		return nil, errcode.New(
+		cause := errcode.New(
 			errcode.AgentInvalidSourceState,
 			http.StatusConflict,
 			"capability readiness authority is required",
 			nil,
 		)
+		return nil, settleRunningFailure("capability readiness authority is unavailable", cause)
 	}
 	readiness, agentVersion, readinessErr := s.capabilityReadiness.ResolveForTurn(
 		ctx,
@@ -852,7 +1236,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		runtimeSnapshot,
 	)
 	if readinessErr != nil {
-		return nil, readinessErr
+		return nil, settleRunningFailure("capability readiness rejected", readinessErr)
 	}
 	if persistErr := s.persistRuntimeAuthority(
 		ctx,
@@ -861,25 +1245,27 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		readiness,
 		agentVersion,
 	); persistErr != nil {
-		return nil, persistErr
+		return nil, settleRunningFailure("failed to persist runtime authority", persistErr)
 	}
 	db, err := s.getDB(ctx)
 	if err != nil {
-		return nil, err
+		return nil, settleRunningFailure("failed to open authorized capability store", err)
 	}
 	config.AuthorizedCapabilities, err = LoadAuthorizedCapabilitySet(ctx, db, config)
 	if err != nil {
-		return nil, err
+		return nil, settleRunningFailure("failed to load authorized capability set", err)
 	}
 	config.AvailableTools = config.AuthorizedCapabilities.ToolNames()
 	trace.CapabilitySnapshotID = config.AuthorizedCapabilities.SnapshotID
 
 	logger.Infof(ctx, "turn started: turn_id=%s agent_id=%s conversation_id=%s provider=%s",
 		turnID, config.AgentID, config.ConversationID, config.Provider)
-	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+	if err := s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 		Type:  "progress",
 		Stage: "turn_started",
-	})
+	}); err != nil {
+		return nil, settleRunningFailure("failed to persist turn start event", err)
+	}
 	s.publishDomainEvent(ctx, config.AgentID, turnID, config.TaskID, config.StepID, string(domain.EventTypeAgentTurnStarted), map[string]interface{}{
 		"turn_id":         turnID,
 		"conversation_id": config.ConversationID,
@@ -902,8 +1288,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			config.Model,
 			config.Attachments,
 		); err != nil {
-			_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist user message")
-			return nil, err
+			return nil, settleRunningFailure("failed to persist user message", err)
 		}
 	}
 
@@ -920,9 +1305,13 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		config.MemoryDisabled,
 	)
 	if err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "prompt assembly failed")
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"prompt assembly failed", err)
+		assemblyErr := errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"prompt assembly failed",
+			err,
+		)
+		return nil, settleRunningFailure("prompt assembly failed", assemblyErr)
 	}
 
 	systemPromptHash := sha256Short(assemblyResult.SystemPrompt)
@@ -935,19 +1324,20 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		turnID, systemPromptHash, assemblyResult.SkillCount)
 	if len(trace.KnowledgeChunks) > 0 {
 		knowledgeChunkPayload, _ := json.Marshal(trace.KnowledgeChunks)
-		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+		if err := s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 			Type:      "progress",
 			Stage:     "knowledge_retrieved",
 			Iteration: len(trace.KnowledgeChunks),
 			Result:    string(knowledgeChunkPayload),
-		})
+		}); err != nil {
+			return nil, settleRunningFailure("failed to persist knowledge retrieval event", err)
+		}
 	}
 
 	// Step 5 — Load conversation messages.
 	messages, err := s.loadMessages(ctx, config.ConversationID)
 	if err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to load conversation messages")
-		return nil, err
+		return nil, settleRunningFailure("failed to load conversation messages", err)
 	}
 	if config.ContextBranchHeadID != "" {
 		messages = projectMessageBranch(messages, config.ContextBranchHeadID)
@@ -970,12 +1360,13 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		toolDefinitions,
 	)
 	if err != nil {
-		return nil, errcode.New(
+		schemaErr := errcode.New(
 			errcode.AgentInvalidSourceState,
 			http.StatusConflict,
 			"build authorized Tool schema context",
 			err,
 		)
+		return nil, settleRunningFailure("failed to build authorized Tool schema context", schemaErr)
 	}
 	trace.ToolDefinitionTokens = toolDefinitionTokens
 
@@ -991,7 +1382,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	if shouldCompress {
 		messages, err = s.runCompression(ctx, config, turnID, trace, assemblyResult, messages)
 		if err != nil {
-			return nil, err
+			return nil, settleRunningFailure("context compression failed", err)
 		}
 	}
 	if toolSchemaSegment != nil {
@@ -1004,12 +1395,14 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	if len(attachmentSegments) > 0 {
 		assemblyResult.Segments = append(assemblyResult.Segments, attachmentSegments...)
 		for _, segment := range attachmentSegments {
-			s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+			if err := s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 				Type:   "progress",
 				Stage:  "attachment_omitted",
 				Source: segment.SourceRefs[0],
 				Result: segment.DecisionReason,
-			})
+			}); err != nil {
+				return nil, settleRunningFailure("failed to persist attachment omission event", err)
+			}
 		}
 	}
 
@@ -1017,18 +1410,28 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	if config.AttemptID != "" {
 		ledgerJSON, ledgerErr := json.Marshal(assemblyResult.Segments)
 		if ledgerErr != nil {
-			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-				"encode turn attempt context ledger", ledgerErr)
+			cause := errcode.New(
+				errcode.AgentInternal,
+				http.StatusInternalServerError,
+				"encode turn attempt context ledger",
+				ledgerErr,
+			)
+			return nil, settleRunningFailure("failed to encode turn attempt context ledger", cause)
 		}
 		db, dbErr := s.getDB(ctx)
 		if dbErr != nil {
-			return nil, dbErr
+			return nil, settleRunningFailure("failed to open context ledger store", dbErr)
 		}
 		if updateErr := db.WithContext(ctx).Model(&persistence.TurnAttempt{}).
 			Where("id = ?", config.AttemptID).
 			Update("context_ledger", string(ledgerJSON)).Error; updateErr != nil {
-			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-				"persist turn attempt context ledger", updateErr)
+			cause := errcode.New(
+				errcode.AgentInternal,
+				http.StatusInternalServerError,
+				"persist turn attempt context ledger",
+				updateErr,
+			)
+			return nil, settleRunningFailure("failed to persist turn attempt context ledger", cause)
 		}
 	}
 	// Attachment bytes are admission-only transient data until a provider
@@ -1036,10 +1439,12 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	config.AdmittedAttachments = nil
 
 	// Step 7 — Credential lease + provider call with error recovery loop.
-	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+	if err := s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 		Type:  "progress",
 		Stage: "provider_call_started",
-	})
+	}); err != nil {
+		return nil, settleRunningFailure("failed to persist provider start event", err)
+	}
 	assistantResponse, providerToolCalls, providerCalls, streamed, err := s.providerCallWithRetry(
 		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages,
 	)
@@ -1047,32 +1452,36 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	if err != nil {
 		terminalCtx := context.WithoutCancel(ctx)
 		if usageErr := s.persistAttemptUsage(terminalCtx, turnID, config.AttemptID, trace); usageErr != nil {
-			return nil, fmt.Errorf("persist failed-attempt usage: %w", usageErr)
+			return nil, settleRunningFailure(
+				"failed to persist failed-attempt usage",
+				errors.Join(err, fmt.Errorf("persist failed-attempt usage: %w", usageErr)),
+			)
 		}
 		if traceErr := s.saveTurnTrace(terminalCtx, trace); traceErr != nil {
-			return nil, fmt.Errorf("persist failed-attempt trace: %w", traceErr)
+			return nil, settleRunningFailure(
+				"failed to persist failed-attempt trace",
+				errors.Join(err, fmt.Errorf("persist failed-attempt trace: %w", traceErr)),
+			)
+		}
+		if errors.Is(err, errExplicitUserCancellation) {
+			return nil, settleRunningFailure("provider call cancelled", err)
 		}
 		if errors.Is(err, context.Canceled) {
-			_ = s.cancelTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID)
-			s.emitTurnEvent(terminalCtx, config, turnID, TurnEvent{
-				Type:  "cancelled",
-				Stage: "turn_cancelled",
-			})
-			return nil, err
+			return nil, settleRunningFailure("provider call interrupted", err)
 		}
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, fmt.Sprintf("provider call failed after retries: %v", err))
-		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
-			Type:  "error",
-			Error: err.Error(),
-		})
-		return nil, err
+		if reason, exhausted := runtimeBudgetExhaustionReason(err); exhausted {
+			return nil, settleRunningFailure(reason, err)
+		}
+		return nil, settleRunningFailure(fmt.Sprintf("provider call failed after retries: %v", err), err)
 	}
 	if !streamed {
-		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+		if err := s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 			Type:  "text",
 			Text:  assistantResponse,
 			Stage: "provider_call_completed",
-		})
+		}); err != nil {
+			return nil, settleRunningFailure("failed to persist provider response event", err)
+		}
 	}
 
 	// Step 8 — Tool call iteration loop.
@@ -1088,26 +1497,18 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		0,
 	)
 	if usageErr := s.persistAttemptUsage(ctx, turnID, config.AttemptID, trace); usageErr != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist turn usage")
-		return nil, usageErr
+		return nil, settleRunningFailure("failed to persist turn usage", usageErr)
 	}
 	if err != nil {
 		terminalReason := fmt.Sprintf("tool call processing failed: %v", err)
 		if reason, exhausted := runtimeBudgetExhaustionReason(err); exhausted {
 			terminalReason = reason
 		}
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, terminalReason)
-		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
-			Type:  "error",
-			Stage: terminalReason,
-			Error: err.Error(),
-		})
-		return nil, err
+		return nil, settleRunningFailure(terminalReason, err)
 	}
 	if paused {
 		if err := s.markTurnWaitingForLocalTool(ctx, turnID, config.AttemptID, toolIterations); err != nil {
-			_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist local tool wait state")
-			return nil, err
+			return nil, settleRunningFailure("failed to persist local tool wait state", err)
 		}
 		if s.chatTaskService != nil && config.StepID != "" {
 			if err := s.chatTaskService.BindChatStepToTurn(
@@ -1116,18 +1517,19 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 				config.StepID,
 				turnID,
 			); err != nil {
-				_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to bind local tool wait step")
-				return nil, err
+				return nil, settleRunningFailure("failed to bind local tool wait step", err)
 			}
 		}
 		if err := s.saveTurnTrace(ctx, trace); err != nil {
 			logger.Errorf(ctx, "failed to save paused turn trace: turn_id=%s err=%v", turnID, err)
 		}
-		s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+		if err := s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 			Type:      "progress",
 			Stage:     "waiting_local_tool",
 			Iteration: toolIterations,
-		})
+		}); err != nil {
+			return nil, settleRunningFailure("failed to persist local tool wait event", err)
+		}
 		return &domain.Turn{
 			TurnID:         turnID,
 			ConversationID: config.ConversationID,
@@ -1141,7 +1543,7 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	assistantResponse = strings.TrimSpace(assistantResponse)
-	return s.finishTurnExecution(
+	turn, err := s.finishTurnExecution(
 		ctx,
 		config,
 		turnRecord,
@@ -1151,6 +1553,10 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		assistantResponse,
 		toolIterations,
 	)
+	if err != nil {
+		return nil, settleRunningFailure("failed to complete turn", err)
+	}
+	return turn, nil
 }
 
 func (s *TurnService) finishTurnExecution(
@@ -1191,13 +1597,9 @@ func (s *TurnService) finishTurnExecution(
 		trace.ReviewTriggered = true
 	}
 
-	// Step 10 — Persist assistant message and update turn status.
-	if err := s.completeAssistantMessage(ctx, config, turnID, assistantResponse); err != nil {
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "failed to persist assistant message")
-		return nil, err
-	}
-
-	if err := s.completeTurn(ctx, turnID, assistantResponse, toolIterations); err != nil {
+	// Step 10 — Persist the assistant message, terminal state, step, and
+	// replayable terminal events in one transaction.
+	if err := s.completeTurn(ctx, config, turnID, assistantResponse, toolIterations); err != nil {
 		return nil, err
 	}
 
@@ -1236,11 +1638,6 @@ func (s *TurnService) finishTurnExecution(
 	}
 
 	logger.Infof(ctx, "turn completed: turn_id=%s iterations=%d", turnID, toolIterations)
-	s.emitTurnEvent(ctx, config, turnID, TurnEvent{
-		Type:      "progress",
-		Stage:     "turn_completed",
-		Iteration: toolIterations,
-	})
 	s.publishDomainEvent(ctx, config.AgentID, turnID, config.TaskID, config.StepID, string(domain.EventTypeAgentTurnCompleted), map[string]interface{}{
 		"turn_id":         turnID,
 		"conversation_id": config.ConversationID,
@@ -1327,9 +1724,12 @@ func (s *TurnService) runCompression(
 	compResult, compErr := s.compression.Compress(ctx, messages, config.ContextWindowSize)
 	if compErr != nil {
 		logger.Errorf(ctx, "compression failed: turn_id=%s err=%v", turnID, compErr)
-		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID, "context compression failed")
-		return nil, errcode.New(errcode.AgentCompressionFailed, http.StatusInternalServerError,
-			"context compression failed", compErr)
+		return nil, errcode.New(
+			errcode.AgentCompressionFailed,
+			http.StatusInternalServerError,
+			"context compression failed",
+			compErr,
+		)
 	}
 
 	trace.CompressionBefore = compResult.TokensBefore
@@ -1363,7 +1763,15 @@ func (s *TurnService) runCompression(
 	// Rebuild system prompt with fresh snapshot after compression.
 	db, dbErr := s.getDB(ctx)
 	if dbErr != nil {
-		return nil, dbErr
+		return nil, fmt.Errorf("open post-compression prompt store: %w", dbErr)
+	}
+	if len(messages) == 0 {
+		return nil, errcode.New(
+			errcode.AgentCompressionFailed,
+			http.StatusInternalServerError,
+			"context compression produced no messages",
+			nil,
+		)
 	}
 	freshAssembly, freshErr := s.promptAssembly.Assemble(
 		ctx,
@@ -1528,7 +1936,7 @@ func (s *TurnService) providerCallWithRetry(
 	}
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if err := ctx.Err(); err != nil {
+		if err := executionContextError(ctx); err != nil {
 			return "", nil, providerCalls, false, err
 		}
 
@@ -1573,8 +1981,8 @@ func (s *TurnService) providerCallWithRetry(
 			ProviderType: config.Provider,
 			Effort:       config.Effort,
 			ThinkingMode: config.ThinkingMode,
-			DeltaSink: func(deltaCtx context.Context, delta ProviderDelta) {
-				s.emitTurnEvent(deltaCtx, config, turnID, TurnEvent{
+			DeltaSink: func(deltaCtx context.Context, delta ProviderDelta) error {
+				return s.emitTurnEvent(deltaCtx, config, turnID, TurnEvent{
 					Type:  delta.Type,
 					Text:  delta.Content,
 					Stage: "provider_delta",
@@ -1583,9 +1991,6 @@ func (s *TurnService) providerCallWithRetry(
 		})
 
 		callDuration := time.Since(callStart)
-		if err := ctx.Err(); err != nil {
-			return "", nil, providerCalls, false, err
-		}
 
 		// Build provider call record for trace regardless of outcome.
 		callRecord := domain.ProviderCallRecord{
@@ -1606,7 +2011,15 @@ func (s *TurnService) providerCallWithRetry(
 		providerCalls = append(providerCalls, callRecord)
 
 		// Release credential (no-op today, future distributed lock support).
-		_ = s.credentialPool.Release(ctx, credential.CredentialID)
+		_ = s.credentialPool.Release(context.WithoutCancel(ctx), credential.CredentialID)
+
+		if err := executionContextError(ctx); err != nil {
+			return "", nil, providerCalls, false, err
+		}
+
+		if errors.Is(callErr, errTurnEventPersistence) {
+			return "", nil, providerCalls, false, callErr
+		}
 
 		// Success path.
 		if callErr == nil && resp != nil {
@@ -1846,13 +2259,15 @@ func (s *TurnService) processToolCalls(
 
 		for index, tc := range toolCalls {
 			callID := stableToolCallID(toolBatchID, index, tc)
-			s.emitTurnEvent(ctx, config, turnID, TurnEvent{
+			if err := s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 				Type:       "tool_call",
 				ToolCallID: callID,
 				ToolName:   tc.ToolName,
 				Arguments:  tc.Arguments,
 				Iteration:  iterations,
-			})
+			}); err != nil {
+				return iterations, false, err
+			}
 
 			authorized, ok := config.AuthorizedCapabilities.Tool(tc.ToolName)
 			if !ok {
@@ -1902,7 +2317,9 @@ func (s *TurnService) processToolCalls(
 			return iterations, false, err
 		}
 		for _, decision := range decisions {
-			s.emitTurnEvent(ctx, config, turnID, toolDecisionTurnEvent(decision, iterations))
+			if err := s.emitTurnEvent(ctx, config, turnID, toolDecisionTurnEvent(decision, iterations)); err != nil {
+				return iterations, false, err
+			}
 		}
 		return iterations, true, nil
 	}
@@ -1913,6 +2330,7 @@ func (s *TurnService) processToolCalls(
 const (
 	maxToolCallsExhaustedReason          = "max_tool_calls_exhausted"
 	maxIdenticalToolCallsExhaustedReason = "max_identical_tool_calls_exhausted"
+	wallTimeExhaustedReason              = "wall_time_exhausted"
 )
 
 type toolLoopBudgetState struct {
@@ -2011,6 +2429,14 @@ func toolCallBudgetKey(toolName string, argumentsHash string) string {
 }
 
 func runtimeBudgetExhausted(reason string, limit uint32, consumed uint32) error {
+	return runtimeBudgetExhaustedWithDetails(
+		reason,
+		fmt.Sprintf("%d", limit),
+		fmt.Sprintf("%d", consumed),
+	)
+}
+
+func runtimeBudgetExhaustedWithDetails(reason string, limit string, consumed string) error {
 	return &errcode.BizError{
 		Code:       errcode.AgentToolBudgetExhausted,
 		HTTPStatus: http.StatusUnprocessableEntity,
@@ -2023,11 +2449,19 @@ func runtimeBudgetExhausted(reason string, limit uint32, consumed uint32) error 
 			Terminal:  true,
 			Details: map[string]string{
 				"reason":   reason,
-				"limit":    fmt.Sprintf("%d", limit),
-				"consumed": fmt.Sprintf("%d", consumed),
+				"limit":    limit,
+				"consumed": consumed,
 			},
 		},
 	}
+}
+
+func wallTimeBudgetExhausted(limitMillis uint64) error {
+	return runtimeBudgetExhaustedWithDetails(
+		wallTimeExhaustedReason,
+		fmt.Sprintf("%d", limitMillis),
+		fmt.Sprintf("%d", limitMillis),
+	)
 }
 
 func runtimeBudgetExhaustionReason(err error) (string, bool) {
@@ -2121,6 +2555,48 @@ func lowerPositiveLimit64(policy uint64, requested uint64) uint64 {
 		return requested
 	}
 	return policy
+}
+
+func withRuntimeBudgetDeadline(
+	ctx context.Context,
+	budget *model.RuntimeBudget,
+	startedAt time.Time,
+) (context.Context, context.CancelFunc) {
+	if budget == nil || budget.GetWallTimeMs() == 0 {
+		return context.WithCancel(ctx)
+	}
+	wallTime := budget.GetWallTimeMs()
+	maxDurationMillis := uint64((time.Duration(1<<63 - 1)) / time.Millisecond)
+	if wallTime > maxDurationMillis {
+		wallTime = maxDurationMillis
+	}
+	if startedAt.IsZero() {
+		startedAt = time.Now()
+	}
+	return context.WithDeadlineCause(
+		ctx,
+		startedAt.Add(time.Duration(wallTime)*time.Millisecond),
+		wallTimeBudgetExhausted(wallTime),
+	)
+}
+
+func executionContextError(ctx context.Context) error {
+	if ctx == nil || ctx.Err() == nil {
+		return nil
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	return ctx.Err()
+}
+
+func isStationLifecycleCancellation(ctx context.Context, err error) bool {
+	if ctx == nil || ctx.Err() == nil || !errors.Is(err, context.Canceled) {
+		return false
+	}
+	cause := context.Cause(ctx)
+	return errors.Is(cause, context.Canceled) &&
+		!errors.Is(cause, errExplicitUserCancellation)
 }
 
 func toolDecisionTurnEvent(decision ProposalDecision, iteration int) TurnEvent {
@@ -2321,7 +2797,7 @@ func (s *TurnService) settleBlockedToolBatches(ctx context.Context) error {
 		return fmt.Errorf("load blocked tool batches: %w", err)
 	}
 	for _, row := range rows {
-		if err := s.interruptTurnForToolBlock(
+		if err := s.interruptTurn(
 			ctx,
 			row.AgentID,
 			row.TurnID,
@@ -2331,16 +2807,6 @@ func (s *TurnService) settleBlockedToolBatches(ctx context.Context) error {
 			"tool_batch_blocked",
 		); err != nil {
 			return err
-		}
-		if s.chatTaskService != nil && row.StepID != "" {
-			if err := s.chatTaskService.FailChatStep(
-				ctx,
-				row.TaskID,
-				row.StepID,
-				"tool batch blocked",
-			); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
@@ -2372,7 +2838,7 @@ func (s *TurnService) settleReconciliationRequiredTurns(ctx context.Context) err
 		return fmt.Errorf("load reconciliation-required turns: %w", err)
 	}
 	for _, row := range rows {
-		if err := s.interruptTurnForToolBlock(
+		if err := s.interruptTurn(
 			ctx,
 			row.AgentID,
 			row.TurnID,
@@ -2383,21 +2849,11 @@ func (s *TurnService) settleReconciliationRequiredTurns(ctx context.Context) err
 		); err != nil {
 			return err
 		}
-		if s.chatTaskService != nil && row.StepID != "" {
-			if err := s.chatTaskService.FailChatStep(
-				ctx,
-				row.TaskID,
-				row.StepID,
-				"tool continuation requires reconciliation",
-			); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }
 
-func (s *TurnService) interruptTurnForToolBlock(
+func (s *TurnService) interruptTurn(
 	ctx context.Context,
 	agentID string,
 	turnID string,
@@ -2406,42 +2862,160 @@ func (s *TurnService) interruptTurnForToolBlock(
 	stepID string,
 	reasonCode string,
 ) error {
+	_, err := s.interruptTurnWithEvent(ctx, agentID, turnID, conversationID, taskID, stepID, reasonCode)
+	return err
+}
+
+func (s *TurnService) interruptTurnWithEvent(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	conversationID string,
+	taskID string,
+	stepID string,
+	reasonCode string,
+) (TurnEvent, error) {
+	ownershipCtx := ctx
+	ctx = context.WithoutCancel(ctx)
 	db, err := s.getDB(ctx)
 	if err != nil {
-		return err
+		return TurnEvent{}, turnTerminalPersistenceError("open interruption database", err)
 	}
 	now := time.Now()
-	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&persistence.AgentTurn{}).
-			Where("id = ? AND status = ?", turnID, string(domain.TurnStatusWaitingLocalTool)).
-			Updates(map[string]interface{}{
-				"status":         string(domain.TurnStatusInterrupted),
-				"final_response": reasonCode,
-				"ended_at":       now,
-			}).Error; err != nil {
+	var committedEvent TurnEvent
+	transactionErr := func() error {
+		unlockOwnership, err := s.lockTurnExecutionOwnership(ownershipCtx, turnID)
+		if err != nil {
 			return err
 		}
-		return tx.Model(&persistence.TurnAttempt{}).
-			Where("turn_id = ? AND ended_at IS NULL", turnID).
-			Updates(map[string]interface{}{
-				"status":     string(domain.TurnStatusInterrupted),
-				"error_code": reasonCode,
-				"ended_at":   now,
-			}).Error
-	}); err != nil {
-		return fmt.Errorf("interrupt reconciliation-required turn: %w", err)
+		defer unlockOwnership()
+
+		return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var turn persistence.AgentTurn
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ?", turnID).
+				First(&turn).Error; err != nil {
+				return err
+			}
+			if turn.Status == string(domain.TurnStatusInterrupted) {
+				return nil
+			}
+			if turn.Status != string(domain.TurnStatusRunning) &&
+				turn.Status != string(domain.TurnStatusWaitingLocalTool) {
+				return nil
+			}
+			attemptID, err := currentTurnAttemptIDTx(tx, turnID)
+			if err != nil {
+				return err
+			}
+			conversationID = turn.ConversationID
+			if err := tx.Model(&turn).
+				Updates(map[string]interface{}{
+					"status":          string(domain.TurnStatusInterrupted),
+					"final_response":  reasonCode,
+					"terminal_reason": reasonCode,
+					"ended_at":        now,
+				}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&persistence.TurnAttempt{}).
+				Where("turn_id = ? AND ended_at IS NULL", turnID).
+				Updates(map[string]interface{}{
+					"status":     string(domain.TurnStatusInterrupted),
+					"error_code": reasonCode,
+					"ended_at":   now,
+				}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&persistence.AgentMessage{}).
+				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
+				Updates(map[string]interface{}{
+					"status":     string(domain.TurnStatusInterrupted),
+					"updated_at": now,
+				}).Error; err != nil {
+				return err
+			}
+			if strings.TrimSpace(stepID) != "" {
+				if err := tx.Model(&persistence.ExecutionStep{}).
+					Where("task_id = ? AND step_id = ? AND status = ?", taskID, stepID, int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING)).
+					Updates(map[string]interface{}{
+						"status":         int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED),
+						"result_summary": reasonCode,
+						"ended_at":       now,
+					}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&persistence.ExecutorLease{}).
+					Where("step_id = ? AND status = ?", stepID, chatLeaseStatusActive).
+					Updates(map[string]interface{}{
+						"status":       chatLeaseStatusReleased,
+						"heartbeat_at": now,
+						"expires_at":   now,
+					}).Error; err != nil {
+					return err
+				}
+			}
+			event := TurnEvent{
+				Type:           "error",
+				TurnID:         turnID,
+				AttemptID:      attemptID,
+				ConversationID: conversationID,
+				AgentID:        agentID,
+				Stage:          reasonCode,
+				Error:          reasonCode,
+			}
+			payload, err := json.Marshal(event)
+			if err != nil {
+				return err
+			}
+			event.Seq, err = (&ConversationService{}).persistTurnEventTx(
+				tx,
+				conversationID,
+				turnID,
+				attemptID,
+				"error",
+				payload,
+				now,
+			)
+			if err != nil {
+				return err
+			}
+			committedEvent = event
+			if strings.TrimSpace(taskID) != "" && strings.TrimSpace(stepID) != "" {
+				writer := s.eventWriter
+				if writer == nil {
+					writer = NewTaskEventWriter(nil)
+				}
+				_, err = writer.appendTx(
+					ctx,
+					tx,
+					"",
+					taskID,
+					stepID,
+					turnID,
+					string(domain.EventTypeCollaborationNodeFailed),
+					map[string]interface{}{
+						"task_id": taskID,
+						"step_id": stepID,
+						"turn_id": turnID,
+						"reason":  reasonCode,
+					},
+				)
+				return err
+			}
+			return nil
+		})
+	}()
+	if transactionErr != nil {
+		if errors.Is(transactionErr, errTurnExecutionSuperseded) {
+			return TurnEvent{}, transactionErr
+		}
+		return TurnEvent{}, turnTerminalPersistenceError("interrupt turn", transactionErr)
 	}
-	s.emitTurnEvent(ctx, &TurnConfig{
-		AgentID:        agentID,
-		ConversationID: conversationID,
-		TaskID:         taskID,
-		StepID:         stepID,
-	}, turnID, TurnEvent{
-		Type:  "error",
-		Stage: reasonCode,
-		Error: reasonCode,
-	})
-	return nil
+	if s.convService != nil && committedEvent.Seq > 0 {
+		s.convService.notifyTurnEvent(conversationID, turnID)
+	}
+	return committedEvent, nil
 }
 
 func (s *TurnService) ResumeReadyToolContinuation(
@@ -2507,15 +3081,73 @@ func (s *TurnService) ResumeReadyToolContinuation(
 	if err != nil {
 		return true, err
 	}
+	var attempt persistence.TurnAttempt
+	if err := db.WithContext(ctx).
+		Select("started_at").
+		Where("id = ?", batch.AttemptID).
+		First(&attempt).Error; err != nil {
+		return true, fmt.Errorf("load continuation attempt deadline anchor: %w", err)
+	}
+	ctx, cancelRuntimeBudget := withRuntimeBudgetDeadline(
+		ctx,
+		config.RuntimeBudget,
+		attempt.StartedAt,
+	)
+	defer cancelRuntimeBudget()
+	settleExpiredContinuation := func(operationErr error) (bool, error) {
+		deadlineErr := executionContextError(ctx)
+		reason, exhausted := runtimeBudgetExhaustionReason(deadlineErr)
+		if !exhausted {
+			return false, nil
+		}
+		settlementCtx := context.WithoutCancel(ctx)
+		var settlementErrors []error
+		if operationErr != nil {
+			settlementErrors = append(settlementErrors, operationErr)
+		}
+		settlementErrors = append(settlementErrors, deadlineErr)
+		if completeErr := s.toolDispatch.CompleteContinuation(
+			settlementCtx,
+			continuation.ID,
+			continuation.LeaseID,
+			continuation.FencingToken,
+			nil,
+		); completeErr != nil {
+			settlementErrors = append(settlementErrors, completeErr)
+		}
+		if settleErr := s.failTurn(
+			settlementCtx,
+			batch.AgentID,
+			batch.TurnID,
+			batch.TaskID,
+			batch.StepID,
+			reason,
+		); settleErr != nil {
+			settlementErrors = append(settlementErrors, settleErr)
+		}
+		return true, errors.Join(settlementErrors...)
+	}
+	if settled, settleErr := settleExpiredContinuation(nil); settled {
+		return true, settleErr
+	}
 	trace, err := s.loadTurnTraceForResume(ctx, batch.TurnID)
 	if err != nil {
+		if settled, settleErr := settleExpiredContinuation(err); settled {
+			return true, settleErr
+		}
 		return true, err
 	}
 	messages, err := s.loadMessages(ctx, batch.ConversationID)
 	if err != nil {
+		if settled, settleErr := settleExpiredContinuation(err); settled {
+			return true, settleErr
+		}
 		return true, err
 	}
 	if err := s.appendClientToolResultsToTrace(ctx, trace, batch.ID); err != nil {
+		if settled, settleErr := settleExpiredContinuation(err); settled {
+			return true, settleErr
+		}
 		return true, err
 	}
 	if err := s.toolDispatch.MarkContinuationEmitted(
@@ -2525,10 +3157,16 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		continuation.FencingToken,
 		false,
 	); err != nil {
+		if settled, settleErr := settleExpiredContinuation(err); settled {
+			return true, settleErr
+		}
 		return true, err
 	}
 	budgetState, err := s.loadToolLoopBudgetState(ctx, batch.TurnID)
 	if err != nil {
+		if settled, settleErr := settleExpiredContinuation(err); settled {
+			return true, settleErr
+		}
 		return true, err
 	}
 	if exhaustion := budgetState.exhaustionBeforeContinuation(config.RuntimeBudget); exhaustion != nil {
@@ -2541,9 +3179,8 @@ func (s *TurnService) ResumeReadyToolContinuation(
 			continuation.FencingToken,
 			nil,
 		)
-		_ = s.failTurn(ctx, batch.AgentID, batch.TurnID, batch.TaskID, batch.StepID, reason)
-		if s.chatTaskService != nil && batch.StepID != "" {
-			_ = s.chatTaskService.FailChatStep(ctx, batch.TaskID, batch.StepID, reason)
+		if settleErr := s.failTurn(ctx, batch.AgentID, batch.TurnID, batch.TaskID, batch.StepID, reason); settleErr != nil {
+			return true, errors.Join(exhaustion, settleErr)
 		}
 		return true, exhaustion
 	}
@@ -2562,20 +3199,36 @@ func (s *TurnService) ResumeReadyToolContinuation(
 	)
 	trace.ProviderCalls = append(trace.ProviderCalls, providerCalls...)
 	if callErr != nil {
-		if usageErr := s.persistAttemptUsage(ctx, batch.TurnID, batch.AttemptID, trace); usageErr != nil {
+		if isStationLifecycleCancellation(ctx, callErr) {
+			return true, fmt.Errorf("Station lifecycle interrupted provider continuation: %w", callErr)
+		}
+		settlementCtx := context.WithoutCancel(ctx)
+		if usageErr := s.persistAttemptUsage(settlementCtx, batch.TurnID, batch.AttemptID, trace); usageErr != nil {
 			return true, fmt.Errorf("persist continuation usage: %w", usageErr)
 		}
-		_ = s.saveTurnTrace(ctx, trace)
-		_ = s.toolDispatch.CompleteContinuation(
-			ctx,
+		_ = s.saveTurnTrace(settlementCtx, trace)
+		if completeErr := s.toolDispatch.CompleteContinuation(
+			settlementCtx,
 			continuation.ID,
 			continuation.LeaseID,
 			continuation.FencingToken,
 			nil,
-		)
-		_ = s.failTurn(ctx, batch.AgentID, batch.TurnID, batch.TaskID, batch.StepID, "provider continuation failed")
-		if s.chatTaskService != nil && batch.StepID != "" {
-			_ = s.chatTaskService.FailChatStep(ctx, batch.TaskID, batch.StepID, "provider continuation failed")
+		); completeErr != nil {
+			return true, errors.Join(callErr, completeErr)
+		}
+		terminalReason := "provider continuation failed"
+		if reason, exhausted := runtimeBudgetExhaustionReason(callErr); exhausted {
+			terminalReason = reason
+		}
+		if settleErr := s.failTurn(
+			settlementCtx,
+			batch.AgentID,
+			batch.TurnID,
+			batch.TaskID,
+			batch.StepID,
+			terminalReason,
+		); settleErr != nil {
+			return true, errors.Join(callErr, settleErr)
 		}
 		return true, fmt.Errorf("continue provider after tool batch: %w", callErr)
 	}
@@ -2591,41 +3244,64 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		providerToolCalls,
 		int(batch.Iteration),
 	)
+	if processErr != nil && isStationLifecycleCancellation(ctx, processErr) {
+		return true, fmt.Errorf("Station lifecycle interrupted tool continuation processing: %w", processErr)
+	}
 	if usageErr := s.persistAttemptUsage(ctx, batch.TurnID, batch.AttemptID, trace); usageErr != nil {
+		if settled, settleErr := settleExpiredContinuation(usageErr); settled {
+			return true, settleErr
+		}
 		return true, fmt.Errorf("persist continuation usage: %w", usageErr)
 	}
 	if processErr != nil {
+		settlementCtx := context.WithoutCancel(ctx)
 		terminalReason := "tool continuation processing failed"
 		if reason, exhausted := runtimeBudgetExhaustionReason(processErr); exhausted {
 			terminalReason = reason
 		}
-		_ = s.saveTurnTrace(ctx, trace)
-		_ = s.toolDispatch.CompleteContinuation(
-			ctx,
+		_ = s.saveTurnTrace(settlementCtx, trace)
+		if completeErr := s.toolDispatch.CompleteContinuation(
+			settlementCtx,
 			continuation.ID,
 			continuation.LeaseID,
 			continuation.FencingToken,
 			[]byte(nextResponse),
-		)
-		_ = s.failTurn(ctx, batch.AgentID, batch.TurnID, batch.TaskID, batch.StepID, terminalReason)
-		if s.chatTaskService != nil && batch.StepID != "" {
-			_ = s.chatTaskService.FailChatStep(ctx, batch.TaskID, batch.StepID, terminalReason)
+		); completeErr != nil {
+			return true, errors.Join(processErr, completeErr)
+		}
+		if settleErr := s.failTurn(
+			settlementCtx,
+			batch.AgentID,
+			batch.TurnID,
+			batch.TaskID,
+			batch.StepID,
+			terminalReason,
+		); settleErr != nil {
+			return true, errors.Join(processErr, settleErr)
 		}
 		return true, processErr
 	}
 
 	if paused {
 		if err := s.markTurnWaitingForLocalTool(ctx, batch.TurnID, batch.AttemptID, toolIterations); err != nil {
+			if settled, settleErr := settleExpiredContinuation(err); settled {
+				return true, settleErr
+			}
 			return true, err
 		}
 		if err := s.saveTurnTrace(ctx, trace); err != nil {
 			logger.Errorf(ctx, "failed to save resumed turn trace: turn_id=%s err=%v", batch.TurnID, err)
 		}
-		s.emitTurnEvent(ctx, config, batch.TurnID, TurnEvent{
+		if err := s.emitTurnEvent(ctx, config, batch.TurnID, TurnEvent{
 			Type:      "progress",
 			Stage:     "waiting_local_tool",
 			Iteration: toolIterations,
-		})
+		}); err != nil {
+			if settled, settleErr := settleExpiredContinuation(err); settled {
+				return true, settleErr
+			}
+			return true, err
+		}
 	} else {
 		nextResponse = strings.TrimSpace(nextResponse)
 		if _, err := s.finishTurnExecution(
@@ -2638,6 +3314,9 @@ func (s *TurnService) ResumeReadyToolContinuation(
 			nextResponse,
 			toolIterations,
 		); err != nil {
+			if settled, settleErr := settleExpiredContinuation(err); settled {
+				return true, settleErr
+			}
 			return true, err
 		}
 		if s.chatTaskService != nil && batch.StepID != "" {
@@ -2648,13 +3327,16 @@ func (s *TurnService) ResumeReadyToolContinuation(
 				batch.TurnID,
 				nextResponse,
 			); err != nil {
+				if settled, settleErr := settleExpiredContinuation(err); settled {
+					return true, settleErr
+				}
 				return true, err
 			}
 		}
 	}
 
 	if err := s.toolDispatch.CompleteContinuation(
-		ctx,
+		context.WithoutCancel(ctx),
 		continuation.ID,
 		continuation.LeaseID,
 		continuation.FencingToken,
@@ -2777,7 +3459,9 @@ func (s *TurnService) recordToolOutcome(
 	if toolErr != nil {
 		event.Error = toolErr.Error()
 	}
-	s.emitTurnEvent(ctx, config, turnID, event)
+	if err := s.emitTurnEvent(ctx, config, turnID, event); err != nil {
+		return err
+	}
 
 	if tc.ToolName == "skill_view" && toolErr == nil {
 		var viewArgs struct {
@@ -3088,30 +3772,61 @@ func (s *TurnService) createOrReopenTurnRecord(ctx context.Context, config *Turn
 		return &record, nil
 	}
 	if existingTurnID := strings.TrimSpace(config.ExistingTurnID); existingTurnID != "" {
+		attemptID := strings.TrimSpace(config.AttemptID)
+		if attemptID == "" {
+			return nil, errcode.New(
+				errcode.AgentInvalidRequest,
+				http.StatusConflict,
+				"retry attempt admission is required",
+				nil,
+			)
+		}
 		var record persistence.AgentTurn
 		if err := db.WithContext(ctx).
-			Where("id = ? AND conversation_id = ? AND status IN ?", existingTurnID, config.ConversationID, []string{
-				string(domain.TurnStatusFailed),
-				string(domain.TurnStatusCancelled),
-			}).
+			Where(
+				"id = ? AND conversation_id = ? AND status = ?",
+				existingTurnID,
+				config.ConversationID,
+				string(domain.TurnStatusRunning),
+			).
 			First(&record).Error; err != nil {
 			return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusConflict,
-				"source turn is not retryable", err)
+				"retry turn admission is unavailable", err)
 		}
-		if err := db.WithContext(ctx).Model(&record).Updates(map[string]interface{}{
-			"status":         string(domain.TurnStatusRunning),
-			"started_at":     now,
-			"ended_at":       nil,
-			"final_response": nil,
-		}).Error; err != nil {
-			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-				"failed to reopen turn record", err)
+		var attempt persistence.TurnAttempt
+		if err := db.WithContext(ctx).
+			Where(
+				"id = ? AND turn_id = ? AND status = ? AND ended_at IS NULL",
+				attemptID,
+				existingTurnID,
+				string(domain.TurnStatusRunning),
+			).
+			First(&attempt).Error; err != nil {
+			return nil, errcode.New(
+				errcode.AgentInvalidRequest,
+				http.StatusConflict,
+				"retry attempt admission is unavailable",
+				err,
+			)
+		}
+		currentAttemptID, err := currentTurnAttemptIDTx(db.WithContext(ctx), existingTurnID)
+		if err != nil {
+			return nil, errcode.New(
+				errcode.AgentInternal,
+				http.StatusInternalServerError,
+				"failed to verify retry attempt admission",
+				err,
+			)
+		}
+		if currentAttemptID != attemptID {
+			return nil, errcode.New(
+				errcode.AgentVersionConflict,
+				http.StatusConflict,
+				"retry attempt admission was superseded",
+				nil,
+			)
 		}
 		config.TurnID = record.ID
-		record.Status = string(domain.TurnStatusRunning)
-		record.StartedAt = now
-		record.EndedAt = nil
-		record.FinalResponse = nil
 		return &record, nil
 	}
 
@@ -3780,38 +4495,266 @@ func stringValue(value *string) string {
 // Helper: completeTurn
 // ---------------------------------------------------------------------------
 
-func (s *TurnService) completeTurn(ctx context.Context, turnID, finalResponse string, toolIterations int) error {
+func (s *TurnService) completeTurn(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	finalResponse string,
+	toolIterations int,
+) error {
+	if err := executionContextError(ctx); err != nil {
+		return err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
-		return err
+		return turnTerminalPersistenceError("open completion database", err)
 	}
 
 	now := time.Now()
-	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&persistence.AgentTurn{}).
-			Where("id = ?", turnID).
-			Updates(map[string]interface{}{
-				"status":          string(domain.TurnStatusCompleted),
-				"final_response":  finalResponse,
-				"tool_iterations": toolIterations,
-				"terminal_reason": "completed",
-				"ended_at":        now,
-			}).Error; err != nil {
+	var committedEvent TurnEvent
+	transactionErr := func() error {
+		unlockOwnership, err := s.lockTurnExecutionOwnership(ctx, turnID)
+		if err != nil {
 			return err
 		}
-		return tx.Model(&persistence.TurnAttempt{}).
-			Where("turn_id = ? AND ended_at IS NULL", turnID).
+		defer unlockOwnership()
+
+		return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var turn persistence.AgentTurn
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ?", turnID).
+				First(&turn).Error; err != nil {
+				return err
+			}
+			if turn.Status == string(domain.TurnStatusCompleted) {
+				return nil
+			}
+			if turn.Status != string(domain.TurnStatusRunning) &&
+				turn.Status != string(domain.TurnStatusWaitingLocalTool) {
+				return errcode.New(
+					errcode.AgentVersionConflict,
+					http.StatusConflict,
+					"turn is already terminal",
+					nil,
+				)
+			}
+			if err := s.completeAssistantMessageTx(tx, config, turnID, finalResponse, now); err != nil {
+				return err
+			}
+			if err := tx.Model(&turn).
+				Where("status IN ?", []string{
+					string(domain.TurnStatusRunning),
+					string(domain.TurnStatusWaitingLocalTool),
+				}).
+				Updates(map[string]interface{}{
+					"status":          string(domain.TurnStatusCompleted),
+					"final_response":  finalResponse,
+					"tool_iterations": toolIterations,
+					"terminal_reason": "completed",
+					"ended_at":        now,
+				}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&persistence.TurnAttempt{}).
+				Where("turn_id = ? AND ended_at IS NULL", turnID).
+				Updates(map[string]interface{}{
+					"status":   string(domain.TurnStatusCompleted),
+					"ended_at": now,
+				}).Error; err != nil {
+				return err
+			}
+			if strings.TrimSpace(config.StepID) != "" {
+				if err := tx.Model(&persistence.ExecutionStep{}).
+					Where(
+						"task_id = ? AND step_id = ? AND status = ?",
+						config.TaskID,
+						config.StepID,
+						int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+					).
+					Updates(map[string]interface{}{
+						"status":         int32(model.TaskNodeStatus_TASK_NODE_STATUS_COMPLETED),
+						"turn_id":        turnID,
+						"result_summary": finalResponse,
+						"ended_at":       now,
+					}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&persistence.ExecutorLease{}).
+					Where("step_id = ? AND status = ?", config.StepID, chatLeaseStatusActive).
+					Updates(map[string]interface{}{
+						"status":       chatLeaseStatusReleased,
+						"heartbeat_at": now,
+						"expires_at":   now,
+					}).Error; err != nil {
+					return err
+				}
+			}
+			event := TurnEvent{
+				Type:           "done",
+				TurnID:         turnID,
+				AttemptID:      config.AttemptID,
+				ConversationID: turn.ConversationID,
+				AgentID:        turn.AgentID,
+				Stage:          "turn_completed",
+				Iteration:      toolIterations,
+			}
+			payload, err := json.Marshal(event)
+			if err != nil {
+				return err
+			}
+			event.Seq, err = (&ConversationService{}).persistTurnEventTx(
+				tx,
+				turn.ConversationID,
+				turnID,
+				config.AttemptID,
+				"done",
+				payload,
+				now,
+			)
+			if err != nil {
+				return err
+			}
+			committedEvent = event
+			if strings.TrimSpace(config.TaskID) != "" && strings.TrimSpace(config.StepID) != "" {
+				writer := s.eventWriter
+				if writer == nil {
+					writer = NewTaskEventWriter(nil)
+				}
+				taskEvent, err := writer.appendTx(
+					ctx,
+					tx,
+					"",
+					config.TaskID,
+					config.StepID,
+					turnID,
+					string(domain.EventTypeCollaborationNodeCompleted),
+					map[string]interface{}{
+						"task_id":        config.TaskID,
+						"step_id":        config.StepID,
+						"turn_id":        turnID,
+						"result_summary": finalResponse,
+					},
+				)
+				if err != nil {
+					return err
+				}
+				checkpoint := persistence.TaskCheckpoint{
+					CheckpointID: generateID("ckpt"),
+					TaskID:       config.TaskID,
+					EventSeq:     taskEvent.EventSeq,
+					CreatedAt:    now,
+				}
+				checkpoint.StateJSON, err = buildChatTaskCheckpointStateJSONTx(
+					tx,
+					config.TaskID,
+					taskEvent.EventSeq,
+				)
+				if err != nil {
+					return err
+				}
+				if err := tx.Create(&checkpoint).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&persistence.TaskRun{}).
+					Where("task_id = ?", config.TaskID).
+					Updates(map[string]interface{}{
+						"root_turn_id":          turnID,
+						"current_checkpoint_id": checkpoint.CheckpointID,
+						"updated_at":            now,
+					}).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}()
+	if transactionErr != nil {
+		if errors.Is(transactionErr, errTurnExecutionSuperseded) {
+			return transactionErr
+		}
+		logger.Errorf(ctx, "failed to complete turn: turn_id=%s err=%v", turnID, transactionErr)
+		return turnTerminalPersistenceError("complete turn", transactionErr)
+	}
+	if s.convService != nil && committedEvent.Seq > 0 {
+		s.convService.notifyTurnEvent(config.ConversationID, turnID)
+	}
+	if committedEvent.Seq > 0 {
+		emitLiveTurnEvent(context.WithoutCancel(ctx), config, turnID, committedEvent)
+	}
+	return nil
+}
+
+func (s *TurnService) completeAssistantMessageTx(
+	tx *gorm.DB,
+	config *TurnConfig,
+	turnID string,
+	content string,
+	now time.Time,
+) error {
+	if strings.TrimSpace(config.AssistantMessageID) != "" {
+		result := tx.Model(&persistence.AgentMessage{}).
+			Where(
+				"id = ? AND conversation_id = ? AND turn_id = ? AND status = ?",
+				config.AssistantMessageID,
+				config.ConversationID,
+				turnID,
+				"pending",
+			).
 			Updates(map[string]interface{}{
-				"status":   string(domain.TurnStatusCompleted),
-				"ended_at": now,
-			}).Error
-	}); err != nil {
-		logger.Errorf(ctx, "failed to complete turn: turn_id=%s err=%v", turnID, err)
-		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to update turn status", err)
+				"content":    content,
+				"model_name": config.Model,
+				"status":     "completed",
+				"updated_at": now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errcode.New(errcode.AgentVersionConflict, http.StatusConflict, "pending assistant message changed", nil)
+		}
+		return nil
 	}
 
-	return nil
+	var conversation persistence.Conversation
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", config.ConversationID).
+		First(&conversation).Error; err != nil {
+		return err
+	}
+	var maxSeq struct{ MaxSeq int64 }
+	if err := tx.Model(&persistence.AgentMessage{}).
+		Where("conversation_id = ?", config.ConversationID).
+		Select("COALESCE(MAX(seq), 0) AS max_seq").
+		Scan(&maxSeq).Error; err != nil {
+		return err
+	}
+	messageID := generateID("msg")
+	message := persistence.AgentMessage{
+		ID:                messageID,
+		ConversationID:    config.ConversationID,
+		TurnID:            &turnID,
+		ModelName:         optionalString(config.Model),
+		Role:              string(domain.MessageRoleAssistant),
+		Status:            "completed",
+		Content:           &content,
+		Seq:               maxSeq.MaxSeq + 1,
+		BranchID:          optionalString(config.AssistantBranchID),
+		ParentMessageID:   optionalString(config.AssistantParentID),
+		ReplacesMessageID: optionalString(config.AssistantReplacesID),
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if message.ParentMessageID == nil {
+		message.ParentMessageID = optionalString(conversation.ActiveBranchMessageID)
+	}
+	if err := tx.Create(&message).Error; err != nil {
+		return err
+	}
+	return tx.Model(&conversation).Updates(map[string]interface{}{
+		"active_branch_message_id": messageID,
+		"updated_at":               now,
+		"version":                  gorm.Expr("version + 1"),
+	}).Error
 }
 
 // ---------------------------------------------------------------------------
@@ -3819,35 +4762,175 @@ func (s *TurnService) completeTurn(ctx context.Context, turnID, finalResponse st
 // ---------------------------------------------------------------------------
 
 func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, stepID, reason string) error {
+	_, err := s.failTurnWithEvent(ctx, agentID, turnID, taskID, stepID, reason)
+	return err
+}
+
+func (s *TurnService) failTurnWithEvent(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	taskID string,
+	stepID string,
+	reason string,
+) (TurnEvent, error) {
+	ownershipCtx := ctx
+	ctx = context.WithoutCancel(ctx)
 	db, err := s.getDB(ctx)
 	if err != nil {
-		return err
+		return TurnEvent{}, turnTerminalPersistenceError("open failure database", err)
 	}
 
 	now := time.Now()
 	boundedReason := truncateRunes(reason, 100)
-	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&persistence.AgentTurn{}).
-			Where("id = ?", turnID).
-			Updates(map[string]interface{}{
-				"status":          string(domain.TurnStatusFailed),
-				"final_response":  reason,
-				"terminal_reason": boundedReason,
-				"ended_at":        now,
-			}).Error; err != nil {
+	conversationID := ""
+	var committedEvent TurnEvent
+	transactionErr := func() error {
+		unlockOwnership, err := s.lockTurnExecutionOwnership(ownershipCtx, turnID)
+		if err != nil {
 			return err
 		}
-		return tx.Model(&persistence.TurnAttempt{}).
-			Where("turn_id = ? AND ended_at IS NULL", turnID).
-			Updates(map[string]interface{}{
-				"status":     string(domain.TurnStatusFailed),
-				"error_code": boundedReason,
-				"ended_at":   now,
-			}).Error
-	}); err != nil {
-		logger.Errorf(ctx, "failed to mark turn as failed: turn_id=%s err=%v", turnID, err)
-		return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to mark turn as failed", err)
+		defer unlockOwnership()
+
+		return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var turn persistence.AgentTurn
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ?", turnID).
+				First(&turn).Error; err != nil {
+				return err
+			}
+			if turn.Status == string(domain.TurnStatusFailed) {
+				return nil
+			}
+			if turn.Status != string(domain.TurnStatusRunning) &&
+				turn.Status != string(domain.TurnStatusWaitingLocalTool) {
+				return nil
+			}
+			attemptID, err := currentTurnAttemptIDTx(tx, turnID)
+			if err != nil {
+				return err
+			}
+			conversationID = turn.ConversationID
+			if err := tx.Model(&turn).
+				Updates(map[string]interface{}{
+					"status":          string(domain.TurnStatusFailed),
+					"final_response":  reason,
+					"terminal_reason": boundedReason,
+					"ended_at":        now,
+				}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&persistence.TurnAttempt{}).
+				Where("turn_id = ? AND ended_at IS NULL", turnID).
+				Updates(map[string]interface{}{
+					"status":     string(domain.TurnStatusFailed),
+					"error_code": boundedReason,
+					"ended_at":   now,
+				}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&persistence.AgentMessage{}).
+				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
+				Updates(map[string]interface{}{
+					"status":     string(domain.TurnStatusFailed),
+					"updated_at": now,
+				}).Error; err != nil {
+				return err
+			}
+			var boundStep persistence.ExecutionStep
+			if strings.TrimSpace(stepID) == "" {
+				_ = tx.Where(
+					"turn_id = ? AND status = ?",
+					turnID,
+					int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+				).First(&boundStep).Error
+				taskID = boundStep.TaskID
+				stepID = boundStep.StepID
+			}
+			if strings.TrimSpace(stepID) != "" {
+				if err := tx.Model(&persistence.ExecutionStep{}).
+					Where("task_id = ? AND step_id = ? AND status = ?", taskID, stepID, int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING)).
+					Updates(map[string]interface{}{
+						"status":         int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED),
+						"result_summary": boundedReason,
+						"ended_at":       now,
+					}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&persistence.ExecutorLease{}).
+					Where("step_id = ? AND status = ?", stepID, chatLeaseStatusActive).
+					Updates(map[string]interface{}{
+						"status":       chatLeaseStatusReleased,
+						"heartbeat_at": now,
+						"expires_at":   now,
+					}).Error; err != nil {
+					return err
+				}
+			}
+			event := TurnEvent{
+				Type:           "error",
+				TurnID:         turnID,
+				AttemptID:      attemptID,
+				ConversationID: turn.ConversationID,
+				AgentID:        turn.AgentID,
+				Stage:          boundedReason,
+				Error:          reason,
+			}
+			payload, err := json.Marshal(event)
+			if err != nil {
+				return err
+			}
+			event.Seq, err = (&ConversationService{}).persistTurnEventTx(
+				tx,
+				turn.ConversationID,
+				turnID,
+				attemptID,
+				"error",
+				payload,
+				now,
+			)
+			if err != nil {
+				return err
+			}
+			committedEvent = event
+			if strings.TrimSpace(taskID) != "" && strings.TrimSpace(stepID) != "" {
+				writer := s.eventWriter
+				if writer == nil {
+					writer = NewTaskEventWriter(nil)
+				}
+				if _, err := writer.appendTx(
+					ctx,
+					tx,
+					"",
+					taskID,
+					stepID,
+					turnID,
+					string(domain.EventTypeCollaborationNodeFailed),
+					map[string]interface{}{
+						"task_id": taskID,
+						"step_id": stepID,
+						"turn_id": turnID,
+						"reason":  boundedReason,
+					},
+				); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}()
+	if transactionErr != nil {
+		if errors.Is(transactionErr, errTurnExecutionSuperseded) {
+			return TurnEvent{}, transactionErr
+		}
+		logger.Errorf(ctx, "failed to mark turn as failed: turn_id=%s err=%v", turnID, transactionErr)
+		return TurnEvent{}, turnTerminalPersistenceError("fail turn", transactionErr)
+	}
+	if s.convService != nil && conversationID != "" && committedEvent.Seq > 0 {
+		s.convService.notifyTurnEvent(conversationID, turnID)
+	}
+	if committedEvent.Seq == 0 {
+		return committedEvent, nil
 	}
 
 	logger.Warnf(ctx, "turn failed: turn_id=%s reason=%s", turnID, reason)
@@ -3861,7 +4944,7 @@ func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, ste
 		s.growthMetrics.RecordEvent(ctx, agentID, EventTurnFailed, CategoryTurn, turnID, reason, "failure")
 	}
 
-	return nil
+	return committedEvent, nil
 }
 
 func truncateRunes(value string, limit int) string {
@@ -3876,88 +4959,279 @@ func truncateRunes(value string, limit int) string {
 }
 
 func (s *TurnService) cancelTurn(ctx context.Context, agentID, turnID, taskID, stepID string) error {
+	_, err := s.cancelTurnWithResult(ctx, agentID, turnID, taskID, stepID, "")
+	return err
+}
+
+func (s *TurnService) cancelTurnWithEvent(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	taskID string,
+	stepID string,
+) (TurnEvent, error) {
+	result, err := s.cancelTurnWithResult(ctx, agentID, turnID, taskID, stepID, "")
+	return result.Event, err
+}
+
+func (s *TurnService) cancelTurnWithResult(
+	ctx context.Context,
+	agentID string,
+	turnID string,
+	taskID string,
+	stepID string,
+	expectedPtid string,
+) (turnCancellationResult, error) {
+	ownershipCtx := ctx
 	ctx = context.WithoutCancel(ctx)
 	db, err := s.getDB(ctx)
 	if err != nil {
-		return err
+		return turnCancellationResult{}, turnTerminalPersistenceError("open cancellation database", err)
 	}
 	now := time.Now()
-	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&persistence.AgentTurn{}).
-			Where("id = ? AND status IN ?", turnID, []string{
-				string(domain.TurnStatusRunning),
-				string(domain.TurnStatusWaitingLocalTool),
-			}).
-			Updates(map[string]interface{}{
-				"status":          string(domain.TurnStatusCancelled),
-				"final_response":  "cancelled by user",
-				"terminal_reason": "cancelled_by_user",
-				"ended_at":        now,
-			}).Error; err != nil {
+	conversationID := ""
+	var committedEvent TurnEvent
+	result := turnCancellationResult{}
+	transactionErr := func() error {
+		unlockOwnership, err := s.lockTurnExecutionOwnership(ownershipCtx, turnID)
+		if err != nil {
 			return err
 		}
-		if err := tx.Model(&persistence.TurnAttempt{}).
-			Where("turn_id = ? AND ended_at IS NULL", turnID).
-			Updates(map[string]interface{}{
-				"status":   string(domain.TurnStatusCancelled),
-				"ended_at": now,
-			}).Error; err != nil {
-			return err
-		}
-		var batchIDs []string
-		if err := tx.Model(&persistence.ToolBatch{}).
-			Where("turn_id = ? AND status = ?", turnID, persistence.ToolBatchStatusOpen).
-			Pluck("id", &batchIDs).Error; err != nil {
-			return err
-		}
-		if len(batchIDs) == 0 {
+		defer unlockOwnership()
+
+		return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var turn persistence.AgentTurn
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ?", turnID).
+				First(&turn).Error; err != nil {
+				return err
+			}
+			if expectedPtid != "" {
+				var ownerCount int64
+				if err := tx.Model(&persistence.Conversation{}).
+					Where("id = ? AND ptid = ?", turn.ConversationID, expectedPtid).
+					Count(&ownerCount).Error; err != nil {
+					return err
+				}
+				if ownerCount != 1 {
+					return errcode.New(errcode.AgentNotFound, http.StatusNotFound, "turn not found", nil)
+				}
+			}
+			result.Status = turn.Status
+			if turn.Status != string(domain.TurnStatusRunning) &&
+				turn.Status != string(domain.TurnStatusWaitingLocalTool) {
+				return nil
+			}
+			if agentID == "" {
+				agentID = turn.AgentID
+			}
+			attemptID, err := currentTurnAttemptIDTx(tx, turnID)
+			if err != nil {
+				return err
+			}
+			conversationID = turn.ConversationID
+			if err := tx.Model(&turn).
+				Where("status IN ?", []string{
+					string(domain.TurnStatusRunning),
+					string(domain.TurnStatusWaitingLocalTool),
+				}).
+				Updates(map[string]interface{}{
+					"status":          string(domain.TurnStatusCancelled),
+					"final_response":  "cancelled by user",
+					"terminal_reason": "cancelled_by_user",
+					"ended_at":        now,
+				}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&persistence.TurnAttempt{}).
+				Where("turn_id = ? AND ended_at IS NULL", turnID).
+				Updates(map[string]interface{}{
+					"status":   string(domain.TurnStatusCancelled),
+					"ended_at": now,
+				}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&persistence.AgentMessage{}).
+				Where("turn_id = ? AND role = ? AND status = ?", turnID, string(domain.MessageRoleAssistant), "pending").
+				Updates(map[string]interface{}{
+					"status":     string(domain.TurnStatusCancelled),
+					"updated_at": now,
+				}).Error; err != nil {
+				return err
+			}
+			var boundStep persistence.ExecutionStep
+			if strings.TrimSpace(stepID) == "" {
+				_ = tx.Where(
+					"turn_id = ? AND status = ?",
+					turnID,
+					int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+				).First(&boundStep).Error
+				taskID = boundStep.TaskID
+				stepID = boundStep.StepID
+			}
+			if strings.TrimSpace(stepID) != "" {
+				if err := tx.Model(&persistence.ExecutionStep{}).
+					Where("task_id = ? AND step_id = ? AND status = ?", taskID, stepID, int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING)).
+					Updates(map[string]interface{}{
+						"status":         int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED),
+						"result_summary": "cancelled_by_user",
+						"ended_at":       now,
+					}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&persistence.ExecutorLease{}).
+					Where("step_id = ? AND status = ?", stepID, chatLeaseStatusActive).
+					Updates(map[string]interface{}{
+						"status":       chatLeaseStatusReleased,
+						"heartbeat_at": now,
+						"expires_at":   now,
+					}).Error; err != nil {
+					return err
+				}
+			}
+			var batchIDs []string
+			if err := tx.Model(&persistence.ToolBatch{}).
+				Where("turn_id = ? AND status = ?", turnID, persistence.ToolBatchStatusOpen).
+				Pluck("id", &batchIDs).Error; err != nil {
+				return err
+			}
+			if len(batchIDs) > 0 {
+				if err := tx.Model(&persistence.ToolCall{}).
+					Where("tool_batch_id IN ? AND status IN ?", batchIDs, []string{
+						persistence.ToolCallStatusProposed,
+						persistence.ToolCallStatusWaitingApproval,
+						persistence.ToolCallStatusApproved,
+						persistence.ToolCallStatusDispatchCommitted,
+					}).
+					Updates(map[string]interface{}{
+						"status":     persistence.ToolCallStatusCancelled,
+						"error_code": "turn_cancelled",
+						"ended_at":   now,
+						"updated_at": now,
+					}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&persistence.ToolCall{}).
+					Where("tool_batch_id IN ? AND status = ?", batchIDs, persistence.ToolCallStatusPrepared).
+					Updates(map[string]interface{}{
+						"status":     persistence.ToolCallStatusUnknownSideEffect,
+						"error_code": "turn_cancelled_after_prepare",
+						"ended_at":   now,
+						"updated_at": now,
+					}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&persistence.ToolBatch{}).
+					Where("id IN ? AND status = ?", batchIDs, persistence.ToolBatchStatusOpen).
+					Updates(map[string]interface{}{
+						"status":     persistence.ToolBatchStatusBlocked,
+						"settled_at": now,
+						"updated_at": now,
+					}).Error; err != nil {
+					return err
+				}
+			}
+
+			event := TurnEvent{
+				Type:           "cancelled",
+				TurnID:         turnID,
+				AttemptID:      attemptID,
+				ConversationID: turn.ConversationID,
+				AgentID:        turn.AgentID,
+				Stage:          "turn_cancelled",
+				Error:          "cancelled_by_user",
+			}
+			payload, err := json.Marshal(event)
+			if err != nil {
+				return err
+			}
+			event.Seq, err = (&ConversationService{}).persistTurnEventTx(
+				tx,
+				turn.ConversationID,
+				turnID,
+				attemptID,
+				event.Type,
+				payload,
+				now,
+			)
+			if err != nil {
+				return err
+			}
+			committedEvent = event
+			result.Event = event
+			result.Status = string(domain.TurnStatusCancelled)
+			result.Cancelled = true
+			if strings.TrimSpace(taskID) != "" && strings.TrimSpace(stepID) != "" {
+				writer := s.eventWriter
+				if writer == nil {
+					writer = NewTaskEventWriter(nil)
+				}
+				if _, err := writer.appendTx(
+					ctx,
+					tx,
+					"",
+					taskID,
+					stepID,
+					turnID,
+					string(domain.EventTypeCollaborationNodeFailed),
+					map[string]interface{}{
+						"task_id": taskID,
+						"step_id": stepID,
+						"turn_id": turnID,
+						"reason":  "cancelled_by_user",
+					},
+				); err != nil {
+					return err
+				}
+			}
 			return nil
+		})
+	}()
+	if transactionErr != nil {
+		if errors.Is(transactionErr, errTurnExecutionSuperseded) {
+			return turnCancellationResult{}, transactionErr
 		}
-		if err := tx.Model(&persistence.ToolCall{}).
-			Where("tool_batch_id IN ? AND status IN ?", batchIDs, []string{
-				persistence.ToolCallStatusProposed,
-				persistence.ToolCallStatusWaitingApproval,
-				persistence.ToolCallStatusApproved,
-				persistence.ToolCallStatusDispatchCommitted,
-			}).
-			Updates(map[string]interface{}{
-				"status":     persistence.ToolCallStatusCancelled,
-				"error_code": "turn_cancelled",
-				"ended_at":   now,
-				"updated_at": now,
-			}).Error; err != nil {
-			return err
+		var bizErr *errcode.BizError
+		if errors.As(transactionErr, &bizErr) {
+			return turnCancellationResult{}, transactionErr
 		}
-		if err := tx.Model(&persistence.ToolCall{}).
-			Where("tool_batch_id IN ? AND status = ?", batchIDs, persistence.ToolCallStatusPrepared).
-			Updates(map[string]interface{}{
-				"status":     persistence.ToolCallStatusUnknownSideEffect,
-				"error_code": "turn_cancelled_after_prepare",
-				"ended_at":   now,
-				"updated_at": now,
-			}).Error; err != nil {
-			return err
-		}
-		return tx.Model(&persistence.ToolBatch{}).
-			Where("id IN ? AND status = ?", batchIDs, persistence.ToolBatchStatusOpen).
-			Updates(map[string]interface{}{
-				"status":     persistence.ToolBatchStatusBlocked,
-				"settled_at": now,
-				"updated_at": now,
-			}).Error
-	}); err != nil {
-		return errcode.New(
-			errcode.AgentInternal,
-			http.StatusInternalServerError,
-			"failed to mark turn as cancelled",
-			err,
-		)
+		return turnCancellationResult{}, turnTerminalPersistenceError("cancel turn", transactionErr)
+	}
+	if !result.Cancelled {
+		return result, nil
+	}
+	if s.convService != nil && conversationID != "" && committedEvent.Seq > 0 {
+		s.convService.notifyTurnEvent(conversationID, turnID)
 	}
 	s.publishDomainEvent(ctx, agentID, turnID, taskID, stepID, string(domain.EventTypeAgentTurnCancelled), map[string]interface{}{
 		"turn_id": turnID,
 		"reason":  "cancelled by user",
 	})
-	return nil
+	return result, nil
+}
+
+func currentTurnAttemptIDTx(tx *gorm.DB, turnID string) (string, error) {
+	var attempt persistence.TurnAttempt
+	if err := tx.
+		Select("id").
+		Where("turn_id = ?", turnID).
+		Order("attempt_index DESC").
+		First(&attempt).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return "", nil
+		}
+		return "", err
+	}
+	return attempt.ID, nil
+}
+
+func turnTerminalPersistenceError(operation string, cause error) error {
+	return errcode.New(
+		errcode.AgentInternal,
+		http.StatusInternalServerError,
+		"failed to persist terminal turn state",
+		fmt.Errorf("%w: %s: %w", errTurnEventPersistence, operation, cause),
+	)
 }
 
 // ---------------------------------------------------------------------------

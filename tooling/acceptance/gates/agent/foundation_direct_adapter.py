@@ -87,6 +87,22 @@ REQUIRED_ASSERTIONS = {
             "authorizedDownloadVerified",
         }
     ),
+    "AS-F06": frozenset(
+        {
+            "exactRuntimeAttribution",
+            "exactRecoveryTransitionOrdering",
+            "replayAfterAcknowledgedCursor",
+            "duplicateAndOutOfOrderIdempotent",
+            "pageClientAndStationRestartRecovered",
+            "transportLossNonTerminal",
+            "terminalProjectionEqualsStation",
+            "failedOrCancelledNotCompleted",
+            "recoveryFailureRetryAndReload",
+            "staleGenerationAndRevisionRejected",
+            "zeroDuplicateSideEffects",
+            "cleanupComplete",
+        }
+    ),
     "AS-F07": frozenset(
         {
             "retryCreatedAttempt",

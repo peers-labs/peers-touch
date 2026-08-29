@@ -13,9 +13,9 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
-	"sync/atomic"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
@@ -102,38 +102,23 @@ func (h *TurnHandlers) SetAdmissionService(admission *service.TurnAdmissionServi
 // beginChatTaskStep ensures the Station-owned Chat root task for the conversation
 // and opens an execution step for the incoming user message. It returns the
 // task/step ids so the caller can bind them to the turn and close them out.
-func (h *TurnHandlers) beginChatTaskStep(ctx context.Context, req *model.ExecuteTurnRequest) (taskID, stepID string) {
+func (h *TurnHandlers) beginChatTaskStep(ctx context.Context, req *model.ExecuteTurnRequest) (taskID, stepID string, err error) {
 	if h.chatTaskService == nil {
-		return "", ""
+		return "", "", nil
 	}
 	actorID := subjectActorID(ctx)
 	if actorID == "" {
-		return "", ""
+		return "", "", nil
 	}
-	taskID, err := h.chatTaskService.EnsureChatTask(ctx, actorID, req.GetAgentId(), req.GetConversationId(), req.GetUserInput())
+	taskID, err = h.chatTaskService.EnsureChatTask(ctx, actorID, req.GetAgentId(), req.GetConversationId(), req.GetUserInput())
 	if err != nil {
-		return "", ""
+		return "", "", err
 	}
 	stepID, err = h.chatTaskService.BeginChatStep(ctx, taskID, req.GetAgentId(), req.GetUserInput())
 	if err != nil {
-		return taskID, ""
+		return taskID, "", err
 	}
-	return taskID, stepID
-}
-
-func (h *TurnHandlers) settleChatTaskForTurn(
-	ctx context.Context,
-	taskID string,
-	stepID string,
-	turn *domain.Turn,
-) error {
-	if h.chatTaskService == nil || stepID == "" || turn == nil {
-		return nil
-	}
-	if turn.Status == domain.TurnStatusCompleted {
-		return h.chatTaskService.FinishChatStep(ctx, taskID, stepID, turn.TurnID, turn.FinalResponse)
-	}
-	return nil
+	return taskID, stepID, nil
 }
 
 func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.ExecuteTurnRequest) (*model.ExecuteTurnResponse, error) {
@@ -208,19 +193,24 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 		config.PrecreatedTurnID = admission.GetTurnId()
 		config.TurnID = admission.GetTurnId()
 	}
-	taskID, stepID := h.beginChatTaskStep(ctx, req)
+	taskID, stepID, taskErr := h.beginChatTaskStep(ctx, req)
 	config.TaskID = taskID
 	config.StepID = stepID
+	if taskErr != nil {
+		if admission != nil {
+			taskErr = h.turnService.SettleAdmittedTurnAfterError(
+				context.WithoutCancel(ctx),
+				config,
+				admission.GetTurnId(),
+				"failed to prepare admitted chat task",
+				taskErr,
+			)
+		}
+		return nil, toHandlerError(taskErr)
+	}
 
 	turn, err := h.turnService.ExecuteTurn(ctx, config, req.GetUserInput())
 	if err != nil {
-		if h.chatTaskService != nil && stepID != "" {
-			_ = h.chatTaskService.FailChatStep(ctx, taskID, stepID, err.Error())
-		}
-		return nil, toHandlerError(err)
-	}
-
-	if err := h.settleChatTaskForTurn(ctx, taskID, stepID, turn); err != nil {
 		return nil, toHandlerError(err)
 	}
 
@@ -302,8 +292,6 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		return nil
 	}
 	turnID := service.NewTurnID()
-	turnCtx, releaseTurn := h.turnService.RegisterTurn(ctx, turnID)
-	defer releaseTurn()
 
 	createdConversation := false
 	if strings.TrimSpace(input.GetConversationId()) == "" && len(input.GetAttachments()) > 0 {
@@ -380,12 +368,6 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 			})
 			return nil
 		}
-		if createdConversation {
-			_ = h.writePersistedTurnStreamEvent(ctx, resp, "conversation_created", turnID, input.GetConversationId(), input.GetAgentId(), map[string]any{
-				"type":            "conversation_created",
-				"conversation_id": input.GetConversationId(),
-			})
-		}
 		if admission.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
 			event := "admission_replayed"
 			if admission.GetStatus() == model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED {
@@ -399,54 +381,102 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		}
 		turnID = admission.GetTurnId()
 	}
+	if err := exposeTurnStreamIdentity(resp, turnID); err != nil {
+		if admission == nil {
+			return err
+		}
+		return h.turnService.SettleAdmittedTurnAfterError(
+			context.WithoutCancel(ctx),
+			&service.TurnConfig{
+				AgentID:        input.GetAgentId(),
+				ConversationID: input.GetConversationId(),
+			},
+			turnID,
+			"failed to expose admitted turn stream identity",
+			err,
+		)
+	}
+	if createdConversation && admission != nil {
+		if err := h.writePersistedTurnStreamEvent(ctx, resp, "conversation_created", turnID, input.GetConversationId(), input.GetAgentId(), map[string]any{
+			"type":            "conversation_created",
+			"conversation_id": input.GetConversationId(),
+		}); err != nil {
+			return h.turnService.SettleAdmittedTurnAfterError(
+				context.WithoutCancel(ctx),
+				&service.TurnConfig{
+					AgentID:        input.GetAgentId(),
+					ConversationID: input.GetConversationId(),
+				},
+				turnID,
+				"failed to flush admitted conversation event",
+				err,
+			)
+		}
+	}
 
 	events := make(chan service.TurnEvent, 32)
 	done := make(chan turnStreamResult, 1)
-	var errorEmitted atomic.Bool
-	config, configErr := h.turnConfigFromRequest(ctx, &input, func(eventCtx context.Context, event service.TurnEvent) {
-		if event.Type == "error" || event.Type == "cancelled" {
-			errorEmitted.Store(true)
-		}
+	config, configErr := h.turnConfigFromRequest(ctx, &input, func(_ context.Context, event service.TurnEvent) {
 		select {
 		case events <- event:
-		case <-eventCtx.Done():
+		case <-ctx.Done():
 		}
 	})
 	if configErr != nil {
-		_ = writeTurnStreamEvent(resp, "error", map[string]any{
+		if admission != nil {
+			configErr = h.turnService.SettleAdmittedTurnAfterError(
+				context.WithoutCancel(ctx),
+				&service.TurnConfig{
+					AgentID:        input.GetAgentId(),
+					ConversationID: input.GetConversationId(),
+				},
+				turnID,
+				"failed to construct admitted turn configuration",
+				configErr,
+			)
+		}
+		if writeErr := writeTurnStreamEvent(resp, "error", map[string]any{
 			"type":  "error",
 			"error": configErr.Error(),
-		})
+		}); writeErr != nil {
+			return errors.Join(configErr, writeErr)
+		}
 		return nil
 	}
 	config.TurnID = turnID
-	config.ExecutionContext = turnCtx
 	if admission != nil {
 		config.PrecreatedTurnID = turnID
 	}
-	taskID, stepID := h.beginChatTaskStep(ctx, &input)
+	taskID, stepID, taskErr := h.beginChatTaskStep(ctx, &input)
 	config.TaskID = taskID
 	config.StepID = stepID
+	if taskErr != nil {
+		if admission != nil {
+			taskErr = h.turnService.SettleAdmittedTurnAfterError(
+				context.WithoutCancel(ctx),
+				config,
+				turnID,
+				"failed to prepare admitted chat task",
+				taskErr,
+			)
+		}
+		if writeErr := writeTurnStreamEvent(resp, "error", map[string]any{
+			"type":  "error",
+			"error": taskErr.Error(),
+		}); writeErr != nil {
+			return errors.Join(taskErr, writeErr)
+		}
+		return nil
+	}
+	turnCtx, releaseTurn := h.turnService.RegisterTurn(context.WithoutCancel(ctx), turnID)
+	config.ExecutionContext = turnCtx
 
 	go func() {
-		turn, err := h.turnService.ExecuteTurn(ctx, config, input.GetUserInput())
-		if h.chatTaskService != nil && stepID != "" {
-			if err != nil {
-				_ = h.chatTaskService.FailChatStep(ctx, taskID, stepID, err.Error())
-			} else if settleErr := h.settleChatTaskForTurn(ctx, taskID, stepID, turn); settleErr != nil {
-				err = settleErr
-			}
-		}
-		var suggestions []string
-		if err == nil && turn != nil {
-			suggestions = h.turnService.GenerateFollowUpSuggestions(ctx, config, input.GetUserInput(), turn.FinalResponse)
-		}
-		turnModel := ""
-		if turn != nil {
-			turnModel = turn.Model
-		}
-		done <- turnStreamResult{turn: domainTurnToProto(turn), taskID: taskID, err: err, suggestions: suggestions, model: turnModel}
+		defer releaseTurn()
+
+		turn, err := h.turnService.ExecuteTurn(turnCtx, config, input.GetUserInput())
 		close(events)
+		done <- turnStreamResult{turn: domainTurnToProto(turn), err: err}
 	}()
 
 	for {
@@ -456,40 +486,46 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 				events = nil
 				continue
 			}
-			_ = writeTurnStreamEvent(resp, event.Type, event)
+			if err := writeTurnStreamEvent(resp, event.Type, event); err != nil {
+				return nil
+			}
 		case result := <-done:
+			if err := drainTurnStreamEvents(resp, events); err != nil {
+				return nil
+			}
 			if result.err != nil {
-				if !errorEmitted.Load() {
-					_ = h.writePersistedTurnStreamEvent(ctx, resp, "error", turnID, input.GetConversationId(), input.GetAgentId(), map[string]any{
-						"type":  "error",
-						"error": result.err.Error(),
-					})
-				}
 				return nil
 			}
 			if result.turn != nil && result.turn.GetStatus() == model.TurnStatus_TURN_STATUS_RUNNING {
 				return nil
 			}
-			donePayload := map[string]any{
-				"type":        "done",
-				"turn":        result.turn,
-				"task_id":     result.taskID,
-				"suggestions": result.suggestions,
-			}
-			if admission != nil {
-				donePayload["admission"] = admission
-			}
-			// Include model at top level so the BFF and frontend can
-			// extract it without navigating the proto Turn structure.
-			if result.turn != nil && result.turn.GetFinalResponse() != "" {
-				donePayload["model"] = turnModelFromResult(result)
-			}
-			_ = h.writePersistedTurnStreamEvent(ctx, resp, "done", turnID, input.GetConversationId(), input.GetAgentId(), donePayload)
 			return nil
 		case <-ctx.Done():
 			return nil
 		}
 	}
+}
+
+func exposeTurnStreamIdentity(resp server.Response, turnID string) error {
+	resp.SetHeader("X-Agent-Turn-ID", strings.TrimSpace(turnID))
+	return resp.Flush()
+}
+
+func drainTurnStreamEvents(resp server.Response, events <-chan service.TurnEvent) error {
+	for events != nil {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return nil
+			}
+			if err := writeTurnStreamEvent(resp, event.Type, event); err != nil {
+				return err
+			}
+		default:
+			return nil
+		}
+	}
+	return nil
 }
 
 func (h *TurnHandlers) writePersistedTurnStreamEvent(
@@ -576,17 +612,8 @@ func (h *TurnHandlers) HandleQuickCompletion(ctx context.Context, req server.Req
 }
 
 type turnStreamResult struct {
-	turn        *model.Turn
-	taskID      string
-	err         error
-	suggestions []string
-	model       string // Model name from domain.Turn.Model (not in proto).
-}
-
-// turnModelFromResult returns the model name recorded on the result. The proto
-// Turn message lacks a model field, so the handler carries it separately.
-func turnModelFromResult(result turnStreamResult) string {
-	return result.model
+	turn *model.Turn
+	err  error
 }
 
 func (h *TurnHandlers) turnConfigFromRequest(

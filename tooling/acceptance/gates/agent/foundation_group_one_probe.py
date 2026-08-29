@@ -22,6 +22,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_as_f03,
     evaluate_as_f04,
     evaluate_as_f05,
+    evaluate_as_f06,
     evaluate_as_f10,
 )
 
@@ -33,6 +34,7 @@ GROUP_ONE_CELLS = frozenset(
         "AS-F03",
         "AS-F04",
         "AS-F05",
+        "AS-F06",
         "AS-F07",
         "AS-F08",
         "AS-F09",
@@ -46,7 +48,7 @@ GROUP_ONE_ROWS = frozenset(
         "foundation-browser-direct",
     }
 )
-EXPECTED_GROUP_ONE_TUPLES = 40
+EXPECTED_GROUP_ONE_TUPLES = 44
 
 
 class GroupOneProbeError(RuntimeError):
@@ -182,6 +184,12 @@ def assert_group_one_capture(
             platform=probe_input.platform,
         ),
         "AS-F05": lambda facts: evaluate_as_f05(facts),
+        "AS-F06": lambda facts: evaluate_as_f06(
+            facts,
+            platform=probe_input.platform,
+            locale=probe_input.locale,
+            sample_id=probe_input.sample_id,
+        ),
         "AS-F10": lambda facts: evaluate_as_f10(
             facts,
             platform=probe_input.platform,

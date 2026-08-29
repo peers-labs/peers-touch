@@ -15,6 +15,7 @@ import { agentCapabilityRuntime } from '../runtimes/agentCapabilityRuntime';
 import { agentTopicRuntime } from '../runtimes/agentTopicRuntime';
 import { messagingRecoveryRuntime } from '../runtimes/messagingRecoveryRuntime';
 import { toolRuntime } from '../runtimes/toolRuntime';
+import { chatRuntime } from '../runtimes/chatRuntime';
 import { log } from '../utils/logger';
 
 // Register kernel-managed runtimes once. The legacy bridges
@@ -34,6 +35,7 @@ function registerKernelRuntimes(): void {
   registerRuntime(momentsRuntime);
   registerRuntime(agentCapabilityRuntime);
   registerRuntime(agentTopicRuntime);
+  registerRuntime(chatRuntime);
   registerRuntime(messagingRecoveryRuntime);
   registerRuntime(toolRuntime);
 }
@@ -85,39 +87,11 @@ export function installDeferredAppRuntimeProjections(): Promise<void> {
   installAppRuntime();
 
   deferredInstallInFlight = (async () => {
-    // #region debug-point D:deferred-runtime-bootstrap
-    void fetch('http://127.0.0.1:7777/event', {
-      method: 'POST',
-      body: JSON.stringify({
-        sessionId: 'post-login-update-loop',
-        runId: 'post-fix',
-        hypothesisId: 'D',
-        location: 'services/appRuntime.ts:installDeferredAppRuntimeProjections',
-        msg: '[DEBUG] Deferred runtime bootstrap started',
-        data: { runtimeIds: DEFERRED_APP_RUNTIME_IDS },
-        ts: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     const installedRuntimes: string[] = [];
     for (const runtimeId of DEFERRED_APP_RUNTIME_IDS) {
       installRuntime(runtimeId);
       await bootstrapRuntime(runtimeId, null);
       installedRuntimes.push(runtimeId);
-      // #region debug-point D:deferred-runtime-bootstrap
-      void fetch('http://127.0.0.1:7777/event', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId: 'post-login-update-loop',
-          runId: 'post-fix',
-          hypothesisId: 'D',
-          location: 'services/appRuntime.ts:deferred-runtime-loop',
-          msg: '[DEBUG] Deferred runtime bootstrapped',
-          data: { installedRuntimes, runtimeId },
-          ts: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       await yieldToRenderer();
     }
     deferredInstalled = true;
@@ -143,6 +117,7 @@ export function teardownAppRuntime(): void {
   teardownRuntime(momentsRuntime.id);
   teardownRuntime(agentCapabilityRuntime.id);
   teardownRuntime(agentTopicRuntime.id);
+  teardownRuntime(chatRuntime.id);
   teardownRuntime(messagingRecoveryRuntime.id);
   teardownRuntime(toolRuntime.id);
   teardownMediaRuntime();

@@ -22,6 +22,8 @@ export interface MessageActionContext {
   onDelete: () => void;
   onRegenerate: () => void;
   onRetry: () => void;
+  onRetryRecovery: () => void;
+  onReloadSnapshot: () => void;
   onBranch: () => void;
   onContinue: () => void;
   onDeleteAndRegenerate: () => void;

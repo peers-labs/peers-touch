@@ -1,0 +1,527 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EVENT, eventBus } from '../kernel/events';
+import type { AgentTurnStreamEventPayload } from '../kernel/events/types';
+import type { StreamEvent } from '../services/desktop_api';
+import type { ActiveAgentTurnRecovery } from '../store/agentTurnRecovery';
+import { useAgentTurnRecoveryStore } from '../store/agentTurnRecovery';
+
+const mocks = vi.hoisted(() => ({
+  readValue: vi.fn(),
+  write: vi.fn(),
+  applyRecoveredTurnEvent: vi.fn(),
+  reconcileRecoveredTurn: vi.fn(),
+  replayControllers: [] as AbortController[],
+  replayInputs: [] as Array<{
+    conversation_id: string;
+    turn_id: string;
+    after_seq: number;
+  }>,
+  replayOnEvents: [] as Array<(event: StreamEvent) => void>,
+  replayOnErrors: [] as Array<(error: Error) => void>,
+  sessionUser: null as { actorId: string; ptid?: string } | null,
+  subscribers: new Map<string, Set<(payload: unknown) => void>>(),
+}));
+
+vi.mock('../kernel/events', () => ({
+  EVENT: {
+    AGENT_TURN_STREAM_EVENT: 'agent:turn-stream-event',
+  },
+  eventBus: {
+    publish: (type: string, payload: unknown) => {
+      for (const handler of mocks.subscribers.get(type) || []) handler(payload);
+    },
+    subscribe: (type: string, handler: (payload: unknown) => void) => {
+      const handlers = mocks.subscribers.get(type) || new Set();
+      handlers.add(handler);
+      mocks.subscribers.set(type, handlers);
+      return () => handlers.delete(handler);
+    },
+  },
+}));
+
+vi.mock('../storage/desktopClientStorage', () => ({
+  createDesktopClientStorageRuntime: () => ({
+    repositories: {
+      runtimeProjection: {
+        readValue: mocks.readValue,
+        write: mocks.write,
+      },
+    },
+  }),
+}));
+
+vi.mock('../services/desktop_api', () => ({
+  classifyAgentTurnTerminalEvent: (event: { event: string; data: Record<string, unknown> }) => {
+    if (event.event === 'done') return 'completed';
+    if (event.event === 'cancelled') return 'cancelled';
+    if (event.event === 'error') return 'failed';
+    if (event.event !== 'snapshot') return null;
+    const status = String(event.data.status || '');
+    if (status === 'completed') return 'completed';
+    if (status === 'cancelled') return 'cancelled';
+    if (status === 'failed') return 'failed';
+    if (status === 'interrupted') return 'interrupted';
+    return null;
+  },
+  streamAgentTurnReplay: (
+    input: {
+      conversation_id: string;
+      turn_id: string;
+      after_seq: number;
+    },
+    onEvent: (event: StreamEvent) => void,
+    onError: (error: Error) => void,
+    sourcePtid: string,
+  ) => {
+    const controller = new AbortController();
+    mocks.replayControllers.push(controller);
+    mocks.replayInputs.push(input);
+    mocks.replayOnEvents.push((event) => onEvent({ ...event, ptid: sourcePtid }));
+    mocks.replayOnErrors.push(onError);
+    return controller;
+  },
+}));
+
+vi.mock('../store/chat', () => ({
+  useChatStore: {
+    getState: () => ({
+      applyRecoveredTurnEvent: mocks.applyRecoveredTurnEvent,
+      reconcileRecoveredTurn: mocks.reconcileRecoveredTurn,
+    }),
+  },
+}));
+
+vi.mock('../store/session', () => ({
+  useSessionStore: {
+    getState: () => ({ currentUser: mocks.sessionUser }),
+  },
+}));
+
+vi.mock('../utils/logger', () => ({
+  log: {
+    error: vi.fn(),
+    warn: vi.fn(),
+  },
+}));
+
+import { chatRuntime, reloadAgentTurnSnapshot } from './chatRuntime';
+
+function activeTurn(overrides: Partial<ActiveAgentTurnRecovery> = {}): ActiveAgentTurnRecovery {
+  return {
+    actorId: 'ptid:person:alice',
+    conversationId: 'conversation-1',
+    agentId: 'agent-1',
+    turnId: 'turn-1',
+    streamId: 'stream-1',
+    streamGeneration: 10,
+    cursor: 4,
+    phase: 'CONNECTED',
+    startedAt: 100,
+    updatedAt: 200,
+    recoveryEpoch: 0,
+    ...overrides,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+function stationSnapshot(
+  data: Record<string, unknown>,
+): {
+  event: 'snapshot';
+  data: Record<string, unknown>;
+  sourceDelivery: {
+    transport: 'station-sse';
+    ptid: string;
+    conversationId: string;
+    turnId: string;
+    sequence: number;
+    rawPayload: { eventType: string; data: Record<string, unknown> };
+  };
+} {
+  const sourceData = { ...data };
+  return {
+    event: 'snapshot',
+    data,
+    sourceDelivery: {
+      transport: 'station-sse',
+      ptid: 'ptid:person:alice',
+      conversationId: String(data.conversationId),
+      turnId: String(data.turnId),
+      sequence: Number(data.seq),
+      rawPayload: { eventType: 'snapshot', data: sourceData },
+    },
+  };
+}
+
+describe('chatRuntime Agent turn recovery', () => {
+  beforeEach(() => {
+    chatRuntime.teardown();
+    useAgentTurnRecoveryStore.getState().reset();
+    mocks.readValue.mockReset();
+    mocks.write.mockReset().mockResolvedValue(undefined);
+    mocks.applyRecoveredTurnEvent.mockReset();
+    mocks.reconcileRecoveredTurn.mockReset().mockResolvedValue(undefined);
+    mocks.replayControllers.length = 0;
+    mocks.replayInputs.length = 0;
+    mocks.replayOnEvents.length = 0;
+    mocks.replayOnErrors.length = 0;
+    mocks.sessionUser = null;
+    mocks.subscribers.clear();
+    chatRuntime.install();
+  });
+
+  afterEach(() => {
+    chatRuntime.teardown();
+  });
+
+  it('merges a delayed bootstrap read with a newer live record for the same actor', async () => {
+    const persistedRead = deferred<unknown>();
+    mocks.readValue.mockReturnValueOnce(persistedRead.promise);
+    const bootstrap = chatRuntime.bootstrap('ptid:person:alice');
+    const livePayload: AgentTurnStreamEventPayload = {
+      streamId: 'stream-live',
+      streamGeneration: 11,
+      ptid: 'ptid:person:alice',
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      event: 'text',
+      data: { turnId: 'turn-live', seq: 8 },
+      timestampMs: 500,
+    };
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, livePayload);
+
+    persistedRead.resolve({ 'conversation-1': activeTurn() });
+    await bootstrap;
+
+    expect(useAgentTurnRecoveryStore.getState().active['conversation-1']).toMatchObject({
+      turnId: 'turn-live',
+      streamGeneration: 11,
+      cursor: 8,
+    });
+  });
+
+  it('ignores a stale actor bootstrap that resolves after the active actor changes', async () => {
+    const aliceRead = deferred<unknown>();
+    const bobRead = deferred<unknown>();
+    mocks.readValue
+      .mockReturnValueOnce(aliceRead.promise)
+      .mockReturnValueOnce(bobRead.promise);
+
+    const aliceBootstrap = chatRuntime.bootstrap('ptid:person:alice');
+    const bobBootstrap = chatRuntime.bootstrap('ptid:person:bob');
+    bobRead.resolve({});
+    await bobBootstrap;
+    aliceRead.resolve({ 'conversation-1': activeTurn() });
+    await aliceBootstrap;
+
+    expect(useAgentTurnRecoveryStore.getState().actorId).toBe('ptid:person:bob');
+    expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
+  });
+
+  it('hands a native connection loss to the interruptible replay transport', async () => {
+    mocks.readValue.mockResolvedValueOnce({});
+    await chatRuntime.bootstrap('ptid:person:alice');
+    const basePayload = {
+      streamId: 'stream-1',
+      streamGeneration: 10,
+      ptid: 'ptid:person:alice',
+      conversationId: 'conversation-1',
+      agentId: 'agent-1',
+      timestampMs: 500,
+    };
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      ...basePayload,
+      event: 'connected',
+      data: { turnId: 'turn-1', seq: 1 },
+    });
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      ...basePayload,
+      event: 'connection_lost',
+      data: { turnId: 'turn-1', seq: 1, recoveryHandoff: true },
+    });
+
+    expect(mocks.replayOnEvents).toHaveLength(1);
+  });
+
+  it('publishes source-bound replay metadata without making it a second state input', async () => {
+    mocks.readValue.mockResolvedValueOnce({ 'conversation-1': activeTurn() });
+    const observed: unknown[] = [];
+    eventBus.subscribe(EVENT.AGENT_TURN_STREAM_EVENT, (payload) => observed.push(payload));
+    await chatRuntime.bootstrap('ptid:person:alice');
+    mocks.applyRecoveredTurnEvent.mockClear();
+
+    const rawData = {
+      turnId: 'turn-1',
+      conversationId: 'conversation-1',
+      seq: 5,
+      text: 'replayed',
+    };
+    mocks.replayOnEvents[0]({
+      event: 'text',
+      data: rawData,
+      sourceDelivery: {
+        transport: 'station-sse',
+        ptid: 'ptid:person:alice',
+        conversationId: 'conversation-1',
+        turnId: 'turn-1',
+        sequence: 5,
+        rawPayload: { eventType: 'text', data: { ...rawData } },
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(observed).toContainEqual(expect.objectContaining({
+        deliveryOnly: true,
+        sourceDelivery: {
+          transport: 'station-sse',
+          ptid: 'ptid:person:alice',
+          conversationId: 'conversation-1',
+          turnId: 'turn-1',
+          sequence: 5,
+          rawPayload: { eventType: 'text', data: rawData },
+        },
+      }));
+    });
+    expect(useAgentTurnRecoveryStore.getState().active['conversation-1'].cursor).toBe(5);
+    expect(mocks.applyRecoveredTurnEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a late stream event from a different authenticated actor', async () => {
+    mocks.readValue.mockResolvedValueOnce({});
+    await chatRuntime.bootstrap('ptid:person:alice');
+
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      streamId: 'stream-bob',
+      streamGeneration: 12,
+      ptid: 'ptid:person:bob',
+      conversationId: 'conversation-bob',
+      agentId: 'agent-1',
+      event: 'text',
+      data: { turnId: 'turn-bob', seq: 1 },
+      timestampMs: 500,
+    });
+
+    expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(mocks.applyRecoveredTurnEvent).not.toHaveBeenCalled();
+  });
+
+  it('uses canonical PTID when the session also carries an internal actor id', async () => {
+    mocks.sessionUser = {
+      actorId: 'internal-actor-42',
+      ptid: 'ptid:person:alice',
+    };
+    mocks.readValue.mockResolvedValueOnce({});
+    await chatRuntime.bootstrap('internal-actor-42');
+
+    eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+      streamId: 'stream-ptid',
+      streamGeneration: 12,
+      ptid: 'ptid:person:alice',
+      conversationId: 'conversation-ptid',
+      agentId: 'agent-1',
+      event: 'text',
+      data: { turnId: 'turn-ptid', seq: 1 },
+      timestampMs: 500,
+    });
+
+    expect(useAgentTurnRecoveryStore.getState().actorId).toBe('ptid:person:alice');
+    expect(useAgentTurnRecoveryStore.getState().active['conversation-ptid']).toMatchObject({
+      actorId: 'ptid:person:alice',
+      turnId: 'turn-ptid',
+    });
+  });
+
+  it('reloads the Station Turn snapshot from the durable replay path', async () => {
+    mocks.readValue.mockResolvedValueOnce({
+      'conversation-1': activeTurn({
+        phase: 'RECOVERY_FAILED',
+        failureKey: 'chat.agentTurnRecovery.recoveryFailed',
+      }),
+    });
+    await chatRuntime.bootstrap('ptid:person:alice');
+    mocks.replayOnErrors[0](new Error('station unavailable'));
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active['conversation-1'].phase)
+        .toBe('RECOVERY_FAILED');
+    });
+    mocks.replayControllers.length = 0;
+    mocks.replayInputs.length = 0;
+    mocks.replayOnEvents.length = 0;
+    mocks.replayOnErrors.length = 0;
+
+    const reload = reloadAgentTurnSnapshot('conversation-1');
+    expect(mocks.replayInputs).toEqual([{
+      conversation_id: 'conversation-1',
+      turn_id: 'turn-1',
+      after_seq: Number.MAX_SAFE_INTEGER,
+    }]);
+    mocks.replayOnEvents[0](stationSnapshot({
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        status: 'interrupted',
+        terminal_reason: 'station_restart_interrupted',
+        seq: 5,
+    }));
+    const result = await reload;
+
+    await vi.waitFor(() => {
+      expect(mocks.reconcileRecoveredTurn).toHaveBeenCalledWith(
+        'conversation-1',
+        'turn-1',
+        { status: 'interrupted', reason: 'station_restart_interrupted' },
+      );
+      expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
+    });
+    expect(mocks.replayControllers[0].signal.aborted).toBe(true);
+    expect(result).toMatchObject({
+      source: 'station-snapshot-reconcile',
+      actorId: 'ptid:person:alice',
+      conversationId: 'conversation-1',
+      turnId: 'turn-1',
+      streamId: 'stream-1',
+      streamGeneration: 10,
+      status: 'interrupted',
+      sequence: 5,
+      terminal: true,
+      terminalStatus: 'interrupted',
+      sourceDelivery: {
+        transport: 'station-sse',
+        ptid: 'ptid:person:alice',
+        conversationId: 'conversation-1',
+        turnId: 'turn-1',
+        sequence: 5,
+      },
+    });
+  });
+
+  it('does not report reload progress when the authoritative snapshot is invalid', async () => {
+    mocks.readValue.mockResolvedValueOnce({
+      'conversation-1': activeTurn({
+        phase: 'RECOVERY_FAILED',
+        failureKey: 'chat.agentTurnRecovery.recoveryFailed',
+        recoveryEpoch: 3,
+      }),
+    });
+    await chatRuntime.bootstrap('ptid:person:alice');
+    mocks.replayOnErrors[0](new Error('station unavailable'));
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active['conversation-1'].phase)
+        .toBe('RECOVERY_FAILED');
+    });
+    mocks.replayControllers.length = 0;
+    mocks.replayInputs.length = 0;
+    mocks.replayOnEvents.length = 0;
+    mocks.replayOnErrors.length = 0;
+    mocks.reconcileRecoveredTurn.mockClear();
+    const recoveryEpochBefore =
+      useAgentTurnRecoveryStore.getState().active['conversation-1'].recoveryEpoch;
+
+    const reload = reloadAgentTurnSnapshot('conversation-1');
+    mocks.replayOnEvents[0](stationSnapshot({
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        status: 'interrupted',
+        terminal_reason: 'station_restart_interrupted',
+        seq: 3,
+    }));
+    await expect(reload).rejects.toThrow('chat.agentTurnRecovery.snapshotInvalid');
+
+    expect(useAgentTurnRecoveryStore.getState().active['conversation-1']).toMatchObject({
+      phase: 'RECOVERY_FAILED',
+      recoveryEpoch: recoveryEpochBefore,
+    });
+    expect(mocks.reconcileRecoveredTurn).toHaveBeenCalledTimes(1);
+    expect(mocks.reconcileRecoveredTurn).toHaveBeenCalledWith(
+      'conversation-1',
+      'turn-1',
+      null,
+    );
+  });
+
+  it('reports a non-terminal reload only after authoritative reconciliation succeeds', async () => {
+    mocks.readValue.mockResolvedValueOnce({
+      'conversation-1': activeTurn({
+        phase: 'RECOVERY_FAILED',
+        failureKey: 'chat.agentTurnRecovery.recoveryFailed',
+      }),
+    });
+    await chatRuntime.bootstrap('ptid:person:alice');
+    mocks.replayOnErrors[0](new Error('station unavailable'));
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active['conversation-1'].phase)
+        .toBe('RECOVERY_FAILED');
+    });
+    mocks.replayControllers.length = 0;
+    mocks.replayInputs.length = 0;
+    mocks.replayOnEvents.length = 0;
+    mocks.replayOnErrors.length = 0;
+    const reconciliation = deferred<void>();
+    mocks.reconcileRecoveredTurn.mockReturnValueOnce(reconciliation.promise);
+
+    const reload = reloadAgentTurnSnapshot('conversation-1');
+    mocks.replayOnEvents[0](stationSnapshot({
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        status: 'running',
+        seq: 7,
+    }));
+    await Promise.resolve();
+
+    const beforeReconciliation =
+      useAgentTurnRecoveryStore.getState().active['conversation-1'];
+    expect(beforeReconciliation.phase).toBe('RECOVERY_FAILED');
+    expect(beforeReconciliation.cursor).toBe(4);
+
+    reconciliation.resolve();
+    const result = await reload;
+
+    expect(useAgentTurnRecoveryStore.getState().active['conversation-1']).toMatchObject({
+      phase: 'CONNECTED',
+      cursor: 7,
+    });
+    expect(result).toMatchObject({
+      source: 'station-snapshot-reconcile',
+      status: 'running',
+      sequence: 7,
+      terminal: false,
+      terminalStatus: null,
+    });
+  });
+
+  it('persists terminal removal and tears down replay when message sync fails', async () => {
+    mocks.readValue.mockResolvedValueOnce({ 'conversation-1': activeTurn() });
+    mocks.reconcileRecoveredTurn.mockRejectedValueOnce(new Error('sync failed'));
+    await chatRuntime.bootstrap('ptid:person:alice');
+    expect(mocks.replayOnEvents).toHaveLength(1);
+
+    mocks.replayOnEvents[0]({
+      event: 'snapshot',
+      data: { status: 'completed', seq: 5 },
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.write).toHaveBeenCalledWith('agent-turn-recovery', {});
+      expect(mocks.replayControllers[0].signal.aborted).toBe(true);
+    });
+    expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
+
+    chatRuntime.teardown();
+    const lastWrite = mocks.write.mock.calls[mocks.write.mock.calls.length - 1];
+    mocks.readValue.mockResolvedValueOnce(lastWrite?.[1]);
+    mocks.replayControllers.length = 0;
+    mocks.replayOnEvents.length = 0;
+    chatRuntime.install();
+    await chatRuntime.bootstrap('ptid:person:alice');
+
+    expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
+    expect(mocks.replayOnEvents).toHaveLength(0);
+  });
+});

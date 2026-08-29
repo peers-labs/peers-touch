@@ -7,15 +7,21 @@ export type OperationStatus =
   | 'waiting_for_approval'
   | 'completed'
   | 'cancelled'
+  | 'interrupted'
   | 'failed';
 
 export type RunState =
   | 'idle'
   | 'streaming'
+  | 'connection_lost'
+  | 'reconnecting'
+  | 'replaying'
   | 'reconciling'
+  | 'recovery_failed'
   | 'approval_pending'
   | 'completed'
   | 'failed'
+  | 'interrupted'
   | 'cancelled';
 
 export interface OperationError {
@@ -39,6 +45,7 @@ export interface Operation {
   pendingApproval?: PendingApproval;
   turnId?: string;
   conversationId?: string;
+  streamGeneration?: number;
   lastEventSeq?: number;
 }
 
@@ -65,7 +72,12 @@ export type TurnStreamEventType =
   | 'admission_replayed'
   | 'error'
   | 'cancelled'
+  | 'connection_lost'
+  | 'reconnecting'
+  | 'replaying'
   | 'reconciling'
+  | 'connected'
+  | 'recovery_failed'
   | 'snapshot'
   | 'catchup_done'
   | 'done';
