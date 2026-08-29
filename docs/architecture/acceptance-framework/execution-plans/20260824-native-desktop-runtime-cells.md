@@ -544,7 +544,7 @@ committed to this plan.
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | in progress | Product and receiver runners already consume `NativeDesktopRuntimeBinding`. The remaining six Chat Native runners now have the same runtime-manifest, source identity, Evidence Store, actor-storage, and cleanup contracts; focused static/Infra tests pass, while exact-source Linux Gate evidence is pending. |
-| NDR-W7 Linux MP-W13 proof | reopened / in progress | Historical exact-source run `20260826T212504506606Z-466161eb5815892a433ae5948cbb7fd0` at `e5b3fd74943cdba46e16c72c415a2031051448b7` passed all 25 product, runtime identity, and cleanup assertions on `desktop-linux-native`. That proof remains valid only for its recorded source. The working-tree HTTP Gateway/PIN identity closure passes focused checks and independent blocker review; NDR-W7 remains `PARTIAL/UNPROVEN` until the resulting clean commit passes a new exact-source aggregate. |
+| NDR-W7 Linux MP-W13 proof | reopened / in progress | Exact-source aggregate `20260829T172402956898Z-bb3291653179b1ac01157ce6c8666670` at `7dcdc71a22e8bf30b114b910a708c1d0cb6b2be0` passed 6 of 10 Gates and failed 4. Runtime/source identity and cleanup passed, but restored-session durability and Gateway Acceptance feature wiring remain open. NDR-W7 is `PARTIAL/UNPROVEN`. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
@@ -1060,6 +1060,50 @@ images, volumes, and database data were preserved, and root usage returned to
 Gateway, renderer, and Station endpoints from the Provisioner-owned Runtime
 Manifest instead of caller-supplied defaults. No product proof is claimed from
 this blocked run.
+
+### 2026-08-29 Current-Source Aggregate Result
+
+Exact-source Linux aggregate
+`20260829T172402956898Z-bb3291653179b1ac01157ce6c8666670` ran at clean commit
+`7dcdc71a22e8bf30b114b910a708c1d0cb6b2be0` on
+`desktop-linux-native`. Source, Station, remote checkout, Desktop binary,
+Ubuntu 24.04, Xorg, WebKitGTK, and workspace `a534541b87e49abf` were bound
+successfully. All Gate and runtime-cell cleanup completed without using
+protected WebDriver port `4445`.
+
+The aggregate result is 6 PASS and 4 FAIL across 10 Gates, with canonical
+status `PARTIAL/UNPROVEN`:
+
+- `chat-native-product-closure-e2e` failed because a second process restart
+  reached `session_missing`. Station takeover rotated and persisted the raw
+  token, but revoked-session invalidation cleared the durable active-account
+  state and the prepared restore tuple did not recommit it.
+- `chat-native-interactions-e2e` and `chat-native-typing-e2e` timed out because
+  their restart helpers explicitly logged out and then performed a fresh
+  password login. A process-restart proof must preserve storage and wait for
+  restored actor/device identity instead.
+- `chat-desktop-gateway-e2e` failed its durable-write rollback assertion
+  because the Provisioner-built Desktop runtime omitted the
+  `acceptance-webdriver` feature, so the commit-failure injection path was not
+  compiled into the tested binary.
+
+`chat-native-two-client-e2e`, `chat-contact-message-resilience-e2e`,
+`chat-native-multi-device-e2e`, `chat-native-recovery-e2e`, and
+`chat-native-group-mls-e2e` are `DONE/PROVEN` for this source-bound run.
+`federation-desktop-gateway-smoke` executed successfully but remains
+`PARTIAL/UNPROVEN` in aggregate judgment. Required-proven validation,
+Gap Detector, Completion Audit, and `review-submit` remain blocked until the
+four failed Gates pass in a new full exact-source aggregate.
+
+The working-tree Gateway diagnostic
+`20260829T191005525236Z-4057c7f1e1106c911f843de1647f6a62` subsequently passed
+with `DONE/PROVEN` Gate and cleanup evidence against disposable Station
+`18132`. Its manifest records a dirty workspace digest, so it is diagnostic
+evidence only. The Provisioner now compiles the required Acceptance feature,
+binds its otherwise unused WebDriver listener to an OS-assigned ephemeral port,
+and fails closed when the selected worktree/profile already owns a live
+Desktop Rust or Vite process. Focused Provisioner tests pass. Protected ports
+`18080` and `4445` are not cleanup targets.
 
 ## 13. Final Readiness Gate
 
