@@ -1026,6 +1026,17 @@ artifact. NDR-W7 therefore remains `PARTIAL/UNPROVEN` until these changes are
 committed and that exact commit passes the Linux aggregate and required-proven
 validation.
 
+The first exact-source aggregate attempt after commit `14e04370851f48847daf1dacfa53395286227ebf`
+failed closed before product execution. The process environment did not export
+the required destructive-reset authorization, and the selected
+`federation-desktop-gateway-smoke` Gate declared the
+`local-desktop-gateway` environment without its matching Provisioner. The
+runtime cell reached `CLEANED`; no blocked Native Gate produced product proof.
+The rerun must explicitly bind the worktree-local `three` profile to disposable
+Station `18132`, export `CHAT_ACCEPTANCE_RESET=1`, and provision the Federation
+Gateway smoke through `local-desktop-gateway`. These are execution wiring
+corrections under D-07 and do not alter product assertions.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
