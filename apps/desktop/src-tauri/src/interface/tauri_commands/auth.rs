@@ -25,23 +25,26 @@ fn bind_window_session(
         Some(id) if !id.is_empty() => id.to_string(),
         _ => return,
     };
-    // The token is intentionally read from the legacy `AppState.session`
-    // here: PR-3 keeps both stores in sync; PR-4 cuts the legacy store.
-    let token = state
+    // Inherit the account and token committed by this authentication
+    // transaction; recomputing the station-scoped account can split Engines.
+    let session_identity = state
         .session
         .lock()
         .ok()
-        .and_then(|g| g.token.clone())
-        .unwrap_or_default();
-    if token.is_empty() {
+        .and_then(|session| {
+            Some((
+                session.account_id.clone()?,
+                session.token.clone()?,
+            ))
+        });
+    let Some((account_id, token)) = session_identity else {
+        return;
+    };
+    if account_id.trim().is_empty() || token.trim().is_empty() {
         return;
     }
     let mut actor = ActorRef::new_person(actor_id.clone());
     actor.ptid = payload.ptid.clone().unwrap_or_default();
-    let account_id = crate::infrastructure::auth_identity::find_account_id_by_actor_id(&actor_id)
-        .unwrap_or_else(|| {
-            crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-        });
     if let Err(error) =
         auth_service::activate_messaging_profile(state, &account_id, &actor_id, &token)
     {
