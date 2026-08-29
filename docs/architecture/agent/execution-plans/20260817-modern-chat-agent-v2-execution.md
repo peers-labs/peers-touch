@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `39253c1eb` confirmed the AS-F06 terminal projection still disappears across client restart in run `20260829T063423272048Z-1c231db35525bc464a9519d31b6063a7`; durable reload is now ordered after client restart/re-authentication and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `ebd2ef361` stopped before AS-F06 at Browser AS-F02 zh-CN in run `20260829T065748506580Z-a20565f7c6512b90ccb3f5c4119d95c2`; cancellation now requires authoritative status plus live-or-replayed client terminal evidence; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2960,6 +2960,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   first, then invokes the accepted durable snapshot reload against the
   rehydrated recovery record. AS-F06 and G-F remain `UNPROVEN` pending another
   exact-source run.
+- Checkpoint `ebd2ef3614250ab82b104ad364e9a8f75f332059` was deployed
+  exact-source to profile `two`. Run
+  `20260829T065748506580Z-a20565f7c6512b90ccb3f5c4119d95c2`
+  stopped at Browser AS-F02 zh-CN with
+  `agent.acceptance.foundationActiveTurnCancelMissing`; cleanup passed. The
+  cancellation command can commit before its live SSE terminal frame is
+  observed. The local correction requires the production cancel response to
+  report authoritative `cancelled`; when the live terminal is absent, it
+  disconnects only the transport and requires the existing replay path to
+  recover a client event whose terminal classification is `cancelled`.
+  AS-F02, AS-F06, and G-F remain `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

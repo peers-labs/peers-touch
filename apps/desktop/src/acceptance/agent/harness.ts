@@ -5248,9 +5248,20 @@ export function installAcceptanceHarness(): void {
           conversation.conversation_id,
         );
 
-        await api.cancelAgentTurn(activeTurnId);
+        const activeCancellation = await api.cancelAgentTurn(activeTurnId);
+        if (!String(activeCancellation.status).toLowerCase().endsWith('cancelled')) {
+          active.controller.abort();
+          throw new Error('agent.acceptance.foundationActiveTurnCancelRejected');
+        }
+        if (!active.events.some((event) =>
+          event.event === 'cancelled'
+          || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
+          active.controller.disconnectTransport();
+        }
         const activeResult = await active.result;
-        if (!activeResult.events.some((event) => event.event === 'cancelled')) {
+        if (!activeResult.events.some((event) =>
+          event.event === 'cancelled'
+          || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
           throw new Error('agent.acceptance.foundationActiveTurnCancelMissing');
         }
         turnDurationMs = performance.now() - activeStartedAt;
