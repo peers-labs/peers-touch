@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `59fda6608` repeatedly exposed an AS-F06 fixture race where the provider can complete before an active recovery handoff is prepared; preparation now uses bounded, cleanup-complete reprovisioning only for the two terminal timing outcomes; proof remains UNPROVEN pending another exact-source run | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `3fbbc5268` exhausted three AS-F06 preparation retries and disproved probabilistic reprovisioning; the Harness now linearizes active-record validation, cursor freeze, handoff publication, and transport disconnect in one non-yielding event callback, with complete evidence published only after pending observations drain; proof remains UNPROVEN pending checkpoint deployment | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3208,6 +3208,32 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   attempt count, and retries only the already-terminal and missing-registration
   timing outcomes. All other failures still fail immediately. AS-F06 and G-F
   remain `UNPROVEN`.
+- Checkpoint `3fbbc5268f6dc642f270a36fc21c140f7b8e6ed7` was deployed
+  exact-source to profile `two`. Run
+  `20260829T155537016167Z-d0c7edaaf594134e11e60a97ff840d60`
+  again stopped at Browser AS-F06 prepare after all three bounded attempts
+  returned `foundationRecoveryRegistrationMissing`. The Station attestation,
+  local source, and evidence source all matched `3fbbc5268`; Gate cleanup and
+  redaction passed, all shared client ports were released, and the Gate remains
+  `PARTIAL / UNPROVEN`. This repeated exhaustion falsifies the prior assumption
+  that a bounded reprovision alone resolves a rare provider-terminal race.
+  The aggregate error currently covers missing active state plus actor, Turn,
+  stream, cursor, and stream-generation mismatches; the next correction must
+  identify the failed invariant from source-backed diagnostics and fix its
+  owning lifecycle rather than add further retries.
+- Independent read-only reconciliation confirmed that the accepted D07 replay
+  contract is complete and no design amendment is required: the defect was the
+  AS-F06 evidence producer polling source events before separately reading the
+  transient active recovery record. Preparation now uses one conversation and
+  commits the matching recovery identity, acknowledged cursor, mutation
+  evidence, in-memory handoff, and transport disconnect in one synchronous
+  callback. It registers the controller before awaiting the boundary, clears
+  the submission timeout at commit, drains pending replay observations before
+  publishing fully hashed durable evidence, and no longer retries the same
+  race. Desktop check, 395 Desktop tests with one unrelated skip, Desktop build,
+  123 focused Foundation tests, Agent Acceptance validation, and
+  `git diff --check` pass. This is implementation evidence only; AS-F06 and G-F
+  remain `UNPROVEN` until the next exact-source runtime Gate.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

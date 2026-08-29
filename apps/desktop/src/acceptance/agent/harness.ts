@@ -151,6 +151,21 @@ interface FoundationF06Handoff {
   preparedAt: string;
 }
 
+interface FoundationF06FaultBoundary {
+  handoff: FoundationF06Handoff;
+  projectionBeforeMutation: string;
+  projectionAfterMutation: string;
+  prefix: string;
+  duplicateSource: {
+    event: string;
+    data: Record<string, unknown>;
+  };
+  outOfOrderSource: {
+    event: string;
+    data: Record<string, unknown>;
+  };
+}
+
 const FOUNDATION_F06_STORAGE_KEY = 'pt.acceptance.agent.foundation.as-f06';
 const FOUNDATION_F06_PHASE_BY_EVENT: Record<string, string> = {
   connection_lost: 'CONNECTION_LOST',
@@ -163,6 +178,7 @@ const FOUNDATION_F06_PHASE_BY_EVENT: Record<string, string> = {
 let foundationF06ObservationInstalled = false;
 let foundationF06ReplayRecording: Promise<void> = Promise.resolve();
 const foundationF06Controllers = new Map<string, AgentTurnStreamController>();
+const foundationF06PendingHandoffs = new Map<string, FoundationF06Handoff>();
 const foundationF06ReplayingScenarios = new Set<string>();
 
 function authenticatedFoundationActorPtid(): string {
@@ -254,6 +270,7 @@ async function updateFoundationF06RecoveryFailure(
 
 function removeFoundationF06Handoff(scenarioKey: string): void {
   foundationF06ReplayingScenarios.delete(scenarioKey);
+  foundationF06PendingHandoffs.delete(scenarioKey);
   const handoffs = readFoundationF06Handoffs();
   delete handoffs[scenarioKey];
   if (Object.keys(handoffs).length === 0) {
@@ -267,7 +284,11 @@ function installFoundationF06Observation(): void {
   if (foundationF06ObservationInstalled) return;
   foundationF06ObservationInstalled = true;
   useAgentTurnRecoveryStore.subscribe((state, previousState) => {
-    for (const handoff of Object.values(readFoundationF06Handoffs())) {
+    const observedHandoffs = [
+      ...Object.values(readFoundationF06Handoffs()),
+      ...foundationF06PendingHandoffs.values(),
+    ];
+    for (const handoff of observedHandoffs) {
       const current = state.active[handoff.conversationId];
       const previous = previousState.active[handoff.conversationId];
       if (
@@ -281,7 +302,8 @@ function installFoundationF06Observation(): void {
         continue;
       }
       foundationF06ReplayRecording = foundationF06ReplayRecording.then(() => {
-        const latest = readFoundationF06Handoff(handoff.scenarioKey);
+        const pending = foundationF06PendingHandoffs.get(handoff.scenarioKey);
+        const latest = pending ?? readFoundationF06Handoff(handoff.scenarioKey);
         if (!latest) return;
         latest.transitions.push({
           phase: current.phase,
@@ -290,7 +312,7 @@ function installFoundationF06Observation(): void {
           observedAt: new Date(current.updatedAt).toISOString(),
           terminal: false,
         });
-        writeFoundationF06Handoff(latest);
+        if (!pending) writeFoundationF06Handoff(latest);
       });
     }
   });
@@ -298,7 +320,11 @@ function installFoundationF06Observation(): void {
     const observed = payload as typeof payload & {
       sourceDelivery?: AgentTurnSourceDelivery;
     };
-    const handoff = Object.values(readFoundationF06Handoffs()).find((candidate) =>
+    const observedHandoffs = [
+      ...Object.values(readFoundationF06Handoffs()),
+      ...foundationF06PendingHandoffs.values(),
+    ];
+    const handoff = observedHandoffs.find((candidate) =>
       payload.conversationId === candidate.conversationId
       && String(payload.data.turnId || payload.data.turn_id || '') === candidate.turnId
       && payload.ptid === candidate.actorPtid
@@ -312,7 +338,8 @@ function installFoundationF06Observation(): void {
     const sourceDelivery = observed.sourceDelivery;
     if (!sourceDelivery) return;
     foundationF06ReplayRecording = foundationF06ReplayRecording.then(async () => {
-      const current = readFoundationF06Handoff(handoff.scenarioKey);
+      const pending = foundationF06PendingHandoffs.get(handoff.scenarioKey);
+      const current = pending ?? readFoundationF06Handoff(handoff.scenarioKey);
       if (!current) return;
       if (
         foundationF06ReplayingScenarios.has(handoff.scenarioKey)
@@ -353,7 +380,7 @@ function installFoundationF06Observation(): void {
         current.replayedSequences.push(sourceDelivery.sequence);
         current.replayDeliveries.push(replayDelivery);
       }
-      writeFoundationF06Handoff(current);
+      if (!pending) writeFoundationF06Handoff(current);
     });
   });
 }
@@ -446,6 +473,12 @@ function startObservedFoundationTurn(input: {
   requestedBudget?: AgentRuntimeBudgetInput;
   streamId?: string;
   timeoutMs?: number;
+  onEvent?: (
+    event: ObservedFoundationTurnResult['events'][number],
+    events: ObservedFoundationTurnResult['events'],
+    controller: AgentTurnStreamController,
+    complete: () => void,
+  ) => void;
 }): ObservedFoundationTurn {
   const sourcePtid = authenticatedFoundationActorPtid();
   const events: ObservedFoundationTurnResult['events'] = [];
@@ -470,7 +503,8 @@ function startObservedFoundationTurn(input: {
     window.clearTimeout(timeout);
     resolveResult({ ok, error, events });
   };
-  const controller = streamAgentTurn({
+  let controller!: AgentTurnStreamController;
+  controller = streamAgentTurn({
     conversation_id: input.conversationId,
     agent_id: input.agentId,
     user_input: input.content,
@@ -490,6 +524,7 @@ function startObservedFoundationTurn(input: {
       observedAt: new Date().toISOString(),
     };
     events.push(observed);
+    input.onEvent?.(observed, events, controller, () => finish(true, null));
     if (!firstEventObserved) {
       firstEventObserved = true;
       resolveFirstEvent(observed);
@@ -2287,56 +2322,42 @@ async function runFoundationF06Prepare(input: {
   foundationF06Controllers.delete(input.scenarioKey);
   removeFoundationF06Handoff(input.scenarioKey);
   const agentId = input.agent.id || input.agent.name;
-  const maximumAttempts = 3;
-  for (let preparationAttempt = 1; preparationAttempt <= maximumAttempts; preparationAttempt += 1) {
-    const conversation = await api.createAgentConversation({
-      agent_id: agentId,
-      title: `Foundation recovery ${input.sampleId}`,
-      provider_id: input.agent.provider,
-      model_name: input.agent.model,
-    });
-    const turnId = useAgentTurnRecoveryStore.getState()
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `Foundation recovery ${input.sampleId}`,
+    provider_id: input.agent.provider,
+    model_name: input.agent.model,
+  });
+  try {
+    return await withFoundationCapabilitiesDisabled(
+      input.agent,
+      input.capabilitySessionId,
+      (toolIsolation) => prepareFoundationF06Conversation(
+        input,
+        conversation,
+        agentId,
+        scenarioStartedAt,
+        toolIsolation,
+      ),
+    );
+  } catch (error) {
+    const activeTurnId = useAgentTurnRecoveryStore.getState()
       .active[conversation.conversation_id]?.turnId ?? '';
     try {
-      return await withFoundationCapabilitiesDisabled(
-        input.agent,
-        input.capabilitySessionId,
-        (toolIsolation) => prepareFoundationF06Conversation(
-          input,
-          conversation,
-          agentId,
-          scenarioStartedAt,
-          preparationAttempt,
-          toolIsolation,
-        ),
-      );
-    } catch (error) {
-      const activeTurnId = useAgentTurnRecoveryStore.getState()
-        .active[conversation.conversation_id]?.turnId ?? turnId;
-      try {
-        await cleanupFoundationF06Scenario({
-          scenarioKey: input.scenarioKey,
-          conversationId: conversation.conversation_id,
-          turnId: activeTurnId,
-        });
-      } catch (cleanupError) {
-        const primary = error instanceof Error ? error.message : String(error);
-        const cleanup = cleanupError instanceof Error
-          ? cleanupError.message
-          : String(cleanupError);
-        throw new Error(`CLEANUP_FAILED:${primary}; cleanup=${cleanup}`);
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      const retryablePreparation = (
-        message.includes('foundationRecoveryTurnAlreadyTerminal')
-        || message.includes('foundationRecoveryRegistrationMissing')
-      );
-      if (!retryablePreparation || preparationAttempt === maximumAttempts) {
-        throw error;
-      }
+      await cleanupFoundationF06Scenario({
+        scenarioKey: input.scenarioKey,
+        conversationId: conversation.conversation_id,
+        turnId: activeTurnId,
+      });
+    } catch (cleanupError) {
+      const primary = error instanceof Error ? error.message : String(error);
+      const cleanup = cleanupError instanceof Error
+        ? cleanupError.message
+        : String(cleanupError);
+      throw new Error(`CLEANUP_FAILED:${primary}; cleanup=${cleanup}`);
     }
+    throw error;
   }
-  throw new Error('agent.acceptance.foundationRecoveryPreparationExhausted');
 }
 
 async function prepareFoundationF06Conversation(
@@ -2351,13 +2372,26 @@ async function prepareFoundationF06Conversation(
   conversation: Awaited<ReturnType<typeof api.createAgentConversation>>,
   agentId: string,
   scenarioStartedAt: string,
-  preparationAttempt: number,
   toolIsolation: FoundationCapabilityIsolation,
 ): Promise<FoundationF06Handoff> {
   await useChatStore.getState().selectSession(conversation.conversation_id);
 
   const streamId = `foundation-f06-${crypto.randomUUID()}`;
   const idempotencyKey = crypto.randomUUID();
+  const actorId = authenticatedFoundationActorPtid();
+  let boundarySettled = false;
+  let resolveBoundary!: (value: FoundationF06FaultBoundary) => void;
+  let rejectBoundary!: (error: Error) => void;
+  const faultBoundary = new Promise<FoundationF06FaultBoundary>((resolve, reject) => {
+    resolveBoundary = resolve;
+    rejectBoundary = reject;
+  });
+  const failBoundary = (errorKey: string) => {
+    if (boundarySettled) return;
+    boundarySettled = true;
+    rejectBoundary(new Error(errorKey));
+  };
+
   const observed = startObservedFoundationTurn({
     conversationId: conversation.conversation_id,
     agentId,
@@ -2370,192 +2404,243 @@ async function prepareFoundationF06Conversation(
     thinkingMode: 'disabled',
     clientCapabilitySessionId: input.capabilitySessionId,
     timeoutMs: 300_000,
-  });
-  await observed.firstEvent;
-  await waitFor(
-    () => (
-      observed.events.some((event) => (
-        event.event === 'text' && Number(event.data.seq ?? 0) > 0
-      ))
-      && new Set(
-        observed.events
-          .map((event) => Number(event.data.seq ?? 0))
-          .filter((sequence) => Number.isSafeInteger(sequence) && sequence > 0),
-      ).size >= 2
-    ),
-    'Foundation AS-F06 mutation-source cursor',
-    60_000,
-  );
-  const turnId = observedTurnId(observed.events);
-  const acknowledgedCursor = Math.max(
-    ...observed.events.map((event) => Number(event.data.seq ?? 0)),
-  );
-  if (!turnId || acknowledgedCursor <= 0) {
-    observed.controller.abort();
-    throw new Error('agent.acceptance.foundationRecoveryCursorMissing');
-  }
-  if (observed.events.some((event) =>
-    classifyAgentTurnTerminalEvent(event) !== null)) {
-    throw new Error('agent.acceptance.foundationRecoveryTurnAlreadyTerminal');
-  }
+    onEvent: (event, events, controller, complete) => {
+      if (boundarySettled) return;
+      if (classifyAgentTurnTerminalEvent(event) !== null) {
+        failBoundary('agent.acceptance.foundationRecoveryTurnAlreadyTerminal');
+        return;
+      }
+      const durableEvents = events
+        .filter((candidate) => Number(candidate.data.seq ?? 0) > 0)
+        .sort((left, right) =>
+          Number(left.data.seq ?? 0) - Number(right.data.seq ?? 0));
+      const hasText = durableEvents.some((candidate) => candidate.event === 'text');
+      const uniqueSequences = new Set(
+        durableEvents.map((candidate) => Number(candidate.data.seq ?? 0)),
+      );
+      if (!hasText || uniqueSequences.size < 2) return;
 
-  const prefix = observed.events
-    .filter((event) => event.event === 'text')
-    .map((event) => String(event.data.content ?? event.data.text ?? ''))
-    .join('');
-  if (!prefix) {
-    observed.controller.abort();
-    throw new Error('agent.acceptance.foundationRecoveryPrefixMissing');
-  }
+      const turnId = observedTurnId(events);
+      if (!turnId) {
+        failBoundary('agent.acceptance.foundationRecoveryTurnMissing');
+        return;
+      }
+      const active = useAgentTurnRecoveryStore.getState()
+        .active[conversation.conversation_id];
+      if (!active) {
+        failBoundary('agent.acceptance.foundationRecoveryRegistrationMissing');
+        return;
+      }
+      if (active.actorId !== actorId) {
+        failBoundary('agent.acceptance.foundationRecoveryActorMismatch');
+        return;
+      }
+      if (active.turnId !== turnId) {
+        failBoundary('agent.acceptance.foundationRecoveryTurnMismatch');
+        return;
+      }
+      if (active.streamId !== streamId) {
+        failBoundary('agent.acceptance.foundationRecoveryStreamMismatch');
+        return;
+      }
+      if (active.streamGeneration !== controller.streamGeneration) {
+        failBoundary('agent.acceptance.foundationRecoveryGenerationMismatch');
+        return;
+      }
 
-  const recoveryStore = useAgentTurnRecoveryStore.getState();
-  const active = recoveryStore.active[conversation.conversation_id];
-  if (
-    !active
-    || active.actorId !== observed.sourcePtid
-    || active.turnId !== turnId
-    || active.streamId !== streamId
-    || active.cursor < acknowledgedCursor
-    || active.streamGeneration !== observed.controller.streamGeneration
-  ) {
-    observed.controller.abort();
-    throw new Error('agent.acceptance.foundationRecoveryRegistrationMissing');
-  }
-  const durableEvents = observed.events
-    .filter((event) => Number(event.data.seq ?? 0) > 0)
-    .sort((left, right) =>
-      Number(left.data.seq ?? 0) - Number(right.data.seq ?? 0));
-  const duplicateSource = [...durableEvents]
-    .reverse()
-    .find((event) => Number(event.data.seq ?? 0) === active.cursor);
-  const outOfOrderSource = [...durableEvents]
-    .reverse()
-    .find((event) => Number(event.data.seq ?? 0) < active.cursor);
-  if (!duplicateSource || !outOfOrderSource) {
-    observed.controller.abort();
-    throw new Error('agent.acceptance.foundationRecoveryMutationSourceMissing');
-  }
-  const chatBefore = useChatStore.getState();
-  const projectionBefore = await sha256Hex(stableJson({
-    operation: chatBefore.operations[conversation.conversation_id]
-      ? {
-          turnId: chatBefore.operations[conversation.conversation_id].turnId,
-          streamGeneration:
-            chatBefore.operations[conversation.conversation_id].streamGeneration,
-          lastEventSeq:
-            chatBefore.operations[conversation.conversation_id].lastEventSeq,
-          status: chatBefore.operations[conversation.conversation_id].status,
-          runState: chatBefore.operations[conversation.conversation_id].runState,
-        }
-      : null,
-    messageCount: chatBefore.messages.length,
-    turnMessages: chatBefore.messages
-      .filter((message) => message.turnId === turnId)
-      .map((message) => ({
-        id: message.id,
-        content: message.content,
-        terminalStatus: message.terminalStatus,
-        toolCalls: message.toolCalls,
-      })),
-    cursor: active.cursor,
-  }));
-  const actorId = observed.sourcePtid;
-  const publishFault = (
-    source: { event: string; data: Record<string, unknown> },
-    streamGeneration: number,
-  ) => eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
-    streamId,
-    streamGeneration,
-    ptid: actorId,
-    conversationId: conversation.conversation_id,
-    agentId,
-    event: source.event,
-    data: {
-      ...source.data,
-      turnId,
-      conversationId: conversation.conversation_id,
+      const acknowledgedCursor = active.cursor;
+      const duplicateSource = [...durableEvents]
+        .reverse()
+        .find((candidate) =>
+          Number(candidate.data.seq ?? 0) === acknowledgedCursor);
+      const outOfOrderSource = [...durableEvents]
+        .reverse()
+        .find((candidate) =>
+          Number(candidate.data.seq ?? 0) < acknowledgedCursor);
+      if (!duplicateSource || !outOfOrderSource) return;
+
+      const prefix = durableEvents
+        .filter((candidate) =>
+          candidate.event === 'text'
+          && Number(candidate.data.seq ?? 0) <= acknowledgedCursor)
+        .map((candidate) =>
+          String(candidate.data.content ?? candidate.data.text ?? ''))
+        .join('');
+      if (!prefix) {
+        failBoundary('agent.acceptance.foundationRecoveryPrefixMissing');
+        return;
+      }
+
+      const chatBefore = useChatStore.getState();
+      const projectionBeforeMutation = stableJson({
+        operation: chatBefore.operations[conversation.conversation_id]
+          ? {
+              turnId: chatBefore.operations[conversation.conversation_id].turnId,
+              streamGeneration:
+                chatBefore.operations[conversation.conversation_id].streamGeneration,
+              lastEventSeq:
+                chatBefore.operations[conversation.conversation_id].lastEventSeq,
+              status: chatBefore.operations[conversation.conversation_id].status,
+              runState: chatBefore.operations[conversation.conversation_id].runState,
+            }
+          : null,
+        messageCount: chatBefore.messages.length,
+        turnMessages: chatBefore.messages
+          .filter((message) => message.turnId === turnId)
+          .map((message) => ({
+            id: message.id,
+            content: message.content,
+            terminalStatus: message.terminalStatus,
+            toolCalls: message.toolCalls,
+          })),
+        cursor: active.cursor,
+      });
+      const publishFault = (
+        source: { event: string; data: Record<string, unknown> },
+        streamGeneration: number,
+      ) => eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, {
+        streamId,
+        streamGeneration,
+        ptid: actorId,
+        conversationId: conversation.conversation_id,
+        agentId,
+        event: source.event,
+        data: {
+          ...source.data,
+          turnId,
+          conversationId: conversation.conversation_id,
+        },
+        timestampMs: Date.now(),
+      });
+      publishFault(duplicateSource, active.streamGeneration);
+      publishFault(outOfOrderSource, active.streamGeneration);
+      const staleGeneration = Math.max(1, active.streamGeneration - 1);
+      publishFault(duplicateSource, staleGeneration);
+      publishFault({
+        event: 'done',
+        data: {
+          ...outOfOrderSource.data,
+          seq: Number(outOfOrderSource.data.seq),
+          status: 'completed',
+        },
+      }, active.streamGeneration);
+
+      const chatAfter = useChatStore.getState();
+      const activeAfterMutation = useAgentTurnRecoveryStore.getState()
+        .active[conversation.conversation_id];
+      const projectionAfterMutation = stableJson({
+        operation: chatAfter.operations[conversation.conversation_id]
+          ? {
+              turnId: chatAfter.operations[conversation.conversation_id].turnId,
+              streamGeneration:
+                chatAfter.operations[conversation.conversation_id].streamGeneration,
+              lastEventSeq:
+                chatAfter.operations[conversation.conversation_id].lastEventSeq,
+              status: chatAfter.operations[conversation.conversation_id].status,
+              runState: chatAfter.operations[conversation.conversation_id].runState,
+            }
+          : null,
+        messageCount: chatAfter.messages.length,
+        turnMessages: chatAfter.messages
+          .filter((message) => message.turnId === turnId)
+          .map((message) => ({
+            id: message.id,
+            content: message.content,
+            terminalStatus: message.terminalStatus,
+            toolCalls: message.toolCalls,
+          })),
+        cursor: activeAfterMutation?.cursor,
+      });
+      const handoff: FoundationF06Handoff = {
+        scenarioKey: input.scenarioKey,
+        platform: input.platform,
+        locale: input.locale,
+        sampleId: input.sampleId,
+        conversationId: conversation.conversation_id,
+        turnId,
+        streamId,
+        streamGeneration: active.streamGeneration,
+        actorPtid: actorId,
+        actorPtidHash: 'pending',
+        acknowledgedCursor,
+        conversationRevision: conversation.version,
+        prefixHash: 'pending',
+        prefixLength: prefix.length,
+        duplicateSequence: Number(duplicateSource.data.seq),
+        outOfOrderSequence: Number(outOfOrderSource.data.seq),
+        staleGeneration,
+        staleGenerationRejected:
+          activeAfterMutation?.streamGeneration === active.streamGeneration,
+        staleTerminalRejected:
+          activeAfterMutation?.turnId === turnId
+          && chatAfter.operations[conversation.conversation_id]?.status
+            !== 'completed',
+        cursorBeforeMutation: active.cursor,
+        cursorAfterMutation: activeAfterMutation?.cursor ?? 0,
+        projectionBeforeMutationHash: 'pending',
+        projectionAfterMutationHash: 'pending',
+        duplicatePayloadHash: 'pending',
+        outOfOrderPayloadHash: 'pending',
+        transitions: [],
+        replayedSequences: [],
+        replayDeliveries: [],
+        preparationAttempts: 1,
+        toolIsolation,
+        preparedAt: scenarioStartedAt,
+      };
+      foundationF06PendingHandoffs.set(input.scenarioKey, handoff);
+      boundarySettled = true;
+      controller.disconnectTransport();
+      resolveBoundary({
+        handoff,
+        projectionBeforeMutation,
+        projectionAfterMutation,
+        prefix,
+        duplicateSource,
+        outOfOrderSource,
+      });
+      complete();
     },
-    timestampMs: Date.now(),
   });
-  publishFault(duplicateSource, active.streamGeneration);
-  publishFault(outOfOrderSource, active.streamGeneration);
-  const staleGeneration = Math.max(1, active.streamGeneration - 1);
-  publishFault(duplicateSource, staleGeneration);
-  publishFault({
-    event: 'done',
-    data: {
-      ...outOfOrderSource.data,
-      seq: Number(outOfOrderSource.data.seq),
-      status: 'completed',
-    },
-  }, active.streamGeneration);
-  const chatAfter = useChatStore.getState();
-  const activeAfterMutation = useAgentTurnRecoveryStore.getState()
-    .active[conversation.conversation_id];
-  const projectionAfter = await sha256Hex(stableJson({
-    operation: chatAfter.operations[conversation.conversation_id]
-      ? {
-          turnId: chatAfter.operations[conversation.conversation_id].turnId,
-          streamGeneration:
-            chatAfter.operations[conversation.conversation_id].streamGeneration,
-          lastEventSeq:
-            chatAfter.operations[conversation.conversation_id].lastEventSeq,
-          status: chatAfter.operations[conversation.conversation_id].status,
-          runState: chatAfter.operations[conversation.conversation_id].runState,
-        }
-      : null,
-    messageCount: chatAfter.messages.length,
-    turnMessages: chatAfter.messages
-      .filter((message) => message.turnId === turnId)
-      .map((message) => ({
-        id: message.id,
-        content: message.content,
-        terminalStatus: message.terminalStatus,
-        toolCalls: message.toolCalls,
-      })),
-    cursor: useAgentTurnRecoveryStore.getState()
-      .active[conversation.conversation_id]?.cursor,
-  }));
-
-  const handoff: FoundationF06Handoff = {
-    scenarioKey: input.scenarioKey,
-    platform: input.platform,
-    locale: input.locale,
-    sampleId: input.sampleId,
-    conversationId: conversation.conversation_id,
-    turnId,
-    streamId,
-    streamGeneration: active.streamGeneration,
-    actorPtid: actorId,
-    actorPtidHash: await sha256Hex(actorId),
-    acknowledgedCursor,
-    conversationRevision: conversation.version,
-    prefixHash: await sha256Hex(prefix),
-    prefixLength: prefix.length,
-    duplicateSequence: Number(duplicateSource.data.seq),
-    outOfOrderSequence: Number(outOfOrderSource.data.seq),
-    staleGeneration,
-    staleGenerationRejected:
-      activeAfterMutation?.streamGeneration === active.streamGeneration,
-    staleTerminalRejected:
-      activeAfterMutation?.turnId === turnId
-      && chatAfter.operations[conversation.conversation_id]?.status
-        !== 'completed',
-    cursorBeforeMutation: active.cursor,
-    cursorAfterMutation: activeAfterMutation?.cursor ?? 0,
-    projectionBeforeMutationHash: projectionBefore,
-    projectionAfterMutationHash: projectionAfter,
-    duplicatePayloadHash: await sha256Hex(stableJson(duplicateSource)),
-    outOfOrderPayloadHash: await sha256Hex(stableJson(outOfOrderSource)),
-    transitions: [],
-    replayedSequences: [],
-    replayDeliveries: [],
-    preparationAttempts: preparationAttempt,
-    toolIsolation,
-    preparedAt: scenarioStartedAt,
-  };
-  writeFoundationF06Handoff(handoff);
   foundationF06Controllers.set(input.scenarioKey, observed.controller);
+  const boundary = await Promise.race([
+    faultBoundary,
+    observed.result.then((result) => {
+      throw new Error(
+        result.error || 'agent.acceptance.foundationRecoveryTurnAlreadyTerminal',
+      );
+    }),
+  ]);
+  const [
+    actorPtidHash,
+    prefixHash,
+    projectionBeforeMutationHash,
+    projectionAfterMutationHash,
+    duplicatePayloadHash,
+    outOfOrderPayloadHash,
+  ] = await Promise.all([
+    sha256Hex(boundary.handoff.actorPtid),
+    sha256Hex(boundary.prefix),
+    sha256Hex(boundary.projectionBeforeMutation),
+    sha256Hex(boundary.projectionAfterMutation),
+    sha256Hex(stableJson(boundary.duplicateSource)),
+    sha256Hex(stableJson(boundary.outOfOrderSource)),
+  ]);
+  await foundationF06ReplayRecording;
+  const handoff = foundationF06PendingHandoffs.get(input.scenarioKey);
+  if (!handoff) {
+    throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
+  }
+  Object.assign(handoff, {
+    actorPtidHash,
+    prefixHash,
+    projectionBeforeMutationHash,
+    projectionAfterMutationHash,
+    duplicatePayloadHash,
+    outOfOrderPayloadHash,
+  });
+  foundationF06PendingHandoffs.delete(input.scenarioKey);
+  writeFoundationF06Handoff(handoff);
 
   eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'settings' });
   await waitFor(
@@ -2578,24 +2663,17 @@ async function observeFoundationRecoveryFailure(
     throw new Error('agent.acceptance.foundationRecoveryControllerMissing');
   }
   await foundationF06ReplayRecording;
-  const activeBeforeDisconnect = useAgentTurnRecoveryStore.getState()
+  const activeAtOutage = useAgentTurnRecoveryStore.getState()
     .active[handoff.conversationId];
   if (
-    !activeBeforeDisconnect
-    || activeBeforeDisconnect.actorId !== handoff.actorPtid
-    || activeBeforeDisconnect.turnId !== handoff.turnId
-    || activeBeforeDisconnect.streamId !== handoff.streamId
-    || activeBeforeDisconnect.streamGeneration !== handoff.streamGeneration
+    !activeAtOutage
+    || activeAtOutage.actorId !== handoff.actorPtid
+    || activeAtOutage.turnId !== handoff.turnId
+    || activeAtOutage.streamId !== handoff.streamId
+    || activeAtOutage.streamGeneration !== handoff.streamGeneration
   ) {
     throw new Error('agent.acceptance.foundationRecoveryRegistrationMissing');
   }
-  handoff.acknowledgedCursor = activeBeforeDisconnect.cursor;
-  handoff.transitions = [];
-  handoff.replayedSequences = [];
-  handoff.replayDeliveries = [];
-  foundationF06ReplayingScenarios.delete(handoff.scenarioKey);
-  writeFoundationF06Handoff(handoff);
-  controller.disconnectTransport();
   await waitFor(
     () => useAgentTurnRecoveryStore.getState()
       .active[handoff.conversationId]?.phase === 'RECOVERY_FAILED',

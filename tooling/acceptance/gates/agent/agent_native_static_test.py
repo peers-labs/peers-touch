@@ -173,25 +173,71 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
 
     def test_recovery_cursor_is_frozen_at_fault_injection(self) -> None:
-        cursor_update = self.source.index(
-            "handoff.acknowledgedCursor = activeBeforeDisconnect.cursor"
+        prepare_start = self.source.index(
+            "async function prepareFoundationF06Conversation"
+        )
+        cursor_capture = self.source.index(
+            "const acknowledgedCursor = active.cursor",
+            prepare_start,
+        )
+        handoff_publish = self.source.index(
+            "foundationF06PendingHandoffs.set(input.scenarioKey, handoff)",
+            cursor_capture,
         )
         disconnect = self.source.index(
             "controller.disconnectTransport()",
-            cursor_update,
+            handoff_publish,
         )
 
-        self.assertLess(cursor_update, disconnect)
-        self.assertIn("handoff.transitions = []", self.source)
-        self.assertIn("handoff.replayDeliveries = []", self.source)
+        self.assertLess(cursor_capture, handoff_publish)
+        self.assertLess(handoff_publish, disconnect)
+        self.assertNotIn("await ", self.source[cursor_capture:disconnect])
+        self.assertIn("transitions: []", self.source[cursor_capture:disconnect])
+        self.assertIn("replayDeliveries: []", self.source[cursor_capture:disconnect])
+        self.assertIn(
+            "foundationF06PendingHandoffs.delete(input.scenarioKey)",
+            self.source[disconnect:],
+        )
+        self.assertIn("writeFoundationF06Handoff(handoff)", self.source[disconnect:])
+        drain = self.source.index(
+            "await foundationF06ReplayRecording",
+            disconnect,
+        )
+        pending_delete = self.source.index(
+            "foundationF06PendingHandoffs.delete(input.scenarioKey)",
+            drain,
+        )
+        self.assertLess(drain, pending_delete)
 
-    def test_recovery_preparation_retries_only_terminal_timing_outcomes(self) -> None:
-        self.assertIn("const maximumAttempts = 3", self.source)
-        self.assertIn("preparationAttempts: preparationAttempt", self.source)
-        self.assertIn("foundationRecoveryTurnAlreadyTerminal", self.source)
-        self.assertIn("foundationRecoveryRegistrationMissing", self.source)
-        self.assertIn("if (!retryablePreparation", self.source)
+    def test_recovery_preparation_uses_one_fault_bound_attempt(self) -> None:
+        prepare_start = self.source.index("async function runFoundationF06Prepare")
+        prepare_end = self.source.index(
+            "async function prepareFoundationF06Conversation",
+            prepare_start,
+        )
+        observe_start = self.source.index(
+            "async function observeFoundationRecoveryFailure",
+            prepare_end,
+        )
+        observe_end = self.source.index(
+            "async function exerciseFoundationDurableReload",
+            observe_start,
+        )
+
+        self.assertNotIn(
+            "maximumAttempts",
+            self.source[prepare_start:prepare_end],
+        )
+        self.assertIn("preparationAttempts: 1", self.source[prepare_end:observe_start])
         self.assertIn("await cleanupFoundationF06Scenario", self.source)
+        self.assertIn(
+            "foundationF06Controllers.set(input.scenarioKey, observed.controller)",
+            self.source[prepare_end:observe_start],
+        )
+        self.assertNotIn(
+            "disconnectTransport()",
+            self.source[observe_start:observe_end],
+        )
 
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)
