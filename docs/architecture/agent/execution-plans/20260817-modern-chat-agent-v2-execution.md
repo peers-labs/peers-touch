@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `af8fc11dc` exposed that outage-time session projection loss was incorrectly treated as recovery identity loss in run `20260829T050459651702Z-43df5f11c2e7611a8e4ad1edc1084ca0`; recovery identity is now verified from its durable PTID-fenced record and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `ab8a82c2c` verified the initial AS-F06 recovery identity in run `20260829T052004514366Z-305bbc15288605635bf949662a3ab0d4`; the retry subassertion still depended on the absent outage-time session projection and is locally corrected; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2900,6 +2900,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   requires any available session projection to match; durable reload follows
   the same ownership rule. The independent oracle now requires the explicit
   session-match fact. AS-F06 and G-F remain `UNPROVEN` pending another
+  exact-source run.
+- Checkpoint `ab8a82c2cb30e6973a89c69e4a2bf337d315d914` was deployed
+  exact-source to profile `two`. Run
+  `20260829T052004514366Z-305bbc15288605635bf949662a3ab0d4`
+  proved the initial recovery actor, Turn, stream, generation, failure phase,
+  and session-consistency facts. Its retry also advanced `recoveryEpoch` from
+  1 to 2 and returned to `RECOVERY_FAILED`, but the producer marked
+  `retry.observed=false` because that nested assertion still compared the
+  recovery actor directly to the unavailable outage-time session projection.
+  The local correction applies the same durable-record ownership rule to the
+  retry assertion. AS-F06 and G-F remain `UNPROVEN` pending another
   exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery

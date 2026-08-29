@@ -2626,7 +2626,8 @@ async function observeFoundationRecoveryFailure(
       invoked: true,
       observed:
         Boolean(afterRetry)
-        && afterRetry?.actorId === authenticatedPtid
+        && afterRetry?.actorId === handoff.actorPtid
+        && (!authenticatedPtid || afterRetry.actorId === authenticatedPtid)
         && afterRetry.turnId === handoff.turnId
         && afterRetry.streamId === handoff.streamId
         && afterRetry.streamGeneration === handoff.streamGeneration
