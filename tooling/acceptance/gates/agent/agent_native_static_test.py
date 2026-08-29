@@ -162,9 +162,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_replay_observer_accepts_primary_and_observation_deliveries(self) -> None:
         self.assertIn(
-            "const replayStarted = current.transitions.some(",
+            "if (payload.event === 'replaying')",
             self.source,
         )
+        self.assertIn("foundationF06ReplayingScenarios.add(", self.source)
         self.assertIn("if (!sourceDelivery) return;", self.source)
         self.assertNotIn(
             "observed.deliveryOnly !== true || !sourceDelivery",

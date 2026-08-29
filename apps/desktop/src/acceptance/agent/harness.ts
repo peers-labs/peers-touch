@@ -162,6 +162,7 @@ const FOUNDATION_F06_PHASE_BY_EVENT: Record<string, string> = {
 let foundationF06ObservationInstalled = false;
 let foundationF06ReplayRecording: Promise<void> = Promise.resolve();
 const foundationF06Controllers = new Map<string, AgentTurnStreamController>();
+const foundationF06ReplayingScenarios = new Set<string>();
 
 function authenticatedFoundationActorPtid(): string {
   const user = useSessionStore.getState().currentUser;
@@ -249,6 +250,7 @@ async function updateFoundationF06RecoveryFailure(
 }
 
 function removeFoundationF06Handoff(scenarioKey: string): void {
+  foundationF06ReplayingScenarios.delete(scenarioKey);
   const handoffs = readFoundationF06Handoffs();
   delete handoffs[scenarioKey];
   if (Object.keys(handoffs).length === 0) {
@@ -293,23 +295,24 @@ function installFoundationF06Observation(): void {
     const observed = payload as typeof payload & {
       sourceDelivery?: AgentTurnSourceDelivery;
     };
-    const sourceDelivery = observed.sourceDelivery;
-    if (!sourceDelivery) return;
     const handoff = Object.values(readFoundationF06Handoffs()).find((candidate) =>
-      sourceDelivery.conversationId === candidate.conversationId
-      && sourceDelivery.turnId === candidate.turnId
-      && sourceDelivery.ptid === candidate.actorPtid
+      payload.conversationId === candidate.conversationId
+      && String(payload.data.turnId || payload.data.turn_id || '') === candidate.turnId
+      && payload.ptid === candidate.actorPtid
       && payload.streamId === candidate.streamId
       && payload.streamGeneration === candidate.streamGeneration);
     if (!handoff) return;
+    if (payload.event === 'replaying') {
+      foundationF06ReplayingScenarios.add(handoff.scenarioKey);
+      return;
+    }
+    const sourceDelivery = observed.sourceDelivery;
+    if (!sourceDelivery) return;
     foundationF06ReplayRecording = foundationF06ReplayRecording.then(async () => {
       const current = readFoundationF06Handoff(handoff.scenarioKey);
       if (!current) return;
-      const replayStarted = current.transitions.some(
-        (transition) => transition.phase === 'REPLAYING',
-      );
       if (
-        replayStarted
+        foundationF06ReplayingScenarios.has(handoff.scenarioKey)
         && sourceDelivery.rawPayload.eventType !== 'catchup_done'
         && sourceDelivery.rawPayload.eventType !== 'snapshot'
         && Number.isSafeInteger(sourceDelivery.sequence)

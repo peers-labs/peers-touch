@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `9cf45451d` showed Browser reconnect replay uses the primary source-bound event path while the AS-F06 recorder accepted only observation-only deliveries; the recorder now accepts both paths after `REPLAYING` with unchanged source identity/hash equality; proof remains UNPROVEN pending another exact-source run | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `91154e56f` showed the AS-F06 recorder's replay guard depended on asynchronously persisted transition evidence; it now tracks the `replaying` control event synchronously before accepting same-identity source deliveries; proof remains UNPROVEN pending another exact-source run | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3160,6 +3160,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   paths only after observing `REPLAYING`, while retaining actor, Turn, stream,
   generation, cursor, payload-hash, and independent Station equality checks.
   AS-F06 and G-F remain `UNPROVEN`.
+- Checkpoint `91154e56f52f25dfbacabb8cbbf37c5e0b98a17d` was deployed
+  exact-source to profile `two`. Run
+  `20260829T133110384766Z-0f2e14721e48fc23a0dc8021925f22e4`
+  again reached only `replayAfterAcknowledgedCursor`; cleanup and redaction
+  passed. It recorded terminal sequence `107` while Station independently
+  returned `32..107`. The recorder admitted primary source deliveries only
+  after finding `REPLAYING` in its asynchronously persisted transition list,
+  so a fast replay batch could deliver events before that localStorage write
+  completed. The recorder now marks each scenario synchronously when its
+  matching `replaying` control event arrives, then accepts subsequent
+  same-identity source deliveries. The persisted transition list remains an
+  independent final ordering proof. AS-F06 and G-F remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
