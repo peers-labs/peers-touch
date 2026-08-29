@@ -35,7 +35,8 @@
 | S | A cross-window identity-change event classifies the renderer's own actor as a same-actor takeover during reload. | Medium | Low | Pending ordered Identity event-buffer evidence. |
 | T | The Rust event-stream reconnect reports a stale token as session-revoked after Station restart and kicks the current renderer. | High | Low | Pending revocation reason/raw and realtime connection-state evidence. |
 | U | A normal frontend API request maps an `UNAUTHORIZED` response to session-revoked during boot reconciliation. | Medium | Low | Pending revocation payload raw marker and event ordering. |
-| V | Renderer restore rotates a persisted token while boot requests using the previous token are still in flight; their late `kicked` responses demote the newly restored session. | High | Low | Partially confirmed: old and new documents emit ordinary API revocations around restore, but the first bounded trace dropped the `auth_restore_session` request itself. Pending one targeted ordering run. |
+| V | Renderer restore rotates a persisted token while boot requests using the previous token are still in flight; their late `kicked` responses demote the newly restored session. | High | Low | Rejected: the revoked reconciliation requests start only after `auth_restore_session` succeeds. |
+| W | Persistent restore writes the rotated token but not its account ID to `AppState.session`, causing `bind_window_session` to skip rebinding and later commands to use the old window token. | High | Low | Confirmed by the targeted runtime ordering and the Rust restore/bind code path. |
 
 ## Log Evidence
 - Pre-fix Gate run `20260829T023644548452Z-8983d0bd277b21b69d93e766da7eaa4e` failed after 120 seconds.
@@ -78,6 +79,10 @@
 - Debug line 10 shows Alice's old document remained authenticated until `auth_validate_token` request 511 emitted `token_missing` immediately after Station restart. Lines 12-14 show the replacement document retained the actor in the session store but entered `accountGate(reason=revoked)` after `notification_list`, three `peer_profile_get` requests, and `social_friend_request_list` emitted `kicked`.
 - Charlie's replacement document restored to `authenticated/ready` in lines 7-9. This proves the failure is an actor-local session ordering race rather than a global Station or renderer-reload failure.
 - The first timeline returned only the latest 60 events, which omitted the replacement document's initial `auth_restore_session` request. The next probe retains only `auth_restore_session` and request IDs that emit `revoked`, preserving their paired start/result events from the full bounded buffer.
+- Targeted ordering run `20260829T071109976191Z-cf19c1d3f53d908393b6542033bbf3be` on commit `c4bb7b3e8e61bbbf110e9ce8cf945bd5e83f507a` reproduced the same boundary after 28 assertions passed.
+- Debug line 7 shows Charlie's `auth_restore_session` request 9 succeeded at `1787988162156`; only afterward did `sync_user_profile` and the initial notification/profile requests start, then return `kicked` from `1787988162425`. This rejects V's stale in-flight request ordering.
+- The owner path confirms W: persistent restore creates `SessionState { account_id: None }`, rotates the token, and `write_session` writes only actor/token. The Tauri wrapper then calls `bind_window_session`, which requires both `account_id` and token and returns without replacing the window registry entry. Subsequent window-scoped commands therefore use the old kicked token even though `auth_restore_session` returned success.
+- The targeted run retained exact source/Station/runtime/binary commit identity, passed every assertion through Group duplicate replay, failed only at `clients.reload_after_station_restart`, and completed Gate plus Provisioner/runtime-cell cleanup.
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
@@ -101,5 +106,9 @@ replacement before returning from `refresh()`, so stale Harness readiness is
 not the cause. The Identity evidence proves the new renderer receives a
 session-revoked transition after restoring the same still-authenticated actor.
 The event evidence identifies ordinary API response handling as the publisher.
-The next instrumentation records command-only request ordering to determine
-whether stale old-token responses arrive after successful session rotation.
+The targeted command ordering rejects late pre-restore responses and confirms
+that restore fails to commit the account identity needed to replace the
+window-scoped token. The owner-layer fix must commit account, actor, and rotated
+token together before `bind_window_session` runs. The candidate fix adds an
+account-aware session write used by password and OAuth restore paths while
+preserving the existing account during ordinary token validation.
