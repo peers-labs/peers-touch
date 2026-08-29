@@ -27,6 +27,7 @@ import {
 } from '../../gen/proto/domain/agent/agent_pb';
 import {
   CapabilityApprovalPolicy,
+  CapabilityReadinessState,
   CapabilitySourceKind,
   type AgentCapabilityBinding,
   type CapabilityManifest,
@@ -1001,6 +1002,22 @@ async function updateFoundationToolPolicy(
     approvalPolicy: policy,
     expectedAgentVersion: agent.version,
   }, current?.revision ?? 0, crypto.randomUUID());
+}
+
+async function updateFoundationCapabilityBindingEnabled(
+  agent: NonNullable<ReturnType<typeof selectedAgent>>,
+  binding: AgentCapabilityBinding,
+  enabled: boolean,
+): Promise<AgentCapabilityBinding> {
+  return api.upsertAgentCapabilityBinding({
+    bindingId: binding.bindingId,
+    agentId: agent.id || agent.name,
+    capabilityId: binding.capabilityId,
+    capabilityVersion: binding.capabilityVersion,
+    enabled,
+    approvalPolicy: binding.approvalPolicy,
+    expectedAgentVersion: agent.version,
+  }, binding.revision, crypto.randomUUID());
 }
 
 async function startFoundationToolTurn(input: {
@@ -3642,6 +3659,10 @@ function evaluateF04(ctx: DirectCellAssertionContext): Record<string, boolean | 
 
 function evaluateF03(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
   const facts = evidenceRecord(ctx.scenarioFacts, 'foundationF03Facts');
+  const toolIsolation = evidenceRecord(
+    facts.toolIsolation,
+    'foundationF03ToolIsolation',
+  );
   const events = evidenceArray(facts.events, 'foundationF03Events')
     .map((value) => evidenceRecord(value, 'foundationF03Event'));
   const sequences = events.map((event) => Number(event.sequence));
@@ -3656,6 +3677,8 @@ function evaluateF03(ctx: DirectCellAssertionContext): Record<string, boolean | 
       events.some((event) => event.eventType === 'progress')
       && events.some((event) => event.eventType === 'text')
       && !events.some((event) => event.eventType === 'thinking')
+      && Number(toolIsolation.readyCapabilityCount) === 0
+      && Number(facts.toolDefinitionTokens) === 0
       && sequences.every((sequence) => Number.isInteger(sequence) && sequence > 0)
       && sequences.every((sequence, index) =>
         index === 0 || sequence > sequences[index - 1]),
@@ -5094,62 +5117,124 @@ export function installAcceptanceHarness(): void {
       }
 
       if (cell === 'AS-F03') {
-        const conversation = await api.createAgentConversation({
-          agent_id: agentId,
-          title: `Foundation stream ${sampleId}`,
-          provider_id: agent.provider,
-          model_name: agent.model,
-        });
-        preparedConversationId = conversation.conversation_id;
-        await useChatStore.getState().selectSession(conversation.conversation_id);
+        const originalBindings = (
+          await api.listAgentCapabilityBindings(agentId)
+        ).filter((binding) => binding.enabled && !binding.tombstonedAt);
+        const disabledBindings: AgentCapabilityBinding[] = [];
+        let scenarioError: unknown = null;
 
-        const startedAt = performance.now();
-        const observed = startObservedFoundationTurn({
-          conversationId: conversation.conversation_id,
-          agentId,
-          content: 'Reply immediately with 100 numbered queue rules. Do not explain.',
-          idempotencyKey: crypto.randomUUID(),
-          provider: agent.provider || undefined,
-          model: agent.model || undefined,
-          effort: 'low',
-          thinkingMode: 'disabled',
-          clientCapabilitySessionId:
-            capabilitySessions.selectedStationSession?.session_id,
-        });
-        await observed.firstEvent;
-        const textDeadline = Date.now() + 60_000;
-        while (
-          !observed.events.some((event) => event.event === 'text')
-          && Date.now() < textDeadline
-        ) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
+        try {
+          for (const binding of originalBindings) {
+            disabledBindings.push(
+              await updateFoundationCapabilityBindingEnabled(
+                agent,
+                binding,
+                false,
+              ),
+            );
+          }
+          const isolatedReadiness = await api.getAgentCapabilityReadiness({
+            agent_id: agentId,
+            client_capability_session_id:
+              capabilitySessions.selectedStationSession?.session_id,
+          });
+          const readyCapabilityCount = isolatedReadiness.capabilities.filter(
+            (capability) =>
+              capability.state === CapabilityReadinessState.READY,
+          ).length;
+          if (readyCapabilityCount !== 0) {
+            throw new Error(
+              'agent.acceptance.foundationProgressiveToolIsolationFailed',
+            );
+          }
+
+          const conversation = await api.createAgentConversation({
+            agent_id: agentId,
+            title: `Foundation stream ${sampleId}`,
+            provider_id: agent.provider,
+            model_name: agent.model,
+          });
+          preparedConversationId = conversation.conversation_id;
+          await useChatStore.getState().selectSession(conversation.conversation_id);
+
+          const startedAt = performance.now();
+          const observed = startObservedFoundationTurn({
+            conversationId: conversation.conversation_id,
+            agentId,
+            content: 'Reply immediately with 100 numbered queue rules. Do not explain.',
+            idempotencyKey: crypto.randomUUID(),
+            provider: agent.provider || undefined,
+            model: agent.model || undefined,
+            effort: 'low',
+            thinkingMode: 'disabled',
+            clientCapabilitySessionId:
+              capabilitySessions.selectedStationSession?.session_id,
+          });
+          await observed.firstEvent;
+          const textDeadline = Date.now() + 60_000;
+          while (
+            !observed.events.some((event) => event.event === 'text')
+            && Date.now() < textDeadline
+          ) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          if (!observed.events.some((event) => event.event === 'text')) {
+            observed.controller.abort();
+            throw new Error('agent.acceptance.progressiveTextMissing');
+          }
+          preparedTurnId = observedTurnId(observed.events);
+          if (!preparedTurnId) {
+            observed.controller.abort();
+            throw new Error('agent.acceptance.foundationTurnIdMissing');
+          }
+          await api.cancelAgentTurn(preparedTurnId);
+          const result = await observed.result;
+          turnDurationMs = performance.now() - startedAt;
+          const normalizedEvents = result.events.map((event) => ({
+            eventType: event.event,
+            sequence: Number(event.data.seq ?? 0),
+            observedAt: event.observedAt,
+          }));
+          const terminalEvent = [...normalizedEvents]
+            .reverse()
+            .find((event) =>
+              ['done', 'error', 'cancelled'].includes(event.eventType));
+          preparedRuntimeEvent.current = terminalEvent ?? null;
+          scenarioFacts = {
+            events: normalizedEvents,
+            sawTextBeforeCancel: true,
+            toolIsolation: {
+              disabledBindingCount: disabledBindings.length,
+              readyCapabilityCount,
+            },
+          };
+        } catch (error) {
+          scenarioError = error;
+          throw error;
+        } finally {
+          const restoration = await Promise.allSettled(
+            disabledBindings.reverse().map((binding, index) =>
+              updateFoundationCapabilityBindingEnabled(
+                agent,
+                binding,
+                originalBindings[originalBindings.length - 1 - index]?.enabled
+                  ?? true,
+              )),
+          );
+          const cleanupFailure = restoration.find(
+            (result) => result.status === 'rejected',
+          );
+          if (cleanupFailure?.status === 'rejected') {
+            const primaryCode = scenarioError === null
+              ? 'none'
+              : observedErrorCode(scenarioError);
+            throw new Error(
+              'agent.acceptance.foundationCapabilityBindingRestoreFailed'
+              + `: primary=${primaryCode}`
+              + ` cleanup=${observedErrorCode(cleanupFailure.reason)}`,
+            );
+          }
         }
-        if (!observed.events.some((event) => event.event === 'text')) {
-          observed.controller.abort();
-          throw new Error('agent.acceptance.progressiveTextMissing');
-        }
-        preparedTurnId = observedTurnId(observed.events);
-        if (!preparedTurnId) {
-          observed.controller.abort();
-          throw new Error('agent.acceptance.foundationTurnIdMissing');
-        }
-        await api.cancelAgentTurn(preparedTurnId);
-        const result = await observed.result;
-        turnDurationMs = performance.now() - startedAt;
-        const normalizedEvents = result.events.map((event) => ({
-          eventType: event.event,
-          sequence: Number(event.data.seq ?? 0),
-          observedAt: event.observedAt,
-        }));
-        const terminalEvent = [...normalizedEvents]
-          .reverse()
-          .find((event) =>
-            ['done', 'error', 'cancelled'].includes(event.eventType));
-        preparedRuntimeEvent.current = terminalEvent ?? null;
-        scenarioFacts = {
-          events: normalizedEvents,
-          sawTextBeforeCancel: true,
-        };
       }
 
       if (cell === 'AS-F04') {
@@ -5226,6 +5311,17 @@ export function installAcceptanceHarness(): void {
             snapshot,
             'thinkingMode',
             'thinking_mode',
+          );
+          const tokenUsage = evidenceRecord(
+            evidenceField(diagnostics, 'tokenUsage', 'token_usage'),
+            'turnTokenUsage',
+          );
+          scenarioFacts.toolDefinitionTokens = Number(
+            evidenceField(
+              tokenUsage,
+              'toolDefinitionTokens',
+              'tool_definition_tokens',
+            ) ?? -1,
           );
         }
       }

@@ -55,6 +55,11 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
             "sawTextBeforeCancel": True,
             "thinkingMode": "disabled",
             "terminalTracePersisted": True,
+            "toolIsolation": {
+                "disabledBindingCount": 1,
+                "readyCapabilityCount": 0,
+            },
+            "toolDefinitionTokens": 0,
         }
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_as_f03(facts)

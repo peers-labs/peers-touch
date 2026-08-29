@@ -408,6 +408,11 @@ def valid_as_f03_capture() -> dict[str, object]:
         "sawTextBeforeCancel": True,
         "thinkingMode": "disabled",
         "terminalTracePersisted": True,
+        "toolIsolation": {
+            "disabledBindingCount": 1,
+            "readyCapabilityCount": 0,
+        },
+        "toolDefinitionTokens": 0,
     }
 
 
@@ -791,6 +796,28 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
         events.insert(1, {"eventType": "thinking", "sequence": 2})
         events[2]["sequence"] = 3
         events[3]["sequence"] = 4
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "progressiveEventsSequenced",
+        ):
+            evaluate_as_f03(capture)
+
+    def test_as_f03_rejects_ready_capability_during_text_probe(self) -> None:
+        capture = valid_as_f03_capture()
+        isolation = capture["toolIsolation"]
+        assert isinstance(isolation, dict)
+        isolation["readyCapabilityCount"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "progressiveEventsSequenced",
+        ):
+            evaluate_as_f03(capture)
+
+    def test_as_f03_rejects_tool_definitions_in_runtime_snapshot(self) -> None:
+        capture = valid_as_f03_capture()
+        capture["toolDefinitionTokens"] = 61
 
         with self.assertRaisesRegex(
             GroupOneScenarioError,

@@ -129,6 +129,11 @@ def evaluate_as_f02(capture: Mapping[str, Any]) -> dict[str, bool]:
 
 
 def evaluate_as_f03(capture: Mapping[str, Any]) -> dict[str, bool | None]:
+    tool_isolation = _mapping(
+        capture,
+        "toolIsolation",
+        scenario="AS-F03",
+    )
     events = [
         _mapping({"event": value}, "event", scenario="AS-F03")
         for value in _list(capture, "events", scenario="AS-F03")
@@ -150,6 +155,16 @@ def evaluate_as_f03(capture: Mapping[str, Any]) -> dict[str, bool | None]:
                 event.get("eventType") == "thinking"
                 for event in events
             )
+            and _nonnegative_int(
+                tool_isolation,
+                "readyCapabilityCount",
+                scenario="AS-F03",
+            ) == 0
+            and _nonnegative_int(
+                capture,
+                "toolDefinitionTokens",
+                scenario="AS-F03",
+            ) == 0
             and sequences == sorted(set(sequences))
         ),
         "cancelledDuringTextAuthoritative": (

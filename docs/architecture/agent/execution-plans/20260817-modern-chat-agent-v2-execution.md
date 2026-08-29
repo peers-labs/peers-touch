@@ -2714,6 +2714,26 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   style, and `git diff --check` pass. This remains implementation evidence:
   AS-F02, AS-F06, and G-F are `UNPROVEN` until a new exact-source deployment
   and Gate run.
+- Checkpoint `a3dd6e509aa24b4815d5b93ef1099935f39a51d6` was deployed
+  exact-source to profile `two`. Run
+  `20260829T012401200269Z-f5c96ff75d8f89e78fbe4253e0bef963`
+  passed the Browser AS-F02 prefix and advanced the unique first failure to
+  `foundation-browser-direct / AS-F03 / en / single / sample-001`, where the
+  producer reported `agent.acceptance.progressiveTextMissing`. Runtime source
+  and Station commits matched, both workspace digests were clean, and cleanup
+  passed. This proves the AS-F02 cancellation/trace regression is closed for
+  that runtime path; AS-F03 and the complete Gate remain `UNPROVEN`.
+- The AS-F03 failure was a fixture-isolation defect rather than a provider
+  failure: the shared Agent's enabled `skills_list` binding produced a valid
+  production ToolCall under `tool_choice=auto`, so no answer-text delta could
+  occur before the text barrier. The local correction uses the production
+  capability-binding API to disable every effective binding for the AS-F03
+  text-only subcase, verifies zero READY capabilities, checks the admitted
+  Turn recorded zero tool-definition tokens, and restores every binding by
+  revision in `finally`. Desktop check, 389 tests, production build, 101
+  focused Foundation tests, Agent Domain validation, the gap-detector
+  self-tests, and `git diff --check` pass. AS-F03 and G-F remain `UNPROVEN`
+  pending a new exact-source Gate run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
