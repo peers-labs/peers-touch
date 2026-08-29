@@ -2380,7 +2380,56 @@ class NativeInteractionsGate(AcceptanceGate):
         for actor, client in self.clients.items():
             client.driver.refresh()
             client.wait_for_acceptance_harness(30)
-            enter_chat_page(client)
+            # #region debug-point M,N:post-restart-shell-state
+            def shell_state() -> dict[str, Any]:
+                value = client.execute_script(
+                    """
+                    return {
+                      currentUrl: window.location.href,
+                      hash: window.location.hash,
+                      readyState: document.readyState,
+                      primaryNavCount: document.querySelectorAll(
+                        '[data-pt-primary-nav]'
+                      ).length,
+                      chatNavCount: document.querySelectorAll(
+                        '[data-pt-primary-nav="chat"]'
+                      ).length,
+                      chatLayoutCount: document.querySelectorAll(
+                        '[data-social-chat-layout]'
+                      ).length,
+                      loginSurfaceCount: document.querySelectorAll(
+                        '[data-login-page], [data-auth-page], form'
+                      ).length,
+                    };
+                    """,
+                )
+                return value if isinstance(value, dict) else {}
+
+            report_interaction_projection_debug(
+                "M,N",
+                "native_interactions_runner:post-restart-shell-before-navigation",
+                {"actor": actor, "shell": shell_state()},
+            )
+            try:
+                enter_chat_page(client)
+            except Exception as error:
+                report_interaction_projection_debug(
+                    "M,N",
+                    "native_interactions_runner:post-restart-shell-navigation-error",
+                    {
+                        "actor": actor,
+                        "shell": shell_state(),
+                        "errorType": type(error).__name__,
+                        "error": str(error),
+                    },
+                )
+                raise
+            report_interaction_projection_debug(
+                "M,N",
+                "native_interactions_runner:post-restart-shell-ready",
+                {"actor": actor, "shell": shell_state()},
+            )
+            # #endregion
 
     @staticmethod
     def port_is_free(port: int) -> bool:
