@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `59fda6608` repeatedly exposed an AS-F06 prepare/fault-injection race where the active Turn can finish before the coordinator injects disconnect; fault injection and cursor freeze must become one harness-owned operation; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `59fda6608` repeatedly exposed an AS-F06 fixture race where the provider can complete before an active recovery handoff is prepared; preparation now uses bounded, cleanup-complete reprovisioning only for the two terminal timing outcomes; proof remains UNPROVEN pending another exact-source run | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3201,11 +3201,13 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `20260829T152315684358Z-b8bd384c8f14fda3b05b5ec5ab8d6368`
   both stopped at Browser AS-F06 prepare with
   `foundationRecoveryRegistrationMissing`; cleanup and redaction passed.
-  The active Turn can complete after the prepare cursor is sampled but before
-  the coordinator invokes the separate failure-observation action. The next
-  correction must combine latest-cursor freeze and transport disconnect in one
-  harness-owned operation, preserving the same Station restart orchestration
-  and assertions. AS-F06 and G-F remain `UNPROVEN`.
+  The provider can complete between the initial event sample and active
+  recovery registration, before a handoff exists or the coordinator can inject
+  the Station outage. Preparation now performs at most three explicit attempts,
+  cleans every partial conversation before retrying, records the successful
+  attempt count, and retries only the already-terminal and missing-registration
+  timing outcomes. All other failures still fail immediately. AS-F06 and G-F
+  remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

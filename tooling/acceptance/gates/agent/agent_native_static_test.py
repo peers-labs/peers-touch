@@ -185,6 +185,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("handoff.transitions = []", self.source)
         self.assertIn("handoff.replayDeliveries = []", self.source)
 
+    def test_recovery_preparation_retries_only_terminal_timing_outcomes(self) -> None:
+        self.assertIn("const maximumAttempts = 3", self.source)
+        self.assertIn("preparationAttempts: preparationAttempt", self.source)
+        self.assertIn("foundationRecoveryTurnAlreadyTerminal", self.source)
+        self.assertIn("foundationRecoveryRegistrationMissing", self.source)
+        self.assertIn("if (!retryablePreparation", self.source)
+        self.assertIn("await cleanupFoundationF06Scenario", self.source)
+
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)
 

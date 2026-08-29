@@ -145,6 +145,7 @@ interface FoundationF06Handoff {
   transitions: FoundationF06Transition[];
   replayedSequences: number[];
   replayDeliveries: FoundationF06ReplayDelivery[];
+  preparationAttempts: number;
   toolIsolation: FoundationCapabilityIsolation;
   recoveryFailure?: Record<string, unknown>;
   preparedAt: string;
@@ -209,6 +210,8 @@ function readFoundationF06Handoffs(): Record<string, FoundationF06Handoff> {
         || !Array.isArray(value.transitions)
         || !Array.isArray(value.replayedSequences)
         || !Array.isArray(value.replayDeliveries)
+        || !Number.isSafeInteger(value.preparationAttempts)
+        || Number(value.preparationAttempts) < 1
         || !value.toolIsolation
         || !Number.isSafeInteger(value.toolIsolation.disabledBindingCount)
         || !Number.isSafeInteger(value.toolIsolation.readyCapabilityCount)
@@ -2284,42 +2287,56 @@ async function runFoundationF06Prepare(input: {
   foundationF06Controllers.delete(input.scenarioKey);
   removeFoundationF06Handoff(input.scenarioKey);
   const agentId = input.agent.id || input.agent.name;
-  const conversation = await api.createAgentConversation({
-    agent_id: agentId,
-    title: `Foundation recovery ${input.sampleId}`,
-    provider_id: input.agent.provider,
-    model_name: input.agent.model,
-  });
-  try {
-    return await withFoundationCapabilitiesDisabled(
-      input.agent,
-      input.capabilitySessionId,
-      (toolIsolation) => prepareFoundationF06Conversation(
-        input,
-        conversation,
-        agentId,
-        scenarioStartedAt,
-        toolIsolation,
-      ),
-    );
-  } catch (error) {
+  const maximumAttempts = 3;
+  for (let preparationAttempt = 1; preparationAttempt <= maximumAttempts; preparationAttempt += 1) {
+    const conversation = await api.createAgentConversation({
+      agent_id: agentId,
+      title: `Foundation recovery ${input.sampleId}`,
+      provider_id: input.agent.provider,
+      model_name: input.agent.model,
+    });
     const turnId = useAgentTurnRecoveryStore.getState()
       .active[conversation.conversation_id]?.turnId ?? '';
     try {
-      await cleanupFoundationF06Scenario({
-        scenarioKey: input.scenarioKey,
-        conversationId: conversation.conversation_id,
-        turnId,
-      });
-    } catch (cleanupError) {
-      const primary = error instanceof Error ? error.message : String(error);
-      const cleanup = cleanupError instanceof Error
-        ? cleanupError.message
-        : String(cleanupError);
-      throw new Error(`CLEANUP_FAILED:${primary}; cleanup=${cleanup}`);
+      return await withFoundationCapabilitiesDisabled(
+        input.agent,
+        input.capabilitySessionId,
+        (toolIsolation) => prepareFoundationF06Conversation(
+          input,
+          conversation,
+          agentId,
+          scenarioStartedAt,
+          preparationAttempt,
+          toolIsolation,
+        ),
+      );
+    } catch (error) {
+      const activeTurnId = useAgentTurnRecoveryStore.getState()
+        .active[conversation.conversation_id]?.turnId ?? turnId;
+      try {
+        await cleanupFoundationF06Scenario({
+          scenarioKey: input.scenarioKey,
+          conversationId: conversation.conversation_id,
+          turnId: activeTurnId,
+        });
+      } catch (cleanupError) {
+        const primary = error instanceof Error ? error.message : String(error);
+        const cleanup = cleanupError instanceof Error
+          ? cleanupError.message
+          : String(cleanupError);
+        throw new Error(`CLEANUP_FAILED:${primary}; cleanup=${cleanup}`);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      const retryablePreparation = (
+        message.includes('foundationRecoveryTurnAlreadyTerminal')
+        || message.includes('foundationRecoveryRegistrationMissing')
+      );
+      if (!retryablePreparation || preparationAttempt === maximumAttempts) {
+        throw error;
+      }
     }
-    throw error;
   }
+  throw new Error('agent.acceptance.foundationRecoveryPreparationExhausted');
 }
 
 async function prepareFoundationF06Conversation(
@@ -2334,6 +2351,7 @@ async function prepareFoundationF06Conversation(
   conversation: Awaited<ReturnType<typeof api.createAgentConversation>>,
   agentId: string,
   scenarioStartedAt: string,
+  preparationAttempt: number,
   toolIsolation: FoundationCapabilityIsolation,
 ): Promise<FoundationF06Handoff> {
   await useChatStore.getState().selectSession(conversation.conversation_id);
@@ -2532,6 +2550,7 @@ async function prepareFoundationF06Conversation(
     transitions: [],
     replayedSequences: [],
     replayDeliveries: [],
+    preparationAttempts: preparationAttempt,
     toolIsolation,
     preparedAt: scenarioStartedAt,
   };
@@ -3084,6 +3103,7 @@ async function runFoundationF06Complete(
         conversationRevision: handoff.conversationRevision,
         prefixHash: handoff.prefixHash,
         prefixLength: handoff.prefixLength,
+        preparationAttempts: handoff.preparationAttempts,
       },
       transitions: latestHandoff.transitions,
       replay: {
