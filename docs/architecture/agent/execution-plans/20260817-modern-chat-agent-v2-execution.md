@@ -3363,6 +3363,15 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   therefore enters the existing bounded retry/failure path instead of hanging
   indefinitely. AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending checkpoint
   deployment and exact-source verification.
+- Checkpoint `9324ff0d4c3bfb31b388462e0fdd19dc2c723f0b` was deployed
+  exact-source to profile `two`. After reclaiming `42.44GB` of remote BuildKit
+  cache without touching volumes, run
+  `20260829T202925054384Z-6d67ce144ad4a2113e5cd06053faf421`
+  again reached Browser AS-F06 but did not expose `RECOVERY_FAILED` inside the
+  120-second outage window; cleanup and redaction passed. The next diagnostic
+  preserves the active phase, cursor, failure key hash, and observed transition
+  sequence on timeout so the remaining Browser recovery state divergence is
+  source-backed.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

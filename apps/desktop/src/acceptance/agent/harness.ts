@@ -2708,12 +2708,17 @@ async function observeFoundationRecoveryFailure(
   ) {
     throw new Error('agent.acceptance.foundationRecoveryRegistrationMissing');
   }
-  await waitFor(
-    () => useAgentTurnRecoveryStore.getState()
-      .active[handoff.conversationId]?.phase === 'RECOVERY_FAILED',
-    'Foundation AS-F06 active recovery failure',
-    120_000,
-  );
+  let failureWaitError = '';
+  try {
+    await waitFor(
+      () => useAgentTurnRecoveryStore.getState()
+        .active[handoff.conversationId]?.phase === 'RECOVERY_FAILED',
+      'Foundation AS-F06 active recovery failure',
+      120_000,
+    );
+  } catch (error) {
+    failureWaitError = error instanceof Error ? error.message : String(error);
+  }
   const authenticatedPtid =
     useSessionStore.getState().currentUser?.ptid?.trim()
     || useSessionStore.getState().currentUser?.actorId.trim()
@@ -2735,6 +2740,8 @@ async function observeFoundationRecoveryFailure(
     expectedStreamGeneration: handoff.streamGeneration,
     observedStreamGeneration: active?.streamGeneration ?? 0,
     observedPhase: active?.phase ?? 'MISSING',
+    failureWaitError,
+    transitions: [...handoff.transitions],
     errorHash: active?.failureKey ? await sha256Hex(active.failureKey) : '',
     notCompleted:
       active?.phase === 'RECOVERY_FAILED'
