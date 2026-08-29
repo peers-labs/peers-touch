@@ -544,7 +544,7 @@ committed to this plan.
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | in progress | Product and receiver runners already consume `NativeDesktopRuntimeBinding`. The remaining six Chat Native runners now have the same runtime-manifest, source identity, Evidence Store, actor-storage, and cleanup contracts; focused static/Infra tests pass, while exact-source Linux Gate evidence is pending. |
-| NDR-W7 Linux MP-W13 proof | reopened / in progress | Exact-source aggregate `20260829T172402956898Z-bb3291653179b1ac01157ce6c8666670` at `7dcdc71a22e8bf30b114b910a708c1d0cb6b2be0` passed 6 of 10 Gates and failed 4. Runtime/source identity and cleanup passed, but restored-session durability and Gateway Acceptance feature wiring remain open. NDR-W7 is `PARTIAL/UNPROVEN`. |
+| NDR-W7 Linux MP-W13 proof | reopened / in progress | Exact-source aggregate `20260829T203439484372Z-7c6fba9d9db5ce018b758a5e207fe73a` at `d5b76eaf953504e0b599682a68472ccff04601f0` passed all 10 Gates with cleanup, but Federation Gateway smoke omitted Phase/BOM/Spec traceability and forced the aggregate to `PARTIAL/UNPROVEN`. The Gate metadata correction and a new exact-source aggregate remain pending. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
@@ -1104,6 +1104,24 @@ binds its otherwise unused WebDriver listener to an OS-assigned ephemeral port,
 and fails closed when the selected worktree/profile already owns a live
 Desktop Rust or Vite process. Focused Provisioner tests pass. Protected ports
 `18080` and `4445` are not cleanup targets.
+
+### 2026-08-29 Exact-Source Traceability Result
+
+Exact-source Linux aggregate
+`20260829T203439484372Z-7c6fba9d9db5ce018b758a5e207fe73a` ran against clean
+commit `d5b76eaf953504e0b599682a68472ccff04601f0`, disposable Station `18132`,
+and runtime cell `desktop-linux-native`. All 10 selected Gates passed and all
+Provisioner cleanup artifacts passed. The aggregate nevertheless remained
+`PARTIAL/UNPROVEN` because `federation-desktop-gateway-smoke` did not emit
+Phase/BOM/Spec traceability.
+
+The Gate now binds its existing Federation Phase 1 `WS-6` client-integration
+workstream, `desktop-federation-context-surface` capability, and
+`desktop-federation-surfaces` Feature to the canonical evidence report. This
+is a business evidence-injection correction; aggregate proof semantics remain
+unchanged. NDR-W7 still requires a new clean commit, full exact-source
+aggregate, required-proven validation, Gap Detector, Completion Audit, and
+`review-submit`.
 
 ## 13. Final Readiness Gate
 

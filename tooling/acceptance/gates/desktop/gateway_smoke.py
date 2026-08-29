@@ -63,6 +63,9 @@ def station_status(data: dict[str, Any]) -> dict[str, Any]:
 
 class DesktopGatewaySmokeGate(AcceptanceGate):
     gate_id = GATE_ID
+    phase = "WS-6"
+    bom = ("desktop-federation-context-surface",)
+    spec = ("desktop-federation-surfaces",)
 
     def run(self) -> dict[str, Any]:
         target_url, gateway_url, expected_station = configured_runtime_endpoints()
