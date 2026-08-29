@@ -2766,6 +2766,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   correction uses the generated Proto3 default of zero after proving the typed
   Attempt usage object exists. AS-F03 and G-F remain `UNPROVEN` pending another
   exact-source run.
+- Checkpoint `cdff0040b61e65003a25f0a9274e0b485ef20478` was deployed
+  exact-source to profile `two`. Run
+  `20260829T021337638940Z-b4baabdaae0e358b1c110df244ff226e`
+  again stopped at AS-F03 `progressiveEventsSequenced`; cleanup passed.
+  Station truth for the candidate Turn contained 44 text events, no thinking
+  events, one cancelled terminal event, a durable trace, and zero
+  tool-definition tokens. Because the compound oracle did not expose which
+  client-capture component differed, the next checkpoint adds only redacted
+  event type/sequence and isolation-count diagnostics while preserving every
+  existing pass condition.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

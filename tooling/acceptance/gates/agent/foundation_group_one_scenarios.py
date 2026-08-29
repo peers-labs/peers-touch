@@ -185,8 +185,17 @@ def evaluate_as_f03(capture: Mapping[str, Any]) -> dict[str, bool | None]:
         if passed is not None and not passed
     )
     if failed:
+        diagnostics = {
+            "eventTypes": [event.get("eventType") for event in events],
+            "sequences": sequences,
+            "readyCapabilityCount": tool_isolation.get(
+                "readyCapabilityCount"
+            ),
+            "toolDefinitionTokens": capture.get("toolDefinitionTokens"),
+        }
         raise GroupOneScenarioError(
-            f"AS-F03 production facts failed assertions: {failed}"
+            "AS-F03 production facts failed assertions: "
+            f"{failed}; diagnostics={diagnostics}"
         )
     return assertions
 
