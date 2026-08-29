@@ -11,6 +11,7 @@ use crate::infrastructure::session_vault;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::oauth::{OAuthBridgeRequest, OAuthBridgeResponse};
+use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -19,7 +20,7 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -63,8 +64,16 @@ struct LoopbackSessionState {
     status: String,
     callback_url: Option<String>,
     error: Option<String>,
+    account_id: Option<String>,
+    actor_id: Option<String>,
     created_at: i64,
     completed_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OAuthCallbackSession {
+    account_id: String,
+    actor_id: String,
 }
 
 static LOOPBACK_SESSIONS: OnceLock<Mutex<HashMap<String, LoopbackSessionState>>> = OnceLock::new();
@@ -98,6 +107,45 @@ fn update_loopback_session(
     }
 }
 
+fn complete_loopback_session(
+    session_id: &str,
+    callback_url: String,
+    session: OAuthCallbackSession,
+) {
+    if let Ok(mut sessions) = loopback_sessions().lock() {
+        if let Some(item) = sessions.get_mut(session_id) {
+            item.status = "completed".to_string();
+            item.callback_url = Some(callback_url);
+            item.error = None;
+            item.account_id = Some(session.account_id);
+            item.actor_id = Some(session.actor_id);
+            item.completed_at = Some(chrono_like_now_unix());
+        }
+    }
+}
+
+pub(crate) fn completed_loopback_identity(
+    session_id: &str,
+) -> Result<(String, String), &'static str> {
+    let sessions = loopback_sessions()
+        .lock()
+        .map_err(|_| "OAuth loopback session registry is unavailable")?;
+    let session = sessions
+        .get(session_id)
+        .ok_or("OAuth loopback session was not found")?;
+    if session.status != "completed" {
+        return Err("OAuth loopback session is not completed");
+    }
+    match (&session.account_id, &session.actor_id) {
+        (Some(account_id), Some(actor_id))
+            if !account_id.trim().is_empty() && !actor_id.trim().is_empty() =>
+        {
+            Ok((account_id.clone(), actor_id.clone()))
+        }
+        _ => Err("OAuth loopback session has no persisted identity"),
+    }
+}
+
 fn parse_query_params(raw_path: &str) -> HashMap<String, String> {
     let query = raw_path.split_once('?').map(|(_, q)| q).unwrap_or("");
     let mut params: HashMap<String, String> = HashMap::new();
@@ -121,7 +169,7 @@ fn save_oauth_callback(
     input: OAuthCallbackInput,
     ts: Option<String>,
     sig: Option<String>,
-) -> CmdResult<()> {
+) -> CmdResult<OAuthCallbackSession> {
     let provider_id = input.provider.trim();
     if provider_id.is_empty() {
         return Err(invalid_argument("provider is required"));
@@ -199,26 +247,32 @@ fn save_oauth_callback(
         ts: ts.clone().unwrap_or_default(),
         sig: sig.clone().unwrap_or_default(),
     };
-    match station_client::post_peers_proto_no_auth::<OAuthBridgeRequest, OAuthBridgeResponse>(
-        "/actor/oauth-bridge",
-        &bridge_req,
-    ) {
-        Ok(bridge) => {
-            if !bridge.access_token.is_empty() {
-                let _ = session_vault::persist_raw_session_for_account(
-                    &account_id,
-                    &bridge.actor_id,
-                    &bridge.access_token,
-                    SessionSource::OauthBridge,
-                );
-            }
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "station oauth-bridge call failed, continuing without station session");
-        }
+    let bridge =
+        station_client::post_peers_proto_no_auth::<OAuthBridgeRequest, OAuthBridgeResponse>(
+            "/actor/oauth-bridge",
+            &bridge_req,
+        )
+        .map_err(|error| internal_error(format!("station oauth bridge failed: {error}")))?;
+    if bridge.actor_id.trim().is_empty() {
+        return Err(internal_error("station oauth bridge returned no actor"));
     }
+    if bridge.access_token.trim().is_empty() {
+        return Err(internal_error(
+            "station oauth bridge returned no access token",
+        ));
+    }
+    session_vault::persist_raw_session_for_account(
+        &account_id,
+        &bridge.actor_id,
+        &bridge.access_token,
+        SessionSource::OauthBridge,
+    )
+    .map_err(|error| internal_error(format!("failed to persist OAuth session: {error}")))?;
 
-    Ok(())
+    Ok(OAuthCallbackSession {
+        account_id,
+        actor_id: bridge.actor_id,
+    })
 }
 
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
@@ -728,6 +782,7 @@ pub fn oauth2_authorize(input: OAuthAuthorizeInput) -> AppResult<StubPayload> {
 pub fn oauth2_start_loopback(
     input: OAuthLoopbackStartInput,
     i18n: I18nService,
+    identity_transition: Arc<Mutex<()>>,
 ) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
@@ -757,6 +812,8 @@ pub fn oauth2_start_loopback(
                 status: "pending".to_string(),
                 callback_url: None,
                 error: None,
+                account_id: None,
+                actor_id: None,
                 created_at: chrono_like_now_unix(),
                 completed_at: None,
             },
@@ -813,31 +870,35 @@ pub fn oauth2_start_loopback(
                 );
                 message = i18n.resolve_key(&lang, "oauth", "oauth.callback.providerMismatch");
             } else {
-                match save_oauth_callback(
-                    OAuthCallbackInput {
-                        provider,
-                        provider_user_id,
-                        username: params.get("username").cloned(),
-                        display_name: params.get("display_name").cloned(),
-                        created_at: params
-                            .get("created_at")
-                            .cloned()
-                            .or_else(|| params.get("createdAt").cloned())
-                            .or_else(|| params.get("register_time").cloned()),
-                        email: params.get("email").cloned(),
-                        avatar_url: params.get("avatar_url").cloned(),
-                        profile_url: params.get("profile_url").cloned(),
-                        expires_at: params.get("expires_at").cloned(),
-                    },
-                    params.get("ts").cloned(),
-                    params.get("sig").cloned(),
-                ) {
-                    Ok(_) => {
-                        update_loopback_session(
+                let callback = OAuthCallbackInput {
+                    provider,
+                    provider_user_id,
+                    username: params.get("username").cloned(),
+                    display_name: params.get("display_name").cloned(),
+                    created_at: params
+                        .get("created_at")
+                        .cloned()
+                        .or_else(|| params.get("createdAt").cloned())
+                        .or_else(|| params.get("register_time").cloned()),
+                    email: params.get("email").cloned(),
+                    avatar_url: params.get("avatar_url").cloned(),
+                    profile_url: params.get("profile_url").cloned(),
+                    expires_at: params.get("expires_at").cloned(),
+                };
+                let save_result = match identity_transition.lock() {
+                    Ok(_transition) => save_oauth_callback(
+                        callback,
+                        params.get("ts").cloned(),
+                        params.get("sig").cloned(),
+                    ),
+                    Err(_) => Err(internal_error("failed to coordinate identity transition")),
+                };
+                match save_result {
+                    Ok(session) => {
+                        complete_loopback_session(
                             &session_id_for_thread,
-                            "completed",
-                            Some(callback_url.clone()),
-                            None,
+                            callback_url.clone(),
+                            session,
                         );
                         ok = true;
                         message = i18n.resolve_key(&lang, "oauth", "oauth.callback.loginComplete");
@@ -905,6 +966,8 @@ pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayl
     let mut callback_url: Option<String> = None;
     let mut status = "pending".to_string();
     let mut error: Option<String> = None;
+    let mut account_id: Option<String> = None;
+    let mut actor_id: Option<String> = None;
     if let Ok(mut sessions) = loopback_sessions().lock() {
         for session in sessions.values_mut() {
             if now - session.created_at > 600 && session.status == "pending" {
@@ -917,6 +980,8 @@ pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayl
             status = item.status.clone();
             callback_url = item.callback_url.clone();
             error = item.error.clone();
+            account_id = item.account_id.clone();
+            actor_id = item.actor_id.clone();
             if item.status == "completed" || item.status == "failed" || item.status == "expired" {
                 completed = true;
             }
@@ -931,13 +996,34 @@ pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayl
     }
     success_payload(
         "oauth2_poll_loopback",
-        json!({ "completed": completed, "status": status, "callback_url": callback_url, "error": error }),
+        json!({
+            "completed": completed,
+            "status": status,
+            "callback_url": callback_url,
+            "error": error,
+            "account_id": account_id,
+            "actor_id": actor_id
+        }),
     )
 }
 
-pub fn oauth2_handle_callback(input: OAuthCallbackInput) -> AppResult<StubPayload> {
-    try_cmd!(save_oauth_callback(input, None, None));
-    success_payload("oauth2_handle_callback", json!({ "status":"ok" }))
+pub fn oauth2_handle_callback(
+    input: OAuthCallbackInput,
+    state: &AppState,
+) -> AppResult<StubPayload> {
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => return internal_error("failed to coordinate identity transition"),
+    };
+    let session = try_cmd!(save_oauth_callback(input, None, None));
+    success_payload(
+        "oauth2_handle_callback",
+        json!({
+            "status": "ok",
+            "account_id": session.account_id,
+            "actor_id": session.actor_id
+        }),
+    )
 }
 
 pub fn oauth2_list_connections() -> AppResult<StubPayload> {

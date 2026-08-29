@@ -57,7 +57,11 @@ impl MessagingRepository for TestRepo {
         Ok(())
     }
 
-    fn consumption_marker_matches(&self, _item_id: &str, _payload_sha256: &[u8]) -> Result<bool, String> {
+    fn consumption_marker_matches(
+        &self,
+        _item_id: &str,
+        _payload_sha256: &[u8],
+    ) -> Result<bool, String> {
         Ok(false)
     }
 
@@ -65,7 +69,10 @@ impl MessagingRepository for TestRepo {
         Ok((0, 0))
     }
 
-    fn commit_conversation_state(&self, _commit: &ConversationStateReceiveCommit) -> Result<ReceiveCommitResult, String> {
+    fn commit_conversation_state(
+        &self,
+        _commit: &ConversationStateReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String> {
         Ok(ReceiveCommitResult::Committed)
     }
 
@@ -73,15 +80,24 @@ impl MessagingRepository for TestRepo {
         Ok(Vec::new())
     }
 
-    fn commit_public_event(&self, _commit: &PublicEventReceiveCommit) -> Result<ReceiveCommitResult, String> {
+    fn commit_public_event(
+        &self,
+        _commit: &PublicEventReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String> {
         Ok(ReceiveCommitResult::Committed)
     }
 
-    fn commit_interaction_event(&self, _commit: &InteractionReceiveCommit) -> Result<ReceiveCommitResult, String> {
+    fn commit_interaction_event(
+        &self,
+        _commit: &InteractionReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String> {
         Ok(ReceiveCommitResult::Committed)
     }
 
-    fn commit_delivery_receipt(&self, _commit: &DeliveryReceiptReceiveCommit) -> Result<(), String> {
+    fn commit_delivery_receipt(
+        &self,
+        _commit: &DeliveryReceiptReceiveCommit,
+    ) -> Result<(), String> {
         Ok(())
     }
 
@@ -93,19 +109,42 @@ impl MessagingRepository for TestRepo {
         Ok(None)
     }
 
-    fn mark_command_submitted(&self, _command_id: &str, _command_bytes: &[u8], _attempt_count: u32) -> Result<(), String> {
+    fn mark_command_submitted(
+        &self,
+        _command_id: &str,
+        _command_bytes: &[u8],
+        _attempt_count: u32,
+    ) -> Result<(), String> {
         Ok(())
     }
 
-    fn mark_command_retry(&self, _command_id: &str, _command_bytes: &[u8], _attempt_count: u32, _next_attempt_at_unix_ms: i64, _error_code: &str) -> Result<(), String> {
+    fn mark_command_retry(
+        &self,
+        _command_id: &str,
+        _command_bytes: &[u8],
+        _attempt_count: u32,
+        _next_attempt_at_unix_ms: i64,
+        _error_code: &str,
+    ) -> Result<(), String> {
         Ok(())
     }
 
-    fn mark_command_failed(&self, _command_id: &str, _command_bytes: &[u8], _attempt_count: u32, _error_code: &str) -> Result<(), String> {
+    fn mark_command_failed(
+        &self,
+        _command_id: &str,
+        _command_bytes: &[u8],
+        _attempt_count: u32,
+        _error_code: &str,
+    ) -> Result<(), String> {
         Ok(())
     }
 
-    fn mark_command_superseded(&self, _command_id: &str, _command_bytes: &[u8], _attempt_count: u32) -> Result<(), String> {
+    fn mark_command_superseded(
+        &self,
+        _command_id: &str,
+        _command_bytes: &[u8],
+        _attempt_count: u32,
+    ) -> Result<(), String> {
         Ok(())
     }
 
@@ -117,17 +156,26 @@ impl MessagingRepository for TestRepo {
         Ok(self.session.lock().unwrap().clone())
     }
 
-    fn load_direct_skipped_keys(&self, _session_id: &str) -> Result<Vec<DrSkippedMessageKey>, String> {
+    fn load_direct_skipped_keys(
+        &self,
+        _session_id: &str,
+    ) -> Result<Vec<DrSkippedMessageKey>, String> {
         Ok(self.skipped.lock().unwrap().clone())
     }
 
-    fn commit_direct_receive(&self, commit: &DirectReceiveCommit) -> Result<ReceiveCommitResult, String> {
+    fn commit_direct_receive(
+        &self,
+        commit: &DirectReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String> {
         *self.committed_message.lock().unwrap() = Some(commit.projection.clone());
         *self.session.lock().unwrap() = Some(commit.session.clone());
         Ok(ReceiveCommitResult::Committed)
     }
 
-    fn commit_direct_edit(&self, _commit: &DirectEditCommit) -> Result<ReceiveCommitResult, String> {
+    fn commit_direct_edit(
+        &self,
+        _commit: &DirectEditCommit,
+    ) -> Result<ReceiveCommitResult, String> {
         Ok(ReceiveCommitResult::Committed)
     }
 
@@ -172,13 +220,8 @@ fn direct_processor_decrypts_and_commits_message_via_repository() {
 
     let bob_session = DirectSession {
         session_id: session_id.to_string(),
-        key: DirectSessionKey::new(
-            "conv-1",
-            bob_endpoint.clone(),
-            alice_endpoint.clone(),
-            1,
-        )
-        .unwrap(),
+        key: DirectSessionKey::new("conv-1", bob_endpoint.clone(), alice_endpoint.clone(), 1)
+            .unwrap(),
         protocol_version: 1,
         established: true,
         peer_identity_key: [9; 32],
@@ -188,14 +231,13 @@ fn direct_processor_decrypts_and_commits_message_via_repository() {
 
     let repo = std::sync::Arc::new(TestRepo::new(bob_session));
 
-    let processor =
-        DirectMessageProcessor::with_actor_identity(
-            repo.clone(),
-            bob_endpoint.clone(),
-            std::sync::Arc::new(messaging_core::crypto::identity::IdentityKeyPair::generate()),
-            test_clock,
-        )
-        .unwrap();
+    let processor = DirectMessageProcessor::with_actor_identity(
+        repo.clone(),
+        bob_endpoint.clone(),
+        std::sync::Arc::new(messaging_core::crypto::identity::IdentityKeyPair::generate()),
+        test_clock,
+    )
+    .unwrap();
 
     let sender_proto = ProtoCryptoEndpoint {
         ptid: "ptid:alice".to_string(),

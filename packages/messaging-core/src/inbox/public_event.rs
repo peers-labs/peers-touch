@@ -104,14 +104,9 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
                 now,
                 committed_at_unix_ms,
             ),
-            Some(conversation_event::Payload::MessageRetracted(fact)) => self
-                .process_message_retracted(
-                    item,
-                    event,
-                    fact,
-                    consumer_epoch,
-                    now,
-                ),
+            Some(conversation_event::Payload::MessageRetracted(fact)) => {
+                self.process_message_retracted(item, event, fact, consumer_epoch, now)
+            }
             Some(conversation_event::Payload::ReactionCommitted(fact)) => {
                 self.process_reaction(item, event, fact, consumer_epoch, now, committed_at_unix_ms)
             }

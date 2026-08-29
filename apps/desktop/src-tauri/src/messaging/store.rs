@@ -8058,7 +8058,9 @@ mod tests {
             updated_at_unix_ms: 100,
         };
 
-        assert!(store.bootstrap_conversation_projection(&projection).unwrap());
+        assert!(store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap());
         assert_eq!(
             store.conversation_projections().unwrap()[0].members,
             projection.members
@@ -8292,20 +8294,13 @@ mod tests {
                         'ptid:alice', 'alice-device', ?3,
                         'consumed', ?4
                      )",
-                    params![
-                        event_id,
-                        event_sequence,
-                        message_id,
-                        committed_at_unix_ms
-                    ],
+                    params![event_id, event_sequence, message_id, committed_at_unix_ms],
                 )
                 .unwrap();
         }
-        for (message_id, created_at_unix_ms) in [
-            ("pending-z", 50),
-            ("pending-a", 50),
-            ("message-second", 25),
-        ] {
+        for (message_id, created_at_unix_ms) in
+            [("pending-z", 50), ("pending-a", 50), ("message-second", 25)]
+        {
             connection
                 .execute(
                     "INSERT INTO messaging_pending_messages(

@@ -191,10 +191,10 @@ acceptance-chat-w11:
 		--contract tooling/acceptance/closures/messaging-w11.yaml \
 		--output tooling/acceptance/plans/chat-w11-closure.json \
 		--manifest-output tooling/acceptance/reports/w11-contract-manifest.json
-	PT_ACCEPTANCE_RUNTIME_CELL="$(RUNTIME_CELL)" \
+	PT_ACCEPTANCE_RUNTIME_CELL="desktop-linux-native" \
 		python3 tooling/scripts/acceptance-run.py \
 		--plan tooling/acceptance/plans/chat-w11-closure.json \
-		--runtime-cell "$(RUNTIME_CELL)"
+		--runtime-cell "desktop-linux-native"
 
 acceptance-desktop-anchor-inventory:
 	python3 tooling/scripts/acceptance-run.py --gate desktop-anchor-inventory-gate

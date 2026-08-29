@@ -27,6 +27,7 @@ from .evidence_store import (
     ARTIFACT_ROOT_ENV,
     RUN_GATE_ENV,
     RUN_ID_ENV,
+    REDACTION_VALUES_ENV,
     RUN_WORKSPACE_ENV,
     ArtifactSession,
     ArtifactRef,

@@ -30,16 +30,44 @@ from .errors import (
     EvidenceSymlinkRejected,
     EvidenceWriteInterrupted,
 )
-from .redaction import redact_value
+from .redaction import (
+    redact_artifact_bytes,
+    redact_value,
+    redact_value_with_values,
+)
 
 
 ARTIFACT_ROOT_ENV = "PT_ACCEPTANCE_ARTIFACT_ROOT"
 RUN_WORKSPACE_ENV = "PT_ACCEPTANCE_WORKSPACE_ID"
 RUN_GATE_ENV = "PT_ACCEPTANCE_GATE_ID"
 RUN_ID_ENV = "PT_ACCEPTANCE_RUN_ID"
+REDACTION_VALUES_ENV = "PT_ACCEPTANCE_REDACTION_VALUES"
 GATE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 RUN_ID_PATTERN = re.compile(r"^\d{8}T\d{12}Z-[0-9a-f]{32}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _redaction_values(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[str, ...]:
+    current_environment = dict(os.environ if environment is None else environment)
+    raw = current_environment.get(REDACTION_VALUES_ENV, "").strip()
+    if not raw:
+        return ()
+    try:
+        values = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise EvidenceManifestInvalid(
+            "Acceptance redaction values are malformed"
+        ) from error
+    if (
+        not isinstance(values, list)
+        or any(not isinstance(value, str) for value in values)
+    ):
+        raise EvidenceManifestInvalid(
+            "Acceptance redaction values must be a string array"
+        )
+    return tuple(values)
 
 
 def _utc_now() -> str:
@@ -294,6 +322,12 @@ def write_current_artifact(
     current_environment = dict(
         os.environ if environment is None else environment
     )
+    secret_values = _redaction_values(current_environment)
+    if any(secret in relative_path for secret in secret_values if len(secret) >= 4):
+        raise EvidenceManifestInvalid(
+            "Acceptance artifact path contains a resolved credential"
+        )
+    value, _ = redact_artifact_bytes(value, secret_values)
     run_dir = current_run_directory(
         repo_root=repo_root,
         environment=current_environment,
@@ -951,6 +985,8 @@ class RunHandle:
         self.state = "ACTIVE"
         self._manifest: dict[str, Any] | None = None
         self._manifest_ref: ArtifactRef | None = None
+        self._redaction_values: tuple[str, ...] = ()
+        self._redacted_artifacts: set[str] = set()
 
     @property
     def manifest_ref(self) -> ArtifactRef:
@@ -969,78 +1005,22 @@ class RunHandle:
                 RUN_WORKSPACE_ENV: self.store.workspace_id,
                 RUN_GATE_ENV: self.gate_id,
                 RUN_ID_ENV: self.run_id,
+                REDACTION_VALUES_ENV: json.dumps(self._redaction_values),
             }
         )
         return environment
 
-    def refresh_redacted_artifacts(
-        self,
-        relative_paths: list[str],
-    ) -> None:
-        """Refresh registered digests after the runner redacts leaked bytes."""
+    def configure_redaction(self, secret_values: tuple[str, ...]) -> None:
         with self._mutex:
             if self.state != "ACTIVE":
                 raise EvidenceConflict(
-                    "artifacts can only be refreshed in an active run"
+                    "redaction can only be configured for an active run"
                 )
-            changed = set(relative_paths)
-            if not changed:
-                return
+            self._redaction_values = tuple(secret_values)
 
-            for role, reference in tuple(self._artifacts.items()):
-                if reference.path not in changed:
-                    continue
-                relative = _validate_relative_path(reference.path)
-                path = self.run_dir.joinpath(*relative.parts)
-                _ensure_no_symlink(self.run_dir, path)
-                if not path.is_file():
-                    del self._artifacts[role]
-                    continue
-                self._artifacts[role] = ArtifactRef(
-                    workspace_id=reference.workspace_id,
-                    gate_id=reference.gate_id,
-                    run_id=reference.run_id,
-                    path=reference.path,
-                    sha256=_sha256_file(path),
-                    media_type=reference.media_type,
-                )
-
-            role_dir = self.run_dir / ".artifact-roles"
-            if not role_dir.is_dir():
-                return
-            for metadata_path in sorted(role_dir.glob("*.json")):
-                metadata = json.loads(
-                    metadata_path.read_text(encoding="utf-8")
-                )
-                if not isinstance(metadata, dict):
-                    raise EvidenceManifestInvalid(
-                        "artifact role metadata must be an object"
-                    )
-                reference = ArtifactRef.from_dict(metadata.get("artifact"))
-                if reference.path not in changed:
-                    continue
-                relative = _validate_relative_path(reference.path)
-                path = self.run_dir.joinpath(*relative.parts)
-                _ensure_no_symlink(self.run_dir, path)
-                if not path.is_file():
-                    metadata_path.unlink()
-                    continue
-                metadata["artifact"] = ArtifactRef(
-                    workspace_id=reference.workspace_id,
-                    gate_id=reference.gate_id,
-                    run_id=reference.run_id,
-                    path=reference.path,
-                    sha256=_sha256_file(path),
-                    media_type=reference.media_type,
-                ).to_dict()
-                encoded = (
-                    json.dumps(metadata, indent=2, sort_keys=True) + "\n"
-                ).encode("utf-8")
-                _atomic_write(
-                    metadata_path,
-                    encoded,
-                    path_role="artifact-role-redaction-refresh",
-                )
+    @property
+    def redacted_artifacts(self) -> tuple[str, ...]:
+        return tuple(sorted(self._redacted_artifacts))
 
     def collect_existing_artifacts(self) -> dict[str, ArtifactRef]:
         with self._mutex:
@@ -1157,6 +1137,20 @@ class RunHandle:
             if self.state != "ACTIVE":
                 raise EvidenceConflict("artifacts can only be written to an active run")
             normalized, target = self._target(relative_path)
+            if any(
+                secret in normalized
+                for secret in self._redaction_values
+                if len(secret) >= 4
+            ):
+                raise EvidenceManifestInvalid(
+                    "Acceptance artifact path contains a resolved credential"
+                )
+            value, redacted = redact_artifact_bytes(
+                value,
+                self._redaction_values,
+            )
+            if redacted:
+                self._redacted_artifacts.add(normalized)
             digest = _sha256_bytes(value)
             if target.exists():
                 if target.is_symlink():
@@ -1244,9 +1238,18 @@ class RunHandle:
                 },
                 "redaction": {"status": redaction_status},
             }
+            manifest = redact_value_with_values(
+                manifest,
+                self._redaction_values,
+            )
             encoded = (
                 json.dumps(manifest, indent=2, sort_keys=True, default=str) + "\n"
             ).encode("utf-8")
+            encoded, _ = redact_artifact_bytes(
+                encoded,
+                self._redaction_values,
+            )
+            manifest = json.loads(encoded)
             target = self.run_dir / "manifest.json"
             _atomic_write(target, encoded, path_role="run-manifest")
             self._manifest_ref = ArtifactRef(
@@ -1378,6 +1381,15 @@ class RunHandle:
             return latest_paths[0]
         finally:
             lock.release()
+
+    def discard(self) -> None:
+        with self._mutex:
+            if self.state != "ACTIVE":
+                raise EvidenceConflict("only an active run can be discarded")
+            self._active_lock.release()
+            shutil.rmtree(self.run_dir)
+            _fsync_directory(self.run_dir.parent)
+            self.state = "CLOSED"
 
     def close(self) -> None:
         self._active_lock.release()

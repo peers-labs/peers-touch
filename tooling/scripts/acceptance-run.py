@@ -36,6 +36,7 @@ def run_environment(environment: dict[str, str]):
         "PT_ACCEPTANCE_WORKSPACE_ID",
         "PT_ACCEPTANCE_GATE_ID",
         "PT_ACCEPTANCE_RUN_ID",
+        "PT_ACCEPTANCE_REDACTION_VALUES",
         "PT_ACCEPTANCE_RUNTIME_CELL",
     )
     previous = {key: os.environ.get(key) for key in keys}
@@ -153,13 +154,9 @@ def redact_runtime_text(
     text: str,
     secret_values: tuple[str, ...],
 ) -> str:
-    from tooling.acceptance.core.redaction import REDACTED, redact_text
+    from tooling.acceptance.core.redaction import redact_text_with_values
 
-    redacted = redact_text(text)
-    for value in secret_values:
-        if len(value) >= 4:
-            redacted = redacted.replace(value, REDACTED)
-    return redacted
+    return redact_text_with_values(text, secret_values)
 
 
 def redact_runtime_value(
@@ -190,17 +187,13 @@ def redact_runtime_value(
     return redact_value(visit(value)), leaked
 
 
-def redact_runtime_artifacts(
+def audit_runtime_artifacts(
     run_dir: Path,
     secret_values: tuple[str, ...],
-) -> tuple[list[str], list[str]]:
-    redacted_paths: list[str] = []
+) -> list[str]:
+    from tooling.acceptance.core.redaction import redact_artifact_bytes
+
     leaked_paths: list[str] = []
-    credential_bytes = tuple(
-        value.encode("utf-8")
-        for value in secret_values
-        if len(value) >= 4
-    )
     credential_values = tuple(
         value for value in secret_values if len(value) >= 4
     )
@@ -209,7 +202,6 @@ def redact_runtime_artifacts(
         if (
             not path.is_file()
             or relative == Path(".active.lock")
-            or relative.parts[0] == ".artifact-roles"
         ):
             continue
         relative_path = relative.as_posix()
@@ -225,53 +217,16 @@ def redact_runtime_artifacts(
             continue
         if any(value in relative_path for value in credential_values):
             leaked_paths.append(relative_path)
-            try:
-                path.unlink()
-            except OSError:
-                pass
-            parent = path.parent
-            while parent != run_dir:
-                try:
-                    parent.rmdir()
-                except OSError:
-                    break
-                parent = parent.parent
-            redacted_paths.append(relative_path)
             continue
         try:
             raw_bytes = path.read_bytes()
         except OSError:
             leaked_paths.append(relative_path)
             continue
-        if any(value in raw_bytes for value in credential_bytes):
+        _, redacted = redact_artifact_bytes(raw_bytes, secret_values)
+        if redacted:
             leaked_paths.append(relative_path)
-        try:
-            original = raw_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            if relative_path in leaked_paths:
-                path.write_bytes(b"[REDACTED]\n")
-                redacted_paths.append(relative_path)
-            continue
-        try:
-            payload = json.loads(original)
-        except json.JSONDecodeError:
-            redacted = redact_runtime_text(original, secret_values)
-        else:
-            from tooling.acceptance.core.redaction import redact_value
-
-            redacted = (
-                json.dumps(
-                    redact_value(payload),
-                    indent=2,
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-            redacted = redact_runtime_text(redacted, secret_values)
-        if redacted != original:
-            path.write_text(redacted, encoding="utf-8")
-            redacted_paths.append(relative_path)
-    return sorted(redacted_paths), sorted(leaked_paths)
+    return sorted(set(leaked_paths))
 
 
 def persist_provisioner_cleanup_result(
@@ -360,17 +315,19 @@ def provisioning_failure_result(
     error: Exception,
     duration_seconds: float,
 ) -> dict[str, Any]:
+    from tooling.acceptance.core import BlockedError
     from tooling.acceptance.core.redaction import redact_text
 
-    return {
+    blocked = isinstance(error, BlockedError)
+    result = {
         "id": gate_id,
         "command": command,
         "environment": environment,
         "tier": tier,
-        "status": "failed",
+        "status": "blocked" if blocked else "failed",
         "exit_code": None,
         "duration_seconds": duration_seconds,
-        "completionStatus": "PARTIAL",
+        "completionStatus": "BLOCKED" if blocked else "PARTIAL",
         "proofStatus": "UNPROVEN",
         "reason": redact_text(str(error)),
         "errorType": type(error).__name__,
@@ -384,6 +341,10 @@ def provisioning_failure_result(
             "execution"
         ),
     }
+    if blocked:
+        result["blockedReason"] = error.reason
+        result["blockedResource"] = error.resource
+    return result
 
 
 def runtime_cell_failure_result(
@@ -1175,6 +1136,7 @@ def acceptance_exit_code(report: dict[str, Any]) -> int:
 
 def main() -> int:
     from tooling.acceptance.core import (
+        EvidenceConflict,
         EvidenceError,
         EvidenceStore,
         source_identity,
@@ -1288,8 +1250,19 @@ def main() -> int:
                         )
                     print(f"[PROVISION] {provisioner_id}")
                     try:
+                        preparation_error: Exception | None = None
                         with run_environment(gate_env):
                             provisioner = environment_provisioner(provisioner_id)
+                            try:
+                                provisioner.prepare_credentials()
+                            except Exception as error:
+                                preparation_error = error
+                        runtime_secrets = credential_values(provisioner)
+                        gate_run.configure_redaction(runtime_secrets)
+                        gate_env = gate_run.subprocess_environment(gate_env)
+                        if preparation_error is not None:
+                            raise preparation_error
+                        with run_environment(gate_env):
                             provisioner, manifest, manifest_path = provision_environment(
                                 provisioner_id,
                                 gate_id,
@@ -1307,7 +1280,6 @@ def main() -> int:
                             error=error,
                             duration_seconds=round(time.time() - started, 3),
                         )
-                    runtime_secrets = credential_values(provisioner)
                     if result is None and manifest and manifest.get("state") == "BLOCKED":
                         reason = manifest.get("blockedReason", "unknown")
                         resource = manifest.get("blockedResource", "")
@@ -1478,11 +1450,18 @@ def main() -> int:
                 media_type="text/plain",
                 role="log",
             )
-            redacted_artifacts, leaked_artifacts = redact_runtime_artifacts(
+            leaked_artifacts = audit_runtime_artifacts(
                 gate_run.run_dir,
                 runtime_secrets,
             )
-            gate_run.refresh_redacted_artifacts(redacted_artifacts)
+            redacted_artifacts = list(gate_run.redacted_artifacts)
+            if leaked_artifacts:
+                gate_run.discard()
+                active_gate_run = None
+                raise EvidenceConflict(
+                    "resolved credentials bypassed the immutable artifact writer: "
+                    + ", ".join(leaked_artifacts)
+                )
             duration = round(time.time() - started, 3)
             if result is None:
                 status = (
