@@ -247,7 +247,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 DirectProbeHarnessClient(mismatch=True)
             )(probe_input)
 
-    def test_as_f06_prepares_all_tuples_around_one_shared_restart(self) -> None:
+    def test_as_f06_closes_each_tuple_around_its_own_restart(self) -> None:
         native = F06HarnessClient("desktop_app")
         browser = F06HarnessClient("browser")
         runtime_pair = SimpleNamespace(native=native, browser=browser)
@@ -293,10 +293,11 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 )
             )
 
-        restart.assert_called_once()
-        authenticate.assert_called_once_with(runtime_pair, {})
-        self.assertEqual(native.restart_count, 1)
-        self.assertEqual(browser.restart_count, 1)
+        self.assertEqual(restart.call_count, 4)
+        self.assertEqual(authenticate.call_count, 4)
+        authenticate.assert_called_with(runtime_pair, {})
+        self.assertEqual(native.restart_count, 4)
+        self.assertEqual(browser.restart_count, 4)
         self.assertEqual(len(native.prepare_calls), 2)
         self.assertEqual(len(browser.prepare_calls), 2)
         self.assertEqual(len(native.failure_calls), 2)
@@ -359,9 +360,6 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(
             cleanup_log,
             [
-                "desktop_app|zh-CN|AS-F06|sample-001",
-                "desktop_app|en|AS-F06|sample-001",
-                "browser|zh-CN|AS-F06|sample-001",
                 "browser|en|AS-F06|sample-001",
             ],
         )
@@ -380,10 +378,21 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             {},
         )
 
-        with patch.object(
-            foundation_scenario_runner,
-            "_authenticate_clients",
-        ) as authenticate:
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "restart_foundation_station",
+                side_effect=lambda *_args, **kwargs: (
+                    kwargs["during_outage"](time.monotonic() + 165),
+                    kwargs["after_restart"](time.monotonic() + 180),
+                    {"containerId": "container"},
+                )[-1],
+            ) as restart,
+            patch.object(
+                foundation_scenario_runner,
+                "_authenticate_clients",
+            ) as authenticate,
+        ):
             with self.assertRaisesRegex(RuntimeError, "prepare failed"):
                 coordinator.capture(
                     DirectRuntimeProbeInput(
@@ -394,9 +403,10 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                     )
                 )
 
-        authenticate.assert_called_once()
-        self.assertEqual(native.restart_count, 1)
-        self.assertEqual(browser.restart_count, 1)
+        self.assertEqual(restart.call_count, 3)
+        self.assertEqual(authenticate.call_count, 4)
+        self.assertEqual(native.restart_count, 4)
+        self.assertEqual(browser.restart_count, 4)
         self.assertEqual(
             cleanup_log,
             [

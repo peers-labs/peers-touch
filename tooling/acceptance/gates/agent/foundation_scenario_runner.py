@@ -369,7 +369,7 @@ class FoundationF06Coordinator:
                         f"{self._scenario_key(probe_input)}"
                     )
                 prepared.append((probe_input, handoff))
-            self._execute_prepared(f06_inputs)
+                self._execute_active(probe_input)
         except BaseException as error:
             primary_error = error
 
@@ -390,60 +390,58 @@ class FoundationF06Coordinator:
             raise primary_error
         self._executed = True
 
-    def _execute_prepared(
+    def _execute_active(
         self,
-        f06_inputs: tuple[DirectRuntimeProbeInput, ...],
+        probe_input: DirectRuntimeProbeInput,
     ) -> None:
         def observe_recovery_failures(outage_deadline: float) -> None:
-            for probe_input in f06_inputs:
-                remaining = outage_deadline - time.monotonic()
-                if remaining <= 0:
-                    raise ScenarioRunnerError(
-                        "AS-F06 global Station outage deadline expired "
-                        "during recovery-failure callbacks"
-                    )
-                client = self._client(probe_input.platform)
-                result = client.harness(
-                    "foundationF06ObserveFailure",
-                    {"scenarioKey": self._scenario_key(probe_input)},
-                    timeout=remaining,
+            remaining = outage_deadline - time.monotonic()
+            if remaining <= 0:
+                raise ScenarioRunnerError(
+                    "AS-F06 Station outage deadline expired "
+                    "during recovery-failure callback"
                 )
-                if (
-                    not isinstance(result, Mapping)
-                    or result.get("activeFailureObserved") is not True
-                ):
-                    raise ScenarioRunnerError(
-                        f"AS-F06 recovery failure was not observed for "
-                        f"{self._scenario_key(probe_input)}"
-                    )
+            client = self._client(probe_input.platform)
+            result = client.harness(
+                "foundationF06ObserveFailure",
+                {"scenarioKey": self._scenario_key(probe_input)},
+                timeout=remaining,
+            )
+            if (
+                not isinstance(result, Mapping)
+                or result.get("activeFailureObserved") is not True
+            ):
+                raise ScenarioRunnerError(
+                    f"AS-F06 recovery failure was not observed for "
+                    f"{self._scenario_key(probe_input)}"
+                )
 
         def exercise_durable_reloads(operation_deadline: float) -> None:
-            for probe_input in f06_inputs:
-                remaining = operation_deadline - time.monotonic()
-                if remaining <= 0:
-                    raise ScenarioRunnerError(
-                        "AS-F06 global Station outage deadline expired "
-                        "during durable-reload verification"
-                    )
-                client = self._client(probe_input.platform)
-                result = client.harness(
-                    "foundationF06DurableReload",
-                    {"scenarioKey": self._scenario_key(probe_input)},
-                    timeout=remaining,
+            remaining = operation_deadline - time.monotonic()
+            if remaining <= 0:
+                raise ScenarioRunnerError(
+                    "AS-F06 Station restart deadline expired "
+                    "during durable-reload verification"
                 )
-                durable_reload = (
-                    result.get("durableReload")
-                    if isinstance(result, Mapping)
-                    else None
+            client = self._client(probe_input.platform)
+            result = client.harness(
+                "foundationF06DurableReload",
+                {"scenarioKey": self._scenario_key(probe_input)},
+                timeout=remaining,
+            )
+            durable_reload = (
+                result.get("durableReload")
+                if isinstance(result, Mapping)
+                else None
+            )
+            if (
+                not isinstance(durable_reload, Mapping)
+                or durable_reload.get("observed") is not True
+            ):
+                raise ScenarioRunnerError(
+                    f"AS-F06 durable reload was not observed for "
+                    f"{self._scenario_key(probe_input)}"
                 )
-                if (
-                    not isinstance(durable_reload, Mapping)
-                    or durable_reload.get("observed") is not True
-                ):
-                    raise ScenarioRunnerError(
-                        f"AS-F06 durable reload was not observed for "
-                        f"{self._scenario_key(probe_input)}"
-                    )
 
         station_restart = restart_foundation_station(
             self._runtime_manifest,
@@ -464,28 +462,27 @@ class FoundationF06Coordinator:
             "clientReloads": client_reloads,
         }
 
-        for probe_input in f06_inputs:
-            client = self._client(probe_input.platform)
-            self._set_locale(client, probe_input)
-            result = client.harness(
-                "foundationDirectProbe",
-                {
-                    "platform": probe_input.platform,
-                    "locale": probe_input.locale,
-                    "cell": probe_input.cell,
-                    "sampleId": probe_input.sample_id,
-                    "scenarioKey": self._scenario_key(probe_input),
-                    "stationRestart": orchestration,
-                },
-                timeout=300,
+        client = self._client(probe_input.platform)
+        self._set_locale(client, probe_input)
+        result = client.harness(
+            "foundationDirectProbe",
+            {
+                "platform": probe_input.platform,
+                "locale": probe_input.locale,
+                "cell": probe_input.cell,
+                "sampleId": probe_input.sample_id,
+                "scenarioKey": self._scenario_key(probe_input),
+                "stationRestart": orchestration,
+            },
+            timeout=300,
+        )
+        if not isinstance(result, Mapping):
+            raise ScenarioRunnerError(
+                f"AS-F06 completion returned invalid evidence for "
+                f"{self._scenario_key(probe_input)}"
             )
-            if not isinstance(result, Mapping):
-                raise ScenarioRunnerError(
-                    f"AS-F06 completion returned invalid evidence for "
-                    f"{self._scenario_key(probe_input)}"
-                )
-            assert_group_one_capture(probe_input, result)
-            self._captures[self._capture_key(probe_input)] = dict(result)
+        assert_group_one_capture(probe_input, result)
+        self._captures[self._capture_key(probe_input)] = dict(result)
 
     def capture(
         self,

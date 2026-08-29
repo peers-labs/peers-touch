@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `434469698` closed the AS-F06 transport hang and reached post-restart durable reload in run `20260829T040641993969Z-89b3b4e2546ff51716c0739ca4cb8532`; a Harness handoff write-order race is locally corrected and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `2b0b7ff9d` exposed nondeterministic AS-F06 batch preparation in run `20260829T043023680453Z-c1380cde93d76b3d0e076d85c05366e6`; each tuple now owns a local `prepare -> outage -> recovery -> reload -> completion` cycle and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2863,6 +2863,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   correction serializes recovery-failure persistence through the same replay
   recording ledger and merges into the latest handoff before every write.
   AS-F06 and G-F remain `UNPROVEN` pending another exact-source run.
+- Checkpoint `2b0b7ff9dfe33754e8c35cbbb2f1385ac36bb9e0` was deployed
+  exact-source to profile `two`. Run
+  `20260829T043023680453Z-c1380cde93d76b3d0e076d85c05366e6`
+  failed at Browser AS-F06 while waiting for active recovery failure; cleanup
+  passed. Unlike the preceding run, the first prepared provider Turn completed
+  before the shared outage because the coordinator prepared all four matrix
+  tuples serially before fault injection. The local correction gives every
+  tuple its own bounded `prepare -> outage -> recovery failure -> Station
+  restart -> durable reload -> client restart -> completion` cycle. This
+  removes provider-duration coupling without weakening any tuple, reusing
+  evidence, or synthesizing transport failure. The 96 focused
+  Foundation/native static tests and `git diff --check` pass. AS-F06 and G-F
+  remain `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
