@@ -28,6 +28,7 @@
 | L | The post-reload virtual timeline mounts only the viewport tail, leaving the terminal base message off-DOM even though it remains in the active conversation store. | High | Low | Rejected: the scroll container and every message row are absent, not merely the target row. |
 | M | The refreshed client is left on an unauthenticated or boot surface, so neither primary navigation nor the Chat page can mount. | High | Low | Pending post-refresh shell-state evidence. |
 | N | The authenticated shell mounts, but route restoration fails to expose the Chat navigation target or page host. | Medium | Low | Pending route/navigation/page-host evidence. |
+| O | WebKitGTK returns from `refresh()` before replacing the old document, so Harness readiness accepts the stale pre-refresh Harness and the real reload unmounts the shell afterward. | High | Low | Pending pre-refresh versus post-return `performance.timeOrigin` evidence. |
 
 ## Log Evidence
 - Pre-fix Gate run `20260829T023644548452Z-8983d0bd277b21b69d93e766da7eaa4e` failed after 120 seconds.
@@ -53,6 +54,10 @@
 - Geometry run `20260829T045247379819Z-b039f224ef7d7eb14d20be531f7a3e00` reproduced the same Alice timeout. Debug lines 5-12 show `domSurface.messageIds=[]` and `domSurface.scroll=null` for the full bounded window, proving the complete Chat surface was absent rather than the target being virtualized offscreen.
 - `enter_chat_page` currently returns solely when `current_url` ends in `#/chat`. After a WebView refresh, the URL can already match while the authenticated application has not mounted the Chat page, so the helper skips the navigation action and surface-ready wait.
 - The surface-ready fix changed that silent false-ready state into an explicit `clients.reload_after_station_restart` `TimeoutException` in run `20260829T050944875971Z-69a277b3783d4cfc0e2620035391d1c5`. This proves the helper no longer advances without a mounted Chat surface, but the shell state that prevents navigation still requires runtime evidence.
+- Exact-source run `20260829T052733208520Z-c8bab1c493295aa587229ac263d67a8a` on commit `7f0c26a0f563a74e0a29de7b93069727d213bd8b` passed all Direct and Group assertions through retry, offline recovery, duplicate replay, and Station restart, then failed at `clients.reload_after_station_restart`.
+- Debug line 5 observed Bob immediately after `refresh()` and Harness readiness with the authenticated Chat shell still mounted: `chatLayoutCount=1`, `chatNavCount=1`, `primaryNavCount=11`, `loginSurfaceCount=0`.
+- Debug line 6 observed the same `tauri://localhost#/chat` URL 20 seconds later with `chatLayoutCount=0`, `chatNavCount=0`, `primaryNavCount=0`, and `loginSurfaceCount=0`. This rejects a stable unauthenticated surface (M) and a stable authenticated-shell route failure (N); the shell transitioned after it had already been accepted as ready.
+- The run preserved source/Station/runtime-cell/binary identity and completed both Gate cleanup and outer Provisioner cleanup. It remains `PARTIAL / UNPROVEN`.
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
@@ -71,4 +76,8 @@ The post-fix evidence confirms that the account-inheritance fix closes the
 original retry-wait projection split. Cleanup is still blocked because the
 focused Gate exposed a later Station-restart convergence failure. That boundary
 must be diagnosed independently before the debugging session can be confirmed
-fixed.
+fixed. The latest evidence localizes the remaining failure to an unstable
+post-refresh document/shell readiness boundary. The next instrumentation
+compares document generations before refresh, immediately after the WebDriver
+command returns, and after Harness readiness to determine whether the old
+Harness is being accepted before WebKitGTK completes document replacement.

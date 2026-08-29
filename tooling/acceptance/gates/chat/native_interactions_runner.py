@@ -2378,56 +2378,87 @@ class NativeInteractionsGate(AcceptanceGate):
 
     def reload_clients_after_station_restart(self) -> None:
         for actor, client in self.clients.items():
-            client.driver.refresh()
-            client.wait_for_acceptance_harness(30)
-            # #region debug-point M,N:post-restart-shell-state
-            def shell_state() -> dict[str, Any]:
-                value = client.execute_script(
-                    """
+            # #region debug-point M,N,O:post-restart-document-and-shell-state
+            def document_state() -> dict[str, Any]:
+                try:
+                    value = client.execute_script(
+                        """
+                        const navigation = performance.getEntriesByType(
+                          'navigation'
+                        )[0];
+                        return {
+                          currentUrl: window.location.href,
+                          hash: window.location.hash,
+                          readyState: document.readyState,
+                          timeOrigin: performance.timeOrigin,
+                          navigationType: navigation
+                            ? navigation.type
+                            : '',
+                          hasHarness: Boolean(
+                            window.__PT_ACCEPTANCE__
+                          ),
+                          primaryNavCount: document.querySelectorAll(
+                            '[data-pt-primary-nav]'
+                          ).length,
+                          chatNavCount: document.querySelectorAll(
+                            '[data-pt-primary-nav="chat"]'
+                          ).length,
+                          chatLayoutCount: document.querySelectorAll(
+                            '[data-social-chat-layout]'
+                          ).length,
+                          loginSurfaceCount: document.querySelectorAll(
+                            '[data-login-page], [data-auth-page], form'
+                          ).length,
+                        };
+                        """,
+                    )
+                    return value if isinstance(value, dict) else {}
+                except Exception as error:
                     return {
-                      currentUrl: window.location.href,
-                      hash: window.location.hash,
-                      readyState: document.readyState,
-                      primaryNavCount: document.querySelectorAll(
-                        '[data-pt-primary-nav]'
-                      ).length,
-                      chatNavCount: document.querySelectorAll(
-                        '[data-pt-primary-nav="chat"]'
-                      ).length,
-                      chatLayoutCount: document.querySelectorAll(
-                        '[data-social-chat-layout]'
-                      ).length,
-                      loginSurfaceCount: document.querySelectorAll(
-                        '[data-login-page], [data-auth-page], form'
-                      ).length,
-                    };
-                    """,
-                )
-                return value if isinstance(value, dict) else {}
+                        "probeErrorType": type(error).__name__,
+                        "probeError": str(error),
+                    }
 
             report_interaction_projection_debug(
-                "M,N",
+                "O",
+                "native_interactions_runner:pre-refresh-document",
+                {"actor": actor, "document": document_state()},
+            )
+            client.driver.refresh()
+            report_interaction_projection_debug(
+                "O",
+                "native_interactions_runner:post-refresh-return-document",
+                {"actor": actor, "document": document_state()},
+            )
+            client.wait_for_acceptance_harness(30)
+            report_interaction_projection_debug(
+                "O",
+                "native_interactions_runner:post-harness-document",
+                {"actor": actor, "document": document_state()},
+            )
+            report_interaction_projection_debug(
+                "M,N,O",
                 "native_interactions_runner:post-restart-shell-before-navigation",
-                {"actor": actor, "shell": shell_state()},
+                {"actor": actor, "shell": document_state()},
             )
             try:
                 enter_chat_page(client)
             except Exception as error:
                 report_interaction_projection_debug(
-                    "M,N",
+                    "M,N,O",
                     "native_interactions_runner:post-restart-shell-navigation-error",
                     {
                         "actor": actor,
-                        "shell": shell_state(),
+                        "shell": document_state(),
                         "errorType": type(error).__name__,
                         "error": str(error),
                     },
                 )
                 raise
             report_interaction_projection_debug(
-                "M,N",
+                "M,N,O",
                 "native_interactions_runner:post-restart-shell-ready",
-                {"actor": actor, "shell": shell_state()},
+                {"actor": actor, "shell": document_state()},
             )
             # #endregion
 
