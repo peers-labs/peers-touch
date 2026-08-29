@@ -34,6 +34,15 @@ ALL_MIGRATED_RUNNERS = (
     "native_recovery_runner.py",
     "native_typing_runner.py",
 )
+TRACEABLE_GATE_CLASSES = {
+    "contact_message_resilience_runner.py": "ContactMessageResilienceGate",
+    "native_group_mls_runner.py": "NativeGroupMlsGate",
+    "native_interactions_runner.py": "NativeInteractionsGate",
+    "native_multi_device_runner.py": "NativeMultiDeviceGate",
+    "native_product_closure_runner.py": "NativeProductClosureGate",
+    "native_recovery_runner.py": "NativeRecoveryGate",
+    "native_typing_runner.py": "NativeTypingGate",
+}
 
 
 class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
@@ -344,6 +353,31 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             with self.subTest(suite=suite):
                 self.assertIn(suite, command)
 
+    def test_environment_gate_classes_declare_traceability(self) -> None:
+        runner_root = ROOT / "tooling/acceptance/gates/chat"
+        for filename, class_name in TRACEABLE_GATE_CLASSES.items():
+            with self.subTest(runner=filename):
+                tree = ast.parse(
+                    (runner_root / filename).read_text(encoding="utf-8")
+                )
+                gate_class = next(
+                    node
+                    for node in tree.body
+                    if isinstance(node, ast.ClassDef)
+                    and node.name == class_name
+                )
+                assignments = {
+                    target.id: ast.literal_eval(node.value)
+                    for node in gate_class.body
+                    if isinstance(node, ast.Assign)
+                    for target in node.targets
+                    if isinstance(target, ast.Name)
+                    and target.id in {"phase", "bom", "spec"}
+                }
+                self.assertTrue(assignments.get("phase"))
+                self.assertTrue(assignments.get("bom"))
+                self.assertTrue(assignments.get("spec"))
+
     def test_desktop_gateway_gate_runs_as_repo_module(self) -> None:
         gates = json.loads(
             (ROOT / "tooling/acceptance/gates.yaml").read_text(
@@ -373,7 +407,7 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             desktop_gateway_e2e,
             "new_report",
             return_value=report,
-        ), patch.object(
+        ) as report_factory, patch.object(
             desktop_gateway_e2e,
             "runtime_manifest",
             return_value=manifest,
@@ -393,6 +427,12 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         self.assertEqual(report.runtime, runtime)
         self.assertEqual(report.status, "PASS")
         report.write.assert_called_once_with()
+        report_factory.assert_called_once_with(
+            "chat-desktop-gateway-e2e",
+            phase="MP-W03",
+            bom=("MP-G01", "MP-G02", "MP-G03", "MP-G04"),
+            spec=("chat-desktop-gateway-message-flow",),
+        )
 
     def test_station_readback_uses_strict_shared_ssh_transport(self) -> None:
         support = (
