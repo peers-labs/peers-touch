@@ -3341,6 +3341,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   recovery watermark and authenticated-session presence so terminal reduction
   can be distinguished from session-runtime teardown without retaining local
   storage or sensitive identities.
+- Diagnostic checkpoint `3283f2ba18cba1e0d59f243568a4ec5f1f7437f7`
+  was deployed exact-source to profile `two`. Run
+  `20260829T193708550305Z-2f3e1ed308b9cc74db440872ad2e3c1e`
+  showed `recoveryActorPresent=true`, `sessionAuthenticated=true`, and a
+  terminal watermark at cursor `59` while the active record was missing.
+  This rules out session teardown: later queued/terminal events for other Turns
+  in the same conversation had superseded the running Turn's recovery record.
+  The recovery reducer now excludes queued admissions from active recovery and
+  prevents a different Turn's terminal from clearing the current record.
+  AS-F02, AS-F06, and G-F remain `PARTIAL / UNPROVEN` pending focused
+  verification, checkpoint deployment, and another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

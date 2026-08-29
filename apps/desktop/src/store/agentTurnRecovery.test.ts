@@ -50,6 +50,26 @@ describe('Agent turn recovery projection', () => {
       terminal: false,
       record: current,
     });
+
+    const cancelledQueuedTurn = reduceAgentTurnRecovery(
+      current.actorId,
+      current,
+      {
+        streamId: 'stream-queued',
+        ptid: current.actorId,
+        streamGeneration: current.streamGeneration + 1,
+        conversationId: current.conversationId,
+        agentId: current.agentId,
+        event: 'cancelled',
+        data: { turnId: 'turn-queued', seq: 60 },
+        timestampMs: 601,
+      },
+    );
+    expect(cancelledQueuedTurn).toEqual({
+      accepted: false,
+      terminal: false,
+      record: current,
+    });
   });
 
   it('keeps transport loss non-terminal and advances the explicit recovery FSM', () => {
@@ -117,6 +137,30 @@ describe('Agent turn recovery projection', () => {
 
     expect(reduction.accepted).toBe(false);
     expect(reduction.record).toBe(current);
+  });
+
+  it('does not let another queued turn clear the active turn recovery', () => {
+    const current = activeTurn();
+    const reduction = reduceAgentTurnRecovery(
+      current.actorId,
+      current,
+      {
+        streamId: 'stream-queued',
+        ptid: current.actorId,
+        streamGeneration: current.streamGeneration + 1,
+        conversationId: current.conversationId,
+        agentId: current.agentId,
+        event: 'queued',
+        data: { turnId: 'turn-queued', seq: 59 },
+        timestampMs: 600,
+      },
+    );
+
+    expect(reduction).toEqual({
+      accepted: false,
+      terminal: false,
+      record: current,
+    });
   });
 
   it('removes a turn only when Station reports a terminal fact', () => {

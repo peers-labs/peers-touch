@@ -63,6 +63,7 @@ interface AgentTurnRecoveryState {
 }
 
 const TERMINAL_EVENTS = new Set(['done', 'error', 'cancelled']);
+const QUEUED_EVENTS = new Set(['queued', 'admission_replayed']);
 const PHASE_BY_EVENT: Record<string, AgentTurnRecoveryPhase> = {
   connected: 'CONNECTED',
   connection_lost: 'CONNECTION_LOST',
@@ -134,6 +135,9 @@ export function reduceAgentTurnRecovery(
   if (!actorId || !conversationId || !turnId) {
     return { accepted: false, terminal: false };
   }
+  if (QUEUED_EVENTS.has(payload.event)) {
+    return { accepted: false, terminal: false, record: current };
+  }
   if (current && current.actorId !== actorId) {
     return { accepted: false, terminal: false, record: current };
   }
@@ -145,17 +149,16 @@ export function reduceAgentTurnRecovery(
   if (current && streamGeneration < current.streamGeneration) {
     return { accepted: false, terminal: false, record: current };
   }
-  if (
-    current
-    && streamGeneration === current.streamGeneration
-    && current.turnId !== turnId
-  ) {
-    return { accepted: false, terminal: false, record: current };
-  }
-
   const terminal =
     TERMINAL_EVENTS.has(payload.event)
     || (payload.event === 'snapshot' && snapshotIsTerminal(payload.data));
+  if (
+    current
+    && current.turnId !== turnId
+    && (terminal || streamGeneration === current.streamGeneration)
+  ) {
+    return { accepted: false, terminal: false, record: current };
+  }
   if (terminal && sequence === 0) {
     return { accepted: false, terminal: false, record: current };
   }
