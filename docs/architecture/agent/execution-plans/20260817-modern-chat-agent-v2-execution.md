@@ -2776,6 +2776,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   client-capture component differed, the next checkpoint adds only redacted
   event type/sequence and isolation-count diagnostics while preserving every
   existing pass condition.
+- Diagnostic checkpoint `b196e0f86d83bbc927779af30a928dec3c3176d0`
+  was deployed exact-source to profile `two`. Run
+  `20260829T021942294103Z-8df4c245f21c9fcdfc314e6c3ce50925`
+  showed that the AS-F03 capture contained durable sequences `1..34`, then
+  synthetic transport controls `connection_lost`, `reconnecting`, and
+  `replaying` at cursor `34`, followed by the durable cancelled event at
+  sequence `35`; zero READY capabilities and zero tool-definition tokens were
+  preserved. The local correction excludes only defined transport controls
+  from AS-F03's durable sequence oracle. Product progress/text/terminal events
+  remain mandatory and duplicate durable sequences still fail. Cleanup passed;
+  AS-F03 and G-F remain `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

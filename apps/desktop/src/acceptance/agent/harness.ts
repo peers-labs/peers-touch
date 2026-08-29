@@ -5217,11 +5217,15 @@ export function installAcceptanceHarness(): void {
           await api.cancelAgentTurn(preparedTurnId);
           const result = await observed.result;
           turnDurationMs = performance.now() - startedAt;
-          const normalizedEvents = result.events.map((event) => ({
-            eventType: event.event,
-            sequence: Number(event.data.seq ?? 0),
-            observedAt: event.observedAt,
-          }));
+          const normalizedEvents = result.events
+            .filter((event) =>
+              !FOUNDATION_F06_PHASE_BY_EVENT[event.event]
+              && event.event !== 'catchup_done')
+            .map((event) => ({
+              eventType: event.event,
+              sequence: Number(event.data.seq ?? 0),
+              observedAt: event.observedAt,
+            }));
           const terminalEvent = [...normalizedEvents]
             .reverse()
             .find((event) =>
