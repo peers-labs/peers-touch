@@ -295,6 +295,37 @@ async function flushAppletAuditRecords(): Promise<void> {
   }
 }
 
+// #region debug-point U,V:acceptance-auth-command-timeline
+interface AcceptanceAuthCommandDebugEvent {
+  command: string;
+  event: 'start' | 'result' | 'revoked' | 'error';
+  requestId: number;
+  timestampMs: number;
+  ok?: boolean;
+  reason?: string;
+}
+
+const acceptanceAuthCommandDebugEvents: AcceptanceAuthCommandDebugEvent[] = [];
+let acceptanceAuthCommandDebugSequence = 0;
+
+function recordAcceptanceAuthCommandDebug(
+  event: AcceptanceAuthCommandDebugEvent,
+): void {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
+  acceptanceAuthCommandDebugEvents.push(event);
+  if (acceptanceAuthCommandDebugEvents.length > 200) {
+    acceptanceAuthCommandDebugEvents.splice(
+      0,
+      acceptanceAuthCommandDebugEvents.length - 200,
+    );
+  }
+}
+
+export function getAcceptanceAuthCommandDebugEvents(): AcceptanceAuthCommandDebugEvent[] {
+  return acceptanceAuthCommandDebugEvents.slice();
+}
+// #endregion
+
 function publishSessionRevoked(payload: SessionRevokedPayload) {
   eventBus.publish(EVENT.AUTH_SESSION_REVOKED, payload);
 }
@@ -333,6 +364,13 @@ async function invokeRustCommand<TInput, TData>(
 ): Promise<RustCommandResult<TData>> {
   const quiet = isQuietCommand(command);
   const start = Date.now();
+  const debugRequestId = ++acceptanceAuthCommandDebugSequence;
+  recordAcceptanceAuthCommandDebug({
+    command,
+    event: 'start',
+    requestId: debugRequestId,
+    timestampMs: start,
+  });
   if (!quiet) {
     log.info('api', `→ ${command}`, input != null ? { req: input } : undefined);
   }
@@ -349,6 +387,14 @@ async function invokeRustCommand<TInput, TData>(
     if (!result.ok) {
       const revoked = extractSessionRevoked(result.error);
       if (revoked) {
+        recordAcceptanceAuthCommandDebug({
+          command,
+          event: 'revoked',
+          requestId: debugRequestId,
+          timestampMs: Date.now(),
+          ok: false,
+          reason: revoked.reason,
+        });
         publishSessionRevoked(revoked);
         if (!quiet) {
           log.info('api', `← ${command} UNAUTHORIZED (${elapsed}ms)`, { reason: revoked.reason, deferred });
@@ -365,12 +411,26 @@ async function invokeRustCommand<TInput, TData>(
     } else if (!quiet) {
       log.info('api', `← ${command} OK (${elapsed}ms)${deferred ? ' [deferred]' : ''}`);
     }
+    recordAcceptanceAuthCommandDebug({
+      command,
+      event: 'result',
+      requestId: debugRequestId,
+      timestampMs: Date.now(),
+      ok: result.ok,
+    });
     scheduleAppletAuditFlush(command);
     return result;
   } catch (error) {
     const elapsed = Date.now() - start;
     const msg = error instanceof Error ? error.message : String(error);
     log.error('api', `← ${command} ERROR (${elapsed}ms)`, { error: msg });
+    recordAcceptanceAuthCommandDebug({
+      command,
+      event: 'error',
+      requestId: debugRequestId,
+      timestampMs: Date.now(),
+      ok: false,
+    });
     return {
       ok: false,
       error: {
