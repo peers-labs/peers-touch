@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `2a3c8eb67` exposed the AS-F02 cancel acknowledgement/terminal distinction in run `20260829T071137788543Z-20a7d49fdcae9ba75cb1a481c6039f36`; cancellation now requires a `cancelling` command acknowledgement plus live-or-replayed `cancelled` terminal evidence; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `879fde9c2` reached AS-F06 post-client-restart durable reload in run `20260829T072540143604Z-a5b0d4fdaffd78d716811aab395d4f84`, where the result reported `observed=false`; redacted field diagnostics are added without changing the assertion; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2977,6 +2977,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   source-bound replay path to produce a client terminal classified as
   `cancelled`. AS-F02, AS-F06, and G-F remain `UNPROVEN` pending another
   exact-source run.
+- Checkpoint `879fde9c2bac2c45bd282cfbe045a06ec6ee1272` was deployed
+  exact-source to profile `two`. Run
+  `20260829T072234733047Z-3979973b3ad182ccfd05b85deeb22858`
+  stopped at Browser AS-F02 `rejectedDraftRestored`; cleanup passed. An
+  unchanged exact-source rerun
+  `20260829T072540143604Z-a5b0d4fdaffd78d716811aab395d4f84`
+  did not reproduce that UI assertion and reached Browser AS-F06, where the
+  post-client-restart durable reload returned `observed=false`; cleanup again
+  passed. The local diagnostic change includes the redacted reload result in
+  the coordinator error without weakening the predicate. AS-F06 and G-F remain
+  `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

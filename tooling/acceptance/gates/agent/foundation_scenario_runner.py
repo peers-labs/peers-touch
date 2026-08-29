@@ -444,7 +444,7 @@ class FoundationF06Coordinator:
             ):
                 raise ScenarioRunnerError(
                     f"AS-F06 durable reload was not observed for "
-                    f"{self._scenario_key(probe_input)}"
+                    f"{self._scenario_key(probe_input)}: {result!r}"
                 )
 
         station_restart = restart_foundation_station(
