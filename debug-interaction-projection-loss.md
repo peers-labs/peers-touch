@@ -32,6 +32,7 @@
 - Debug line 2 proves the Direct path is coherent: authenticated actor present, WebView API 7 messages, HTTP Gateway 7 messages, frontend raw/mapped store 7 messages, and target DOM present.
 - Debug lines 4-14 prove the Group split for 200 bounded samples: authenticated actor present, WebView API 0 messages, HTTP Gateway 7 messages including the target, frontend raw/mapped store 0 messages, and target DOM absent.
 - Static source inspection shows the Tauri command resolves its Engine through `WindowSessionRegistry`, while the HTTP Gateway resolves its Engine through the legacy process-global `AppState.session`.
+- Context run `20260829T033633047893Z-5c11bc21a447f7c2015be934dc5b5962` passed the complete unchanged Gate. Its Direct and Group samples had identical Tauri/Gateway account and Engine profile IDs with seven messages on both surfaces. This is a non-reproduction, not post-fix proof.
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
@@ -42,6 +43,6 @@
 The failure is below the frontend store and above the persisted Engine
 projection. Authentication loss, Rust projection deletion, and TypeScript
 mapping are rejected. The remaining root-cause boundary is divergent
-window-session versus process-global account/Engine resolution. One final
-instrumented run will compare both account and Engine profile identities before
-the owner-layer fix is selected.
+window-session versus process-global runtime resolution. The next instrumented
+run also compares process ID and endpoint device identity so a cross-process
+Gateway tunnel cannot masquerade as the same logical account/profile.
