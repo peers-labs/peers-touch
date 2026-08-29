@@ -3292,6 +3292,21 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   396 tests with one unrelated skip, 126 focused Foundation tests, and
   `git diff --check` pass. AS-F06 and G-F remain `UNPROVEN` pending the next
   exact-source run.
+- Checkpoint `9ebb8ead5804cd3f5425f04be02cc478caafae8b` was deployed
+  exact-source to profile `two`. Run
+  `20260829T181637661692Z-4ea1eff9f8c2b23cf4f96e40cfcaba2d`
+  passed the Browser AS-F01-AS-F05 prefix and proved that the AS-F06 recovery
+  record now exists, then timed out waiting for the Browser direct tuple to
+  reach `RECOVERY_FAILED` during the bounded Station outage. The runtime and
+  Station attestations both identify checkpoint `9ebb8ead5` with clean source
+  digests. Cleanup and redaction passed. This narrows the first failure from
+  missing runtime registration to recovery-fault ordering: the Browser
+  transport is disconnected during prepare while Station is still available,
+  so replay can establish a live tail before the coordinator stops Station.
+  The Browser live transport now emits a typed recovery handoff and leaves
+  replay/reconcile ownership exclusively with `chatRuntime`, matching the
+  Desktop runtime contract. AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending
+  focused verification, checkpoint deployment, and another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

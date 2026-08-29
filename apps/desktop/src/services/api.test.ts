@@ -232,7 +232,7 @@ describe('Agent turn stream completion', () => {
     expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn_stream', expect.anything())
   })
 
-  it('recovers a Browser stream after transport-only disconnect without cancelling the turn', async () => {
+  it('hands a disconnected Browser stream to the recovery runtime without cancelling the turn', async () => {
     const browserWindow = Object.assign(new EventTarget(), {
       setTimeout: globalThis.setTimeout.bind(globalThis),
       clearTimeout: globalThis.clearTimeout.bind(globalThis),
@@ -297,9 +297,13 @@ describe('Agent turn stream completion', () => {
     await vi.waitFor(() => {
       expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
         event: 'connection_lost',
-        data: expect.objectContaining({ reason: 'transport_disconnect_requested' }),
+        data: expect.objectContaining({
+          reason: 'transport_disconnect_requested',
+          recoveryHandoff: true,
+        }),
       }))
     })
+    expect(mockFetch).toHaveBeenCalledTimes(1)
     expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn', expect.anything())
     controller.abort()
     await vi.waitFor(() => {
@@ -318,18 +322,8 @@ describe('Agent turn stream completion', () => {
     ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
       'http://127.0.0.1:3030'
     let requestCount = 0
-    let replayInput: Record<string, unknown> | null = null
-    mockFetch.mockImplementation((_url, init) => {
+    mockFetch.mockImplementation(() => {
       requestCount += 1
-      const signal = (init as RequestInit).signal
-      if (requestCount > 1) {
-        replayInput = JSON.parse(String((init as RequestInit).body || '{}'))
-        return new Promise((_resolve, reject) => {
-          signal?.addEventListener('abort', () => {
-            reject(new DOMException('replay cancelled', 'AbortError'))
-          }, { once: true })
-        })
-      }
       const body = new ReadableStream<Uint8Array>({
         start(streamController) {
           streamController.enqueue(new TextEncoder().encode(
@@ -373,17 +367,19 @@ describe('Agent turn stream completion', () => {
     await vi.waitFor(() => {
       expect(events.some((event) => event.event === 'connection_lost')).toBe(true)
     })
-    await vi.waitFor(() => expect(requestCount).toBe(2))
     expect(
       events
         .filter((event) => event.event === 'text')
         .map((event) => event.data.seq),
     ).toEqual([1])
-    expect(replayInput).toEqual({
-      conversation_id: 'conversation-1',
-      turn_id: 'turn-1',
-      afterSequence: 1,
-    })
+    expect(events).toContainEqual(expect.objectContaining({
+      event: 'connection_lost',
+      data: expect.objectContaining({
+        seq: 1,
+        recoveryHandoff: true,
+      }),
+    }))
+    expect(requestCount).toBe(1)
     controller.abort()
   })
 })

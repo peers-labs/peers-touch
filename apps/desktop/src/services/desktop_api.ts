@@ -6317,95 +6317,10 @@ export function streamAgentTurn(
               turnId,
               conversationId,
               seq: lastSequence,
+              recoveryHandoff: true,
               reason: transportDisconnectRequested
                 ? 'transport_disconnect_requested'
                 : liveTransportError?.message || 'station_stream_closed',
-            },
-          });
-          let replayError: Error | null = null;
-          for (let attempt = 0; attempt <= AGENT_REPLAY_RETRY_DELAYS_MS.length; attempt += 1) {
-            if (attempt > 0) {
-              await waitForAgentReplay(AGENT_REPLAY_RETRY_DELAYS_MS[attempt - 1], controller.signal);
-            }
-            const replayController = new AbortController();
-            const abortReplay = () => replayController.abort();
-            if (controller.signal.aborted) abortReplay();
-            else controller.signal.addEventListener('abort', abortReplay, { once: true });
-            const catchupDeadline = globalThis.setTimeout(
-              abortReplay,
-              AGENT_REPLAY_CATCHUP_TIMEOUT_MS,
-            );
-            try {
-              forward({
-                event: 'reconnecting',
-                data: { turnId, conversationId, seq: lastSequence, attempt: attempt + 1 },
-              });
-              const replay = await fetch(`${gatewayBase}/agent/turn/events`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-                body: JSON.stringify(toAgentTurnReplayWireInput({
-                  conversation_id: conversationId,
-                  turn_id: turnId,
-                  after_seq: lastSequence,
-                })),
-                signal: replayController.signal,
-              });
-              forward({
-                event: 'replaying',
-                data: { turnId, conversationId, seq: lastSequence },
-              });
-              let liveTailEstablished = false;
-              const replayTerminal = await consumeAgentSSE(replay, replayController.signal, (frame) => {
-                const sourceFrame: StreamEvent = {
-                  ...frame,
-                  sourceDelivery: AGENT_REPLAY_CONTROL_EVENTS.has(frame.event)
-                    ? undefined
-                    : createAgentTurnSourceDelivery(
-                        frame.event,
-                        frame.data,
-                        sourcePtid,
-                        conversationId,
-                        turnId,
-                      ),
-                };
-                if (frame.event === 'catchup_done' && !liveTailEstablished) {
-                  liveTailEstablished = true;
-                  globalThis.clearTimeout(catchupDeadline);
-                  forward({
-                    event: 'reconciling',
-                    data: { turnId, conversationId, seq: lastSequence },
-                  });
-                  if (forward(sourceFrame)) return true;
-                  return forward({
-                    event: 'connected',
-                    data: { turnId, conversationId, seq: lastSequence },
-                  });
-                }
-                if (classifyAgentTurnTerminalEvent(sourceFrame) !== null) {
-                  globalThis.clearTimeout(catchupDeadline);
-                }
-                return forward(sourceFrame);
-              });
-              if (replayTerminal || settled || controller.signal.aborted) return;
-              replayError = new Error(
-                liveTailEstablished
-                  ? 'agent.error.replayTailClosed'
-                  : 'agent.error.replayIncomplete',
-              );
-            } catch (error) {
-              replayError = error instanceof Error ? error : new Error(String(error));
-            } finally {
-              globalThis.clearTimeout(catchupDeadline);
-              controller.signal.removeEventListener('abort', abortReplay);
-            }
-          }
-          forward({
-            event: 'recovery_failed',
-            data: {
-              turnId,
-              conversationId,
-              seq: lastSequence,
-              error: replayError?.message || 'agent.error.replayFailed',
             },
           });
           return;
