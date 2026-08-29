@@ -2,7 +2,10 @@ import { identityRuntime } from '../../kernel/identityRuntime';
 import { bootstrapRuntime, installRuntime } from '../../kernel/runtime';
 import { EVENT, eventBus } from '../../kernel/events';
 import i18n, { changeLanguage } from '../../i18n';
-import { installDeferredAppRuntimeProjections } from '../../services/appRuntime';
+import {
+  installAuthenticatedCriticalRuntimes,
+  installDeferredAppRuntimeProjections,
+} from '../../services/appRuntime';
 import {
   api,
   classifyAgentTurnTerminalEvent,
@@ -4278,8 +4281,11 @@ export function installAcceptanceHarness(): void {
         await attemptLogin();
       }
 
-      await installDeferredAppRuntimeProjections();
       const user = useSessionStore.getState().currentUser;
+      if (user?.actorId) {
+        await installAuthenticatedCriticalRuntimes(user.actorId);
+      }
+      await installDeferredAppRuntimeProjections();
       return {
         authenticated: Boolean(user?.actorId),
         actorId: user?.actorId ?? null,

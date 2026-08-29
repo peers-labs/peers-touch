@@ -117,6 +117,7 @@ interface RuntimeDescriptor {
 - `install` runs once at boot. `bootstrap` runs once per `(actorId, runtime)` pair; the registry guards against duplicate concurrent bootstraps via per-runtime sequence numbers.
 - `app`-scope runtimes (search, settings, social, moments) do not depend on the active actor at install time; their data either is identity-independent, is itself the source of truth for the active actor, or observes authenticated actor edges through its own bridge logic.
 - `session`-scope runtimes are created by registering a descriptor with `scope: 'session'`; the BootPipeline calls their `bootstrap`/`teardown` on the authenticated-actor edge.
+- `agent-chat` is an authenticated-critical session runtime. Its stream consumer and actor-bound recovery projection MUST finish install/bootstrap before Agent turn commands are exposed; otherwise early sequenced events can be observed by the transport but dropped by the recovery owner.
 - `acquirePage` / `releasePage` are optional page-resource lease hooks for dynamic runtime instances. They do not replace `install/bootstrap/reconcile`; they only let the owning runtime acquire or release page-scoped resources when PageHost proves a page needs them.
 - Ordinary page switches do not trigger `releasePage`. `keepAlive:{lru}` means the page is hidden but cached; resources are released only for explicit close, LRU eviction, or true unmount.
 - Runtime entries live in `apps/desktop/src/runtimes/*Runtime.ts` and are registered through `services/appRuntime.ts → registerKernelRuntimes`.
@@ -150,8 +151,8 @@ interface PageDescriptor {
 |---|---|---|
 | `shell` | `main.tsx → bootstrap()` start | `main.tsx` |
 | `identity` | account picker / OAuth / restore | `useAppLifecycle` |
-| `runtime:critical` | install + bootstrap critical runtimes | `App.tsx` (`installAppRuntime`) |
-| `firstPaint` | `<ReadyView />` first effect | `ReadyView` |
+| `runtime:critical` | authenticated actor accepted | `useAppRuntime` (`installAuthenticatedCriticalRuntimes`) |
+| `firstPaint` | critical runtime bootstrap completes | `App.tsx` / `ReadyView` |
 | `runtime:idle` | install non-critical session-scope runtimes | `App.tsx` (`scheduleIdle → installIdleRuntimes`) |
 | `pages:prewarm` | mount `preload: 'idle'` pages off-frame | `PageHost` |
 | `steady` | runtimes own their own reconcile timers | each runtime |

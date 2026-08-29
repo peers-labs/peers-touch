@@ -24,6 +24,7 @@ AGENT_CAPABILITY_RUNTIME = (
     ROOT / "apps" / "desktop" / "src" / "runtimes" / "agentCapabilityRuntime.ts"
 )
 DESKTOP_WEB_MAIN = ROOT / "apps" / "desktop" / "src" / "main.tsx"
+DESKTOP_APP = ROOT / "apps" / "desktop" / "src" / "App.tsx"
 DESKTOP_MAIN = ROOT / "apps" / "desktop" / "src-tauri" / "src" / "main.rs"
 FOUNDATION_RUNTIME_CLIENT = (
     ROOT
@@ -37,6 +38,12 @@ DESKTOP_HTTP_GATEWAY = (
     ROOT / "apps" / "desktop" / "src-tauri" / "src" / "interface" / "http_gateway" / "mod.rs"
 )
 DESKTOP_API = ROOT / "apps" / "desktop" / "src" / "services" / "desktop_api.ts"
+DESKTOP_APP_RUNTIME = (
+    ROOT / "apps" / "desktop" / "src" / "services" / "appRuntime.ts"
+)
+DESKTOP_APP_RUNTIME_HOOK = (
+    ROOT / "apps" / "desktop" / "src" / "hooks" / "useAppRuntime.ts"
+)
 DESKTOP_CONTRACTS = ROOT / "apps" / "desktop" / "src-tauri" / "src" / "contracts.rs"
 DESKTOP_AGENT_TURN = (
     ROOT
@@ -473,6 +480,30 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("toLowerCase() !== 'cancelled'", scenario)
         self.assertNotIn("setTimeout(resolve, 50)", scenario)
         self.assertNotIn("disconnectTransport()", scenario)
+
+    def test_agent_chat_runtime_bootstraps_before_authenticated_turns(self) -> None:
+        app_runtime = DESKTOP_APP_RUNTIME.read_text(encoding="utf-8")
+        runtime_hook = DESKTOP_APP_RUNTIME_HOOK.read_text(encoding="utf-8")
+        app = DESKTOP_APP.read_text(encoding="utf-8")
+        harness = HARNESS.read_text(encoding="utf-8")
+
+        self.assertIn("CRITICAL_SESSION_RUNTIME_IDS", app_runtime)
+        self.assertIn("chatRuntime.id", app_runtime)
+        self.assertIn("await bootstrapRuntime(runtimeId, actorId)", app_runtime)
+        self.assertIn("criticalInstallInFlight?.actorId === actorId", app_runtime)
+        self.assertIn(
+            "await installAuthenticatedCriticalRuntimes(user.actorId)",
+            harness,
+        )
+        self.assertIn("tearDownSessionRuntimes()", runtime_hook)
+        self.assertIn(
+            "installIdleRuntimes(actorId, CRITICAL_SESSION_RUNTIME_IDS)",
+            runtime_hook,
+        )
+        self.assertIn(
+            "lifecycle.state === 'ready' && !criticalRuntimeReady",
+            app,
+        )
 
     def test_group_one_controller_uses_manifest_bound_client_modes(self) -> None:
         source = FOUNDATION_RUNTIME_CLIENT.read_text(encoding="utf-8")

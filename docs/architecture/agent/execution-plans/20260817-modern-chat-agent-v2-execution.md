@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `e8ce6e425` crossed AS-F06 preparation and exposed post-disconnect buffered Browser delivery; checkpoint `88bcd7264` fixed that boundary but the next exact-source run first failed at AS-F03 cancellation before reaching AS-F06; callback-bound cancel and authoritative typed cancellation propagation are locally verified; proof remains UNPROVEN pending deployment | W8a |
+| G-F Complete Foundation Gate | in progress: checkpoint `64d6c740a` passed the cancellation prefix but exposed that `agent-chat` could remain uninstalled until idle while Agent turns were already accepted; the runtime is now authenticated-critical and Acceptance waits for the same production bootstrap path; proof remains UNPROVEN pending deployment | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3276,6 +3276,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   status as AS-F03. This is the mechanical completion of the cancellation
   response cutover, not a Gate relaxation. AS-F02, AS-F03, AS-F06, and G-F
   remain `UNPROVEN` pending another exact-source run.
+- Checkpoint `64d6c740a781ba361eaeabde5172eb910d35034b` was deployed
+  exact-source to profile `two`. Run
+  `20260829T173327792006Z-8fc5745467a507b4328706e7a6fd0626`
+  passed the Browser AS-F02/AS-F03 cancellation prefix and again reached AS-F06,
+  where the synchronous boundary found no active recovery registration;
+  cleanup and redaction passed. The Agent chat recovery runtime was registered
+  but remained an idle session runtime, while Acceptance login awaited only
+  app-scoped deferred projections. A fast Agent turn could therefore publish
+  valid stream events before `agent-chat` installed and actor-bootstrap
+  completed, causing the runtime to reject them while the direct Harness
+  observer still saw them. `agent-chat` is now an authenticated-critical
+  runtime through one shared production helper; the production lifecycle and
+  Acceptance login both await it, and the idle pass excludes it. Desktop check,
+  396 tests with one unrelated skip, 126 focused Foundation tests, and
+  `git diff --check` pass. AS-F06 and G-F remain `UNPROVEN` pending the next
+  exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

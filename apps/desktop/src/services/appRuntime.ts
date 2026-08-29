@@ -43,6 +43,10 @@ function registerKernelRuntimes(): void {
 let installed = false;
 let deferredInstalled = false;
 let deferredInstallInFlight: Promise<void> | null = null;
+let criticalInstallInFlight: {
+  actorId: string;
+  promise: Promise<void>;
+} | null = null;
 
 const DEFERRED_APP_RUNTIME_IDS = [
   socialRuntime.id,
@@ -50,6 +54,10 @@ const DEFERRED_APP_RUNTIME_IDS = [
   settingsRuntime.id,
   federationRuntime.id,
   momentsRuntime.id,
+];
+
+export const CRITICAL_SESSION_RUNTIME_IDS: ReadonlyArray<string> = [
+  chatRuntime.id,
 ];
 
 function yieldToRenderer(): Promise<void> {
@@ -103,11 +111,35 @@ export function installDeferredAppRuntimeProjections(): Promise<void> {
   return deferredInstallInFlight;
 }
 
+export async function installAuthenticatedCriticalRuntimes(
+  actorId: string,
+): Promise<void> {
+  if (criticalInstallInFlight?.actorId === actorId) {
+    return criticalInstallInFlight.promise;
+  }
+  installAppRuntime();
+  const promise = (async () => {
+    for (const runtimeId of CRITICAL_SESSION_RUNTIME_IDS) {
+      installRuntime(runtimeId);
+      await bootstrapRuntime(runtimeId, actorId);
+    }
+  })();
+  criticalInstallInFlight = { actorId, promise };
+  try {
+    await promise;
+  } finally {
+    if (criticalInstallInFlight?.promise === promise) {
+      criticalInstallInFlight = null;
+    }
+  }
+}
+
 export function teardownAppRuntime(): void {
   if (!installed) return;
   installed = false;
   deferredInstalled = false;
   deferredInstallInFlight = null;
+  criticalInstallInFlight = null;
 
   teardownRuntime(socialRuntime.id);
   teardownRuntime(searchRuntime.id);
