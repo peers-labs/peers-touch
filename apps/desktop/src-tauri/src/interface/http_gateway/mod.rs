@@ -6921,23 +6921,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         "pinned_at_unix_ms": m.pinned_at_unix_ms,
                         "read_by_ptids": m.read_by_ptids,
                     })).collect();
-                    let mut payload = json!({ "messages": items });
-                    // #region debug-point B,F:http-gateway-messaging-runtime-context
-                    #[cfg(feature = "acceptance-webdriver")]
-                    if let Some(object) = payload.as_object_mut() {
-                        object.insert(
-                            "debug_context".to_string(),
-                            json!({
-                                "account_id": account_id,
-                                "endpoint_device_id": engine.endpoint().device_id,
-                                "engine_profile_id": engine.profile_id(),
-                                "process_id": std::process::id(),
-                                "session_kind": "legacy-process-global",
-                            }),
-                        );
-                    }
-                    // #endregion
-                    to_json(AppResult::success(payload))
+                    to_json(AppResult::success(json!({ "messages": items })))
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }
