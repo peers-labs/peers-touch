@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getBootTrace } from '../../kernel/boot';
+import { EVENT } from '../../kernel/events';
+import { eventDebugBuffer } from '../../kernel/events/debug';
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { refreshSocialProjection } from '../../services/socialRealtime';
 import { api } from '../../services/desktop_api';
@@ -423,6 +425,11 @@ export function installAcceptanceHarness(): void {
     async debugIdentityLifecycleState() {
       const { phase, lifecycle } = identityRuntime.getSnapshot();
       const session = useSessionStore.getState();
+      const relevantEventTypes = new Set<string>([
+        EVENT.AUTH_IDENTITY_CHANGED,
+        EVENT.AUTH_SESSION_REVOKED,
+        EVENT.REALTIME_CONNECTION_STATE,
+      ]);
       return {
         phaseKind: phase.kind,
         phaseReason: 'reason' in phase ? phase.reason : null,
@@ -438,6 +445,28 @@ export function installAcceptanceHarness(): void {
           phase: entry.phase,
           finished: entry.finishedAt !== undefined,
         })),
+        eventTrace: eventDebugBuffer.list()
+          .filter(entry => relevantEventTypes.has(entry.type))
+          .slice(-12)
+          .map(entry => {
+            const payload = (
+              entry.payload
+              && typeof entry.payload === 'object'
+            )
+              ? entry.payload as Record<string, unknown>
+              : {};
+            return {
+              type: entry.type,
+              timestampMs: entry.timestamp_ms,
+              reason: typeof payload.reason === 'string'
+                ? payload.reason
+                : null,
+              connected: typeof payload.connected === 'boolean'
+                ? payload.connected
+                : null,
+              hasRaw: typeof payload.raw === 'string',
+            };
+          }),
       };
     },
     // #endregion
