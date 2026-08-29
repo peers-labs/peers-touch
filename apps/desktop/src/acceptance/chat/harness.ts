@@ -417,6 +417,31 @@ export function installAcceptanceHarness(): void {
       return interactionProjection(kind, conversationId, messageId);
     },
 
+    // #region debug-point A,B,D:interaction-projection-state
+    async debugInteractionProjectionState({
+      conversationId,
+      kind,
+      messageId,
+    }: MessageInteractionInput) {
+      const snapshot = () => {
+        const social = useSocialChatStore.getState();
+        const rawMessages = social.messages[conversationId] ?? [];
+        const mappedMessages = social.getIMMessages(kind, conversationId);
+        return {
+          activeTab: social.activeTab,
+          activeSessionUlid: social.activeSessionUlid,
+          activeGroupUlid: social.activeGroupUlid,
+          rawMessageIds: rawMessages.map(message => message.ulid),
+          mappedMessageIds: mappedMessages.map(message => message.id),
+          target: interactionProjection(kind, conversationId, messageId),
+        };
+      };
+      const before = snapshot();
+      await refreshConversation(kind, conversationId);
+      return { before, after: snapshot() };
+    },
+    // #endregion
+
     async openInteractionThread({
       conversationId,
       kind,
