@@ -106,6 +106,39 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                     dispatch.index("start_authenticated_client("),
                 )
 
+    def test_native_restart_preserves_and_restores_session(self) -> None:
+        contracts = {
+            "native_interactions_runner.py": (
+                "self.create_authenticated_client(\n"
+                "            actor,\n"
+                "            restore_session=self.runtime_binding is not None,",
+                "    def create_authenticated_client(",
+            ),
+            "native_typing_runner.py": (
+                "self.start_injected_client(actor, restore_session=True)",
+                "    def start_injected_client(",
+            ),
+        }
+        for runner, (restore_call, initial_start) in contracts.items():
+            with self.subTest(runner=runner):
+                source = (
+                    ROOT / "tooling/acceptance/gates/chat" / runner
+                ).read_text(encoding="utf-8")
+                stop_start = source.index("    def stop_client_for_restart(")
+                stop_end = source.index("\n    def ", stop_start + 8)
+                stop_source = source[stop_start:stop_end]
+                self.assertIn("client.stop(preserve_state=True)", stop_source)
+                self.assertNotIn("auth_logout", stop_source)
+                self.assertIn(restore_call, source)
+                self.assertIn("def wait_for_realtime_device(", source)
+                initial_start_index = source.index(initial_start)
+                initial_end_index = source.index(
+                    "\n    def ",
+                    initial_start_index + len(initial_start),
+                )
+                initial_source = source[initial_start_index:initial_end_index]
+                self.assertEqual(initial_source.count("station.auth_logout()"), 1)
+
     def test_selected_runtime_rejects_uninjected_gate_construction(self) -> None:
         previous = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL")
         os.environ["PT_ACCEPTANCE_RUNTIME_CELL"] = "desktop-linux-native"

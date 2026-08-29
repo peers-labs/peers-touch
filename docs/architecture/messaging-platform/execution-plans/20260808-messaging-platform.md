@@ -1334,6 +1334,38 @@ Gateway smoke used caller-supplied ports instead of its Provisioner-owned
 Runtime Manifest. The Gate now derives the Gateway, renderer, and Station
 endpoints from that manifest; its product assertions are unchanged.
 
+The exact-source Linux aggregate
+`20260829T172402956898Z-bb3291653179b1ac01157ce6c8666670` at clean commit
+`7dcdc71a22e8bf30b114b910a708c1d0cb6b2be0` executed all 10 selected Gates.
+Six passed and four failed, so MP-W13-F remains `PARTIAL/UNPROVEN`. Source,
+Station, remote checkout, Desktop binary, Linux host, WebKitGTK, workspace, and
+cleanup identity were valid.
+
+The four failures identify two implementation closures:
+
+- Product Closure lost durable `active_account_id + has_session` after Station
+  takeover invalidated the revoked session, so the second restart reached
+  `session_missing`. Interactions and Typing also modeled restart as explicit
+  logout plus fresh password login instead of persisted-session restore.
+- Desktop Gateway did not compile the `acceptance-webdriver` feature in its
+  Provisioner-owned runtime, so the planned durable identity commit failure
+  injection could not execute.
+
+The implementation must recommit the restored account state with the rotated
+token, make Native restart helpers preserve and restore the existing session,
+and build the local Gateway runtime with the Acceptance feature. Focused reruns
+are diagnostic only. MP-W13-F still requires a new full exact-source aggregate,
+required-proven validation, Gap Detector, Completion Audit, independent review,
+and `review-submit`.
+
+Working-tree Gateway diagnostic
+`20260829T191005525236Z-4057c7f1e1106c911f843de1647f6a62` passed with
+`DONE/PROVEN` Gate and cleanup evidence against disposable Station `18132`.
+Because its workspace digest is dirty, it does not satisfy MP-W13-F
+exact-source proof. The Provisioner now enables the Acceptance-only commit
+failure path while binding its unused WebDriver listener to an ephemeral port,
+and it refuses to replace an existing worktree/profile Desktop process.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

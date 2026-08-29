@@ -123,7 +123,12 @@ pub fn account_switch(
                     return AppResult::fail(ErrorCode::InternalError, error, None);
                 }
             };
-            let prepared = prepared.with_active_identity_state(identity_state);
+            let prepared = match prepared.with_fallback_active_identity_state(identity_state) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    return AppResult::fail(ErrorCode::InternalError, error, None);
+                }
+            };
             crate::interface::tauri_commands::auth::commit_tauri_session_with_identity_state(
                 state.inner(),
                 &app,
@@ -404,7 +409,10 @@ pub fn account_unlock(
         Ok(identity_state) => identity_state,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    let prepared = prepared.with_active_identity_state(identity_state);
+    let prepared = match prepared.with_fallback_active_identity_state(identity_state) {
+        Ok(prepared) => prepared,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
     let unlock_payload =
         crate::interface::tauri_commands::auth::commit_tauri_session_with_identity_state(
             state.inner(),

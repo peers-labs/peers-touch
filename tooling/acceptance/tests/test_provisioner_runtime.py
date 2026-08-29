@@ -300,6 +300,37 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(gateway_port, 3300)
         self.assertEqual(renderer_port, 3480)
 
+    def test_desktop_gateway_refuses_existing_profile_process(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pid_path = (
+                Path(tmpdir)
+                / "peers-touch-desktop-rust-three-app-peers-group-chat.pid"
+            )
+            pid_path.write_text("1234\n", encoding="utf-8")
+            with patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "tempfile.gettempdir",
+                return_value=tmpdir,
+            ), patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "REPO_ROOT",
+                Path("/workspace/peers-group-chat"),
+            ), patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway.os.kill",
+            ):
+                with self.assertRaises(BlockedError) as raised:
+                    provisioner._ensure_desktop_runtime_is_unowned(
+                        {"PT_DEV_PROFILE": "three"}
+                    )
+
+        self.assertEqual(
+            raised.exception.resource,
+            "desktop-process:1234",
+        )
+
     def test_desktop_gateway_timeout_names_external_artifact_logically(self):
         provisioner = LocalDesktopGatewayProvisioner(
             EnvironmentContract(id="local-desktop-gateway")
@@ -324,7 +355,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "tooling.acceptance.provisioners.local_desktop_gateway."
                 "subprocess.Popen",
                 return_value=process,
-            ), patch.object(
+            ) as popen, patch.object(
                 provisioner,
                 "_gateway_ready",
                 return_value=False,
@@ -348,6 +379,14 @@ class ProvisionerBlockingTests(unittest.TestCase):
             self.assertEqual(
                 write_artifact.call_args.args[:2],
                 (PROVISION_DESKTOP_LOG, b""),
+            )
+            self.assertEqual(
+                popen.call_args.kwargs["env"]["PT_DESKTOP_E2E"],
+                "true",
+            )
+            self.assertEqual(
+                popen.call_args.kwargs["env"]["TAURI_WEBDRIVER_PORT"],
+                "0",
             )
 
         self.assertEqual(

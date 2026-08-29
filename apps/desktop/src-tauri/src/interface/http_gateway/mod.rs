@@ -4360,7 +4360,17 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                             ))
                         }
                     };
-                    let prepared = prepared.with_active_identity_state(identity_state);
+                    let prepared =
+                        match prepared.with_fallback_active_identity_state(identity_state) {
+                            Ok(prepared) => prepared,
+                            Err(error) => {
+                                return to_json(AppResult::<AuthSessionPayload>::fail(
+                                    ErrorCode::InternalError,
+                                    error,
+                                    None,
+                                ))
+                            }
+                        };
                     #[cfg(feature = "acceptance-webdriver")]
                     if acceptance_fail_identity_commit {
                         return to_json(
@@ -4541,7 +4551,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            let prepared = prepared.with_active_identity_state(identity_state);
+            let prepared = match prepared.with_fallback_active_identity_state(identity_state) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    return to_json(AppResult::<AuthSessionPayload>::fail(
+                        ErrorCode::InternalError,
+                        error,
+                        None,
+                    ))
+                }
+            };
             to_json(app_auth::commit_http_gateway_session_with_identity_state(
                 state, prepared,
             ))
