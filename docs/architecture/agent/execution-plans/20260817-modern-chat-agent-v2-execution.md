@@ -3418,6 +3418,21 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   validation, and `git diff --check` pass. AS-F06 and G-F remain
   `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source
   verification.
+- Checkpoint `40454a1ef08117f4628815bd0b1a798cf372172e` was deployed
+  exact-source to profile `two`. Run
+  `20260829T215751647699Z-4253464ce1ad27a97bbf8403b497f91b`
+  crossed the prior unconditional re-login path but then failed while the
+  coordinator prepared both clients after an AS-F06 restart:
+  `harness agent.ensureProvider failed: authentication required`. The immutable
+  result is `PARTIAL / UNPROVEN`; cleanup and redaction passed. The
+  post-restart helper was still broader than the active runtime tuple and also
+  rewrote provider fixture state before recovery proof. AS-F06 now restarts and
+  validates only the tuple's target client, requires its existing session,
+  performs no provider rewrite during recovery, and uses the protected
+  capability-session readback as the server-backed authentication check.
+  One hundred five focused Foundation tests and `git diff --check` pass.
+  AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending checkpoint deployment and
+  exact-source verification.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

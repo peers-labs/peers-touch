@@ -65,6 +65,7 @@ from tooling.acceptance.gates.agent.foundation_non_advertisement_adapter import 
     NonAdvertisementProbeInput,
 )
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
+    FoundationRuntimeClient,
     FoundationRuntimePair,
 )
 
@@ -421,9 +422,11 @@ class FoundationF06Coordinator:
                 )
 
         def exercise_durable_reloads(operation_deadline: float) -> None:
+            client = self._client(probe_input.platform)
             _authenticate_clients(
                 self._runtime_pair,
                 self._profile_env,
+                clients=(client,),
                 require_existing_session=True,
                 session_deadline=operation_deadline,
             )
@@ -459,16 +462,13 @@ class FoundationF06Coordinator:
             during_outage=observe_recovery_failures,
             after_restart=exercise_durable_reloads,
         )
-        client_reloads: dict[str, bool] = {}
-        for platform, client in (
-            ("desktop_app", self._runtime_pair.native),
-            ("browser", self._runtime_pair.browser),
-        ):
-            client.restart()
-            client_reloads[platform] = True
+        client = self._client(probe_input.platform)
+        client.restart()
+        client_reloads = {probe_input.platform: True}
         _authenticate_clients(
             self._runtime_pair,
             self._profile_env,
+            clients=(client,),
             require_existing_session=True,
         )
         orchestration = {
@@ -476,7 +476,6 @@ class FoundationF06Coordinator:
             "clientReloads": client_reloads,
         }
 
-        client = self._client(probe_input.platform)
         self._set_locale(client, probe_input)
         result = client.harness(
             "foundationDirectProbe",
@@ -612,6 +611,7 @@ def _authenticate_clients(
     runtime_pair: FoundationRuntimePair,
     profile_env: dict[str, str],
     *,
+    clients: tuple[FoundationRuntimeClient, ...] | None = None,
     require_existing_session: bool = False,
     session_deadline: float | None = None,
 ) -> None:
@@ -625,8 +625,9 @@ def _authenticate_clients(
     account = "alice@p.t"
     password = profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
     provider_config = _agent_provider_config(profile_env)
+    selected_clients = clients or (runtime_pair.native, runtime_pair.browser)
 
-    for client in (runtime_pair.native, runtime_pair.browser):
+    for client in selected_clients:
         # Step 0: Warm-up — wait for Rust backend to finish initializing
         _warm_up_client(client)
 
@@ -697,23 +698,24 @@ def _authenticate_clients(
             )
 
         # Step 3: Configure the exact profile-bound provider and model.
-        provider_result = client.harness(
-            "ensureProvider",
-            provider_config,
-            timeout=60,
-        )
-        if not isinstance(provider_result, Mapping) or not provider_result.get(
-            "configured"
-        ):
-            raise ScenarioRunnerError(
-                f"{client.spec.runtime} provider configuration failed: "
-                f"{provider_result}"
+        if not require_existing_session:
+            provider_result = client.harness(
+                "ensureProvider",
+                provider_config,
+                timeout=60,
             )
+            if not isinstance(provider_result, Mapping) or not provider_result.get(
+                "configured"
+            ):
+                raise ScenarioRunnerError(
+                    f"{client.spec.runtime} provider configuration failed: "
+                    f"{provider_result}"
+                )
 
     # Step 4: Pre-probe health check — verify harness responds before
     # heavy capability probes. Surface diagnostics early if the agent
     # runtime failed to initialise.
-    for client in (runtime_pair.native, runtime_pair.browser):
+    for client in selected_clients:
         try:
             health = client.harness("getAcceptanceHarnessStatus", {}, timeout=30)
         except Exception as error:
@@ -732,20 +734,21 @@ def _authenticate_clients(
 
     # Step 5: Open browser capability session explicitly (browser worker does
     # not auto-start; it requires an explicit openBrowserCapabilitySession call).
-    try:
-        runtime_pair.browser.harness(
-            "openBrowserCapabilitySession", {}, timeout=30
-        )
-    except Exception:
-        pass  # May already be open or handled by the runtime; polling will verify.
+    if runtime_pair.browser in selected_clients:
+        try:
+            runtime_pair.browser.harness(
+                "openBrowserCapabilitySession", {}, timeout=30
+            )
+        except Exception:
+            pass  # May already be open or handled by the runtime; polling will verify.
 
-    # Step 6: Wait for capability sessions on both clients (Station async)
+    # Step 6: Wait for capability sessions on the selected clients (Station async)
     # Capability session registration is asynchronous on Station; the
     # messaging engine + signing identity must be ready before the worker
     # can register a lease. Give each client an independent 90s window.
     import time as _time
 
-    for client in (runtime_pair.native, runtime_pair.browser):
+    for client in selected_clients:
         client_deadline = _time.monotonic() + 90
         established = False
         while _time.monotonic() < client_deadline:

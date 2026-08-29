@@ -273,6 +273,8 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
 
         self.assertNotIn("loginWithPassword", native.calls)
         self.assertNotIn("loginWithPassword", browser.calls)
+        self.assertNotIn("ensureProvider", native.calls)
+        self.assertNotIn("ensureProvider", browser.calls)
         self.assertIn("getRuntimeSnapshot", native.calls)
         self.assertIn("getRuntimeSnapshot", browser.calls)
 
@@ -381,8 +383,12 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             call.kwargs.get("require_existing_session") is True
             for call in authenticate.call_args_list
         ))
-        self.assertEqual(native.restart_count, 4)
-        self.assertEqual(browser.restart_count, 4)
+        self.assertTrue(all(
+            len(call.kwargs.get("clients", ())) == 1
+            for call in authenticate.call_args_list
+        ))
+        self.assertEqual(native.restart_count, 2)
+        self.assertEqual(browser.restart_count, 2)
         self.assertEqual(len(native.prepare_calls), 2)
         self.assertEqual(len(browser.prepare_calls), 2)
         self.assertEqual(len(native.failure_calls), 2)
@@ -490,8 +496,8 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
 
         self.assertEqual(restart.call_count, 3)
         self.assertEqual(authenticate.call_count, 7)
-        self.assertEqual(native.restart_count, 4)
-        self.assertEqual(browser.restart_count, 4)
+        self.assertEqual(native.restart_count, 2)
+        self.assertEqual(browser.restart_count, 3)
         self.assertEqual(
             cleanup_log,
             [
