@@ -338,15 +338,16 @@ def restart_foundation_station(
     else:
         try:
             stop_deadline = operation_deadline - RESTORE_RESERVE_SECONDS
-            _remaining_seconds(stop_deadline, "Station stop")
+            _remaining_seconds(stop_deadline, "Station abrupt stop")
             stopped = _remote_command(
                 deployment_env,
-                f"docker stop {shlex.quote(before['containerId'])}",
+                "docker kill --signal KILL "
+                f"{shlex.quote(before['containerId'])}",
                 deadline=stop_deadline,
             )
             if not _container_ids_match(stopped, before["containerId"]):
                 raise FoundationStationRestartError(
-                    "AS-F06 docker stop returned a different container identity"
+                    "AS-F06 docker kill returned a different container identity"
                 )
             health_down_deadline = min(
                 operation_deadline - RESTORE_RESERVE_SECONDS,

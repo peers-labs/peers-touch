@@ -332,10 +332,16 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             {},
         )
 
-        with patch.object(
-            foundation_scenario_runner,
-            "restart_foundation_station",
-            side_effect=RuntimeError("outage failed"),
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "restart_foundation_station",
+                side_effect=RuntimeError("outage failed"),
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "_authenticate_clients",
+            ) as authenticate,
         ):
             with self.assertRaisesRegex(RuntimeError, "outage failed"):
                 coordinator.capture(
@@ -347,6 +353,9 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                     )
                 )
 
+        authenticate.assert_called_once()
+        self.assertEqual(native.restart_count, 1)
+        self.assertEqual(browser.restart_count, 1)
         self.assertEqual(
             cleanup_log,
             [
@@ -371,16 +380,23 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             {},
         )
 
-        with self.assertRaisesRegex(RuntimeError, "prepare failed"):
-            coordinator.capture(
-                DirectRuntimeProbeInput(
-                    platform="browser",
-                    locale="en",
-                    cell="AS-F06",
-                    sample_id="sample-001",
+        with patch.object(
+            foundation_scenario_runner,
+            "_authenticate_clients",
+        ) as authenticate:
+            with self.assertRaisesRegex(RuntimeError, "prepare failed"):
+                coordinator.capture(
+                    DirectRuntimeProbeInput(
+                        platform="browser",
+                        locale="en",
+                        cell="AS-F06",
+                        sample_id="sample-001",
+                    )
                 )
-            )
 
+        authenticate.assert_called_once()
+        self.assertEqual(native.restart_count, 1)
+        self.assertEqual(browser.restart_count, 1)
         self.assertEqual(
             cleanup_log,
             [

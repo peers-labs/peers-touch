@@ -252,7 +252,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         stop_deadline = next(
             call.kwargs["deadline"]
             for call in remote.call_args_list
-            if call.args[1].startswith("docker stop")
+            if call.args[1].startswith("docker kill")
         )
         start_deadline = next(
             call.kwargs["deadline"]
@@ -267,7 +267,10 @@ class FoundationStationRestartTest(unittest.TestCase):
         self.assertIs(evidence["outageObserved"], True)
         self.assertEqual(evidence["deadlineSeconds"], 180)
         commands = [call.args[1] for call in remote.call_args_list]
-        self.assertIn(f"docker stop {CONTAINER_ID}", commands)
+        self.assertIn(
+            f"docker kill --signal KILL {CONTAINER_ID}",
+            commands,
+        )
         self.assertIn(f"docker start {CONTAINER_ID}", commands)
         self.assertFalse(any(command.startswith("docker restart") for command in commands))
 
@@ -326,7 +329,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         commands = [call.args[1] for call in remote.call_args_list]
         self.assertIn(f"docker start {CONTAINER_ID}", commands)
 
-    def test_bounded_outage_restores_after_stop_identity_error(self) -> None:
+    def test_bounded_outage_restores_after_kill_identity_error(self) -> None:
         remote_outputs = iter(
             (
                 CONTAINER_ID[:12],
@@ -368,7 +371,7 @@ class FoundationStationRestartTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 foundation_station_restart.FoundationStationRestartError,
-                "docker stop returned a different container identity",
+                "docker kill returned a different container identity",
             ):
                 foundation_station_restart.restart_foundation_station(
                     runtime_manifest(),

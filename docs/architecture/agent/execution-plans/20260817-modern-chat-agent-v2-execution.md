@@ -2812,6 +2812,21 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   production queue-cancel, Turn-cancel, and permanent-delete APIs, failing as
   `CLEANUP_FAILED` if residue cannot be removed. AS-F02, AS-F06, and G-F remain
   `UNPROVEN` pending another exact-source run.
+- Checkpoint `c472a3c52eb99f00a73d1d87931ec139dd7d1379` was deployed
+  exact-source to profile `two`. Run
+  `20260829T031317712137Z-7b1b2c562d50090c8c6246ecfa95544e`
+  passed Browser AS-F01-AS-F05 and prepared all four AS-F06 tuples with zero
+  READY capabilities. The outage callback then timed out because `docker stop`
+  performed a graceful Station shutdown that durably settled all four Turns as
+  `station_lifecycle_interrupted` before clients could observe a transport-only
+  recovery failure. Failure cleanup also exposed two evidence defects:
+  permanent deletion is represented by durable `status=deleted`, not GET 404,
+  and clients were not restarted/re-authenticated after an outage callback
+  error. The local correction injects an abrupt `SIGKILL` against the same
+  source-bound container before restart, accepts only the canonical deleted
+  status or not-found as cleanup proof, and restores client authentication
+  before reverse-order failure cleanup. AS-F06 and G-F remain `UNPROVEN`
+  pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

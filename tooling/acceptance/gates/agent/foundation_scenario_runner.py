@@ -309,6 +309,22 @@ class FoundationF06Coordinator:
                 errors.append(f"{scenario_key}: {error}")
         return errors
 
+    def _restore_clients_for_cleanup(self) -> list[str]:
+        errors: list[str] = []
+        for platform, client in (
+            ("desktop_app", self._runtime_pair.native),
+            ("browser", self._runtime_pair.browser),
+        ):
+            try:
+                client.restart()
+            except BaseException as error:
+                errors.append(f"{platform} cleanup restart: {error}")
+        try:
+            _authenticate_clients(self._runtime_pair, self._profile_env)
+        except BaseException as error:
+            errors.append(f"cleanup authentication: {error}")
+        return errors
+
     def _execute(self) -> None:
         f06_inputs = tuple(
             DirectRuntimeProbeInput(
@@ -357,7 +373,12 @@ class FoundationF06Coordinator:
         except BaseException as error:
             primary_error = error
 
-        cleanup_errors = self._cleanup_prepared(prepared)
+        cleanup_errors = (
+            self._restore_clients_for_cleanup()
+            if primary_error is not None
+            else []
+        )
+        cleanup_errors.extend(self._cleanup_prepared(prepared))
         if cleanup_errors:
             detail = "; ".join(cleanup_errors)
             if primary_error is not None:

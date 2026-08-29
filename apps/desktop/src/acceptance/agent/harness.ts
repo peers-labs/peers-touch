@@ -615,7 +615,8 @@ async function cleanupStaleFoundationQueueConversations(
     pageSize: 200,
   });
   const stale = conversations.filter((conversation) =>
-    conversation.title.startsWith('Foundation queue '));
+    conversation.status !== 'deleted'
+    && conversation.title.startsWith('Foundation queue '));
 
   for (const conversation of stale) {
     try {
@@ -2732,7 +2733,15 @@ async function cleanupFoundationF06Scenario(input: {
 
   let conversationDeleted = false;
   try {
-    await api.getAgentConversation(input.conversationId);
+    const deleted = await api.getAgentConversation(input.conversationId);
+    conversationDeleted = deleted.status === 'deleted';
+    if (conversationDeleted) {
+      deletionErrorCode = 'CONVERSATION_DELETED';
+    } else if (cleanupError === null) {
+      cleanupError = new Error(
+        'agent.acceptance.foundationCleanupConversationNotDeleted',
+      );
+    }
   } catch (error) {
     deletionErrorCode = observedErrorCode(error);
     conversationDeleted = deletionErrorCode.includes('AGENT_4004');
@@ -5475,7 +5484,11 @@ export function installAcceptanceHarness(): void {
         let conversationDeleted = false;
         let deletionErrorCode = '';
         try {
-          await api.getAgentConversation(currentConversationId);
+          const deleted = await api.getAgentConversation(currentConversationId);
+          conversationDeleted = deleted.status === 'deleted';
+          if (conversationDeleted) {
+            deletionErrorCode = 'CONVERSATION_DELETED';
+          }
         } catch (error) {
           deletionErrorCode = observedErrorCode(error);
           conversationDeleted = deletionErrorCode.includes('AGENT_4004');
