@@ -2133,8 +2133,9 @@ fn materialize_attachment_cache(
         if !source_valid {
             return Err(SENDER_ATTACHMENT_SOURCE_INVALID.to_string());
         }
-        std::fs::remove_file(cache_path)
-            .map_err(|error| format!("remove invalid messaging sender attachment cache: {error}"))?;
+        std::fs::remove_file(cache_path).map_err(|error| {
+            format!("remove invalid messaging sender attachment cache: {error}")
+        })?;
     }
     if !source_valid {
         return Err(SENDER_ATTACHMENT_SOURCE_INVALID.to_string());

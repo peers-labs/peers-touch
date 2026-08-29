@@ -105,7 +105,7 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
                     != MessagingContentKind::Text
                 {
                     return Err(
-                        "messaging Direct processor only accepts text projections".to_string(),
+                        "messaging Direct processor only accepts text projections".to_string()
                     );
                 }
                 (message.message_id.as_str(), false, Some(message))
@@ -328,20 +328,20 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
             .map_err(|_| "messaging Direct signed prekey ID is invalid".to_string())?;
         let signed_prekey =
             X25519KeyPair::from_private_bytes(self.store.load_signed_prekey(signed_prekey_id)?);
-        let (one_time_prekey, consumed_one_time_prekey_id) =
-            match init.recipient_one_time_prekey_id {
-                Some(id) => {
-                    let id = i32::try_from(id)
-                        .map_err(|_| "messaging Direct one-time prekey ID is invalid".to_string())?;
-                    (
-                        Some(X25519KeyPair::from_private_bytes(
-                            self.store.load_one_time_prekey(id)?,
-                        )),
-                        Some(id),
-                    )
-                }
-                None => (None, None),
-            };
+        let (one_time_prekey, consumed_one_time_prekey_id) = match init.recipient_one_time_prekey_id
+        {
+            Some(id) => {
+                let id = i32::try_from(id)
+                    .map_err(|_| "messaging Direct one-time prekey ID is invalid".to_string())?;
+                (
+                    Some(X25519KeyPair::from_private_bytes(
+                        self.store.load_one_time_prekey(id)?,
+                    )),
+                    Some(id),
+                )
+            }
+            None => (None, None),
+        };
         let sender = direct
             .sender
             .as_ref()
