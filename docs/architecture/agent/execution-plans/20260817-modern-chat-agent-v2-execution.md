@@ -3331,6 +3331,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   state, and recovery phase/cursor so the next run can distinguish a missing
   handoff, cleared recovery record, stalled replay, or absent terminal
   delivery without exposing actor or content data.
+- Diagnostic checkpoint `8c4aa5f02e3436f7b3725d2e734a303ac519a66d`
+  was deployed exact-source to profile `two`. Run
+  `20260829T192655934922Z-bbfb13ebd621bdb52a62e948972f7681`
+  again stopped at Browser AS-F02 after observing durable sequences `1..30`
+  and `connection_lost` at cursor `30`. The observation timed out with
+  `resultOk=false`, `turnSubmissionTimeout`, and the recovery record
+  `MISSING`; cleanup and redaction passed. The next diagnostic adds the
+  recovery watermark and authenticated-session presence so terminal reduction
+  can be distinguished from session-runtime teardown without retaining local
+  storage or sensitive identities.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

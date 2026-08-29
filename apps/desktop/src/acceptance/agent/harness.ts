@@ -5455,8 +5455,10 @@ export function installAcceptanceHarness(): void {
         if (!activeResult.events.some((event) =>
           event.event === 'cancelled'
           || classifyAgentTurnTerminalEvent(event) === 'cancelled')) {
-          const recovery = useAgentTurnRecoveryStore.getState()
-            .active[conversation.conversation_id];
+          const recoveryState = useAgentTurnRecoveryStore.getState();
+          const recovery = recoveryState.active[conversation.conversation_id];
+          const watermark = recoveryState.watermarks[conversation.conversation_id];
+          const session = useSessionStore.getState();
           throw new Error(
             'agent.acceptance.foundationActiveTurnCancelMissing:'
             + stableJson({
@@ -5468,6 +5470,12 @@ export function installAcceptanceHarness(): void {
               })),
               recoveryPhase: recovery?.phase ?? 'MISSING',
               recoveryCursor: recovery?.cursor ?? 0,
+              recoveryActorPresent: Boolean(recoveryState.actorId),
+              watermarkPresent: Boolean(watermark),
+              watermarkTerminal: watermark?.terminal ?? false,
+              watermarkCursor: watermark?.cursor ?? 0,
+              sessionAuthenticated: session.authenticated,
+              sessionActorPresent: Boolean(session.currentUser?.actorId),
             }),
           );
         }
