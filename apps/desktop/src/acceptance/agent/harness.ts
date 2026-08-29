@@ -5313,7 +5313,7 @@ export function installAcceptanceHarness(): void {
             'thinking_mode',
           );
           const tokenUsage = evidenceRecord(
-            evidenceField(diagnostics, 'tokenUsage', 'token_usage'),
+            attempt.usage,
             'turnTokenUsage',
           );
           scenarioFacts.toolDefinitionTokens = Number(

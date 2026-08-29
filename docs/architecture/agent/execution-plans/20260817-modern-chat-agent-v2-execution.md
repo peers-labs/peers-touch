@@ -2734,6 +2734,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   focused Foundation tests, Agent Domain validation, the gap-detector
   self-tests, and `git diff --check` pass. AS-F03 and G-F remain `UNPROVEN`
   pending a new exact-source Gate run.
+- Checkpoint `74aa82b0fd0971d8c42d5244ca816af4f3e5869b` was deployed
+  exact-source to profile `two`. Run
+  `20260829T014951245897Z-7786fc286928468cb8d9818c6fbbce88`
+  produced an AS-F03 Turn with 36 ordered text events, zero thinking events,
+  one cancelled terminal event, a durable trace, and
+  `tool_definition_tokens=0`. The run then failed in the Harness because it
+  read usage from the diagnostic replay root instead of the generated
+  `TurnAttempt.usage` field. Cleanup passed. The local producer correction now
+  reads the last Attempt's generated usage contract; AS-F03 and G-F remain
+  `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
