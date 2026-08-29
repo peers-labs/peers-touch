@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `ab8a82c2c` verified the initial AS-F06 recovery identity in run `20260829T052004514366Z-305bbc15288605635bf949662a3ab0d4`; the retry subassertion still depended on the absent outage-time session projection and is locally corrected; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `7c92daed5` passed AS-F06 failure/retry proof and reached post-restart durable reload in run `20260829T053414430688Z-9b2d9402d0a74e1ac10784e2537acdfa`; client re-authentication is now ordered before snapshot replay and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2912,6 +2912,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   The local correction applies the same durable-record ownership rule to the
   retry assertion. AS-F06 and G-F remain `UNPROVEN` pending another
   exact-source run.
+- Checkpoint `7c92daed568153329aeea1ee8028c8c7197eb397` was deployed
+  exact-source to profile `two`. Run
+  `20260829T053414430688Z-9b2d9402d0a74e1ac10784e2537acdfa`
+  proved the Browser AS-F06 recovery failure and retry path, then reached
+  post-restart durable reload. The authoritative snapshot request returned
+  HTTP 401 because the coordinator attempted replay before restoring client
+  authentication after Station restart; cleanup passed. The local correction
+  re-authenticates both existing clients immediately after Station health
+  recovery and before durable reload. The later process restart and
+  re-authentication remain in place as the independent client-restart portion
+  of AS-F06. AS-F06 and G-F remain `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

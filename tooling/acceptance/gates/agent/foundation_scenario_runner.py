@@ -421,6 +421,7 @@ class FoundationF06Coordinator:
                 )
 
         def exercise_durable_reloads(operation_deadline: float) -> None:
+            _authenticate_clients(self._runtime_pair, self._profile_env)
             remaining = operation_deadline - time.monotonic()
             if remaining <= 0:
                 raise ScenarioRunnerError(
