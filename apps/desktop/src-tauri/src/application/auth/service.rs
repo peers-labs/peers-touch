@@ -46,10 +46,14 @@ impl PreparedAuthSession {
         }
     }
 
-    pub(crate) fn with_active_identity_state(mut self, mut state: AccountIdentityState) -> Self {
-        state.active_account_id = Some(self.account_id.clone());
-        self.identity_state = Some(state);
-        self
+    pub(crate) fn with_fallback_active_identity_state(
+        mut self,
+        state: AccountIdentityState,
+    ) -> Result<Self, String> {
+        if self.identity_state.is_none() {
+            self.identity_state = Some(restore_account_session_state(state, &self.account_id)?);
+        }
+        Ok(self)
     }
 }
 
@@ -1278,6 +1282,22 @@ pub(crate) fn prepare_auth_restore_session_for_account_during_transition(
     {
         return Err(error);
     }
+    let identity_state = if loaded_from_persistent_store {
+        let state = match crate::infrastructure::auth_identity::read_state() {
+            Ok(state) => state,
+            Err(error) => {
+                return Err(AppResult::fail(ErrorCode::InternalError, error, None));
+            }
+        };
+        match restore_account_session_state(state, &account_id) {
+            Ok(state) => Some(state),
+            Err(error) => {
+                return Err(AppResult::fail(ErrorCode::InternalError, error, None));
+            }
+        }
+    } else {
+        None
+    };
     let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
     let (p_name, p_email, p_avatar, p_local_avatar, p_method) = match &profile {
         Some(p) => (
@@ -1307,7 +1327,7 @@ pub(crate) fn prepare_auth_restore_session_for_account_during_transition(
         actor_id,
         token,
         revoked_previous_actor_sessions: loaded_from_persistent_store,
-        identity_state: None,
+        identity_state,
     })
 }
 
@@ -1580,6 +1600,14 @@ fn mark_account_has_session(
     Ok(())
 }
 
+fn restore_account_session_state(
+    mut state: AccountIdentityState,
+    account_id: &str,
+) -> Result<AccountIdentityState, String> {
+    mark_account_has_session(&mut state, account_id)?;
+    Ok(state)
+}
+
 /// Load a Station JWT persisted for the **active** account (OAuth bridge) and
 /// mirror it into `AppState` for the BFF.
 pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload> {
@@ -1748,10 +1776,13 @@ pub(crate) fn verify_session_with_station(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_session_identity, commit_legacy_runtime_binding, rollback_legacy_runtime_binding,
-        session_belongs_to_selected_account, validate_pin_session_token,
+        apply_session_identity, commit_legacy_runtime_binding, restore_account_session_state,
+        rollback_legacy_runtime_binding, session_belongs_to_selected_account,
+        validate_pin_session_token, PreparedAuthSession,
     };
+    use crate::contracts::AuthSessionPayload;
     use crate::domain::auth::session::AuthSession;
+    use crate::infrastructure::auth_identity::{AccountIdentity, AccountIdentityState};
     use crate::state::SessionState;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use std::cell::RefCell;
@@ -1830,6 +1861,90 @@ mod tests {
             &previous,
             Some("station:account-old"),
         ));
+    }
+
+    #[test]
+    fn restored_takeover_reactivates_durable_account_session() {
+        let state = AccountIdentityState {
+            active_account_id: None,
+            accounts: vec![
+                AccountIdentity {
+                    id: "station:account-old".to_string(),
+                    has_session: true,
+                    ..AccountIdentity::default()
+                },
+                AccountIdentity {
+                    id: "station:account-restored".to_string(),
+                    has_session: false,
+                    ..AccountIdentity::default()
+                },
+            ],
+        };
+
+        let restored = restore_account_session_state(state, "station:account-restored")
+            .expect("restored account should remain durable");
+
+        assert_eq!(
+            restored.active_account_id.as_deref(),
+            Some("station:account-restored")
+        );
+        assert!(!restored.accounts[0].has_session);
+        assert!(restored.accounts[1].has_session);
+    }
+
+    #[test]
+    fn caller_fallback_does_not_replace_prepared_restore_state() {
+        let prepared_state = restore_account_session_state(
+            AccountIdentityState {
+                active_account_id: None,
+                accounts: vec![AccountIdentity {
+                    id: "station:account-restored".to_string(),
+                    has_session: false,
+                    ..AccountIdentity::default()
+                }],
+            },
+            "station:account-restored",
+        )
+        .expect("restore state should be prepared");
+        let prepared = PreparedAuthSession {
+            payload: AuthSessionPayload {
+                command: "auth_restore_session".to_string(),
+                status: "restored".to_string(),
+                actor_id: Some("ptid:restored".to_string()),
+                ptid: Some("ptid:restored".to_string()),
+                name: None,
+                email: None,
+                avatar_url: None,
+                avatar_local_path: None,
+                login_method: None,
+            },
+            account_id: "station:account-restored".to_string(),
+            actor_id: "ptid:restored".to_string(),
+            token: "token".to_string(),
+            revoked_previous_actor_sessions: true,
+            identity_state: Some(prepared_state),
+        };
+        let stale_fallback = AccountIdentityState {
+            active_account_id: None,
+            accounts: vec![AccountIdentity {
+                id: "station:account-restored".to_string(),
+                has_session: false,
+                ..AccountIdentity::default()
+            }],
+        };
+
+        let prepared = prepared
+            .with_fallback_active_identity_state(stale_fallback)
+            .expect("prepared restore state should remain valid");
+        let committed = prepared
+            .identity_state
+            .expect("prepared restore state must win over caller fallback");
+
+        assert_eq!(
+            committed.active_account_id.as_deref(),
+            Some("station:account-restored")
+        );
+        assert!(committed.accounts[0].has_session);
     }
 
     #[test]
