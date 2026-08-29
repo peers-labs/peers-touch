@@ -160,6 +160,17 @@ class AgentHarnessStaticTest(unittest.TestCase):
             main_source,
         )
 
+    def test_replay_observer_accepts_primary_and_observation_deliveries(self) -> None:
+        self.assertIn(
+            "const replayStarted = current.transitions.some(",
+            self.source,
+        )
+        self.assertIn("if (!sourceDelivery) return;", self.source)
+        self.assertNotIn(
+            "observed.deliveryOnly !== true || !sourceDelivery",
+            self.source,
+        )
+
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)
 

@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `406195425` crossed explicit retry and reached the AS-F06 replay-equality oracle in run `20260829T123725220148Z-723c24b6ac16ab96dd98a6afbc6663d3`; the Acceptance observer now installs before App runtimes and Station readback excludes synthesized snapshots; proof remains UNPROVEN pending another exact-source run | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `9cf45451d` showed Browser reconnect replay uses the primary source-bound event path while the AS-F06 recorder accepted only observation-only deliveries; the recorder now accepts both paths after `REPLAYING` with unchanged source identity/hash equality; proof remains UNPROVEN pending another exact-source run | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3147,6 +3147,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   harness installation before rendering App runtimes and excludes synthesized
   snapshots from the independent persisted-event comparison. AS-F06 and G-F
   remain `UNPROVEN`.
+- Checkpoint `9cf45451d7798aa387a88d0c7532ca7e4970d745` was deployed
+  exact-source to profile `two`. Run
+  `20260829T130511526884Z-0e55ce925c2f27d25058950661b67e75`
+  again reached only `replayAfterAcknowledgedCursor`; cleanup and redaction
+  passed. The Browser runtime replayed persisted events through the original
+  stream's reconnect path, which publishes normal source-bound runtime events,
+  while the Acceptance recorder admitted only observation-only deliveries.
+  It therefore omitted sequences `32..202` and retained only the explicit
+  snapshot loader's sequence `203`; Station independently returned persisted
+  sequences `32..203`. The recorder now accepts both source-bound delivery
+  paths only after observing `REPLAYING`, while retaining actor, Turn, stream,
+  generation, cursor, payload-hash, and independent Station equality checks.
+  AS-F06 and G-F remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

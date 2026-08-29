@@ -292,10 +292,9 @@ function installFoundationF06Observation(): void {
   eventBus.subscribe(EVENT.AGENT_TURN_STREAM_EVENT, (payload) => {
     const observed = payload as typeof payload & {
       sourceDelivery?: AgentTurnSourceDelivery;
-      deliveryOnly?: boolean;
     };
     const sourceDelivery = observed.sourceDelivery;
-    if (observed.deliveryOnly !== true || !sourceDelivery) return;
+    if (!sourceDelivery) return;
     const handoff = Object.values(readFoundationF06Handoffs()).find((candidate) =>
       sourceDelivery.conversationId === candidate.conversationId
       && sourceDelivery.turnId === candidate.turnId
