@@ -137,6 +137,41 @@ class F06HarnessClient:
         return result
 
 
+class SessionHarnessClient:
+    def __init__(self, runtime: str, *, authenticated: bool = True) -> None:
+        self.spec = SimpleNamespace(runtime=runtime)
+        self.authenticated = authenticated
+        self.calls: list[str] = []
+
+    def harness(
+        self,
+        method: str,
+        _payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        del timeout
+        self.calls.append(method)
+        if method == "getAcceptanceHarnessStatus":
+            return {"ready": True}
+        if method == "getRuntimeSnapshot":
+            return {
+                "authenticated": self.authenticated,
+                "actorId": "ptid:test" if self.authenticated else None,
+                "identityState": "ready" if self.authenticated else "onboarding",
+            }
+        if method == "navigateToAgent":
+            return {"navigated": True}
+        if method == "ensureProvider":
+            return {"configured": True}
+        if method == "openBrowserCapabilitySession":
+            return {"opened": True}
+        if method == "getFoundationCapabilitySessions":
+            return {"selectedStationSession": {"session_id": "capability-session"}}
+        if method == "loginWithPassword":
+            return {"authenticated": True}
+        raise AssertionError(f"unexpected method: {method}")
+
+
 class FoundationScenarioRunnerProfileTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
@@ -221,6 +256,49 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 }
             )
 
+    def test_recovery_setup_reuses_existing_sessions_without_login(self) -> None:
+        native = SessionHarnessClient("desktop_app")
+        browser = SessionHarnessClient("browser")
+
+        foundation_scenario_runner._authenticate_clients(
+            SimpleNamespace(native=native, browser=browser),
+            {
+                "PT_AGENT_PROVIDER_ID": "ark",
+                "PT_AGENT_PROVIDER_API_KEY": "credential",
+                "PT_AGENT_DEFAULT_MODEL_ID": "endpoint-model",
+                "PT_AGENT_PROVIDER_BASE_URL": "https://provider.example/v1",
+            },
+            require_existing_session=True,
+        )
+
+        self.assertNotIn("loginWithPassword", native.calls)
+        self.assertNotIn("loginWithPassword", browser.calls)
+        self.assertIn("getRuntimeSnapshot", native.calls)
+        self.assertIn("getRuntimeSnapshot", browser.calls)
+
+    def test_recovery_setup_rejects_a_missing_existing_session(self) -> None:
+        native = SessionHarnessClient("desktop_app", authenticated=False)
+        browser = SessionHarnessClient("browser")
+
+        with self.assertRaisesRegex(
+            foundation_scenario_runner.ScenarioRunnerError,
+            "existing session was not restored",
+        ):
+            foundation_scenario_runner._authenticate_clients(
+                SimpleNamespace(native=native, browser=browser),
+                {
+                    "PT_AGENT_PROVIDER_ID": "ark",
+                    "PT_AGENT_PROVIDER_API_KEY": "credential",
+                    "PT_AGENT_DEFAULT_MODEL_ID": "endpoint-model",
+                    "PT_AGENT_PROVIDER_BASE_URL": "https://provider.example/v1",
+                },
+                require_existing_session=True,
+                session_deadline=time.monotonic() + 0.01,
+            )
+
+        self.assertNotIn("loginWithPassword", native.calls)
+        self.assertEqual(browser.calls, [])
+
     def test_direct_probe_runs_independent_group_one_oracle(self) -> None:
         probe_input = DirectRuntimeProbeInput(
             platform="desktop_app",
@@ -299,7 +377,10 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
 
         self.assertEqual(restart.call_count, 4)
         self.assertEqual(authenticate.call_count, 8)
-        authenticate.assert_called_with(runtime_pair, {})
+        self.assertTrue(all(
+            call.kwargs.get("require_existing_session") is True
+            for call in authenticate.call_args_list
+        ))
         self.assertEqual(native.restart_count, 4)
         self.assertEqual(browser.restart_count, 4)
         self.assertEqual(len(native.prepare_calls), 2)

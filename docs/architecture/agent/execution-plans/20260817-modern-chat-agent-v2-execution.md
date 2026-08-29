@@ -3399,6 +3399,25 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `3310`, `3311`, `4445`, and `4446` passed. This is an execution-environment
   precondition failure, not product proof. The next serial run must retain the
   same Gate and set the explicit restart authorization required by AS-F06.
+- Checkpoint `8f86dfcb7478b0e75cf1345aa77e1609798d2825` was deployed
+  exact-source to profile `two`, and run
+  `20260829T213127221374Z-fb8ae2d367edb773b731f747f790e171`
+  executed AS-F06 with explicit restart authorization. It observed
+  `RECOVERY_FAILED`, preserved the authenticated session through the outage,
+  invoked retry, advanced recovery epoch `1 -> 2`, and observed the retry
+  return to `RECOVERY_FAILED`; the next first failure was
+  `AS_F06_DURABLE_RELOAD_TARGET_MISSING`. The immutable result is
+  `PARTIAL / UNPROVEN`; cleanup and redaction passed. The coordinator had
+  unconditionally called `loginWithPassword` after Station restart. That
+  production login pipeline invalidates `runtime.projection` and traverses a
+  non-ready identity phase whose lifecycle teardown clears the in-memory
+  recovery owner, so the subsequent durable reload had no target. AS-F06
+  recovery orchestration now requires the original authenticated session after
+  both Station and client restarts; it no longer logs in to manufacture
+  recovery state. One hundred five focused Foundation tests, Agent Domain
+  validation, and `git diff --check` pass. AS-F06 and G-F remain
+  `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source
+  verification.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

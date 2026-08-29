@@ -421,7 +421,12 @@ class FoundationF06Coordinator:
                 )
 
         def exercise_durable_reloads(operation_deadline: float) -> None:
-            _authenticate_clients(self._runtime_pair, self._profile_env)
+            _authenticate_clients(
+                self._runtime_pair,
+                self._profile_env,
+                require_existing_session=True,
+                session_deadline=operation_deadline,
+            )
             remaining = operation_deadline - time.monotonic()
             if remaining <= 0:
                 raise ScenarioRunnerError(
@@ -461,7 +466,11 @@ class FoundationF06Coordinator:
         ):
             client.restart()
             client_reloads[platform] = True
-        _authenticate_clients(self._runtime_pair, self._profile_env)
+        _authenticate_clients(
+            self._runtime_pair,
+            self._profile_env,
+            require_existing_session=True,
+        )
         orchestration = {
             **station_restart,
             "clientReloads": client_reloads,
@@ -595,20 +604,23 @@ def _warm_up_client(client: "FoundationRuntimeClient") -> None:
         if attempt < max_attempts:
             _time.sleep(retry_interval)
 
-    # Final attempt failed — not fatal, login will be attempted anyway but
-    # may timeout if the backend is genuinely unavailable.
+    # Final warm-up failure is not terminal here. The caller's next login or
+    # existing-session probe reports the operation-specific failure.
 
 
 def _authenticate_clients(
     runtime_pair: FoundationRuntimePair,
     profile_env: dict[str, str],
+    *,
+    require_existing_session: bool = False,
+    session_deadline: float | None = None,
 ) -> None:
-    """Login, navigate, and configure provider on both runtime clients.
+    """Prepare authenticated clients without masking recovery failures.
 
-    This step is required before any harness probe that reads agent state.
-    The actor account is alice@p.t with CHAT_NATIVE_DEMO_PASSWORD from the
-    profile environment. Provider configuration uses the exact provider, model,
-    credential, and base URL bound by the active profile.
+    Initial setup logs in with the profile fixture. Recovery paths set
+    require_existing_session so Station/client restart must preserve the
+    original session instead of silently replacing it. Both paths then
+    navigate and bind the exact profile provider before capability checks.
     """
     account = "alice@p.t"
     password = profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
@@ -618,16 +630,64 @@ def _authenticate_clients(
         # Step 0: Warm-up — wait for Rust backend to finish initializing
         _warm_up_client(client)
 
-        # Step 1: Login (extended timeout for cold-start scenarios)
-        login_result = client.harness(
-            "loginWithPassword",
-            {"account": account, "password": password},
-            timeout=120,
-        )
-        if not isinstance(login_result, Mapping) or not login_result.get("authenticated"):
-            raise ScenarioRunnerError(
-                f"{client.spec.runtime} login failed: {login_result}"
+        # Step 1: Initial setup may log in. Recovery paths must instead prove
+        # the original session survived Station or client restart.
+        if require_existing_session:
+            restore_deadline = min(
+                session_deadline or time.monotonic() + 120,
+                time.monotonic() + 120,
             )
+            session_state: Mapping[str, Any] | None = None
+            while time.monotonic() < restore_deadline:
+                try:
+                    candidate = client.harness(
+                        "getRuntimeSnapshot",
+                        {},
+                        timeout=min(
+                            30,
+                            max(1, restore_deadline - time.monotonic()),
+                        ),
+                    )
+                except Exception:
+                    candidate = None
+                if isinstance(candidate, Mapping):
+                    session_state = candidate
+                    if (
+                        candidate.get("authenticated") is True
+                        and candidate.get("identityState") == "ready"
+                        and isinstance(candidate.get("actorId"), str)
+                        and candidate.get("actorId")
+                    ):
+                        break
+                remaining = restore_deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(1.0, remaining))
+            else:
+                session_state = None
+            if (
+                not isinstance(session_state, Mapping)
+                or session_state.get("authenticated") is not True
+                or session_state.get("identityState") != "ready"
+                or not isinstance(session_state.get("actorId"), str)
+                or not session_state.get("actorId")
+            ):
+                raise ScenarioRunnerError(
+                    f"{client.spec.runtime} existing session was not restored"
+                )
+        else:
+            login_result = client.harness(
+                "loginWithPassword",
+                {"account": account, "password": password},
+                timeout=120,
+            )
+            if (
+                not isinstance(login_result, Mapping)
+                or not login_result.get("authenticated")
+            ):
+                raise ScenarioRunnerError(
+                    f"{client.spec.runtime} login failed: {login_result}"
+                )
 
         # Step 2: Navigate to agent surface
         nav_result = client.harness("navigateToAgent", {}, timeout=60)
