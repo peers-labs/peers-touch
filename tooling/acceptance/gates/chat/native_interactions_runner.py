@@ -2057,6 +2057,28 @@ class NativeInteractionsGate(AcceptanceGate):
                                 ),
                                 "harnessState": harness_state,
                                 "dom": snapshot,
+                                "domSurface": self.clients[actor].execute_script(
+                                    """
+                                    const scroll = document.querySelector(
+                                      '.chat-message-scroll'
+                                    );
+                                    return {
+                                      messageIds: Array.from(
+                                        document.querySelectorAll(
+                                          '[data-message-ulid]'
+                                        ),
+                                        (row) => row.getAttribute(
+                                          'data-message-ulid'
+                                        ),
+                                      ),
+                                      scroll: scroll ? {
+                                        clientHeight: scroll.clientHeight,
+                                        scrollHeight: scroll.scrollHeight,
+                                        scrollTop: scroll.scrollTop,
+                                      } : null,
+                                    };
+                                    """,
+                                ),
                                 "engine": self.engine_snapshot(
                                     actor,
                                     conversation_id,
