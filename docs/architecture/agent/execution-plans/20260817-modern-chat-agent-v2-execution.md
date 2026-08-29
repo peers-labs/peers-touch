@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `7c92daed5` passed AS-F06 failure/retry proof and reached post-restart durable reload in run `20260829T053414430688Z-9b2d9402d0a74e1ac10784e2537acdfa`; client re-authentication is now ordered before snapshot replay and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `46a44c775` passed AS-F06 outage, retry, re-authentication, and durable reload in run `20260829T055049412419Z-90ce04174f23e6cf6c6ee3a99af04298`; Station now checkpoints Turn trace authority before provider side effects and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2923,6 +2923,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   recovery and before durable reload. The later process restart and
   re-authentication remain in place as the independent client-restart portion
   of AS-F06. AS-F06 and G-F remain `UNPROVEN` pending another exact-source run.
+- Checkpoint `46a44c7751faeae9bfd554febc03473716a50220` was deployed
+  exact-source to profile `two`. Run
+  `20260829T055049412419Z-90ce04174f23e6cf6c6ee3a99af04298`
+  passed the Browser AS-F06 outage, recovery failure, retry, post-restart
+  authentication, durable snapshot reload, and client restart, then failed in
+  final evidence collection with `Failed to get agent turn trace`; cleanup
+  passed. The interrupted Turn and terminal projection were durable, but trace
+  persistence occurred only after the external provider returned, so an abrupt
+  process loss could permanently omit the trace row. The local Station
+  correction checkpoints the assembled trace before starting the provider
+  side effect; existing terminal paths continue to upsert richer trace data.
+  AS-F06 and G-F remain `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

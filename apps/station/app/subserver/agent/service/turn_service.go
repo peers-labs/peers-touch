@@ -1440,6 +1440,13 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	// adapter has an explicit native image/file mapping. Never persist them.
 	config.AdmittedAttachments = nil
 
+	// A provider call is an external side effect. Persist the trace authority
+	// before starting it so abrupt process loss cannot leave a durable Turn
+	// without its corresponding trace.
+	if err := s.saveTurnTrace(ctx, trace); err != nil {
+		return nil, settleRunningFailure("failed to checkpoint turn trace before provider call", err)
+	}
+
 	// Step 7 — Credential lease + provider call with error recovery loop.
 	if err := s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 		Type:  "progress",
