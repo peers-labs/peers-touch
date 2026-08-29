@@ -6743,7 +6743,7 @@ export function streamAgentTurnReplay(
             } else {
               deliverReplayEvent(sourceEvent);
             }
-            return terminalStatus !== null;
+            return liveTailEstablished && terminalStatus !== null;
           });
           if (terminal || controller.signal.aborted) return;
           replayError = new Error(

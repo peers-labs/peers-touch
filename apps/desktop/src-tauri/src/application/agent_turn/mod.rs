@@ -1244,6 +1244,11 @@ fn replay_event_is_terminal(event: &str, data: &Value) -> bool {
     )
 }
 
+fn replay_event_closes_stream(event: &str, data: &Value, live_tail_established: bool) -> bool {
+    replay_event_is_terminal(event, data)
+        && (live_tail_established || event == "snapshot")
+}
+
 fn build_replay_request_body(conversation_id: &str, turn_id: &str, after_sequence: i64) -> Value {
     json!({
         "conversation_id": conversation_id,
@@ -1348,8 +1353,9 @@ fn emit_replay_event(
         );
         return false;
     }
+    let closes_stream = replay_event_closes_stream(&event, &data, *live_tail_established);
     emit_turn_stream_event_to(app, window_label, stream_id, ptid, &event, data);
-    terminal
+    closes_stream
 }
 
 async fn replay_station_turn_events(
@@ -2439,6 +2445,18 @@ mod tests {
             &json!({"status": "completed", "seq": 9}),
         ));
         assert!(replay_event_is_terminal("done", &json!({"seq": 9}),));
+    }
+
+    #[test]
+    fn replay_terminal_rows_close_only_after_catchup() {
+        let terminal = json!({"seq": 9, "error": "station_restart_interrupted"});
+        assert!(!replay_event_closes_stream("error", &terminal, false));
+        assert!(replay_event_closes_stream("error", &terminal, true));
+        assert!(replay_event_closes_stream(
+            "snapshot",
+            &json!({"status": "interrupted", "seq": 9}),
+            false,
+        ));
     }
 
     #[test]

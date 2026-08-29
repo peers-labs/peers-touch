@@ -328,6 +328,64 @@ describe('api.startAgentTurnReplayStream', () => {
     })
   })
 
+  it('reads the authoritative snapshot after a catch-up terminal event', async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    })
+    vi.stubGlobal('window', browserWindow)
+    ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+      'http://127.0.0.1:3030'
+    const terminalData = {
+      turnId: 'turn-1',
+      conversationId: 'conversation-1',
+      seq: 5,
+      error: 'station_restart_interrupted',
+    }
+    mockFetch.mockResolvedValue(new Response(
+      [
+        `event: error\ndata: ${JSON.stringify(terminalData)}\n\n`,
+        `event: snapshot\ndata: ${JSON.stringify({
+          ...terminalData,
+          status: 'interrupted',
+        })}\n\n`,
+      ].join(''),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      },
+    ))
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+
+    streamAgentTurnReplay(
+      {
+        conversation_id: 'conversation-1',
+        turn_id: 'turn-1',
+        after_seq: 4,
+      },
+      onEvent,
+      onError,
+      'ptid:person:owner',
+    )
+
+    await vi.waitFor(() => {
+      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'snapshot',
+        data: expect.objectContaining({ status: 'interrupted' }),
+      }))
+    })
+    expect(onEvent.mock.calls.map(([event]) => event.event)).toEqual([
+      'reconnecting',
+      'replaying',
+      'error',
+      'reconciling',
+      'connected',
+      'snapshot',
+    ])
+    expect(onError).not.toHaveBeenCalled()
+  })
+
   it('starts replay-then-tail without buffering the live response', async () => {
     vi.mocked(invoke).mockResolvedValue({
       ok: true,

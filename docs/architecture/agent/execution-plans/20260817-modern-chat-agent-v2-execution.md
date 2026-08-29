@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `52caeb68f` reached Browser AS-F06 final probe in clean run `20260829T102930918349Z-6c131acdb12621e339778b72c6057d7e`; explicit durable reload now requests post-cursor event rows before its authoritative snapshot, and cleanup diagnostics are strengthened; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `50041002f` exposed that Browser replay closed on a catch-up terminal row before receiving the following authoritative snapshot in run `20260829T111024619399Z-ed92416efa7237cf4dc7b99afd1ef599`; Browser and Native replay close semantics are locally aligned and await exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3093,6 +3093,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   state. Cleanup now retries only while the conversation remains readable and
   reports its normalized deletion code on exhaustion. AS-F06 and G-F remain
   `UNPROVEN`.
+- Checkpoint `50041002f8dc6fa0ea68841cdd248e631641de07` was deployed
+  exact-source to profile `two`. An initial run
+  `20260829T110511958953Z-8b9f9d96e80e09bc8fa3d2f3b03caff1`
+  stopped at a previously proven AS-F01 provider timeout with cleanup passing.
+  Its unchanged rerun
+  `20260829T111024619399Z-ed92416efa7237cf4dc7b99afd1ef599`
+  reached Browser AS-F06 but timed out in explicit durable reload. The replay
+  transport closed as soon as it received a persisted terminal event during
+  catch-up, before consuming the authoritative snapshot that Station emits
+  immediately afterward. The local correction keeps both Browser and Native
+  replay open across catch-up terminal rows and closes only on a terminal
+  snapshot or a terminal event after live-tail establishment. Focused Browser
+  and Rust tests cover that ordering. AS-F06 and G-F remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
