@@ -548,18 +548,24 @@ class NativeDesktopLinuxProvisioner:
         self._actor_port_slots: dict[str, int] = {}
         self._endpoints: dict[str, _EndpointRuntime] = {}
         self._tunnel_failures: list[dict[str, object]] = []
+        self._source_lease: RemoteGitSourceLease | None = None
 
     def ready(self, gate_id: str = "runtime-cell-preflight") -> RuntimeCellManifest:
         if self.state_path.exists():
-            current = self.status()
-            if current.get("state") == RuntimeCellState.LEASED.value:
-                raise BlockedError(
-                    reason=(
-                        f"Linux runtime cell {self.contract.cell_id} is already leased"
-                    ),
-                    resource=f"runtime-cell:{self.contract.cell_id}",
+            current = self._read_state()
+            current_state = str(current.get("state") or "UNKNOWN")
+            reason = (
+                f"Linux runtime cell {self.contract.cell_id} is already leased"
+                if current_state == RuntimeCellState.LEASED.value
+                else (
+                    f"Linux runtime cell {self.contract.cell_id} has recoverable "
+                    f"{current_state} owner state; run stop before ready"
                 )
-            self.state_path.unlink(missing_ok=True)
+            )
+            raise BlockedError(
+                reason=reason,
+                resource=f"runtime-cell:{self.contract.cell_id}",
+            )
         if self.tunnel_state_path.exists():
             self._stop_tunnel_supervisor()
 
@@ -595,11 +601,24 @@ class NativeDesktopLinuxProvisioner:
             deploy_path=request.deploy_path,
             port=request.ssh_port,
             known_hosts_file=request.known_hosts_file,
+            persistent=True,
+            expires_at_epoch=expires_epoch,
         )
         try:
             host = self._host_preflight()
             lease.acquire()
+            self._source_lease = lease
             source_lease_acquired = True
+            self._write_state(
+                {
+                    "cellId": self.contract.cell_id,
+                    "runId": run_id,
+                    "state": "PREPARING",
+                    "containerName": container_name,
+                    "buildContainerName": build_container_name,
+                    "sourceLeaseOwner": source_lease_owner,
+                }
+            )
             source = RemoteSourceSynchronizer(
                 request,
                 source_lease_held=True,
@@ -648,6 +667,7 @@ class NativeDesktopLinuxProvisioner:
                     "remoteControl": str(remote_control),
                     "remoteSource": str(remote_source),
                     "sourceCommit": source.commit,
+                    "sourceLeaseOwner": source_lease_owner,
                 }
             )
 
@@ -723,6 +743,7 @@ class NativeDesktopLinuxProvisioner:
                     "remoteControl": str(remote_control),
                     "remoteSource": str(remote_source),
                     "sourceCommit": source.commit,
+                    "sourceLeaseOwner": source_lease_owner,
                     "tunnelSupervisorPid": int(
                         tunnels["supervisorPid"]
                     ),
@@ -742,7 +763,6 @@ class NativeDesktopLinuxProvisioner:
                 }
             )
             source_lease_acquired = False
-            lease.release()
             return manifest
         except BaseException as error:
             cleanup_failures: list[str] = []
@@ -763,13 +783,17 @@ class NativeDesktopLinuxProvisioner:
                     cleanup_failures.append(
                         f"remote runtime: {cleanup_error}"
                     )
-            if not cleanup_failures:
-                self.state_path.unlink(missing_ok=True)
-                self.tunnel_state_path.unlink(missing_ok=True)
+            if cleanup_failures:
+                source_lease_acquired = False
+                raise ProvisioningError(
+                    f"Linux runtime-cell operation failed ({error}); "
+                    "cleanup also failed: "
+                    + "; ".join(cleanup_failures)
+                ) from error
             if source_lease_acquired:
                 source_lease_acquired = False
                 try:
-                    lease.release()
+                    self._release_source_lease()
                 except Exception as cleanup_error:
                     cleanup_failures.append(
                         f"source lease: {cleanup_error}"
@@ -780,10 +804,12 @@ class NativeDesktopLinuxProvisioner:
                     "cleanup also failed: "
                     + "; ".join(cleanup_failures)
                 ) from error
+            self.state_path.unlink(missing_ok=True)
+            self.tunnel_state_path.unlink(missing_ok=True)
             raise
         finally:
             if source_lease_acquired:
-                lease.release()
+                self._release_source_lease()
 
     def status(self) -> dict[str, Any]:
         state = self._read_state()
@@ -799,7 +825,14 @@ class NativeDesktopLinuxProvisioner:
                 "cellId": self.contract.cell_id,
                 "state": RuntimeCellState.CLEANED.value,
             }
-        remote_control = Path(str(state["remoteControl"]))
+        remote_control_value = str(state.get("remoteControl") or "")
+        if not remote_control_value:
+            return {
+                "cellId": self.contract.cell_id,
+                "state": "PREPARING",
+                "sourceLeaseOwner": state.get("sourceLeaseOwner"),
+            }
+        remote_control = Path(remote_control_value)
         remote = self._remote_control(
             remote_control,
             "status",
@@ -815,6 +848,7 @@ class NativeDesktopLinuxProvisioner:
             if not audit["clean"]:
                 raise
             self._stop_tunnel_supervisor()
+            self._release_source_lease(state)
             self.state_path.unlink(missing_ok=True)
             self.tunnel_state_path.unlink(missing_ok=True)
             return {
@@ -1630,12 +1664,21 @@ class NativeDesktopLinuxProvisioner:
             except ProvisioningError as error:
                 actor_cleanup_failures.append(str(error))
         if not state:
-            self._stop_tunnel_supervisor()
+            try:
+                self._stop_tunnel_supervisor()
+            except (OSError, ProvisioningError) as error:
+                actor_cleanup_failures.append(f"local tunnels: {error}")
             if actor_cleanup_failures:
                 raise ProvisioningError(
                     "Linux runtime-cell actor cleanup failed: "
                     + "; ".join(actor_cleanup_failures)
                 )
+            try:
+                self._release_source_lease()
+            except Exception as error:
+                raise ProvisioningError(
+                    f"Linux runtime-cell source lease cleanup failed: {error}"
+                ) from error
             return {
                 "cellId": self.contract.cell_id,
                 "state": RuntimeCellState.CLEANED.value,
@@ -1646,11 +1689,26 @@ class NativeDesktopLinuxProvisioner:
             self._stop_tunnel_supervisor()
         except (OSError, ProvisioningError) as error:
             cleanup_failures.append(f"local tunnels: {error}")
+        remote_control_value = str(state.get("remoteControl") or "")
+        if not remote_control_value:
+            if cleanup_failures:
+                raise ProvisioningError(
+                    "Linux runtime-cell cleanup failed: "
+                    + "; ".join(cleanup_failures)
+                )
+            self._release_source_lease(state)
+            self.state_path.unlink(missing_ok=True)
+            self.tunnel_state_path.unlink(missing_ok=True)
+            return {
+                "cellId": self.contract.cell_id,
+                "state": RuntimeCellState.CLEANED.value,
+                "alreadyClean": True,
+            }
         try:
             remote = self._stop_remote(
                 run_id=str(state["runId"]),
                 container_name=str(state["containerName"]),
-                remote_control=Path(str(state["remoteControl"])),
+                remote_control=Path(remote_control_value),
             )
         except (OSError, ProvisioningError) as error:
             audit = self._remote_cleanup_audit(state)
@@ -1668,6 +1726,15 @@ class NativeDesktopLinuxProvisioner:
                 "Linux runtime-cell cleanup failed: "
                 + "; ".join(cleanup_failures)
             )
+        try:
+            self._release_source_lease(state)
+        except Exception as error:
+            cleanup_failures.append(f"source lease: {error}")
+        if cleanup_failures:
+            raise ProvisioningError(
+                "Linux runtime-cell cleanup failed: "
+                + "; ".join(cleanup_failures)
+            )
         self.state_path.unlink(missing_ok=True)
         self.tunnel_state_path.unlink(missing_ok=True)
         return {
@@ -1675,6 +1742,41 @@ class NativeDesktopLinuxProvisioner:
             "state": RuntimeCellState.CLEANED.value,
             "remote": remote,
         }
+
+    def _release_source_lease(
+        self,
+        state: dict[str, Any] | None = None,
+    ) -> None:
+        lease = self._source_lease
+        if lease is None and state is not None:
+            owner = str(state.get("sourceLeaseOwner") or "")
+            if owner:
+                request = SourceSyncRequest.from_env_files(
+                    self.profile.deploy_environment,
+                    source_root=self.source_root,
+                    environments_dir=self.deploy_root,
+                    central_environment_path=(
+                        REPO_ROOT / ".local" / "deploy" / "git-server.env"
+                    ),
+                    require_clean=(
+                        self.contract.source.clean_commit_required_for_proof
+                    ),
+                )
+                lease = RemoteGitSourceLease(
+                    request.environment_name,
+                    owner,
+                    host=request.host,
+                    user=request.user,
+                    deploy_path=request.deploy_path,
+                    port=request.ssh_port,
+                    known_hosts_file=request.known_hosts_file,
+                    persistent=True,
+                )
+                lease.attach_persistent()
+        if lease is None:
+            return
+        lease.release()
+        self._source_lease = None
 
     def _remote_cleanup_audit(
         self,

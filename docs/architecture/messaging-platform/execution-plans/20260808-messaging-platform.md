@@ -1223,6 +1223,43 @@ removed after verification, and the focused Desktop, Rust, and static checks
 passed. A new clean exact-range aggregate, required-proven validation, Gap
 Detector, Completion Audit, and independent review remain required.
 
+Independent review of the subsequent clean candidate
+`f00bfdde35675a206fb80490180149a9c28fd464` found that the W11 audit could accept
+stale source evidence, did not mechanically require the MP-W13 Product Closure
+Gate, and wrote its verdict to the repository instead of the external Evidence
+Store. The review also found that restored account identity could still race a
+concurrent account switch. The in-flight 20-Gate aggregate was stopped and its
+runtime cell was cleaned; it is not final proof.
+
+Before rerunning MP-W13-F and MP-W11 closure:
+
+- the closure contract must explicitly bind `desktop-linux-native` and include
+  `chat-native-product-closure-e2e`;
+- every consumed Gate manifest and canonical report must match the current
+  clean source, workspace, Gate, run, and claimed runtime cell;
+- the closure verdict must be a canonical Evidence Store artifact; and
+- account selection, token restoration, session commit, window binding, and
+  messaging activation must preserve one coordinated account identity.
+
+These corrections preserve the accepted journey and all existing product
+assertions. They do not claim macOS or Windows parity.
+
+The candidate now closes those review findings. PIN unlock, account switch,
+restore, session commit, window binding, and Messaging Engine activation share
+one transition boundary across Tauri and HTTP Gateway paths. W11 requires the
+Product Closure Gate and validates each native report against the runner-owned
+runtime-cell manifest, current clean source, binary digest, Linux host/image
+attestation, Gate, run, workspace, and `desktop-linux-native` claim. Evidence
+redaction occurs before first write, including the final manifest; post-run
+scanning is read-only and includes role metadata. The remote source lease
+survives a standalone `ready` process, is owner-released by a later `stop`, and
+expires on the runtime-cell TTL.
+
+Focused code and framework checks pass, and independent blocker review reports
+no findings. MP-W13-F remains `UNPROVEN` until this candidate is committed,
+deployed to disposable Station `18132`, and passes the new exact-range Linux
+aggregate plus final Gap Detector and Completion Audit.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

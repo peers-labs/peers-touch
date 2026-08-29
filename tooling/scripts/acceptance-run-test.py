@@ -129,7 +129,16 @@ class AcceptanceRunTest(unittest.TestCase):
         events: list[str] = []
 
         class EnvironmentProvisioner:
-            resolved_credential_values: tuple[str, ...] = ()
+            resolved_credential_values = ("resolved-secret",)
+
+            def prepare_credentials(
+                self,
+            ) -> tuple[tuple[str, ...], dict[str, str]]:
+                events.append("credentials-ready")
+                return (
+                    ("env:SYNTHETIC_SECRET",),
+                    {"synthetic": "resolved-secret"},
+                )
 
             def cleanup(self) -> tuple[str, ...]:
                 events.append("environment-cleanup")
@@ -144,6 +153,10 @@ class AcceptanceRunTest(unittest.TestCase):
         cell_lifecycle = CellLifecycle()
 
         def provision_environment(*_args, **_kwargs):
+            redaction_values = json.loads(
+                os.environ["PT_ACCEPTANCE_REDACTION_VALUES"]
+            )
+            self.assertEqual(redaction_values, ["resolved-secret"])
             events.append("environment-ready")
             return (
                 environment_provisioner,
@@ -238,6 +251,7 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(
             events,
             [
+                "credentials-ready",
                 "environment-ready",
                 "cell-ready",
                 "gate",
@@ -558,7 +572,7 @@ class AcceptanceRunTest(unittest.TestCase):
             ["evidence/leaked.bin"],
         )
 
-    def test_runtime_artifact_scan_rejects_binary_secret(self) -> None:
+    def test_runtime_artifact_audit_rejects_binary_secret_without_rewrite(self) -> None:
         module = load_module()
         secret = "resolved-binary-secret"
         with tempfile.TemporaryDirectory() as tmp:
@@ -566,18 +580,19 @@ class AcceptanceRunTest(unittest.TestCase):
             artifact = run_dir / "evidence.bin"
             artifact.write_bytes(b"\x00prefix-" + secret.encode() + b"-suffix")
 
-            redacted, leaked = module.redact_runtime_artifacts(
+            leaked = module.audit_runtime_artifacts(
                 run_dir,
                 (secret,),
             )
-            redacted_bytes = artifact.read_bytes()
+            preserved_bytes = artifact.read_bytes()
 
-        self.assertEqual(redacted, ["evidence.bin"])
         self.assertEqual(leaked, ["evidence.bin"])
-        self.assertNotIn(secret.encode(), redacted_bytes)
-        self.assertIn(b"[REDACTED]", redacted_bytes)
+        self.assertEqual(
+            preserved_bytes,
+            b"\x00prefix-" + secret.encode() + b"-suffix",
+        )
 
-    def test_runtime_artifact_scan_removes_secret_path(self) -> None:
+    def test_runtime_artifact_audit_rejects_secret_path_without_removal(self) -> None:
         module = load_module()
         secret = "resolved-path-secret"
         with tempfile.TemporaryDirectory() as tmp:
@@ -587,19 +602,18 @@ class AcceptanceRunTest(unittest.TestCase):
             artifact = secret_parent / "result.txt"
             artifact.write_text("safe content", encoding="utf-8")
 
-            redacted, leaked = module.redact_runtime_artifacts(
+            leaked = module.audit_runtime_artifacts(
                 run_dir,
                 (secret,),
             )
 
-            self.assertFalse(artifact.exists())
-            self.assertFalse(secret_parent.exists())
+            self.assertTrue(artifact.exists())
+            self.assertTrue(secret_parent.exists())
 
         expected_path = f"evidence-{secret}/result.txt"
-        self.assertEqual(redacted, [expected_path])
         self.assertEqual(leaked, [expected_path])
 
-    def test_runtime_artifact_scan_checks_hidden_artifacts(self) -> None:
+    def test_runtime_artifact_audit_checks_hidden_artifacts_without_rewrite(self) -> None:
         module = load_module()
         secret = "resolved-hidden-secret"
         with tempfile.TemporaryDirectory() as tmp:
@@ -610,16 +624,49 @@ class AcceptanceRunTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            redacted, leaked = module.redact_runtime_artifacts(
+            leaked = module.audit_runtime_artifacts(
                 run_dir,
                 (secret,),
             )
 
             content = artifact.read_text(encoding="utf-8")
 
-        self.assertEqual(redacted, [".env"])
         self.assertEqual(leaked, [".env"])
-        self.assertNotIn(secret, content)
+        self.assertIn(secret, content)
+
+    def test_runtime_artifact_audit_checks_role_metadata(self) -> None:
+        module = load_module()
+        secret = "resolved-role-secret"
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            role_dir = run_dir / ".artifact-roles"
+            role_dir.mkdir()
+            artifact = role_dir / "report.json"
+            artifact.write_text(
+                json.dumps({"extra": secret}),
+                encoding="utf-8",
+            )
+
+            leaked = module.audit_runtime_artifacts(
+                run_dir,
+                (secret,),
+            )
+
+        self.assertEqual(leaked, [".artifact-roles/report.json"])
+
+    def test_runtime_artifact_audit_uses_canonical_json_redaction(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            artifact = run_dir / "report.json"
+            artifact.write_text(
+                '{"outer":{"password":"1"}}',
+                encoding="utf-8",
+            )
+
+            leaked = module.audit_runtime_artifacts(run_dir, ())
+
+        self.assertEqual(leaked, ["report.json"])
 
     def test_runtime_artifact_scan_rejects_symlink_without_following_it(
         self,
@@ -636,14 +683,13 @@ class AcceptanceRunTest(unittest.TestCase):
             link = run_dir / "linked.bin"
             link.symlink_to(external)
 
-            redacted, leaked = module.redact_runtime_artifacts(
+            leaked = module.audit_runtime_artifacts(
                 run_dir,
                 (secret,),
             )
 
             self.assertEqual(external.read_bytes(), original)
 
-        self.assertEqual(redacted, [])
         self.assertEqual(leaked, ["linked.bin"])
 
     def test_environment_gate_without_typed_runtime_evidence_is_unproven(
@@ -1571,7 +1617,7 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertIn("count=1", redacted)
         self.assertIn("password=[REDACTED]", redacted)
 
-    def test_runtime_artifact_redaction_removes_resolved_secret_values(self) -> None:
+    def test_runtime_artifact_audit_detects_resolved_secret_values(self) -> None:
         module = load_module()
         secret = "artifact-secret-value"
         with tempfile.TemporaryDirectory() as tmp:
@@ -1588,21 +1634,16 @@ class AcceptanceRunTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            redacted_paths, leaked_paths = module.redact_runtime_artifacts(
+            leaked_paths = module.audit_runtime_artifacts(
                 root,
                 (secret,),
             )
             serialized = artifact.read_text(encoding="utf-8")
 
-        self.assertEqual(
-            redacted_paths,
-            ["reports/gate.json"],
-        )
         self.assertEqual(leaked_paths, ["reports/gate.json"])
-        self.assertNotIn(secret, serialized)
-        self.assertIn("[REDACTED]", serialized)
+        self.assertIn(secret, serialized)
         self.assertIn('"count": 1', serialized)
-        self.assertNotIn('"password": "1"', serialized)
+        self.assertIn('"password": "1"', serialized)
 
     def test_runtime_secret_scan_redacts_high_entropy_canary_only(self) -> None:
         module = load_module()
@@ -1620,7 +1661,7 @@ class AcceptanceRunTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            _, leaked_paths = module.redact_runtime_artifacts(
+            leaked_paths = module.audit_runtime_artifacts(
                 root,
                 (canary, "1"),
             )
@@ -1630,8 +1671,7 @@ class AcceptanceRunTest(unittest.TestCase):
             leaked_paths,
             ["reports/gate.json"],
         )
-        self.assertNotIn(canary, serialized)
-        self.assertIn("[REDACTED]", serialized)
+        self.assertIn(canary, serialized)
         self.assertIn('"count": 1', serialized)
 
     def test_build_run_report_deduplicates_review_commands_by_command_text(self) -> None:

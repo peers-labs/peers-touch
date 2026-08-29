@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   accountReset: vi.fn(),
   sidebarReset: vi.fn(),
   globalContextReset: vi.fn(),
+  restoreSession: vi.fn(),
 }));
 
 vi.mock('./identityPipeline', () => ({
@@ -34,7 +35,7 @@ vi.mock('../store/session', () => ({
         ? { actorId: mocks.currentActorId }
         : null,
       reset: mocks.sessionReset,
-      restoreSession: vi.fn(),
+      restoreSession: mocks.restoreSession,
     }),
   },
 }));
@@ -121,5 +122,18 @@ describe('identity handler actor-scoped projection cleanup', () => {
     expect(mocks.socialReset).not.toHaveBeenCalled();
     expect(mocks.notificationReset).not.toHaveBeenCalled();
     expect(mocks.navigationBadgeReset).not.toHaveBeenCalled();
+  });
+
+  it('does not restore a switched account twice', async () => {
+    const handler = mocks.handlers.get('refresh-current-session');
+    expect(handler).toBeDefined();
+
+    await handler?.({
+      reason: 'switch',
+      actorId: 'ptid:peer:bob',
+      loginMethod: 'password',
+    });
+
+    expect(mocks.restoreSession).not.toHaveBeenCalled();
   });
 });

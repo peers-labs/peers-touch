@@ -3,6 +3,7 @@
   "plan": "closure-mp-w11",
   "description": "Machine-readable closure contract for MP-W11 Atomic Cutover And Completion Audit. Every deliverable here must be mechanically verified. No AI discretion over what counts as done.\n",
   "closure_contract": "MP-W11",
+  "claimed_runtime_cell": "desktop-linux-native",
   "selected_gates": [
     {
       "id": "chat-w11-forbidden-scan",
@@ -38,6 +39,23 @@
       "description": "Validate native runner fail-closed evidence, MP-W13 no-bypass DOM actions, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey.",
       "required_by": [
         "closure:MP-W11"
+      ]
+    },
+    {
+      "id": "chat-native-product-closure-e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_product_closure_entry",
+      "timeout_seconds": 3600,
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "tier": "env-evidence",
+      "description": "Run Alice and Bob through real Native Chat DOM actions and prove transcript, thread, reaction, toolbar geometry, identity, Station attribution, settings/background, attachment conservation, restart and cleanup.",
+      "required_by": [
+        "closure:MP-W11"
+      ],
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
       ]
     },
     {

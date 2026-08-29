@@ -1,6 +1,4 @@
-use crate::proto::chat::{
-    DeviceEventDelivery, DeviceQueueItem, PreparedEndpointPayloadKind,
-};
+use crate::proto::chat::{DeviceEventDelivery, DeviceQueueItem, PreparedEndpointPayloadKind};
 use prost::Message;
 use sha2::{Digest, Sha256};
 

@@ -304,8 +304,16 @@ class IdentityRuntime {
   };
 
   loginWithOAuthBridge = async (): Promise<void> => {
+    const sessionId = useOAuth2Store.getState().completedLoopbackSessionId;
+    if (!sessionId) {
+      throw new AuthCommandException({
+        code: 'UNAUTHORIZED',
+        message: 'oauth loopback session is missing',
+      });
+    }
     markLocalIdentityAction();
-    const resp = await api.ensureStationSession();
+    const resp = await api.ensureStationSession(sessionId);
+    useSessionStore.getState().activateAuthenticatedSession(resp);
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
       reason: 'oauth_bridge',
@@ -317,8 +325,8 @@ class IdentityRuntime {
 
   switchAccount = async (accountId: string): Promise<void> => {
     markLocalIdentityAction();
-    await api.accountSwitch(accountId);
-    const restored = await api.authRestoreSession();
+    const restored = await api.accountSwitch(accountId);
+    useSessionStore.getState().activateAuthenticatedSession(restored);
     await runIdentityPipeline({
       reason: 'switch',
       actorId: restored.actor_id ?? accountId,

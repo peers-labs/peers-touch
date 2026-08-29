@@ -89,6 +89,53 @@ class ProvisionerBaseClassTests(unittest.TestCase):
             (values["canary"],),
         )
 
+    def test_prepare_credentials_resolves_once_and_reuses_cached_values(self):
+        credential = CredentialRef(id="canary", source_ref="env:CANARY")
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(
+                id="home-station",
+                credentials=(credential,),
+            )
+        )
+
+        with patch.object(
+            CredentialRef,
+            "resolve",
+            return_value="resolved-secret",
+        ) as resolve:
+            first_refs, first_values = provisioner.prepare_credentials()
+            second_refs, second_values = provisioner.prepare_credentials()
+
+        self.assertEqual(resolve.call_count, 1)
+        self.assertEqual(first_refs, second_refs)
+        self.assertEqual(first_values, second_values)
+        self.assertIsNot(first_values, second_values)
+        self.assertEqual(
+            provisioner.resolved_credential_values,
+            ("resolved-secret",),
+        )
+
+    def test_prepare_credentials_replays_failure_without_reresolving(self):
+        credential = CredentialRef(id="canary", source_ref="env:CANARY")
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(
+                id="home-station",
+                credentials=(credential,),
+            )
+        )
+
+        with patch.object(
+            CredentialRef,
+            "resolve",
+            side_effect=RuntimeError("missing credential"),
+        ) as resolve:
+            with self.assertRaises(BlockedError):
+                provisioner.prepare_credentials()
+            with self.assertRaises(BlockedError):
+                provisioner.prepare_credentials()
+
+        self.assertEqual(resolve.call_count, 1)
+
     def test_resolved_credentials_survive_later_resolution_failure(self):
         first = CredentialRef(id="first", source_ref="env:FIRST")
         second = CredentialRef(id="second", source_ref="env:SECOND")

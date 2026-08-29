@@ -154,18 +154,12 @@ fn position_acceptance_window(
         })?
         .to_logical::<f64>(scale)
         .width;
-    let window_x = acceptance_window_x(
-        monitor_x,
-        monitor_width,
-        actual_window_width,
-        slot,
-        count,
-    )
-    .ok_or_else(|| {
-        std::io::Error::other(format!(
+    let window_x = acceptance_window_x(monitor_x, monitor_width, actual_window_width, slot, count)
+        .ok_or_else(|| {
+            std::io::Error::other(format!(
             "acceptance window width {actual_window_width} exceeds monitor width {monitor_width}"
         ))
-    })?;
+        })?;
     window
         .set_position(tauri::LogicalPosition::new(window_x, window_y))
         .map_err(|error| {
@@ -255,9 +249,9 @@ fn configure_acceptance_window(
         .map_err(|error| {
             std::io::Error::other(format!("acceptance window resize failed: {error}"))
         })?;
-    window
-        .show()
-        .map_err(|error| std::io::Error::other(format!("acceptance window show failed: {error}")))?;
+    window.show().map_err(|error| {
+        std::io::Error::other(format!("acceptance window show failed: {error}"))
+    })?;
     window.set_always_on_top(true).map_err(|error| {
         std::io::Error::other(format!("acceptance window layering failed: {error}"))
     })?;

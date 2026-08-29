@@ -162,7 +162,7 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
             _NATIVE_ADAPTER_PROBE_SCRIPT,
         )
 
-    def test_ready_holds_source_lease_through_manifest_validation(self) -> None:
+    def test_ready_retains_source_lease_until_stop(self) -> None:
         source = (
             REPO_ROOT
             / "tooling"
@@ -172,10 +172,31 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         acquired = source.index("lease.acquire()")
+        retained = source.index("self._source_lease = lease", acquired)
+        persistent = source.index("persistent=True", acquired)
+        persisted_owner = source.index('"sourceLeaseOwner": source_lease_owner', acquired)
         validated = source.index("manifest.validate(self.contract)")
-        released = source.index("lease.release()", validated)
+        returned = source.index("return manifest", validated)
+        rollback = source.index("except BaseException as error:", returned)
+        rollback_failure = source.index("if cleanup_failures:", rollback)
+        rollback_release = source.index(
+            "self._release_source_lease()",
+            rollback_failure,
+        )
+        rollback_state_delete = source.index(
+            "self.state_path.unlink(missing_ok=True)",
+            rollback_release,
+        )
+        stop = source.index("def stop(", returned)
+        released = source.index("self._release_source_lease(state)", stop)
         self.assertLess(acquired, validated)
-        self.assertLess(validated, released)
+        self.assertLess(acquired, retained)
+        self.assertLess(acquired, persistent)
+        self.assertLess(acquired, persisted_owner)
+        self.assertLess(validated, returned)
+        self.assertLess(rollback_failure, rollback_release)
+        self.assertLess(rollback_release, rollback_state_delete)
+        self.assertLess(returned, released)
         self.assertIn(
             'remote_control = Path(str(acquired["controlPath"]))',
             source,
@@ -190,6 +211,100 @@ class LinuxRuntimeCellContractTests(unittest.TestCase):
             ),
             1,
         )
+        self.assertEqual(
+            source.count('"sourceLeaseOwner": source_lease_owner'),
+            3,
+        )
+
+    def test_source_lease_release_is_idempotent(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        lease = Mock()
+        provisioner._source_lease = lease
+
+        provisioner._release_source_lease()
+        provisioner._release_source_lease()
+
+        lease.release.assert_called_once_with()
+        self.assertIsNone(provisioner._source_lease)
+
+    def test_source_lease_release_failure_retains_handle_for_retry(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        lease = Mock()
+        lease.release.side_effect = RuntimeError("release failed")
+        provisioner._source_lease = lease
+
+        with self.assertRaisesRegex(RuntimeError, "release failed"):
+            provisioner._release_source_lease()
+
+        self.assertIs(provisioner._source_lease, lease)
+
+    def test_failed_remote_cleanup_retains_source_lease(self) -> None:
+        provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+        provisioner.contract = SimpleNamespace(cell_id="desktop-linux-native")
+        provisioner._actors = {}
+        provisioner._endpoints = {}
+        provisioner._stop_tunnel_supervisor = Mock()
+        provisioner._stop_remote = Mock(
+            side_effect=ProvisioningError("remote cleanup failed")
+        )
+        provisioner._remote_cleanup_audit = Mock(
+            return_value={"clean": False}
+        )
+        provisioner._release_source_lease = Mock()
+        provisioner._read_state = Mock(
+            return_value={
+                "runId": "run-1",
+                "containerName": "runtime-cell",
+                "remoteControl": "/tmp/remote-control.py",
+            }
+        )
+
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "remote cleanup failed",
+        ):
+            provisioner.stop()
+
+        provisioner._release_source_lease.assert_not_called()
+
+    def test_ready_reentry_preserves_preparing_owner_until_recovery_stop(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provisioner = object.__new__(NativeDesktopLinuxProvisioner)
+            provisioner.contract = SimpleNamespace(
+                cell_id="desktop-linux-native"
+            )
+            provisioner._actors = {}
+            provisioner._endpoints = {}
+            provisioner.state_path = Path(tmp) / "state.json"
+            provisioner.tunnel_state_path = Path(tmp) / "tunnels.json"
+            provisioner.state_path.write_text("{}", encoding="utf-8")
+            provisioner.tunnel_state_path.write_text("{}", encoding="utf-8")
+            provisioner._stop_tunnel_supervisor = Mock()
+            provisioner._release_source_lease = Mock()
+            state = {
+                "runId": "run-1",
+                "state": "PREPARING",
+                "containerName": "runtime-cell",
+                "sourceLeaseOwner": "runtime-cell:desktop-linux-native:run-1",
+            }
+            provisioner._read_state = Mock(return_value=state)
+
+            with self.assertRaisesRegex(
+                BlockedError,
+                "recoverable PREPARING owner state; run stop before ready",
+            ):
+                provisioner.ready()
+
+            self.assertTrue(provisioner.state_path.exists())
+            provisioner._release_source_lease.assert_not_called()
+
+            result = provisioner.stop()
+
+        provisioner._release_source_lease.assert_called_once_with(state)
+        self.assertEqual(result["state"], "CLEANED")
+        self.assertTrue(result["alreadyClean"])
 
     def test_make_exposes_the_four_cell_lifecycle_commands(self) -> None:
         source = (

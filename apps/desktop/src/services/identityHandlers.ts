@@ -35,7 +35,7 @@ registerIdentityHandler('clear-client-storage-caches', async (payload) => {
 });
 
 registerIdentityHandler('refresh-current-session', async (payload) => {
-  if (payload.reason === 'logout') {
+  if (payload.reason === 'logout' || payload.reason === 'switch') {
     return;
   }
   try {

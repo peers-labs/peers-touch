@@ -17,6 +17,8 @@ import re
 import sys
 from pathlib import Path
 
+from tooling.acceptance.core.evidence_store import ArtifactSession, source_identity
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
 MANIFEST_PATH = Path(
     os.environ.get(
@@ -163,18 +165,30 @@ SCANNERS = {
     "tauri-command-absent": scan_tauri_command_absent,
 }
 
-REPORT_PATH = REPO_ROOT / "tooling" / "acceptance" / "reports" / "chat-w11-forbidden-scan.json"
-
-
 def write_report(checked: int, violations: list[str]) -> None:
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     report = {
+        "artifactKind": "acceptance-gate-evidence-report",
+        "gateId": "chat-w11-forbidden-scan",
         "status": "PASS" if not violations else "FAIL",
         "assertions": [{"name": f"target-{i}", "passed": True} for i in range(checked)],
         "violations": violations,
         "checkedTargets": checked,
     }
-    REPORT_PATH.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    with ArtifactSession(
+        repo_root=REPO_ROOT,
+        gate_id="chat-w11-forbidden-scan",
+        source=source_identity(REPO_ROOT),
+    ) as session:
+        session.write_json(
+            "reports/chat-w11-forbidden-scan.json",
+            report,
+            role="scan-report",
+        )
+        session.complete(
+            status="passed" if not violations else "failed",
+            completion_status="DONE" if not violations else "PARTIAL",
+            proof_status="PROVEN" if not violations else "UNPROVEN",
+        )
 
 
 def main() -> int:

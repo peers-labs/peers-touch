@@ -576,8 +576,8 @@ mod tests {
 
     #[test]
     fn legacy_conversation_projection_decodes_without_member_roles() {
-        let projection: RecoveryConversationProjection = serde_json::from_value(
-            serde_json::json!({
+        let projection: RecoveryConversationProjection =
+            serde_json::from_value(serde_json::json!({
                 "conversation_id": "conversation-legacy",
                 "authority_station_id": "station-local",
                 "kind": 2,
@@ -588,9 +588,8 @@ mod tests {
                 "mls_epoch": 1,
                 "active": true,
                 "updated_at_unix_ms": 100,
-            }),
-        )
-        .unwrap();
+            }))
+            .unwrap();
 
         assert!(projection.member_roles.is_empty());
     }

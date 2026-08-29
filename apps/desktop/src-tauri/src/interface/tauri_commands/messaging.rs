@@ -298,9 +298,7 @@ fn attachment_projection_json(
 }
 
 fn allow_attachment_preview(window: &Window, path: &Path) -> Result<(), String> {
-    let scope = window
-        .app_handle()
-        .asset_protocol_scope();
+    let scope = window.app_handle().asset_protocol_scope();
     scope
         .allow_file(path)
         .map_err(|error| format!("allow messaging attachment preview: {error}"))?;
@@ -543,8 +541,7 @@ pub fn messaging_create_group(
             false
         }
     };
-    let creation_state =
-        group_creation_state(&progress, &prepared.command_id, projection_ready);
+    let creation_state = group_creation_state(&progress, &prepared.command_id, projection_ready);
     AppResult::success(json!({
         "conversation_id": prepared.conversation_id,
         "command_id": prepared.command_id,

@@ -172,7 +172,13 @@ def _parse_scalar(value: str) -> Any:
 def validate_contract(contract: dict[str, Any], gate_defs: dict[str, Any]) -> list[str]:
     errors: list[str] = []
 
-    required_fields = {"version", "workstream", "deliverables", "gate_order"}
+    required_fields = {
+        "version",
+        "workstream",
+        "claimed_runtime_cell",
+        "deliverables",
+        "gate_order",
+    }
     for field in required_fields:
         if field not in contract:
             errors.append(f"contract missing required field: {field}")
@@ -222,6 +228,21 @@ def validate_contract(contract: dict[str, Any], gate_defs: dict[str, Any]) -> li
         if gid not in gate_defs:
             errors.append(f"gate_order references unknown gate: {gid!r}")
 
+    claimed_runtime_cell = contract.get("claimed_runtime_cell")
+    if not isinstance(claimed_runtime_cell, str) or not claimed_runtime_cell:
+        errors.append("contract must declare a claimed_runtime_cell")
+    else:
+        for gid in gate_order:
+            required_cells = gate_defs.get(gid, {}).get(
+                "requiredRuntimeCells",
+                [],
+            )
+            if required_cells and claimed_runtime_cell not in required_cells:
+                errors.append(
+                    f"gate {gid!r} does not support claimed runtime cell "
+                    f"{claimed_runtime_cell!r}"
+                )
+
     closure_gates_in_order = {g for g in gate_order if g in CLOSURE_GATE_IDS}
     if not closure_gates_in_order:
         errors.append(
@@ -259,6 +280,7 @@ def generate_plan(contract: dict[str, Any], gate_defs: dict[str, Any]) -> dict[s
         "plan": f"closure-{contract['workstream'].lower()}",
         "description": contract.get("description", ""),
         "closure_contract": contract["id"] if "id" in contract else contract["workstream"],
+        "claimed_runtime_cell": contract["claimed_runtime_cell"],
         "selected_gates": selected_gates,
     }
 
@@ -272,6 +294,7 @@ def generate_manifest(contract: dict[str, Any]) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "version": 1,
         "workstream": contract["workstream"],
+        "claimed_runtime_cell": contract["claimed_runtime_cell"],
         "scan_targets": {},
     }
 

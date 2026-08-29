@@ -1,3 +1,4 @@
+use crate::domain::auth::session::validate_token;
 use crate::domain::pin_lock::{self, EncryptedSession, PinProtection};
 use crate::infrastructure::avatar_cache;
 use crate::infrastructure::local_scope;
@@ -42,6 +43,21 @@ pub struct AccountIdentity {
     /// Whether this account has an active (restorable) session, regardless of PIN.
     #[serde(default)]
     pub has_session: bool,
+}
+
+pub struct UnlockedAccountSession {
+    pub token: String,
+    pub account_id: String,
+    pub actor_id: Option<String>,
+}
+
+fn token_actor_id(token: &str) -> Result<String, String> {
+    let session =
+        validate_token(token).map_err(|_| "session token is invalid or expired".to_string())?;
+    if session.actor_id.trim().is_empty() {
+        return Err("session token is missing its actor subject".to_string());
+    }
+    Ok(session.actor_id)
 }
 
 pub fn account_identity_path() -> Result<PathBuf, String> {
@@ -271,7 +287,9 @@ pub fn set_account_pin(
     let protection = pin_lock::create_pin_protection(pin)?;
 
     if let Some(token) = current_token {
-        let encrypted = pin_lock::encrypt_session(pin, &protection.enc_salt, account_id, token)?;
+        let actor_id = token_actor_id(token)?;
+        let encrypted =
+            pin_lock::encrypt_session(pin, &protection.enc_salt, account_id, &actor_id, token)?;
         account.encrypted_session = Some(encrypted);
         account.has_session = true;
     }
@@ -294,7 +312,9 @@ pub fn save_encrypted_session(account_id: &str, pin: &str, token: &str) -> Resul
         .as_ref()
         .ok_or_else(|| "no PIN set for this account".to_string())?;
 
-    let encrypted = pin_lock::encrypt_session(pin, &protection.enc_salt, account_id, token)?;
+    let actor_id = token_actor_id(token)?;
+    let encrypted =
+        pin_lock::encrypt_session(pin, &protection.enc_salt, account_id, &actor_id, token)?;
     account.encrypted_session = Some(encrypted);
     account.session_expires_at = extract_jwt_exp(token);
     account.has_session = true;
@@ -327,7 +347,7 @@ pub fn verify_account_pin(account_id: &str, pin: &str) -> Result<(), pin_lock::P
 pub fn unlock_account_session(
     account_id: &str,
     pin: &str,
-) -> Result<String, pin_lock::PinVerifyError> {
+) -> Result<UnlockedAccountSession, pin_lock::PinVerifyError> {
     let mut state = read_state().map_err(|e| pin_lock::PinVerifyError::Internal(e))?;
     let account = state
         .accounts
@@ -359,6 +379,11 @@ pub fn unlock_account_session(
         .encrypted_session
         .as_ref()
         .ok_or_else(|| pin_lock::PinVerifyError::Internal("no encrypted session".to_string()))?;
+    if encrypted.account_id != account_id {
+        return Err(pin_lock::PinVerifyError::Internal(
+            "encrypted session account does not match the selected account".to_string(),
+        ));
+    }
 
     let enc_salt = account
         .pin_protection
@@ -366,8 +391,13 @@ pub fn unlock_account_session(
         .map(|p| p.enc_salt.as_str())
         .unwrap_or("");
 
-    pin_lock::decrypt_session(pin, enc_salt, encrypted)
-        .map_err(|e| pin_lock::PinVerifyError::Internal(e))
+    let token = pin_lock::decrypt_session(pin, enc_salt, encrypted)
+        .map_err(pin_lock::PinVerifyError::Internal)?;
+    Ok(UnlockedAccountSession {
+        token,
+        account_id: encrypted.account_id.clone(),
+        actor_id: (!encrypted.actor_id.trim().is_empty()).then(|| encrypted.actor_id.clone()),
+    })
 }
 
 /// Clear stored session for an account (e.g. on explicit logout).

@@ -20,22 +20,13 @@ pub trait MlsCrypto: Send + Sync {
     ) -> Result<MlsCommitOutcome, String>;
 
     /// Process a welcome message to join a group.
-    fn process_welcome(
-        &self,
-        welcome: &[u8],
-    ) -> Result<Self::GroupState, String>;
+    fn process_welcome(&self, welcome: &[u8]) -> Result<Self::GroupState, String>;
 
     /// Serialize group state for durable persistence.
-    fn serialize_group_state(
-        &self,
-        state: &Self::GroupState,
-    ) -> Result<Vec<u8>, String>;
+    fn serialize_group_state(&self, state: &Self::GroupState) -> Result<Vec<u8>, String>;
 
     /// Deserialize group state from persisted bytes.
-    fn deserialize_group_state(
-        &self,
-        bytes: &[u8],
-    ) -> Result<Self::GroupState, String>;
+    fn deserialize_group_state(&self, bytes: &[u8]) -> Result<Self::GroupState, String>;
 }
 
 /// Result of MLS application message decryption.

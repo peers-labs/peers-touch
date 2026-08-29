@@ -227,7 +227,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             if gate_id == "chat-federated-browser-prereq":
                 return self._ready(manifest)
 
-            credential_refs, _ = self._resolve_credentials()
+            credential_refs, _ = self.prepare_credentials()
             fixture = next(
                 (
                     item
