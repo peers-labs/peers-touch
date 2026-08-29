@@ -3449,6 +3449,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   binding test, Rust compilation, 105 focused Foundation tests, and `git diff
   --check` pass. AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending checkpoint
   deployment and exact-source verification.
+- Checkpoint `143a98063a8c340c3ab1ca1841e13632fc707f18` was deployed
+  exact-source to profile `two`. Run
+  `20260829T224556120320Z-30a9c4e61d6d16ecd94bb8dd4ec3d7e0`
+  reached Browser AS-F06 recovery but lost authenticated capability readback
+  after Browser restart: the renderer lifecycle remained `ready` while both
+  local and Station capability probes returned `authentication required`.
+  The immutable result is `PARTIAL / UNPROVEN`; cleanup and redaction passed.
+  Station logs showed a successful Browser session takeover followed by late
+  `session_revoked` responses from the replaced token. The Rust event-stream
+  revocation bridge previously emitted those stale failures globally and could
+  therefore clear the newly restored session. Revocation delivery is now
+  fenced to the token used by the failed stream; a replaced token terminates
+  only its stale stream, while a failure for the current token still emits the
+  canonical session-revoked event. Two focused token-fencing tests, the HTTP
+  Gateway restore-binding test, Rust compilation, 105 focused Foundation
+  tests, and `git diff --check` pass. AS-F06 and G-F remain
+  `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source
+  verification.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
