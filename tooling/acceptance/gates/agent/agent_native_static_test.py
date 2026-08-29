@@ -479,6 +479,8 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("resolveCancellation({ turnId, result })", scenario)
         self.assertIn("toLowerCase() !== 'cancelled'", scenario)
         self.assertIn("terminalEvent?.eventType !== 'cancelled'", scenario)
+        self.assertIn("!replay.deliveryOnly", source)
+        self.assertIn("replay.streamGeneration !== controller.streamGeneration", source)
         self.assertNotIn("setTimeout(resolve, 50)", scenario)
         self.assertNotIn("disconnectTransport()", scenario)
 

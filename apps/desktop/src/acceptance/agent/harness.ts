@@ -16,6 +16,7 @@ import {
   type AgentRuntimeBudgetInput,
   type AgentTurnSourceDelivery,
   type AgentTurnStreamController,
+  type StreamEvent,
 } from '../../services/desktop_api';
 import {
   flushAgentTurnRecoveryPersistence,
@@ -500,13 +501,29 @@ function startObservedFoundationTurn(input: {
   });
   let settled = false;
   let timeout = 0;
+  let unsubscribeReplay: (() => void) | null = null;
   const finish = (ok: boolean, error: string | null) => {
     if (settled) return;
     settled = true;
     window.clearTimeout(timeout);
+    unsubscribeReplay?.();
+    unsubscribeReplay = null;
     resolveResult({ ok, error, events });
   };
   let controller!: AgentTurnStreamController;
+  const observeEvent = (event: StreamEvent) => {
+    const observed = {
+      event: event.event,
+      data: evidenceValue(event.data) as Record<string, unknown>,
+      observedAt: new Date().toISOString(),
+    };
+    events.push(observed);
+    input.onEvent?.(observed, events, controller, () => finish(true, null));
+    if (!firstEventObserved) {
+      firstEventObserved = true;
+      resolveFirstEvent(observed);
+    }
+  };
   controller = streamAgentTurn({
     conversation_id: input.conversationId,
     agent_id: input.agentId,
@@ -520,19 +537,33 @@ function startObservedFoundationTurn(input: {
     attachments: input.attachments,
     requested_budget: input.requestedBudget,
     stream_id: input.streamId,
-  }, (event) => {
-    const observed = {
-      event: event.event,
-      data: evidenceValue(event.data) as Record<string, unknown>,
-      observedAt: new Date().toISOString(),
+  }, observeEvent, () => finish(true, null), (error) => finish(false, error.message), sourcePtid);
+  unsubscribeReplay = eventBus.subscribe(EVENT.AGENT_TURN_STREAM_EVENT, (payload) => {
+    const replay = payload as typeof payload & {
+      deliveryOnly?: boolean;
+      sourceDelivery?: AgentTurnSourceDelivery;
     };
-    events.push(observed);
-    input.onEvent?.(observed, events, controller, () => finish(true, null));
-    if (!firstEventObserved) {
-      firstEventObserved = true;
-      resolveFirstEvent(observed);
+    if (
+      !replay.deliveryOnly
+      || replay.ptid !== sourcePtid
+      || replay.conversationId !== input.conversationId
+      || replay.streamGeneration !== controller.streamGeneration
+    ) {
+      return;
     }
-  }, () => finish(true, null), (error) => finish(false, error.message), sourcePtid);
+    const event = {
+      event: replay.event,
+      data: replay.data,
+      sourceDelivery: replay.sourceDelivery,
+    };
+    observeEvent(event);
+    const terminal = classifyAgentTurnTerminalEvent(event);
+    if (terminal === 'failed') {
+      finish(false, String(event.data.error || 'agent.error.streamFailed'));
+    } else if (terminal !== null && terminal !== 'interrupted') {
+      finish(true, null);
+    }
+  });
   timeout = window.setTimeout(() => {
     controller.abort();
     finish(false, 'agent.acceptance.turnSubmissionTimeout');
