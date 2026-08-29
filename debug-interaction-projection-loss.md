@@ -15,11 +15,11 @@
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
 | A | A concurrent `loadMessages` request overwrites the conversation store with an empty result after the Station endpoint switch. | High | Medium | Inconclusive: the frontend store remained empty for 200 samples. |
-| B | The Harness and Engine snapshot read different active profile or Engine instances during endpoint switching. | High | Medium | Confirmed at the API boundary; account/profile identity still needs one final observation. |
+| B | The Harness and Engine snapshot read different active profile or Engine instances during endpoint switching. | High | Medium | Confirmed: the same process resolves `station_url_*` through the Gateway and `station_peer_*` through the Tauri window. |
 | C | Preparing the retrying edit temporarily removes the committed message row from the conversation projection query. | Medium | Medium | Rejected: Engine projection and Rust list retained the target throughout the failure. |
 | D | The Rust projection remains present but TypeScript projection mapping or filtering drops the message. | Medium | Low | Rejected: both raw and mapped frontend store arrays were empty. |
 | E | The authenticated actor guard becomes false, so `loadMessages` returns before reading and storing Rust projections. | High | Low | Rejected: Group samples retain actor `352266494551261187` with `authenticated=true`. |
-| F | The WebView API wrapper and the HTTP Gateway resolve different active runtime contexts. | Medium | Low | Confirmed: Group samples return zero WebView API messages while the HTTP Gateway returns the same seven Rust messages for all 200 attempts. |
+| F | The WebView API wrapper and the HTTP Gateway resolve different active runtime contexts. | Medium | Low | Confirmed: the paths can resolve different account IDs, Engine profiles, and endpoint devices inside one process. |
 
 ## Log Evidence
 - Pre-fix Gate run `20260829T023644548452Z-8983d0bd277b21b69d93e766da7eaa4e` failed after 120 seconds.
@@ -33,6 +33,8 @@
 - Debug lines 4-14 prove the Group split for 200 bounded samples: authenticated actor present, WebView API 0 messages, HTTP Gateway 7 messages including the target, frontend raw/mapped store 0 messages, and target DOM absent.
 - Static source inspection shows the Tauri command resolves its Engine through `WindowSessionRegistry`, while the HTTP Gateway resolves its Engine through the legacy process-global `AppState.session`.
 - Context run `20260829T033633047893Z-5c11bc21a447f7c2015be934dc5b5962` passed the complete unchanged Gate. Its Direct and Group samples had identical Tauri/Gateway account and Engine profile IDs with seven messages on both surfaces. This is a non-reproduction, not post-fix proof.
+- Process-identity run `20260829T035438061971Z-b7aa79bb190088cc4d7f9e47563132c2` also passed the unchanged Gate, but its Group sample exposed the race deterministically. Both paths used PID `1509` and the same actor. The Gateway retained `station_url_098c...` with endpoint `01M15TPT...`, while the Tauri window used `station_peer_12D3...` with endpoint `01M15TR0...`.
+- `auth_service::auth_login` writes the authoritative account ID into `AppState.session`. `bind_window_session` then incorrectly recomputes the account ID through `find_account_id_by_actor_id`, whose preferred password account depends on the mutable active Station scope. If Station peer identity becomes available between those operations, one login creates two Engine identities for the same actor.
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
@@ -41,8 +43,8 @@
 
 ## Verification Conclusion
 The failure is below the frontend store and above the persisted Engine
-projection. Authentication loss, Rust projection deletion, and TypeScript
-mapping are rejected. The remaining root-cause boundary is divergent
-window-session versus process-global runtime resolution. The next instrumented
-run also compares process ID and endpoint device identity so a cross-process
-Gateway tunnel cannot masquerade as the same logical account/profile.
+projection. Authentication loss, Rust projection deletion, TypeScript mapping,
+and cross-process tunnel routing are rejected. The root cause is a time-of-check
+identity split in `bind_window_session`: it recomputes a station-scoped account
+instead of inheriting the account ID committed by the authentication
+transaction.
