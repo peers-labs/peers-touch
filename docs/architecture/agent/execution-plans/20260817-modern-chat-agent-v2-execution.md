@@ -3307,6 +3307,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   replay/reconcile ownership exclusively with `chatRuntime`, matching the
   Desktop runtime contract. AS-F06 and G-F remain `PARTIAL / UNPROVEN` pending
   focused verification, checkpoint deployment, and another exact-source run.
+- Checkpoint `4368d1bea09c4cb632bc8005bc43a7e1b4fed4d3` was deployed
+  exact-source to profile `two`. Run
+  `20260829T184558755894Z-8ad50dcb8c21189961dae5436f2de290`
+  stopped earlier at Browser AS-F02 with
+  `agent.acceptance.foundationActiveTurnCancelMissing`; cleanup and redaction
+  passed. Station logs prove that `/sub-agent/agent/turn/cancel` returned HTTP
+  200 and cancelled the provider context immediately afterward, while the
+  Browser command bridge delivered a null parsed payload to the Harness.
+  The Harness now treats the successful command response only as an
+  acknowledgement, rejects any conflicting non-null status, and requires the
+  subsequent Station-authored `cancelled` SSE event as the terminal proof.
+  AS-F02, AS-F06, and G-F remain `PARTIAL / UNPROVEN` pending focused
+  verification, checkpoint deployment, and another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

@@ -5408,7 +5408,10 @@ export function installAcceptanceHarness(): void {
         );
 
         const activeCancellation = await api.cancelAgentTurn(activeTurnId);
-        if (String(activeCancellation.status).toLowerCase() !== 'cancelled') {
+        if (
+          activeCancellation
+          && String(activeCancellation.status).toLowerCase() !== 'cancelled'
+        ) {
           active.controller.abort();
           throw new Error('agent.acceptance.foundationActiveTurnCancelRejected');
         }
@@ -5592,10 +5595,10 @@ export function installAcceptanceHarness(): void {
           const cancellationResult = await cancellationAttempt.result;
           if (cancellationResult.error) throw cancellationResult.error;
           const activeCancellation = cancellationResult.response;
-          if (!activeCancellation) {
-            throw new Error('agent.acceptance.foundationActiveTurnCancelMissing');
-          }
-          if (String(activeCancellation.status).toLowerCase() !== 'cancelled') {
+          if (
+            activeCancellation
+            && String(activeCancellation.status).toLowerCase() !== 'cancelled'
+          ) {
             observed.controller.abort();
             throw new Error('agent.acceptance.foundationActiveTurnCancelRejected');
           }
@@ -5614,6 +5617,9 @@ export function installAcceptanceHarness(): void {
             .reverse()
             .find((event) =>
               ['done', 'error', 'cancelled'].includes(event.eventType));
+          if (terminalEvent?.eventType !== 'cancelled') {
+            throw new Error('agent.acceptance.foundationActiveTurnCancelMissing');
+          }
           preparedRuntimeEvent.current = terminalEvent ?? null;
           scenarioFacts = {
             events: normalizedEvents,
