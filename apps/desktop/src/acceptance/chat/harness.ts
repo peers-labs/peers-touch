@@ -1,7 +1,8 @@
+import { invoke } from '@tauri-apps/api/core';
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { refreshSocialProjection } from '../../services/socialRealtime';
 import { api } from '../../services/desktop_api';
-import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
+import type { GroupChatFederatedActorInput, RustCommandResult } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
 import { useSessionStore } from '../../store/session';
@@ -442,10 +443,20 @@ export function installAcceptanceHarness(): void {
       const apiMessages = actorId
         ? await imServiceV1.messaging.listMessages(conversationId)
         : [];
+      const nativeResponse = actorId
+        ? await invoke<RustCommandResult<{
+            messages: Array<{ message_id: string }>;
+            debug_context?: Record<string, string>;
+          }>>('messaging_list_messages', {
+            input: { conversation_id: conversationId },
+          })
+        : null;
       return {
         actorId,
         authenticated: useSessionStore.getState().authenticated,
         apiMessageIds: apiMessages.map(message => message.messageId),
+        nativeMessageIds: nativeResponse?.data?.messages.map(message => message.message_id) ?? [],
+        nativeRuntimeContext: nativeResponse?.data?.debug_context ?? null,
         before,
         after: snapshot(),
       };

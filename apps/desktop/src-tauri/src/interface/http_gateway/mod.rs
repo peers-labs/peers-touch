@@ -6921,7 +6921,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                         "pinned_at_unix_ms": m.pinned_at_unix_ms,
                         "read_by_ptids": m.read_by_ptids,
                     })).collect();
-                    to_json(AppResult::success(json!({ "messages": items })))
+                    let mut payload = json!({ "messages": items });
+                    // #region debug-point B,F:http-gateway-messaging-runtime-context
+                    #[cfg(feature = "acceptance-webdriver")]
+                    if let Some(object) = payload.as_object_mut() {
+                        object.insert(
+                            "debug_context".to_string(),
+                            json!({
+                                "account_id": account_id,
+                                "engine_profile_id": engine.profile_id(),
+                                "session_kind": "legacy-process-global",
+                            }),
+                        );
+                    }
+                    // #endregion
+                    to_json(AppResult::success(payload))
                 }
                 Err(e) => to_json(AppResult::<Value>::fail(ErrorCode::InternalError, &e, None)),
             }

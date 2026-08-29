@@ -15,11 +15,11 @@
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
 | A | A concurrent `loadMessages` request overwrites the conversation store with an empty result after the Station endpoint switch. | High | Medium | Inconclusive: the frontend store remained empty for 200 samples. |
-| B | The Harness and Engine snapshot read different active profile or Engine instances during endpoint switching. | Medium | Medium | Pending |
+| B | The Harness and Engine snapshot read different active profile or Engine instances during endpoint switching. | High | Medium | Confirmed at the API boundary; account/profile identity still needs one final observation. |
 | C | Preparing the retrying edit temporarily removes the committed message row from the conversation projection query. | Medium | Medium | Rejected: Engine projection and Rust list retained the target throughout the failure. |
 | D | The Rust projection remains present but TypeScript projection mapping or filtering drops the message. | Medium | Low | Rejected: both raw and mapped frontend store arrays were empty. |
-| E | The authenticated actor guard becomes false, so `loadMessages` returns before reading and storing Rust projections. | High | Low | Pending |
-| F | The WebView API wrapper and the HTTP Gateway resolve different active runtime contexts. | Medium | Low | Pending |
+| E | The authenticated actor guard becomes false, so `loadMessages` returns before reading and storing Rust projections. | High | Low | Rejected: Group samples retain actor `352266494551261187` with `authenticated=true`. |
+| F | The WebView API wrapper and the HTTP Gateway resolve different active runtime contexts. | Medium | Low | Confirmed: Group samples return zero WebView API messages while the HTTP Gateway returns the same seven Rust messages for all 200 attempts. |
 
 ## Log Evidence
 - Pre-fix Gate run `20260829T023644548452Z-8983d0bd277b21b69d93e766da7eaa4e` failed after 120 seconds.
@@ -28,6 +28,10 @@
 - Runtime-cell and provisioner cleanup both passed.
 - Instrumented pre-fix run `20260829T030310332405Z-637fddb6533f13fcb8c261e02d5530c1` reproduced the failure in the Group path.
 - Debug samples 4-14 show the target in Rust `messaging_list_messages` and Engine projection while frontend raw/mapped arrays and DOM remain empty.
+- Instrumented context run `20260829T031740788716Z-fbc882b2c02801a85192f0b3218f2df5` reproduced the same Group failure and preserved complete runtime-cell and Provisioner cleanup.
+- Debug line 2 proves the Direct path is coherent: authenticated actor present, WebView API 7 messages, HTTP Gateway 7 messages, frontend raw/mapped store 7 messages, and target DOM present.
+- Debug lines 4-14 prove the Group split for 200 bounded samples: authenticated actor present, WebView API 0 messages, HTTP Gateway 7 messages including the target, frontend raw/mapped store 0 messages, and target DOM absent.
+- Static source inspection shows the Tauri command resolves its Engine through `WindowSessionRegistry`, while the HTTP Gateway resolves its Engine through the legacy process-global `AppState.session`.
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
@@ -35,4 +39,9 @@
 - Instrumentation is read-only and does not change Gate assertions, retry timing, product state, or cleanup behavior.
 
 ## Verification Conclusion
-Pending instrumentation and a clean pre-fix reproduction.
+The failure is below the frontend store and above the persisted Engine
+projection. Authentication loss, Rust projection deletion, and TypeScript
+mapping are rejected. The remaining root-cause boundary is divergent
+window-session versus process-global account/Engine resolution. One final
+instrumented run will compare both account and Engine profile identities before
+the owner-layer fix is selected.
