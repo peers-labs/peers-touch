@@ -4,7 +4,10 @@ import { EVENT } from '../../kernel/events';
 import { eventDebugBuffer } from '../../kernel/events/debug';
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { refreshSocialProjection } from '../../services/socialRealtime';
-import { api } from '../../services/desktop_api';
+import {
+  api,
+  getAcceptanceAuthCommandDebugEvents,
+} from '../../services/desktop_api';
 import type { GroupChatFederatedActorInput, RustCommandResult } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
@@ -467,6 +470,7 @@ export function installAcceptanceHarness(): void {
               hasRaw: typeof payload.raw === 'string',
             };
           }),
+        authCommandTrace: getAcceptanceAuthCommandDebugEvents().slice(-60),
       };
     },
     // #endregion
