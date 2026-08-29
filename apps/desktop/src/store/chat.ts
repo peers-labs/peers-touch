@@ -962,7 +962,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
 
   selectSession: async (key: string, _sessionOverride?: Session) => {
     log.info('chat', 'Selecting session', { key });
-    if (key === get().currentSessionKey) return;
+    if (key === get().currentSessionKey) {
+      if (!isAgentDraftKey(key) && !isActiveOperation(get().operations[key])) {
+        await loadSessionMessages(key, get, set);
+      }
+      return;
+    }
     const liveOp = get().operations[key];
     // Only adopt a buffered message list while a stream is actively running for
     // this session. A buffer with no live operation is stale (e.g. left behind

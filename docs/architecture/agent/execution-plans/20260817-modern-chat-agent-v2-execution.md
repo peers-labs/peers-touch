@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `46a44c775` passed AS-F06 outage, retry, re-authentication, and durable reload in run `20260829T055049412419Z-90ce04174f23e6cf6c6ee3a99af04298`; Station now checkpoints Turn trace authority before provider side effects and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `5edd1fb02` proved the AS-F06 trace checkpoint and reached post-client-restart projection in run `20260829T061026253831Z-024fb1d63a2b9fe4d4a71d621586b5d3`; same-session selection now reconciles authoritative messages and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2935,6 +2935,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   correction checkpoints the assembled trace before starting the provider
   side effect; existing terminal paths continue to upsert richer trace data.
   AS-F06 and G-F remain `UNPROVEN` pending another exact-source run.
+- Checkpoint `5edd1fb021b6fbb3fd073f35b21d52eab837404f` was deployed
+  exact-source to profile `two`. Run
+  `20260829T061026253831Z-024fb1d63a2b9fe4d4a71d621586b5d3`
+  passed trace retrieval and advanced to the post-client-restart terminal
+  projection, where it timed out; cleanup passed. Independent Station readback
+  confirmed the Turn and assistant message were durably
+  `interrupted/station_restart_interrupted`. The Desktop store's
+  `selectSession` returned immediately when the requested key was already
+  current, even with no active operation, so an explicit post-restart
+  selection could retain a stale local projection. The local correction makes
+  same-session selection run the normal authoritative message reconciliation
+  whenever no live operation owns the session. AS-F06 and G-F remain
+  `UNPROVEN` pending another exact-source run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
