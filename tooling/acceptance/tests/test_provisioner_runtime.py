@@ -249,6 +249,20 @@ class ProfileResolutionTests(unittest.TestCase):
 
 
 class ProvisionerBlockingTests(unittest.TestCase):
+    def test_desktop_gateway_uses_committed_actor_fixture_reference(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+
+        refs, values = provisioner.prepare_credentials()
+
+        self.assertEqual(
+            refs,
+            ("fixture:apps/station/app/conf/actor.yml#preset_users",),
+        )
+        self.assertEqual(values, {})
+        self.assertEqual(provisioner.resolved_credential_values, ())
+
     def test_desktop_gateway_profile_ports_fail_closed(self):
         provisioner = LocalDesktopGatewayProvisioner(
             EnvironmentContract(id="local-desktop-gateway")
@@ -295,6 +309,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             external_log = Path(tmpdir) / "run" / PROVISION_DESKTOP_LOG
+            storage_root = Path(tmpdir) / "desktop-storage"
             with patch(
                 "tooling.acceptance.provisioners.local_desktop_gateway."
                 "current_artifact_path",
@@ -316,8 +331,12 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "os.killpg",
             ):
                 with self.assertRaises(BlockedError) as raised:
-                    provisioner._start_gateway("http://127.0.0.1:3030")
+                    provisioner._start_gateway(
+                        "http://127.0.0.1:3030",
+                        storage_root,
+                    )
                 provisioner.cleanup()
+            self.assertFalse(storage_root.exists())
 
         self.assertEqual(
             raised.exception.resource,

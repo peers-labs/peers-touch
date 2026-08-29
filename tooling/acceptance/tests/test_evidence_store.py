@@ -233,12 +233,27 @@ class EvidenceStoreTests(unittest.TestCase):
                 "status": "passed",
                 "completionStatus": "DONE",
                 "proofStatus": "PROVEN",
+                "secretScan": {
+                    "status": "passed",
+                    "scannedHighEntropyValues": 0,
+                    "scannedCredentialValues": 0,
+                    "redactedArtifacts": [],
+                },
             },
         )
         latest_path = run.publish_latest()
         run.close()
 
         self.assertEqual(manifest["state"], "DURABLE")
+        self.assertEqual(
+            manifest["result"]["secretScan"],
+            {
+                "status": "passed",
+                "scannedHighEntropyValues": 0,
+                "scannedCredentialValues": 0,
+                "redactedArtifacts": [],
+            },
+        )
         self.assertEqual(
             json.loads(self.store.resolve(report_ref).read_text())["token"],
             REDACTED,
@@ -250,6 +265,39 @@ class EvidenceStoreTests(unittest.TestCase):
             json.loads(latest_path.read_text())["manifestSha256"],
             json.loads(latest_path.read_text())["manifest"]["sha256"],
         )
+
+    def test_finalize_rejects_malformed_secret_scan_metadata(self) -> None:
+        malformed_values = (
+            "passed",
+            {
+                "status": "passed",
+                "scannedHighEntropyValues": 0,
+                "scannedCredentialValues": "credential-value",
+                "redactedArtifacts": [],
+            },
+            {
+                "status": "passed",
+                "scannedHighEntropyValues": 0,
+                "scannedCredentialValues": 0,
+                "redactedArtifacts": [],
+                "token": "not-persisted",
+            },
+        )
+
+        for secret_scan in malformed_values:
+            with self.subTest(secret_scan=secret_scan):
+                run = self.store.begin_run(
+                    "unit-gate",
+                    source={"commit": "abc"},
+                )
+                with self.assertRaises(EvidenceManifestInvalid):
+                    run.finalize(
+                        result={
+                            "status": "passed",
+                            "secretScan": secret_scan,
+                        },
+                    )
+                run.close()
 
     def test_runtime_cell_latest_pointers_are_independent(self) -> None:
         generic = self.store.begin_run("unit-gate", source={"commit": "abc"})

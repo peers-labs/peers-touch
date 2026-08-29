@@ -190,7 +190,12 @@
       "when": {
         "paths": [
           "apps/desktop/src-tauri/src/interface/http_gateway/**",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/account.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
+          "apps/desktop/src-tauri/src/application/account/**",
           "apps/desktop/src-tauri/src/application/auth/service.rs",
+          "apps/desktop/src-tauri/src/domain/pin_lock/**",
+          "apps/desktop/src-tauri/src/infrastructure/auth_identity/**",
           "apps/desktop/src-tauri/src/messaging/**",
           "apps/desktop/src/services/desktop_api.ts",
           "apps/desktop/src/services/im-service.ts"
