@@ -14,16 +14,20 @@
 ## Hypotheses & Verification
 | ID | Hypothesis | Likelihood | Effort | Evidence |
 |----|------------|------------|--------|----------|
-| A | A concurrent `loadMessages` request overwrites the conversation store with an empty result after the Station endpoint switch. | High | Medium | Pending |
+| A | A concurrent `loadMessages` request overwrites the conversation store with an empty result after the Station endpoint switch. | High | Medium | Inconclusive: the frontend store remained empty for 200 samples. |
 | B | The Harness and Engine snapshot read different active profile or Engine instances during endpoint switching. | Medium | Medium | Pending |
-| C | Preparing the retrying edit temporarily removes the committed message row from the conversation projection query. | Medium | Medium | Pending |
-| D | The Rust projection remains present but TypeScript projection mapping or filtering drops the message. | Medium | Low | Pending |
+| C | Preparing the retrying edit temporarily removes the committed message row from the conversation projection query. | Medium | Medium | Rejected: Engine projection and Rust list retained the target throughout the failure. |
+| D | The Rust projection remains present but TypeScript projection mapping or filtering drops the message. | Medium | Low | Rejected: both raw and mapped frontend store arrays were empty. |
+| E | The authenticated actor guard becomes false, so `loadMessages` returns before reading and storing Rust projections. | High | Low | Pending |
+| F | The WebView API wrapper and the HTTP Gateway resolve different active runtime contexts. | Medium | Low | Pending |
 
 ## Log Evidence
 - Pre-fix Gate run `20260829T023644548452Z-8983d0bd277b21b69d93e766da7eaa4e` failed after 120 seconds.
 - The last Harness state was `present=False, contentState=missing, edited=None`.
 - The Gate had already observed the Engine intent and outbox in `retry_wait`.
 - Runtime-cell and provisioner cleanup both passed.
+- Instrumented pre-fix run `20260829T030310332405Z-637fddb6533f13fcb8c261e02d5530c1` reproduced the failure in the Group path.
+- Debug samples 4-14 show the target in Rust `messaging_list_messages` and Engine projection while frontend raw/mapped arrays and DOM remain empty.
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
