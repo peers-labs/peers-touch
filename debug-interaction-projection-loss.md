@@ -23,9 +23,9 @@
 | G | Station restart causes Bob's Gateway and Tauri window to resolve different account or Engine identities again. | Medium | Low | Pending restart-convergence instrumentation. |
 | H | Bob's Engine consumer does not resume after Station restart, leaving the local terminal projection stale or absent. | High | Low | Pending Engine and consumption-count comparison. |
 | I | Station restart loses or fails to replay the authoritative terminal interaction state. | Medium | Low | Pending Station readback comparison. |
-| J | Bob's page reload restores the wrong conversation selection, so the Engine is correct while the queried store or DOM points elsewhere. | Medium | Low | Pending Harness active-tab/conversation comparison. |
+| J | Page reload preserves the `#/chat` URL before the Chat surface is mounted, so the navigation helper returns without restoring the visible page. | Medium | Low | Confirmed: active store selection is correct while the entire Chat DOM surface is absent. |
 | K | Bob's authentication/session becomes invalid after Station restart, preventing projection refresh. | Medium | Low | Pending authenticated actor and sync-error comparison. |
-| L | The post-reload virtual timeline mounts only the viewport tail, leaving the terminal base message off-DOM even though it remains in the active conversation store. | High | Low | Pending rendered-row and scroll-geometry evidence. |
+| L | The post-reload virtual timeline mounts only the viewport tail, leaving the terminal base message off-DOM even though it remains in the active conversation store. | High | Low | Rejected: the scroll container and every message row are absent, not merely the target row. |
 
 ## Log Evidence
 - Pre-fix Gate run `20260829T023644548452Z-8983d0bd277b21b69d93e766da7eaa4e` failed after 120 seconds.
@@ -48,6 +48,8 @@
 - Restart-instrumented run `20260829T043303965616Z-093fbc4a15f98cf7de3df4917651e02b` reproduced the later boundary as `timed out waiting for alice direct terminal state after Station restart`.
 - Debug lines 5-12 show 140 bounded Alice samples with no sync error. Station retained the terminal event; Engine consumption count remained 32; Gateway and Tauri returned eight messages through the same account/profile/device/PID; raw and mapped stores contained the target with `retracted=true`; active tab and conversation were correct. Only `data-message-ulid=<target>` was absent from DOM.
 - This rejects G, H, I, J, and K for the observed Alice failure. The remaining distinction is whether the virtualized timeline mounted other viewport rows while the target was offscreen, or whether the complete timeline surface failed to render.
+- Geometry run `20260829T045247379819Z-b039f224ef7d7eb14d20be531f7a3e00` reproduced the same Alice timeout. Debug lines 5-12 show `domSurface.messageIds=[]` and `domSurface.scroll=null` for the full bounded window, proving the complete Chat surface was absent rather than the target being virtualized offscreen.
+- `enter_chat_page` currently returns solely when `current_url` ends in `#/chat`. After a WebView refresh, the URL can already match while the authenticated application has not mounted the Chat page, so the helper skips the navigation action and surface-ready wait.
 
 ## Instrumentation
 - `apps/desktop/src/acceptance/chat/harness.ts`: expose raw and mapped store state before and after the existing conversation refresh.
