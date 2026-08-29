@@ -3068,6 +3068,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `unittest discover` suite is not a valid current gate because it still
   references migrated files and historical symbols. AS-F06 and G-F remain
   `UNPROVEN` pending another exact-source run.
+- Checkpoint `a97bf733c0abe987b3a4c8cde866b0f990119195` was deployed
+  exact-source to profile `two`. Run
+  `20260829T094145443231Z-cf0a61dda46dbd06236838d4a196acee`
+  failed closed during Browser AS-F06 observation with
+  `foundationRecoverySequencePayloadConflict`; cleanup and redaction passed.
+  The same source sequence was represented once by its persisted terminal
+  event and once by the synthesized authoritative snapshot, whose payloads are
+  expected to differ. Snapshot delivery already has a separate durable-reload
+  proof field, so the replay recorder now excludes snapshots from persisted
+  event-sequence equality while retaining conflict detection for repeated
+  persisted events. AS-F06 and G-F remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

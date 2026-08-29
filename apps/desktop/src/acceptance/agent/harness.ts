@@ -312,6 +312,7 @@ function installFoundationF06Observation(): void {
       if (
         replayStarted
         && sourceDelivery.rawPayload.eventType !== 'catchup_done'
+        && sourceDelivery.rawPayload.eventType !== 'snapshot'
         && Number.isSafeInteger(sourceDelivery.sequence)
         && sourceDelivery.sequence > current.acknowledgedCursor
       ) {
