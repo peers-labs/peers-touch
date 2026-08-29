@@ -49,6 +49,13 @@ struct ReplayStreamRegistration {
     cancel: watch::Sender<bool>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LiveStreamControl {
+    Active,
+    CancelTurn,
+    DisconnectTransport,
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct AgentStreamKey {
     window_label: String,
@@ -64,13 +71,13 @@ pub struct ReplayCancellation {
 
 struct LiveStreamRegistration {
     generation: u64,
-    cancel: watch::Sender<bool>,
+    control: watch::Sender<LiveStreamControl>,
 }
 
 pub struct LiveStreamCancellation {
     key: AgentStreamKey,
     generation: u64,
-    receiver: watch::Receiver<bool>,
+    receiver: watch::Receiver<LiveStreamControl>,
 }
 
 fn replay_stream_registry() -> &'static Mutex<HashMap<AgentStreamKey, ReplayStreamRegistration>> {
@@ -151,7 +158,7 @@ pub fn register_agent_turn_live_stream(
 ) -> LiveStreamCancellation {
     static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
     let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
-    let (cancel, receiver) = watch::channel(false);
+    let (control, receiver) = watch::channel(LiveStreamControl::Active);
     let key = stream_key(window_label, ptid, stream_id);
     if let Ok(mut registry) = live_stream_registry().lock() {
         let previous_key = registry
@@ -161,9 +168,15 @@ pub fn register_agent_turn_live_stream(
             })
             .cloned();
         if let Some(previous) = previous_key.and_then(|key| registry.remove(&key)) {
-            let _ = previous.cancel.send(true);
+            let _ = previous.control.send(LiveStreamControl::CancelTurn);
         }
-        registry.insert(key.clone(), LiveStreamRegistration { generation, cancel });
+        registry.insert(
+            key.clone(),
+            LiveStreamRegistration {
+                generation,
+                control,
+            },
+        );
     }
     LiveStreamCancellation {
         key,
@@ -179,7 +192,21 @@ pub fn cancel_agent_turn_live_stream(window_label: &str, stream_id: &str) {
             .find(|key| key.window_label == window_label && key.stream_id == stream_id)
             .cloned();
         if let Some(registration) = key.and_then(|key| registry.remove(&key)) {
-            let _ = registration.cancel.send(true);
+            let _ = registration.control.send(LiveStreamControl::CancelTurn);
+        }
+    }
+}
+
+pub fn disconnect_agent_turn_live_stream(window_label: &str, stream_id: &str) {
+    if let Ok(mut registry) = live_stream_registry().lock() {
+        let key = registry
+            .keys()
+            .find(|key| key.window_label == window_label && key.stream_id == stream_id)
+            .cloned();
+        if let Some(registration) = key.and_then(|key| registry.remove(&key)) {
+            let _ = registration
+                .control
+                .send(LiveStreamControl::DisconnectTransport);
         }
     }
 }
@@ -777,7 +804,7 @@ async fn stream_station_turn(
     body: &Value,
     token: &str,
     ptid: &str,
-    cancellation: &mut watch::Receiver<bool>,
+    cancellation: &mut watch::Receiver<LiveStreamControl>,
     provider_id: &str,
 ) -> Result<(), String> {
     let effective_provider = body
@@ -795,7 +822,7 @@ async fn stream_station_turn(
         .build()
         .map_err(|error| format!("failed to create Station stream client: {error}"))?;
     let auth = format!("Bearer {}", token.trim());
-    let (response, cancellation_requested_during_admission) = await_stream_admission(
+    let (response, admission_control) = await_stream_admission(
         client
             .post(url)
             .header(CONTENT_TYPE, "application/json")
@@ -817,16 +844,19 @@ async fn stream_station_turn(
         .filter(|value| !value.is_empty())
         .unwrap_or_default()
         .to_string();
-    if cancellation_requested_during_admission && !admitted_turn_id.is_empty() {
-        return cancel_live_stream_turn(&admitted_turn_id, token);
-    }
     if !response.status().is_success() {
         return Err(format!(
             "Station turn stream returned HTTP {}",
             response.status()
         ));
     }
-    if cancellation_requested_during_admission {
+    if admission_control == LiveStreamControl::CancelTurn {
+        if admitted_turn_id.is_empty() {
+            return Err("agent.error.streamIdentityMissing".to_string());
+        }
+        return cancel_live_stream_turn(&admitted_turn_id, token);
+    }
+    if admission_control == LiveStreamControl::DisconnectTransport && admitted_turn_id.is_empty() {
         return Err("agent.error.streamIdentityMissing".to_string());
     }
 
@@ -835,6 +865,8 @@ async fn stream_station_turn(
     let mut last_sequence = 0_i64;
     let mut turn_id = admitted_turn_id;
     let mut transport_error: Option<String> = None;
+    let mut transport_disconnect_requested =
+        admission_control == LiveStreamControl::DisconnectTransport;
     let mut conversation_id = body
         .get("conversation_id")
         .and_then(Value::as_str)
@@ -842,15 +874,23 @@ async fn stream_station_turn(
         .to_string();
     let mut body = response.bytes_stream();
     let mut buffer = Vec::new();
-    loop {
-        let chunk = match next_stream_item_or_cancel(body.next(), cancellation).await {
-            CancellableStreamItem::Cancelled => {
+    'stream: loop {
+        if transport_disconnect_requested {
+            break;
+        }
+        let chunk = match next_live_stream_item_or_control(body.next(), cancellation).await {
+            LiveStreamItem::Control(LiveStreamControl::CancelTurn) => {
                 if turn_id.is_empty() {
                     return Ok(());
                 }
                 return cancel_live_stream_turn(&turn_id, token);
             }
-            CancellableStreamItem::Item(chunk) => chunk,
+            LiveStreamItem::Control(LiveStreamControl::DisconnectTransport) => {
+                transport_disconnect_requested = true;
+                break;
+            }
+            LiveStreamItem::Control(LiveStreamControl::Active) => continue,
+            LiveStreamItem::Item(chunk) => chunk,
         };
         let Some(chunk) = chunk else {
             break;
@@ -870,11 +910,18 @@ async fn stream_station_turn(
                 &mut conversation_id,
                 &mut last_sequence,
             );
-            if replay_is_cancelled(cancellation) {
-                if turn_id.is_empty() {
-                    return Ok(());
+            match live_stream_control(cancellation) {
+                LiveStreamControl::CancelTurn => {
+                    if turn_id.is_empty() {
+                        return Ok(());
+                    }
+                    return cancel_live_stream_turn(&turn_id, token);
                 }
-                return cancel_live_stream_turn(&turn_id, token);
+                LiveStreamControl::DisconnectTransport => {
+                    transport_disconnect_requested = true;
+                    break 'stream;
+                }
+                LiveStreamControl::Active => {}
             }
             if matches!(event.as_str(), "done" | "error" | "cancelled") {
                 terminal_received = true;
@@ -921,7 +968,7 @@ async fn stream_station_turn(
             }
         }
     }
-    if !terminal_received && !replay_is_cancelled(cancellation) {
+    if !terminal_received && live_stream_control(cancellation) != LiveStreamControl::CancelTurn {
         if (turn_id.is_empty() || conversation_id.is_empty()) && transport_error.is_some() {
             return Err(transport_error.unwrap_or_else(|| {
                 "Station stream closed before turn identity was received".to_string()
@@ -935,7 +982,11 @@ async fn stream_station_turn(
             "connection_lost",
             json!({
                 "type": "connection_lost",
-                "reason": transport_error.unwrap_or_else(|| "station_stream_closed".to_string()),
+                "reason": if transport_disconnect_requested {
+                    "transport_disconnect_requested".to_string()
+                } else {
+                    transport_error.unwrap_or_else(|| "station_stream_closed".to_string())
+                },
                 "turnId": turn_id,
                 "conversationId": conversation_id,
                 "seq": last_sequence,
@@ -951,35 +1002,71 @@ enum CancellableStreamItem<T> {
     Cancelled,
 }
 
+enum LiveStreamItem<T> {
+    Item(T),
+    Control(LiveStreamControl),
+}
+
 async fn await_stream_admission<F, T>(
     response: F,
-    cancellation: &mut watch::Receiver<bool>,
+    cancellation: &mut watch::Receiver<LiveStreamControl>,
     timeout: Duration,
-) -> Result<(T, bool), String>
+) -> Result<(T, LiveStreamControl), String>
 where
     F: Future<Output = T>,
 {
     tokio::pin!(response);
     let deadline = tokio::time::Instant::now() + timeout;
-    let mut cancellation_requested = replay_is_cancelled(cancellation);
+    let mut requested_control = live_stream_control(cancellation);
     loop {
         tokio::select! {
             output = &mut response => {
-                return Ok((
-                    output,
-                    cancellation_requested || replay_is_cancelled(cancellation),
-                ));
+                let current_control = live_stream_control(cancellation);
+                return Ok((output, if current_control == LiveStreamControl::Active {
+                    requested_control
+                } else {
+                    current_control
+                }));
             }
             _ = tokio::time::sleep_until(deadline) => {
                 return Err("agent.error.streamAdmissionTimeout".to_string());
             }
             changed = cancellation.changed() => {
-                if changed.is_err() || replay_is_cancelled(cancellation) {
-                    cancellation_requested = true;
+                if changed.is_err() {
+                    requested_control = LiveStreamControl::CancelTurn;
+                } else {
+                    requested_control = live_stream_control(cancellation);
                 }
             }
         }
     }
+}
+
+async fn next_live_stream_item_or_control<F, T>(
+    item: F,
+    cancellation: &mut watch::Receiver<LiveStreamControl>,
+) -> LiveStreamItem<T>
+where
+    F: Future<Output = T>,
+{
+    let current_control = live_stream_control(cancellation);
+    if current_control != LiveStreamControl::Active {
+        return LiveStreamItem::Control(current_control);
+    }
+    tokio::select! {
+        item = item => LiveStreamItem::Item(item),
+        changed = cancellation.changed() => {
+            if changed.is_err() {
+                LiveStreamItem::Control(LiveStreamControl::CancelTurn)
+            } else {
+                LiveStreamItem::Control(live_stream_control(cancellation))
+            }
+        }
+    }
+}
+
+fn live_stream_control(cancellation: &watch::Receiver<LiveStreamControl>) -> LiveStreamControl {
+    *cancellation.borrow()
 }
 
 async fn next_stream_item_or_cancel<F, T>(
@@ -2395,7 +2482,10 @@ mod tests {
 
         cancel_agent_turn_live_stream("main", "live-stream-1");
 
-        assert!(*cancellation.receiver.borrow_and_update());
+        assert_eq!(
+            *cancellation.receiver.borrow_and_update(),
+            LiveStreamControl::CancelTurn
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -2406,7 +2496,7 @@ mod tests {
 
         let read = tokio::time::timeout(
             Duration::from_millis(50),
-            next_stream_item_or_cancel(
+            next_live_stream_item_or_control(
                 std::future::pending::<Option<Result<Vec<u8>, String>>>(),
                 &mut cancellation.receiver,
             ),
@@ -2414,7 +2504,32 @@ mod tests {
         .await
         .expect("cancellation should unblock the pending stream read");
 
-        assert!(matches!(read, CancellableStreamItem::Cancelled));
+        assert!(matches!(
+            read,
+            LiveStreamItem::Control(LiveStreamControl::CancelTurn)
+        ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn live_stream_disconnect_unblocks_read_without_requesting_turn_cancel() {
+        let mut cancellation =
+            register_agent_turn_live_stream("main", "ptid:person:one", "live-stream-disconnect");
+        disconnect_agent_turn_live_stream("main", "live-stream-disconnect");
+
+        let read = tokio::time::timeout(
+            Duration::from_millis(50),
+            next_live_stream_item_or_control(
+                std::future::pending::<Option<Result<Vec<u8>, String>>>(),
+                &mut cancellation.receiver,
+            ),
+        )
+        .await
+        .expect("transport disconnect should unblock the pending stream read");
+
+        assert!(matches!(
+            read,
+            LiveStreamItem::Control(LiveStreamControl::DisconnectTransport)
+        ));
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -2451,11 +2566,10 @@ mod tests {
         admission_sender
             .send("turn-admitted")
             .expect("admission receiver must remain attached");
-        let (turn_id, cancellation_requested) =
-            admission.await.expect("admission identity should arrive");
+        let (turn_id, control) = admission.await.expect("admission identity should arrive");
 
         assert_eq!(turn_id, "turn-admitted");
-        assert!(cancellation_requested);
+        assert_eq!(control, LiveStreamControl::CancelTurn);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -2485,10 +2599,16 @@ mod tests {
 
         cancel_agent_turn_live_stream("main", "shared-live");
 
-        assert!(*first.receiver.borrow_and_update());
-        assert!(!*second.receiver.borrow());
+        assert_eq!(
+            *first.receiver.borrow_and_update(),
+            LiveStreamControl::CancelTurn
+        );
+        assert_eq!(*second.receiver.borrow(), LiveStreamControl::Active);
         cancel_agent_turn_live_stream("secondary", "shared-live");
-        assert!(*second.receiver.borrow_and_update());
+        assert_eq!(
+            *second.receiver.borrow_and_update(),
+            LiveStreamControl::CancelTurn
+        );
     }
 
     #[test]

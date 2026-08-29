@@ -96,6 +96,22 @@ pub fn agent_cancel_turn_stream(
 }
 
 #[tauri::command]
+pub fn agent_disconnect_turn_stream(
+    input: AgentTurnTransportCancelInput,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let stream_id = input.stream_id.trim();
+    if stream_id.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "stream_id is required", None);
+    }
+    application_agent_turn::disconnect_agent_turn_live_stream(window.label(), stream_id);
+    AppResult::success(StubPayload {
+        command: "agent_disconnect_turn_stream".to_string(),
+        status: serde_json::json!({ "stream_id": stream_id }).to_string(),
+    })
+}
+
+#[tauri::command]
 pub fn agent_cancel_turn(
     input: AgentTurnStreamCancelInput,
     state: State<'_, Arc<AppState>>,

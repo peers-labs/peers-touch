@@ -158,6 +158,7 @@ const FOUNDATION_F06_PHASE_BY_EVENT: Record<string, string> = {
 };
 let foundationF06ObservationInstalled = false;
 let foundationF06ReplayRecording: Promise<void> = Promise.resolve();
+const foundationF06Controllers = new Map<string, AgentTurnStreamController>();
 
 function authenticatedFoundationActorPtid(): string {
   const user = useSessionStore.getState().currentUser;
@@ -2235,6 +2236,8 @@ async function runFoundationF06Prepare(input: {
   sampleId: string;
 }): Promise<FoundationF06Handoff> {
   const scenarioStartedAt = new Date().toISOString();
+  foundationF06Controllers.get(input.scenarioKey)?.abort();
+  foundationF06Controllers.delete(input.scenarioKey);
   removeFoundationF06Handoff(input.scenarioKey);
   const agentId = input.agent.id || input.agent.name;
   const conversation = await api.createAgentConversation({
@@ -2489,6 +2492,7 @@ async function prepareFoundationF06Conversation(
     preparedAt: scenarioStartedAt,
   };
   writeFoundationF06Handoff(handoff);
+  foundationF06Controllers.set(input.scenarioKey, observed.controller);
 
   eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'settings' });
   await waitFor(
@@ -2503,6 +2507,14 @@ async function prepareFoundationF06Conversation(
 async function observeFoundationRecoveryFailure(
   handoff: FoundationF06Handoff,
 ): Promise<Record<string, unknown>> {
+  const controller = foundationF06Controllers.get(handoff.scenarioKey);
+  if (
+    !controller
+    || controller.streamGeneration !== handoff.streamGeneration
+  ) {
+    throw new Error('agent.acceptance.foundationRecoveryControllerMissing');
+  }
+  controller.disconnectTransport();
   await waitFor(
     () => useAgentTurnRecoveryStore.getState()
       .active[handoff.conversationId]?.phase === 'RECOVERY_FAILED',
@@ -2701,6 +2713,9 @@ async function cleanupFoundationF06Scenario(input: {
   conversationId: string;
   turnId: string;
 }): Promise<Record<string, unknown>> {
+  const controller = foundationF06Controllers.get(input.scenarioKey);
+  foundationF06Controllers.delete(input.scenarioKey);
+  controller?.abort();
   const handoff = readFoundationF06Handoff(input.scenarioKey);
   if (
     handoff
@@ -4168,15 +4183,20 @@ export function installAcceptanceHarness(): void {
         throw new Error('agent.acceptance.providerModelUnavailable');
       }
       const agentStore = useAgentStore.getState();
-      const selected = agentStore.selectedAgent;
-      const agent = agentStore.agents.find((a) => a.name === selected) || agentStore.agents[0];
+      await agentStore.loadAgents();
+      const refreshedAgentStore = useAgentStore.getState();
+      const selected = refreshedAgentStore.selectedAgent;
+      const agent = refreshedAgentStore.agents.find((a) => a.name === selected)
+        || refreshedAgentStore.agents[0];
       if (agent) {
         const agentId = agent.id || agent.name;
-        await agentStore.updateAgentProfile(agentId, {
-          provider: providerId,
-          model: modelId,
-        });
-        await agentStore.loadAgents();
+        if (agent.provider !== providerId || agent.model !== modelId) {
+          await agentStore.updateAgentProfile(agentId, {
+            provider: providerId,
+            model: modelId,
+          });
+          await agentStore.loadAgents();
+        }
         const readiness = await api.getAgentCapabilityReadiness({
           agent_id: agentId,
         });
@@ -5493,6 +5513,7 @@ export function installAcceptanceHarness(): void {
           deletionErrorCode = observedErrorCode(error);
           conversationDeleted = deletionErrorCode.includes('AGENT_4004');
         }
+        foundationF06Controllers.delete(scenarioKey);
         removeFoundationF06Handoff(scenarioKey);
         scenarioFacts.cleanup = {
           ...evidenceRecord(

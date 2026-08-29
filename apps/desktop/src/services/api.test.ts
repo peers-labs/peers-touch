@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { create, toBinary } from '@bufbuild/protobuf'
 import {
@@ -18,6 +18,7 @@ import {
 
 const mockFetch = vi.fn()
 const { mockListen } = vi.hoisted(() => ({ mockListen: vi.fn() }))
+const hadWindow = typeof window !== 'undefined'
 vi.stubGlobal('fetch', mockFetch)
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -30,6 +31,15 @@ beforeEach(() => {
   mockFetch.mockReset()
   mockListen.mockReset()
   vi.mocked(invoke).mockReset()
+  if (typeof window !== 'undefined') {
+    delete (window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__
+  }
+})
+
+afterEach(() => {
+  if (!hadWindow && typeof window !== 'undefined') {
+    delete (globalThis as unknown as { window?: Window }).window
+  }
 })
 
 describe('api.health', () => {
@@ -171,6 +181,130 @@ describe('Agent turn stream completion', () => {
     await vi.waitFor(() => {
       expect(invoke).toHaveBeenCalledWith('agent_cancel_turn_stream', {
         input: { stream_id: startedStreamId },
+      })
+    })
+  })
+
+  it('disconnects a native transport without cancelling the durable turn', async () => {
+    mockListen.mockResolvedValue(() => undefined)
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      const streamId = String((args as { input?: { stream_id?: string } })?.input?.stream_id || '')
+      if (command === 'agent_execute_turn_stream' || command === 'agent_disconnect_turn_stream') {
+        return Promise.resolve({
+          ok: true,
+          data: {
+            command,
+            status: JSON.stringify({ stream_id: streamId }),
+          },
+        })
+      }
+      return Promise.reject(new Error(`unexpected command: ${command}`))
+    })
+
+    const controller = streamAgentTurn(
+      {
+        client_idempotency_key: 'request-transport-disconnect',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'hello',
+      },
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      'ptid:person:owner',
+    )
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('agent_execute_turn_stream', {
+        input: expect.objectContaining({
+          stream_id: expect.any(String),
+        }),
+      })
+    })
+
+    controller.disconnectTransport()
+
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('agent_disconnect_turn_stream', {
+        input: { stream_id: expect.any(String) },
+      })
+    })
+    expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn', expect.anything())
+    expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn_stream', expect.anything())
+  })
+
+  it('recovers a Browser stream after transport-only disconnect without cancelling the turn', async () => {
+    const browserWindow = Object.assign(new EventTarget(), {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    })
+    vi.stubGlobal('window', browserWindow)
+    ;(window as typeof window & { __PT_GATEWAY_BASE__?: string }).__PT_GATEWAY_BASE__ =
+      'http://127.0.0.1:3030'
+    let requestCount = 0
+    mockFetch.mockImplementation((_url, init) => {
+      requestCount += 1
+      if (requestCount > 1) {
+        return Promise.reject(new Error('Station unavailable'))
+      }
+      const signal = (init as RequestInit).signal
+      const body = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          streamController.enqueue(new TextEncoder().encode(
+            'event: text\ndata: {"turnId":"turn-1","conversationId":"conversation-1","seq":1,"text":"partial"}\n\n',
+          ))
+          signal?.addEventListener('abort', () => {
+            streamController.error(new DOMException('transport disconnected', 'AbortError'))
+          }, { once: true })
+        },
+      })
+      return Promise.resolve(new Response(body, {
+        status: 200,
+        headers: { 'x-agent-turn-id': 'turn-1' },
+      }))
+    })
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'agent_cancel_turn',
+        status: JSON.stringify({ turn_id: 'turn-1', status: 'cancelled' }),
+      },
+    })
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+    const controller = streamAgentTurn(
+      {
+        client_idempotency_key: 'request-browser-disconnect',
+        conversation_id: 'conversation-1',
+        agent_id: 'agent-1',
+        user_input: 'hello',
+      },
+      onEvent,
+      vi.fn(),
+      onError,
+      'ptid:person:owner',
+    )
+    await vi.waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+    })
+    await vi.waitFor(() => {
+      expect(onEvent.mock.calls.length + onError.mock.calls.length).toBeGreaterThan(0)
+    })
+    expect(onError).not.toHaveBeenCalled()
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ event: 'text' }))
+
+    controller.disconnectTransport()
+
+    await vi.waitFor(() => {
+      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'connection_lost',
+        data: expect.objectContaining({ reason: 'transport_disconnect_requested' }),
+      }))
+    })
+    expect(invoke).not.toHaveBeenCalledWith('agent_cancel_turn', expect.anything())
+    controller.abort()
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('agent_cancel_turn', {
+        input: { turn_id: 'turn-1' },
       })
     })
   })

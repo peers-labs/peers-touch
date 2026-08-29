@@ -277,6 +277,7 @@ fn main() {
             agent_turn::agent_execute_turn,
             agent_turn::agent_execute_turn_stream,
             agent_turn::agent_cancel_turn_stream,
+            agent_turn::agent_disconnect_turn_stream,
             agent_turn::agent_cancel_turn,
             agent_turn::agent_replay_turn_stream,
             agent_turn::agent_cancel_turn_replay_stream,

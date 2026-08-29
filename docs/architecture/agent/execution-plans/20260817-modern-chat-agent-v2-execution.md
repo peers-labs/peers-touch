@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: AS-F06 implementation checkpoint `1aebfd3bd` is deployed exact-source; run `20260829T005514635679Z-15d1bb8f377ed2e1101bf019636808ee` regressed at Browser AS-F02 because the durably cancelled active Turn had no trace; cleanup passed and proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `72d07e291` reached AS-F06, but run `20260829T033240508585Z-98a80c68e781d200d212c3fcafc9dc94` showed a crashed Station can leave the Browser SSE reader pending without publishing `connection_lost`; a transport-only Browser/Native disconnect contract is locally verified and awaits exact-source deployment; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2827,6 +2827,29 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   status or not-found as cleanup proof, and restores client authentication
   before reverse-order failure cleanup. AS-F06 and G-F remain `UNPROVEN`
   pending another exact-source run.
+- Checkpoint `72d07e291ec7e13a7afedaa12dd4412619f977ea` was deployed
+  exact-source to profile `two`. Run
+  `20260829T033240508585Z-98a80c68e781d200d212c3fcafc9dc94`
+  again passed Browser AS-F01-AS-F05 and admitted all AS-F06 Turns, but timed
+  out waiting for Browser `RECOVERY_FAILED`. The abrupt Station kill left the
+  Browser SSE `reader.read()` pending, so the client never published
+  `connection_lost`; using the existing controller `abort()` was invalid
+  because it also semantically cancelled the durable Turn. Failure cleanup
+  additionally exposed that provider setup rewrote an already-correct Agent
+  during re-authentication and could conflict.
+- The local correction separates transport disconnect from semantic Turn
+  cancellation. Browser uses an independent transport abort signal and enters
+  the existing bounded replay path after either an explicit disconnect or a
+  post-admission stream error. Native uses a typed live-stream control channel
+  and a dedicated Tauri command that emits the existing source-bound recovery
+  handoff without cancelling the Turn. The AS-F06 Harness retains each
+  scenario's controller, disconnects it during the bounded outage, and releases
+  it during cleanup. Provider setup now refreshes Agent state and skips the
+  versioned write when provider/model already match. Desktop check, 391 tests,
+  production build, 19 Rust Agent-turn tests, 96 focused Foundation/native
+  static tests, Agent Domain validation, Rust formatting, and
+  `git diff --check` pass. AS-F06 and G-F remain `UNPROVEN` pending checkpoint
+  commit, exact-source profile `two` deployment, and a new Foundation run.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

@@ -4540,6 +4540,12 @@ export const api = {
       { stream_id: streamId },
     ),
 
+  disconnectAgentTurnStream: (streamId: string) =>
+    invokeRustDataFromStatus<AgentTurnTransportCancelInput, { stream_id: string }>(
+      'agent_disconnect_turn_stream',
+      { stream_id: streamId },
+    ),
+
   startAgentTurnReplayStream: (input: AgentTurnReplayStreamInput) =>
     invokeRustDataFromStatus<AgentTurnReplayStreamInput, { stream_id: string }>(
       'agent_replay_turn_stream',
@@ -5953,6 +5959,7 @@ export interface AgentTurnSourceDelivery {
 
 export interface AgentTurnStreamController extends AbortController {
   readonly streamGeneration: number;
+  disconnectTransport(): void;
 }
 
 export interface ChatImageInput {
@@ -6196,6 +6203,16 @@ export function streamAgentTurn(
   });
   log.info('api', 'streamAgentTurn started', { conversationId: input.conversation_id, agentId: input.agent_id });
   if (isHttpGatewayMode()) {
+    const transportController = new AbortController();
+    let transportDisconnectRequested = false;
+    Object.defineProperty(controller, 'disconnectTransport', {
+      value: () => {
+        if (transportDisconnectRequested || controller.signal.aborted) return;
+        transportDisconnectRequested = true;
+        transportController.abort();
+      },
+      enumerable: true,
+    });
     (async () => {
       let turnId = '';
       let conversationId = input.conversation_id || '';
@@ -6243,6 +6260,7 @@ export function streamAgentTurn(
         return false;
       };
       controller.signal.addEventListener('abort', () => {
+        transportController.abort();
         if (turnId) {
           api.cancelAgentTurn(turnId).catch((error) => {
             log.warn('api', 'Browser Agent turn cancel failed', { error: String(error) });
@@ -6251,41 +6269,54 @@ export function streamAgentTurn(
       }, { once: true });
       try {
         const gatewayBase = String((window as any).__PT_GATEWAY_BASE__ || '');
-        const response = await fetch(`${gatewayBase}/agent/turn/stream`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-          body: JSON.stringify({ ...input, stream: true }),
-          signal: controller.signal,
-        });
-        const admittedTurnId = response.headers.get('x-agent-turn-id')?.trim() || '';
-        if (admittedTurnId) turnId = admittedTurnId;
-        if (controller.signal.aborted) {
-          if (turnId) {
-            await api.cancelAgentTurn(turnId);
+        let terminal = false;
+        let liveTransportError: Error | null = null;
+        try {
+          const response = await fetch(`${gatewayBase}/agent/turn/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+            body: JSON.stringify({ ...input, stream: true }),
+            signal: transportController.signal,
+          });
+          const admittedTurnId = response.headers.get('x-agent-turn-id')?.trim() || '';
+          if (admittedTurnId) turnId = admittedTurnId;
+          if (controller.signal.aborted) {
+            if (turnId) {
+              await api.cancelAgentTurn(turnId);
+            }
+            return;
           }
-          return;
+          terminal = await consumeAgentSSE(
+            response,
+            transportController.signal,
+            (event) => forward({
+              ...event,
+              sourceDelivery: createAgentTurnSourceDelivery(
+                event.event,
+                event.data,
+                sourcePtid,
+                conversationId || input.conversation_id,
+                turnId,
+              ),
+            }),
+          );
+        } catch (error) {
+          liveTransportError = error instanceof Error ? error : new Error(String(error));
         }
-        const terminal = await consumeAgentSSE(
-          response,
-          controller.signal,
-          (event) => forward({
-            ...event,
-            sourceDelivery: createAgentTurnSourceDelivery(
-              event.event,
-              event.data,
-              sourcePtid,
-              conversationId || input.conversation_id,
-              turnId,
-            ),
-          }),
-        );
         if (!terminal && !controller.signal.aborted) {
           if (!turnId || !conversationId) {
-            throw new Error('agent.error.streamIdentityMissing');
+            throw liveTransportError ?? new Error('agent.error.streamIdentityMissing');
           }
           forward({
             event: 'connection_lost',
-            data: { turnId, conversationId, seq: lastSequence, reason: 'station_stream_closed' },
+            data: {
+              turnId,
+              conversationId,
+              seq: lastSequence,
+              reason: transportDisconnectRequested
+                ? 'transport_disconnect_requested'
+                : liveTransportError?.message || 'station_stream_closed',
+            },
           });
           let replayError: Error | null = null;
           for (let attempt = 0; attempt <= AGENT_REPLAY_RETRY_DELAYS_MS.length; attempt += 1) {
@@ -6383,6 +6414,17 @@ export function streamAgentTurn(
     })();
     return controller;
   }
+  let transportDisconnectRequested = false;
+  let disconnectNativeTransport = () => {
+    transportDisconnectRequested = true;
+  };
+  Object.defineProperty(controller, 'disconnectTransport', {
+    value: () => {
+      if (controller.signal.aborted) return;
+      disconnectNativeTransport();
+    },
+    enumerable: true,
+  });
   (async () => {
     let unlistenLive: (() => void) | undefined;
     let settled = false;
@@ -6407,6 +6449,20 @@ export function streamAgentTurn(
           error: String(error),
         });
       });
+    };
+    const disconnectTransport = () => {
+      if (!startCompleted || transportCancellationSent) return;
+      transportCancellationSent = true;
+      void api.disconnectAgentTurnStream(streamId).catch((error) => {
+        log.warn('api', 'Agent turn transport disconnect failed', {
+          streamId,
+          error: String(error),
+        });
+      });
+    };
+    disconnectNativeTransport = () => {
+      transportDisconnectRequested = true;
+      disconnectTransport();
     };
     const cancelSemanticTurn = () => {
       if (!capturedTurnId) return;
@@ -6536,6 +6592,9 @@ export function streamAgentTurn(
       if (controller.signal.aborted) {
         abortNativeStream();
         return;
+      }
+      if (transportDisconnectRequested) {
+        disconnectTransport();
       }
     } catch (err: unknown) {
       cleanup();
