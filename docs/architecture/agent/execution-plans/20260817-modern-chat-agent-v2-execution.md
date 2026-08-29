@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `50041002f` exposed that Browser replay closed on a catch-up terminal row before receiving the following authoritative snapshot in run `20260829T111024619399Z-ed92416efa7237cf4dc7b99afd1ef599`; Browser and Native replay close semantics are locally aligned and await exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `c457f884f` passed AS-F06 transition ordering and stale-revision proof in run `20260829T113329057061Z-0c78e4730bbb54bdac17ccd146f2d318`; replay equality is the sole remaining product assertion and now emits bounded source diagnostics; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3106,6 +3106,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   replay open across catch-up terminal rows and closes only on a terminal
   snapshot or a terminal event after live-tail establishment. Focused Browser
   and Rust tests cover that ordering. AS-F06 and G-F remain `UNPROVEN`.
+- Checkpoint `c457f884f4367ff819153d1f2caffbb471c8ba94` was deployed
+  exact-source to profile `two`. Run
+  `20260829T113329057061Z-0c78e4730bbb54bdac17ccd146f2d318`
+  reached the complete Browser AS-F06 oracle and passed transition ordering,
+  stale-generation rejection, stale-terminal rejection, and stale-revision
+  rejection. Its sole product assertion failure was
+  `replayAfterAcknowledgedCursor`: observed source sequences were `[186, 187]`
+  after cursor `31`, so the remaining mismatch is restricted to payload/source
+  identity or Station readback equality. Cleanup reported
+  `CONVERSATION_DELETED` but still treated the helper's retry exhaustion as an
+  error; deletion is now recognized as idempotent success before archive.
+  Bounded replay diagnostics were extended without changing any predicate.
+  AS-F06 and G-F remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

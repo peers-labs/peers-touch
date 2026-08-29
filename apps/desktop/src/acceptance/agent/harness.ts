@@ -586,6 +586,9 @@ async function deleteFoundationConversation(
   for (let attempt = 0; attempt < 12; attempt += 1) {
     try {
       const conversation = await api.getAgentConversation(conversationId);
+      if (conversation.status === 'deleted') {
+        return 'CONVERSATION_DELETED';
+      }
       await api.archiveAgentConversation(
         conversationId,
         conversation.version,

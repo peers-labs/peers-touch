@@ -1095,6 +1095,19 @@ def evaluate_as_f06(
             "afterCursor": after_cursor,
             "replaySequences": replay_sequences,
             "replayDeliverySequences": replay_delivery_sequences,
+            "stationReplaySequences": [
+                delivery.get("sequence")
+                for delivery in station_replay_deliveries
+            ],
+            "replayPayloadHashesValid": replay_payload_hashes_valid,
+            "replaySourceMatches": replay_source_matches,
+            "sourceIdentityValid": source_identity_valid,
+            "deliveryStreamMatches": all(
+                delivery.get("streamId") == handoff.get("streamId")
+                and delivery.get("streamGeneration")
+                == handoff.get("streamGeneration")
+                for delivery in replay_deliveries
+            ),
             "staleGeneration": stale_generation,
             "activeGeneration": active_generation,
             "staleGenerationRejected": idempotence.get(
