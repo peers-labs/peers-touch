@@ -899,6 +899,29 @@ failures. The immutable aggregate above remains historical execution evidence,
 not final review proof. NDR-W1 and NDR-W6 remain in progress until a new clean
 candidate reproduces the full aggregate with complete traceability.
 
+### 2026-08-29 Restored Session Identity Checkpoint
+
+Focused Linux run
+`20260829T073113740621Z-8e6bf85237eb3db7b715aa5523a759da`
+passed the unchanged `chat-native-interactions-e2e` Gate after the Desktop auth
+owner began committing account, actor, and rotated token as one restored
+session identity. All 34 assertions passed, including timeout retry,
+`station_restart_convergence`, Station and Engine readback, and resource
+release. Replacement documents for Alice, Bob, and Charlie each completed
+`auth_restore_session`, remained authenticated, and produced no post-restore
+`kicked` response.
+
+The immutable runtime evidence binds source, Station `18132`, the clean Linux
+checkout, and binary SHA-256
+`068ef890a7442e29aca59c8a4a094f2530460133e0b91a7554f4e0053eaecbb3`
+to commit `0d4ab0cf774441814b27ba281a3fa65ca70f9a3d`. Gate cleanup
+released all actor processes, ports, endpoint leases, logs, and storage; outer
+Provisioner cleanup reached `CLEANED`. This closes the focused restart defect
+only. The temporary debugger instrumentation and artifacts were subsequently
+removed, and focused Desktop, Rust, and static checks passed. NDR-W1 and NDR-W6
+remain in progress until the resulting clean commit passes a new exact-range
+aggregate.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

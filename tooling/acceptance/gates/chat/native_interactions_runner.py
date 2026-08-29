@@ -92,44 +92,6 @@ REQUIRED_ASSERTIONS = {
 }
 
 
-# #region debug-point A,B,C,D:interaction-projection-report
-def report_interaction_projection_debug(
-    hypothesis_id: str,
-    location: str,
-    data: dict[str, Any],
-) -> None:
-    debug_url = os.environ.get("DEBUG_SERVER_URL", "")
-    if not debug_url:
-        return
-    payload = json.dumps(
-        {
-            "sessionId": os.environ.get(
-                "DEBUG_SESSION_ID",
-                "interaction-projection-loss",
-            ),
-            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "msg": "[DEBUG] Native interaction projection observation",
-            "data": data,
-            "ts": int(time.time() * 1000),
-        },
-    ).encode("utf-8")
-    try:
-        urllib.request.urlopen(
-            urllib.request.Request(
-                debug_url,
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            ),
-            timeout=2,
-        ).read()
-    except OSError:
-        pass
-# #endregion
-
-
 def selected_runtime() -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -1653,19 +1615,6 @@ class NativeInteractionsGate(AcceptanceGate):
                 f"Alice {claim_kind} interaction retry_wait after connection loss",
                 STEP_TIMEOUT,
             )
-            # #region debug-point B,C:retry-wait-engine-state
-            report_interaction_projection_debug(
-                "B,C",
-                "native_interactions_runner:retry-wait-engine-state",
-                {
-                    "kind": claim_kind,
-                    "conversationId": conversation_id,
-                    "messageId": message_id,
-                    "commandId": command_id,
-                    "engine": pending_engine,
-                },
-            )
-            # #endregion
             intent = pending_engine.get("intent") or {}
             outbox = pending_engine.get("outbox") or {}
             command_sha = str(intent.get("commandSha256") or "")
@@ -1677,11 +1626,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 raise GateError(
                     "timeout retry did not preserve one exact network-failed command"
                 )
-            sender_observation_count = 0
-
             def _sender_settled() -> dict[str, Any] | None:
-                nonlocal sender_observation_count
-                sender_observation_count += 1
                 value = async_harness(
                     self.clients["alice"],
                     "interactionProjection",
@@ -1692,70 +1637,6 @@ class NativeInteractionsGate(AcceptanceGate):
                     },
                 )
                 proj = value if isinstance(value, dict) else None
-                if sender_observation_count == 1 or (
-                    proj is None and sender_observation_count % 20 == 0
-                ):
-                    # #region debug-point A,B,C,D:sender-projection-sample
-                    try:
-                        gateway_messages = gateway_command(
-                            self.clients["alice"],
-                            "messaging_list_messages",
-                            {"conversation_id": conversation_id},
-                        )
-                        rust_messages = gateway_messages.get("messages", [])
-                        harness_state = async_harness(
-                            self.clients["alice"],
-                            "debugInteractionProjectionState",
-                            {
-                                "conversationId": conversation_id,
-                                "kind": kind,
-                                "messageId": message_id,
-                            },
-                        )
-                        report_interaction_projection_debug(
-                            "A,B,C,D",
-                            "native_interactions_runner:sender-projection-sample",
-                            {
-                                "kind": claim_kind,
-                                "conversationId": conversation_id,
-                                "messageId": message_id,
-                                "commandId": command_id,
-                                "attempt": sender_observation_count,
-                                "projection": proj,
-                                "rustMessageIds": [
-                                    item.get("message_id")
-                                    for item in rust_messages
-                                    if isinstance(item, dict)
-                                ],
-                                "gatewayRuntimeContext": gateway_messages.get(
-                                    "debug_context"
-                                ),
-                                "harnessState": harness_state,
-                                "dom": message_dom_snapshot(
-                                    self.clients["alice"],
-                                    message_id,
-                                ),
-                                "engine": self.engine_snapshot(
-                                    "alice",
-                                    conversation_id,
-                                    message_id,
-                                    command_id,
-                                ),
-                            },
-                        )
-                    except Exception as error:
-                        report_interaction_projection_debug(
-                            "A,B,C,D",
-                            "native_interactions_runner:sender-projection-sample-error",
-                            {
-                                "kind": claim_kind,
-                                "messageId": message_id,
-                                "attempt": sender_observation_count,
-                                "errorType": type(error).__name__,
-                                "error": str(error),
-                            },
-                        )
-                    # #endregion
                 if (
                     proj
                     and proj.get("content") == original_text
@@ -1992,121 +1873,24 @@ class NativeInteractionsGate(AcceptanceGate):
             self.message_ids[f"{claim_kind}.thread.nested"],
         ]
         for actor in members:
-            restart_observation_count = 0
-
             def _sync_and_dom(actor: str = actor) -> dict[str, Any] | None:
-                nonlocal restart_observation_count
-                restart_observation_count += 1
-                sync_error = ""
                 try:
                     self.sync(actor, kind, conversation_id)
-                except Exception as error:
-                    sync_error = f"{type(error).__name__}: {error}"
-                snapshot = message_dom_snapshot(
-                    self.clients[actor],
-                    message_id,
-                )
-                terminal_snapshot = (
+                except Exception:
+                    return None
+                return (
                     snapshot
                     if (
-                        snapshot
+                        snapshot := message_dom_snapshot(
+                            self.clients[actor],
+                            message_id,
+                        )
                     )
                     and snapshot.get("retracted") == "true"
                     and snapshot.get("pinned") is False
                     and len(snapshot.get("reactions") or []) == 0
                     else None
                 )
-                if restart_observation_count == 1 or (
-                    terminal_snapshot is None
-                    and restart_observation_count % 20 == 0
-                ):
-                    # #region debug-point G,H,I,J,K:restart-convergence-sample
-                    try:
-                        gateway_messages = gateway_command(
-                            self.clients[actor],
-                            "messaging_list_messages",
-                            {"conversation_id": conversation_id},
-                        )
-                        rust_messages = gateway_messages.get("messages", [])
-                        harness_state = async_harness(
-                            self.clients[actor],
-                            "debugInteractionProjectionState",
-                            {
-                                "conversationId": conversation_id,
-                                "kind": kind,
-                                "messageId": message_id,
-                            },
-                        )
-                        report_interaction_projection_debug(
-                            "G,H,I,J,K",
-                            "native_interactions_runner:restart-convergence-sample",
-                            {
-                                "actor": actor,
-                                "kind": claim_kind,
-                                "conversationId": conversation_id,
-                                "messageId": message_id,
-                                "attempt": restart_observation_count,
-                                "syncError": sync_error,
-                                "rustMessageIds": [
-                                    item.get("message_id")
-                                    for item in rust_messages
-                                    if isinstance(item, dict)
-                                ],
-                                "gatewayRuntimeContext": gateway_messages.get(
-                                    "debug_context"
-                                ),
-                                "harnessState": harness_state,
-                                "dom": snapshot,
-                                "domSurface": self.clients[actor].execute_script(
-                                    """
-                                    const scroll = document.querySelector(
-                                      '.chat-message-scroll'
-                                    );
-                                    return {
-                                      messageIds: Array.from(
-                                        document.querySelectorAll(
-                                          '[data-message-ulid]'
-                                        ),
-                                        (row) => row.getAttribute(
-                                          'data-message-ulid'
-                                        ),
-                                      ),
-                                      scroll: scroll ? {
-                                        clientHeight: scroll.clientHeight,
-                                        scrollHeight: scroll.scrollHeight,
-                                        scrollTop: scroll.scrollTop,
-                                      } : null,
-                                    };
-                                    """,
-                                ),
-                                "engine": self.engine_snapshot(
-                                    actor,
-                                    conversation_id,
-                                    message_id,
-                                ),
-                                "station": station_readback(
-                                    self.station_url,
-                                    conversation_id,
-                                    message_id,
-                                ),
-                            },
-                        )
-                    except Exception as error:
-                        report_interaction_projection_debug(
-                            "G,H,I,J,K",
-                            "native_interactions_runner:restart-convergence-sample-error",
-                            {
-                                "actor": actor,
-                                "kind": claim_kind,
-                                "messageId": message_id,
-                                "attempt": restart_observation_count,
-                                "syncError": sync_error,
-                                "errorType": type(error).__name__,
-                                "error": str(error),
-                            },
-                        )
-                    # #endregion
-                return terminal_snapshot
 
             wait_until(
                 _sync_and_dom,
@@ -2378,121 +2162,9 @@ class NativeInteractionsGate(AcceptanceGate):
 
     def reload_clients_after_station_restart(self) -> None:
         for actor, client in self.clients.items():
-            # #region debug-point M,N,O:post-restart-document-and-shell-state
-            def document_state() -> dict[str, Any]:
-                try:
-                    value = client.execute_script(
-                        """
-                        const navigation = performance.getEntriesByType(
-                          'navigation'
-                        )[0];
-                        return {
-                          currentUrl: window.location.href,
-                          hash: window.location.hash,
-                          readyState: document.readyState,
-                          timeOrigin: performance.timeOrigin,
-                          navigationType: navigation
-                            ? navigation.type
-                            : '',
-                          hasHarness: Boolean(
-                            window.__PT_ACCEPTANCE__
-                          ),
-                          primaryNavCount: document.querySelectorAll(
-                            '[data-pt-primary-nav]'
-                          ).length,
-                          chatNavCount: document.querySelectorAll(
-                            '[data-pt-primary-nav="chat"]'
-                          ).length,
-                          chatLayoutCount: document.querySelectorAll(
-                            '[data-social-chat-layout]'
-                          ).length,
-                          loginSurfaceCount: document.querySelectorAll(
-                            '[data-login-page], [data-auth-page], form'
-                          ).length,
-                        };
-                        """,
-                    )
-                    return value if isinstance(value, dict) else {}
-                except Exception as error:
-                    return {
-                        "probeErrorType": type(error).__name__,
-                        "probeError": str(error),
-                    }
-
-            def identity_state() -> dict[str, Any]:
-                try:
-                    value = async_harness(
-                        client,
-                        "debugIdentityLifecycleState",
-                        {},
-                        timeout=5,
-                    )
-                    return value if isinstance(value, dict) else {}
-                except Exception as error:
-                    return {
-                        "probeErrorType": type(error).__name__,
-                        "probeError": str(error),
-                    }
-
-            report_interaction_projection_debug(
-                "O,P,Q,R",
-                "native_interactions_runner:pre-refresh-document",
-                {
-                    "actor": actor,
-                    "document": document_state(),
-                    "identity": identity_state(),
-                },
-            )
             client.driver.refresh()
-            report_interaction_projection_debug(
-                "O",
-                "native_interactions_runner:post-refresh-return-document",
-                {"actor": actor, "document": document_state()},
-            )
             client.wait_for_acceptance_harness(30)
-            report_interaction_projection_debug(
-                "O,P,Q,R",
-                "native_interactions_runner:post-harness-document",
-                {
-                    "actor": actor,
-                    "document": document_state(),
-                    "identity": identity_state(),
-                },
-            )
-            report_interaction_projection_debug(
-                "M,N,O,P,Q,R",
-                "native_interactions_runner:post-restart-shell-before-navigation",
-                {
-                    "actor": actor,
-                    "shell": document_state(),
-                    "identity": identity_state(),
-                },
-            )
-            try:
-                enter_chat_page(client)
-            except Exception as error:
-                report_interaction_projection_debug(
-                    "M,N,O,P,Q,R",
-                    "native_interactions_runner:post-restart-shell-navigation-error",
-                    {
-                        "actor": actor,
-                        "shell": document_state(),
-                        "identity": identity_state(),
-                        "errorType": type(error).__name__,
-                        "error": str(error),
-                    },
-                )
-                raise
-            report_interaction_projection_debug(
-                "M,N,O,P,Q,R",
-                "native_interactions_runner:post-restart-shell-ready",
-                {
-                    "actor": actor,
-                    "shell": document_state(),
-                    "identity": identity_state(),
-                },
-            )
-            # #endregion
+            enter_chat_page(client)
 
     @staticmethod
     def port_is_free(port: int) -> bool:

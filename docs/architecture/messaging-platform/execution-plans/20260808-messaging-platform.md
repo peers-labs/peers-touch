@@ -1207,6 +1207,22 @@ injected-network backoff scope that remains unproven. MP-W13-F stays
 `UNPROVEN` until the corrected clean candidate, Completion Audit, and
 independent review pass.
 
+Focused Linux run
+`20260829T073113740621Z-8e6bf85237eb3db7b715aa5523a759da`
+then passed all 34 unchanged `chat-native-interactions-e2e` assertions at clean
+commit `0d4ab0cf774441814b27ba281a3fa65ca70f9a3d`. Runtime evidence
+shows Alice, Bob, and Charlie each restored into an authenticated ready shell
+without any post-restore `kicked` response. Direct and Group restart
+convergence, Station authority readback, Engine durable readback, Gate cleanup,
+and outer runtime-cell cleanup all passed. The source, Station `18132`, clean
+Linux checkout, and Desktop binary are bound to the same commit.
+
+This focused result closes the restored-session identity defect but does not
+complete MP-W13-F. The temporary debugger instrumentation and artifacts were
+removed after verification, and the focused Desktop, Rust, and static checks
+passed. A new clean exact-range aggregate, required-proven validation, Gap
+Detector, Completion Audit, and independent review remain required.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
