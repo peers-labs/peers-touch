@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `91154e56f` showed the AS-F06 recorder's replay guard depended on asynchronously persisted transition evidence; it now tracks the `replaying` control event synchronously before accepting same-identity source deliveries; proof remains UNPROVEN pending another exact-source run | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `38d813cce` showed the AS-F06 handoff cursor was frozen before live streaming stopped; fault injection now freezes the latest acknowledged runtime cursor and resets pre-fault observations before disconnect; proof remains UNPROVEN pending another exact-source run | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3172,6 +3172,19 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   matching `replaying` control event arrives, then accepts subsequent
   same-identity source deliveries. The persisted transition list remains an
   independent final ordering proof. AS-F06 and G-F remain `UNPROVEN`.
+- Checkpoint `38d813cce5843c1b54cf86315f13e0dd224d3cce` was deployed
+  exact-source to profile `two`. Run
+  `20260829T135524062282Z-6f28c694e56da4ed4067df8ea3f5e17f`
+  reached the complete Browser AS-F06 oracle with cleanup/redaction passing.
+  The prepared handoff froze cursor `31`, but the live stream advanced through
+  `226` before the injected disconnect, so only replayed terminal sequence
+  `227` was correctly observed while independent readback incorrectly compared
+  against all persisted rows `32..227`. Pre-fault natural reconnect phases also
+  preceded the injected `CONNECTION_LOST`. Fault injection now freezes the
+  owning runtime's latest cursor and clears pre-fault transition/replay
+  observations before disconnect, aligning both ordering and replay equality
+  with the actual injected recovery boundary. AS-F06 and G-F remain
+  `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

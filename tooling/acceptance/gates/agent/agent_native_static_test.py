@@ -172,6 +172,19 @@ class AgentHarnessStaticTest(unittest.TestCase):
             self.source,
         )
 
+    def test_recovery_cursor_is_frozen_at_fault_injection(self) -> None:
+        cursor_update = self.source.index(
+            "handoff.acknowledgedCursor = activeBeforeDisconnect.cursor"
+        )
+        disconnect = self.source.index(
+            "controller.disconnectTransport()",
+            cursor_update,
+        )
+
+        self.assertLess(cursor_update, disconnect)
+        self.assertIn("handoff.transitions = []", self.source)
+        self.assertIn("handoff.replayDeliveries = []", self.source)
+
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)
 

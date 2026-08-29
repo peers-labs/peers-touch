@@ -2558,6 +2558,24 @@ async function observeFoundationRecoveryFailure(
   ) {
     throw new Error('agent.acceptance.foundationRecoveryControllerMissing');
   }
+  await foundationF06ReplayRecording;
+  const activeBeforeDisconnect = useAgentTurnRecoveryStore.getState()
+    .active[handoff.conversationId];
+  if (
+    !activeBeforeDisconnect
+    || activeBeforeDisconnect.actorId !== handoff.actorPtid
+    || activeBeforeDisconnect.turnId !== handoff.turnId
+    || activeBeforeDisconnect.streamId !== handoff.streamId
+    || activeBeforeDisconnect.streamGeneration !== handoff.streamGeneration
+  ) {
+    throw new Error('agent.acceptance.foundationRecoveryRegistrationMissing');
+  }
+  handoff.acknowledgedCursor = activeBeforeDisconnect.cursor;
+  handoff.transitions = [];
+  handoff.replayedSequences = [];
+  handoff.replayDeliveries = [];
+  foundationF06ReplayingScenarios.delete(handoff.scenarioKey);
+  writeFoundationF06Handoff(handoff);
   controller.disconnectTransport();
   await waitFor(
     () => useAgentTurnRecoveryStore.getState()
