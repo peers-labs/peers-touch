@@ -23,6 +23,7 @@ DESKTOP_APP_SCRIPT = ROOT / "tooling" / "scripts" / "dev-desktop-app.sh"
 AGENT_CAPABILITY_RUNTIME = (
     ROOT / "apps" / "desktop" / "src" / "runtimes" / "agentCapabilityRuntime.ts"
 )
+DESKTOP_WEB_MAIN = ROOT / "apps" / "desktop" / "src" / "main.tsx"
 DESKTOP_MAIN = ROOT / "apps" / "desktop" / "src-tauri" / "src" / "main.rs"
 FOUNDATION_RUNTIME_CLIENT = (
     ROOT
@@ -144,6 +145,20 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_harness_registers_agent_namespace(self) -> None:
         self.assertIn("registerAcceptanceHarness('agent'", self.source)
+
+    def test_acceptance_observers_install_before_app_render(self) -> None:
+        main_source = DESKTOP_WEB_MAIN.read_text(encoding="utf-8")
+        install_call = main_source.index(
+            "await installAcceptanceHarnessesForBuild()"
+        )
+        render_call = main_source.index("createRoot(")
+
+        self.assertLess(install_call, render_call)
+        self.assertIn("await installAcceptanceHarnesses()", main_source)
+        self.assertNotIn(
+            "void import('./acceptance/registry')",
+            main_source,
+        )
 
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)

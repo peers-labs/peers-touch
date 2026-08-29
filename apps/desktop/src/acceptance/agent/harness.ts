@@ -387,6 +387,7 @@ async function foundationStationReplayReadback(
         && sourceDelivery.sequence > handoff.acknowledgedCursor
         && !FOUNDATION_F06_PHASE_BY_EVENT[event.event]
         && event.event !== 'catchup_done'
+        && event.event !== 'snapshot'
       ) {
         const rawPayload = evidenceValue(
           sourceDelivery.rawPayload,

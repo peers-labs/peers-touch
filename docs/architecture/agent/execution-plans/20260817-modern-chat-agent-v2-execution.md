@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source checkpoint `7a7442012` again exposed the intermittent explicit-retry dispatch race in run `20260829T115504602448Z-81b5706495f784694d505c6097c642f6`; recovery retry is now synchronously dispatched to its owning runtime through the kernel event bus and awaits exact-source deployment; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source checkpoint `406195425` crossed explicit retry and reached the AS-F06 replay-equality oracle in run `20260829T123725220148Z-723c24b6ac16ab96dd98a6afbc6663d3`; the Acceptance observer now installs before App runtimes and Station readback excludes synthesized snapshots; proof remains UNPROVEN pending another exact-source run | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3129,6 +3129,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   the user command synchronously through the typed kernel event bus to the
   already-installed `chatRuntime`, preserving runtime ownership and removing
   delayed command acceptance. AS-F06 and G-F remain `UNPROVEN`.
+- Checkpoint `4061954253f04b269b6a17e3dfc7699ec61cf9e0` was deployed
+  exact-source to profile `two`. Run
+  `20260829T121943527111Z-975f2a034ce0ada85721dd83240a6d93`
+  stopped at the AS-F06 Station-restart precondition because the destructive
+  test opt-in was absent; this was an invocation error rather than product
+  evidence, and cleanup/redaction passed. The unchanged-source rerun
+  `20260829T123725220148Z-723c24b6ac16ab96dd98a6afbc6663d3`
+  used the required opt-in, crossed explicit retry, restart, durable reload,
+  transition ordering, stale-generation, stale-terminal, and stale-revision
+  checks, and failed only `replayAfterAcknowledgedCursor`. Client delivery
+  metadata was valid and source-bound, but it recorded only sequence `139`
+  while independent Station readback returned `32..139` plus a synthesized
+  snapshot at sequence `139`. The Acceptance harness was installed through a
+  fire-and-forget import, so after renderer restart the runtime could replay
+  persisted events before its observer subscribed. The local correction awaits
+  harness installation before rendering App runtimes and excludes synthesized
+  snapshots from the independent persisted-event comparison. AS-F06 and G-F
+  remain `UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
