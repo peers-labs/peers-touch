@@ -431,6 +431,7 @@ describe('api.startAgentTurnReplayStream', () => {
       expect(onError).toHaveBeenCalledWith(
         expect.objectContaining({ message: 'agent.error.streamIdleTimeout' }),
       )
+      expect(mockFetch).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
     }

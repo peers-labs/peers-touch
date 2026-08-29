@@ -6577,6 +6577,7 @@ export function streamAgentTurnReplay(
       const gatewayBase = String((window as any).__PT_GATEWAY_BASE__ || '');
       let replayError: Error | null = null;
       for (let attempt = 0; attempt <= AGENT_REPLAY_RETRY_DELAYS_MS.length; attempt += 1) {
+        let liveTailEstablished = false;
         try {
           if (attempt > 0) {
             await waitForAgentReplay(
@@ -6609,7 +6610,6 @@ export function streamAgentTurnReplay(
               seq: input.after_seq,
             },
           });
-          let liveTailEstablished = false;
           const terminal = await consumeAgentSSE(response, controller.signal, (event) => {
             const sourceEvent: StreamEvent = {
               ...event,
@@ -6684,6 +6684,10 @@ export function streamAgentTurnReplay(
         } catch (error) {
           if (controller.signal.aborted) return;
           replayError = error instanceof Error ? error : new Error(String(error));
+        }
+        if (liveTailEstablished && replayError) {
+          reportReplayError(replayError);
+          return;
         }
       }
       if (!controller.signal.aborted) {
