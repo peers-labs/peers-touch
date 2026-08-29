@@ -5249,7 +5249,7 @@ export function installAcceptanceHarness(): void {
         );
 
         const activeCancellation = await api.cancelAgentTurn(activeTurnId);
-        if (!String(activeCancellation.status).toLowerCase().endsWith('cancelled')) {
+        if (String(activeCancellation.status).toLowerCase() !== 'cancelling') {
           active.controller.abort();
           throw new Error('agent.acceptance.foundationActiveTurnCancelRejected');
         }
