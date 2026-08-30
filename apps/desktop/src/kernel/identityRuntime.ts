@@ -5,13 +5,14 @@ import { useSocialChatStore } from '../store/socialChat';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
 import { readDesktopPreferenceSync, removeDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
-import type { AppLifecycle, AppState, SessionUser } from '../types/navigation';
+import type { AppLifecycle, SessionUser } from '../types/navigation';
 import { log } from '../utils/logger';
 import { markPhaseEnd, markPhaseStart } from './boot';
 import { EVENT, eventBus } from './events';
 import { globalContext } from './global-context';
 import {
   DEFAULT_IDENTITY_POLICY,
+  appStateFromIdentity,
   identityAuthenticatedEdge,
   identityPhaseAllowsReady,
   identityPhaseNeedsAuthGate,
@@ -161,12 +162,6 @@ function userWithSyncedProfile(
     email: profile.email || user.email,
     avatar: profile.avatar_url || user.avatar,
   };
-}
-
-function appStateFromIdentity(phase: IdentityPhase): AppState {
-  if (identityPhaseAllowsReady(phase)) return 'ready';
-  if (phase.kind === 'resolvingSession' || phase.kind === 'accessGateChainPending') return 'resuming';
-  return 'onboarding';
 }
 
 function classifyRestoreFailure(error: unknown): IdentityAuthGateReason {
@@ -406,6 +401,12 @@ class IdentityRuntime {
       loginMethod: null,
     });
     await this.loadAuthGate('revoked', false);
+  };
+
+  logout = async (): Promise<void> => {
+    this.dispatch({ type: 'LOGOUT_REQUESTED' });
+    await useSessionStore.getState().logout();
+    await this.loadAuthGate('logout', false);
   };
 
   revalidateIfNeeded = (): void => {

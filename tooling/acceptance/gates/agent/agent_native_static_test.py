@@ -25,6 +25,9 @@ AGENT_CAPABILITY_RUNTIME = (
 )
 DESKTOP_WEB_MAIN = ROOT / "apps" / "desktop" / "src" / "main.tsx"
 DESKTOP_APP = ROOT / "apps" / "desktop" / "src" / "App.tsx"
+IDENTITY_RUNTIME = (
+    ROOT / "apps" / "desktop" / "src" / "kernel" / "identityRuntime.ts"
+)
 DESKTOP_MAIN = ROOT / "apps" / "desktop" / "src-tauri" / "src" / "main.rs"
 FOUNDATION_RUNTIME_CLIENT = (
     ROOT
@@ -444,6 +447,31 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_harness_exposes_login(self) -> None:
         self.assertIn("loginWithPassword", self.source)
+
+    def test_cleanup_logout_closes_identity_phase_before_session_reset(
+        self,
+    ) -> None:
+        identity_runtime = IDENTITY_RUNTIME.read_text(encoding="utf-8")
+        logout_start = identity_runtime.index("logout = async ()")
+        logout_end = identity_runtime.index(
+            "revalidateIfNeeded =",
+            logout_start,
+        )
+        logout = identity_runtime[logout_start:logout_end]
+
+        self.assertLess(
+            logout.index("this.dispatch({ type: 'LOGOUT_REQUESTED' })"),
+            logout.index("await useSessionStore.getState().logout()"),
+        )
+        self.assertLess(
+            logout.index("await useSessionStore.getState().logout()"),
+            logout.index("await this.loadAuthGate('logout', false)"),
+        )
+        self.assertIn("await identityRuntime.logout()", self.source)
+        self.assertNotIn(
+            "await useSessionStore.getState().logout()",
+            self.source,
+        )
 
     def test_harness_exposes_navigate_to_agent(self) -> None:
         self.assertIn("navigateToAgent", self.source)

@@ -4109,6 +4109,26 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   remained empty. The current first failure is the Native logout stage; collect
   stage-level identity-pipeline, realtime-stop, auth-logout, and Harness
   completion evidence before modifying logout behavior.
+- Diagnostic checkpoint `3c5366986` reproduced the Native cleanup timeout in
+  exact-source run
+  `20260830T193203658069Z-418da7749a9af6320a312537a45aed04`.
+  Debug Server evidence shows both clients completed every identity-pipeline
+  handler, realtime stream shutdown, and Rust auth logout within one second.
+  The remaining Harness wait did not settle. The owning race is between the
+  session store reset and the still-`ready` identity lifecycle:
+  `useAppLifecycle` can revalidate and restore the live Rust session before
+  `authLogout` completes. The dependency-ready fix is to dispatch
+  `LOGOUT_REQUESTED` through `identityRuntime` before the existing session
+  logout pipeline and use that lifecycle-owned operation from Acceptance.
+  Foundation remains `PARTIAL / UNPROVEN`.
+- The local logout correction introduces an explicit `loggingOut` identity
+  phase that projects to the non-interactive `resuming` shell.
+  `identityRuntime.logout()` enters that phase before the session store reset,
+  which prevents session revalidation, LoginPage mounting, and auth-gate
+  account reads while the Rust session is still live; only completed session
+  teardown enters `accountGate(logout)`. Acceptance delegates to this
+  lifecycle-owned operation. Reducer/predicate behavior and source ordering are
+  covered by focused tests; post-fix Native runtime evidence remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

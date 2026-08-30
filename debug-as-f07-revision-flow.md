@@ -177,3 +177,16 @@
   provisioner cleanup and does not override the inner failed cleanup sidecar.
   AS-F07 instrumentation remained empty, so F-I require stage-level logout
   instrumentation before any behavior change.
+- Instrumented exact-source run
+  `20260830T193203658069Z-418da7749a9af6320a312537a45aed04`
+  on `3c5366986afcbc3bbd41a3d27bb3d174f02c18cd` reproduced the
+  same Native logout timeout. Both Browser and Native traces show every
+  identity handler finishing, followed by `realtimeStreamStop` and
+  `authLogout`, all within one second. The Harness call nevertheless exceeded
+  30 seconds, leaving its only remaining wait on `session.authenticated`.
+  Hypotheses F, G, and H are rejected; I is confirmed. The source race is that
+  `clear-zustand-stores` drops `session.authenticated` while
+  `identityRuntime` still reports `ready`, so `useAppLifecycle` may restore the
+  still-live Rust session before `authLogout` finishes. The fix must dispatch
+  `LOGOUT_REQUESTED` through the identity owner before running the existing
+  session logout pipeline, then enter the auth gate.

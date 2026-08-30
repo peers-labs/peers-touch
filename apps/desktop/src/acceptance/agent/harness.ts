@@ -5377,12 +5377,20 @@ export function installAcceptanceHarness(): void {
 
     async logout() {
       const activeOperations = Object.values(useChatStore.getState().operations);
-      await useSessionStore.getState().logout();
+      await identityRuntime.logout();
+      reportFoundationF07Debug(
+        'I',
+        'cleanup-identity-runtime-logout-finished',
+        {
+          authenticated: useSessionStore.getState().authenticated,
+        },
+      );
       await waitFor(
         () => !useSessionStore.getState().authenticated,
         'session to become unauthenticated',
         30_000,
       );
+      reportFoundationF07Debug('I', 'cleanup-harness-logout-finished');
       return {
         authenticated: false,
         identityState: identityRuntime.getSnapshot().lifecycle.state,
