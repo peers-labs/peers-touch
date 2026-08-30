@@ -1,6 +1,9 @@
+import { createMobileAppStorageRuntime } from '../../storage/mobileClientStorage';
+
 export type StationProtocol = 'https' | 'http';
 
 export interface MobileStationEntry {
+  stationPeerId: string;
   url: string;
   label: string;
   createdAt: number;
@@ -10,7 +13,7 @@ export interface MobileStationEntry {
 }
 
 export interface StoredStationRegistry {
-  activeUrl: string;
+  activeStationPeerId: string;
   entries: MobileStationEntry[];
 }
 
@@ -25,21 +28,24 @@ export interface StationStatusInput {
   checkedAt?: number;
 }
 
+export interface VerifiedStationInput {
+  stationPeerId: string;
+  url: string;
+}
+
 const STATION_REGISTRY_KEY = 'peers-touch.mobile.station-registry.v1';
 
 export async function loadStationRegistry(): Promise<StoredStationRegistry> {
+  const repository = createMobileAppStorageRuntime().repositories.stationRegistry;
   try {
-    const parsed = await createMobileAppStorageRuntime().repositories.stationRegistry.readValue(STATION_REGISTRY_KEY) as Partial<StoredStationRegistry> | null;
+    const parsed = await repository.readValue(STATION_REGISTRY_KEY) as Partial<StoredStationRegistry> | null;
     if (!parsed) return createEmptyStationRegistry();
-    const entries = Array.isArray(parsed.entries)
-      ? parsed.entries.filter(isStationEntry).sort(compareRecentlyUsed)
-      : [];
-    const activeUrl = typeof parsed.activeUrl === 'string' ? parsed.activeUrl : '';
-
-    return {
-      activeUrl: entries.some((entry) => entry.url === activeUrl) ? activeUrl : entries[0]?.url ?? '',
-      entries,
-    };
+    const registry = parseStoredStationRegistry(parsed);
+    if (!registry) {
+      await repository.remove(STATION_REGISTRY_KEY);
+      return createEmptyStationRegistry();
+    }
+    return registry;
   } catch {
     return createEmptyStationRegistry();
   }
@@ -53,20 +59,39 @@ export function emptyStationRegistry(): StoredStationRegistry {
   return createEmptyStationRegistry();
 }
 
+export function parseStoredStationRegistry(value: unknown): StoredStationRegistry | null {
+  if (!value || typeof value !== 'object') return null;
+  const parsed = value as Partial<StoredStationRegistry>;
+  if (!isStoredStationRegistry(parsed)) return null;
+  const entries = parsed.entries.slice().sort(compareRecentlyUsed);
+  return {
+    activeStationPeerId: entries.some((entry) => entry.stationPeerId === parsed.activeStationPeerId)
+      ? parsed.activeStationPeerId
+      : entries[0]?.stationPeerId ?? '',
+    entries,
+  };
+}
+
 export function addStationEntry(
   registry: StoredStationRegistry,
-  input: StationAddressInput,
+  input: VerifiedStationInput,
   status: StationStatusInput = {},
 ): { ok: true; registry: StoredStationRegistry } | { ok: false; error: string } {
-  const normalized = buildStationUrl(input);
-  if (!normalized) return { ok: false, error: 'mobile.launch.validAddressHint' };
+  const stationPeerId = input.stationPeerId.trim();
+  const normalized = normalizeVerifiedStationUrl(input.url);
+  if (!stationPeerId || !normalized) return { ok: false, error: 'mobile.launch.stationIdentityInvalid' };
+  const conflictingUrl = registry.entries.find(
+    (entry) => entry.url === normalized && entry.stationPeerId !== stationPeerId,
+  );
+  if (conflictingUrl) return { ok: false, error: 'mobile.launch.stationIdentityMismatch' };
 
   const now = Date.now();
-  const entries = registry.entries.filter((entry) => entry.url !== normalized);
-  const existing = registry.entries.find((entry) => entry.url === normalized);
+  const entries = registry.entries.filter((entry) => entry.stationPeerId !== stationPeerId);
+  const existing = registry.entries.find((entry) => entry.stationPeerId === stationPeerId);
   const nextEntry: MobileStationEntry = existing
-    ? { ...existing, lastUsedAt: now }
+    ? { ...existing, url: normalized, lastUsedAt: now }
     : {
+        stationPeerId,
         url: normalized,
         label: extractStationLabel(normalized),
         createdAt: now,
@@ -77,7 +102,7 @@ export function addStationEntry(
   return {
     ok: true,
     registry: {
-      activeUrl: normalized,
+      activeStationPeerId: stationPeerId,
       entries: [checkedEntry, ...entries].sort(compareRecentlyUsed),
     },
   };
@@ -85,27 +110,31 @@ export function addStationEntry(
 
 export function activateStationEntry(
   registry: StoredStationRegistry,
-  url: string,
+  stationPeerId: string,
   status: StationStatusInput = {},
 ): StoredStationRegistry {
-  if (!registry.entries.some((entry) => entry.url === url)) return registry;
+  if (!registry.entries.some((entry) => entry.stationPeerId === stationPeerId)) return registry;
 
   const now = Date.now();
   const entries = registry.entries
-    .map((entry) => (entry.url === url ? applyStationStatus({ ...entry, lastUsedAt: now }, status) : entry))
+    .map((entry) => (
+      entry.stationPeerId === stationPeerId
+        ? applyStationStatus({ ...entry, lastUsedAt: now }, status)
+        : entry
+    ))
     .sort(compareRecentlyUsed);
 
-  return { activeUrl: url, entries };
+  return { activeStationPeerId: stationPeerId, entries };
 }
 
 export function updateStationEntryStatus(
   registry: StoredStationRegistry,
-  url: string,
+  stationPeerId: string,
   status: StationStatusInput,
 ): StoredStationRegistry {
   let changed = false;
   const entries = registry.entries.map((entry) => {
-    if (entry.url !== url) return entry;
+    if (entry.stationPeerId !== stationPeerId) return entry;
 
     const next = applyStationStatus(entry, status);
     const entryChanged = !isSameStationEntry(entry, next);
@@ -116,12 +145,28 @@ export function updateStationEntryStatus(
   return changed ? { ...registry, entries } : registry;
 }
 
-export function removeStationEntry(registry: StoredStationRegistry, url: string): StoredStationRegistry {
-  const entries = registry.entries.filter((entry) => entry.url !== url);
+export function removeStationEntry(registry: StoredStationRegistry, stationPeerId: string): StoredStationRegistry {
+  const entries = registry.entries.filter((entry) => entry.stationPeerId !== stationPeerId);
   if (entries.length === registry.entries.length) return registry;
 
-  const activeUrl = registry.activeUrl === url ? entries[0]?.url ?? '' : registry.activeUrl;
-  return { activeUrl, entries };
+  const activeStationPeerId = registry.activeStationPeerId === stationPeerId
+    ? entries[0]?.stationPeerId ?? ''
+    : registry.activeStationPeerId;
+  return { activeStationPeerId, entries };
+}
+
+export function activeStationEntry(registry: StoredStationRegistry): MobileStationEntry | null {
+  return registry.entries.find((entry) => entry.stationPeerId === registry.activeStationPeerId) ?? null;
+}
+
+export function requireMatchingStationIdentity(
+  entry: MobileStationEntry,
+  verifiedStationPeerId: string,
+): MobileStationEntry {
+  if (entry.stationPeerId !== verifiedStationPeerId.trim()) {
+    throw new Error('mobile.launch.stationIdentityMismatch');
+  }
+  return entry;
 }
 
 export function buildStationUrl(input: StationAddressInput): string | null {
@@ -151,7 +196,19 @@ export function splitStationInput(value: string, fallbackProtocol: StationProtoc
 }
 
 function createEmptyStationRegistry(): StoredStationRegistry {
-  return { activeUrl: '', entries: [] };
+  return { activeStationPeerId: '', entries: [] };
+}
+
+function normalizeVerifiedStationUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || !url.hostname) return null;
+    url.hash = '';
+    url.search = '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
 }
 
 function normalizeStationAddress(value: string): string | null {
@@ -187,6 +244,7 @@ function applyStationStatus(entry: MobileStationEntry, status: StationStatusInpu
 function isSameStationEntry(a: MobileStationEntry, b: MobileStationEntry): boolean {
   return (
     a.url === b.url &&
+    a.stationPeerId === b.stationPeerId &&
     a.label === b.label &&
     a.createdAt === b.createdAt &&
     a.lastUsedAt === b.lastUsedAt &&
@@ -199,10 +257,19 @@ function isStationEntry(value: unknown): value is MobileStationEntry {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<MobileStationEntry>;
   return (
+    typeof entry.stationPeerId === 'string' &&
+    Boolean(entry.stationPeerId.trim()) &&
     typeof entry.url === 'string' &&
     typeof entry.label === 'string' &&
     typeof entry.createdAt === 'number' &&
     typeof entry.lastUsedAt === 'number'
   );
 }
-import { createMobileAppStorageRuntime } from '../../storage/mobileClientStorage';
+
+function isStoredStationRegistry(value: Partial<StoredStationRegistry>): value is StoredStationRegistry {
+  return (
+    typeof value.activeStationPeerId === 'string' &&
+    Array.isArray(value.entries) &&
+    value.entries.every(isStationEntry)
+  );
+}

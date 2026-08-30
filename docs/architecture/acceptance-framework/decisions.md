@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-18
+> **Created**: 2026-06-03 | **Updated**: 2026-08-27
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -24,6 +24,7 @@
 | D-10 | Gap Detector 作为跨阶段只读守卫 | proposed |
 | D-11 | Runtime Evidence Store 位于 source tree 之外 | accepted |
 | D-12 | Acceptance Infra 与业务注入使用独立责任平面 | accepted |
+| D-13 | Runtime Manifest 使用 typed services map 表达完整服务拓扑 | accepted |
 
 ---
 
@@ -561,3 +562,60 @@ Infra readiness 只消费 `acceptance_core_self_validation`。方向为
 
 若某项能力无法明确归入 Infra contract 或业务注入，必须先形成 ownership decision；
 不得以“代码位于 `tooling/acceptance/`”为由默认归属 Infra。
+
+---
+
+## D-13: Runtime Manifest 使用 typed services map 表达完整服务拓扑
+
+**Status**: accepted
+**Date**: 2026-08-27 | **Accepted**: 2026-08-27
+
+### Context
+
+原 Runtime Manifest 只有顶层 `station` 字段，无法无损表达 Mobile Acceptance
+要求的 `station-primary`、`station-secondary` 和 `relay`。增加第二个并行字段会让
+同一 Station 同时存在两种表达，并引入读取优先级、双写和证据一致性问题。
+
+### Decision
+
+`EnvironmentContract.services` 与 `RuntimeManifest.services` 是唯一 canonical
+服务拓扑契约。service ID 表示环境中的稳定角色，`kind` 表示服务类型。因此
+`station-primary` 与 `station-secondary` 均使用 `kind: station`，`relay` 使用
+`kind: relay`。
+
+每个 required Environment service 在 manifest 进入 `FIXTURE_READY` 前必须有且只有
+一个 source-bound `ServiceAttestation`。Manifest map key 必须等于 attestation 的
+service ID，kind 必须等于 Environment requirement 的 kind。
+
+删除 legacy 顶层 `station` 字段。Reader 和 writer 禁止 dual-write、alias、按 map
+顺序推断 primary Station 或回退旧字段。单 Station 环境继续使用
+`services.station`。
+
+每份 attestation 使用 service-scoped artifact path：
+`runtime/services/<service-id>/attestation.json`。
+
+### Rationale
+
+服务角色与服务类型分离后，同一 manifest 可以表达多个同类服务和不同类型服务，
+同时保持一个拓扑真源。Service-scoped artifact path 消除同一 run 内多 Station
+attestation 覆盖。
+
+### Alternatives Considered
+
+- 保留 `station` 并新增 `services`：拒绝，会形成 split-brain 和永久兼容债务。
+- 只保留 singular `station`：拒绝，无法证明 Station replacement、跨 Station
+  scope isolation 和 Relay 依赖。
+- 由 Mobile Gate 维护第二份 manifest：拒绝，业务 Gate 不拥有 runtime resource
+  truth。
+
+### Consequences
+
+- 所有 Runtime Manifest producer、consumer、validator 和 test 必须原子迁移。
+- Environment service contract 必须声明 `kind`。
+- 每增加一种 service kind，都必须提供对应 runtime owner 产生的 attestation。
+- 旧 manifest fail closed，不能继续作为 current proof。
+
+### Review / Reversal Trigger
+
+若服务角色无法用稳定 ID 表达，应重新评审 Environment Contract；不得恢复 singular
+字段或引入并行 manifest。

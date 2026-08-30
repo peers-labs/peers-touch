@@ -26,7 +26,7 @@ func NewProviderConfigService(cliRegistry *CLIAdapterRegistry) *ProviderConfigSe
 }
 
 type ProviderCreateRequest struct {
-	ActorID     string
+	ActorPTID   string
 	ProviderID  string
 	DisplayName string
 	BaseURL     string
@@ -35,7 +35,7 @@ type ProviderCreateRequest struct {
 }
 
 type ProviderUpdateRequest struct {
-	ActorID     string
+	ActorPTID   string
 	ProviderID  string
 	Version     int64
 	DisplayName *string
@@ -45,12 +45,12 @@ type ProviderUpdateRequest struct {
 }
 
 type ProviderDeleteRequest struct {
-	ActorID    string
+	ActorPTID  string
 	ProviderID string
 	Version    int64
 }
 
-func (s *ProviderConfigService) List(ctx context.Context, actorID string) ([]persistence.AgentProvider, error) {
+func (s *ProviderConfigService) List(ctx context.Context, actorPTID string) ([]persistence.AgentProvider, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -58,7 +58,7 @@ func (s *ProviderConfigService) List(ctx context.Context, actorID string) ([]per
 
 	var providers []persistence.AgentProvider
 	if err := db.WithContext(ctx).
-		Where("actor_id = ?", actorID).
+		Where("actor_ptid = ?", actorPTID).
 		Order("created_at ASC").
 		Find(&providers).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -95,7 +95,7 @@ func (s *ProviderConfigService) Create(ctx context.Context, req ProviderCreateRe
 
 	provider := persistence.AgentProvider{
 		ID:            uuid.New().String(),
-		ActorID:       req.ActorID,
+		ActorPTID:     req.ActorPTID,
 		Name:          req.ProviderID,
 		DisplayName:   req.DisplayName,
 		BaseURL:       req.BaseURL,
@@ -114,7 +114,7 @@ func (s *ProviderConfigService) Create(ctx context.Context, req ProviderCreateRe
 			"failed to create provider", err)
 	}
 
-	logger.Infof(ctx, "provider created: actor=%s, provider=%s, runtime=%s", req.ActorID, req.ProviderID, runtimeKind)
+	logger.Infof(ctx, "provider created: actor_ptid=%s, provider=%s, runtime=%s", req.ActorPTID, req.ProviderID, runtimeKind)
 	return &provider, nil
 }
 
@@ -126,7 +126,7 @@ func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRe
 
 	var provider persistence.AgentProvider
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND name = ?", req.ActorID, req.ProviderID).
+		Where("actor_ptid = ? AND name = ?", req.ActorPTID, req.ProviderID).
 		First(&provider).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,
@@ -168,13 +168,13 @@ func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRe
 
 	// Re-read to return authoritative state
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND name = ?", req.ActorID, req.ProviderID).
+		Where("actor_ptid = ? AND name = ?", req.ActorPTID, req.ProviderID).
 		First(&provider).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to re-read provider after update", err)
 	}
 
-	logger.Infof(ctx, "provider updated: actor=%s, provider=%s, version=%d", req.ActorID, req.ProviderID, provider.Version)
+	logger.Infof(ctx, "provider updated: actor_ptid=%s, provider=%s, version=%d", req.ActorPTID, req.ProviderID, provider.Version)
 	return &provider, nil
 }
 
@@ -186,7 +186,7 @@ func (s *ProviderConfigService) Delete(ctx context.Context, req ProviderDeleteRe
 
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var provider persistence.AgentProvider
-		if err := tx.Where("actor_id = ? AND name = ?", req.ActorID, req.ProviderID).
+		if err := tx.Where("actor_ptid = ? AND name = ?", req.ActorPTID, req.ProviderID).
 			First(&provider).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return errcode.New(errcode.AgentNotFound, http.StatusNotFound,
@@ -201,13 +201,13 @@ func (s *ProviderConfigService) Delete(ctx context.Context, req ProviderDeleteRe
 				fmt.Sprintf("version conflict: current=%d, submitted=%d", provider.Version, req.Version), nil)
 		}
 
-		if err := tx.Where("actor_id = ? AND provider = ?", req.ActorID, req.ProviderID).
+		if err := tx.Where("actor_ptid = ? AND provider = ?", req.ActorPTID, req.ProviderID).
 			Delete(&persistence.Credential{}).Error; err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"failed to cascade delete credentials", err)
 		}
 
-		if err := tx.Where("actor_id = ? AND provider_id = ?", req.ActorID, req.ProviderID).
+		if err := tx.Where("actor_ptid = ? AND provider_id = ?", req.ActorPTID, req.ProviderID).
 			Delete(&persistence.AgentModel{}).Error; err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 				"failed to cascade delete models", err)
@@ -218,7 +218,7 @@ func (s *ProviderConfigService) Delete(ctx context.Context, req ProviderDeleteRe
 				"failed to delete provider", err)
 		}
 
-		logger.Infof(ctx, "provider deleted with cascade: actor=%s, provider=%s", req.ActorID, req.ProviderID)
+		logger.Infof(ctx, "provider deleted with cascade: actor_ptid=%s, provider=%s", req.ActorPTID, req.ProviderID)
 		return nil
 	})
 }
@@ -233,7 +233,7 @@ func (s *ProviderConfigService) getDB(ctx context.Context) (*gorm.DB, error) {
 }
 
 // HideModel appends a model ID to the provider's hidden_models list.
-func (s *ProviderConfigService) HideModel(ctx context.Context, actorID, providerID, modelID string) error {
+func (s *ProviderConfigService) HideModel(ctx context.Context, actorPTID, providerID, modelID string) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
@@ -241,7 +241,7 @@ func (s *ProviderConfigService) HideModel(ctx context.Context, actorID, provider
 
 	var provider persistence.AgentProvider
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND name = ?", actorID, providerID).
+		Where("actor_ptid = ? AND name = ?", actorPTID, providerID).
 		First(&provider).Error; err != nil {
 		return errcode.New(errcode.AgentNotFound, http.StatusNotFound,
 			fmt.Sprintf("provider %q not found", providerID), err)
@@ -265,7 +265,7 @@ func (s *ProviderConfigService) HideModel(ctx context.Context, actorID, provider
 }
 
 // UnhideModel removes a model ID from the provider's hidden_models list.
-func (s *ProviderConfigService) UnhideModel(ctx context.Context, actorID, providerID, modelID string) error {
+func (s *ProviderConfigService) UnhideModel(ctx context.Context, actorPTID, providerID, modelID string) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
@@ -273,7 +273,7 @@ func (s *ProviderConfigService) UnhideModel(ctx context.Context, actorID, provid
 
 	var provider persistence.AgentProvider
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND name = ?", actorID, providerID).
+		Where("actor_ptid = ? AND name = ?", actorPTID, providerID).
 		First(&provider).Error; err != nil {
 		return nil
 	}
@@ -303,7 +303,7 @@ func (s *ProviderConfigService) UnhideModel(ctx context.Context, actorID, provid
 }
 
 // GetHiddenModels returns the list of hidden model IDs for a provider.
-func (s *ProviderConfigService) GetHiddenModels(ctx context.Context, actorID, providerID string) ([]string, error) {
+func (s *ProviderConfigService) GetHiddenModels(ctx context.Context, actorPTID, providerID string) ([]string, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -311,7 +311,7 @@ func (s *ProviderConfigService) GetHiddenModels(ctx context.Context, actorID, pr
 
 	var provider persistence.AgentProvider
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND name = ?", actorID, providerID).
+		Where("actor_ptid = ? AND name = ?", actorPTID, providerID).
 		First(&provider).Error; err != nil {
 		return nil, nil
 	}

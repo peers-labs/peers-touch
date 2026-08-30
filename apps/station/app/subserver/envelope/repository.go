@@ -36,7 +36,7 @@ type Repository interface {
 	// --- Inbox (per-device durable delivery) ---
 
 	// EnqueueInbox persists an envelope for a specific device.
-	// Idempotent on (recipient_did, recipient_device_id, idempotency_key).
+	// Idempotent on (recipient_ptid, recipient_device_id, idempotency_key).
 	EnqueueInbox(ctx context.Context, item *chat.DeviceInboxItem) (string, error)
 
 	// MarkInboxDelivered sets status=DELIVERED (SSE frame sent to device).
@@ -48,7 +48,7 @@ type Repository interface {
 	// UnackedInboxItems returns items not yet ACK'd for a device, after the
 	// given cursor (inbox_item_id), ordered by first_queued_at. Used for
 	// SSE reconnect / cold-start recovery.
-	UnackedInboxItems(ctx context.Context, recipientDID, deviceID string, afterCursor string, limit int) ([]*chat.DeviceInboxItem, error)
+	UnackedInboxItems(ctx context.Context, recipientPTID, deviceID string, afterCursor string, limit int) ([]*chat.DeviceInboxItem, error)
 
 	// --- Idempotency ---
 

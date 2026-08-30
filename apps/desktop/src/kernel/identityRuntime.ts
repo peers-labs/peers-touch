@@ -106,11 +106,11 @@ async function loadKnownAccountUsers(sessionAuthenticated: boolean): Promise<Ses
 }
 
 function appletLaunchContextToSessionUser(context: AppletProductWindowLaunchContext): SessionUser {
-  const actorId = context.actorId || 'applet-product-window-certification';
+  const actorPtid = context.actorPtid || 'applet-product-window-certification';
   return {
-    name: context.name || actorId,
+    name: context.name || actorPtid,
     email: context.email || '',
-    accountId: `applet-product-window-certification:${actorId}`,
+    accountId: `applet-product-window-certification:${actorPtid}`,
     hasPin: false,
     hasSession: true,
     provider: context.loginMethod || 'product-window-certification',
@@ -118,13 +118,13 @@ function appletLaunchContextToSessionUser(context: AppletProductWindowLaunchCont
 }
 
 function activateAppletProductWindowLaunch(context: AppletProductWindowLaunchContext): boolean {
-  if (!context.enabled || !context.appletId || !context.actorId) return false;
+  if (!context.enabled || !context.appletId || !context.actorPtid) return false;
 
   setAppletProductWindowLaunchContext(context);
   const loginMethod = context.loginMethod || 'product-window-certification';
   useSessionStore.getState().activateAppletLaunchSession({
-    actorId: context.actorId,
-    name: context.name || context.actorId,
+    actorPtid: context.actorPtid,
+    name: context.name || context.actorPtid,
     email: context.email || '',
     loginMethod,
     loginProvider: loginMethod,
@@ -141,9 +141,9 @@ function activateAppletProductWindowLaunch(context: AppletProductWindowLaunchCon
 
 function currentSessionUser(): SessionUser | null {
   const current = useSessionStore.getState().currentUser;
-  if (!current?.actorId) return null;
+  if (!current?.actorPtid) return null;
   return {
-    name: current.name || current.actorId,
+    name: current.name || current.actorPtid,
     email: current.email || '',
     avatar: current.avatarUrl,
     hasSession: true,
@@ -297,7 +297,7 @@ class IdentityRuntime {
     const resp = await api.authLogin({ account, password });
     await runIdentityPipeline({
       reason: 'login',
-      actorId: resp.actor_id ?? null,
+      actorPtid: resp.actor_ptid ?? null,
       loginMethod: 'password',
     });
     await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
@@ -309,7 +309,7 @@ class IdentityRuntime {
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
       reason: 'oauth_bridge',
-      actorId: resp.actor_id ?? null,
+      actorPtid: resp.actor_ptid ?? null,
       loginMethod: method,
     });
     await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
@@ -321,7 +321,7 @@ class IdentityRuntime {
     const restored = await api.authRestoreSession();
     await runIdentityPipeline({
       reason: 'switch',
-      actorId: restored.actor_id ?? accountId,
+      actorPtid: restored.actor_ptid ?? accountId,
       loginMethod: restored.login_method ?? null,
     });
     await useAccountIdentityStore.getState().load();
@@ -333,7 +333,7 @@ class IdentityRuntime {
     const resp = await api.accountUnlock(accountId, pin);
     await runIdentityPipeline({
       reason: 'unlock',
-      actorId: resp.actor_id ?? null,
+      actorPtid: resp.actor_ptid ?? null,
       loginMethod: resp.login_method ?? null,
     });
     await useAccountIdentityStore.getState().load();
@@ -429,7 +429,7 @@ class IdentityRuntime {
     log.info('identity', 'authenticated edge accepted', {
       edge: edge.kind,
       completion: edge.completion,
-      actorId: useSessionStore.getState().currentUser?.actorId,
+      actorPtid: useSessionStore.getState().currentUser?.actorPtid,
     });
     this.dispatch(edge.event);
     await this.reconcileAuthenticatedIdentity(edge.user, edge.kind);
@@ -455,7 +455,7 @@ class IdentityRuntime {
     } catch (error) {
       log.warn('identity', 'profile sync failed during authenticated reconciliation', {
         edge: edgeKind,
-        actorId: useSessionStore.getState().currentUser?.actorId,
+        actorPtid: useSessionStore.getState().currentUser?.actorPtid,
         error: String(error),
       });
       this.dispatch({ type: 'PROFILE_SYNC_FAILED' });
@@ -471,7 +471,7 @@ class IdentityRuntime {
     } catch (error) {
       log.warn('identity', 'account cache refresh failed during authenticated reconciliation', {
         edge: edgeKind,
-        actorId: useSessionStore.getState().currentUser?.actorId,
+        actorPtid: useSessionStore.getState().currentUser?.actorPtid,
         error: String(error),
       });
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_FAILED' });

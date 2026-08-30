@@ -271,7 +271,7 @@ pub fn restore_profile_database_atomically(
         &final_spec.app_name,
         &final_spec.domain,
         &final_spec.profile,
-        Some(&final_spec.user_scope),
+        &final_spec.user_scope,
     )
     .map_err(|error| format!("{error:?}"))?;
     let mut staging_spec = final_spec.clone();
@@ -280,7 +280,7 @@ pub fn restore_profile_database_atomically(
         &staging_spec.app_name,
         &staging_spec.domain,
         &staging_spec.profile,
-        Some(&staging_spec.user_scope),
+        &staging_spec.user_scope,
     )
     .map_err(|error| format!("{error:?}"))?;
     remove_database_files(&staging_path)?;

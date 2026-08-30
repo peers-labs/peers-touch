@@ -49,7 +49,7 @@ func (p *LedgerEventPublisher) PublishToLocalActors(ctx context.Context, event *
 				ActorSignature:         event.ActorSignature,
 				StationSignature:       event.StationSignature,
 				SequencerSignature:     event.SequencerSignature,
-				ActorId:                event.ActorId,
+				ActorPtid:              event.ActorPtid,
 				ActorFederatedHandle:   event.ActorFederatedHandle,
 				StationPeerId:          event.StationPeerId,
 				SequencerStationPeerId: event.SequencerStationPeerId,
@@ -60,7 +60,7 @@ func (p *LedgerEventPublisher) PublishToLocalActors(ctx context.Context, event *
 
 	var errs []error
 	for _, actor := range actors {
-		if _, pubErr := bus.Publish(actor.ActorID, streamEvent); pubErr != nil {
+		if _, pubErr := bus.Publish(actor.ActorPTID, streamEvent); pubErr != nil {
 			errs = append(errs, pubErr)
 		}
 	}

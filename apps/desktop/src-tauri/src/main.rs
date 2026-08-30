@@ -36,10 +36,10 @@ pub mod peers_touch {
 use interface::tauri_commands::{
     account, actor, admin, agent_growth, agent_orchestration, agent_scheduler, agent_turn, agents,
     applets, auth, channels, chat, conversation, cron, crypto, desktop_capture, federation,
-    frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice,
-    key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery, mls,
-    model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
-    search, settings, skills, skills_market, social, station, system, tools, tts,
+    frontend_log, frontend_telemetry, group_chat, host_events, i18n, ice, key_exchange, mcp,
+    memory, messaging as messaging_commands, messaging_recovery, mls, model_config, notebook,
+    notification, oauth2, oss, presence, profile, provider, realtime, search, settings, skills,
+    skills_market, social, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -160,9 +160,6 @@ fn main() {
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to resolve attachment cache dir at startup");
                 }
-            }
-            if let Err(e) = infrastructure::session_store::migrate_legacy() {
-                tracing::warn!(error = %e, "session_store: migrate_legacy failed (continuing boot)");
             }
             Ok(())
         })
@@ -672,11 +669,11 @@ fn main() {
                 );
                 let mut handles = Vec::new();
                 for session in sessions {
-                    if session.actor.actor_id.is_empty() || session.jwt.trim().is_empty() {
+                    if session.actor.ptid.is_empty() || session.jwt.trim().is_empty() {
                         continue;
                     }
                     if let Some(h) = supervisor.notify(
-                        &session.actor.actor_id,
+                        &session.actor.ptid,
                         &session.jwt,
                         domain::presence::PresenceTrigger::AppShutdown,
                         app.clone(),

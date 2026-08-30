@@ -41,7 +41,7 @@ export interface AccessPolicy {
   mode: AccessPolicyMode;
   allowed_emails?: string[];
   allowed_usernames?: string[];
-  allowed_actor_ids?: number[];
+  allowed_actor_ptids?: string[];
   enabled_gates?: AccessGateType[];
   self_service_invite?: boolean;
   updated_at?: string;

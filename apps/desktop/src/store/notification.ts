@@ -7,7 +7,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { api, isUnauthorizedError, type NotificationData, type NotificationUnreadCountsResponse } from '../services/desktop_api';
-import { currentAuthenticatedActorId } from './session';
+import { currentAuthenticatedActorPtid } from './session';
 import { log } from '../utils/logger';
 
 const POLL_INTERVAL = 15_000;
@@ -44,7 +44,7 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
   pollTimer: null,
 
   loadNotifications: async () => {
-    if (!currentAuthenticatedActorId()) {
+    if (!currentAuthenticatedActorPtid()) {
       set({ loading: false });
       return;
     }
@@ -69,7 +69,7 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
   },
 
   loadMore: async () => {
-    if (!currentAuthenticatedActorId()) return;
+    if (!currentAuthenticatedActorPtid()) return;
     const { nextCursor, loading, hasMore } = get();
     if (loading || !hasMore || !nextCursor) return;
 
@@ -96,7 +96,7 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
   },
 
   refreshUnreadCounts: async () => {
-    if (!currentAuthenticatedActorId()) {
+    if (!currentAuthenticatedActorPtid()) {
       set({ unreadTotal: 0, unreadByCategory: {} });
       return;
     }
@@ -113,7 +113,7 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
   },
 
   markRead: async (ids: string[]) => {
-    if (!currentAuthenticatedActorId()) return;
+    if (!currentAuthenticatedActorPtid()) return;
     try {
       await api.notificationMarkRead(ids);
       set((prev) => ({
@@ -127,7 +127,7 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
   },
 
   markAllRead: async (category?: number) => {
-    if (!currentAuthenticatedActorId()) return;
+    if (!currentAuthenticatedActorPtid()) return;
     try {
       await api.notificationMarkAllRead(category);
       set((prev) => ({
@@ -149,7 +149,7 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
   },
 
   deleteNotifications: async (ids: string[]) => {
-    if (!currentAuthenticatedActorId()) return;
+    if (!currentAuthenticatedActorPtid()) return;
     try {
       await api.notificationDelete(ids);
       set((prev) => ({
@@ -163,7 +163,7 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
   },
 
   startPolling: () => {
-    if (!currentAuthenticatedActorId()) {
+    if (!currentAuthenticatedActorPtid()) {
       get().stopPolling();
       set({ notifications: [], unreadTotal: 0, unreadByCategory: {}, loading: false });
       return;

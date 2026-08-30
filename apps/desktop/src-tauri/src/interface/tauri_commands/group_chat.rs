@@ -6,10 +6,10 @@ use crate::contracts::{
     GroupChatEditInput, GroupChatFederatedActorInput, GroupChatLeaveGroupInput, GroupChatListInput,
     GroupChatListMessagesInput, GroupChatMarkReadInput, GroupChatSyncInput,
     GroupChatThreadCountsInput, GroupChatThreadInput, GroupChatUnreadInput, GroupInviteInput,
-    GroupJoinInput, GroupMembersInput,
-    GroupMessageActionInput, GroupOfflineMessagesInput, GroupRemoveMemberInput,
-    GroupSearchMessagesInput, GroupTransferOwnershipInput, GroupUlidInput, GroupUpdateInput,
-    GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
+    GroupJoinInput, GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
+    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupTransferOwnershipInput, GroupUlidInput,
+    GroupUpdateInput, GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput,
+    StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -51,13 +51,17 @@ fn token_from_state_proto(
     Ok(token)
 }
 
-fn actor_id_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Option<String> {
-    session_resolver::actor_id_for_window(state.inner(), window)
+fn actor_ptid_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Option<String> {
+    session_resolver::ptid_for_window(state.inner(), window)
 }
 
-fn user_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> String {
-    let actor_id = actor_id_from_state(state, window);
-    crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref())
+fn user_scope_from_state(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<String, AppResult<StubPayload>> {
+    let actor_ptid = actor_ptid_from_state(state, window)
+        .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
+    Ok(crate::infrastructure::local_scope::user_scope_for_actor_ptid(&actor_ptid))
 }
 
 fn request_json(
@@ -343,7 +347,10 @@ pub fn group_chat_local_search_scoped(
     if input.query.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "query is required", None);
     }
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     let limit = input.limit.unwrap_or(50).clamp(1, 200) as usize;
     let items =
         match chat_storage::search_group_messages(user_scope.as_str(), input.query.as_str(), limit)
@@ -369,7 +376,10 @@ pub fn group_chat_set_cursor_scoped(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     if input.scope.trim().is_empty() || input.cursor.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -397,7 +407,10 @@ pub fn group_chat_get_cursor_scoped(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     if input.scope.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "scope is required", None);
     }
@@ -419,7 +432,10 @@ pub fn group_chat_get_key_version_scoped(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     let key_version = match chat_storage::get_chat_key_version(user_scope.as_str()) {
         Ok(version) => version,
         Err(reason) => {
@@ -449,7 +465,10 @@ pub fn group_chat_rotate_key_scoped(
             None,
         );
     }
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     let key_version = match chat_storage::rotate_chat_key(user_scope.as_str(), input.next_version) {
         Ok(version) => version,
         Err(reason) => {
@@ -479,7 +498,10 @@ pub fn group_chat_sync_from_station_scoped(
     if input.group_ulid.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
     }
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     let scope_key = format!("group:{}", input.group_ulid);
     let cursor = match chat_storage::get_scope_cursor(user_scope.as_str(), scope_key.as_str()) {
         Ok(cursor) => cursor,
@@ -569,7 +591,7 @@ pub fn group_chat_create_group(
     let req = model::chat::CreateGroupRequest {
         name: input.name,
         description: input.description.unwrap_or_default(),
-        initial_member_dids: input.member_dids.unwrap_or_default(),
+        initial_member_ptids: input.member_ptids.unwrap_or_default(),
         initial_federated_members: input
             .initial_federated_members
             .unwrap_or_default()
@@ -595,7 +617,7 @@ fn group_chat_federated_actor_input_to_proto(
     input: GroupChatFederatedActorInput,
 ) -> model::chat::FederatedActorRef {
     model::chat::FederatedActorRef {
-        ptid: input.actor_did,
+        ptid: input.actor_ptid,
         home_station_peer_id: input.home_station_peer_id,
         home_station_domain: input.home_station_domain.unwrap_or_default(),
         federated_handle: input.federated_handle.unwrap_or_default(),
@@ -706,7 +728,7 @@ pub fn group_chat_invite_to_group(
 
     let req = model::chat::InviteToGroupRequest {
         group_ulid: input.group_ulid,
-        invitee_dids: input.member_dids,
+        invitee_ptids: input.member_ptids,
         ..Default::default()
     };
 
@@ -833,16 +855,16 @@ pub fn group_chat_remove_member(
         Ok(token) => token,
         Err(error) => return error,
     };
-    if input.group_ulid.trim().is_empty() || input.member_did.trim().is_empty() {
+    if input.group_ulid.trim().is_empty() || input.member_ptid.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "group_ulid and member_did are required",
+            "group_ulid and member_ptid are required",
             None,
         );
     }
     let req = model::chat::RemoveMemberRequest {
         group_ulid: input.group_ulid,
-        ptid: input.member_did,
+        ptid: input.member_ptid,
     };
     let resp = match station_client::request_proto::<
         model::chat::RemoveMemberRequest,
@@ -871,10 +893,10 @@ pub fn group_chat_update_member(
         Ok(token) => token,
         Err(error) => return error,
     };
-    if input.group_ulid.trim().is_empty() || input.member_did.trim().is_empty() {
+    if input.group_ulid.trim().is_empty() || input.member_ptid.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "group_ulid and member_did are required",
+            "group_ulid and member_ptid are required",
             None,
         );
     }
@@ -886,7 +908,7 @@ pub fn group_chat_update_member(
         });
     let req = model::chat::UpdateMemberRequest {
         group_ulid: input.group_ulid,
-        ptid: input.member_did,
+        ptid: input.member_ptid,
         role: input.role,
         muted: input.muted,
         muted_until,
@@ -918,16 +940,16 @@ pub fn group_chat_transfer_ownership(
         Ok(token) => token,
         Err(error) => return error,
     };
-    if input.group_ulid.trim().is_empty() || input.next_owner_did.trim().is_empty() {
+    if input.group_ulid.trim().is_empty() || input.next_owner_ptid.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "group_ulid and next_owner_did are required",
+            "group_ulid and next_owner_ptid are required",
             None,
         );
     }
     let req = model::chat::TransferGroupOwnershipRequest {
         group_ulid: input.group_ulid,
-        next_owner_did: input.next_owner_did,
+        next_owner_ptid: input.next_owner_ptid,
     };
     let resp = match station_client::request_proto::<
         model::chat::TransferGroupOwnershipRequest,

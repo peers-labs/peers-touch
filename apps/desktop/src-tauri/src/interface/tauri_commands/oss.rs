@@ -95,7 +95,7 @@ pub struct OssResolveUrlInput {
     /// renderers calling for purely-public local files may omit
     /// it; foreign-origin URIs need it for federation to succeed.
     #[serde(default)]
-    pub actor_did: String,
+    pub actor_ptid: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -958,7 +958,7 @@ pub fn oss_resolve_url(
     // best-effort and let the application layer decide whether the
     // current request actually needs it.
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_oss::oss_resolve_url(&input.uri, &token, &input.actor_did)
+    application_oss::oss_resolve_url(&input.uri, &token, &input.actor_ptid)
 }
 
 #[tauri::command]

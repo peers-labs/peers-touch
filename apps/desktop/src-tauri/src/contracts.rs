@@ -16,9 +16,9 @@ pub struct StubPayload {
 pub struct AuthSessionPayload {
     pub command: String,
     pub status: String,
-    pub actor_id: Option<String>,
-    #[serde(default)]
-    pub ptid: Option<String>,
+    pub actor_ptid: Option<String>,
+    #[serde(skip)]
+    pub session_token: Option<String>,
     pub name: Option<String>,
     pub email: Option<String>,
     pub avatar_url: Option<String>,
@@ -161,7 +161,7 @@ pub struct AttachmentInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialFriendRequestSendInput {
-    pub receiver_did: String,
+    pub receiver_ptid: String,
     pub message: Option<String>,
 }
 
@@ -196,7 +196,7 @@ pub struct KeyExchangeUploadInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyExchangeFetchInput {
-    pub did: String,
+    pub ptid: String,
     pub device_id: Option<String>,
     pub home_station_peer_id: Option<String>,
 }
@@ -586,15 +586,15 @@ pub struct AvatarResolveLocalInput {
     pub url: Option<String>,
 }
 
-/// Input for `peer_profile_get`. `did` is the peer's numeric actor id (also
-/// referred to as DID throughout the desktop chat layer).
+/// Input for `peer_profile_get`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeerProfileGetInput {
-    pub did: String,
+    pub actor_ptid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountUpsertOAuthInput {
+    pub actor_ptid: String,
     pub provider: String,
     pub provider_user_id: String,
     pub name: Option<String>,
@@ -1308,7 +1308,7 @@ pub struct ProviderModelToggleAllInput {
 pub struct GroupCreateInput {
     pub name: String,
     pub description: Option<String>,
-    pub member_dids: Option<Vec<String>>,
+    pub member_ptids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1327,7 +1327,7 @@ pub struct GroupUpdateInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupInviteInput {
     pub group_ulid: String,
-    pub member_dids: Vec<String>,
+    pub member_ptids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1339,19 +1339,19 @@ pub struct GroupAddFederatedMemberInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupRemoveMemberInput {
     pub group_ulid: String,
-    pub member_did: String,
+    pub member_ptid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupTransferOwnershipInput {
     pub group_ulid: String,
-    pub next_owner_did: String,
+    pub next_owner_ptid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupUpdateMemberInput {
     pub group_ulid: String,
-    pub member_did: String,
+    pub member_ptid: String,
     pub role: Option<i32>,
     pub muted: Option<bool>,
     pub muted_until_unix_ms: Option<i64>,
@@ -1464,7 +1464,7 @@ pub struct ActorSearchUsersInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupChatFederatedActorInput {
-    pub actor_did: String,
+    pub actor_ptid: String,
     pub home_station_peer_id: String,
     pub home_station_domain: Option<String>,
     pub federated_handle: Option<String>,
@@ -1477,7 +1477,7 @@ pub struct GroupChatFederatedActorInput {
 pub struct GroupChatCreateGroupInput {
     pub name: String,
     pub description: Option<String>,
-    pub member_dids: Option<Vec<String>>,
+    pub member_ptids: Option<Vec<String>>,
     pub initial_federated_members: Option<Vec<GroupChatFederatedActorInput>>,
 }
 
@@ -1490,7 +1490,7 @@ pub struct GroupChatLeaveGroupInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendRequestSendInput {
-    pub receiver_did: String,
+    pub receiver_ptid: String,
     pub message: Option<String>,
 }
 
@@ -1508,7 +1508,7 @@ pub struct FriendRequestListInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendRequestDeleteInput {
-    pub peer_did: String,
+    pub peer_ptid: String,
 }
 
 // --- Notification contracts ---
@@ -1578,7 +1578,7 @@ pub struct SocialDeleteMomentInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialListByAuthorInput {
-    pub user_id: String,
+    pub author_ptid: String,
     #[serde(default)]
     pub cursor: Option<String>,
     #[serde(default)]
@@ -1687,14 +1687,14 @@ pub struct SocialDeleteCommentInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialFollowInput {
-    pub target_user_id: String,
+    pub target_actor_ptid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialGetFollowersInput {
     /// `None` ↔ "for the calling actor".
     #[serde(default)]
-    pub user_id: Option<String>,
+    pub actor_ptid: Option<String>,
     #[serde(default)]
     pub cursor: Option<String>,
     #[serde(default)]
@@ -1704,7 +1704,7 @@ pub struct SocialGetFollowersInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialGetFollowingInput {
     #[serde(default)]
-    pub user_id: Option<String>,
+    pub actor_ptid: Option<String>,
     #[serde(default)]
     pub cursor: Option<String>,
     #[serde(default)]
@@ -1713,7 +1713,7 @@ pub struct SocialGetFollowingInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialGetRelationshipInput {
-    pub target_user_id: String,
+    pub target_actor_ptid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1722,7 +1722,7 @@ pub struct SocialCircleCreateInput {
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
-    pub member_dids: Option<Vec<String>>,
+    pub member_ptids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1741,13 +1741,13 @@ pub struct SocialCircleDeleteInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialCircleAddMembersInput {
     pub circle_id: String,
-    pub member_dids: Vec<String>,
+    pub member_ptids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocialCircleRemoveMembersInput {
     pub circle_id: String,
-    pub member_dids: Vec<String>,
+    pub member_ptids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

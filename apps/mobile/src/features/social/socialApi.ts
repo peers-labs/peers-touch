@@ -2,6 +2,7 @@ import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { encryptClientMediaBlob, encryptClientMediaBlobChunked, type ClientEncryptedMediaAsset } from '@peers-touch/client-media-security';
 
 import type { MobileAuthSession } from '../auth/authSession';
+import { mobileAuthScope, mobileAuthScopeKey } from '../auth/mobileAuthIdentity';
 import { FriendshipStatus as FriendshipStatusCode } from '../../gen/proto/domain/chat/chat_pb';
 import {
   ConversationCommandSchema,
@@ -118,8 +119,8 @@ interface ListSessionsPayload {
 }
 
 interface ListBlockedUsersPayload {
-  blockedUsers?: Array<{ actorId?: string; actor_id?: string; status?: number }>;
-  blocked_users?: Array<{ actorId?: string; actor_id?: string; status?: number }>;
+  blockedUsers?: Array<{ actorPtid?: string; actor_ptid?: string; status?: number }>;
+  blocked_users?: Array<{ actorPtid?: string; actor_ptid?: string; status?: number }>;
   total?: number;
 }
 
@@ -168,19 +169,19 @@ export interface SocialApiClient {
   listFriendRequests: (status?: number, limit?: number, offset?: number) => Promise<ListFriendRequestsPayload>;
   acceptFriendRequest: (requestId: string) => Promise<{ request?: FriendRequest; session?: FriendChatSession }>;
   rejectFriendRequest: (requestId: string) => Promise<{ request?: FriendRequest }>;
-  sendFriendRequest: (receiverDid: string, message?: string) => Promise<{ request?: FriendRequest }>;
+  sendFriendRequest: (receiverPtid: string, message?: string) => Promise<{ request?: FriendRequest }>;
   listSessions: (limit?: number, offset?: number) => Promise<ListSessionsPayload>;
-  createSession: (participantDid: string) => Promise<{ session?: FriendChatSession; created?: boolean }>;
+  createSession: (participantPtid: string) => Promise<{ session?: FriendChatSession; created?: boolean }>;
   getConversationSettings: (sessionUlid: string) => Promise<FriendConversationSettings>;
   updateConversationSettings: (sessionUlid: string, input: UpdateFriendConversationSettingsInput) => Promise<FriendConversationSettings>;
-  blockUser: (targetDid: string) => Promise<Record<string, unknown>>;
-  unblockUser: (targetDid: string) => Promise<Record<string, unknown>>;
+  blockUser: (targetPtid: string) => Promise<Record<string, unknown>>;
+  unblockUser: (targetPtid: string) => Promise<Record<string, unknown>>;
   listBlockedUsers: (limit?: number, offset?: number) => Promise<FriendshipStatus[]>;
-  getFriendshipStatus: (targetDid: string) => Promise<FriendshipStatus>;
+  getFriendshipStatus: (targetPtid: string) => Promise<FriendshipStatus>;
   listMessages: (sessionUlid: string, beforeUlid?: string, limit?: number) => Promise<ListMessagesPayload>;
-  sendMessage: (sessionUlid: string, receiverDid: string, content: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<{ message?: FriendChatMessage }>;
-  sendEncryptedMessage: (sessionUlid: string, receiverDid: string, encryptedPayload: Uint8Array, messageType?: number) => Promise<{ message?: FriendChatMessage }>;
-  sendSenderKeyDistribution: (sessionUlid: string, receiverDid: string, encryptedPayload: Uint8Array) => Promise<{ message?: FriendChatMessage }>;
+  sendMessage: (sessionUlid: string, receiverPtid: string, content: string, attachments?: ChatAttachmentInput[], messageType?: number) => Promise<{ message?: FriendChatMessage }>;
+  sendEncryptedMessage: (sessionUlid: string, receiverPtid: string, encryptedPayload: Uint8Array, messageType?: number) => Promise<{ message?: FriendChatMessage }>;
+  sendSenderKeyDistribution: (sessionUlid: string, receiverPtid: string, encryptedPayload: Uint8Array) => Promise<{ message?: FriendChatMessage }>;
   editMessage: (sessionUlid: string, messageUlid: string, newEncryptedPayload: Uint8Array) => Promise<Record<string, unknown>>;
   recallMessage: (sessionUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
   deleteMessage: (sessionUlid: string, messageUlid: string) => Promise<Record<string, unknown>>;
@@ -193,7 +194,7 @@ export interface SocialApiClient {
   markAllNotificationsRead: (category?: number) => Promise<Record<string, unknown>>;
   deleteNotifications: (notificationIds: string[]) => Promise<Record<string, unknown>>;
   searchActors: (query: string) => Promise<ActorSearchPayload>;
-  getPeerProfile: (did: string) => Promise<PeerProfile>;
+  getPeerProfile: (ptid: string) => Promise<PeerProfile>;
   resolveFederationHandle: (handle: string) => Promise<FederationResolveView>;
   createMoment: (draft: MobileMomentDraft) => Promise<Post | undefined>;
 }
@@ -269,8 +270,8 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
     conversationId: string,
     typing: boolean,
   ): Promise<Record<string, unknown>> {
-    const senderPtid = String(session.actor?.id ?? '').trim();
-    const deviceId = `mobile-web-${session.sessionId}`;
+    const senderPtid = mobileAuthScope(session).ptid;
+    const deviceId = `mobile-web-${mobileAuthScopeKey(session)}`;
     if (!senderPtid || !conversationId.trim()) {
       throw new SocialApiError({
         method: 'POST',
@@ -324,11 +325,11 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
         path: '/friend-chat/friend-request/reject',
         body: { request_id: requestId },
       }),
-    sendFriendRequest: (receiverDid, message = '') =>
+    sendFriendRequest: (receiverPtid, message = '') =>
       request({
         method: 'POST',
         path: '/friend-chat/friend-request/send',
-        body: { receiver_did: receiverDid, message },
+        body: { receiver_ptid: receiverPtid, message },
       }),
     listSessions: (limit = 50, offset = 0) =>
       request<ListSessionsPayload>({
@@ -336,11 +337,11 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
         path: '/friend-chat/sessions',
         query: { limit, offset },
       }),
-    createSession: (participantDid) =>
+    createSession: (participantPtid) =>
       request({
         method: 'POST',
         path: '/friend-chat/session/create',
-        body: { participant_did: participantDid },
+        body: { participant_ptid: participantPtid },
       }),
     getConversationSettings: (sessionUlid) =>
       request<{ settings?: unknown }>({
@@ -361,17 +362,17 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
           ...(input.clearedAt !== undefined ? { cleared_at_unix_ms: input.clearedAt } : {}),
         },
       }).then((payload) => normalizeFriendConversationSettings(payload.settings ?? payload)),
-    blockUser: (targetDid) =>
+    blockUser: (targetPtid) =>
       request({
         method: 'POST',
         path: '/friend-chat/block',
-        body: { target_did: targetDid },
+        body: { target_ptid: targetPtid },
       }),
-    unblockUser: (targetDid) =>
+    unblockUser: (targetPtid) =>
       request({
         method: 'DELETE',
         path: '/friend-chat/block',
-        body: { target_did: targetDid },
+        body: { target_ptid: targetPtid },
       }),
     listBlockedUsers: (limit = 100, offset = 0) =>
       request<ListBlockedUsersPayload>({
@@ -382,51 +383,51 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
         const blockedUsers = payload.blockedUsers ?? payload.blocked_users ?? [];
         return blockedUsers
           .map((item) => normalizeFriendshipStatus({ friend: item }))
-          .filter((item) => item.targetDid);
+          .filter((item) => item.targetPtid);
       }),
-    getFriendshipStatus: (targetDid) =>
-      request<{ friend?: { actorId?: string; actor_id?: string; status?: number } }>({
+    getFriendshipStatus: (targetPtid) =>
+      request<{ friend?: { actorPtid?: string; actor_ptid?: string; status?: number } }>({
         method: 'GET',
         path: '/friend-chat/friendship/status',
-        query: { target_did: targetDid },
-      }).then((payload) => normalizeFriendshipStatus(payload, targetDid)),
+        query: { target_ptid: targetPtid },
+      }).then((payload) => normalizeFriendshipStatus(payload, targetPtid)),
     listMessages: (sessionUlid, beforeUlid, limit = 50) =>
       request<ListMessagesPayload>({
         method: 'GET',
         path: '/friend-chat/messages',
         query: { session_ulid: sessionUlid, before_ulid: beforeUlid, limit },
       }),
-    sendMessage: (sessionUlid, receiverDid, content, attachments, messageType = 1) =>
+    sendMessage: (sessionUlid, receiverPtid, content, attachments, messageType = 1) =>
       request({
         method: 'POST',
         path: '/friend-chat/message/send',
         body: {
           session_ulid: sessionUlid,
-          receiver_did: receiverDid,
+          receiver_ptid: receiverPtid,
           content,
           type: messageType,
           ...(attachments?.length ? { attachments } : {}),
         },
       }),
-    sendEncryptedMessage: (sessionUlid, receiverDid, encryptedPayload, messageType = 1) =>
+    sendEncryptedMessage: (sessionUlid, receiverPtid, encryptedPayload, messageType = 1) =>
       request({
         method: 'POST',
         path: '/friend-chat/message/send',
         body: {
           session_ulid: sessionUlid,
-          receiver_did: receiverDid,
+          receiver_ptid: receiverPtid,
           content: '',
           type: messageType,
           encrypted_payload: bytesToBase64(encryptedPayload),
         },
       }),
-    sendSenderKeyDistribution: (sessionUlid, receiverDid, encryptedPayload) =>
+    sendSenderKeyDistribution: (sessionUlid, receiverPtid, encryptedPayload) =>
       request({
         method: 'POST',
         path: '/friend-chat/message/send',
         body: {
           session_ulid: sessionUlid,
-          receiver_did: receiverDid,
+          receiver_ptid: receiverPtid,
           content: '',
           type: FriendMessageType.SENDER_KEY_DISTRIBUTION,
           encrypted_payload: bytesToBase64(encryptedPayload),
@@ -503,10 +504,10 @@ export function createSocialApiClient(session: MobileAuthSession): SocialApiClie
         path: '/api/v1/social/users/search',
         query: { q: query },
       }),
-    getPeerProfile: (did) =>
+    getPeerProfile: (ptid) =>
       request<PeerProfile>({
         method: 'GET',
-        path: `/actor/actors/${encodeURIComponent(did)}/profile`,
+        path: `/actor/actors/${encodeURIComponent(ptid)}/profile`,
       }),
     resolveFederationHandle: (handle) =>
       request<FederationResolveView>({
@@ -690,12 +691,12 @@ export function normalizeChatBackgroundId(value: unknown): ChatBackgroundId {
 }
 
 function normalizeFriendshipStatus(
-  payload: { friend?: { actorId?: string; actor_id?: string; status?: number } },
-  fallbackTargetDid = '',
+  payload: { friend?: { actorPtid?: string; actor_ptid?: string; status?: number } },
+  fallbackTargetPtid = '',
 ): FriendshipStatus {
   const friend = payload.friend;
   return {
-    targetDid: String(friend?.actorId ?? friend?.actor_id ?? fallbackTargetDid),
+    targetPtid: String(friend?.actor_ptid ?? friend?.actorPtid ?? fallbackTargetPtid),
     blocked: Number(friend?.status ?? 0) === FriendshipStatusCode.BLOCKED,
   };
 }

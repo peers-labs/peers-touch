@@ -153,7 +153,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 "tooling.acceptance.core.attestation.REPO_ROOT",
                 worktree,
             ), patch(
-                "tooling.acceptance.core.attestation.read_station_version",
+                "tooling.acceptance.core.attestation.read_service_version",
                 return_value={
                     "build_commit": "abcdef123456",
                     "build_time": "2026-08-16T00:00:00Z",
@@ -165,7 +165,15 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 attestation = produce_station_attestation(
                     environment_id="test",
                     run_id="run-1",
+                    service_id="station",
                     station_url="http://station.example",
+                    profile_env={"PT_STATION_MODE": "local"},
+                )
+                secondary = produce_station_attestation(
+                    environment_id="test",
+                    run_id="run-1",
+                    service_id="station-secondary",
+                    station_url="http://station-secondary.example",
                     profile_env={"PT_STATION_MODE": "local"},
                 )
 
@@ -173,16 +181,30 @@ class StationAttestationOwnerTests(unittest.TestCase):
             payload = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(
                 payload["artifactKind"],
-                "station-deployment-attestation",
+                "service-deployment-attestation",
             )
+            self.assertEqual(payload["serviceId"], "station")
+            self.assertEqual(payload["serviceKind"], "station")
             self.assertEqual(payload["producer"], "station-deployment")
             self.assertEqual(payload["commit"], "abcdef1234567890")
-            self.assertEqual(payload["protoDigest"], "proto-digest")
+            self.assertEqual(payload["protocolDigest"], "proto-digest")
+            self.assertEqual(
+                attestation.artifact_ref["path"],
+                "runtime/services/station/attestation.json",
+            )
+            self.assertEqual(
+                secondary.artifact_ref["path"],
+                "runtime/services/station-secondary/attestation.json",
+            )
+            self.assertNotEqual(
+                attestation.artifact_ref["path"],
+                secondary.artifact_ref["path"],
+            )
             run.close()
 
     def test_dirty_station_deployment_blocks(self) -> None:
         with patch(
-            "tooling.acceptance.core.attestation.read_station_version",
+            "tooling.acceptance.core.attestation.read_service_version",
             return_value={"build_commit": "abcdef123456"},
         ), patch(
             "tooling.acceptance.core.attestation._local_source_identity",
@@ -192,6 +214,7 @@ class StationAttestationOwnerTests(unittest.TestCase):
                 produce_station_attestation(
                     environment_id="test",
                     run_id="run-1",
+                    service_id="station",
                     station_url="http://station.example",
                     profile_env={"PT_STATION_MODE": "local"},
                 )

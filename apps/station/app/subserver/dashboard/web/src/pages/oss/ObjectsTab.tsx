@@ -82,7 +82,7 @@ export function ObjectsTab() {
 
   const buildQuery = useCallback((): ossApi.OSSObjectListQuery => ({
     bucket_id: bucketFilter.trim() || undefined,
-    owner_actor_id: ownerFilter.trim() || undefined,
+    owner_ptid: ownerFilter.trim() || undefined,
     mime: mimeFilter.trim() || undefined,
     visibility: visibilityFilter === 'all' ? undefined : visibilityFilter,
     page,
@@ -236,8 +236,8 @@ export function ObjectsTab() {
     },
     {
       title: 'Owner',
-      dataIndex: 'owner_actor_id',
-      key: 'owner_actor_id',
+      dataIndex: 'owner_ptid',
+      key: 'owner_ptid',
       width: 160,
       render: (v: string) => v ? <Text code>{shortHash(v, 12, 4)}</Text> : <Text type="secondary">—</Text>,
     },
@@ -460,7 +460,7 @@ export function ObjectsTab() {
                   : <Text type="secondary">—</Text>}
               </Descriptions.Item>
               <Descriptions.Item label="Owner actor">
-                <Text code>{drawerTarget.owner_actor_id || '—'}</Text>
+                <Text code>{drawerTarget.owner_ptid || '—'}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Bucket">
                 <Text code>{drawerTarget.bucket_id || '—'}</Text>

@@ -55,6 +55,7 @@
   - `apps/mobile/`
   - `apps/mobile/src/`
   - `apps/mobile/src-tauri/`
+- `apps/mobile/src-tauri/gen/android/`
   - `apps/mobile/src-tauri/gen/apple/`
 
 Mobile 当前已明确成立的事实：
@@ -254,7 +255,8 @@ apps/mobile/
 ├── src/          # mobile-web UI
 ├── src-tauri/    # Rust capability kernel
 │   └── gen/
-│       └── apple/ # Tauri generated iOS project
+│       ├── android/ # Tauri generated Android project
+│       └── apple/   # Tauri generated iOS project
 ├── android/      # legacy/native plugin source during migration
 └── ios/          # legacy/native plugin source during migration
 ```

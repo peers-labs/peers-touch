@@ -5,7 +5,7 @@ static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
 pub struct AccessContext {
-    pub actor_id: Option<String>,
+    pub actor_ptid: Option<String>,
     pub token: Option<String>,
 }
 
@@ -26,8 +26,8 @@ pub fn build_request_id() -> String {
 }
 
 pub fn authorize(context: &AccessContext, _capability: AdminCapability) -> bool {
-    if let Some(actor_id) = &context.actor_id {
-        let normalized = actor_id.to_ascii_lowercase();
+    if let Some(actor_ptid) = &context.actor_ptid {
+        let normalized = actor_ptid.to_ascii_lowercase();
         if normalized.starts_with("admin")
             || normalized.starts_with("root")
             || normalized.ends_with(":admin")
@@ -72,7 +72,7 @@ pub fn validate_action(action: &str) -> Result<(), String> {
 pub fn emit_audit(
     request_id: &str,
     capability: AdminCapability,
-    actor_id: Option<&str>,
+    actor_ptid: Option<&str>,
     outcome: &str,
 ) {
     let capability_name = match capability {
@@ -80,6 +80,6 @@ pub fn emit_audit(
         AdminCapability::NetworkProbe => "admin_network_probe",
         AdminCapability::ExecuteAction => "admin_execute_action",
     };
-    let actor = actor_id.unwrap_or("anonymous");
+    let actor = actor_ptid.unwrap_or("anonymous");
     tracing::info!(request_id = %request_id, command = %capability_name, actor = %actor, outcome = %outcome, "admin audit log");
 }

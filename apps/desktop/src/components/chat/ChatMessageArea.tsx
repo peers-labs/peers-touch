@@ -80,7 +80,7 @@ export function ChatMessageArea() {
     getIMSenderProfile,
     messageHasMore,
     messageLoadingMore,
-    currentUserDid,
+    currentUserPtid,
     loadGroupMembers,
     scrollToMessageUlid,
     setScrollToMessageUlid,
@@ -116,7 +116,7 @@ export function ChatMessageArea() {
     getIMSenderProfile: s.getIMSenderProfile,
     messageHasMore: s.messageHasMore,
     messageLoadingMore: s.messageLoadingMore,
-    currentUserDid: s.currentUserDid,
+    currentUserPtid: s.currentUserPtid,
     loadGroupMembers: s.loadGroupMembers,
     scrollToMessageUlid: s.scrollToMessageUlid,
     setScrollToMessageUlid: s.setScrollToMessageUlid,
@@ -175,7 +175,7 @@ export function ChatMessageArea() {
   // Resolve the active peer DID for friend conversations. Used by the
   // header presence dot to decide whether the friend is reachable on
   // station, separate from whether our P2P channel happens to be up.
-  const activePeerDid = activeTab === 'friend' ? activeConversation?.peerDid || null : null;
+  const activePeerDid = activeTab === 'friend' ? activeConversation?.peerPtid || null : null;
 
   // Peer-presence indicator. Truth source: Station's PresenceFlip
   // events carried by the unified `/events/stream` runtime.
@@ -350,7 +350,7 @@ export function ChatMessageArea() {
   // Receiver-side: derive whether the peer is composing in the
   // currently-active conversation. We also expose a list of typing
   // names for group chats once the group fan-out lands; for friend
-  // chats the entry is keyed on the peer's actor_id.
+  // chats the entry is keyed on the peer's actor_ptid.
   const peerIsTyping = (() => {
     if (!activeUlid) return false;
     const map = typingPeers[activeUlid];
@@ -436,10 +436,10 @@ export function ChatMessageArea() {
         return;
       }
       if (activeTab === 'friend') {
-        const receiverDid = activeConversation?.peerDid || '';
+        const receiverPtid = activeConversation?.peerPtid || '';
         await sendFriendMessage(
           activeUlid,
-          receiverDid,
+          receiverPtid,
           content,
           draft.messageType,
           replyRef,
@@ -473,17 +473,17 @@ export function ChatMessageArea() {
    *  an active RTCPeerConnection. Text chat uses the realtime SSE
    *  stream; WebRTC readiness gates calls only. */
   const callsAvailable = (() => {
-    if (activeTab !== 'friend' || !activeUlid || !currentUserDid) return false;
+    if (activeTab !== 'friend' || !activeUlid || !currentUserPtid) return false;
     const s = friendP2pStatus[activeUlid];
     return !!s && s.state === 'connected';
   })();
 
   const handleStartCall = async (kind: 'audio' | 'video') => {
-    if (!callsAvailable || !currentUserDid) return;
-    const peerDid = activePeerDid;
-    if (!peerDid) return;
+    if (!callsAvailable || !currentUserPtid) return;
+    const peerPtid = activePeerDid;
+    if (!peerPtid) return;
     try {
-      await callP2p.startCall(currentUserDid, peerDid, kind);
+      await callP2p.startCall(currentUserPtid, peerPtid, kind);
     } catch (err) {
       log.error('chat', 'startCall failed', err);
       toast.error(t('chat.social.call.mediaDenied'));
@@ -743,7 +743,7 @@ export function ChatMessageArea() {
           <ChatMessageTimeline
             activeConversationId={activeUlid}
             activeKind={activeKind}
-            currentUserDid={currentUserDid}
+            currentUserPtid={currentUserPtid}
             scrollContainerRef={scrollContainerRef}
             getSenderProfile={getIMSenderProfile}
             highlightedMessageUlid={highlightedMessageUlid}
@@ -760,7 +760,7 @@ export function ChatMessageArea() {
             onReact={(msg) => {
               if (!activeUlid) return;
               const remove = (reactions[msg.ulid] ?? []).some(
-                reaction => reaction.actorId === currentUserDid && reaction.emoji === '👍',
+                reaction => reaction.actorPtid === currentUserPtid && reaction.emoji === '👍',
               );
               reactToMessage(activeUlid, msg.ulid, '👍', remove);
             }}

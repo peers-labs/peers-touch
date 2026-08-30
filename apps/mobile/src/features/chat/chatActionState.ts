@@ -1,6 +1,7 @@
 import type { ChatBackgroundId } from '../social/socialApi';
 import { normalizeChatBackgroundId } from '../social/socialApi';
 import { createMobileActorStorageRuntime } from '../../storage/mobileClientStorage';
+import type { MobileAuthSession } from '../auth/authSession';
 import {
   chatConversationSuppressesAlerts,
   visibleChatConversationUnread,
@@ -31,17 +32,26 @@ export function chatActionKey(kind: ChatKind, ulid: string): string {
   return `${kind}:${ulid}`;
 }
 
-export async function loadChatActionStates(actorDid: string | null): Promise<Record<string, ChatActionState>> {
+export async function loadChatActionStates(session: MobileAuthSession): Promise<Record<string, ChatActionState>> {
   try {
-    const cached = await createMobileActorStorageRuntime(actorDid).repositories.chatPreferences.readValue(storageKey(actorDid));
+    const cached = await createMobileActorStorageRuntime(
+      session.stationPeerId,
+      session.actorRef.ptid,
+    ).repositories.chatPreferences.readValue(STORAGE_PREFIX);
     return normalizeChatActionStates(cached);
   } catch {
     return {};
   }
 }
 
-export async function saveChatActionStates(actorDid: string | null, states: Record<string, ChatActionState>): Promise<void> {
-  await createMobileActorStorageRuntime(actorDid).repositories.chatPreferences.write(storageKey(actorDid), states);
+export async function saveChatActionStates(
+  session: MobileAuthSession,
+  states: Record<string, ChatActionState>,
+): Promise<void> {
+  await createMobileActorStorageRuntime(
+    session.stationPeerId,
+    session.actorRef.ptid,
+  ).repositories.chatPreferences.write(STORAGE_PREFIX, states);
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(CHAT_ACTION_STATE_CHANGED_EVENT));
 }
 
@@ -67,10 +77,6 @@ export function chatSuppressesAlerts(state: ChatAlertPreference | undefined): bo
 
 export function visibleChatUnread(unread: number, state: ChatAlertPreference | undefined): number {
   return visibleChatConversationUnread(unread, state);
-}
-
-function storageKey(actorDid: string | null): string {
-  return `${STORAGE_PREFIX}:${actorDid || 'anonymous'}`;
 }
 
 function normalizeChatActionStates(value: unknown): Record<string, ChatActionState> {

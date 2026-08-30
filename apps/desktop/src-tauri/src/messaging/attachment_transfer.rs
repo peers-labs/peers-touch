@@ -2371,7 +2371,7 @@ mod tests {
     fn live_engine_worker_uploads_through_station_transport() {
         #[derive(serde::Deserialize)]
         struct NativeSession {
-            actor_id: String,
+            actor_ptid: String,
             token: String,
         }
 
@@ -2452,7 +2452,7 @@ mod tests {
         .expect("native Desktop session file must be valid");
         assert!(!session.token.trim().is_empty());
         assert!(
-            profile_id.ends_with(&session.actor_id),
+            profile_id.ends_with(&session.ptid),
             "native session actor must match the Engine profile"
         );
 

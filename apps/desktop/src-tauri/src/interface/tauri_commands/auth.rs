@@ -20,34 +20,29 @@ fn bind_window_session(
     app: &AppHandle,
     window: &Window,
     payload: &AuthSessionPayload,
-) {
-    let actor_id = match payload.actor_id.as_deref() {
-        Some(id) if !id.is_empty() => id.to_string(),
-        _ => return,
-    };
-    // The token is intentionally read from the legacy `AppState.session`
-    // here: PR-3 keeps both stores in sync; PR-4 cuts the legacy store.
-    let token = state
-        .session
-        .lock()
-        .ok()
-        .and_then(|g| g.token.clone())
-        .unwrap_or_default();
-    if token.is_empty() {
-        return;
-    }
-    let mut actor = ActorRef::new_person(actor_id.clone());
-    actor.ptid = payload.ptid.clone().unwrap_or_default();
-    let account_id = crate::infrastructure::auth_identity::find_account_id_by_actor_id(&actor_id)
-        .unwrap_or_else(|| {
-            crate::infrastructure::local_scope::account_id_for_password_actor(&actor_id)
-        });
+) -> Result<(), String> {
+    let actor_ptid = payload
+        .actor_ptid
+        .as_deref()
+        .filter(|ptid| ptid.starts_with("ptid:"))
+        .ok_or_else(|| "authenticated response missing canonical actor_ptid".to_string())?
+        .to_string();
+    let token = payload
+        .session_token
+        .as_deref()
+        .filter(|token| !token.trim().is_empty())
+        .ok_or_else(|| "authenticated response missing session token".to_string())?
+        .to_string();
+    let actor = ActorRef::new_person(actor_ptid.clone());
+    let account_id =
+        crate::infrastructure::auth_identity::find_account_id_by_actor_ptid(&actor_ptid)
+            .ok_or_else(|| "authenticated actor has no local account".to_string())?;
     if let Err(error) =
-        auth_service::activate_messaging_profile(state, &account_id, &actor_id, &token)
+        auth_service::activate_messaging_profile(state, &account_id, &actor_ptid, &token)
     {
         tracing::warn!(
             account_id = %account_id,
-            actor_id = %actor_id,
+            actor_ptid = %actor_ptid,
             error = %error,
             "window session retained while messaging profile activation awaits retry"
         );
@@ -59,12 +54,13 @@ fn bind_window_session(
     for session in kicked {
         let payload = serde_json::json!({
             "reason": "takeover",
-            "actor_id": session.actor.actor_id,
+            "actor_ptid": session.actor.ptid,
         });
         if let Err(error) = app.emit_to(&session.window_label, SESSION_KICKED_EVENT, &payload) {
             tracing::warn!(window = %session.window_label, error = %error, "auth: failed to emit local session kick");
         }
     }
+    Ok(())
 }
 
 fn broadcast_identity(
@@ -83,7 +79,7 @@ fn broadcast_identity(
         app,
         IdentityChangedPayload {
             reason,
-            actor_id: data.actor_id.clone(),
+            actor_ptid: data.actor_ptid.clone(),
             login_method: data.login_method.clone(),
         },
     );
@@ -93,14 +89,17 @@ fn bind_after(
     state: &Arc<AppState>,
     app: &AppHandle,
     window: &Window,
-    result: &AppResult<AuthSessionPayload>,
-) {
+    result: AppResult<AuthSessionPayload>,
+) -> AppResult<AuthSessionPayload> {
     if !result.ok {
-        return;
+        return result;
     }
     if let Some(data) = &result.data {
-        bind_window_session(state, app, window, data);
+        if let Err(error) = bind_window_session(state, app, window, data) {
+            return AppResult::fail(crate::error::ErrorCode::Unauthorized, error, None);
+        }
     }
+    result
 }
 
 fn unbind_after(state: &Arc<AppState>, window: &Window, result: &AppResult<AuthSessionPayload>) {
@@ -117,8 +116,12 @@ pub fn auth_login(
     app: AppHandle,
     window: Window,
 ) -> AppResult<AuthSessionPayload> {
-    let result = auth_service::auth_login(input, state.inner());
-    bind_after(state.inner(), &app, &window, &result);
+    let result = bind_after(
+        state.inner(),
+        &app,
+        &window,
+        auth_service::auth_login(input, state.inner()),
+    );
     broadcast_identity(&app, IdentityChangeReason::Login, &result);
     result
 }
@@ -151,8 +154,12 @@ pub fn access_submit_login(
     app: AppHandle,
     window: Window,
 ) -> AppResult<AuthSessionPayload> {
-    let result = auth_service::access_submit_login(input, state.inner());
-    bind_after(state.inner(), &app, &window, &result);
+    let result = bind_after(
+        state.inner(),
+        &app,
+        &window,
+        auth_service::access_submit_login(input, state.inner()),
+    );
     broadcast_identity(&app, IdentityChangeReason::Login, &result);
     result
 }
@@ -175,33 +182,50 @@ pub fn auth_restore_session(
     app: AppHandle,
     window: Window,
 ) -> AppResult<AuthSessionPayload> {
-    let result = auth_service::auth_restore_session(state.inner());
-    bind_after(state.inner(), &app, &window, &result);
-    result
+    bind_after(
+        state.inner(),
+        &app,
+        &window,
+        auth_service::auth_restore_session(state.inner()),
+    )
 }
 
 #[tauri::command]
 pub fn auth_validate_token(
-    input: AuthValidateTokenInput,
+    mut input: AuthValidateTokenInput,
     state: State<'_, Arc<AppState>>,
     app: AppHandle,
     window: Window,
 ) -> AppResult<AuthSessionPayload> {
-    let result = auth_service::auth_validate_token(input, state.inner());
-    bind_after(state.inner(), &app, &window, &result);
-    result
+    if input
+        .token
+        .as_deref()
+        .is_none_or(|token| token.trim().is_empty())
+    {
+        input.token =
+            crate::application::session_resolver::token_for_window(state.inner(), &window);
+    }
+    bind_after(
+        state.inner(),
+        &app,
+        &window,
+        auth_service::auth_validate_token(input, state.inner()),
+    )
 }
 
-/// Load a Station JWT (persisted during OAuth callback) into AppState
-/// so the BFF session becomes immediately active.
+/// Load a PTID-scoped Station JWT persisted during OAuth callback.
 #[tauri::command]
 pub fn ensure_station_session(
     state: State<'_, Arc<AppState>>,
     app: AppHandle,
     window: Window,
 ) -> AppResult<AuthSessionPayload> {
-    let result = auth_service::ensure_station_session(state.inner());
-    bind_after(state.inner(), &app, &window, &result);
+    let result = bind_after(
+        state.inner(),
+        &app,
+        &window,
+        auth_service::ensure_station_session(state.inner()),
+    );
     broadcast_identity(&app, IdentityChangeReason::OauthBridge, &result);
     result
 }

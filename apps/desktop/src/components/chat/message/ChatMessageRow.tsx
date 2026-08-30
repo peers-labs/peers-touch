@@ -54,12 +54,12 @@ interface ChatMessageRowProps {
   actionVisibility?: Partial<Record<'delete' | 'edit' | 'recall' | 'reply' | 'thread', boolean>>;
   activeConversationId: string;
   activeKind: ChatSurfaceKind;
-  currentUserDid: string | null;
+  currentUserPtid: string | null;
   density?: 'regular' | 'compact';
   getSenderProfile: (
     kind: ChatSurfaceKind,
     conversationUlid: string,
-    senderId: string,
+    senderPtid: string,
   ) => DesktopIMSenderProfileProjection;
   highlighted: boolean;
   message: ChatMessage;
@@ -72,7 +72,7 @@ interface ChatMessageRowProps {
   onReact: (message: ChatMessage) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
-  reactions?: { actorId: string; emoji: string }[];
+  reactions?: { actorPtid: string; emoji: string }[];
   pinned?: boolean;
   showHoverActions?: boolean;
   showThreadSummary?: boolean;
@@ -322,7 +322,7 @@ function ReplyBlock({
 function ThreadReplyPreviewList({
   activeConversationId,
   activeKind,
-  currentUserDid,
+  currentUserPtid,
   getSenderProfile,
   isOwnRoot,
   messages,
@@ -332,11 +332,11 @@ function ThreadReplyPreviewList({
 }: {
   activeConversationId: string;
   activeKind: ChatSurfaceKind;
-  currentUserDid: string | null;
+  currentUserPtid: string | null;
   getSenderProfile: (
     kind: ChatSurfaceKind,
     conversationUlid: string,
-    senderId: string,
+    senderPtid: string,
   ) => DesktopIMSenderProfileProjection;
   isOwnRoot: boolean;
   messages: ChatMessage[];
@@ -445,8 +445,8 @@ function ThreadReplyPreviewList({
                 </Text>
               )}
               {previewMessages.map((reply) => {
-                const profile = getSenderProfile(activeKind, activeConversationId, reply.senderId);
-                const ownReply = isOwnMessage(reply, currentUserDid);
+                const profile = getSenderProfile(activeKind, activeConversationId, reply.senderPtid);
+                const ownReply = isOwnMessage(reply, currentUserPtid);
                 return (
                   <div
                     key={reply.ulid}
@@ -515,7 +515,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   actionVisibility,
   activeConversationId,
   activeKind,
-  currentUserDid,
+  currentUserPtid,
   density = 'regular',
   getSenderProfile,
   highlighted,
@@ -540,9 +540,9 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 }: ChatMessageRowProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const isOwn = isOwnMessage(message, currentUserDid);
+  const isOwn = isOwnMessage(message, currentUserPtid);
   const isGroup = !isFriendMessage(message);
-  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderId);
+  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderPtid);
   const senderName = senderProfile.name;
   const senderAvatar = senderProfile.avatar;
   const replyToUlid = messageReplyToUlid(message);
@@ -615,7 +615,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             <Flexbox gap={4} style={{ minWidth: 120 }}>
               <Text strong style={{ fontSize: 13 }}>{senderName}</Text>
               <Text type="secondary" ellipsis style={{ fontSize: 11, maxWidth: 180 }}>
-                {message.senderId}
+                {message.senderPtid}
               </Text>
             </Flexbox>
           }
@@ -623,7 +623,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           placement="rightTop"
         >
           <div
-            data-chat-avatar-ptid={message.senderId}
+            data-chat-avatar-ptid={message.senderPtid}
             data-chat-avatar-src={senderAvatar || ''}
             style={{ cursor: 'pointer', flexShrink: 0 }}
           >
@@ -762,7 +762,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           <ThreadReplyPreviewList
             activeConversationId={activeConversationId}
             activeKind={activeKind}
-            currentUserDid={currentUserDid}
+            currentUserPtid={currentUserPtid}
             getSenderProfile={getSenderProfile}
             isOwnRoot={isOwn}
             messages={threadPreviewMessages}
@@ -834,7 +834,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 
       {isOwn && (
         <span
-          data-chat-avatar-ptid={currentUserDid || message.senderId}
+          data-chat-avatar-ptid={currentUserPtid || message.senderPtid}
           data-chat-avatar-src={senderAvatar || ''}
           style={{ display: 'contents' }}
         >

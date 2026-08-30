@@ -56,7 +56,7 @@ export function teardownPresenceBridge(): void {
  * they can call this directly without round-tripping through Tauri.
  */
 export function onTransition(payload: PresenceTransitionEvent): void {
-  if (!payload || typeof payload.actor_id !== 'string') return;
+  if (!payload || typeof payload.actor_ptid !== 'string') return;
 
   log.debug('presence', 'transition', payload);
 

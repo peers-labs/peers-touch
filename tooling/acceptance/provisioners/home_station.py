@@ -206,6 +206,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             attestation = produce_station_attestation(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
+                service_id="station",
                 station_url=station_url,
                 profile_env=profile_env,
             )
@@ -218,7 +219,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     ),
                     resource="source-identity:commit",
                 )
-            if attestation.proto_digest != local_proto_digest:
+            if attestation.protocol_digest != local_proto_digest:
                 raise BlockedError(
                     reason=(
                         "Station and client proto digests do not match; deploy the "
@@ -230,7 +231,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             manifest = dataclasses.replace(
                 manifest,
                 state=ProvisioningState.PROVISIONED,
-                station=attestation,
+                services={attestation.service_id: attestation},
             )
             self._manifest = manifest
             if gate_id == "chat-federated-browser-prereq":

@@ -32,8 +32,13 @@ fn to_stub(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
 }
 
 pub(crate) fn actor_search_item_to_json(actor: &model::actor::Actor) -> serde_json::Value {
+    let actor_ptid = actor
+        .r#ref
+        .as_ref()
+        .map(|actor_ref| actor_ref.ptid.as_str())
+        .unwrap_or_default();
     json!({
-        "id": actor.id,
+        "actorPtid": actor_ptid,
         "username": actor.username,
         "displayName": actor.display_name,
         "email": actor.email,
@@ -98,7 +103,7 @@ pub fn actor_get_me(state: State<'_, Arc<AppState>>, window: Window) -> AppResul
     to_stub(
         "actor_get_me",
         json!({
-            "id": resp.id,
+            "actorPtid": resp.r#ref.as_ref().map(|actor_ref| actor_ref.ptid.as_str()).unwrap_or_default(),
             "displayName": resp.display_name,
             "username": resp.username,
             "avatar": resp.avatar,
@@ -130,19 +135,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn actor_search_json_uses_ptid_without_internal_actor_id() {
+    fn actor_search_json_uses_embedded_actor_ref_ptid() {
         let actor = model::actor::Actor {
-            id: "ptid:v1:actor:peers:p:alice:fingerprint".to_string(),
-            actor_id: 347760575104679938,
+            r#ref: Some(model::actor::ActorRef {
+                ptid: "ptid:v1:actor:peers:p:alice:fingerprint".to_string(),
+                ..Default::default()
+            }),
             ..Default::default()
         };
 
         let value = actor_search_item_to_json(&actor);
 
         assert_eq!(
-            value.get("id").and_then(serde_json::Value::as_str),
+            value
+                .get("actorPtid")
+                .and_then(serde_json::Value::as_str),
             Some("ptid:v1:actor:peers:p:alice:fingerprint")
         );
-        assert!(value.get("actorId").is_none());
+        assert!(value.get("id").is_none());
     }
 }

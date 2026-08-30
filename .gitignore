@@ -55,6 +55,10 @@ logs/
 *.tmp
 *.temp
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Dev workflow sessions (local only)
 .dev-workflow/
 

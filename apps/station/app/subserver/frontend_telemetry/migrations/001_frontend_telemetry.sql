@@ -1,7 +1,7 @@
 -- +migrate Up
 CREATE TABLE IF NOT EXISTS frontend_telemetry_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  actor_id TEXT NOT NULL,
+  actor_ptid TEXT NOT NULL,
   event_id TEXT NOT NULL,
   schema_version INTEGER NOT NULL,
   ts REAL NOT NULL,
@@ -25,15 +25,15 @@ CREATE TABLE IF NOT EXISTS frontend_telemetry_events (
   deleted_at DATETIME
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_frontend_telemetry_actor_event
-ON frontend_telemetry_events(actor_id, event_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_frontend_telemetry_actor_ptid_event
+ON frontend_telemetry_events(actor_ptid, event_id);
 
 CREATE INDEX IF NOT EXISTS idx_frontend_telemetry_events_interaction
-ON frontend_telemetry_events(actor_id, interaction_id);
+ON frontend_telemetry_events(actor_ptid, interaction_id);
 
 CREATE TABLE IF NOT EXISTS frontend_telemetry_rollups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  actor_id TEXT NOT NULL,
+  actor_ptid TEXT NOT NULL,
   runtime TEXT NOT NULL,
   module TEXT NOT NULL,
   kind TEXT NOT NULL,
@@ -50,9 +50,8 @@ CREATE TABLE IF NOT EXISTS frontend_telemetry_rollups (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_frontend_telemetry_rollup
-ON frontend_telemetry_rollups(actor_id, runtime, module, kind, window_start, window_minutes);
+ON frontend_telemetry_rollups(actor_ptid, runtime, module, kind, window_start, window_minutes);
 
 -- +migrate Down
 DROP TABLE IF EXISTS frontend_telemetry_rollups;
 DROP TABLE IF EXISTS frontend_telemetry_events;
-

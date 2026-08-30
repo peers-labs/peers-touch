@@ -10,12 +10,12 @@ import {
 function conversation(
   id: string,
   kind: 'friend' | 'group',
-  peerDid?: string,
+  peerPtid?: string,
 ): DesktopIMConversationProjection {
   return {
     id,
     kind,
-    peerDid,
+    peerPtid,
     title: id,
     avatar: '',
     lastActivityMs: 0,
@@ -37,7 +37,7 @@ describe('findContactConversation', () => {
   it('does not treat a peer PTID as a conversation ID', () => {
     const selection: ContactSelection = {
       kind: 'friend',
-      peerDid: 'ptid:bob',
+      peerPtid: 'ptid:bob',
       displayName: 'Bob',
     };
 
@@ -47,7 +47,7 @@ describe('findContactConversation', () => {
   it('resolves an accepted contact after its direct conversation exists', () => {
     const selection: ContactSelection = {
       kind: 'friend',
-      peerDid: 'ptid:alice',
+      peerPtid: 'ptid:alice',
       displayName: 'Alice',
     };
 
@@ -74,7 +74,7 @@ describe('findContactConversation', () => {
     )).toEqual({
       kind: 'friend',
       conversationId: 'dm-1',
-      peerDid: 'ptid:alice',
+      peerPtid: 'ptid:alice',
       displayName: 'Alice',
       avatar: 'avatar',
     });
@@ -88,7 +88,7 @@ describe('findContactConversation', () => {
       conversations,
     )).toEqual({
       kind: 'friend',
-      peerDid: 'ptid:bob',
+      peerPtid: 'ptid:bob',
       displayName: 'Bob',
       avatar: undefined,
     });

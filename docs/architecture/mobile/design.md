@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-27
+> **Created**: 2026-08-27 | **Updated**: 2026-08-29
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -23,14 +23,14 @@
 | Claim | Class | Evidence | Confidence | Missing proof |
 |---|---|---|---|---|
 | Tauri v2 Mobile is the mainline | verified_fact | `docs/client/mobile/base.md`, `apps/mobile/src-tauri/` | high | none |
-| Station selection/access gates exist; probe lacks stable identity | verified_fact | `App.tsx`, `features/auth/`, `features/station/`, `station.rs` | high | signed peer handshake + native E2E |
+| Station selection/access gates and signed peer-ID handshake are implemented | verified_fact | `features/auth/`, `features/station/`, `station.rs`, W1 evidence | high | physical native OAuth evidence |
 | Friend/group projection runtimes exist | verified_fact | `features/social/`, `features/group/` | high | lifecycle/performance evidence |
 | Runtime registry is descriptive only | verified_fact | `runtimeRegistry.ts` contains status metadata, not lifecycle methods | high | executable kernel absent |
 | Moments currently supports publish only | verified_fact | `MomentsPage.tsx` has no feed/reaction/comment projection | high | read-side runtime |
-| OAuth coordinator is absent | verified_fact | deep-link event exists without provider authorization/session coordination | high | OAuth runtime and Station endpoints |
-| Auth contracts expose legacy actor identifiers | verified_fact | `auth.proto`, `oauth.proto`, and `authSession.ts` expose numeric/legacy IDs | high | canonical PTID cutover |
+| Rust-owned OAuth coordinator and Station attempt/finalizer are implemented | verified_fact | `src-tauri/src/runtime/oauth/`, `apps/station/app/subserver/oauth/` | high | W2-E2 physical proof contracts and evidence |
+| Mobile-facing auth/OAuth contracts use PTID-bearing `ActorRef`; legacy bridge numeric fields are reserved | verified_fact | `auth.proto`, `oauth.proto`, `mobile_oauth.proto`, W1 evidence | high | keep hard-cut scans green |
 | Unknown writes do not survive uniformly | verified_fact | no common durable ledger or outcome lookup exists | high | durable command protocol |
-| Prototype defines intended experience | verified_fact | previously confirmed core journey plus seven reviewed recovery/destructive-state screenshots and L3 audit | high | Owner confirmation remains open; production acceptance is separate |
+| Prototype defines the confirmed target experience | verified_fact | confirmed core journey plus reviewed recovery/destructive-state screenshots and L3 audit | high | production acceptance is separate |
 
 ## 3. System Architecture
 
@@ -204,16 +204,136 @@ Required semantics:
   scheme/host/path, current Station, local attempt/state/expiry, and generation
   before forwarding completion. Station atomically validates and consumes the
   attempt; Mobile cannot claim authoritative consumption.
-- Callback replay, provider mismatch, Station mismatch, stale generation, and
-  duplicate consumption are terminal typed failures.
+- An exact duplicate callback while completion outcome is unresolved resumes
+  the same claimed attempt idempotently. A different callback after claim,
+  post-terminal resubmission, provider mismatch, Station mismatch, stale
+  generation, or duplicate Station consumption is a terminal typed failure.
 - Cancellation deletes local verifier/nonce material and returns to the same
   Station access gate. Timeout expires both local and Station attempt state.
 - Web pages can launch or cancel the flow and render projection state; they
   cannot inspect verifier, nonce, provider token, or raw callback secrets.
 
-The state machine and Model gaps are normative in `data-model.md` §3.2. The
-current bridge records are insufficient; this design does not authorize a
-protocol version bump or field numbering.
+The state machine and current Model contract status are normative in
+`data-model.md` §3.2. MS-P01..MS-P03 and MS-P07 are implemented; remaining
+contract gaps stay explicit. This design does not authorize a protocol version
+bump or new field numbering.
+
+### 7.1 W2 Security Amendment
+
+> **Status**: accepted on 2026-08-28.
+
+The W2 implementation now uses the accepted credential-delivery and activation
+boundary below. W2-E2 still requires physical proof of that implementation:
+
+```text
+mobile-web
+  -> authRuntime projection and user intents only
+  -> mobile-rust OAuth coordinator
+       - PKCE verifier
+       - nonce
+       - attempt secret
+       - credential-delivery private key
+       - raw callback URL and authorization code
+  -> Station OAuth service
+       - provider exchange
+       - Access Gate finalization
+       - idempotent session creation
+       - encrypted credential envelope
+  -> mobile-rust secure session store
+  -> public session projection to mobile-web
+```
+
+The following relationships are forbidden:
+
+- Mobile Web must not receive the PKCE verifier, nonce, raw callback URL,
+  authorization code, provider token, bearer token, refresh token, or
+  credential-delivery private key.
+- Native plugins must not exchange provider credentials or activate a Station
+  session; they launch the browser and deliver OS callbacks to Mobile Rust.
+- OAuth status must not mint or return a new bearer credential.
+- A caller that knows attempt IDs but not the device-held attempt secret must
+  not read, cancel, complete, or acknowledge an OAuth attempt.
+
+### 7.2 Station Authorization Finalizer
+
+Station owns one transactionally fenced authorization finalizer. It locks the
+Access Attempt, OAuth Attempt, and session candidate in that order and then:
+
+1. validates Station, device, lifecycle generation, attempt secret, candidate,
+   and expiry bindings;
+2. requires the Access Attempt to be in the final `granted` state;
+3. rejects cancelled, denied, superseded, stale-generation, or expired rows;
+4. creates at most one session identified by the OAuth candidate ID;
+5. persists the Access Attempt, candidate, gate-decision revision, device, and
+   Station bindings on that session;
+6. creates one encrypted credential envelope for the device delivery key;
+7. commits all rows before returning the envelope.
+
+Retry after an uncertain response returns the same persisted envelope and
+session identity. It never mints another session or credential. A separate
+acknowledgement marks delivery complete and removes the recoverable envelope.
+After acknowledgement, status returns state only.
+
+Cancellation and finalization use the same lock order. Whichever transaction
+commits first determines the terminal state. A cancellation that observes an
+already-created session revokes it before reporting local completion.
+
+### 7.3 Provider Authorization Boundary
+
+The Station-owned `/oauth/authorize` surface is distinct from Mobile's external
+provider redirect. It must derive actor PTID from an authenticated Station
+subject and require explicit consent. Query parameters may identify the OAuth
+client and requested scope, but must never assert actor identity.
+
+Authorization-code redemption is a conditional one-row consume performed
+before token creation. Zero affected rows means expired, revoked, mismatched, or
+already consumed and fails closed.
+
+### 7.4 Native Callback And Restart Recovery
+
+Mobile Rust persists a single station-scoped attempt index in secure storage so
+cold launch can recover the current attempt without Web module globals. The
+record contains only binding metadata and device-held secrets; it is keyed by
+`station_peer_id + device_id + lifecycle_generation`.
+
+Warm and cold callbacks enter the same Rust coordinator. Before Station
+completion, the coordinator revalidates the selected Station peer ID and
+current lifecycle generation. Network failure after local callback validation
+retains the encrypted attempt material and resumes the same Station attempt; it
+does not re-consume the OS callback or create a second attempt.
+
+Only one credential-producing action may be active for one Station/device/
+generation. Email login, OAuth start, Station replacement, and logout are
+serialized by the auth runtime. Station replacement or generation change
+cancels the old attempt before another credential action starts.
+
+### 7.5 Native Acceptance Control Boundary
+
+Native Mobile Acceptance uses Appium 2 with XCUITest and UiAutomator2 drivers.
+The driver switches into the application WebView context and calls the
+acceptance-only `window.__PEERS_MOBILE_ACCEPTANCE__` registry. The registry is
+compiled only when `VITE_ACCEPTANCE_HARNESS=1`; production builds expose no
+control surface.
+
+The Mobile Domain owns typed actions for Station add/replace, Access Gate
+submission, OAuth start/status/cancel, lifecycle restart, OS deep-link
+delivery, projection readback, and cleanup. Drivers may invoke production
+actions through this registry but may not mutate stores, bypass Station, or
+inject a successful business result.
+
+Simulator/emulator cells prove build, launch, callback routing, and deterministic
+failure cases. MS-AG03 remains `UNPROVEN` until physical iOS and Android devices
+complete real GitHub and Google authorization with disposable approved accounts,
+Station readback, source identity, screenshots/AX evidence, and cleanup audit.
+
+### 7.6 W2-E2 Physical Proof Amendment
+
+The accepted ownership, Fixture, Station proof, provider browser lease and
+physical build provenance contracts are defined in
+[`native-oauth-proof/`](./native-oauth-proof/README.md). W2-E2 execution still
+follows the accepted focused plan at
+[`execution-plans/20260829-mobile-native-oauth-proof.md`](./execution-plans/20260829-mobile-native-oauth-proof.md);
+MS-AG03 remains unproven until physical evidence passes.
 
 ## 8. Data And Command Flow
 

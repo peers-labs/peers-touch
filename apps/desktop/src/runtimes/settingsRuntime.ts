@@ -24,11 +24,11 @@ export const settingsRuntime: RuntimeDescriptor = {
   scope: 'app',
   install(): void {
     if (unsubscribeSession) return;
-    let lastActorId: string | null = null;
+    let lastActorPtid: string | null = null;
     unsubscribeSession = useSessionStore.subscribe((state) => {
-      const actorId = state.authenticated ? state.currentUser?.actorId ?? null : null;
-      if (actorId === lastActorId) return;
-      lastActorId = actorId;
+      const actorPtid = state.authenticated ? state.currentUser?.actorPtid ?? null : null;
+      if (actorPtid === lastActorPtid) return;
+      lastActorPtid = actorPtid;
       // Account-shape may change on login/logout/PIN edits; keep the
       // settings projection in lockstep.
       void useSettingsStore.getState().refreshActiveAccount();

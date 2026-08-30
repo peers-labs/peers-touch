@@ -75,12 +75,12 @@ import {
   normalizeConversationMembers,
   type FriendRequestData,
 } from './socialNormalizers';
-import { currentAuthenticatedActorId } from './session';
+import { currentAuthenticatedActorPtid } from './session';
 
 const GROUP_DECRYPT_FAILED_PLACEHOLDER = '[Message cannot be decrypted]';
 
 function hasAuthenticatedActor(): boolean {
-  return Boolean(currentAuthenticatedActorId());
+  return Boolean(currentAuthenticatedActorPtid());
 }
 
 function projectMessagingProjection(
@@ -91,7 +91,7 @@ function projectMessagingProjection(
   const timestamp = timestampFromDate(new Date(projection.timestampUnixMs));
   const common = {
     ulid: projection.messageId,
-    senderDid: projection.senderPtid,
+    senderPtid: projection.senderPtid,
     senderDeviceId: projection.senderDeviceId,
     type: 1,
     content: projection.editedText ?? projection.plaintext,
@@ -133,7 +133,7 @@ function projectMessagingProjection(
       ...common,
       $typeName: 'peers_touch.model.chat.v1.FriendChatMessage',
       sessionUlid: conversationId,
-      receiverDid: '',
+      receiverPtid: '',
       status,
       deliveredAt: undefined,
       readAt: undefined,
@@ -143,7 +143,7 @@ function projectMessagingProjection(
     ...common,
     $typeName: 'peers_touch.model.chat.v1.GroupMessage',
     groupUlid: conversationId,
-    mentionedDids: [],
+    mentionedPtids: [],
     mentionAll: false,
   } as unknown as GroupMessage;
 }
@@ -275,7 +275,7 @@ export interface UnifiedConversation {
 }
 
 export interface CurrentUserProfile {
-  id: string;
+  actorPtid: string;
   username: string;
   displayName: string;
   avatar?: string;
@@ -291,7 +291,7 @@ export interface SearchResult {
   messageId: string;
   conversationId: string;
   scope: 'friend' | 'group';
-  senderDid: string;
+  senderPtid: string;
   content: string;
   sentAt: number;
   conversationName: string;
@@ -338,7 +338,7 @@ interface SocialChatState {
   showDetail: boolean;
   currentUserProfile: CurrentUserProfile | null;
   /** Own DID for message ownership; prefer profile.id, may align with participant DIDs in sessions */
-  currentUserDid: string | null;
+  currentUserPtid: string | null;
   friendRequests: FriendRequestData[];
   groupUnreadCounts: Record<string, number>;
   lastPreviews: Record<string, MessagePreview>;
@@ -370,9 +370,9 @@ interface SocialChatState {
   /** Root message ULID for the currently-open social chat thread panel. */
   openThreadRootUlid: string | null;
 
-  /** Per-message reactions: messageId → list of {actorId, emoji}. */
-  reactions: Record<string, { actorId: string; emoji: string }[]>;
-  pinnedMessages: Record<string, { actorId: string; pinnedAt: number }>;
+  /** Per-message reactions: messageId → list of {actorPtid, emoji}. */
+  reactions: Record<string, { actorPtid: string; emoji: string }[]>;
+  pinnedMessages: Record<string, { actorPtid: string; pinnedAt: number }>;
 
   encryptionEnabled: boolean;
   ownFingerprint: string | null;
@@ -425,7 +425,7 @@ interface SocialChatState {
   /**
    * Per-session typing-state map.
    *
-   *   typingPeers[sessionUlid][peerActorId] = { typing, lastUpdate }
+   *   typingPeers[sessionUlid][peerActorPtid] = { typing, lastUpdate }
    *
    * `typing` mirrors the wire bit (true = peer is composing). The
    * UI bubble must NOT trust `typing=true` indefinitely though —
@@ -445,7 +445,7 @@ interface SocialChatState {
    * `lastUpdate`, which is what the GC sweep needs to keep the
    * bubble alive across the full keystroke burst.
    */
-  applyTypingState: (sessionUlid: string, fromActorId: string, typing: boolean) => void;
+  applyTypingState: (sessionUlid: string, fromActorPtid: string, typing: boolean) => void;
   /**
    * Drop any `typing=true` entries whose last update is older than
    * `staleBefore` ms. Called from the social runtime sweep interval
@@ -477,7 +477,7 @@ interface SocialChatState {
   markThreadRead: (ulid: string, rootUlid: string, lastReadUlid?: string, kind?: 'friend' | 'group') => Promise<void>;
   sendFriendMessage: (
     sessionUlid: string,
-    receiverDid: string,
+    receiverPtid: string,
     content: string,
     type?: number,
     replyToUlid?: string,
@@ -546,7 +546,7 @@ interface SocialChatState {
   ) => void;
   loadCurrentUserProfile: () => Promise<void>;
   /**
-   * Lazily load (or refresh) the public profile of `peerDid` into
+   * Lazily load (or refresh) the public profile of `peerPtid` into
    * `peerProfiles`. Idempotent: repeated calls while a fetch is in
    * flight no-op; subsequent calls after success refresh the cache so
    * peers seeing a profile edit converge on the new data when they
@@ -554,10 +554,10 @@ interface SocialChatState {
    * already-cached short-circuit (used when a profile update event is
    * known to have invalidated the cached row).
    */
-  loadPeerProfile: (peerDid: string, force?: boolean) => Promise<void>;
+  loadPeerProfile: (peerPtid: string, force?: boolean) => Promise<void>;
 
   loadFriendRequests: (status?: number, limit?: number, offset?: number) => Promise<void>;
-  sendFriendRequest: (receiverDid: string, message?: string) => Promise<void>;
+  sendFriendRequest: (receiverPtid: string, message?: string) => Promise<void>;
   acceptFriendRequest: (requestId: string) => Promise<void>;
   rejectFriendRequest: (requestId: string) => Promise<void>;
 
@@ -595,7 +595,7 @@ interface SocialChatState {
   getIMSenderProfile: (
     kind: 'friend' | 'group',
     conversationUlid: string,
-    senderDid: string,
+    senderPtid: string,
   ) => DesktopIMSenderProfileProjection;
 
   searchMessages: (query: string, scope?: string, conversationId?: string) => Promise<void>;
@@ -607,7 +607,7 @@ interface SocialChatState {
   initEncryption: () => Promise<void>;
   /** Clear actor-scoped in-memory data (used by the identity pipeline). */
   reset: () => void;
-  hydrate: (actorId: string) => Promise<void>;
+  hydrate: (actorPtid: string) => Promise<void>;
 }
 
 function activityFromSession(s: FriendChatSession): Date {
@@ -643,25 +643,25 @@ export function peerOfSession(
   viewerDid: string | null,
 ): { did: string; name: string; avatar: string } {
   if (viewerDid) {
-    if (s.participantADid === viewerDid) {
+    if (s.participantAPtid === viewerDid) {
       return {
-        did: s.participantBDid || '',
-        name: s.participantBDisplayName || s.participantBDid || '',
+        did: s.participantBPtid || '',
+        name: s.participantBDisplayName || s.participantBPtid || '',
         avatar: s.participantBAvatar || '',
       };
     }
-    if (s.participantBDid === viewerDid) {
+    if (s.participantBPtid === viewerDid) {
       return {
-        did: s.participantADid || '',
-        name: s.participantADisplayName || s.participantADid || '',
+        did: s.participantAPtid || '',
+        name: s.participantADisplayName || s.participantAPtid || '',
         avatar: s.participantAAvatar || '',
       };
     }
     return { did: '', name: '', avatar: '' };
   }
   return {
-    did: s.participantBDid || s.participantADid || '',
-    name: s.participantBDisplayName || s.participantBDid || s.participantADid || '',
+    did: s.participantBPtid || s.participantAPtid || '',
+    name: s.participantBDisplayName || s.participantBPtid || s.participantAPtid || '',
     avatar: s.participantBAvatar || s.participantAAvatar || '',
   };
 }
@@ -671,16 +671,16 @@ function participantProfileOfSession(
   ptid: string,
 ): ActorAvatarProfile | null {
   if (!ptid) return null;
-  if (s.participantADid === ptid) {
+  if (s.participantAPtid === ptid) {
     return {
-      did: s.participantADid || '',
-      name: s.participantADisplayName || s.participantADid || '',
+      did: s.participantAPtid || '',
+      name: s.participantADisplayName || s.participantAPtid || '',
       avatar: s.participantAAvatar || '',
     };
   }
   return {
-    did: s.participantBDid || s.participantADid || '',
-    name: s.participantBDisplayName || s.participantBDid || s.participantADid || '',
+    did: s.participantBPtid || s.participantAPtid || '',
+    name: s.participantBDisplayName || s.participantBPtid || s.participantAPtid || '',
     avatar: s.participantBAvatar || s.participantAAvatar || '',
   };
 }
@@ -737,7 +737,7 @@ function normalizeGroupMember(raw: unknown): GroupMember {
   return {
     ...(item as unknown as GroupMember),
     groupUlid: String(item.groupUlid ?? item.group_ulid ?? ''),
-    ptid: String(item.ptid ?? item.actor_did ?? ''),
+    ptid: String(item.ptid ?? item.actor_ptid ?? ''),
     invitedBy: String(item.invitedBy ?? item.invited_by ?? ''),
   };
 }
@@ -872,7 +872,7 @@ const initialSocialState: Pick<
   | 'loadError'
   | 'showDetail'
   | 'currentUserProfile'
-  | 'currentUserDid'
+  | 'currentUserPtid'
   | 'friendRequests'
   | 'groupUnreadCounts'
   | 'lastPreviews'
@@ -920,7 +920,7 @@ const initialSocialState: Pick<
   loadError: null,
   showDetail: false,
   currentUserProfile: null,
-  currentUserDid: null,
+  currentUserPtid: null,
   friendRequests: [],
   groupUnreadCounts: {},
   lastPreviews: {},
@@ -978,11 +978,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       },
     })),
 
-  hydrate: async (actorId: string) => {
-    const did = actorId.trim();
+  hydrate: async (actorPtid: string) => {
+    const did = actorPtid.trim();
     if (!did) return;
-    if (currentAuthenticatedActorId() !== did) return;
-    set({ currentUserDid: did });
+    if (currentAuthenticatedActorPtid() !== did) return;
+    set({ currentUserPtid: did });
     const { loadCurrentUserProfile, loadSessions, loadGroups } = get();
     await loadCurrentUserProfile();
     await Promise.all([loadSessions(), loadGroups()]);
@@ -1056,11 +1056,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         }));
       }
 
-      const actorId = currentAuthenticatedActorId() || '';
+      const actorPtid = currentAuthenticatedActorPtid() || '';
       const actorUsername = get().currentUserProfile?.username?.trim().toLowerCase() || '';
       const isSelfMember = (member: ConversationMember): boolean => {
         if (!member.ptid) return false;
-        if (member.ptid === actorId) return true;
+        if (member.ptid === actorPtid) return true;
         if (actorUsername && member.ptid.includes(`:p:${actorUsername}:`)) return true;
         return false;
       };
@@ -1072,7 +1072,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         groups: [],
         loading: false,
         loadError: null,
-        ...(!get().currentUserDid && actorId ? { currentUserDid: actorId } : {}),
+        ...(!get().currentUserPtid && actorPtid ? { currentUserPtid: actorPtid } : {}),
       });
       log.info('socialChat', 'loadConversations completed', {
         direct: directConversations.length,
@@ -1106,7 +1106,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   setActiveTab: (tab) => set({ activeTab: tab, openThreadRootUlid: null }),
   selectSession: (ulid) => {
       const state = get();
-      const did = state.currentUserDid;
+      const did = state.currentUserPtid;
 
       set((prev) => ({
         activeSessionUlid: ulid,
@@ -1115,8 +1115,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         sessions: did
           ? prev.sessions.map((s) => {
               if (s.ulid !== ulid) return s;
-              if (s.participantADid === did) return { ...s, unreadCountA: 0 } as typeof s;
-              if (s.participantBDid === did) return { ...s, unreadCountB: 0 } as typeof s;
+              if (s.participantAPtid === did) return { ...s, unreadCountA: 0 } as typeof s;
+              if (s.participantBPtid === did) return { ...s, unreadCountB: 0 } as typeof s;
               return s;
             })
           : prev.sessions,
@@ -1172,7 +1172,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         projections.map(projection => [
           projection.messageId,
           projection.reactions.map(reaction => ({
-            actorId: reaction.actorPtid,
+            actorPtid: reaction.actorPtid,
             emoji: reaction.reaction,
           })),
         ]),
@@ -1183,7 +1183,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           .map(projection => [
             projection.messageId,
             {
-              actorId: projection.pinnedByPtid!,
+              actorPtid: projection.pinnedByPtid!,
               pinnedAt: projection.pinnedAtUnixMs!,
             },
           ]),
@@ -1321,9 +1321,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  sendFriendMessage: async (sessionUlid, receiverDid, content, type, replyToUlid, attachments, explicitThreadRootUlid) => {
+  sendFriendMessage: async (sessionUlid, receiverPtid, content, type, replyToUlid, attachments, explicitThreadRootUlid) => {
     try {
-      if (!receiverDid) {
+      if (!receiverPtid) {
         throw new Error('A recipient is required for a direct message');
       }
       if ((type ?? 1) !== 1 && !attachments?.length) {
@@ -1340,7 +1340,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       set((state) => ({
         lastPreviews: {
           ...state.lastPreviews,
-          [sessionUlid]: { content, type: 1, senderId: get().currentUserDid ?? '' },
+          [sessionUlid]: { content, type: 1, senderPtid: get().currentUserPtid ?? '' },
         },
       }));
     } catch (error) {
@@ -1365,7 +1365,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       set((state) => ({
         lastPreviews: {
           ...state.lastPreviews,
-          [groupUlid]: { content, type: 1, senderId: get().currentUserDid ?? '' },
+          [groupUlid]: { content, type: 1, senderPtid: get().currentUserPtid ?? '' },
         },
       }));
     } catch (error) {
@@ -1388,10 +1388,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         groupMembers: { ...state.groupMembers, [groupUlid]: members },
       }));
 
-      const actorId = get().currentUserDid || '';
+      const actorPtid = get().currentUserPtid || '';
       const actorUn = get().currentUserProfile?.username?.trim().toLowerCase() || '';
       for (const m of members) {
-        if (m.ptid && m.ptid !== actorId && !(actorUn && m.ptid.includes(`:p:${actorUn}:`)) && !get().peerProfiles[m.ptid]) {
+        if (m.ptid && m.ptid !== actorPtid && !(actorUn && m.ptid.includes(`:p:${actorUn}:`)) && !get().peerProfiles[m.ptid]) {
           get().loadPeerProfile(m.ptid).catch(() => {});
         }
       }
@@ -1458,7 +1458,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       } else {
         delete nextPreviews[ulid];
       }
-      saveConversationLocalState(state.currentUserDid, nextLocalState);
+      saveConversationLocalState(state.currentUserPtid, nextLocalState);
       return {
         conversationLocalState: nextLocalState,
         messages: {
@@ -1548,10 +1548,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     if (!hasAuthenticatedActor()) return;
     try {
       const profile = await api.actorGetMyProfile();
-      const profileDid = profile?.id?.trim() || null;
+      const profileDid = profile?.actorPtid?.trim() || null;
       set({
         currentUserProfile: profile,
-        currentUserDid: profileDid,
+        currentUserPtid: profileDid,
         conversationLocalState: loadConversationLocalState(profileDid),
       });
     } catch (error) {
@@ -1563,15 +1563,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  loadPeerProfile: async (peerDid, force = false) => {
+  loadPeerProfile: async (peerPtid, force = false) => {
     if (!hasAuthenticatedActor()) return;
-    const did = (peerDid || '').trim();
+    const did = (peerPtid || '').trim();
     if (!did) return;
     const state = get();
     // Self profile is owned by `loadCurrentUserProfile`; never re-fetch it
     // through the peer endpoint or we'd double-write the same actor through
     // two different runtime channels.
-    if (state.currentUserDid && state.currentUserDid === did) return;
+    if (state.currentUserPtid && state.currentUserPtid === did) return;
     if (state.peerProfileLoading[did]) return;
     if (!force && did in state.peerProfiles) return;
 
@@ -1585,7 +1585,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
       }));
     } catch (error) {
-      log.warn('socialChat', 'loadPeerProfile failed', { peerDid: did, error });
+      log.warn('socialChat', 'loadPeerProfile failed', { peerPtid: did, error });
       set((prev) => ({
         // Cache `null` so the UI stops spinning and falls back to the
         // session-derived display name + avatar; a future force-refresh
@@ -1605,7 +1605,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       );
       set({ friendRequests: requests });
       await Promise.allSettled(
-        friendRequestProfileDids(requests, get().currentUserDid)
+        friendRequestProfileDids(requests, get().currentUserPtid)
           .map((did) => get().loadPeerProfile(did)),
       );
     } catch {
@@ -1613,9 +1613,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  sendFriendRequest: async (receiverDid, message) => {
+  sendFriendRequest: async (receiverPtid, message) => {
     try {
-      await api.socialFriendRequestSend(receiverDid, message);
+      await api.socialFriendRequestSend(receiverPtid, message);
       await get().loadFriendRequests();
     } catch (error) {
       log.error('socialChat', 'sendFriendRequest failed', error);
@@ -1698,10 +1698,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     });
   },
 
-  applyTypingState: (sessionUlid, fromActorId, typing) => {
-    if (!sessionUlid || !fromActorId) return;
+  applyTypingState: (sessionUlid, fromActorPtid, typing) => {
+    if (!sessionUlid || !fromActorPtid) return;
     set((state) => {
-      const next = applyTypingStateToMap(state.typingPeers, sessionUlid, fromActorId, typing);
+      const next = applyTypingStateToMap(state.typingPeers, sessionUlid, fromActorPtid, typing);
       return next ? { typingPeers: next } : state;
     });
   },
@@ -1750,7 +1750,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           ...patch,
         },
       };
-      saveConversationLocalState(state.currentUserDid, nextLocalState);
+      saveConversationLocalState(state.currentUserPtid, nextLocalState);
       return { conversationLocalState: nextLocalState };
     });
   },
@@ -1763,7 +1763,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     };
     set((state) => {
       const nextLocalState = { ...state.conversationLocalState, [key]: nextEntry };
-      saveConversationLocalState(state.currentUserDid, nextLocalState);
+      saveConversationLocalState(state.currentUserPtid, nextLocalState);
       const nextMessages = { ...state.messages };
       const nextPreviews = { ...state.lastPreviews };
       if (!keepHistory) {
@@ -1789,7 +1789,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ...state.conversationLocalState,
         [key]: { ...current, hidden: false },
       };
-      saveConversationLocalState(state.currentUserDid, nextLocalState);
+      saveConversationLocalState(state.currentUserPtid, nextLocalState);
       return { conversationLocalState: nextLocalState };
     });
   },
@@ -1797,7 +1797,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   deleteGroupContact: async (groupUlid) => {
     try {
       const state = get();
-      const actorPtid = state.currentUserDid ?? '';
+      const actorPtid = state.currentUserPtid ?? '';
       if (!actorPtid) throw new Error('No authenticated actor');
       const [conversation, federationSelf, device] = await Promise.all([
         imServiceV1.conversation.getConversation(groupUlid),
@@ -1824,7 +1824,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   getUnifiedConversations: () => {
     const state = get();
-    const did = state.currentUserDid;
+    const did = state.currentUserPtid;
     const out: UnifiedConversation[] = [];
 
     for (const s of state.sessions) {
@@ -1882,10 +1882,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   getIMConversations: () => {
     const state = get();
-    const actorId = state.currentUserDid || '';
+    const actorPtid = state.currentUserPtid || '';
     const actorUsername = state.currentUserProfile?.username?.trim().toLowerCase() || '';
     const isOwnPtid = (ptid: string): boolean => {
-      if (ptid === actorId) return true;
+      if (ptid === actorPtid) return true;
       if (actorUsername && ptid.includes(`:p:${actorUsername}:`)) return true;
       return false;
     };
@@ -1913,23 +1913,23 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       if (isDirect) {
         const members = state.conversationMembers[convId] || [];
         const peer = members.find((m) => m.ptid && !isOwnPtid(m.ptid)) || members[0];
-        const peerDid = peer?.ptid || '';
-        const profile = state.peerProfiles[peerDid];
-        const friendReq = peerDid
-          ? state.friendRequests.find((r) => r.senderId === peerDid || r.receiverId === peerDid)
+        const peerPtid = peer?.ptid || '';
+        const profile = state.peerProfiles[peerPtid];
+        const friendReq = peerPtid
+          ? state.friendRequests.find((r) => r.senderPtid === peerPtid || r.receiverPtid === peerPtid)
           : undefined;
         const peerName = peer?.nickname
           || profile?.display_name
           || profile?.username
-          || (friendReq ? (friendReq.senderId === peerDid ? friendReq.senderDisplayName : friendReq.receiverDisplayName) : '')
-          || peerDid
+          || (friendReq ? (friendReq.senderPtid === peerPtid ? friendReq.senderDisplayName : friendReq.receiverDisplayName) : '')
+          || peerPtid
           || 'Friend';
         out.push(projectDesktopIMConversation({
           type: 'friend',
           ulid: convId,
           name: peerName,
           avatar: profile?.avatar || '',
-          peerDid,
+          peerPtid,
           lastActivity,
           unread: state.groupUnreadCounts[convId] ?? 0,
           muted: localState?.muted ?? (peer?.muted || false),
@@ -1984,17 +1984,17 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     );
   },
 
-  getIMSenderProfile: (kind, conversationUlid, senderDid) => {
+  getIMSenderProfile: (kind, conversationUlid, senderPtid) => {
     const state = get();
-    const did = senderDid.trim();
-    const isSelf = Boolean(state.currentUserDid && did === state.currentUserDid);
+    const did = senderPtid.trim();
+    const isSelf = Boolean(state.currentUserPtid && did === state.currentUserPtid);
 
     if (isSelf) {
       return {
         id: did,
         name: state.currentUserProfile?.displayName
           || state.currentUserProfile?.username
-          || state.currentUserDid
+          || state.currentUserPtid
           || did,
         avatar: state.currentUserProfile?.avatar || '',
         isSelf,
@@ -2003,7 +2003,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
     if (kind === 'friend') {
       const session = state.sessions.find((item) => item.ulid === conversationUlid);
-      const peer = session ? peerOfSession(session, state.currentUserDid) : null;
+      const peer = session ? peerOfSession(session, state.currentUserPtid) : null;
       if (peer?.name) {
         return { id: did || peer.did || '', name: peer.name, avatar: peer.avatar || '', isSelf };
       }
@@ -2016,10 +2016,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       if (memberEntry?.nickname) {
         return { id: did, name: memberEntry.nickname, avatar: '', isSelf };
       }
-      const friendReq = state.friendRequests.find((r) => r.senderId === did || r.receiverId === did);
+      const friendReq = state.friendRequests.find((r) => r.senderPtid === did || r.receiverPtid === did);
       if (friendReq) {
-        const name = friendReq.senderId === did ? friendReq.senderDisplayName : friendReq.receiverDisplayName;
-        const avatar = friendReq.senderId === did ? friendReq.senderAvatar : friendReq.receiverAvatar;
+        const name = friendReq.senderPtid === did ? friendReq.senderDisplayName : friendReq.receiverDisplayName;
+        const avatar = friendReq.senderPtid === did ? friendReq.senderAvatar : friendReq.receiverAvatar;
         if (name) return { id: did, name, avatar: avatar || '', isSelf };
       }
       return { id: did, name: did, avatar: '', isSelf };
@@ -2030,7 +2030,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     const profileName = profile?.display_name || profile?.username || '';
     const fallback = actorProfileFromSessions(
       state.sessions,
-      state.currentUserDid,
+      state.currentUserPtid,
       did,
       state.currentUserProfile,
     );
@@ -2072,8 +2072,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         if (scope === 'friend') {
           const session = state.sessions.find((item) => item.ulid === conversationId);
           if (session) {
-            conversationName = peerDisplayName(session, state.currentUserDid)
-              || peerOfSession(session, state.currentUserDid).did;
+            conversationName = peerDisplayName(session, state.currentUserPtid)
+              || peerOfSession(session, state.currentUserPtid).did;
           }
         } else {
           const group = state.groups.find((item) => item.ulid === conversationId);
@@ -2090,7 +2090,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
             messageId: message.messageId,
             conversationId,
             scope,
-            senderDid: message.senderPtid,
+            senderPtid: message.senderPtid,
             content: message.plaintext,
             sentAt: message.timestampUnixMs,
             conversationName: conversationName || conversationId.slice(0, 12),

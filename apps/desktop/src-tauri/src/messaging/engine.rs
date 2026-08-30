@@ -972,9 +972,7 @@ impl MessagingEngine {
         let (projection, _) = self
             .store
             .message_projection(conversation_id, message_id)?
-            .ok_or_else(|| {
-                "messaging interaction target projection is unavailable".to_string()
-            })?;
+            .ok_or_else(|| "messaging interaction target projection is unavailable".to_string())?;
         if matches!(interaction, MetadataInteraction::Retract)
             && projection.sender_ptid != self.endpoint.ptid
         {

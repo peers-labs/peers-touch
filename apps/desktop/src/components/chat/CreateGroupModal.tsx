@@ -31,18 +31,18 @@ function getFirstLetter(name: string): string {
 export function CreateGroupModal({ open, onClose }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const { sessions, friendRequests, currentUserDid, loadGroups, selectGroup, setActiveTab, getIMConversations, loadSessions } = useActiveSocialChatSlice((s) => ({
+  const { sessions, friendRequests, currentUserPtid, loadGroups, selectGroup, setActiveTab, getIMConversations, loadSessions } = useActiveSocialChatSlice((s) => ({
     sessions: s.sessions,
     friendRequests: s.friendRequests,
-    currentUserDid: s.currentUserDid,
+    currentUserPtid: s.currentUserPtid,
     loadGroups: s.loadGroups,
     selectGroup: s.selectGroup,
     setActiveTab: s.setActiveTab,
     getIMConversations: s.getIMConversations,
     loadSessions: s.loadSessions,
   }));
-  const sessionActorId = useActiveChatSessionSlice((s) => s.currentUser?.actorId ?? null);
-  const ownDid = currentUserDid || sessionActorId;
+  const sessionActorPtid = useActiveChatSessionSlice((s) => s.currentUser?.actorPtid ?? null);
+  const ownDid = currentUserPtid || sessionActorPtid;
 
   const [searchText, setSearchText] = useState('');
   const [selectedDids, setSelectedDids] = useState<Set<string>>(new Set());
@@ -64,9 +64,9 @@ export function CreateGroupModal({ open, onClose }: Props) {
 
     const conversations = getIMConversations();
     for (const conv of conversations) {
-      if (conv.kind !== 'friend' || !conv.peerDid || conv.peerDid === ownDid || seen.has(conv.peerDid)) continue;
-      seen.set(conv.peerDid, {
-        did: conv.peerDid,
+      if (conv.kind !== 'friend' || !conv.peerPtid || conv.peerPtid === ownDid || seen.has(conv.peerPtid)) continue;
+      seen.set(conv.peerPtid, {
+        did: conv.peerPtid,
         name: conv.title || t('chat.social.sessionList.unknown'),
         avatar: conv.avatar || '',
       });
@@ -74,8 +74,8 @@ export function CreateGroupModal({ open, onClose }: Props) {
 
     for (const req of friendRequests) {
       if (req.status !== 2) continue;
-      const isSender: boolean = req.senderId === ownDid;
-      const peerId: string = isSender ? req.receiverId : req.senderId;
+      const isSender: boolean = req.senderPtid === ownDid;
+      const peerId: string = isSender ? req.receiverPtid : req.senderPtid;
       if (!peerId || peerId === ownDid || seen.has(peerId)) continue;
       const peerName: string = isSender ? req.receiverDisplayName : req.senderDisplayName;
       const peerAvatar: string = isSender ? req.receiverAvatar : req.senderAvatar;
@@ -153,21 +153,21 @@ export function CreateGroupModal({ open, onClose }: Props) {
     if (selectedDids.size === 0) return;
     setCreating(true);
 
-    const memberDids = Array.from(selectedDids).filter((did) => did !== ownDid);
-    if (memberDids.length === 0) { setCreating(false); return; }
+    const memberPtids = Array.from(selectedDids).filter((did) => did !== ownDid);
+    if (memberPtids.length === 0) { setCreating(false); return; }
 
     const namesByDid = new Map(contacts.map((c) => [c.did, c.name]));
     const groupName =
-      memberDids.length <= 3
-        ? memberDids.map((d) => namesByDid.get(d) ?? d.slice(0, 8)).join(', ')
-        : t('chat.social.createGroup.defaultName', { count: memberDids.length + 1 });
+      memberPtids.length <= 3
+        ? memberPtids.map((d) => namesByDid.get(d) ?? d.slice(0, 8)).join(', ')
+        : t('chat.social.createGroup.defaultName', { count: memberPtids.length + 1 });
 
     handleClose();
 
     const conversationId = crypto.randomUUID();
     useSocialChatStore.getState().setGroupSecurityState(conversationId, 'establishing');
     try {
-      await imServiceV1.messaging.createGroup(conversationId, groupName, memberDids);
+      await imServiceV1.messaging.createGroup(conversationId, groupName, memberPtids);
       useSocialChatStore.getState().setGroupSecurityState(conversationId, 'ready');
       await loadGroups();
       await loadSessions();

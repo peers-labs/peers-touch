@@ -16,7 +16,7 @@ func NewOrchestrationHandlers(orchestrationService *service.OrchestrationService
 }
 
 func (h *OrchestrationHandlers) HandleCreateCollaborationTask(ctx context.Context, req *model.CreateCollaborationTaskRequest) (*model.CreateCollaborationTaskResponse, error) {
-	task, _, err := h.orchestrationService.CreateCollaborationTask(ctx, subjectActorID(ctx), req)
+	task, _, err := h.orchestrationService.CreateCollaborationTask(ctx, subjectActorPTID(ctx), req)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -24,7 +24,7 @@ func (h *OrchestrationHandlers) HandleCreateCollaborationTask(ctx context.Contex
 }
 
 func (h *OrchestrationHandlers) HandleGetCollaborationTask(ctx context.Context, req *model.GetCollaborationTaskRequest) (*model.GetCollaborationTaskResponse, error) {
-	task, nodes, err := h.orchestrationService.GetCollaborationTask(ctx, subjectActorID(ctx), req.GetTaskId())
+	task, nodes, err := h.orchestrationService.GetCollaborationTask(ctx, subjectActorPTID(ctx), req.GetTaskId())
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -32,7 +32,7 @@ func (h *OrchestrationHandlers) HandleGetCollaborationTask(ctx context.Context, 
 }
 
 func (h *OrchestrationHandlers) HandleListCollaborationTasks(ctx context.Context, req *model.ListCollaborationTasksRequest) (*model.ListCollaborationTasksResponse, error) {
-	tasks, total, err := h.orchestrationService.ListCollaborationTasks(ctx, subjectActorID(ctx), req)
+	tasks, total, err := h.orchestrationService.ListCollaborationTasks(ctx, subjectActorPTID(ctx), req)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -40,7 +40,7 @@ func (h *OrchestrationHandlers) HandleListCollaborationTasks(ctx context.Context
 }
 
 func (h *OrchestrationHandlers) HandleListTaskEvents(ctx context.Context, req *model.ListTaskEventsRequest) (*model.ListTaskEventsResponse, error) {
-	events, nextSeq, err := h.orchestrationService.ListTaskEvents(ctx, subjectActorID(ctx), req)
+	events, nextSeq, err := h.orchestrationService.ListTaskEvents(ctx, subjectActorPTID(ctx), req)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -48,7 +48,7 @@ func (h *OrchestrationHandlers) HandleListTaskEvents(ctx context.Context, req *m
 }
 
 func (h *OrchestrationHandlers) HandleCancelCollaborationTask(ctx context.Context, req *model.UpdateCollaborationTaskRequest) (*model.UpdateCollaborationTaskResponse, error) {
-	task, _, err := h.orchestrationService.CancelCollaborationTask(ctx, subjectActorID(ctx), req.GetTaskId())
+	task, _, err := h.orchestrationService.CancelCollaborationTask(ctx, subjectActorPTID(ctx), req.GetTaskId())
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -56,7 +56,7 @@ func (h *OrchestrationHandlers) HandleCancelCollaborationTask(ctx context.Contex
 }
 
 func (h *OrchestrationHandlers) HandleResumeCollaborationTask(ctx context.Context, req *model.ResumeTaskRequest) (*model.ResumeTaskResponse, error) {
-	task, _, err := h.orchestrationService.ResumeCollaborationTask(ctx, subjectActorID(ctx), req.GetTaskId(), "agent.collaboration.resume")
+	task, _, err := h.orchestrationService.ResumeCollaborationTask(ctx, subjectActorPTID(ctx), req.GetTaskId(), "agent.collaboration.resume")
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -64,7 +64,7 @@ func (h *OrchestrationHandlers) HandleResumeCollaborationTask(ctx context.Contex
 }
 
 func (h *OrchestrationHandlers) HandleSubmitCollaborationNodeResult(ctx context.Context, req *model.SubmitCollaborationNodeResultRequest) (*model.SubmitCollaborationNodeResultResponse, error) {
-	task, nodes, err := h.orchestrationService.SubmitCollaborationNodeResult(ctx, subjectActorID(ctx), req)
+	task, nodes, err := h.orchestrationService.SubmitCollaborationNodeResult(ctx, subjectActorPTID(ctx), req)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -72,11 +72,11 @@ func (h *OrchestrationHandlers) HandleSubmitCollaborationNodeResult(ctx context.
 }
 
 func (h *OrchestrationHandlers) HandleClaimDesktopExecutorTask(ctx context.Context, req *model.ClaimDesktopExecutorTaskRequest) (*model.ClaimDesktopExecutorTaskResponse, error) {
-	return h.orchestrationService.ClaimDesktopExecutorTask(ctx, subjectActorID(ctx), req)
+	return h.orchestrationService.ClaimDesktopExecutorTask(ctx, subjectActorPTID(ctx), req)
 }
 
 func (h *OrchestrationHandlers) HandleHeartbeatExecutorLease(ctx context.Context, req *model.HeartbeatExecutorLeaseRequest) (*model.HeartbeatExecutorLeaseResponse, error) {
-	lease, err := h.orchestrationService.HeartbeatExecutorLease(ctx, subjectActorID(ctx), req)
+	lease, err := h.orchestrationService.HeartbeatExecutorLease(ctx, subjectActorPTID(ctx), req)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -84,7 +84,7 @@ func (h *OrchestrationHandlers) HandleHeartbeatExecutorLease(ctx context.Context
 }
 
 func (h *OrchestrationHandlers) HandleReleaseExecutorLease(ctx context.Context, req *model.ReleaseExecutorLeaseRequest) (*model.ReleaseExecutorLeaseResponse, error) {
-	lease, err := h.orchestrationService.ReleaseExecutorLease(ctx, subjectActorID(ctx), req)
+	lease, err := h.orchestrationService.ReleaseExecutorLease(ctx, subjectActorPTID(ctx), req)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}

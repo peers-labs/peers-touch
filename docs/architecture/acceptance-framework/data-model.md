@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-08-16 | **Updated**: 2026-08-17
+> **Created**: 2026-08-16 | **Updated**: 2026-08-27
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -36,7 +36,9 @@ profile:
   identity_match: true
 services:
   station:
+    kind: station
     required: true
+    runtime_identity_required: false
     ready_action: station
     health_action: station-check
     status_action: station-status
@@ -54,6 +56,8 @@ cleanup:
 约束：
 
 - `id` 必须与 `gates.yaml.environment` 一致。
+- 每个 service 必须声明 `kind`；需要稳定 peer/runtime identity 的环境必须设置
+  `runtime_identity_required: true`。
 - `source_ref` 只允许引用，不允许写具体 secret value。
 - destructive Fixture 必须声明 authorization 和 target verification。
 - Contract 缺失或字段不完整时，plan 可以生成，但 environment Gate 不得执行。
@@ -80,18 +84,48 @@ Manifest 是一次 provisioning 运行的不可变输出。
     "resolvedName": "three",
     "slot": 2
   },
-  "station": {
-    "url": "<redacted-safe-url>",
-    "liveCommit": "<commit>",
-    "protoDigest": "<sha256>",
-    "attestationArtifact": {
-      "artifactKind": "acceptance-artifact-ref",
-      "workspaceId": "<workspace-id>",
-      "gateId": "<gate-id>",
-      "runId": "<run-id>",
-      "path": "runtime/station-attestation.json",
-      "sha256": "<sha256>",
-      "mediaType": "application/json"
+  "services": {
+    "station-primary": {
+      "kind": "station",
+      "deploymentEnvironment": "station-two",
+      "endpoint": "<redacted-safe-url>",
+      "runtimeIdentity": "<station-peer-id>",
+      "liveCommit": "<commit>",
+      "protocolDigest": "<sha256>",
+      "workspaceDigest": "clean",
+      "attestationArtifact": {
+        "artifactKind": "acceptance-artifact-ref",
+        "workspaceId": "<workspace-id>",
+        "gateId": "<gate-id>",
+        "runId": "<run-id>",
+        "path": "runtime/services/station-primary/attestation.json",
+        "sha256": "<sha256>",
+        "mediaType": "application/json"
+      }
+    },
+    "station-secondary": {
+      "kind": "station",
+      "deploymentEnvironment": "station-three",
+      "endpoint": "<redacted-safe-url>",
+      "runtimeIdentity": "<station-peer-id>",
+      "liveCommit": "<commit>",
+      "protocolDigest": "<sha256>",
+      "workspaceDigest": "clean",
+      "attestationArtifact": {
+        "artifactKind": "acceptance-artifact-ref"
+      }
+    },
+    "relay": {
+      "kind": "relay",
+      "deploymentEnvironment": "relay-1",
+      "endpoint": "<redacted-safe-url>",
+      "runtimeIdentity": "<relay-peer-id>",
+      "liveCommit": "<commit>",
+      "protocolDigest": "<sha256>",
+      "workspaceDigest": "clean",
+      "attestationArtifact": {
+        "artifactKind": "acceptance-artifact-ref"
+      }
     }
   },
   "actorManifest": {
@@ -116,20 +150,30 @@ Manifest identity requirements:
 
 - `runId` 在同一 Acceptance run 内唯一。
 - `source.commit` 来自实际客户端 worktree。
-- `station.liveCommit` 来自 live endpoint，不由本地推断。
-- `station.attestationArtifact` 指向实际 deployment/runtime producer 的输出。
+- `services` 始终存在；provisioning 前可为空对象，ready manifest 必须覆盖所有
+  required Environment services。
+- service map key 必须等于 attestation `serviceId`，并且 kind 必须匹配
+  Environment Contract。
+- `services.*.liveCommit` 来自对应 live endpoint，不由本地推断。
+- `services.*.attestationArtifact` 指向实际 deployment/runtime producer 的输出。
 - `profile.requestedName` 与 `resolvedName` 不一致时状态必须为 `BLOCKED`。
+- 顶层 `station` 字段已删除；reader 遇到旧字段必须 fail closed。
 
-## 4. Station Attestation
+## 4. Service Attestation
 
 ```json
 {
-  "artifactKind": "station-deployment-attestation",
+  "artifactKind": "service-deployment-attestation",
   "capturedAt": "<UTC timestamp>",
+  "serviceId": "station-primary",
+  "serviceKind": "station",
   "environmentId": "home-station",
+  "deploymentEnvironment": "station-two",
+  "endpoint": "<redacted-safe-url>",
   "commit": "<deployed-commit>",
   "workspaceDigest": "clean",
-  "protoDigest": "<sha256>",
+  "protocolDigest": "<sha256>",
+  "runtimeIdentity": "<station-peer-id>",
   "liveMetadata": {
     "buildCommit": "<live-endpoint-commit>"
   },
@@ -137,12 +181,26 @@ Manifest identity requirements:
 }
 ```
 
-规则：
+通用规则：
 
-- Producer 必须是 Station deployment/runtime owner。
+- Producer 必须是该 service 的 deployment/runtime owner。
+- service ID 必须是 Environment Contract 中的稳定角色，service kind 必须匹配。
+- artifact 必须写入
+  `runtime/services/<service-id>/attestation.json`，同一 run 内禁止覆盖。
+- Consumer Gate 按稳定 service ID 选择服务并验证 kind，不得按 map 顺序推断。
 - Consumer Gate 必须比较 attested commit、live commit 和 client commit。
 - `workspaceDigest != clean` 时 Native source-bound proof fail closed。
 - Attestation 不包含部署凭据、SSH target credential 或数据库 secret。
+
+Station-specific 规则：
+
+- Station producer 必须是 Station deployment/runtime owner。
+- `runtimeIdentity` 来自签名 Station identity，不得从 URL 推断。
+
+Relay-specific 规则：
+
+- Relay producer 必须是 Relay deployment/runtime owner。
+- Relay runtime identity、commit 和 protocol digest 必须来自 live runtime 与部署事实。
 
 ## 5. Actor Manifest
 

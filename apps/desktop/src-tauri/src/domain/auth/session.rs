@@ -5,7 +5,7 @@ const TOKEN_TTL_SECONDS: u64 = 60 * 60;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthSession {
-    pub actor_id: String,
+    pub actor_ptid: String,
     pub token: String,
     pub expires_at: u64,
 }
@@ -30,7 +30,7 @@ pub fn validate_login_input(account: &str, password: &str) -> Result<(), AuthDom
     Ok(())
 }
 
-pub fn from_station_response(actor_id: String, token: String) -> AuthSession {
+pub fn from_station_response(actor_ptid: String, token: String) -> AuthSession {
     // Attempt to read `exp` from the JWT payload for accurate expiry tracking.
     // Falls back to a default 1-hour TTL when the token has no `exp` claim.
     let expires_at = token
@@ -39,7 +39,7 @@ pub fn from_station_response(actor_id: String, token: String) -> AuthSession {
         .and_then(decode_jwt_exp)
         .unwrap_or_else(|| now_epoch_seconds() + TOKEN_TTL_SECONDS);
     AuthSession {
-        actor_id,
+        actor_ptid,
         token,
         expires_at,
     }
@@ -63,7 +63,9 @@ pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     // Best-effort local validation:
     // - Decode subject for display/identity wiring
     // - If `exp` exists, enforce expiry so we don't offer "Continue" on an expired session.
-    let actor_id = decode_jwt_subject(parts[1]).unwrap_or_default();
+    let actor_ptid = decode_jwt_subject(parts[1]).ok_or_else(|| {
+        AuthDomainError::Unauthorized("Token subject is not a canonical PTID".to_string())
+    })?;
     if let Some(exp) = decode_jwt_exp(parts[1]) {
         let now = now_epoch_seconds();
         if exp <= now {
@@ -74,7 +76,7 @@ pub fn validate_token(token: &str) -> Result<AuthSession, AuthDomainError> {
     }
 
     Ok(AuthSession {
-        actor_id,
+        actor_ptid,
         token: token.to_string(),
         expires_at: decode_jwt_exp(parts[1])
             .unwrap_or_else(|| now_epoch_seconds() + TOKEN_TTL_SECONDS),
@@ -89,9 +91,9 @@ fn decode_jwt_subject(payload_b64: &str) -> Option<String> {
     let decoded = base64_decode(&b64)?;
     let text = String::from_utf8(decoded).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
-    v.get("subject_id")
-        .or_else(|| v.get("sub"))
+    v.get("sub")
         .and_then(|s| s.as_str())
+        .filter(|subject| subject.starts_with("ptid:"))
         .map(|s| s.to_string())
 }
 

@@ -32,7 +32,7 @@ pub fn account_get_device_id(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_id = match session_resolver::actor_id_for_window(state.inner(), &window) {
+    let actor_ptid = match session_resolver::ptid_for_window(state.inner(), &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -42,7 +42,7 @@ pub fn account_get_device_id(
             );
         }
     };
-    match device_install::get_or_create_device_id(actor_id.as_str()) {
+    match device_install::get_or_create_device_id(actor_ptid.as_str()) {
         Ok(device_id) => {
             crate::infrastructure::station_client::set_device_id(device_id.clone());
             AppResult::success(StubPayload {
@@ -64,33 +64,54 @@ pub fn account_switch(
     let switched_id = input.id.clone();
     let result = application_account::account_switch(input);
     if result.ok {
-        let actor_id = actor_id_for_account(&switched_id);
-        // Re-bind this window's session to the freshly active actor. Without
-        // this, switching accounts in window B would still leave window B's
-        // command resolver pointing at the previous actor.
-        if let Some(id) = actor_id.as_deref() {
-            let token = state
-                .session
-                .lock()
-                .ok()
-                .and_then(|g| g.token.clone())
-                .unwrap_or_default();
-            if !token.is_empty() {
-                let mut actor = ActorRef::new_person(id);
-                actor.ptid = auth_service::canonical_ptid_for_token(&token).unwrap_or_default();
-                state.sessions.bind(ActiveSession::new(
-                    window.label(),
-                    switched_id.clone(),
-                    actor,
-                    token,
-                ));
-            }
+        let actor_ptid = actor_ptid_for_account(&switched_id);
+        let Some(actor_ptid) = actor_ptid else {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "selected account has no canonical actor PTID",
+                None,
+            );
+        };
+        let restored = auth_service::auth_restore_session(state.inner());
+        let Some(session) = restored.data else {
+            return AppResult::fail(
+                restored
+                    .error
+                    .as_ref()
+                    .map(|error| error.code.clone())
+                    .unwrap_or(ErrorCode::Unauthorized),
+                restored
+                    .error
+                    .map(|error| error.message)
+                    .unwrap_or_else(|| "selected account session is unavailable".to_string()),
+                None,
+            );
+        };
+        if session.actor_ptid.as_deref() != Some(actor_ptid.as_str()) {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "selected account session PTID mismatch",
+                None,
+            );
         }
+        let Some(token) = session.session_token else {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "selected account session token is unavailable",
+                None,
+            );
+        };
+        state.sessions.bind_exclusive(ActiveSession::new(
+            window.label(),
+            switched_id.clone(),
+            ActorRef::new_person(actor_ptid.clone()),
+            token,
+        ));
         identity_event::emit(
             &app,
             IdentityChangedPayload {
                 reason: IdentityChangeReason::Switch,
-                actor_id,
+                actor_ptid: Some(actor_ptid),
                 login_method: None,
             },
         );
@@ -98,18 +119,8 @@ pub fn account_switch(
     result
 }
 
-/// Resolve the underlying station actor_id for a given local `account_id`
-/// (e.g. `password:123` → `123`, `github:456` → `456`).
-pub(crate) fn actor_id_for_account(account_id: &str) -> Option<String> {
-    let raw = account_id
-        .split_once(':')
-        .map(|(_, id)| id.to_string())
-        .unwrap_or_else(|| account_id.to_string());
-    if raw.is_empty() {
-        None
-    } else {
-        Some(raw)
-    }
+pub(crate) fn actor_ptid_for_account(account_id: &str) -> Option<String> {
+    session_vault::actor_ptid_for_account(account_id)
 }
 
 #[tauri::command]
@@ -123,8 +134,9 @@ pub fn account_upsert_oauth(input: AccountUpsertOAuthInput) -> AppResult<StubPay
 pub fn account_set_pin(
     input: AccountSetPinInput,
     state: State<'_, Arc<AppState>>,
+    window: Window,
 ) -> AppResult<StubPayload> {
-    let token = state.session.lock().ok().and_then(|g| g.token.clone());
+    let token = session_resolver::token_for_window(state.inner(), &window);
     let account_id = input.account_id.clone();
     let result = application_account::account_set_pin(input, token.as_deref());
     if result.ok {
@@ -262,16 +274,30 @@ pub fn account_unlock(
         }
     };
 
-    // Write to AppState and per-actor session store (debug gateway still uses `AppState.session`)
-    let session = crate::domain::auth::session::from_station_response(
-        session_vault::actor_id_from_account_id(&account_id_clone),
-        token.clone(),
-    );
-
-    if let Ok(mut guard) = state.session.lock() {
-        guard.actor_id = Some(session.actor_id.clone());
-        guard.token = Some(session.token.clone());
-    }
+    let Some(account_actor_ptid) = session_vault::actor_ptid_for_account(&account_id_clone) else {
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "account has no canonical actor PTID",
+            None,
+        );
+    };
+    let session = match crate::domain::auth::session::validate_token(&token) {
+        Ok(session) if session.actor_ptid == account_actor_ptid => session,
+        Ok(_) => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "unlocked session PTID does not match account",
+                None,
+            )
+        }
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "unlocked session has no canonical actor PTID",
+                None,
+            )
+        }
+    };
 
     // Re-encrypt session for next cold start
     let _ =
@@ -282,7 +308,8 @@ pub fn account_unlock(
         id: account_id_clone.clone(),
     });
 
-    let profile = crate::infrastructure::auth_identity::find_profile_by_actor_id(&session.actor_id);
+    let profile =
+        crate::infrastructure::auth_identity::find_profile_by_actor_ptid(&session.actor_ptid);
     let (p_name, p_email, p_avatar, p_local_avatar, p_method) = match &profile {
         Some(p) => (
             Some(p.name.clone()).filter(|v| !v.is_empty()),
@@ -297,9 +324,7 @@ pub fn account_unlock(
     // Bind the unlocked session to *this* window before broadcasting. If another
     // local window already owns this actor, the new unlock wins and the old
     // window is routed through the same global session-revoked flow.
-    let mut actor = ActorRef::new_person(session.actor_id.clone());
-    let canonical_ptid = auth_service::canonical_ptid_for_token(&token);
-    actor.ptid = canonical_ptid.clone().unwrap_or_default();
+    let actor = ActorRef::new_person(session.actor_ptid.clone());
     let kicked = state.sessions.bind_exclusive(ActiveSession::new(
         window.label(),
         account_id_clone.clone(),
@@ -309,7 +334,7 @@ pub fn account_unlock(
     for kicked_session in kicked {
         let payload = serde_json::json!({
             "reason": "takeover",
-            "actor_id": kicked_session.actor.actor_id,
+            "actor_ptid": kicked_session.actor.ptid,
         });
         if let Err(error) =
             app.emit_to(&kicked_session.window_label, SESSION_KICKED_EVENT, &payload)
@@ -320,12 +345,12 @@ pub fn account_unlock(
     if let Err(error) = auth_service::activate_messaging_profile(
         &state,
         &account_id_clone,
-        &session.actor_id,
+        &session.actor_ptid,
         &token,
     ) {
         tracing::warn!(
             account_id = %account_id_clone,
-            actor_id = %session.actor_id,
+            actor_ptid = %session.actor_ptid,
             error = %error,
             "unlocked session retained while durable messaging activation awaits retry"
         );
@@ -334,8 +359,8 @@ pub fn account_unlock(
     let unlock_payload = AppResult::success(AuthSessionPayload {
         command: "account_unlock".to_string(),
         status: "authenticated".to_string(),
-        actor_id: Some(session.actor_id.clone()),
-        ptid: canonical_ptid,
+        actor_ptid: Some(session.actor_ptid.clone()),
+        session_token: Some(session.token.clone()),
         name: p_name,
         email: p_email,
         avatar_url: p_avatar,
@@ -347,7 +372,7 @@ pub fn account_unlock(
         &app,
         IdentityChangedPayload {
             reason: IdentityChangeReason::Unlock,
-            actor_id: Some(session.actor_id),
+            actor_ptid: Some(session.actor_ptid),
             login_method: p_method,
         },
     );
@@ -359,8 +384,9 @@ pub fn account_unlock(
 pub fn account_relink_pin(
     input: AccountUnlockInput,
     state: State<'_, Arc<AppState>>,
+    window: Window,
 ) -> AppResult<StubPayload> {
-    let token = state.session.lock().ok().and_then(|g| g.token.clone());
+    let token = session_resolver::token_for_window(state.inner(), &window);
     let account_id = input.account_id.clone();
     let result = application_account::account_relink_pin(input, token.as_deref());
     if result.ok {

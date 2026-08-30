@@ -34,7 +34,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from tooling.acceptance.core import ProvisioningError, load_runtime_manifest
+from tooling.acceptance.core import (
+    ProvisioningError,
+    load_runtime_manifest,
+    require_runtime_service,
+)
 
 GATE_ID = "chat-desktop-gateway-e2e"
 
@@ -65,10 +69,15 @@ def runtime_manifest() -> dict[str, Any]:
 
 
 def station_url() -> str:
-    station = runtime_manifest().get("station")
-    if not isinstance(station, dict) or not station.get("url"):
-        raise GateError("runtime manifest Station URL is required")
-    return str(station["url"]).rstrip("/")
+    try:
+        station = require_runtime_service(
+            runtime_manifest(),
+            "station",
+            "station",
+        )
+    except ProvisioningError as error:
+        raise GateError(str(error)) from error
+    return str(station["endpoint"]).rstrip("/")
 
 
 def gateway_url() -> str:

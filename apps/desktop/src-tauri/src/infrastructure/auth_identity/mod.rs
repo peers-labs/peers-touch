@@ -17,6 +17,7 @@ pub struct AccountIdentityState {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AccountIdentity {
     pub id: String,
+    pub actor_ptid: String,
     pub provider: String,
     pub provider_user_id: String,
     pub name: String,
@@ -77,6 +78,7 @@ pub fn write_state(state: &AccountIdentityState) -> Result<(), String> {
 }
 
 pub fn upsert_oauth(
+    actor_ptid: &str,
     provider: &str,
     provider_user_id: &str,
     name: &str,
@@ -85,13 +87,17 @@ pub fn upsert_oauth(
     avatar_url: Option<&str>,
     profile_url: Option<&str>,
 ) -> Result<String, String> {
+    if !actor_ptid.trim().starts_with("ptid:") {
+        return Err("canonical actor PTID is required".to_string());
+    }
     let mut state = read_state()?;
     let station_scope = local_scope::active_station_scope();
-    let provider_scope = storage::resolve_user_scope(Some(provider));
-    let provider_user_scope = storage::resolve_user_scope(Some(provider_user_id));
+    let provider_scope = storage::sanitize_storage_segment(provider);
+    let provider_user_scope = storage::sanitize_storage_segment(provider_user_id);
     let account_id = format!("station:{station_scope}:{provider_scope}:{provider_user_scope}");
     let now = unix_to_rfc3339(chrono_like_now_unix());
     if let Some(existing) = state.accounts.iter_mut().find(|item| item.id == account_id) {
+        existing.actor_ptid = actor_ptid.to_string();
         existing.name = name.to_string();
         existing.email = email.unwrap_or_default().to_string();
         existing.avatar_url = avatar_url.unwrap_or_default().to_string();
@@ -110,6 +116,7 @@ pub fn upsert_oauth(
             .unwrap_or_else(|| now.clone());
         state.accounts.push(AccountIdentity {
             id: account_id.clone(),
+            actor_ptid: actor_ptid.to_string(),
             provider: provider.to_string(),
             provider_user_id: provider_user_id.to_string(),
             name: name.to_string(),
@@ -149,15 +156,19 @@ fn unix_to_rfc3339(sec: i64) -> String {
 /// `upsert_oauth` does for OAuth providers.  Sets the account as active and
 /// returns the canonical station-scoped `account_id`.
 pub fn upsert_password(
-    actor_id: &str,
+    actor_ptid: &str,
     name: &str,
     email: &str,
     avatar_url: Option<&str>,
 ) -> Result<String, String> {
+    if !actor_ptid.trim().starts_with("ptid:") {
+        return Err("canonical actor PTID is required".to_string());
+    }
     let mut state = read_state()?;
-    let account_id = local_scope::account_id_for_password_actor(actor_id);
+    let account_id = local_scope::account_id_for_password_ptid(actor_ptid);
     let now = unix_to_rfc3339(chrono_like_now_unix());
     if let Some(existing) = state.accounts.iter_mut().find(|item| item.id == account_id) {
+        existing.actor_ptid = actor_ptid.to_string();
         if !name.is_empty() {
             existing.name = name.to_string();
         }
@@ -171,8 +182,9 @@ pub fn upsert_password(
     } else {
         state.accounts.push(AccountIdentity {
             id: account_id.clone(),
+            actor_ptid: actor_ptid.to_string(),
             provider: "password".to_string(),
-            provider_user_id: actor_id.to_string(),
+            provider_user_id: actor_ptid.to_string(),
             name: name.to_string(),
             email: email.to_string(),
             avatar_url: avatar_url.unwrap_or_default().to_string(),
@@ -191,26 +203,16 @@ pub fn upsert_password(
     Ok(account_id)
 }
 
-/// Look up an account profile by `actor_id`.
-/// Search order: station-scoped password account → active matching account.
-pub fn find_profile_by_actor_id(actor_id: &str) -> Option<AccountIdentity> {
+pub fn find_profile_by_actor_ptid(actor_ptid: &str) -> Option<AccountIdentity> {
     let state = read_state().ok()?;
-    let password_account_id = local_scope::account_id_for_password_actor(actor_id);
-    if let Some(acc) = state.accounts.iter().find(|a| a.id == password_account_id) {
-        return Some(acc.clone());
-    }
-    if let Some(active_id) = &state.active_account_id {
-        if let Some(acc) = state.accounts.iter().find(|a| &a.id == active_id) {
-            if acc.provider_user_id == actor_id {
-                return Some(acc.clone());
-            }
-        }
-    }
-    None
+    state
+        .accounts
+        .into_iter()
+        .find(|account| account.actor_ptid == actor_ptid)
 }
 
 /// Resolve the canonical `account_id` (e.g. `password:123`, `github:456`) for a
-/// Station `actor_id`. Used by token-bound writers (profile sync, avatar sync)
+/// Station `actor_ptid`. Used by token-bound writers (profile sync, avatar sync)
 /// to pick the correct LocalAccount record without trusting the volatile
 /// `active_account_id` pointer.
 ///
@@ -218,24 +220,16 @@ pub fn find_profile_by_actor_id(actor_id: &str) -> Option<AccountIdentity> {
 /// 1. The station-scoped password account.
 /// 2. The currently-active account, if its `provider_user_id` matches.
 /// 3. `None` if no active-station record holds this actor.
-pub fn find_account_id_by_actor_id(actor_id: &str) -> Option<String> {
-    if actor_id.trim().is_empty() {
+pub fn find_account_id_by_actor_ptid(actor_ptid: &str) -> Option<String> {
+    if !actor_ptid.trim().starts_with("ptid:") {
         return None;
     }
     let state = read_state().ok()?;
-    let password_account_id = local_scope::account_id_for_password_actor(actor_id);
-    if state.accounts.iter().any(|a| a.id == password_account_id) {
-        return Some(password_account_id);
-    }
-
-    if let Some(active_id) = state.active_account_id.as_deref() {
-        if let Some(acc) = state.accounts.iter().find(|a| a.id == active_id) {
-            if acc.provider_user_id == actor_id {
-                return Some(acc.id.clone());
-            }
-        }
-    }
-    None
+    state
+        .accounts
+        .into_iter()
+        .find(|account| account.actor_ptid == actor_ptid)
+        .map(|account| account.id)
 }
 
 /// Update the avatar URL for the currently active account identity.

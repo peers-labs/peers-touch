@@ -45,7 +45,7 @@ const originalWindow = globalThis.window;
 const originalCustomEvent = globalThis.CustomEvent;
 
 vi.mock('../store/session', () => ({
-  currentAuthenticatedActorId: () => null,
+  currentAuthenticatedActorPtid: () => null,
   useSessionStore: {
     subscribe: vi.fn(() => () => undefined),
   },
@@ -54,7 +54,7 @@ vi.mock('../store/session', () => ({
 vi.mock('../store/socialChat', () => ({
   useSocialChatStore: {
     getState: () => ({
-      currentUserDid: 'did:peer:self',
+      currentUserPtid: 'did:peer:self',
       activeTab: 'group',
       sessions: [],
       groups: [],
@@ -180,7 +180,7 @@ describe('social realtime group membership side effects', () => {
       messageUlid: 'message-1',
       membershipEpoch: 1,
       committedTsUnixMs: 123,
-      actorDid: 'did:peer:bob',
+      actorPtid: 'did:peer:bob',
     });
 
     await vi.waitFor(() => {
@@ -226,12 +226,12 @@ describe('social realtime group membership side effects', () => {
   });
 });
 
-function publishGroupMembership(kind: RealtimeGroupMembershipChangeKind, actorDid: string): void {
+function publishGroupMembership(kind: RealtimeGroupMembershipChangeKind, actorPtid: string): void {
   eventBus.publish(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, {
     eventId: 'stream-event-1',
     changeEventId: 'membership-change-1',
     groupUlid: 'group-1',
-    actorDid,
+    actorPtid,
     kind,
     changedTsUnixMs: 123,
   });

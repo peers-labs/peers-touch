@@ -209,10 +209,10 @@ func isKnownVisibility(v string) bool {
 // reject empty fields, unknown visibilities and negative
 // quotas/TTLs at this layer so the repo can stay schema-driven.
 func (s *OSSService) CreateBucket(ctx context.Context, req domain.OSSBucketCreateRequest) (*domain.OSSBucketSummary, error) {
-	owner := strings.TrimSpace(req.OwnerActorID)
+	owner := strings.TrimSpace(req.OwnerPTID)
 	name := strings.TrimSpace(req.Name)
 	if owner == "" {
-		return nil, errors.New("owner_actor_id is required")
+		return nil, errors.New("owner_ptid is required")
 	}
 	if name == "" {
 		return nil, errors.New("name is required")
@@ -238,7 +238,7 @@ func (s *OSSService) CreateBucket(ctx context.Context, req domain.OSSBucketCreat
 		return nil, errors.New("ttl_days must be >= 0")
 	}
 	return s.repo.CreateBucket(ctx, infrastructure.BucketCreateInput{
-		OwnerActorID:      owner,
+		OwnerPTID:         owner,
 		Name:              name,
 		DefaultVisibility: vis,
 		QuotaBytes:        req.QuotaBytes,
@@ -435,14 +435,14 @@ type AdminUploadInput struct {
 }
 
 // AdminUploadObject performs an operator-driven upload into the
-// named bucket. The bucket's `OwnerActorID` is what the OSS
+// named bucket. The bucket's `OwnerPTID` is what the OSS
 // FileService stamps on the resulting `oss_files` row — this is
 // the architectural equivalent of "admin acted on behalf of the
 // owner", which is the same model the existing
 // `AdminPatchObject` / `AdminDeleteObject` paths use.
 //
 // We deliberately do NOT allow the operator to pin a different
-// `actor_id` on the resulting row; doing so would let the
+// `actor_ptid` on the resulting row; doing so would let the
 // dashboard exfiltrate uploads under a fake identity. If a
 // future use-case needs that, it should be a separate audited
 // endpoint with a distinct action code.
@@ -465,13 +465,13 @@ func (s *OSSService) AdminUploadObject(ctx context.Context, in AdminUploadInput)
 	if bucket == nil {
 		return nil, errors.New("bucket not found")
 	}
-	if strings.TrimSpace(bucket.OwnerActorID) == "" {
+	if strings.TrimSpace(bucket.OwnerPTID) == "" {
 		// System buckets have no owner — they are auto-provisioned
 		// by the OSS subserver on first user write and the dashboard
 		// should not be ginning up uploads against them under an
 		// empty actor id (the file service would reject it anyway,
 		// but the error message would be cryptic).
-		return nil, errors.New("bucket has no owner_actor_id; system buckets are not eligible for admin upload")
+		return nil, errors.New("bucket has no owner_ptid; system buckets are not eligible for admin upload")
 	}
 
 	visibility := strings.TrimSpace(in.Visibility)
@@ -492,7 +492,7 @@ func (s *OSSService) AdminUploadObject(ctx context.Context, in AdminUploadInput)
 	}
 
 	attr := ossservice.UploadAttribution{
-		ActorID:       bucket.OwnerActorID,
+		ActorPTID:     bucket.OwnerPTID,
 		BucketName:    bucket.Name,
 		Visibility:    visibility,
 		ChatSessionID: strings.TrimSpace(in.ChatSessionID),

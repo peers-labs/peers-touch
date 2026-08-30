@@ -50,8 +50,8 @@ export const socialRuntime: RuntimeDescriptor = {
     teardownHostAdapter = null;
     teardownSocialRealtimeBridge();
   },
-  async bootstrap(actorId: string | null): Promise<void> {
-    if (!actorId) return;
+  async bootstrap(actorPtid: string | null): Promise<void> {
+    if (!actorPtid) return;
     await refreshSocialProjection('runtime:bootstrap', true);
   },
   async reconcile(reason: string): Promise<void> {

@@ -27,11 +27,11 @@ interface ChatThreadStats {
 interface ChatMessageTimelineProps {
   activeConversationId: string;
   activeKind: ChatSurfaceKind;
-  currentUserDid: string | null;
+  currentUserPtid: string | null;
   getSenderProfile: (
     kind: ChatSurfaceKind,
     conversationUlid: string,
-    senderDid: string,
+    senderPtid: string,
   ) => DesktopIMSenderProfileProjection;
   highlightedMessageUlid: string | null;
   isPinned: (message: ChatMessage) => boolean;
@@ -44,7 +44,7 @@ interface ChatMessageTimelineProps {
   onReact: (message: ChatMessage) => void;
   onRecall: (message: ChatMessage) => void;
   onReply: (messageUlid: string) => void;
-  resolveReactions: (message: ChatMessage) => { actorId: string; emoji: string }[];
+  resolveReactions: (message: ChatMessage) => { actorPtid: string; emoji: string }[];
   resolveThreadStats: (message: ChatMessage) => ChatThreadStats;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
@@ -101,7 +101,7 @@ const ESTIMATED_ROW_HEIGHT = 72;
 export function ChatMessageTimeline({
   activeConversationId,
   activeKind,
-  currentUserDid,
+  currentUserPtid,
   getSenderProfile,
   highlightedMessageUlid,
   isPinned,
@@ -184,7 +184,7 @@ export function ChatMessageTimeline({
               <ChatMessageRow
                 activeConversationId={activeConversationId}
                 activeKind={activeKind}
-                currentUserDid={currentUserDid}
+                currentUserPtid={currentUserPtid}
                 getSenderProfile={getSenderProfile}
                 highlighted={highlightedMessageUlid === message.ulid}
                 message={message}

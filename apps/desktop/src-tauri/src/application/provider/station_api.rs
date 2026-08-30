@@ -7,7 +7,7 @@ use crate::infrastructure::station_client::{self, StationClientError};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StationProvider {
     pub id: String,
-    pub actor_id: String,
+    pub actor_ptid: String,
     pub name: String,
     pub display_name: String,
     pub base_url: String,
@@ -23,7 +23,7 @@ pub struct StationProvider {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StationModel {
     pub id: String,
-    pub actor_id: String,
+    pub actor_ptid: String,
     pub provider_id: String,
     pub model_id: String,
     pub display_name: String,

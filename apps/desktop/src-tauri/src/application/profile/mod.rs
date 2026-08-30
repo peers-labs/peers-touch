@@ -44,8 +44,8 @@ pub fn profile_get(token: &str) -> AppResult<StubPayload> {
 /// chat layer). Mirrors `profile_get` but targets `/actor/actors/:id/profile`.
 /// Token is required because the Station endpoint is JWT-protected to keep
 /// peer-directory access bound to a logged-in actor.
-pub fn peer_profile_get(token: &str, peer_did: &str) -> AppResult<StubPayload> {
-    let trimmed = peer_did.trim();
+pub fn peer_profile_get(token: &str, peer_ptid: &str) -> AppResult<StubPayload> {
+    let trimmed = peer_ptid.trim();
     if trimmed.is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -62,7 +62,7 @@ pub fn peer_profile_get(token: &str, peer_did: &str) -> AppResult<StubPayload> {
     ) {
         Ok(p) => success_with_data("peer_profile_get", actor_profile_to_value(&p)),
         Err(e) => {
-            tracing::warn!(error = %e, peer_did = %trimmed, "Failed to fetch peer profile");
+            tracing::warn!(error = %e, peer_ptid = %trimmed, "Failed to fetch peer profile");
             map_station_error("peer_profile_get", "fetch peer profile", e)
         }
     }
@@ -207,7 +207,7 @@ fn upload_and_set_profile_image(
 // ── Local profile fallbacks (kept for backward compat) ──
 
 pub fn profile_upload_avatar(
-    actor_id: &str,
+    actor_ptid: &str,
     input: FileUploadInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -216,12 +216,12 @@ pub fn profile_upload_avatar(
         UploadKind::Avatar,
         input,
         token,
-        actor_id,
+        actor_ptid,
     )
 }
 
 pub fn profile_upload_header(
-    actor_id: &str,
+    actor_ptid: &str,
     input: FileUploadInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -230,16 +230,16 @@ pub fn profile_upload_header(
         UploadKind::Header,
         input,
         token,
-        actor_id,
+        actor_ptid,
     )
 }
 
 pub fn profile_update_privacy(
-    actor_id: &str,
+    actor_ptid: &str,
     _token: &str,
     input: ProfilePrivacyInput,
 ) -> AppResult<StubPayload> {
-    match profile_store::update_privacy(actor_id, input.visibility, input.allow_direct_message) {
+    match profile_store::update_privacy(actor_ptid, input.visibility, input.allow_direct_message) {
         Ok(snapshot) => AppResult::success(StubPayload {
             command: "profile_update_privacy".to_string(),
             status: format!(
@@ -256,9 +256,9 @@ fn map_upload(
     kind: UploadKind,
     input: FileUploadInput,
     token: &str,
-    actor_id: &str,
+    actor_ptid: &str,
 ) -> AppResult<StubPayload> {
-    match profile_store::upload(actor_id, kind, &input.file_path) {
+    match profile_store::upload(actor_ptid, kind, &input.file_path) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
             format!(
@@ -326,8 +326,8 @@ fn canonical_profile_ptid(profile: &ActorProfile) -> Option<&str> {
         .filter(|ptid| ptid.starts_with("ptid:"))
 }
 
-fn profile_matches_actor(profile: &ActorProfile, actor_id: &str) -> bool {
-    profile.id == actor_id || canonical_profile_ptid(profile) == Some(actor_id)
+fn profile_matches_actor(profile: &ActorProfile, actor_ptid: &str) -> bool {
+    profile.id == actor_ptid || canonical_profile_ptid(profile) == Some(actor_ptid)
 }
 
 fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
@@ -419,14 +419,14 @@ fn map_error(command: &str, error: ProfileError) -> AppResult<StubPayload> {
 
 /// Fetch the user's profile from Station and sync metadata + avatar to local storage.
 ///
-/// `actor_id` MUST be the actor whose token is being used for this call. We
+/// `actor_ptid` MUST be the actor whose token is being used for this call. We
 /// intentionally do NOT consult `identities.json::active_account_id` to pick
 /// the destination record — under multi-window dev (`make dev-dual`) and right
 /// after PIN unlock, `active_account_id` may lag behind the per-window session
 /// and would cause us to write actor X's profile into actor Y's record (the
 /// "both rows show User B" bug).
-pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> {
-    if actor_id.trim().is_empty() {
+pub fn sync_user_profile(token: &str, actor_ptid: &str) -> AppResult<StubPayload> {
+    if actor_ptid.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::Unauthorized,
             "sync_user_profile: caller has no bound actor",
@@ -451,9 +451,9 @@ pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> 
     // Cross-check the canonical PTID. Legacy Station profile responses may
     // still carry their storage ID in `profile.id`; `peers_touch.network_id`
     // is the canonical identity in that response shape.
-    if !profile_matches_actor(&profile, actor_id) {
+    if !profile_matches_actor(&profile, actor_ptid) {
         tracing::error!(
-            caller_actor = %actor_id,
+            caller_actor = %actor_ptid,
             station_storage_actor = %profile.id,
             station_actor = ?canonical_profile_ptid(&profile),
             "sync_user_profile: actor mismatch between caller token and Station response; refusing to write"
@@ -472,24 +472,25 @@ pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> 
         profile.avatar.clone()
     };
 
-    // Pick the LocalAccount whose `provider_user_id` matches `actor_id`. This
+    // Pick the LocalAccount whose `provider_user_id` matches `actor_ptid`. This
     // is the only correct destination — `active_account_id` is a UI/router
     // hint and is not authoritative for token-bound writes.
-    let account_id =
-        match crate::infrastructure::auth_identity::find_account_id_by_actor_id(actor_id) {
-            Some(id) => id,
-            None => {
-                tracing::error!(
-                    actor_id = %actor_id,
-                    "sync_user_profile: no LocalAccount matches caller actor_id; refusing to write"
-                );
-                return AppResult::fail(
-                    ErrorCode::NotFound,
-                    "sync_user_profile: caller actor has no local account record",
-                    None,
-                );
-            }
-        };
+    let account_id = match crate::infrastructure::auth_identity::find_account_id_by_actor_ptid(
+        actor_ptid,
+    ) {
+        Some(id) => id,
+        None => {
+            tracing::error!(
+                actor_ptid = %actor_ptid,
+                "sync_user_profile: no LocalAccount matches caller actor_ptid; refusing to write"
+            );
+            return AppResult::fail(
+                ErrorCode::NotFound,
+                "sync_user_profile: caller actor has no local account record",
+                None,
+            );
+        }
+    };
 
     // Sync all profile data + download avatar to local cache.
     let avatar_local = crate::infrastructure::auth_identity::sync_profile_locally(
@@ -612,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn canonical_profile_ptid_rejects_internal_actor_id_without_ptid() {
+    fn canonical_profile_ptid_rejects_internal_actor_ptid_without_ptid() {
         let profile = ActorProfile {
             id: "350519971299721219".to_string(),
             ..ActorProfile::default()

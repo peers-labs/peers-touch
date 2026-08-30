@@ -818,7 +818,7 @@ pub struct KeyExchangeFetchInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatCreateSessionInput {
-    pub participant_did: String,
+    pub participant_ptid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -886,7 +886,7 @@ pub struct ChatScopeCursorSetInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendRequestSendInput {
-    pub receiver_did: String,
+    pub receiver_ptid: String,
     pub message: Option<String>,
 }
 

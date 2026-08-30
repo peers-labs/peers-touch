@@ -18,7 +18,8 @@ func TestMomentEventPublisherPublishesCreatedSelfEcho(t *testing.T) {
 	)
 	defer bus.Close()
 
-	sub, cancel, err := bus.Subscribe(ctx, "42", "device-a", "")
+	const actorPTID = "ptid:v1:actor:peers:p:alice:fingerprint"
+	sub, cancel, err := bus.Subscribe(ctx, actorPTID, "device-a", "")
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
@@ -28,7 +29,7 @@ func TestMomentEventPublisherPublishesCreatedSelfEcho(t *testing.T) {
 	publisher.bus = func() events.EventBus { return bus }
 	publisher.now = func() time.Time { return time.UnixMilli(4321) }
 
-	publisher.PublishCreated(ctx, 1001, 42, &model.Audience{Kind: model.Audience_FOLLOWERS})
+	publisher.PublishCreated(ctx, 1001, actorPTID, &model.Audience{Kind: model.Audience_FOLLOWERS})
 
 	select {
 	case ev := <-sub.Events:
@@ -42,8 +43,8 @@ func TestMomentEventPublisherPublishesCreatedSelfEcho(t *testing.T) {
 		if moment.PostId != "1001" {
 			t.Fatalf("post_id = %q, want 1001", moment.PostId)
 		}
-		if moment.ActorId != "42" || moment.AuthorActorId != "42" {
-			t.Fatalf("actor ids = actor:%q author:%q, want 42", moment.ActorId, moment.AuthorActorId)
+		if moment.ActorPtid != actorPTID || moment.AuthorActorPtid != actorPTID {
+			t.Fatalf("actor PTIDs = actor:%q author:%q, want %q", moment.ActorPtid, moment.AuthorActorPtid, actorPTID)
 		}
 		if moment.Audience != model.Audience_FOLLOWERS.String() {
 			t.Fatalf("audience = %q, want %q", moment.Audience, model.Audience_FOLLOWERS.String())

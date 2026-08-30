@@ -63,15 +63,15 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return err
 	}
+	if err := infrastructure.MigrateIdentitySchema(rds); err != nil {
+		return fmt.Errorf("migrate social identity schema: %w", err)
+	}
 
-	// Cross-subserver contracts. P1 wires the no-op default for both
-	// — the social subserver compiles and runs end-to-end without
-	// requiring chat / actor surfaces to ratify their lookup APIs
-	// first. P3 swaps in real implementations.
-	resolver := application.NewNoopActorResolver()
+	// Actor identity translation is owned by the persistence adapter.
+	resolver := infrastructure.NewActorIdentity(rds)
 	groups := application.NewNoopGroupMembershipChecker()
 
-	repos := infrastructure.NewRepos(rds, resolver.ResolveID)
+	repos := infrastructure.NewRepos(rds)
 
 	// MediaResolver wires the cross-subserver gate that rejects
 	// foreign-origin or fabricated `oss://...` CIDs in image / video
@@ -107,7 +107,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		&notifAdapter{svc: notifSvc},
 		&convAdapter{svc: convSvc},
 	)
-	s.statsSvc = application.NewStatsService(rds, repos)
+	s.statsSvc = application.NewStatsService(repos)
 	s.moderationSvc = application.NewModerationService(repos)
 
 	log.Warn(ctx, "[social] CUSTOM_*/CIRCLE/GROUP audiences degrade until P3 wires real ActorResolver + GroupMembershipChecker")
@@ -142,8 +142,8 @@ type notifAdapter struct {
 	svc *notifapp.Service
 }
 
-func (a *notifAdapter) Produce(recipientID, actorID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) error {
-	_, err := a.svc.Produce(recipientID, actorID, notifType, category, targetType, targetID, title, body, groupKey, metadata)
+func (a *notifAdapter) Produce(recipientPTID, actorPTID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) error {
+	_, err := a.svc.Produce(recipientPTID, actorPTID, notifType, category, targetType, targetID, title, body, groupKey, metadata)
 	return err
 }
 
@@ -153,15 +153,15 @@ type convAdapter struct {
 	svc convsub.Service
 }
 
-func (a *convAdapter) CreateDirect(ctx context.Context, actorAID, actorBID uint64) error {
-	actors, err := actor.GetActorsByIDs(ctx, []uint64{actorAID, actorBID})
+func (a *convAdapter) CreateDirect(ctx context.Context, actorAPTID, actorBPTID string) error {
+	actors, err := actor.GetActorsByPTIDs(ctx, []string{actorAPTID, actorBPTID})
 	if err != nil {
 		return fmt.Errorf("resolve direct-conversation actors: %w", err)
 	}
 	actorAPtid, actorAStation, actorBPtid, actorBStation, err := canonicalDirectParticipants(
 		actors,
-		actorAID,
-		actorBID,
+		actorAPTID,
+		actorBPTID,
 	)
 	if err != nil {
 		return err
@@ -177,11 +177,11 @@ func (a *convAdapter) CreateDirect(ctx context.Context, actorAID, actorBID uint6
 }
 
 func canonicalDirectParticipants(
-	actors map[uint64]*db.Actor,
-	actorAID, actorBID uint64,
+	actors map[string]*db.Actor,
+	actorAPTID, actorBPTID string,
 ) (string, string, string, string, error) {
-	actorA, okA := actors[actorAID]
-	actorB, okB := actors[actorBID]
+	actorA, okA := actors[actorAPTID]
+	actorB, okB := actors[actorBPTID]
 	if !okA || !okB || actorA == nil || actorB == nil {
 		return "", "", "", "", fmt.Errorf("resolve direct-conversation actors: actor record missing")
 	}

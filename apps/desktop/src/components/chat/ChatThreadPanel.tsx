@@ -55,11 +55,11 @@ function formatThreadTime(message: ChatMessage): string {
 interface ThreadMessageItemProps {
   activeConversationId: string;
   activeKind: 'friend' | 'group';
-  currentUserDid: string | null;
+  currentUserPtid: string | null;
   getSenderProfile: (
     kind: 'friend' | 'group',
     conversationUlid: string,
-    senderId: string,
+    senderPtid: string,
   ) => DesktopIMSenderProfileProjection;
   message: ChatMessage;
   messages: ChatMessage[];
@@ -74,7 +74,7 @@ interface ThreadMessageItemProps {
 function ThreadMessageItem({
   activeConversationId,
   activeKind,
-  currentUserDid,
+  currentUserPtid,
   getSenderProfile,
   message,
   messages,
@@ -87,8 +87,8 @@ function ThreadMessageItem({
 }: ThreadMessageItemProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderId);
-  const isOwn = isOwnMessage(message, currentUserDid);
+  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderPtid);
+  const isOwn = isOwnMessage(message, currentUserPtid);
   const isRecalled = isRecalledMessage(message);
   const sentMs = messageTimestampMs(message);
   const withinWindow = sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
@@ -221,7 +221,7 @@ export function ChatThreadPanel() {
     threadError,
     threadHasMore,
     threadNextCursor,
-    currentUserDid,
+    currentUserPtid,
     openThreadRootUlid,
     closeThread,
     loadThreadMessages,
@@ -247,7 +247,7 @@ export function ChatThreadPanel() {
     threadError: s.threadError,
     threadHasMore: s.threadHasMore,
     threadNextCursor: s.threadNextCursor,
-    currentUserDid: s.currentUserDid,
+    currentUserPtid: s.currentUserPtid,
     openThreadRootUlid: s.openThreadRootUlid,
     closeThread: s.closeThread,
     loadThreadMessages: s.loadThreadMessages,
@@ -329,10 +329,10 @@ export function ChatThreadPanel() {
     try {
       const replyToUlid = chatThreadReplyTargetUlid(rootMessage, replyTarget);
       if (activeTab === 'friend') {
-        const receiverDid = activeConversation?.peerDid || '';
+        const receiverPtid = activeConversation?.peerPtid || '';
         await sendFriendMessage(
           activeUlid,
-          receiverDid,
+          receiverPtid,
           content,
           draft.messageType,
           replyToUlid,
@@ -539,7 +539,7 @@ export function ChatThreadPanel() {
               <ThreadMessageItem
                 activeConversationId={activeUlid || ''}
                 activeKind={activeKind}
-                currentUserDid={currentUserDid}
+                currentUserPtid={currentUserPtid}
                 getSenderProfile={getIMSenderProfile}
                 message={rootMessage}
                 messages={displayMessages}
@@ -575,7 +575,7 @@ export function ChatThreadPanel() {
                     key={reply.ulid}
                     activeConversationId={activeUlid || ''}
                     activeKind={activeKind}
-                    currentUserDid={currentUserDid}
+                    currentUserPtid={currentUserPtid}
                     getSenderProfile={getIMSenderProfile}
                     message={reply}
                     messages={displayMessages}

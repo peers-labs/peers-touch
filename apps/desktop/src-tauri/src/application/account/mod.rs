@@ -105,6 +105,9 @@ pub fn account_switch(input: AccountIdInput) -> AppResult<StubPayload> {
 }
 
 pub fn account_upsert_oauth(input: AccountUpsertOAuthInput) -> AppResult<StubPayload> {
+    if !input.actor_ptid.trim().starts_with("ptid:") {
+        return invalid_argument("actor_ptid is required");
+    }
     if input.provider.trim().is_empty() {
         return invalid_argument("provider is required");
     }
@@ -118,6 +121,7 @@ pub fn account_upsert_oauth(input: AccountUpsertOAuthInput) -> AppResult<StubPay
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| provider_user_id.clone());
     let account_id = try_cmd!(auth_identity::upsert_oauth(
+        &input.actor_ptid,
         &provider,
         &provider_user_id,
         &name,
