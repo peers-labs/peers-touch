@@ -1197,6 +1197,16 @@ consumers to the accepted `services.station` manifest contract, with focused
 failure-path tests. This remains an atomic compatibility completion under
 NDR-W7; it does not alter the runtime-cell or product contract.
 
+Candidate `fde961da4bbe787d0053e778467005d60af9e8f2` commits that
+compatibility correction. The Fixture now rejects missing or malformed preset
+actor PTIDs before mutation, and the Native two-client and Product Closure
+Gates require lowercase 64-hex Station protocol digests. Chat Native static,
+Chat and Acceptance Infra structural validation, Desktop check/test/build,
+Station messaging package tests, runtime provisioning self-validation, and a
+real reset against disposable Station `18132` pass. The candidate remains
+`PARTIAL/UNPROVEN` until the new exact-source 18-Gate aggregate and downstream
+required-proven, Gap Detector, Completion Audit, and submit checks pass.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
