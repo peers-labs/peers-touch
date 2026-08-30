@@ -36,4 +36,14 @@ the listener, and leaves `loadAuthoritativeTurnSnapshot` unresolved.
 The fix keeps the Native listener through catch-up terminal rows and closes it
 only for a terminal snapshot or a terminal event after `catchup_done`. The
 shared catch-up deadline also remains active until `catchup_done` or a terminal
-snapshot. Post-fix runtime verification is pending.
+snapshot.
+
+Post-fix run
+`20260830T045331900639Z-ba7ca0c20d20f858b8424ba9e07c9713`
+confirmed Native renderer receipt and completion through snapshot sequence
+`119`, so the original timeout is fixed. The run then exposed a separate
+evidence-handoff defect: the coordinator had validated `sourceDelivery` before
+client restart, but the final renderer read a stale localStorage copy without
+that field. The follow-up passes the already validated immutable reload
+evidence across the restart boundary and merges it with the synchronized
+post-restart handoff. Runtime verification of that follow-up is pending.

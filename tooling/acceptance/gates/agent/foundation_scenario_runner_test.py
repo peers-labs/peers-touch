@@ -412,6 +412,12 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(len(browser.reload_calls), 2)
         self.assertEqual(len(native.complete_calls), 2)
         self.assertEqual(len(browser.complete_calls), 2)
+        for call in (*native.complete_calls, *browser.complete_calls):
+            durable_evidence = call["durableReloadEvidence"]
+            self.assertEqual(
+                durable_evidence["durableReload"]["sourceDelivery"]["eventType"],
+                "snapshot",
+            )
         self.assertEqual(len(native.cleanup_calls), 2)
         self.assertEqual(len(browser.cleanup_calls), 2)
         self.assertEqual(

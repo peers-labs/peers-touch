@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: checkpoint `64d6c740a` passed the cancellation prefix but exposed that `agent-chat` could remain uninstalled until idle while Agent turns were already accepted; the runtime is now authenticated-critical and Acceptance waits for the same production bootstrap path; proof remains UNPROVEN pending deployment | W8a |
+| G-F Complete Foundation Gate | in progress: the current local checkpoint carries source-validated AS-F06 durable reload evidence across the client restart boundary; local checks pass and proof remains UNPROVEN pending exact-source deployment and rerun | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3679,6 +3679,22 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Agent Acceptance validation, and `git diff --check` pass. Post-fix
   instrumentation remains active for one exact-source comparison run. AS-F06
   and G-F remain `PARTIAL / UNPROVEN`.
+- Post-fix checkpoint `dbac7302f875afc41c005d923ae4b87e49c53d44`
+  was deployed exact-source to profile `two`. Run
+  `20260830T045331900639Z-ba7ca0c20d20f858b8424ba9e07c9713`
+  proved the Native replay-listener correction: after persisted terminal
+  `error` sequence `119`, the renderer received `RECONCILING`, `CONNECTED`, and
+  authoritative `snapshot` sequence `119`, then completed durable reload.
+  Execution advanced to final Native evidence evaluation and failed with
+  `foundationF06RecoveryDurableReloadDeliveryMissing`. The Python coordinator
+  had already validated the complete source-bound durable-reload delivery
+  before client restart, proving that the evidence was lost only while crossing
+  the renderer restart boundary. The local correction carries that already
+  validated immutable delivery through the Coordinator and merges it with the
+  freshly synchronized post-restart handoff for the independent oracle. Runtime
+  ports and storage were released; candidate cleanup still reports `FAILED`
+  because Native logout times out after the primary failure. AS-F06 and G-F
+  remain `PARTIAL / UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

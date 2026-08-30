@@ -395,6 +395,8 @@ class FoundationF06Coordinator:
         self,
         probe_input: DirectRuntimeProbeInput,
     ) -> None:
+        durable_reload_evidence: Mapping[str, Any] | None = None
+
         def observe_recovery_failures(outage_deadline: float) -> None:
             remaining = outage_deadline - time.monotonic()
             if remaining <= 0:
@@ -422,6 +424,7 @@ class FoundationF06Coordinator:
                 )
 
         def exercise_durable_reloads(operation_deadline: float) -> None:
+            nonlocal durable_reload_evidence
             client = self._client(probe_input.platform)
             _authenticate_clients(
                 self._runtime_pair,
@@ -470,6 +473,7 @@ class FoundationF06Coordinator:
                     f"AS-F06 durable reload source delivery is invalid for "
                     f"{self._scenario_key(probe_input)}: {result!r}"
                 )
+            durable_reload_evidence = dict(result)
 
         station_restart = restart_foundation_station(
             self._runtime_manifest,
@@ -486,6 +490,11 @@ class FoundationF06Coordinator:
             clients=(client,),
             require_existing_session=True,
         )
+        if durable_reload_evidence is None:
+            raise ScenarioRunnerError(
+                f"AS-F06 durable reload evidence is missing for "
+                f"{self._scenario_key(probe_input)}"
+            )
         orchestration = {
             **station_restart,
             "clientReloads": client_reloads,
@@ -501,6 +510,7 @@ class FoundationF06Coordinator:
                 "sampleId": probe_input.sample_id,
                 "scenarioKey": self._scenario_key(probe_input),
                 "stationRestart": orchestration,
+                "durableReloadEvidence": durable_reload_evidence,
             },
             timeout=300,
         )

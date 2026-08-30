@@ -3033,6 +3033,7 @@ async function cleanupFoundationF06Scenario(input: {
 
 async function runFoundationF06Complete(
   stationRestart: Record<string, unknown>,
+  durableReloadEvidence: Record<string, unknown>,
   input: {
     scenarioKey: string;
     platform: string;
@@ -3162,10 +3163,21 @@ async function runFoundationF06Complete(
   if (!latestHandoff) {
     throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
   }
-  const recoveryFailure = evidenceRecord(
+  const persistedRecoveryFailure = evidenceRecord(
     latestHandoff.recoveryFailure,
     'foundationF06RecoveryFailure',
   );
+  const coordinatorRecoveryFailure = evidenceRecord(
+    durableReloadEvidence,
+    'foundationF06CoordinatorRecoveryFailure',
+  );
+  const recoveryFailure = {
+    ...persistedRecoveryFailure,
+    durableReload: evidenceRecord(
+      coordinatorRecoveryFailure.durableReload,
+      'foundationF06CoordinatorDurableReload',
+    ),
+  };
   const stationReplayDeliveries = await foundationStationReplayReadback(handoff);
   const replayIdentity = (delivery: FoundationF06ReplayDelivery) => ({
     eventType: delivery.eventType,
@@ -5228,6 +5240,7 @@ export function installAcceptanceHarness(): void {
       sampleId,
       scenarioKey,
       stationRestart,
+      durableReloadEvidence,
     }: {
       platform: string;
       locale: string;
@@ -5235,6 +5248,7 @@ export function installAcceptanceHarness(): void {
       sampleId: string;
       scenarioKey?: string;
       stationRestart?: Record<string, unknown>;
+      durableReloadEvidence?: Record<string, unknown>;
     }) {
       const agent = selectedAgent();
       if (!agent) throw new Error('agent.acceptance.agentMissing');
@@ -5256,15 +5270,19 @@ export function installAcceptanceHarness(): void {
         | null = null;
 
       if (cell === 'AS-F06') {
-        if (!stationRestart || !scenarioKey) {
+        if (!stationRestart || !scenarioKey || !durableReloadEvidence) {
           throw new Error('agent.acceptance.foundationStationRestartMissing');
         }
-        const scenario = await runFoundationF06Complete(stationRestart, {
-          scenarioKey,
-          platform,
-          locale,
-          sampleId,
-        });
+        const scenario = await runFoundationF06Complete(
+          stationRestart,
+          durableReloadEvidence,
+          {
+            scenarioKey,
+            platform,
+            locale,
+            sampleId,
+          },
+        );
         preparedConversationId = scenario.conversationId;
         preparedTurnId = scenario.turnId;
         preparedRuntimeEvent.current = scenario.runtimeEvent;
