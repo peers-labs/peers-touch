@@ -113,6 +113,9 @@ class CredentialRefTests(unittest.TestCase):
     def test_reference_suffix_is_safe_but_reference_secret_is_redacted(self):
         self.assertFalse(is_sensitive_key("credentialRefs"))
         self.assertFalse(is_sensitive_key("credential_reference"))
+        self.assertFalse(is_sensitive_key("fenceToken"))
+        self.assertFalse(is_sensitive_key("fenceTokens"))
+        self.assertFalse(is_sensitive_key("maxConcurrentAuthorizations"))
         self.assertTrue(is_sensitive_key("credential_reference_secret"))
         value = redact_value(
             {
@@ -145,6 +148,17 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.id, "local-desktop-gateway")
         self.assertIn("station", contract.services)
         self.assertIn("desktop-gateway", contract.services)
+        self.assertEqual(contract.fixtures[0].id, "chat-native-actors")
+        self.assertTrue(contract.fixtures[0].authorization_required)
+        self.assertEqual(
+            contract.fixtures[0].authorization_ref,
+            "env:CHAT_ACCEPTANCE_RESET",
+        )
+        self.assertEqual(contract.credentials[0].id, "chat-password")
+        self.assertEqual(
+            contract.credentials[0].source_ref,
+            "fixture:apps/station/app/conf/actor.yml#preset_users",
+        )
 
     def test_load_mobile_native_contract(self):
         contract = EnvironmentContract.from_yaml(

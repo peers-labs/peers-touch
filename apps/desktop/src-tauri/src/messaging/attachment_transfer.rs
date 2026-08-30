@@ -2452,7 +2452,7 @@ mod tests {
         .expect("native Desktop session file must be valid");
         assert!(!session.token.trim().is_empty());
         assert!(
-            profile_id.ends_with(&session.ptid),
+            profile_id.ends_with(&session.actor_ptid),
             "native session actor must match the Engine profile"
         );
 
@@ -2479,7 +2479,7 @@ mod tests {
         };
         if let Some(projection) = &projection {
             assert!(
-                projection.member_ptids.iter().any(|member| member == &ptid),
+                projection.members.iter().any(|member| member.ptid == ptid),
                 "native endpoint must be an active conversation member"
             );
         }

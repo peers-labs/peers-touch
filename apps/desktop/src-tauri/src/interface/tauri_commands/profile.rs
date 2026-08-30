@@ -210,9 +210,8 @@ pub fn account_sync_avatar(
 
 /// Fetch profile from Station and sync all user data (metadata + avatar) to local storage.
 // 2026-04-21: New aggregated sync command for user profile local caching.
-// 2026-04-26: Pass the per-window actor_ptid so the application layer writes
-//             into the correct LocalAccount record and does not rely on the
-//             volatile `active_account_id` pointer.
+// 2026-04-26: Pass the complete per-window identity so the application layer
+//             writes the bound LocalAccount and validates the canonical PTID.
 #[tauri::command]
 pub fn sync_user_profile(
     state: State<'_, Arc<AppState>>,
@@ -241,7 +240,7 @@ pub fn sync_user_profile(
             None,
         );
     }
-    application_profile::sync_user_profile(&session.jwt, &session.actor.ptid)
+    application_profile::sync_user_profile(&session.jwt, &session.account_id, &session.actor.ptid)
 }
 
 /// Resolve a remote avatar URL to a local cache file, downloading it on miss.

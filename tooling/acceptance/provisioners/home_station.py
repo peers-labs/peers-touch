@@ -26,7 +26,9 @@ from tooling.acceptance.fixtures.chat_native_actors import produce_actor_manifes
 
 GATE_ROLES = {
     "chat-native-two-client-e2e": ("alice", "bob"),
+    "chat-native-product-closure-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
+    "chat-contact-message-resilience-e2e": ("alice", "bob"),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
     "chat-native-multi-device-e2e": ("alice", "bob"),
     "chat-native-recovery-e2e": ("alice", "bob"),
@@ -35,7 +37,9 @@ GATE_ROLES = {
 
 CLIENT_ROLES = {
     "chat-native-two-client-e2e": ("alice", "bob"),
+    "chat-native-product-closure-e2e": ("alice", "bob", "alice2"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
+    "chat-contact-message-resilience-e2e": ("alice",),
     "chat-native-typing-e2e": ("alice", "bob", "charlie"),
     "chat-native-multi-device-e2e": ("alice", "bob1", "bob2"),
     "chat-native-recovery-e2e": ("alice", "bob"),
@@ -49,28 +53,11 @@ class HomeStationProvisioner(EnvironmentProvisioner):
     def __init__(self, contract: EnvironmentContract) -> None:
         super().__init__(contract)
 
-    def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
-        refs: list[str] = []
-        values: dict[str, str] = {}
-        for credential in self.contract.credentials:
-            try:
-                value = credential.resolve()
-            except Exception as error:
-                raise BlockedError(
-                    reason=(
-                        f"Cannot resolve credential {credential.id} from "
-                        f"{credential.source_ref}: {error}"
-                    ),
-                    resource=f"credential-ref:{credential.source_ref}",
-                ) from error
-            refs.append(credential.source_ref)
-            values[credential.id] = value
-        return tuple(refs), values
-
     def _clients(
         self,
         gate_id: str,
         run_id: str,
+        slot: int | None = None,
     ) -> tuple[ClientRuntime, ...]:
         roles = CLIENT_ROLES.get(gate_id)
         if roles is None:
@@ -80,10 +67,14 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             )
         worktrees = [REPO_ROOT] * len(roles)
 
-        slot = int(os.environ.get("PT_DEV_SLOT", "0"))
-        gateway_base = 3330 + slot * 100
-        renderer_base = 3510 + slot * 100
-        webdriver_base = 4445 + slot * 10
+        selected_slot = (
+            int(os.environ.get("PT_DEV_SLOT", "0"))
+            if slot is None
+            else slot
+        )
+        gateway_base = 3330 + selected_slot * 100
+        renderer_base = 3510 + selected_slot * 100
+        webdriver_base = 4445 + selected_slot * 10
         run_root = Path(f"/tmp/pt-chat-native-{run_id}-{gate_id}")
         clients = tuple(
             ClientRuntime(
@@ -237,7 +228,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             if gate_id == "chat-federated-browser-prereq":
                 return self._ready(manifest)
 
-            credential_refs, _ = self._resolve_credentials()
+            credential_refs, _ = self.prepare_credentials()
             fixture = next(
                 (
                     item
@@ -283,7 +274,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 credential_ref=credential_refs[0] if credential_refs else "",
                 reset_authorized=reset_authorized,
             )
-            clients = self._clients(gate_id, manifest.run_id)
+            clients = self._clients(gate_id, manifest.run_id, slot)
             manifest = dataclasses.replace(
                 manifest,
                 actor_manifest_ref=actor_ref,

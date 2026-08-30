@@ -1,4 +1,9 @@
-from ._paths import REPO_ROOT, ENVIRONMENTS_DIR, REPORTS_DIR
+from ._paths import (
+    REPO_ROOT,
+    ENVIRONMENTS_DIR,
+    RUNTIME_CELLS_DIR,
+    REPORTS_DIR,
+)
 from .errors import (
     GateError,
     DriverError,
@@ -22,6 +27,7 @@ from .evidence_store import (
     ARTIFACT_ROOT_ENV,
     RUN_GATE_ENV,
     RUN_ID_ENV,
+    REDACTION_VALUES_ENV,
     RUN_WORKSPACE_ENV,
     ArtifactSession,
     ArtifactRef,
@@ -41,7 +47,7 @@ from .evidence_store import (
 from .evidence import EvidenceReport, new_report, ActorRuntime
 from .gate import AcceptanceGate
 from .harness import call_async_harness, harness_ready
-from .drivers.base import BaseDriver, DomDriver
+from .drivers import AppLauncher, AppLaunchMetadata, BaseDriver, DomDriver
 from .fixtures.base import BaseFixture
 from .provisioning import (
     ProvisioningState,
@@ -60,6 +66,27 @@ from .provisioning import (
     require_runtime_service,
 )
 from .provisioner import EnvironmentProvisioner
+from .runtime_cell import (
+    RuntimeCellState,
+    CellProofState,
+    RuntimeCellLifecycle,
+    TransportContract,
+    DisplayContract,
+    WebDriverContract,
+    NativeAdapterContract,
+    SourceContract,
+    IsolationContract,
+    RuntimeCellContract,
+    CellPlatformIdentity,
+    CellTransportIdentity,
+    CellDisplayIdentity,
+    CellSourceIdentity,
+    CellAdapterIdentity,
+    RuntimeCellManifest,
+    CellResult,
+    aggregate_matrix,
+    parse_required_runtime_cells,
+)
 
 __all__ = [
     "GateError",
@@ -84,11 +111,14 @@ __all__ = [
     "AcceptanceGate",
     "BaseDriver",
     "DomDriver",
+    "AppLauncher",
+    "AppLaunchMetadata",
     "BaseFixture",
     "call_async_harness",
     "harness_ready",
     "REPO_ROOT",
     "ENVIRONMENTS_DIR",
+    "RUNTIME_CELLS_DIR",
     "REPORTS_DIR",
     "ActorRuntime",
     "ProvisioningState",
@@ -106,6 +136,25 @@ __all__ = [
     "load_runtime_manifest",
     "require_runtime_service",
     "EnvironmentProvisioner",
+    "RuntimeCellState",
+    "CellProofState",
+    "RuntimeCellLifecycle",
+    "TransportContract",
+    "DisplayContract",
+    "WebDriverContract",
+    "NativeAdapterContract",
+    "SourceContract",
+    "IsolationContract",
+    "RuntimeCellContract",
+    "CellPlatformIdentity",
+    "CellTransportIdentity",
+    "CellDisplayIdentity",
+    "CellSourceIdentity",
+    "CellAdapterIdentity",
+    "RuntimeCellManifest",
+    "CellResult",
+    "aggregate_matrix",
+    "parse_required_runtime_cells",
     "ARTIFACT_ROOT_ENV",
     "RUN_GATE_ENV",
     "RUN_ID_ENV",

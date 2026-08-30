@@ -51,7 +51,10 @@ let bootstrappedActorPtid: string | null = null;
 let bootstrapSequence = 0;
 let realtimeStreamActorPtid: string | null = null;
 let realtimeStreamTransition: Promise<void> = Promise.resolve();
-let socialRefreshInFlight: Promise<void> | null = null;
+let socialRefreshInFlight: {
+  actorPtid: string;
+  promise: Promise<void>;
+} | null = null;
 let coldResyncInFlight = false;
 let pendingColdResyncPayload: RealtimeResyncPayload | null = null;
 const seenRealtimeMessageKeys = new Set<string>();
@@ -101,43 +104,66 @@ function rememberBounded(set: Set<string>, key: string, maxSize: number): boolea
  * trigger a refresh from view-mount effects.
  */
 export async function refreshSocialProjection(label: string, includeNotifications = false): Promise<void> {
-  if (!currentAuthenticatedActorPtid()) return;
-  if (socialRefreshInFlight) return socialRefreshInFlight;
+  const actorPtid = currentAuthenticatedActorPtid();
+  if (!actorPtid) return;
+  if (socialRefreshInFlight) {
+    if (socialRefreshInFlight.actorPtid === actorPtid) {
+      return socialRefreshInFlight.promise;
+    }
+    await socialRefreshInFlight.promise;
+    if (currentAuthenticatedActorPtid() !== actorPtid) return;
+    return refreshSocialProjection(label, includeNotifications);
+  }
 
-  socialRefreshInFlight = (async () => {
+  const refreshPromise = (async () => {
     log.info('socialRealtime', 'social projection refresh started', { label });
 
     const chat = useSocialChatStore.getState();
     const notifications = useNotificationStore.getState();
+    await Promise.allSettled([chat.loadCurrentUserProfile()]);
+    if (currentAuthenticatedActorPtid() !== actorPtid) return;
+
     await Promise.allSettled([
       chat.loadFriendRequests(),
       chat.loadSessions(),
-      chat.loadGroups(),
       notifications.refreshUnreadCounts(),
       includeNotifications ? notifications.loadNotifications() : Promise.resolve(),
     ]);
+    if (currentAuthenticatedActorPtid() !== actorPtid) return;
 
     const refreshed = useSocialChatStore.getState();
     const peerPtids = Array.from(new Set(
-      Object.values(refreshed.conversationMembers)
+      [
+        ...Object.values(refreshed.conversationMembers),
+        ...Object.values(refreshed.groupMembers),
+      ]
         .flat()
         .map((member) => member.ptid)
         .filter((ptid) => ptid.startsWith('ptid:') && ptid !== refreshed.currentUserPtid),
     ));
     await Promise.allSettled([
-      refreshed.loadCurrentUserProfile(),
       ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
       refreshed.loadGroupUnreadCounts(),
       refreshed.loadConversationPreviews(),
     ]);
+    if (currentAuthenticatedActorPtid() !== actorPtid) return;
+
     useNavigationBadgeStore.getState().reconcileChatBadge();
 
     log.info('socialRealtime', 'social projection refresh completed', { label });
-  })().finally(() => {
-    socialRefreshInFlight = null;
-  });
+  })();
+  socialRefreshInFlight = {
+    actorPtid,
+    promise: refreshPromise,
+  };
 
-  return socialRefreshInFlight;
+  try {
+    await refreshPromise;
+  } finally {
+    if (socialRefreshInFlight?.promise === refreshPromise) {
+      socialRefreshInFlight = null;
+    }
+  }
 }
 
 export function dispatchSocialRuntimeHostEvent(event: SocialHostEvent): void {
@@ -176,30 +202,11 @@ export function dispatchSocialRuntimeHostEvent(event: SocialHostEvent): void {
 async function bootstrapSocialProjection(actorPtid: string, sequence: number): Promise<void> {
   log.info('socialRealtime', 'social projection bootstrap started', { actorPtid });
 
-  const chat = useSocialChatStore.getState();
-  const notifications = useNotificationStore.getState();
-
-  await Promise.allSettled([
-    chat.loadCurrentUserProfile(),
-    chat.initEncryption(),
-    chat.loadSessions(),
-    chat.loadGroups(),
-    chat.loadFriendRequests(),
-    notifications.refreshUnreadCounts(),
-  ]);
+  await refreshSocialProjection('authenticated bootstrap', true);
 
   if (sequence !== bootstrapSequence) return;
 
   const refreshed = useSocialChatStore.getState();
-  await Promise.allSettled([
-    refreshed.loadGroupUnreadCounts(),
-    refreshed.loadConversationPreviews(),
-    notifications.loadNotifications(),
-  ]);
-
-  if (sequence !== bootstrapSequence) return;
-
-  useNavigationBadgeStore.getState().reconcileChatBadge();
   useMediaRuntimeStore.getState().prewarmMessages(refreshed.messages);
 
   log.info('socialRealtime', 'social projection bootstrap completed', { actorPtid });
@@ -423,11 +430,6 @@ function onGroupMembershipChange(payload: RealtimeGroupMembershipChangePayload):
     await Promise.allSettled([
       store.loadGroups(),
       store.loadGroupUnreadCounts(),
-      payload.kind === 'DISSOLVED'
-        ? Promise.resolve()
-        : payload.kind === 'ADDED' || payload.kind === 'UPDATED' || payload.kind === 'TRANSFERRED' || store.activeGroupUlid === payload.groupUlid
-        ? store.loadGroupMembers(payload.groupUlid)
-        : Promise.resolve(),
     ]);
   });
 }
@@ -490,7 +492,6 @@ async function executeColdResync(payload: RealtimeResyncPayload): Promise<void> 
 
   await Promise.allSettled([
     chat.loadSessions(),
-    chat.loadGroups(),
     chat.loadFriendRequests(),
     notifications.loadNotifications(),
     notifications.refreshUnreadCounts(),
@@ -596,14 +597,10 @@ function onGroupFederationEvent(payload: RealtimeGroupFederationEventPayload): v
   scheduleGroupFederationRefresh(payload.groupUlid, isActiveConversation);
 }
 
-function onConversationSettingsChanged(payload: RealtimeConversationSettingsChangedPayload): void {
+function onConversationSettingsChanged(_payload: RealtimeConversationSettingsChangedPayload): void {
   runDetached('conversation settings refresh', async () => {
     const chat = useSocialChatStore.getState();
-    if (payload.conversationKind === 'friend') {
-      await chat.loadSessions();
-    } else {
-      await chat.loadGroups();
-    }
+    await chat.loadSessions();
     useNavigationBadgeStore.getState().reconcileChatBadge();
   });
 }

@@ -43,6 +43,7 @@ interface SessionStore {
   accessSubmitLogin: (attemptId: string, account: string, password: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
+  activateAuthenticatedSession: (response: AuthSessionResponse) => void;
   activateAppletLaunchSession: (user: CurrentUser) => void;
   /** Update the current actor profile projection after identity reconciliation. */
   updateProfile: (profile: Partial<Pick<CurrentUser, 'name' | 'email' | 'avatarUrl'>>) => void;
@@ -105,9 +106,9 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     });
   },
 
-  loginWithOAuth: async (_providerId: string) => {
+  loginWithOAuth: async (loopbackSessionId: string) => {
     markLocalIdentityAction();
-    const resp = await api.ensureStationSession();
+    const resp = await api.ensureStationSession(loopbackSessionId);
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
       reason: 'oauth_bridge',
@@ -151,6 +152,17 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       actorPtid: null,
       loginMethod: null,
     });
+  },
+
+  activateAuthenticatedSession: (response) => {
+    const method = response.login_method || 'password';
+    const isOAuth = method !== 'password';
+    const user = userFromAuthResponse(
+      response,
+      isOAuth ? 'oauth' : 'password',
+      isOAuth ? method : undefined,
+    );
+    set({ currentUser: user, authenticated: !!user, restoring: false });
   },
 
   activateAppletLaunchSession: (user) => {

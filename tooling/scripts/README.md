@@ -59,10 +59,11 @@ export VITE_PORT=3000
 | `quality-evidence.py` | 推荐 | 聚合 review route、knowledge、acceptance plan、gate tier 和 proven/unproven scope | 通过 `make quality-evidence REVIEW_RANGE=<range>` 调用；产出 JSON/Markdown evidence |
 | `acceptance-plan.py` | 推荐 | 根据 git diff 和 `tooling/acceptance/registry.yaml` 规划应跑的产品验收 gate | 通过 `make acceptance-plan` 调用 |
 | `acceptance-run.py` | 推荐 | 执行 `acceptance-plan.py` 选出的 gate 并记录日志，支持 `--tier` 分层过滤 | 通过 `make acceptance-run` / `make acceptance-run-ci` 调用 |
+| `acceptance-cell.py` | 推荐 | 管理 Native Desktop runtime cell 的 ready/status/logs/stop 生命周期 | 通过 `make acceptance-cell-{ready,status,logs,stop} CELL=<cell-id>` 调用；host 等敏感配置只从本地 profile 解析 |
 | `acceptance-report.py` | 推荐 | 汇总最新验收计划和执行结果 | 通过 `make acceptance-report` 调用 |
 | `acceptance-validate.py` | 推荐 | 按责任范围校验 capability graph、feature/gate、Provisioning contract、registry、run result 与 report；Infra 模式只消费 `acceptance_core_self_validation` | 通过 `make acceptance-infra-validate`、`make acceptance-validate` 或 `make acceptance-validate DOMAIN=<name>` 调用 |
 | `acceptance-infra-boundary-test.py` | 推荐 | 校验 Acceptance Infra / 业务注入责任防火墙、Agent 开发手册路由和 Quality Evidence direction 隔离 | 由 `acceptance-runtime-provisioning-self` Gate 调用 |
-| `acceptance-coverage-report.py` | 推荐 | 汇总项目产品域接入状态、active domain 验证状态和 capability 清单 | 通过 `make acceptance-coverage-report` 调用 |
+| `acceptance-coverage-report.py` | 推荐 | 从当前 workspace 的 durable latest manifests 汇总项目产品域接入状态；校验 proof/redaction/artifact identity，跨平台 Gate 只接受完整 runtime-cell matrix | 通过 `make acceptance-coverage-report` 调用；回归测试为 `acceptance-coverage-report-test.py` |
 | `acceptance-capability-report.py` | 推荐 | 汇总 feature contract、capability graph、mutual validation 与 gate 结果，产出产品能力验收报告 | 通过 `make acceptance-federation-report` 调用 |
 | `agent-lobehub-parity-evidence-chain-gate.py` | 可用 | 校验 Agent LobeHub parity 账本、原型 pending-review 状态和 PLAN-P5 fail-closed 入口控制 | 通过 `python3 tooling/scripts/agent-lobehub-parity-evidence-chain-gate.py` 调用；只证明 evidence-chain 自洽，不确认原型、不创建 EVID-012、不证明 GATE-008 |
 | `agent-lobehub-parity-evidence-chain-gate-test.py` | 可用 | 回归验证 Agent LobeHub parity evidence-chain gate 的 fail-closed 判定 | 通过 `python3 tooling/scripts/agent-lobehub-parity-evidence-chain-gate-test.py` 调用 |

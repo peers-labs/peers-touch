@@ -7,12 +7,12 @@
 
 | Domain | Features | Wired | Proven | Coverage |
 |--------|----------|-------|--------|----------|
-| Chat | 10 | 8 | 0 | 0% |
+| Chat | 11 | 9 | 0 | 0% |
 | Mobile | 9 | 9 | 0 | 0% |
 | Federation | 7 | 6 | 0 | 0% |
-| Applet | 1 | 1 | 1 | 100% |
+| Applet | 1 | 1 | 0 | 0% |
 | Station Dashboard | 2 | 2 | 0 | 0% |
-| **Total** | 29 | 26 | 1 | 3% |
+| **Total** | 30 | 27 | 1 | 3% |
 
 ## Infra (Core Self-Validation)
 
@@ -30,6 +30,7 @@
 | `chat-group-station-lifecycle` | `chat-group-station-e2e` | 0/1 | 0/1 | PARTIAL |
 | `chat-message-interactions` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-interactions-e2e` | 5/5 | 0/5 | WIRED |
 | `chat-native-visible-clients` | `chat-native-visible-static`, `chat-native-two-client-e2e`, `chat-native-multi-device-e2e`, `chat-native-recovery-e2e`, `chat-native-group-mls-e2e` | 5/5 | 0/5 | WIRED |
+| `chat-product-closure` | `desktop-check`, `station-messaging-unit`, `chat-native-visible-static`, `chat-native-product-closure-e2e` | 4/4 | 0/4 | WIRED |
 | `chat-realtime-delivery` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check` | 3/3 | 0/3 | WIRED |
 | `chat-service-contract` | `proto-build`, `station-messaging-unit`, `messaging-platform-contract` | 3/3 | 0/3 | WIRED |
 | `chat-typing-presence` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-typing-e2e` | 5/5 | 0/5 | WIRED |
@@ -65,7 +66,7 @@
 
 | Feature | Required Gates | Registered | Proven | Status |
 |---------|---------------|------------|--------|--------|
-| `applet-desktop-lifecycle-smoothness` | `applet-desktop-lifecycle-smoothness` | 1/1 | 1/1 | COMPLETE |
+| `applet-desktop-lifecycle-smoothness` | `applet-desktop-lifecycle-smoothness` | 1/1 | 0/1 | WIRED |
 
 ## Station Dashboard
 

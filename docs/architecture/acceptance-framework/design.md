@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-27
+> **Created**: 2026-06-03 | **Updated**: 2026-08-30
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -41,6 +41,21 @@
 | 物理reports路径存在广泛writer/reader耦合 | `verified_fact` | repository inventory: 366 references before migration | high | final zero-write scan |
 | repository含tracked historical runtime reports | `verified_fact` | `git ls-files tooling/acceptance/reports` | high | classification/deletion |
 | repo外immutable run store可解耦权限和并发 | `accepted_decision` | D-11 owner acceptance | high | implementation gates |
+
+### 1.3 Native Desktop Runtime Cell 证据账本
+
+| Claim | Class | Evidence | Confidence | Missing proof |
+|---|---|---|---|---|
+| Embedded WebDriver 插件支持 macOS、Linux 与 Windows 原生 WebView backend | `verified_fact` | `tauri-plugin-wdio-webdriver` 1.3.0 README 与 `src/platform/{macos,linux,windows}.rs` | high | project Linux/Windows build smoke |
+| 当前 `TauriDriver` 只启动本机 binary 并连接 `127.0.0.1` | `verified_fact` | `tooling/acceptance/drivers/tauri.py` | high | none |
+| 当前 MP-W13 runner 直接依赖 AppKit、Quartz、CoreGraphics 与 `osascript` | `verified_fact` | `tooling/acceptance/gates/chat/native_product_closure_runner.py` | high | none |
+| 当前 native environment 未表达 host、display、platform adapter 或远端 source staging | `verified_fact` | `tooling/acceptance/environments/native-tauri-embedded-webdriver.yaml` | high | none |
+| Linux 候选机已有 GDM、GNOME、QXL connected virtual output 与 WebKitGTK runtime | `verified_fact` | 2026-08-24 SSH read-only preflight | high | logged-in Acceptance desktop session |
+| Linux 候选机 Ubuntu 20.04 标准源缺少当前 Tauri 所需 `libwebkit2gtk-4.1-dev` | `verified_fact` | remote `apt-cache policy`; Tauri v2 Linux prerequisites | high | supported container userland proof |
+| 同一业务 Gate 可在不同 Desktop OS cell 复用 | `accepted_decision` | D-13 | high | cross-platform driver contract and live proofs |
+| SSH tunnel 可在不暴露 WebDriver 端口的前提下驱动远端 cell | `accepted_decision` | D-14 | high | disconnect/cleanup failure-path proof |
+| Linux 最终 Native proof 不需要物理显示器或 Xvfb | `accepted_decision` | D-15; connected QXL evidence | high | Xorg session, native input, focus and screenshot proof |
+| Remote cell 通过增量 Git objects 获取 clean source | `accepted_decision` | D-16; `tooling/scripts/deploy/deploy.sh` | high | remote source/build attestation proof |
 
 ---
 
@@ -90,6 +105,48 @@ Acceptance Framework 由六层组成：
 | Gate Catalog | `tooling/acceptance/gates.yaml` | 定义稳定 gate 的命令、环境、超时和说明 |
 | Gate Implementation | `tooling/acceptance/gates/**/*.py` | 产生可重复 evidence，不承载业务真源 |
 | Evidence Report | D-11 Evidence Store `ArtifactRef` | 汇总 proven / unproven scope，供人审阅 |
+
+### 2.1 Native Desktop Runtime Cell 拓扑
+
+Native Desktop Gate 的产品断言保持一个 Gate identity；运行平台是独立证据维度，
+不得复制三份业务 Gate 或让某个平台 evidence 代替另一个平台。
+
+```text
+Local Acceptance Orchestrator
+  │
+  ├── Gate definition + required runtime cells
+  ├── incremental Git object sync + commit attestation
+  ├── SSH control channel + localhost port forwards
+  └── local Evidence Store writer
+          │
+          ▼
+Remote Runtime Cell Lease
+  ├── pinned supported userland
+  ├── dedicated graphical session
+  ├── exact-source Desktop Acceptance binary
+  ├── app-local embedded WebDriver on 127.0.0.1
+  ├── platform NativeInput/WindowObservation adapter
+  └── reverse-order process/port/storage/session cleanup
+          │
+          ▼
+macOS WKWebView | Linux WebKitGTK | Windows WebView2
+```
+
+控制面与数据面边界：
+
+- Orchestrator 负责选择 cell、校验 source identity、建立 tunnel、收集 evidence 和
+  发布最终结果。
+- Runtime Cell Provisioner 负责目标主机、图形 session、构建、进程、端口和 storage
+  生命周期；不得包含 Chat selector、actor 或产品断言。
+- Remote source acquisition 复用 `make station` 的 pull-model 语义：Profile 解析目标、
+  source lease、Git push/fetch、exact commit checkout、remote build cache 和
+  attestation；不得每次复制完整 worktree。
+- `TauriDriver` 只负责 W3C WebDriver/DOM 能力，不再假定 app process 必须在本机。
+- `NativeDesktopAdapter` 负责平台窗口激活、真实键鼠输入、焦点、窗口栈和屏幕观察。
+- Business Gate 只调用稳定的 DOM 与 native action interface；不得导入 AppKit、
+  Quartz、X11 或 Win32 API。
+- Embedded WebDriver 仅绑定 cell 内 `127.0.0.1`；远端访问必须经过 run-scoped SSH
+  tunnel，禁止开放到局域网。
 
 ---
 
@@ -300,6 +357,70 @@ latest(worktree, gate_id) -> RunManifest
 `publish_latest`只能在`finalize`成功后调用。Reader不得通过字符串拼接artifact root；
 所有path必须通过resolver，reject absolute child paths、`..`、NUL、symlink escape和
 identity mismatch。
+
+### 3.10 Native Runtime Cell Contract
+
+Native Desktop Gate 可声明 `requiredRuntimeCells`。每个 cell 由独立 contract
+解析，运行结果按 `(gateId, cellId, sourceCommit)` 隔离：
+
+```yaml
+id: desktop-linux-native
+platform: linux
+architecture: x86_64
+isolation:
+  kind: container
+  image_ref: profile:acceptance-linux-image
+  image_digest_required: true
+transport:
+  kind: ssh
+  target_ref: profile:acceptance-linux
+  webdriver_forward: local-loopback
+display:
+  session_type: x11
+  physical_monitor_required: false
+  connected_output_required: true
+  fixed_geometry: 1920x1080
+webdriver:
+  kind: tauri-embedded
+  bind: 127.0.0.1
+native_adapter:
+  input: x11-xtest
+  window: x11-ewmh
+  screenshot: webkitgtk-and-desktop
+source:
+  mode: git-object-sync
+  clean_commit_required_for_proof: true
+  binary_sha256_required: true
+lease:
+  scope: gui-session
+  ttl_seconds: 5400
+cleanup:
+  resources:
+    - ssh-tunnel
+    - processes
+    - ports
+    - storage
+    - source-workspace
+    - gui-session-lease
+```
+
+约束：
+
+- `target_ref` 是 Profile/secret-backed reference，不在仓库中保存 IP、用户名或密钥。
+- Cell preflight 必须核验 OS、architecture、WebView backend、display/session、
+  compositor/window manager、native input、screen capture、toolchain 和磁盘。
+- Host OS 与 cell userland 必须分别取证。容器化 cell 可运行受支持的 Linux
+  userland，而不要求宿主发行版升级，但必须记录 image digest、host kernel 与
+  container isolation。
+- 最终 `PROVEN` 要求 clean commit、remote source digest、binary SHA-256 与运行进程
+  identity 一致；dirty source 只允许诊断并保持 `PARTIAL/UNPROVEN`。
+- Remote proof 只接受 Git 可寻址 clean commit。未提交修改不进入远端 source sync，
+  也不得通过 rsync/tar overlay 绕过 source identity。
+- 每个 cell 必须独占 GUI session lease。同一 session 的并发 Gate fail closed。
+- SSH 中断、Gate timeout 和 orchestrator cancellation 都必须触发远端 TTL/reaper 与
+  本地 reverse-order cleanup。
+- 平台专属断言只能由对应 cell 证明；Linux 不能证明 AppKit/Spaces，macOS 不能证明
+  WebKitGTK/X11，Windows 不能证明另外两者。
 
 Source traceability：
 
@@ -605,6 +726,27 @@ Agent 对 Acceptance Infra 的优化和审计必须使用
 业务接入与产品证明继续使用
 [`pt-acceptance-engineering`](../../../tooling/skills/pt-acceptance-engineering/SKILL.md)。
 
+### 4.12 Runtime Cell 所有权与失败语义
+
+| 组件 | Owner | 允许职责 | 禁止职责 |
+|---|---|---|---|
+| Cell schema/registry/lease | Acceptance Infra | contract validation、选择、互斥、typed failure | 业务 actor、selector、成功条件 |
+| SSH transport | Acceptance Infra | host-key verification、command/tunnel、timeout/cancel | 保存凭据值、解释产品结果 |
+| Desktop cell injection | Desktop platform | OS/display/toolchain/build/native adapter 配置 | Chat journey 与断言 |
+| Native adapter | Desktop platform | focus/input/window stack/screenshot primitive | DOM selector、消息语义 |
+| Chat Gate | Chat business | actor journey、产品动作、receiver-visible assertion | SSH、display setup、平台 API |
+| Evidence Store | Acceptance Infra | local durable artifact、remote artifact import validation | 未验证远端输出、跨 cell 冒充 |
+
+失败必须分层：
+
+- Cell/session/toolchain/source/tunnel 失败：
+  `ACCEPTANCE_GATE_BLOCKED_BY_ENVIRONMENT`，产品 proof 为 `UNPROVEN`。
+- Native adapter 无法证明真实 input/focus/window ownership：
+  environment failure，不得退化为 WebDriver-only click。
+- 产品断言在 ready cell 中失败：`ACCEPTANCE_GATE_FAILED`。
+- Cleanup 未完全释放 remote process、port、storage、session lease：
+  `ACCEPTANCE_CLEANUP_FAILED`，已观察行为可保留但 readiness 为 failed。
+
 ---
 
 ## 5. 端点 / API
@@ -688,3 +830,20 @@ domain 的业务接入缺口，也不提供 bypass 参数。
 - tracked reports已分类，stale runtime evidence不再作为proof；
 - cleanup在active lock存在时拒绝删除；
 - secret redaction与source-bound traceability tests保持通过。
+
+## 8. Native Desktop Runtime Cell 架构质量门
+
+- Gate Catalog 能把同一产品 Gate 展开到声明的 macOS/Linux/Windows cells，结果互不
+  覆盖且不能相互替代。
+- Cell contract 缺失、host key 不匹配、GUI session 不可用、source/binary identity
+  不一致时，在启动产品 Gate 前 fail closed。
+- Embedded WebDriver 只监听 cell loopback；本地仅通过 run-scoped tunnel 访问。
+- Linux cell 使用受支持的 WebKitGTK 4.1 userland 和 persistent Xorg desktop
+  session；允许 digest-pinned container，不要求宿主发行版升级；不混装其它发行版
+  软件包，不以 Xvfb 证据冒充最终 Native proof。
+- macOS、Linux、Windows adapter 均证明真实 input、document focus、window ownership
+  与 screenshot；缺一项时对应 cell 保持 `UNPROVEN`。
+- 成功、失败、timeout、SSH disconnect 与 cancellation 都执行同一 reverse-order
+  cleanup，并验证 tunnel、process、port、storage 和 lease 无残留。
+- Runtime manifest 和 Gate evidence 记录 cell ID、OS/WebView/display identity、
+  source commit/digest、binary hash、actor isolation 与 cleanup result。

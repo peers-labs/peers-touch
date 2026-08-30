@@ -99,7 +99,7 @@ ANDROID_LOCAL_GRADLE_PROJECTS = (
         "apps/mobile/src-tauri/plugins/secure-storage/android",
     ),
 )
-GRADLE_SETTINGS_SOURCE_EXCLUDED_PARTS = frozenset({"build", ".gradle"})
+GRADLE_SETTINGS_SOURCE_EXCLUDED_PARTS = frozenset({"build", ".gradle", "jniLibs"})
 GRADLE_GENERATED_SOURCE_FILES = frozenset({"tauri.build.gradle.kts"})
 
 RESOLVER_ARGUMENTS = {

@@ -15,6 +15,7 @@ function conversation(
   return {
     id,
     kind,
+    authorityStationId: 'station-authority',
     peerPtid,
     title: id,
     avatar: '',

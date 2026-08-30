@@ -304,6 +304,11 @@ meaningful.
 
 Check domain, capability, feature, gate, report, and onboarding consistency.
 Gate scripts must prove real product behavior or honestly report unproven scope.
+Durable evidence must come from the current workspace's canonical latest
+manifest, carry `DONE` / `PROVEN` result semantics, and pass artifact identity
+and digest verification. Native Desktop claims must bind the requested runtime
+cell, clean source commit, Station commit, binary digest, platform probes, and
+reverse-order cleanup; evidence from one platform cannot prove another.
 
 ## Severity Levels
 

@@ -2,6 +2,7 @@ use super::identity::{
     generate_fresh_device_identity, validate_enrollment_actor, FreshDeviceEnrollment,
 };
 use super::recovery::{restore_profile_database_atomically, MessagingRecoveryArchive};
+use super::store::CompletedSenderAttachmentSource;
 use super::{
     AttachmentCryptoMaterial, AttachmentDownloadProjection, AttachmentRetryPolicy,
     AttachmentTransferControl, AttachmentTransferProgress, AttachmentTransferRecord,
@@ -33,14 +34,17 @@ use reqwest::Method;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use ulid::Ulid;
 
 const INTERACTION_PREFLIGHT_DRAIN_LIMIT: u32 = 100;
+const ATTACHMENT_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
+const ATTACHMENT_OPEN_RETRY_FLOOR: Duration = Duration::from_millis(10);
+const SENDER_ATTACHMENT_SOURCE_INVALID: &str = "messaging sender attachment source is invalid";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessagingProjectionChange {
@@ -73,10 +77,53 @@ pub struct SubmitMessageOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedGroupConversation {
+    pub conversation_id: String,
+    pub command_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalAttachmentIntent {
     pub source_local_ref: String,
     pub filename: String,
     pub mime_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AttachmentOpenProgress {
+    Ready(String),
+    Pending { next_attempt_at_unix_ms: i64 },
+}
+
+fn drive_attachment_open<F, S>(
+    deadline: Instant,
+    mut open_once: F,
+    mut sleep: S,
+) -> Result<String, String>
+where
+    F: FnMut() -> Result<AttachmentOpenProgress, String>,
+    S: FnMut(Duration),
+{
+    loop {
+        match open_once()? {
+            AttachmentOpenProgress::Ready(path) => return Ok(path),
+            AttachmentOpenProgress::Pending {
+                next_attempt_at_unix_ms,
+            } => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Err(
+                        "messaging attachment download did not complete before open deadline"
+                            .to_string(),
+                    );
+                }
+                let retry_delay_ms = next_attempt_at_unix_ms
+                    .saturating_sub(now_unix_ms())
+                    .max(ATTACHMENT_OPEN_RETRY_FLOOR.as_millis() as i64);
+                sleep(Duration::from_millis(retry_delay_ms as u64).min(remaining));
+            }
+        }
+    }
 }
 
 pub struct MessagingEngine {
@@ -91,9 +138,20 @@ pub struct MessagingEngine {
     dispatch_lock: Mutex<()>,
     send_intent_lock: Mutex<()>,
     membership_transition_lock: Mutex<()>,
+    attachment_source_lock: Mutex<()>,
     attachment_transfer_control: Arc<AttachmentTransferControl>,
     runtime_consumer_epoch: Arc<AtomicU64>,
     projection_notifier: Mutex<Option<MessagingProjectionNotifier>>,
+}
+
+fn is_stale_endpoint_error(error: &str) -> bool {
+    if error.contains("endpoint is not active") {
+        return true;
+    }
+    if error.contains("station returned 403") {
+        return true;
+    }
+    false
 }
 
 impl MessagingEngine {
@@ -224,6 +282,7 @@ impl MessagingEngine {
             dispatch_lock: Mutex::new(()),
             send_intent_lock: Mutex::new(()),
             membership_transition_lock: Mutex::new(()),
+            attachment_source_lock: Mutex::new(()),
             attachment_transfer_control: Arc::new(AttachmentTransferControl::new()),
             runtime_consumer_epoch: Arc::new(AtomicU64::new(0)),
             projection_notifier: Mutex::new(None),
@@ -266,10 +325,33 @@ impl MessagingEngine {
     }
 
     pub fn stage_attachment_source(&self, filename: &str, bytes: &[u8]) -> Result<String, String> {
+        self.persist_attachment_source(filename, bytes.len() as u64, bytes)
+    }
+
+    pub fn stage_attachment_file(
+        &self,
+        filename: &str,
+        source_path: &Path,
+    ) -> Result<String, String> {
+        let source = File::open(source_path)
+            .map_err(|error| format!("open selected messaging attachment: {error}"))?;
+        let plaintext_size = source
+            .metadata()
+            .map_err(|error| format!("stat selected messaging attachment: {error}"))?
+            .len();
+        self.persist_attachment_source(filename, plaintext_size, source)
+    }
+
+    fn persist_attachment_source(
+        &self,
+        filename: &str,
+        plaintext_size: u64,
+        mut source: impl Read,
+    ) -> Result<String, String> {
         if filename.trim().is_empty()
             || filename.len() > 1024
-            || bytes.is_empty()
-            || bytes.len() as u64 > super::attachment::ATTACHMENT_MAX_PLAINTEXT_SIZE
+            || plaintext_size == 0
+            || plaintext_size > super::attachment::ATTACHMENT_MAX_PLAINTEXT_SIZE
         {
             return Err("messaging attachment source is invalid".to_string());
         }
@@ -287,16 +369,33 @@ impl MessagingEngine {
         let mut file = options
             .open(&path)
             .map_err(|error| format!("create messaging attachment source: {error}"))?;
-        file.write_all(bytes)
-            .and_then(|_| file.sync_all())
-            .map_err(|error| format!("persist messaging attachment source: {error}"))?;
+        let persisted = std::io::copy(&mut source, &mut file)
+            .and_then(|copied| {
+                file.sync_all()?;
+                Ok(copied)
+            })
+            .map_err(|error| {
+                let _ = std::fs::remove_file(&path);
+                format!("persist messaging attachment source: {error}")
+            })?;
+        if persisted != plaintext_size {
+            let _ = std::fs::remove_file(&path);
+            return Err("messaging attachment source size changed while staging".to_string());
+        }
         Ok(path.display().to_string())
     }
 
     pub fn discard_staged_attachment_source(&self, source_local_ref: &str) -> Result<(), String> {
+        let _guard = self
+            .attachment_source_lock
+            .lock()
+            .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
         let path = Path::new(source_local_ref);
         if !managed_attachment_source(&self.profile_id, path)? {
             return Err("messaging attachment source is not Engine-managed".to_string());
+        }
+        if self.store.owns_attachment_source(source_local_ref)? {
+            return Ok(());
         }
         match std::fs::remove_file(path) {
             Ok(()) => Ok(()),
@@ -306,9 +405,24 @@ impl MessagingEngine {
     }
 
     pub fn cleanup_completed_attachment_sources(&self) -> Result<usize, String> {
+        let _guard = self
+            .attachment_source_lock
+            .lock()
+            .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
         let mut cleaned = 0;
-        for (attachment_id, source_local_ref) in self.store.completed_attachment_source_paths()? {
-            let path = Path::new(&source_local_ref);
+        let completed_sources = self.store.completed_attachment_sources()?;
+        for source in completed_sources {
+            let source_path = Path::new(&source.source_local_ref);
+            let cache_path = self.promote_sender_attachment_cache(&source)?;
+            let cache_path_string = cache_path.display().to_string();
+            let expected_plaintext_sha256: [u8; 32] =
+                source.plaintext_sha256.as_slice().try_into().map_err(|_| {
+                    "messaging attachment plaintext commitment is invalid".to_string()
+                })?;
+            if sha256_path(&cache_path)? != expected_plaintext_sha256 {
+                return Err("messaging promoted attachment cache is invalid".to_string());
+            }
+            let path = source_path;
             if !managed_attachment_source(&self.profile_id, path)? {
                 continue;
             }
@@ -322,19 +436,60 @@ impl MessagingEngine {
                 }
             }
             self.store
-                .clear_completed_attachment_source(&attachment_id, &source_local_ref)?;
+                .clear_completed_attachment_source(&source, &cache_path_string)?;
             cleaned += 1;
         }
         Ok(cleaned)
     }
 
     pub fn open_attachment(&self, token: &str, attachment_id: &str) -> Result<String, String> {
+        drive_attachment_open(
+            Instant::now() + ATTACHMENT_OPEN_TIMEOUT,
+            || self.open_attachment_once(token, attachment_id),
+            std::thread::sleep,
+        )
+    }
+
+    fn open_attachment_once(
+        &self,
+        token: &str,
+        attachment_id: &str,
+    ) -> Result<AttachmentOpenProgress, String> {
         if token.trim().is_empty() || attachment_id.trim().is_empty() {
             return Err("messaging attachment open intent is incomplete".to_string());
         }
-        let projection = self
-            .store
-            .attachment_download_projection(attachment_id)?
+        let sender_cache = {
+            let _guard = self
+                .attachment_source_lock
+                .lock()
+                .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
+            match self
+                .store
+                .completed_sender_attachment_source(attachment_id)?
+            {
+                Some(source) => match self.promote_sender_attachment_cache(&source) {
+                    Ok(cache_path) => Some(cache_path),
+                    Err(error)
+                        if error == SENDER_ATTACHMENT_SOURCE_INVALID
+                            && self
+                                .store
+                                .attachment_download_projection(attachment_id)?
+                                .is_some() =>
+                    {
+                        None
+                    }
+                    Err(error) => return Err(error),
+                },
+                None => None,
+            }
+        };
+        if let Some(cache_path) = sender_cache {
+            return Ok(AttachmentOpenProgress::Ready(
+                cache_path.display().to_string(),
+            ));
+        }
+        let projection = self.store.attachment_download_projection(attachment_id)?;
+        let projection = projection
             .ok_or_else(|| "messaging attachment projection is unavailable".to_string())?;
         let expected_plaintext_sha256: [u8; 32] = projection
             .metadata
@@ -345,24 +500,42 @@ impl MessagingEngine {
         if let Some(cache_path) = projection.local_cache_path.as_deref() {
             let path = Path::new(cache_path);
             if path.is_file() && sha256_path(path)? == expected_plaintext_sha256 {
-                return Ok(cache_path.to_string());
+                return Ok(AttachmentOpenProgress::Ready(cache_path.to_string()));
             }
         }
         let download_transfer =
             attachment_download_transfer(&self.profile_id, &projection, now_unix_ms())?;
-        match self.store.attachment_transfer(attachment_id)? {
-            Some(transfer) if transfer.direction == 1 => {
-                let source = Path::new(&transfer.source_local_ref);
-                if source.is_file() && sha256_path(source)? == expected_plaintext_sha256 {
-                    return Ok(transfer.source_local_ref);
+        {
+            let _guard = self
+                .attachment_source_lock
+                .lock()
+                .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
+            match self.store.attachment_transfer(attachment_id)? {
+                Some(transfer) if transfer.direction == 1 => {
+                    self.store
+                        .replace_completed_upload_with_download(&download_transfer)?;
+                    let source_path = Path::new(&transfer.source_local_ref);
+                    if !transfer.source_local_ref.is_empty()
+                        && managed_attachment_source(&self.profile_id, source_path)?
+                    {
+                        match std::fs::remove_file(source_path) {
+                            Ok(()) => {}
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(error) => {
+                                return Err(format!(
+                                    "remove invalid messaging attachment source: {error}"
+                                ))
+                            }
+                        }
+                    }
                 }
-                self.store
-                    .replace_completed_upload_with_download(&download_transfer)?;
-            }
-            Some(transfer) if transfer.direction == 2 => {}
-            Some(_) => return Err("messaging attachment transfer direction is invalid".to_string()),
-            None => {
-                self.store.create_attachment_transfer(&download_transfer)?;
+                Some(transfer) if transfer.direction == 2 => {}
+                Some(_) => {
+                    return Err("messaging attachment transfer direction is invalid".to_string())
+                }
+                None => {
+                    self.store.create_attachment_transfer(&download_transfer)?;
+                }
             }
         }
         let object = projection
@@ -379,15 +552,61 @@ impl MessagingEngine {
             &cache_path,
             now_unix_ms(),
         )? {
-            AttachmentTransferProgress::Complete => Ok(cache_path.display().to_string()),
-            AttachmentTransferProgress::Deferred { .. }
-            | AttachmentTransferProgress::RetryScheduled { .. } => {
-                Err("messaging attachment download is pending".to_string())
+            AttachmentTransferProgress::Complete => Ok(AttachmentOpenProgress::Ready(
+                cache_path.display().to_string(),
+            )),
+            AttachmentTransferProgress::Deferred {
+                next_attempt_at_unix_ms,
             }
+            | AttachmentTransferProgress::RetryScheduled {
+                next_attempt_at_unix_ms,
+            } => Ok(AttachmentOpenProgress::Pending {
+                next_attempt_at_unix_ms,
+            }),
             AttachmentTransferProgress::Terminal { .. } => {
                 Err("messaging attachment download failed".to_string())
             }
         }
+    }
+
+    fn promote_sender_attachment_cache(
+        &self,
+        source: &CompletedSenderAttachmentSource,
+    ) -> Result<PathBuf, String> {
+        let source_path = Path::new(&source.source_local_ref);
+        if !managed_attachment_source(&self.profile_id, source_path)? {
+            return Err("messaging attachment source is not Engine-managed".to_string());
+        }
+        let expected_plaintext_sha256: [u8; 32] = source
+            .plaintext_sha256
+            .as_slice()
+            .try_into()
+            .map_err(|_| "messaging attachment plaintext commitment is invalid".to_string())?;
+        let cache_path = attachment_cache_path(&self.profile_id, &source.attachment_id)?;
+        if source
+            .local_cache_path
+            .as_deref()
+            .is_some_and(|recorded| Path::new(recorded) != cache_path)
+        {
+            return Err("messaging sender attachment cache path conflicts".to_string());
+        }
+        let source_moved =
+            materialize_attachment_cache(source_path, &cache_path, &expected_plaintext_sha256)?;
+        let cache_path_string = cache_path.display().to_string();
+        if let Err(error) = self
+            .store
+            .promote_completed_upload_cache(source, &cache_path_string)
+        {
+            if source_moved {
+                std::fs::rename(&cache_path, source_path).map_err(|rollback_error| {
+                    format!(
+                        "{error}; restore messaging attachment source after cache promotion failure: {rollback_error}"
+                    )
+                })?;
+            }
+            return Err(error);
+        }
+        Ok(cache_path)
     }
 
     pub fn resume_attachment_download_once(
@@ -398,7 +617,7 @@ impl MessagingEngine {
         let Some(attachment_id) = self.store.next_due_attachment_download(now_unix_ms)? else {
             return Ok(false);
         };
-        self.open_attachment(token, &attachment_id)?;
+        self.open_attachment_once(token, &attachment_id)?;
         Ok(true)
     }
 
@@ -664,11 +883,18 @@ impl MessagingEngine {
         if uploads.is_empty() {
             self.store.create_message_draft(&draft)?;
         } else {
-            self.store
-                .create_message_draft_with_uploads(&draft, &uploads)?;
+            {
+                let _source_guard = self
+                    .attachment_source_lock
+                    .lock()
+                    .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
+                self.store
+                    .create_message_draft_with_uploads(&draft, &uploads)?;
+            }
             let worker = self.attachment_transfer_worker(token.to_string())?;
             for attachment_id in &attachment_ids {
-                match worker.run_upload_once(attachment_id, now_unix_ms())? {
+                let progress = worker.run_upload_once(attachment_id, now_unix_ms())?;
+                match progress {
                     AttachmentTransferProgress::Complete => {}
                     AttachmentTransferProgress::Deferred { .. }
                     | AttachmentTransferProgress::RetryScheduled { .. } => {
@@ -718,6 +944,10 @@ impl MessagingEngine {
         token: &str,
         now_unix_ms: i64,
     ) -> Result<bool, String> {
+        let _guard = self
+            .send_intent_lock
+            .lock()
+            .map_err(|_| "messaging send intent lock poisoned".to_string())?;
         let Some(attachment_id) = self.store.next_due_attachment_upload(now_unix_ms)? else {
             return Ok(false);
         };
@@ -821,6 +1051,15 @@ impl MessagingEngine {
         self.store.conversation_message_projections(conversation_id)
     }
 
+    pub fn thread_messages(
+        &self,
+        conversation_id: &str,
+        thread_root_message_id: &str,
+    ) -> Result<Vec<ConversationMessageProjection>, String> {
+        self.store
+            .thread_message_projections(conversation_id, thread_root_message_id)
+    }
+
     pub fn search_messages(
         &self,
         conversation_id: &str,
@@ -843,14 +1082,11 @@ impl MessagingEngine {
         let result = self.try_create_direct_conversation(token, peer_ptid);
         match result {
             Ok(id) => Ok(id),
-            Err(error) if error.contains("endpoint is not active") => {
+            Err(error) if is_stale_endpoint_error(&error) => {
                 tracing::warn!(error = %error, "createDirect: device not active, attempting re-enrollment");
-                if self.recover_stale_enrollment(&error) {
-                    self.enroll_pending_device(token, "Desktop".to_string())?;
-                    self.try_create_direct_conversation(token, peer_ptid)
-                } else {
-                    Err(error)
-                }
+                let _ = self.recover_stale_enrollment(&error);
+                self.enroll_pending_device(token, "Desktop".to_string())?;
+                self.try_create_direct_conversation(token, peer_ptid)
             }
             Err(error) => Err(error),
         }
@@ -903,6 +1139,7 @@ impl MessagingEngine {
         {
             return Err("messaging edit intent is incomplete".to_string());
         }
+        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
         let (projection, _) = self
             .store
             .message_projection(conversation_id, message_id)?
@@ -910,7 +1147,6 @@ impl MessagingEngine {
         if projection.sender_ptid != self.endpoint.ptid {
             return Err("messaging edit target is not authored by this actor".to_string());
         }
-        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
         let plan = self.prepare_send_plan(token, conversation_id)?;
         let conversation_kind = ConversationKind::try_from(plan.conversation_kind)
             .map_err(|_| "messaging edit conversation kind is invalid".to_string())?;
@@ -969,6 +1205,7 @@ impl MessagingEngine {
         if conversation_id.trim().is_empty() || message_id.trim().is_empty() {
             return Err("messaging interaction target is required".to_string());
         }
+        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
         let (projection, _) = self
             .store
             .message_projection(conversation_id, message_id)?
@@ -978,7 +1215,6 @@ impl MessagingEngine {
         {
             return Err("messaging retract target is not authored by this actor".to_string());
         }
-        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
         let plan = self.prepare_send_plan(token, conversation_id)?;
         let (local_sequence, local_hash) = self.store.authority_head(conversation_id)?;
         if local_sequence != plan.authority_sequence || local_hash != plan.authority_hash {
@@ -1138,6 +1374,35 @@ impl MessagingEngine {
         self.store.conversation_projections()
     }
 
+    pub fn command_status(
+        &self,
+        command_id: &str,
+    ) -> Result<Option<super::CommandStatusProjection>, String> {
+        self.store.command_status(command_id)
+    }
+
+    pub fn group_security_status(
+        &self,
+        conversation_id: &str,
+        expected_mls_epoch: i64,
+    ) -> Result<&'static str, String> {
+        let expected_epoch = u64::try_from(expected_mls_epoch)
+            .map_err(|_| "messaging group MLS epoch is invalid".to_string())?;
+        if expected_epoch == 0 || self.mls_manager.has_pending_transition(conversation_id) {
+            return Ok("establishing");
+        }
+        if self
+            .mls_manager
+            .is_local_leaf_active_at_epoch(conversation_id, expected_epoch)?
+        {
+            return Ok("active");
+        }
+        if self.mls_manager.has_session(conversation_id) {
+            return Ok("crypto_desynced");
+        }
+        Ok("establishing")
+    }
+
     #[cfg(feature = "acceptance-webdriver")]
     pub fn acceptance_interaction_snapshot(
         &self,
@@ -1155,17 +1420,20 @@ impl MessagingEngine {
         conversation_id: &str,
         name: &str,
         member_ptids: &[String],
-    ) -> Result<String, String> {
+    ) -> Result<PreparedGroupConversation, String> {
         let transport =
             StationGroupGenesisTransport::new(token.to_string(), self.endpoint.clone())?;
         let plan = transport.prepare(conversation_id, name, member_ptids)?;
-        GroupGenesisPreparer::new(
+        let command = GroupGenesisPreparer::new(
             self.store.clone(),
             self.mls_manager.clone(),
             self.endpoint.clone(),
         )?
         .prepare(&plan, conversation_id, now_unix_ms())?;
-        Ok(conversation_id.to_string())
+        Ok(PreparedGroupConversation {
+            conversation_id: conversation_id.to_string(),
+            command_id: command.command_id,
+        })
     }
 
     pub fn prepare_membership_transition(
@@ -1280,7 +1548,7 @@ impl MessagingEngine {
     }
 
     pub fn recover_stale_enrollment(&self, error: &str) -> bool {
-        if !error.contains("endpoint is not active") {
+        if !is_stale_endpoint_error(error) {
             return false;
         }
         match self.store.reset_device_enrollment() {
@@ -1458,12 +1726,52 @@ impl EngineRegistry {
             .lock()
             .map_err(|_| "messaging worker registry lock poisoned".to_string())?;
         if let Some(worker) = workers.get(profile_id) {
-            return worker.refresh_token(token);
+            if worker.is_active()? {
+                worker.refresh_token(token.clone())?;
+                if worker.is_active()? {
+                    return Ok(());
+                }
+            }
+        }
+        if let Some(worker) = workers.remove(profile_id) {
+            if let Err(error) = worker.stop() {
+                tracing::warn!(
+                    profile_id,
+                    error = %error,
+                    "replacing terminated messaging lifecycle worker"
+                );
+            }
         }
         workers.insert(
             profile_id.to_string(),
             MessagingLifecycleWorker::start(engine, token)?,
         );
+        Ok(())
+    }
+
+    pub fn profile_worker_token(&self, profile_id: &str) -> Result<Option<String>, String> {
+        let workers = self
+            .workers
+            .lock()
+            .map_err(|_| "messaging worker registry lock poisoned".to_string())?;
+        let Some(worker) = workers.get(profile_id) else {
+            return Ok(None);
+        };
+        if !worker.is_active()? {
+            return Ok(None);
+        }
+        worker.token().map(Some)
+    }
+
+    pub fn deactivate_profile_worker(&self, profile_id: &str) -> Result<(), String> {
+        let worker = self
+            .workers
+            .lock()
+            .map_err(|_| "messaging worker registry lock poisoned".to_string())?
+            .remove(profile_id);
+        if let Some(worker) = worker {
+            worker.stop()?;
+        }
         Ok(())
     }
 
@@ -1851,6 +2159,48 @@ fn attachment_cache_path(profile_id: &str, attachment_id: &str) -> Result<PathBu
     Ok(root.join(attachment_id))
 }
 
+fn materialize_attachment_cache(
+    source_path: &Path,
+    cache_path: &Path,
+    expected_plaintext_sha256: &[u8; 32],
+) -> Result<bool, String> {
+    if cache_path.is_file() && sha256_path(cache_path)? == *expected_plaintext_sha256 {
+        return Ok(false);
+    }
+    let source_valid =
+        source_path.is_file() && sha256_path(source_path)? == *expected_plaintext_sha256;
+    if cache_path.exists() {
+        if !source_valid {
+            return Err(SENDER_ATTACHMENT_SOURCE_INVALID.to_string());
+        }
+        std::fs::remove_file(cache_path).map_err(|error| {
+            format!("remove invalid messaging sender attachment cache: {error}")
+        })?;
+    }
+    if !source_valid {
+        return Err(SENDER_ATTACHMENT_SOURCE_INVALID.to_string());
+    }
+    let parent = cache_path
+        .parent()
+        .ok_or_else(|| "messaging attachment cache parent is unavailable".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("create messaging attachment cache directory: {error}"))?;
+    File::open(source_path)
+        .and_then(|source| source.sync_all())
+        .map_err(|error| format!("sync messaging attachment source: {error}"))?;
+    std::fs::rename(source_path, cache_path)
+        .map_err(|error| format!("promote messaging attachment cache: {error}"))?;
+    #[cfg(unix)]
+    File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| format!("sync messaging attachment cache directory: {error}"))?;
+    if sha256_path(cache_path)? != *expected_plaintext_sha256 {
+        let _ = std::fs::rename(cache_path, source_path);
+        return Err("messaging promoted attachment cache is invalid".to_string());
+    }
+    Ok(true)
+}
+
 fn sha256_path(path: &Path) -> Result<[u8; 32], String> {
     let mut file =
         File::open(path).map_err(|error| format!("open messaging attachment cache: {error}"))?;
@@ -1878,12 +2228,150 @@ pub(crate) fn now_unix_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::mls_group::MlsMemberKeyPackage;
+    use std::collections::VecDeque;
+    use std::sync::mpsc;
+    use std::thread;
 
     fn endpoint(device_id: &str) -> EngineEndpoint {
         EngineEndpoint {
             ptid: "ptid:alice".to_string(),
             device_id: device_id.to_string(),
         }
+    }
+
+    #[test]
+    fn attachment_open_retries_pending_transfer_until_ready() {
+        let mut attempts = VecDeque::from([
+            AttachmentOpenProgress::Pending {
+                next_attempt_at_unix_ms: now_unix_ms(),
+            },
+            AttachmentOpenProgress::Ready("/tmp/verified-cache".to_string()),
+        ]);
+        let mut sleeps = Vec::new();
+
+        let path = drive_attachment_open(
+            Instant::now() + Duration::from_secs(1),
+            || Ok(attempts.pop_front().expect("attachment open attempt")),
+            |delay| sleeps.push(delay),
+        )
+        .expect("pending attachment should become ready");
+
+        assert_eq!(path, "/tmp/verified-cache");
+        assert!(attempts.is_empty());
+        assert_eq!(sleeps, vec![ATTACHMENT_OPEN_RETRY_FLOOR]);
+    }
+
+    #[test]
+    fn attachment_open_stops_at_deadline() {
+        let error = drive_attachment_open(
+            Instant::now(),
+            || {
+                Ok(AttachmentOpenProgress::Pending {
+                    next_attempt_at_unix_ms: now_unix_ms(),
+                })
+            },
+            |_| panic!("expired attachment open must not sleep"),
+        )
+        .expect_err("expired attachment open must fail");
+
+        assert_eq!(
+            error,
+            "messaging attachment download did not complete before open deadline"
+        );
+    }
+
+    #[test]
+    fn sender_attachment_source_is_atomically_promoted_to_durable_cache() {
+        let root = std::env::temp_dir().join(format!("sender-cache-{}", Ulid::new()));
+        let source_path = root.join("sources").join("attachment");
+        let cache_path = root.join("cache").join("attachment-1");
+        let bytes = b"verified sender attachment";
+        std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+        std::fs::write(&source_path, bytes).unwrap();
+        let expected: [u8; 32] = Sha256::digest(bytes).into();
+
+        assert!(materialize_attachment_cache(&source_path, &cache_path, &expected).unwrap());
+
+        assert!(!source_path.exists());
+        assert_eq!(std::fs::read(&cache_path).unwrap(), bytes);
+        assert_eq!(sha256_path(&cache_path).unwrap(), expected);
+        assert!(!materialize_attachment_cache(&source_path, &cache_path, &expected).unwrap());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_sender_attachment_cache_promotion_retains_source() {
+        let root = std::env::temp_dir().join(format!("sender-cache-{}", Ulid::new()));
+        let source_path = root.join("sources").join("attachment");
+        let cache_path = root.join("cache").join("attachment-1");
+        std::fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+        std::fs::write(&source_path, b"unexpected bytes").unwrap();
+
+        let error = materialize_attachment_cache(&source_path, &cache_path, &[7; 32])
+            .expect_err("hash mismatch must fail closed");
+
+        assert_eq!(error, "messaging sender attachment source is invalid");
+        assert!(source_path.is_file());
+        assert!(!cache_path.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_attachment_file_is_copied_into_engine_managed_staging() {
+        let profile_id = format!("native-picker-{}", Ulid::new());
+        let engine = MessagingEngine::in_memory(profile_id.clone(), endpoint("device-a")).unwrap();
+        let root = std::env::temp_dir().join(format!("native-picker-source-{}", Ulid::new()));
+        let source_path = root.join("selected.png");
+        let bytes = b"selected attachment bytes";
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&source_path, bytes).unwrap();
+
+        let staged_path = engine
+            .stage_attachment_file("selected.png", &source_path)
+            .unwrap();
+        let staged_path = PathBuf::from(staged_path);
+
+        assert!(source_path.is_file());
+        assert!(managed_attachment_source(&profile_id, &staged_path).unwrap());
+        assert_eq!(std::fs::read(&staged_path).unwrap(), bytes);
+
+        engine
+            .discard_staged_attachment_source(&staged_path.display().to_string())
+            .unwrap();
+        assert!(!staged_path.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn background_attachment_resume_waits_for_active_send_intent() {
+        let engine = Arc::new(
+            MessagingEngine::in_memory(
+                format!("attachment-resume-{}", Ulid::new()),
+                endpoint("device-a"),
+            )
+            .unwrap(),
+        );
+        let send_guard = engine.send_intent_lock.lock().unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let worker_engine = engine.clone();
+        let handle = thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            finished_tx
+                .send(worker_engine.resume_attachment_upload_once("token", now_unix_ms()))
+                .unwrap();
+        });
+
+        started_rx.recv().unwrap();
+        assert!(finished_rx.recv_timeout(Duration::from_millis(50)).is_err());
+
+        drop(send_guard);
+        assert!(!finished_rx
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .unwrap());
+        handle.join().unwrap();
     }
 
     #[test]
@@ -1944,6 +2432,43 @@ mod tests {
             store,
         )
         .is_err());
+    }
+
+    #[test]
+    fn group_security_status_uses_profile_scoped_mls_manager() {
+        let engine =
+            MessagingEngine::in_memory("alice-profile".to_string(), endpoint("alice-device"))
+                .unwrap();
+        let bob = MlsGroupManager::new();
+        bob.actor_identity().init("ptid:bob", "bob-device").unwrap();
+        let created = engine
+            .mls_manager()
+            .create_group(
+                "conversation-1",
+                &[MlsMemberKeyPackage {
+                    ptid: "ptid:bob".to_string(),
+                    device_id: "bob-device".to_string(),
+                    key_package: bob.generate_key_package().unwrap(),
+                }],
+            )
+            .unwrap();
+
+        assert_eq!(
+            engine.group_security_status("conversation-1", 1).unwrap(),
+            "establishing"
+        );
+        engine
+            .mls_manager()
+            .accept_pending_transition("conversation-1", &created.transition_id)
+            .unwrap();
+        assert_eq!(
+            engine.group_security_status("conversation-1", 1).unwrap(),
+            "active"
+        );
+        assert_eq!(
+            engine.group_security_status("conversation-1", 2).unwrap(),
+            "crypto_desynced"
+        );
     }
 
     #[test]
@@ -2029,6 +2554,98 @@ mod tests {
         let registered = registry.get("alice-profile").unwrap().unwrap();
         assert!(Arc::ptr_eq(&engine, &registered));
         assert!(registry.wake_profile("alice-profile").is_ok());
+        registry.deactivate("alice-profile").unwrap();
+    }
+
+    #[test]
+    fn profile_worker_token_can_be_restored_without_removing_engine() {
+        let registry = EngineRegistry::default();
+        let engine = Arc::new(
+            MessagingEngine::from_profile_store(
+                "alice-profile".to_string(),
+                "ptid:alice".to_string(),
+                [17; 32],
+                3,
+                Arc::new(MessagingStore::in_memory().unwrap()),
+            )
+            .unwrap(),
+        );
+        registry
+            .engines
+            .lock()
+            .unwrap()
+            .insert("alice-profile".to_string(), engine.clone());
+        registry
+            .activate_profile_worker("alice-profile", "token-old".to_string())
+            .unwrap();
+        registry
+            .activate_profile_worker("alice-profile", "token-new".to_string())
+            .unwrap();
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            Some("token-new".to_string())
+        );
+
+        registry
+            .activate_profile_worker("alice-profile", "token-old".to_string())
+            .unwrap();
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            Some("token-old".to_string())
+        );
+        registry.deactivate_profile_worker("alice-profile").unwrap();
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            None
+        );
+        assert!(Arc::ptr_eq(
+            &engine,
+            &registry.get("alice-profile").unwrap().unwrap()
+        ));
+        registry.deactivate("alice-profile").unwrap();
+    }
+
+    #[test]
+    fn terminated_profile_worker_is_restarted_before_activation_succeeds() {
+        let registry = EngineRegistry::default();
+        let engine = Arc::new(
+            MessagingEngine::from_profile_store(
+                "alice-profile".to_string(),
+                "ptid:alice".to_string(),
+                [17; 32],
+                3,
+                Arc::new(MessagingStore::in_memory().unwrap()),
+            )
+            .unwrap(),
+        );
+        registry
+            .engines
+            .lock()
+            .unwrap()
+            .insert("alice-profile".to_string(), engine);
+        registry
+            .activate_profile_worker("alice-profile", "token-old".to_string())
+            .unwrap();
+        registry
+            .workers
+            .lock()
+            .unwrap()
+            .get_mut("alice-profile")
+            .unwrap()
+            .terminate_for_test()
+            .unwrap();
+
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            None
+        );
+        registry
+            .activate_profile_worker("alice-profile", "token-new".to_string())
+            .unwrap();
+        assert_eq!(
+            registry.profile_worker_token("alice-profile").unwrap(),
+            Some("token-new".to_string())
+        );
         registry.deactivate("alice-profile").unwrap();
     }
 }

@@ -164,7 +164,29 @@ export function SocialChatPage() {
   ];
 
   return (
-    <Flexbox horizontal style={{ height: '100%', minHeight: 0, width: '100%', overflowX: 'auto', overflowY: 'hidden' }}>
+    <Flexbox
+      data-social-chat-layout
+      data-chat-side-panel-open={openThreadRootUlid || showDetail ? 'true' : 'false'}
+      horizontal
+      style={{ height: '100%', minHeight: 0, width: '100%', overflowX: 'auto', overflowY: 'hidden' }}
+    >
+      <style>
+        {`
+          @media (max-width: 960px) {
+            [data-social-chat-layout][data-chat-side-panel-open='true'] {
+              overflow-x: hidden !important;
+            }
+            [data-social-chat-layout][data-chat-side-panel-open='true']
+              > [data-chat-conversation-list-shell] {
+              display: none !important;
+            }
+            [data-social-chat-layout][data-chat-side-panel-open='true']
+              > [data-chat-conversation-pane] {
+              min-width: 0 !important;
+            }
+          }
+        `}
+      </style>
       {/* Sub-navigation: thin vertical icon bar */}
       <Flexbox
         gap={4}
@@ -208,7 +230,10 @@ export function SocialChatPage() {
       </Flexbox>
 
       {/* Left panel: keep both mounted once visited, toggle visibility */}
-      <div style={{ display: subPage === 'chats' ? 'contents' : 'none' }}>
+      <div
+        data-chat-conversation-list-shell
+        style={{ display: subPage === 'chats' ? 'contents' : 'none' }}
+      >
         <ChatSessionList />
       </div>
       {contactsMounted && (

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-08-15 | **Updated**: 2026-08-27
+> **Created**: 2026-08-15 | **Updated**: 2026-08-30
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/core/`
 
@@ -104,6 +104,73 @@ Runtime report中对其它artifact的引用必须normalize为`ArtifactRef`。用
 `--input/--output`可接受explicit filesystem path，但default必须来自Evidence Store；
 test-only path不能成为production fallback。
 
+### 1.5 Native Desktop Runtime Cell 目标映射
+
+> 本节由 accepted D-13 ~ D-16 约束。
+
+| 当前输入或行为 | 当前问题 | 目标 Owner | 目标 contract/artifact |
+|---|---|---|---|
+| `gates.yaml.environment` 单值 | 无法表达同一 Gate 的 macOS/Linux/Windows proof matrix | Acceptance Infra | optional `requiredRuntimeCells` schema + matrix result |
+| `TauriDriver._launch_app()` | 本机 launch 与 W3C client 耦合 | Acceptance Infra | launcher-neutral `TauriDriver` |
+| `127.0.0.1:<port>` | 默认等同 orchestrator localhost | Acceptance Infra | run-scoped endpoint/tunnel lease |
+| macOS AppKit/CoreGraphics methods 位于 Chat runner | 平台机制污染业务 Gate | Desktop platform injection | `NativeDesktopAdapter` |
+| 本机 `.local/acceptance/bin` | 无远端 source/binary identity | Desktop platform injection | source staging + binary attestation |
+| `deploy.sh` 内嵌 source push/fetch | Git 增量同步能力与 Station/Relay role lifecycle 耦合 | Deployment/Acceptance Infra | role-neutral remote source-sync contract |
+| 本机 process/storage cleanup | 无远端 crash/SSH disconnect 回收 | Acceptance Infra + cell injection | remote lease + TTL reaper + cleanup audit |
+| 单个 Gate result | 无 runtime cell identity，可能跨平台冒充 | Acceptance Infra | `(gateId, cellId, sourceCommit)` result |
+
+目标调用链：
+
+```text
+Gate Catalog
+  -> Environment Contract
+  -> required Runtime Cell Contract
+  -> Runtime Cell lease
+  -> incremental Git object sync + exact commit checkout
+  -> exact-source remote build with persistent caches
+  -> remote app + loopback embedded WebDriver
+  -> run-scoped SSH tunnel
+  -> local TauriDriver + remote NativeDesktopAdapter
+  -> unchanged business Gate assertions
+  -> local immutable Evidence Store
+  -> remote reverse-order cleanup
+```
+
+平台 adapter mapping：
+
+| Cell | WebView | Native input/window backend | Platform-only evidence |
+|---|---|---|---|
+| `desktop-macos-native` | WKWebView | AppKit + CoreGraphics + Accessibility | Spaces、frontmost PID、AX focus |
+| `desktop-linux-native` | WebKitGTK | X11 XTest + EWMH | active window、stack/point owner、X11 focus |
+| `desktop-windows-native` | WebView2 | Win32 `SendInput` + UI Automation | foreground HWND、process/window ownership |
+
+Business Gate 只能依赖 adapter interface。平台实现不得 import Chat Gate，也不得改变
+selector、actor journey、timeout budget 或 success assertion。
+
+### 1.6 Linux Candidate Cell Preflight Baseline
+
+Linux cell 必须通过以下 fail-closed preflight：
+
+- x86_64 Linux host kernel 与 working container runtime；
+- digest-pinned supported Linux userland image；
+- cell userland 内具备 Tauri 当前锁定依赖所需的 WebKitGTK 4.1
+  development/runtime packages；
+- connected virtual or physical output、固定 geometry、persistent Xorg session；
+- dedicated GUI identity、DBus session、keyring 与 user runtime directory；
+- Node/pnpm、Rust/Cargo、Python 和 native build dependencies；
+- SSH host-key pinning、loopback tunnel capability 与 passwordless non-interactive
+  lifecycle commands；
+- repository source staging、clean commit check、remote digest 与 binary SHA-256；
+- 首次传输完整 Git objects、后续仅传缺失 objects；不得传输 `node_modules`、Cargo
+  target 或完整 worktree；
+- X11 XTest input、EWMH focus/window stack 与 desktop screenshot probes；
+- remote process/port/storage/session lease cleanup。
+
+候选机缺少任一项时输出 `ACCEPTANCE_GATE_BLOCKED_BY_ENVIRONMENT`。不得混装其它
+发行版的软件包、回退 Xvfb、改用 browser shell 或省略 Native input proof。宿主
+发行版不需要升级；host kernel、container image digest 与 cell userland 必须分别
+attest。
+
 ---
 
 ## 2. 影响面分析
@@ -130,6 +197,17 @@ test-only path不能成为production fallback。
 | `tooling/scripts/acceptance-*.py` | 原子迁移 | defaults通过Evidence Store，explicit fixture paths保留 |
 | Domain/capability/feature contracts | schema migration | physical report paths改为logical identities |
 | Make/review/quality/skills/docs | consumer migration | 输出与读取命令解析canonical root |
+| `tooling/acceptance/core/provisioning.py` | 架构扩展 | Runtime Cell contract、manifest、matrix identity 与 typed states |
+| `tooling/acceptance/core/provisioner.py` | 架构扩展 | cell lease、transport lifecycle、disconnect/cancel cleanup |
+| `tooling/acceptance/core/drivers/launcher.py` | 新增通用契约 | launcher metadata 与 start/stop/alive 资源所有权 |
+| `tooling/acceptance/drivers/tauri.py` | 职责拆分 | 纯 W3C client 与 local/provisioned launcher 解耦，由 TauriSession 组合并支持 forwarded loopback endpoint |
+| `tooling/acceptance/drivers/native/` | 新增平台注入 | macOS/Linux/Windows input、focus、window observation adapters |
+| `tooling/acceptance/transports/ssh.py` | 新增通用 Infra | host verification、bounded command、port forwarding、cancel |
+| `tooling/scripts/deploy/source-sync.sh` | 从现有 deploy 提取 | role-neutral Git object push/fetch、exact checkout 与 source lease |
+| `tooling/acceptance/runtime-cells/*.yaml` | 新增平台注入 | 非敏感 cell capability contracts |
+| `tooling/acceptance/provisioners/native_desktop_*.py` | 新增平台注入 | 各 Desktop OS 的 session/build/process/cleanup lifecycle |
+| `tooling/scripts/acceptance-run.py` | 架构扩展 | Gate × cell expansion、per-cell result 与 aggregate proof |
+| Native business runners | 依赖反转 | 删除平台 API，改为消费 `NativeDesktopAdapter` |
 
 ### 2.2 不受影响的代码
 
@@ -139,6 +217,8 @@ test-only path不能成为production fallback。
 - Applet 业务代码
 - Chat 产品业务逻辑；本设计不修复 `DELIVERED` receipt
 - Gate 产品成功标准；不得因 provisioning 改造而降低
+- Chat actor journey、selector、message/attachment assertion 与 first-failed-boundary
+  纪律
 - CI/CD 调用的 Make target 名称
 
 ### 2.3 必须删除或禁止保留的旧路径
@@ -159,6 +239,16 @@ Native Chat 目标态只认 provisioning artifact；credential value 仅按 mani
 
 Evidence Store迁移同样禁止dual-write、symlink compatibility、legacy resolver或
 write failure后的source-tree fallback。
+
+Native runtime cell 迁移禁止：
+
+- 保留 Chat runner 内的 AppKit/CoreGraphics 分支并旁挂 Linux 分支；
+- 把 Linux WebDriver DOM click 当成 X11 Native input；
+- 将远端 embedded WebDriver 绑定到非 loopback address；
+- 在 repository contract 中硬编码 host、username、password 或 key path；
+- 使用其它平台 evidence 填充缺失 cell；
+- SSH disconnect 后遗留 app、tunnel、port、storage 或 GUI lease。
+- 通过 rsync/tar overlay 把 dirty 或 untracked source 注入最终 proof。
 
 ---
 

@@ -3,19 +3,46 @@ use crate::contracts::{
     AccountSetPinInput, AccountUnlockInput, AccountUpsertOAuthInput, AuthSessionPayload,
     StubPayload,
 };
-use crate::domain::identity::{ActiveSession, ActorRef};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::identity_event::{self, IdentityChangeReason, IdentityChangedPayload};
-use crate::infrastructure::session_revocation::SESSION_KICKED_EVENT;
 use crate::infrastructure::session_vault;
 use crate::state::AppState;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State, Window};
+use tauri::{AppHandle, State, Window};
 
 use crate::application::account as application_account;
 use crate::application::auth::service as auth_service;
 use crate::application::key_exchange::device_install;
 use crate::application::session_resolver;
+
+fn window_token_for_account(
+    state: &Arc<AppState>,
+    window: &Window,
+    account_id: &str,
+    command: &str,
+) -> Result<String, AppResult<StubPayload>> {
+    let Some(session) = state.sessions.get(window.label()) else {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "Window has no committed session",
+            Some(serde_json::json!({
+                "command": command,
+                "reason": "window_session_missing"
+            })),
+        ));
+    };
+    if session.account_id != account_id {
+        return Err(AppResult::fail(
+            ErrorCode::Forbidden,
+            "Input account does not match the window session",
+            Some(serde_json::json!({
+                "command": command,
+                "reason": "window_account_mismatch"
+            })),
+        ));
+    }
+    Ok(session.jwt)
+}
 
 #[tauri::command]
 pub fn account_list() -> AppResult<StubPayload> {
@@ -60,72 +87,82 @@ pub fn account_switch(
     state: State<'_, Arc<AppState>>,
     app: AppHandle,
     window: Window,
-) -> AppResult<StubPayload> {
-    let switched_id = input.id.clone();
-    let result = application_account::account_switch(input);
-    if result.ok {
-        let actor_ptid = actor_ptid_for_account(&switched_id);
-        let Some(actor_ptid) = actor_ptid else {
+) -> AppResult<AuthSessionPayload> {
+    let transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
             return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "selected account has no canonical actor PTID",
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
                 None,
-            );
-        };
-        let restored = auth_service::auth_restore_session(state.inner());
-        let Some(session) = restored.data else {
-            return AppResult::fail(
-                restored
-                    .error
-                    .as_ref()
-                    .map(|error| error.code.clone())
-                    .unwrap_or(ErrorCode::Unauthorized),
-                restored
-                    .error
-                    .map(|error| error.message)
-                    .unwrap_or_else(|| "selected account session is unavailable".to_string()),
-                None,
-            );
-        };
-        if session.actor_ptid.as_deref() != Some(actor_ptid.as_str()) {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "selected account session PTID mismatch",
-                None,
-            );
+            )
         }
-        let Some(token) = session.session_token else {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "selected account session token is unavailable",
-                None,
-            );
-        };
-        state.sessions.bind_exclusive(ActiveSession::new(
-            window.label(),
-            switched_id.clone(),
-            ActorRef::new_person(actor_ptid.clone()),
-            token,
-        ));
+    };
+    let identity_state = match crate::infrastructure::auth_identity::read_state() {
+        Ok(identity_state) => identity_state,
+        Err(error) => {
+            return AppResult::fail(ErrorCode::InternalError, error, None);
+        }
+    };
+    if !identity_state
+        .accounts
+        .iter()
+        .any(|account| account.id == input.id)
+    {
+        return AppResult::fail(ErrorCode::NotFound, "Account not found", None);
+    }
+    let result = match auth_service::prepare_auth_restore_session_for_account_during_transition(
+        state.inner(),
+        &transition,
+        Some(&input.id),
+    ) {
+        Ok(prepared) => {
+            let identity_state = match crate::infrastructure::auth_identity::read_state() {
+                Ok(identity_state) => identity_state,
+                Err(error) => {
+                    return AppResult::fail(ErrorCode::InternalError, error, None);
+                }
+            };
+            let prepared = match prepared.with_fallback_active_identity_state(identity_state) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    return AppResult::fail(ErrorCode::InternalError, error, None);
+                }
+            };
+            crate::interface::tauri_commands::auth::commit_tauri_session_with_identity_state(
+                state.inner(),
+                &app,
+                &window,
+                prepared,
+            )
+        }
+        Err(error) => error,
+    };
+    if result.ok {
         identity_event::emit(
             &app,
             IdentityChangedPayload {
                 reason: IdentityChangeReason::Switch,
-                actor_ptid: Some(actor_ptid),
-                login_method: None,
+                actor_ptid: result
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.actor_ptid.clone()),
+                login_method: result
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.login_method.clone()),
             },
         );
     }
     result
 }
 
-pub(crate) fn actor_ptid_for_account(account_id: &str) -> Option<String> {
-    session_vault::actor_ptid_for_account(account_id)
-}
-
 #[tauri::command]
-pub fn account_upsert_oauth(input: AccountUpsertOAuthInput) -> AppResult<StubPayload> {
-    application_account::account_upsert_oauth(input)
+pub fn account_upsert_oauth(
+    input: AccountUpsertOAuthInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    application_account::account_upsert_oauth(input, state.inner())
 }
 
 /// Set a PIN for an account. The current session token is read from AppState
@@ -136,9 +173,13 @@ pub fn account_set_pin(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window);
     let account_id = input.account_id.clone();
-    let result = application_account::account_set_pin(input, token.as_deref());
+    let token =
+        match window_token_for_account(state.inner(), &window, &account_id, "account_set_pin") {
+            Ok(token) => token,
+            Err(error) => return error,
+        };
+    let result = application_account::account_set_pin(input, Some(&token));
     if result.ok {
         session_vault::purge_raw_session_for_account(&account_id);
     }
@@ -156,6 +197,16 @@ pub fn account_unlock(
 ) -> AppResult<AuthSessionPayload> {
     let account_id_clone = input.account_id.clone();
     let pin_clone = input.pin.clone();
+    let _transition = match state.identity_transition.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to coordinate identity transition",
+                None,
+            )
+        }
+    };
 
     let result = application_account::account_unlock(input);
     if !result.ok {
@@ -174,26 +225,39 @@ pub fn account_unlock(
         );
     }
 
-    // Parse the token from the stub payload
-    let token = result
+    let unlocked = result
         .data
         .as_ref()
         .and_then(|d| serde_json::from_str::<serde_json::Value>(&d.status).ok())
-        .and_then(|v| {
-            v.get("token")
-                .and_then(|t| t.as_str())
-                .map(|s| s.to_string())
+        .and_then(|value| {
+            Some((
+                value.get("token")?.as_str()?.to_string(),
+                value.get("account_id")?.as_str()?.to_string(),
+                value
+                    .get("actor_ptid")
+                    .and_then(|actor| actor.as_str())
+                    .map(str::to_string),
+            ))
         });
 
-    let token = match token {
-        Some(t) => t,
+    let (token, persisted_account_id, persisted_actor_ptid) = match unlocked {
+        Some(unlocked) => unlocked,
         None => {
             return AppResult::fail(
                 crate::error::ErrorCode::InternalError,
-                "failed to extract token from unlock result",
+                "failed to extract persisted session binding from unlock result",
                 None,
             )
         }
+    };
+    let initial_session = match auth_service::validate_pin_session_token(
+        &account_id_clone,
+        &persisted_account_id,
+        persisted_actor_ptid.as_deref(),
+        &token,
+    ) {
+        Ok(session) => session,
+        Err(error) => return error,
     };
 
     // ── Token liveness check ───────────────────────────────────────────
@@ -273,40 +337,44 @@ pub fn account_unlock(
             );
         }
     };
-
-    let Some(account_actor_ptid) = session_vault::actor_ptid_for_account(&account_id_clone) else {
+    if let Err(error) = auth_service::invalidate_revoked_actor_runtime(
+        state.inner(),
+        &initial_session.actor_ptid,
+        &account_id_clone,
+    ) {
         return AppResult::fail(
-            ErrorCode::Unauthorized,
-            "account has no canonical actor PTID",
-            None,
+            ErrorCode::InternalError,
+            format!("Failed to invalidate superseded actor runtime: {error}"),
+            Some(serde_json::json!({
+                "command": "account_unlock",
+                "reason": "revoked_runtime_cleanup_failed"
+            })),
         );
+    }
+
+    let session = match auth_service::validate_pin_session_token(
+        &account_id_clone,
+        &persisted_account_id,
+        Some(&initial_session.actor_ptid),
+        &token,
+    ) {
+        Ok(session) => session,
+        Err(error) => return error,
     };
-    let session = match crate::domain::auth::session::validate_token(&token) {
-        Ok(session) if session.actor_ptid == account_actor_ptid => session,
-        Ok(_) => {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "unlocked session PTID does not match account",
-                None,
-            )
-        }
-        Err(_) => {
-            return AppResult::fail(
-                ErrorCode::Unauthorized,
-                "unlocked session has no canonical actor PTID",
-                None,
-            )
-        }
-    };
+    if let Err(error) = auth_service::verify_session_with_station(&token) {
+        return error;
+    }
 
     // Re-encrypt session for next cold start
-    let _ =
-        session_vault::save_encrypted_session_and_purge_raw(&account_id_clone, &pin_clone, &token);
-
-    // Switch the active account
-    let _ = application_account::account_switch(crate::contracts::AccountIdInput {
-        id: account_id_clone.clone(),
-    });
+    if let Err(error) =
+        session_vault::save_encrypted_session_and_purge_raw(&account_id_clone, &pin_clone, &token)
+    {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("Failed to persist unlocked session: {error}"),
+            None,
+        );
+    }
 
     let profile =
         crate::infrastructure::auth_identity::find_profile_by_actor_ptid(&session.actor_ptid);
@@ -321,52 +389,42 @@ pub fn account_unlock(
         None => (None, None, None, None, None),
     };
 
-    // Bind the unlocked session to *this* window before broadcasting. If another
-    // local window already owns this actor, the new unlock wins and the old
-    // window is routed through the same global session-revoked flow.
-    let actor = ActorRef::new_person(session.actor_ptid.clone());
-    let kicked = state.sessions.bind_exclusive(ActiveSession::new(
-        window.label(),
-        account_id_clone.clone(),
-        actor,
-        token.clone(),
-    ));
-    for kicked_session in kicked {
-        let payload = serde_json::json!({
-            "reason": "takeover",
-            "actor_ptid": kicked_session.actor.ptid,
-        });
-        if let Err(error) =
-            app.emit_to(&kicked_session.window_label, SESSION_KICKED_EVENT, &payload)
-        {
-            tracing::warn!(window = %kicked_session.window_label, error = %error, "account_unlock: failed to emit local session kick");
-        }
-    }
-    if let Err(error) = auth_service::activate_messaging_profile(
-        &state,
-        &account_id_clone,
-        &session.actor_ptid,
-        &token,
-    ) {
-        tracing::warn!(
-            account_id = %account_id_clone,
-            actor_ptid = %session.actor_ptid,
-            error = %error,
-            "unlocked session retained while durable messaging activation awaits retry"
+    let prepared = auth_service::PreparedAuthSession {
+        payload: AuthSessionPayload {
+            command: "account_unlock".to_string(),
+            status: "authenticated".to_string(),
+            actor_ptid: Some(session.actor_ptid.clone()),
+            session_token: Some(token.clone()),
+            name: p_name,
+            email: p_email,
+            avatar_url: p_avatar,
+            avatar_local_path: p_local_avatar,
+            login_method: p_method.clone(),
+        },
+        account_id: account_id_clone.clone(),
+        actor_ptid: session.actor_ptid.clone(),
+        token,
+        revoked_previous_actor_sessions: true,
+        identity_state: None,
+    };
+    let identity_state = match crate::infrastructure::auth_identity::read_state() {
+        Ok(identity_state) => identity_state,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let prepared = match prepared.with_fallback_active_identity_state(identity_state) {
+        Ok(prepared) => prepared,
+        Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let unlock_payload =
+        crate::interface::tauri_commands::auth::commit_tauri_session_with_identity_state(
+            state.inner(),
+            &app,
+            &window,
+            prepared,
         );
+    if !unlock_payload.ok {
+        return unlock_payload;
     }
-
-    let unlock_payload = AppResult::success(AuthSessionPayload {
-        command: "account_unlock".to_string(),
-        status: "authenticated".to_string(),
-        actor_ptid: Some(session.actor_ptid.clone()),
-        session_token: Some(session.token.clone()),
-        name: p_name,
-        email: p_email,
-        avatar_url: p_avatar,
-        avatar_local_path: p_local_avatar,
-        login_method: p_method.clone(),
-    });
 
     identity_event::emit(
         &app,
@@ -386,9 +444,13 @@ pub fn account_relink_pin(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window);
     let account_id = input.account_id.clone();
-    let result = application_account::account_relink_pin(input, token.as_deref());
+    let token =
+        match window_token_for_account(state.inner(), &window, &account_id, "account_relink_pin") {
+            Ok(token) => token,
+            Err(error) => return error,
+        };
+    let result = application_account::account_relink_pin(input, Some(&token));
     if result.ok {
         session_vault::purge_raw_session_for_account(&account_id);
     }

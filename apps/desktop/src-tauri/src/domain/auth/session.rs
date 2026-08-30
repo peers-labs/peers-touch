@@ -152,8 +152,9 @@ mod tests {
     #[test]
     fn station_jwt_validate() {
         let session = from_station_response(
-            "12345".to_string(),
-            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.abcdefghijklmnopqrstuvwxyz".to_string(),
+            "ptid:test:12345".to_string(),
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJwdGlkOnRlc3Q6MTIzNDUifQ.abcdefghijklmnopqrstuvwxyz"
+                .to_string(),
         );
         let validated = validate_token(&session.token).expect("JWT should be accepted");
         assert_eq!(validated.token, session.token);

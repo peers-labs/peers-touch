@@ -41,7 +41,7 @@ function useDeferredProjections(lifecycle: AppLifecycle): void {
     const actorPtid = session.authenticated ? session.currentUser?.actorPtid ?? null : null;
     if (!actorPtid) return;
     return scheduleIdle(() => {
-      void installDeferredAppRuntimeProjections();
+      void installDeferredAppRuntimeProjections(actorPtid);
       void installIdleRuntimes(actorPtid, CRITICAL_SESSION_RUNTIMES);
     });
   }, [lifecycle.authenticated]);

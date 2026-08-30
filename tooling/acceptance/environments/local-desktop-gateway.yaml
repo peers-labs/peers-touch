@@ -22,8 +22,20 @@
       "attestation_producer": "desktop-deployment"
     }
   },
-  "fixtures": [],
-  "credentials": [],
+  "fixtures": [
+    {
+      "id": "chat-native-actors",
+      "authorization_required": true,
+      "authorization_ref": "env:CHAT_ACCEPTANCE_RESET"
+    }
+  ],
+  "credentials": [
+    {
+      "id": "chat-password",
+      "source_ref": "fixture:apps/station/app/conf/actor.yml#preset_users",
+      "required": true
+    }
+  ],
   "cleanup": {
     "resources": ["processes", "ports", "storage", "sessions"]
   }
