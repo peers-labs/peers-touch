@@ -4097,6 +4097,18 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   deploy that resulting clean HEAD to profile `two`, verify Station and Desktop
   source identity, clear only the retained AS-F07 NDJSON trace, and run the
   Foundation Gate serially.
+- Tracking commit `9b8914432` was deployed exact-source to profile `two`.
+  Run `20260830T191447672147Z-34c5f98bcd80d1d669fb91c6d9fbc571`
+  recorded matching clean Station/Desktop source and then failed before AS-F07
+  candidate publication. The inner scenario result is
+  `CLEANUP_FAILED: runtime release failed; primary=FoundationCandidateError`:
+  Native Harness logout exceeded 30 seconds, while Browser cleanup, all
+  runtime ports, both storage roots, and actor identity cleanup succeeded.
+  The outer run's `cleanupStatus=passed` is provisioner-only metadata and does
+  not supersede the inner failed cleanup sidecar. AS-F07 debug instrumentation
+  remained empty. The current first failure is the Native logout stage; collect
+  stage-level identity-pipeline, realtime-stop, auth-logout, and Harness
+  completion evidence before modifying logout behavior.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.

@@ -23,6 +23,10 @@
 | C | The completed baseline turn exceeds the generic 120-second turn deadline | Medium | Low | Retry completes and the last checkpoint is `baseline-started` |
 | D | A synchronous retry/regenerate/edit command blocks while executing its provider turn | Medium | Low | The last checkpoint is immediately before one revision command |
 | E | Branch selection or receiver projection blocks after all revision commands complete | Low | Low | Edit completes and the last checkpoint is branch-selection or DOM wait |
+| F | A registered identity-pipeline handler does not settle during Native cleanup logout | High | Low | `cleanup-logout-started` appears without `cleanup-identity-pipeline-finished` |
+| G | `realtimeStreamStop` does not settle after the identity pipeline clears local state | Medium | Low | Identity pipeline finishes but `cleanup-realtime-stop-finished` is absent |
+| H | `authLogout` does not settle after realtime shutdown | Medium | Low | Realtime stop finishes but `cleanup-auth-logout-finished` is absent |
+| I | The Harness wait for unauthenticated state does not settle | Low | Low | Store logout finishes but `cleanup-logout-finished` is absent |
 
 ## Instrumentation
 - Record one redacted stage checkpoint before and after each AS-F07 production
@@ -161,3 +165,15 @@
   existing fail-closed capability-disable/restore boundary used by other
   Foundation scenarios. This removes unrelated ToolCalls without prompt
   steering, mocks, or automatic approval. Runtime verification is pending.
+- Exact-source run
+  `20260830T191447672147Z-34c5f98bcd80d1d669fb91c6d9fbc571`
+  on `9b8914432c56399a6d9b9b8bafe08b24c1dde312` provisioned
+  matching Station and Desktop runtimes but failed before AS-F07 produced a
+  candidate. The inner scenario run recorded
+  `CLEANUP_FAILED: runtime release failed; primary=FoundationCandidateError`.
+  Native logout exceeded its 30-second WebDriver script budget, while Browser
+  cleanup, all six runtime ports, both storage roots, and actor identity
+  cleanup completed. The outer run's `cleanupStatus=passed` describes only
+  provisioner cleanup and does not override the inner failed cleanup sidecar.
+  AS-F07 instrumentation remained empty, so F-I require stage-level logout
+  instrumentation before any behavior change.
