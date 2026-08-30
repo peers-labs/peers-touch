@@ -29,7 +29,7 @@ const CELL_METADATA = {
 } as const;
 const COHORT_METADATA = {
   profile: process.env.PT_PERFORMANCE_PROFILE ?? 'unknown',
-  actorId: process.env.PT_PERFORMANCE_ACTOR_ID ?? 'unknown',
+  actorPtid: process.env.PT_PERFORMANCE_ACTOR_PTID ?? 'unknown',
   dataRevision: process.env.PT_PERFORMANCE_DATA_REVISION ?? 'unknown',
   station: process.env.PT_PERFORMANCE_STATION ?? 'unknown',
   windowSize: process.env.PT_PERFORMANCE_WINDOW_SIZE ?? 'unknown',

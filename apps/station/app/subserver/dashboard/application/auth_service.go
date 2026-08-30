@@ -290,7 +290,7 @@ func (s *AuthService) CreateAdmin(ctx context.Context, req domain.CreateAdminReq
 		PasswordHash: hash,
 		DisplayName:  req.DisplayName,
 		Role:         domain.AdminRoleAdmin,
-		DID:          req.DID,
+		PTID:         req.PTID,
 	}
 
 	if err := s.adminRepo.Create(ctx, admin); err != nil {

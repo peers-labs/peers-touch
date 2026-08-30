@@ -1,10 +1,11 @@
 use super::{
-    verify_device_event_delivery, ClaimedItemConsumer, ConversationProjection,
-    ConversationStateReceiveCommit, EngineEndpoint, MessagingStore, ReceiveCommitResult,
+    verify_device_event_delivery, ClaimedItemConsumer, ConversationMemberProjection,
+    ConversationProjection, ConversationStateReceiveCommit, EngineEndpoint, MessagingStore,
+    ReceiveCommitResult,
 };
 use crate::model::chat::{
     conversation_event, ConversationStateMarker, CryptoEndpoint, DeviceConsumptionReceipt,
-    DeviceQueueItem, PreparedEndpointPayloadKind,
+    DeviceQueueItem, MemberRole, PreparedEndpointPayloadKind,
 };
 use prost::Message;
 use std::sync::Arc;
@@ -77,13 +78,25 @@ impl ConversationStateProcessor {
         {
             return Err("messaging recipient is not a conversation member".to_string());
         }
+        let members = created
+            .member_ptids
+            .iter()
+            .map(|ptid| ConversationMemberProjection {
+                ptid: ptid.clone(),
+                role: if ptid == &created.owner_ptid {
+                    MemberRole::Owner as i32
+                } else {
+                    MemberRole::Member as i32
+                },
+            })
+            .collect();
         let projection = ConversationProjection {
             conversation_id: event.conversation_id.clone(),
             authority_station_id: event.authority_station_id.clone(),
             kind: created.kind,
             name: created.name.clone(),
             owner_ptid: created.owner_ptid.clone(),
-            member_ptids: created.member_ptids.clone(),
+            members,
             membership_epoch: event.membership_epoch,
             mls_epoch: event.mls_epoch,
             active: true,
@@ -233,8 +246,15 @@ mod tests {
         let projections = store.conversation_projections().unwrap();
         assert_eq!(projections.len(), 1);
         assert_eq!(
-            projections[0].member_ptids,
-            vec!["ptid:alice".to_string(), "ptid:bob".to_string()]
+            projections[0]
+                .members
+                .iter()
+                .map(|member| (member.ptid.clone(), member.role))
+                .collect::<Vec<_>>(),
+            vec![
+                ("ptid:alice".to_string(), MemberRole::Owner as i32),
+                ("ptid:bob".to_string(), MemberRole::Member as i32),
+            ]
         );
         assert_eq!(store.lane_checkpoint().unwrap(), (1, 1));
     }

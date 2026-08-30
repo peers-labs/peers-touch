@@ -1,0 +1,14 @@
+{
+  "id": "mobile-recovery-degraded-states",
+  "status": "active",
+  "product_area": "mobile",
+  "owners": ["apps/mobile/src/app/**", "apps/mobile/src/components/**", "packages/locales/**"],
+  "truth_sources": ["runtime readiness projections", "command ledger projection", "Station/session validation"],
+  "visible_surfaces": [{"type": "mobile", "state": "recovery-overlay"}],
+  "required_gates": ["mobile-native-recovery-e2e", "mobile-native-recovery-ui-e2e"],
+  "acceptance": {
+    "product_assertions": ["MS-PA14", "MS-PA22", "MS-PA23", "MS-PA25", "MS-PA26", "MS-PA27"],
+    "visible": ["recovery, capacity, identity mismatch, revocation, and deferred states expose one truthful next action"]
+  },
+  "negative": ["recovery UI must not invent persistence or retry ownership", "deferred capabilities must not appear enabled"]
+}

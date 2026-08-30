@@ -11,7 +11,8 @@ message VerifySessionRequest {
 
 message VerifySessionResponse {
   bool valid = 1;
-  string subject_id = 2;
+  reserved 2;
+  reserved "subject_id";
   map<string, string> attributes = 3;
   google.protobuf.Timestamp expires_at = 4;
   peers_touch.model.actor.v1.ActorRef actor_ref = 5 [json_name = "actor_ref"];

@@ -39,18 +39,18 @@ func NewCommentService(repos *infrastructure.Repos, moments *MomentService, publ
 // not deleted, then validates the optional reply target (must be a
 // top-level comment on the same post). Returns the created comment
 // hydrated with author info.
-func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCommentRequest, parentPostID, authorID uint64) (*model.Comment, error) {
+func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCommentRequest, parentPostID uint64, authorPTID string) (*model.Comment, error) {
 	if req == nil {
 		return nil, fmt.Errorf("CreateCommentRequest is nil")
 	}
-	if authorID == 0 {
+	if authorPTID == "" {
 		return nil, fmt.Errorf("authentication required")
 	}
 	if req.Content == "" {
 		return nil, fmt.Errorf("content is required")
 	}
 
-	parent, err := s.moments.GetMoment(ctx, fmt.Sprintf("%d", parentPostID), authorID)
+	parent, err := s.moments.GetMoment(ctx, fmt.Sprintf("%d", parentPostID), authorPTID)
 	if err != nil {
 		return nil, fmt.Errorf("lookup parent post: %w", err)
 	}
@@ -97,7 +97,7 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 		}
 	}
 
-	d, err := s.conv.CreateCommentRequestToDomain(req, authorID, parentPostID, postClass)
+	d, err := s.conv.CreateCommentRequestToDomain(req, authorPTID, parentPostID, postClass)
 	if err != nil {
 		return nil, err
 	}
@@ -110,9 +110,9 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 	}
 
 	out := s.conv.CommentToProto(d)
-	if a, err := actor.GetActorByID(ctx, authorID); err == nil && a != nil {
+	if a, err := actor.GetActorByPTID(ctx, authorPTID); err == nil && a != nil {
 		out.Author = &model.PostAuthor{
-			Id:                fmt.Sprintf("%d", a.ID),
+			Id:                a.PTID,
 			Username:          a.PreferredUsername,
 			DisplayName:       a.Name,
 			AvatarUrl:         a.Icon,
@@ -121,17 +121,17 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 		}
 	}
 
-	logger.Info(ctx, "comment.created", "post_id", parentPostID, "comment_id", d.ID, "author_id", authorID)
+	logger.Info(ctx, "comment.created", "post_id", parentPostID, "comment_id", d.ID, "author_ptid", authorPTID)
 	if s.publisher != nil {
-		s.publisher.PublishCommented(ctx, parentPostID, parseActorID(parent.GetAuthor().GetId()), d.ID, authorID)
+		s.publisher.PublishCommented(ctx, parentPostID, parent.GetAuthorPtid(), d.ID, authorPTID)
 	}
 	return out, nil
 }
 
 // DeleteComment soft-deletes by author. No-op if the caller isn't the
 // author.
-func (s *CommentService) DeleteComment(ctx context.Context, commentID, authorID uint64) error {
-	if authorID == 0 {
+func (s *CommentService) DeleteComment(ctx context.Context, commentID uint64, authorPTID string) error {
+	if authorPTID == "" {
 		return fmt.Errorf("authentication required")
 	}
 
@@ -143,13 +143,13 @@ func (s *CommentService) DeleteComment(ctx context.Context, commentID, authorID 
 		return nil
 	}
 
-	if err := s.repos.Comments.Delete(ctx, commentID, authorID); err != nil {
+	if err := s.repos.Comments.Delete(ctx, commentID, authorPTID); err != nil {
 		return err
 	}
 	if _, err := s.bumpCommentsCount(ctx, c.PostID, c.PostClass, -1); err != nil {
 		logger.Warn(ctx, "comment.delete: comments_count decrement failed", "post_id", c.PostID, "error", err)
 	}
-	logger.Info(ctx, "comment.deleted", "comment_id", commentID, "author_id", authorID)
+	logger.Info(ctx, "comment.deleted", "comment_id", commentID, "author_ptid", authorPTID)
 	return nil
 }
 
@@ -157,7 +157,7 @@ func (s *CommentService) DeleteComment(ctx context.Context, commentID, authorID 
 // readability is checked here, then each comment actor is filtered by
 // InteractionVisibility so third-party replies are only shown to common
 // connections.
-func (s *CommentService) ListByPost(ctx context.Context, parentPostID, viewerID uint64, cursor string, limit int) (*model.GetCommentsResponse, error) {
+func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, viewerPTID string, cursor string, limit int) (*model.GetCommentsResponse, error) {
 	c, err := domain.DecodeCursor(cursor)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cursor: %w", err)
@@ -166,7 +166,7 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID, viewerID 
 		limit = 20
 	}
 
-	parent, err := s.moments.GetMoment(ctx, fmt.Sprintf("%d", parentPostID), viewerID)
+	parent, err := s.moments.GetMoment(ctx, fmt.Sprintf("%d", parentPostID), viewerPTID)
 	if err != nil {
 		return nil, fmt.Errorf("lookup parent post: %w", err)
 	}
@@ -178,8 +178,7 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID, viewerID 
 	} else if blocked {
 		return nil, fmt.Errorf("parent post %d not found or not readable", parentPostID)
 	}
-	postAuthorID := parseActorID(parent.GetAuthorId())
-	visibility, err := buildInteractionVisibility(ctx, s.repos, viewerID, postAuthorID)
+	visibility, err := buildInteractionVisibility(ctx, s.repos, viewerPTID, parent.GetAuthorPtid())
 	if err != nil {
 		return nil, fmt.Errorf("build interaction visibility: %w", err)
 	}
@@ -191,16 +190,16 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID, viewerID 
 	comments := make([]*model.Comment, 0, len(rows))
 	var lastVisible *domain.Comment
 	for _, row := range rows {
-		if !visibility.CanSeeActor(row.AuthorID) {
+		if !visibility.CanSeeActor(row.AuthorPTID) {
 			continue
 		}
 		if len(comments) >= limit {
 			break
 		}
 		out := s.conv.CommentToProto(row)
-		if a, err := actor.GetActorByID(ctx, row.AuthorID); err == nil && a != nil {
+		if a, err := actor.GetActorByPTID(ctx, row.AuthorPTID); err == nil && a != nil {
 			out.Author = &model.PostAuthor{
-				Id:                fmt.Sprintf("%d", a.ID),
+				Id:                a.PTID,
 				Username:          a.PreferredUsername,
 				DisplayName:       a.Name,
 				AvatarUrl:         a.Icon,

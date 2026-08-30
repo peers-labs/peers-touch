@@ -27,10 +27,25 @@ import (
 	envpkg "github.com/peers-labs/peers-touch/station/app/subserver/envelope"
 	envinf "github.com/peers-labs/peers-touch/station/app/subserver/envelope/infrastructure"
 	fedinf "github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
+	msgdomain "github.com/peers-labs/peers-touch/station/app/subserver/messaging/domain"
+	msginf "github.com/peers-labs/peers-touch/station/app/subserver/messaging/infrastructure"
 
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 )
+
+type messagingAuthorityReader interface {
+	GetConversation(
+		ctx context.Context,
+		conversationID string,
+	) (*msgdomain.AuthorityConversation, error)
+	GetMember(
+		ctx context.Context,
+		conversationID string,
+		ptid string,
+	) (*msgdomain.AuthorityMember, error)
+}
 
 type subServer struct {
 	status               server.Status
@@ -47,6 +62,8 @@ type subServer struct {
 	leaveService         *MlsLeaveIntentService
 	leaveIntentForwarder MlsLeaveIntentForwarder
 	kpStore              *KeyPackageStore
+	memberSettings       *memberSettingsStore
+	messagingAuthority   messagingAuthorityReader
 	deviceStore          *touchactor.DeviceStore
 	envelopeService      envpkg.Service
 	localStationID       string
@@ -77,6 +94,15 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 		return err
 	}
 
+	if err := modeldb.MigrateStringIdentityColumn(
+		rds,
+		"conversation_members",
+		"actor_did",
+		"ptid",
+	); err != nil {
+		return err
+	}
+
 	if err := rds.AutoMigrate(
 		&conversationModel{},
 		&conversationMemberModel{},
@@ -96,6 +122,12 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	repo := newPostgresConversationRepo(rds)
 	s.repo = repo
 	s.proposalStore = newCommandProposalStore(rds)
+	memberSettings := newMemberSettingsStore(rds)
+	if err := memberSettings.AutoMigrate(); err != nil {
+		return err
+	}
+	s.memberSettings = memberSettings
+	s.messagingAuthority = msginf.NewAuthorityRepository(rds)
 	s.kpStore = NewKeyPackageStore(rds)
 	if err := s.kpStore.AutoMigrate(); err != nil {
 		return err
@@ -219,6 +251,50 @@ func (s *subServer) requireActiveMembership(ctx context.Context, conversationID 
 		}
 	}
 	return server.Forbidden("active conversation membership required")
+}
+
+func (s *subServer) requireActiveMessagingMembership(
+	ctx context.Context,
+	conversationID string,
+) (*msgdomain.AuthorityConversation, error) {
+	subject := coreauth.GetSubject(ctx)
+	if subject == nil {
+		return nil, server.Unauthorized("authentication required")
+	}
+	if s.messagingAuthority == nil {
+		return nil, server.InternalError("messaging authority repository unavailable")
+	}
+	conversation, err := s.messagingAuthority.GetConversation(ctx, conversationID)
+	if errors.Is(err, msgdomain.ErrNotFound) {
+		return nil, server.Forbidden("active conversation membership required")
+	}
+	if err != nil {
+		return nil, server.InternalErrorWithCause(
+			"resolve messaging conversation membership failed",
+			err,
+		)
+	}
+	if conversation == nil || !conversation.Active {
+		return nil, server.Forbidden("active conversation membership required")
+	}
+	member, err := s.messagingAuthority.GetMember(
+		ctx,
+		conversationID,
+		subject.ID,
+	)
+	if errors.Is(err, msgdomain.ErrNotFound) {
+		return nil, server.Forbidden("active conversation membership required")
+	}
+	if err != nil {
+		return nil, server.InternalErrorWithCause(
+			"resolve messaging actor membership failed",
+			err,
+		)
+	}
+	if member == nil || !member.Active {
+		return nil, server.Forbidden("active conversation membership required")
+	}
+	return conversation, nil
 }
 
 func mapConversationServiceError(err error) error {

@@ -44,8 +44,8 @@ pub fn profile_get(token: &str) -> AppResult<StubPayload> {
 /// chat layer). Mirrors `profile_get` but targets `/actor/actors/:id/profile`.
 /// Token is required because the Station endpoint is JWT-protected to keep
 /// peer-directory access bound to a logged-in actor.
-pub fn peer_profile_get(token: &str, peer_did: &str) -> AppResult<StubPayload> {
-    let trimmed = peer_did.trim();
+pub fn peer_profile_get(token: &str, peer_ptid: &str) -> AppResult<StubPayload> {
+    let trimmed = peer_ptid.trim();
     if trimmed.is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -62,7 +62,7 @@ pub fn peer_profile_get(token: &str, peer_did: &str) -> AppResult<StubPayload> {
     ) {
         Ok(p) => success_with_data("peer_profile_get", actor_profile_to_value(&p)),
         Err(e) => {
-            tracing::warn!(error = %e, peer_did = %trimmed, "Failed to fetch peer profile");
+            tracing::warn!(error = %e, peer_ptid = %trimmed, "Failed to fetch peer profile");
             map_station_error("peer_profile_get", "fetch peer profile", e)
         }
     }
@@ -148,12 +148,7 @@ fn upload_and_set_profile_image(
     }
     tracing::info!(url = %url, field = %field, "OSS URL obtained, updating profile");
 
-    // Resolve relative OSS URL to absolute for local identity sync
-    let absolute_url = if url.starts_with('/') {
-        format!("{}{}", station_client::station_base_url(), url)
-    } else {
-        url.clone()
-    };
+    let media_identity = profile_media_identity(&url);
 
     // Step 2: Update profile with the relative URL (Station stores relative paths)
     let mut body = UpdateProfileRequest::default();
@@ -179,7 +174,7 @@ fn upload_and_set_profile_image(
         Ok(()) => {
             // Sync avatar to local auth identity and download to local cache.
             if field == "avatar" {
-                let _ = sync_avatar_with_download(token, &absolute_url);
+                let _ = sync_avatar_with_download(token, &media_identity);
             }
             match station_client::request_peers_proto_no_body::<ActorProfile>(
                 Method::GET,
@@ -207,7 +202,7 @@ fn upload_and_set_profile_image(
 // ── Local profile fallbacks (kept for backward compat) ──
 
 pub fn profile_upload_avatar(
-    actor_id: &str,
+    actor_ptid: &str,
     input: FileUploadInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -216,12 +211,12 @@ pub fn profile_upload_avatar(
         UploadKind::Avatar,
         input,
         token,
-        actor_id,
+        actor_ptid,
     )
 }
 
 pub fn profile_upload_header(
-    actor_id: &str,
+    actor_ptid: &str,
     input: FileUploadInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -230,16 +225,16 @@ pub fn profile_upload_header(
         UploadKind::Header,
         input,
         token,
-        actor_id,
+        actor_ptid,
     )
 }
 
 pub fn profile_update_privacy(
-    actor_id: &str,
+    actor_ptid: &str,
     _token: &str,
     input: ProfilePrivacyInput,
 ) -> AppResult<StubPayload> {
-    match profile_store::update_privacy(actor_id, input.visibility, input.allow_direct_message) {
+    match profile_store::update_privacy(actor_ptid, input.visibility, input.allow_direct_message) {
         Ok(snapshot) => AppResult::success(StubPayload {
             command: "profile_update_privacy".to_string(),
             status: format!(
@@ -256,9 +251,9 @@ fn map_upload(
     kind: UploadKind,
     input: FileUploadInput,
     token: &str,
-    actor_id: &str,
+    actor_ptid: &str,
 ) -> AppResult<StubPayload> {
-    match profile_store::upload(actor_id, kind, &input.file_path) {
+    match profile_store::upload(actor_ptid, kind, &input.file_path) {
         Ok(outcome) if outcome.rolled_back => AppResult::fail(
             ErrorCode::Conflict,
             format!(
@@ -283,18 +278,19 @@ fn map_upload(
 // ── Helpers ──
 
 fn actor_profile_to_value(p: &ActorProfile) -> Value {
+    let canonical_ptid = canonical_profile_ptid(p).unwrap_or_default();
     let links: Vec<Value> = p
         .links
         .iter()
         .map(|l| json!({ "label": l.label, "url": l.url }))
         .collect();
-    let mut data = json!({
-        "id": p.id,
+    json!({
+        "id": canonical_ptid,
         "username": p.username,
         "display_name": p.display_name,
         "note": p.note,
-        "avatar": p.avatar,
-        "header": p.header,
+        "avatar": profile_media_identity(&p.avatar),
+        "header": profile_media_identity(&p.header),
         "region": p.region,
         "timezone": p.timezone,
         "tags": p.tags,
@@ -310,9 +306,10 @@ fn actor_profile_to_value(p: &ActorProfile) -> Value {
         "manually_approves_followers": p.manually_approves_followers,
         "message_permission": p.message_permission,
         "auto_expire_days": p.auto_expire_days,
-    });
-    resolve_profile_urls(&mut data);
-    data
+        "peers_touch": {
+            "network_id": canonical_ptid,
+        },
+    })
 }
 
 fn canonical_profile_ptid(profile: &ActorProfile) -> Option<&str> {
@@ -326,8 +323,8 @@ fn canonical_profile_ptid(profile: &ActorProfile) -> Option<&str> {
         .filter(|ptid| ptid.starts_with("ptid:"))
 }
 
-fn profile_matches_actor(profile: &ActorProfile, actor_id: &str) -> bool {
-    profile.id == actor_id || canonical_profile_ptid(profile) == Some(actor_id)
+fn profile_matches_actor(profile: &ActorProfile, actor_ptid: &str) -> bool {
+    profile.id == actor_ptid || canonical_profile_ptid(profile) == Some(actor_ptid)
 }
 
 fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
@@ -365,19 +362,10 @@ fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
     r
 }
 
-/// Resolve relative avatar/header URLs (e.g. `/sub-oss/file?key=...`) to absolute URLs
-/// by prepending the Station base URL. This ensures the frontend can render images directly.
-fn resolve_profile_urls(data: &mut Value) {
-    let base = station_client::station_base_url();
-    for field in &["avatar", "header"] {
-        if let Some(val) = data.get_mut(*field) {
-            if let Some(s) = val.as_str() {
-                if !s.is_empty() && s.starts_with('/') {
-                    *val = Value::String(format!("{}{}", base, s));
-                }
-            }
-        }
-    }
+/// Keep Station-owned media identity independent of the current transport
+/// endpoint. The avatar cache resolves relative paths only when downloading.
+fn profile_media_identity(url: &str) -> String {
+    avatar_cache::canonical_remote_identity(url).unwrap_or_else(|_| url.trim().to_string())
 }
 
 fn success_with_data(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -419,17 +407,21 @@ fn map_error(command: &str, error: ProfileError) -> AppResult<StubPayload> {
 
 /// Fetch the user's profile from Station and sync metadata + avatar to local storage.
 ///
-/// `actor_id` MUST be the actor whose token is being used for this call. We
-/// intentionally do NOT consult `identities.json::active_account_id` to pick
+/// `account_id` and `actor_ptid` MUST come from the same bound window session.
+/// We intentionally do NOT consult `identities.json::active_account_id` to pick
 /// the destination record — under multi-window dev (`make dev-dual`) and right
 /// after PIN unlock, `active_account_id` may lag behind the per-window session
 /// and would cause us to write actor X's profile into actor Y's record (the
 /// "both rows show User B" bug).
-pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> {
-    if actor_id.trim().is_empty() {
+pub fn sync_user_profile(
+    token: &str,
+    account_id: &str,
+    actor_ptid: &str,
+) -> AppResult<StubPayload> {
+    if account_id.trim().is_empty() || actor_ptid.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::Unauthorized,
-            "sync_user_profile: caller has no bound actor",
+            "sync_user_profile: caller has no complete bound identity",
             None,
         );
     }
@@ -451,9 +443,9 @@ pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> 
     // Cross-check the canonical PTID. Legacy Station profile responses may
     // still carry their storage ID in `profile.id`; `peers_touch.network_id`
     // is the canonical identity in that response shape.
-    if !profile_matches_actor(&profile, actor_id) {
+    if !profile_matches_actor(&profile, actor_ptid) {
         tracing::error!(
-            caller_actor = %actor_id,
+            caller_actor = %actor_ptid,
             station_storage_actor = %profile.id,
             station_actor = ?canonical_profile_ptid(&profile),
             "sync_user_profile: actor mismatch between caller token and Station response; refusing to write"
@@ -465,35 +457,12 @@ pub fn sync_user_profile(token: &str, actor_id: &str) -> AppResult<StubPayload> 
         );
     }
 
-    // Resolve avatar URL to absolute.
-    let avatar_url = if !profile.avatar.is_empty() && profile.avatar.starts_with('/') {
-        format!("{}{}", station_client::station_base_url(), profile.avatar)
-    } else {
-        profile.avatar.clone()
-    };
-
-    // Pick the LocalAccount whose `provider_user_id` matches `actor_id`. This
-    // is the only correct destination — `active_account_id` is a UI/router
-    // hint and is not authoritative for token-bound writes.
-    let account_id =
-        match crate::infrastructure::auth_identity::find_account_id_by_actor_id(actor_id) {
-            Some(id) => id,
-            None => {
-                tracing::error!(
-                    actor_id = %actor_id,
-                    "sync_user_profile: no LocalAccount matches caller actor_id; refusing to write"
-                );
-                return AppResult::fail(
-                    ErrorCode::NotFound,
-                    "sync_user_profile: caller actor has no local account record",
-                    None,
-                );
-            }
-        };
+    // Resolve avatar URL through the same self/peer profile normalization.
+    let avatar_url = profile_media_identity(&profile.avatar);
 
     // Sync all profile data + download avatar to local cache.
     let avatar_local = crate::infrastructure::auth_identity::sync_profile_locally(
-        &account_id,
+        account_id,
         Some(&profile.display_name),
         None, // email is not in ActorProfile
         if avatar_url.is_empty() {
@@ -579,7 +548,7 @@ pub fn account_sync_avatar(input: &AccountSyncAvatarInput, token: &str) -> AppRe
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_profile_ptid, profile_matches_actor};
+    use super::{actor_profile_to_value, canonical_profile_ptid, profile_matches_actor};
     use crate::model::actor::{ActorProfile, PeersTouchInfo};
 
     #[test]
@@ -612,7 +581,7 @@ mod tests {
     }
 
     #[test]
-    fn canonical_profile_ptid_rejects_internal_actor_id_without_ptid() {
+    fn canonical_profile_ptid_rejects_internal_actor_ptid_without_ptid() {
         let profile = ActorProfile {
             id: "350519971299721219".to_string(),
             ..ActorProfile::default()
@@ -637,5 +606,40 @@ mod tests {
             "ptid:v1:actor:peers:p:alice:1220abc"
         ));
         assert!(!profile_matches_actor(&profile, "350519971299721220"));
+    }
+
+    #[test]
+    fn profile_value_exposes_canonical_ptid_and_transport_independent_media() {
+        let profile = ActorProfile {
+            id: "350519971299721219".to_string(),
+            avatar: "/sub-oss/avatar/alice".to_string(),
+            header: "https://cdn.example.test/header/alice".to_string(),
+            peers_touch: Some(PeersTouchInfo {
+                network_id: "ptid:v1:actor:peers:p:alice:1220abc".to_string(),
+            }),
+            ..ActorProfile::default()
+        };
+
+        let value = actor_profile_to_value(&profile);
+
+        assert_eq!(
+            value.get("id").and_then(|id| id.as_str()),
+            Some("ptid:v1:actor:peers:p:alice:1220abc")
+        );
+        assert_eq!(
+            value
+                .get("peers_touch")
+                .and_then(|info| info.get("network_id"))
+                .and_then(|id| id.as_str()),
+            Some("ptid:v1:actor:peers:p:alice:1220abc")
+        );
+        assert_eq!(
+            value.get("avatar").and_then(|avatar| avatar.as_str()),
+            Some("/sub-oss/avatar/alice")
+        );
+        assert_eq!(
+            value.get("header").and_then(|header| header.as_str()),
+            Some("https://cdn.example.test/header/alice")
+        );
     }
 }

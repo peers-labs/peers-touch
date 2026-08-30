@@ -65,7 +65,7 @@ import (
 // TurnConfig holds per-execution configuration for a single turn.
 type TurnConfig struct {
 	AgentID            string
-	ActorID            string
+	ActorPTID          string
 	ConversationID     string
 	Identity           string
 	AgentConfigPrompt  string
@@ -215,7 +215,7 @@ func (s *TurnService) publishDomainEvent(ctx context.Context, agentID, turnID, t
 	event := domain.DomainEvent{
 		EventID:   generateID("evt"),
 		EventType: eventType,
-		ActorID:   agentID,
+		AgentID:   agentID,
 		Payload:   payload,
 		Metadata: map[string]string{
 			"agent_id": agentID,
@@ -650,7 +650,7 @@ func (s *TurnService) runCompression(
 // produced by CompressionService.Compress and contains the conversation
 // text to summarize along with formatting instructions.
 func (s *TurnService) executeSummaryLLM(ctx context.Context, config *TurnConfig, summaryPrompt string) (string, error) {
-	credential, err := s.credentialPool.Lease(ctx, config.ActorID, config.Provider, domain.RotationRoundRobin)
+	credential, err := s.credentialPool.Lease(ctx, config.ActorPTID, config.Provider, domain.RotationRoundRobin)
 	if err != nil {
 		return "", fmt.Errorf("no credential for summary: %w", err)
 	}
@@ -711,7 +711,7 @@ func (s *TurnService) splitSession(ctx context.Context, config *TurnConfig) (str
 	newConv := persistence.Conversation{
 		ID:         newID,
 		AgentID:    config.AgentID,
-		UserID:     "",
+		ActorPTID:  "",
 		Title:      "Continued (post-compression)",
 		ProviderID: config.Provider,
 		Status:     "active",
@@ -770,13 +770,13 @@ func (s *TurnService) providerCallWithRetry(
 
 		// Turn-time revalidation: verify provider and model are valid before execution.
 		if attempt == 0 {
-			if revalErr := s.revalidateProviderState(ctx, config.ActorID, providerID, config.Model); revalErr != nil {
+			if revalErr := s.revalidateProviderState(ctx, config.ActorPTID, providerID, config.Model); revalErr != nil {
 				return "", providerCalls, false, revalErr
 			}
 		}
 
 		// Lease a credential for the provider.
-		credential, leaseErr := s.credentialPool.Lease(ctx, config.ActorID, providerID, strategy)
+		credential, leaseErr := s.credentialPool.Lease(ctx, config.ActorPTID, providerID, strategy)
 		if leaseErr != nil {
 			logger.Errorf(ctx, "credential lease failed: turn_id=%s attempt=%d err=%v",
 				turnID, attempt, leaseErr)
@@ -1980,7 +1980,7 @@ func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, ste
 
 // revalidateProviderState checks that the provider and model exist, are enabled,
 // and belong to the requesting actor before turn execution begins.
-func (s *TurnService) revalidateProviderState(ctx context.Context, actorID, providerID, modelID string) error {
+func (s *TurnService) revalidateProviderState(ctx context.Context, actorPTID, providerID, modelID string) error {
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return err
@@ -1988,7 +1988,7 @@ func (s *TurnService) revalidateProviderState(ctx context.Context, actorID, prov
 
 	var provider persistence.AgentProvider
 	if err := db.WithContext(ctx).
-		Where("actor_id = ? AND name = ?", actorID, providerID).
+		Where("actor_ptid = ? AND name = ?", actorPTID, providerID).
 		First(&provider).Error; err != nil {
 		return errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
 			fmt.Sprintf("provider %q not found for actor", providerID), err)
@@ -2002,7 +2002,7 @@ func (s *TurnService) revalidateProviderState(ctx context.Context, actorID, prov
 	if modelID != "" {
 		var model persistence.AgentModel
 		if err := db.WithContext(ctx).
-			Where("actor_id = ? AND provider_id = ? AND model_id = ?", actorID, providerID, modelID).
+			Where("actor_ptid = ? AND provider_id = ? AND model_id = ?", actorPTID, providerID, modelID).
 			First(&model).Error; err == nil {
 			if !model.Enabled {
 				return errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
@@ -2118,13 +2118,18 @@ func (s *TurnService) executeCLITurn(ctx context.Context, config *TurnConfig, tu
 		s.emitTurnEvent(ctx, config, turnID, turnEvent)
 	}
 
-	// Derive actorID from context subject for workspace scoping.
-	actorID := config.ActorID
-	if actorID == "" {
-		actorID = config.AgentID
+	// Derive actor PTID from context subject for workspace scoping.
+	actorPTID := strings.TrimSpace(config.ActorPTID)
+	if actorPTID == "" {
+		return nil, errcode.New(
+			errcode.AgentUnauthorized,
+			http.StatusUnauthorized,
+			"actor_ptid is required for CLI workspace scope",
+			nil,
+		)
 	}
 
-	cliErr := s.cliExecutor.Execute(ctx, cliReq, actorID, cliSink)
+	cliErr := s.cliExecutor.Execute(ctx, cliReq, actorPTID, cliSink)
 	if cliErr != nil {
 		_ = s.failTurn(ctx, config.AgentID, turnID, config.TaskID, config.StepID,
 			fmt.Sprintf("CLI execution failed: %v", cliErr))
@@ -2209,7 +2214,7 @@ func (s *TurnService) QuickCompletion(ctx context.Context, config *TurnConfig, p
 		ProviderID: config.Provider,
 		Model:      config.Model,
 		Messages:   []domain.Message{{Role: "user", Content: prompt}},
-		UserID:     config.ActorID,
+		ActorPTID:  config.ActorPTID,
 		Effort:     "low",
 	})
 	if err != nil {
@@ -2242,7 +2247,7 @@ func (s *TurnService) GenerateFollowUpSuggestions(ctx context.Context, config *T
 		Model:        config.Model,
 		SystemPrompt: "You generate follow-up question suggestions. Always respond with a JSON array of exactly 3 short questions.",
 		Messages:     []domain.Message{{Role: "user", Content: prompt}},
-		UserID:       config.ActorID,
+		ActorPTID:    config.ActorPTID,
 		Effort:       "low",
 	})
 	if err != nil {

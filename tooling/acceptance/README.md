@@ -14,7 +14,25 @@ run for a changed path, and which artifacts should be produced for human review.
 - `gates.yaml` defines gate commands, timeouts, environments, tiers, and artifact expectations.
 - `features/` contains product feature contracts.
 - `gates/` contains stable cross-system acceptance implementations.
+- [`gates/mobile/README.md`](./gates/mobile/README.md) records the Mobile
+  native E2E driver selection, Desktop comparison, hybrid context model, and
+  simulator-versus-physical proof boundary.
+- `drivers/native/` defines the platform-neutral Native Desktop interaction
+  contract and OS-specific adapters; business Gates inject this boundary and
+  contain no AppKit, Quartz, CoreGraphics, X11, or Win32 implementation.
+- `runtime-cells/` contains non-sensitive platform capability contracts.
+- `images/desktop-linux/` owns the digest-pinned Linux userland, persistent
+  Xorg session, Window Manager, observer, and in-container process supervisor.
+- `provisioners/native_desktop_linux.py` resolves the local
+  `profile:acceptance-linux` reference, performs exact Git object sync, builds
+  and attests the Desktop binary, and coordinates source-bound remote cleanup.
+- `provisioners/local_tunnel_supervisor.py` owns run-scoped local SSH forwards,
+  applies the cell TTL independently of the lifecycle command, and verifies
+  reverse-order tunnel teardown.
 - `playbooks/` explains how agents should run, diagnose, and preserve acceptance flows.
+- Runtime manifests use typed `services[service-id]` as the only service
+  topology. Every required service must carry an ID/kind-matched source-bound
+  attestation; the removed top-level `station` field is invalid.
 - `desktop-performance-cohort.json` is the canonical P0c-3 profile, account,
   dataset, window, warmup, build, runtime, and scenario manifest.
 - `reports/` stores local or CI acceptance artifacts and is ignored by git.
@@ -42,9 +60,16 @@ This creates a two-way proof:
   Station messaging packages, native selector contract, and Desktop gateway E2E
   gates before requiring latest evidence for the managed domain profile.
 - `make acceptance-chat-desktop-gateway` requires a running Desktop HTTP gateway
-  and proves the client-owned E2EE create, send, hydrate, and decrypt flow.
+  and consumes the Provisioner-owned disposable Alice/Bob actor manifest. It
+  proves atomic account/JWT/Messaging Engine transitions, JWT-bound OAuth PIN
+  unlock, legacy PIN actor-binding rejection, and the client-owned E2EE create,
+  send, hydrate, and decrypt flow.
 - `make acceptance-station-dashboard-domain-validation` runs the Station Dashboard gates and then requires latest evidence for the managed domain profile.
-- `make acceptance-coverage-report` writes `tooling/acceptance/reports/project-coverage-report.md` and summarizes active, candidate, planned, and not-onboarded domains.
+- `make acceptance-coverage-report` writes
+  `docs/architecture/acceptance-framework/coverage-report.md` from canonical
+  durable latest manifests. Proof requires successful redaction, intact
+  artifact identity/digests, and a complete same-source runtime-cell matrix
+  when the Gate declares multiple required cells.
 
 ## Agent Workflow
 
@@ -62,24 +87,59 @@ This creates a two-way proof:
     observers, source matching, isolated profiles, bounded steps, and composer
     cleanup are mandatory.
 
+## Native Desktop Runtime Cells
+
+The Linux cell is managed through:
+
+```bash
+make acceptance-cell-ready CELL=desktop-linux-native
+make acceptance-cell-status CELL=desktop-linux-native
+make acceptance-cell-logs CELL=desktop-linux-native
+make acceptance-cell-stop CELL=desktop-linux-native
+```
+
+`profile:acceptance-linux` resolves locally from
+`.local/acceptance/runtime-cells/acceptance-linux.env`. The profile names a
+separate deploy environment under `.local/deploy/envs/`; neither file is
+committed. The runtime contract contains no host, username, credential, or
+remote absolute path. `ready` requires a clean Git worktree and synchronizes
+only Git objects before the remote image and Desktop build.
+Profiles may select HTTPS mirrors for the base image, Node distribution,
+rustup, and the Cargo registry; immutable image/toolchain pins remain enforced.
+Aggregate execution retains the remote source lease from synchronization
+through Gate execution and releases it last during cell teardown, so
+Gate-time native adapter imports cannot drift from the attested binary.
+
+The remote controller is copied into the run directory before its detached
+reaper starts. Cleanup retains ownership metadata and reports
+`CLEANUP_FAILED` when any container, port, source, or storage resource remains.
+The running container is launched by immutable image ID, and readiness requires
+an observed XTest input effect in addition to focus, point ownership, and
+desktop screenshot probes.
+
 ### W8 Native Chat Operations
 
 `make acceptance-chat-native-static` runs unit and selector contracts without
-launching a live journey. Live targets are
-`acceptance-chat-native-two-client`, `acceptance-chat-native-multi-device`,
-`acceptance-chat-native-recovery`, and `acceptance-chat-native-group-mls`;
-`acceptance-chat-native-w8` runs all four.
+launching a live journey. Every Native Chat target accepts
+`RUNTIME_CELL=<cell-id>` and routes through `NativeDesktopRuntimeBinding`.
+`acceptance-chat-native-w8` runs the two-client, interactions, typing,
+multi-device, recovery, and Group MLS journeys on the selected cell. Contact
+message resilience has its own runtime-cell-aware target.
 
 ### W11 Closure
 
 `make acceptance-chat-w11` runs the fixed W11 closure plan
-(`tooling/acceptance/plans/chat-w11-closure.json`) — 10 gates in sequence:
-forbidden-path scan, duplicate-implementation scan, visible-static checks, all
-six native E2E journeys (two-client, interactions, typing, multi-device,
-recovery, group-MLS), and a mechanical completion-audit that verifies every
-report exists with PASS status before emitting `chat-w11-closure-verdict.json`.
+(`tooling/acceptance/plans/chat-w11-closure.json`) — 11 gates in sequence:
+forbidden-path scan, duplicate-implementation scan, visible-static checks, the
+Product Closure journey, all six W8 native E2E journeys (two-client,
+interactions, typing, multi-device, recovery, group-MLS), and a mechanical
+completion-audit. The audit requires current-source `DONE/PROVEN` evidence for
+the declared `desktop-linux-native` claim and emits the closure verdict through
+the external Evidence Store under role `closure-verdict`.
 The gate list is fixed in the plan JSON — there is no AI-driven gate selection.
-Required environment: `CHAT_ACCEPTANCE_RESET=1`, `CHAT_ACCEPTANCE_PASSWORD=1`,
+This closure intentionally proves Linux only; macOS and Windows remain
+separate, explicit claims. Required environment:
+`CHAT_ACCEPTANCE_RESET=1`, `CHAT_ACCEPTANCE_PASSWORD=1`,
 `CHAT_ACCEPTANCE_ALLOW_STATION_RESTART=1`, and a Station whose build commit
 matches the client HEAD.
 
@@ -92,13 +152,13 @@ preserves the pre-created actors, while the login result supplies their canonica
 PTIDs. The runner rejects a live Station whose `/app-meta/version` commit does
 not match the tested client commit.
 
-The remaining multi-device, recovery, and group-MLS runners still require
-`CHAT_NATIVE_STATION_ATTESTATION`, canonical actor PTIDs, pre-created accounts,
-and `CHAT_NATIVE_DEMO_PASSWORD`. Their attestation JSON contains `commit`,
-`"workspaceDigest": "clean"`, and `protoDigest`. The digest covers source
-protos plus Desktop TypeScript and Station Go generated bindings.
-`CHAT_NATIVE_CLIENT_WORKTREES` accepts one worktree path per client, separated
-by commas; one path may be reused for local process-isolation checks.
+All Native Chat runners consume the Provisioner-owned immutable runtime and
+actor manifests. A selected runtime cell fails closed when the manifest,
+source/Station/cell/binary identity chain, actor allocation, or cleanup
+contract is incomplete. Canonical reports and diagnostic files are written to
+the current external Evidence Store run. Multi-device same-actor identity
+preparation is delegated to the runtime storage owner rather than accessing a
+remote filesystem from the business Gate.
 
 ## Desktop Performance Acceptance Logic
 

@@ -12,7 +12,7 @@ const (
 )
 
 type ListQuery struct {
-	OwnerID        string
+	OwnerPTID      string
 	PageSize       int32
 	PageToken      string
 	OrderBy        string
@@ -20,7 +20,7 @@ type ListQuery struct {
 }
 
 type SearchQuery struct {
-	OwnerID   string
+	OwnerPTID string
 	Query     string
 	PageSize  int32
 	PageToken string
@@ -40,10 +40,10 @@ type Page struct {
 type Repository interface {
 	AutoMigrate(ctx context.Context) error
 	Create(ctx context.Context, note *model.Note) (*model.Note, error)
-	Get(ctx context.Context, ownerID string, noteID string, includeDeleted bool) (*model.Note, error)
+	Get(ctx context.Context, ownerPtid string, noteID string, includeDeleted bool) (*model.Note, error)
 	List(ctx context.Context, query ListQuery) (Page, error)
-	Update(ctx context.Context, ownerID string, noteID string, patch UpdatePatch) (*model.Note, error)
-	Delete(ctx context.Context, ownerID string, noteID string) (bool, error)
-	Restore(ctx context.Context, ownerID string, noteID string) (*model.Note, error)
+	Update(ctx context.Context, ownerPtid string, noteID string, patch UpdatePatch) (*model.Note, error)
+	Delete(ctx context.Context, ownerPtid string, noteID string) (bool, error)
+	Restore(ctx context.Context, ownerPtid string, noteID string) (*model.Note, error)
 	Search(ctx context.Context, query SearchQuery) (Page, error)
 }

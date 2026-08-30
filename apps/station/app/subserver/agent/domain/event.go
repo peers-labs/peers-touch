@@ -18,7 +18,8 @@ type DomainEvent struct {
 	EventID    string
 	EventType  string
 	OccurredAt time.Time
-	ActorID    string
+	ActorPTID  string
+	AgentID    string
 	Payload    interface{}
 	Metadata   map[string]string
 }

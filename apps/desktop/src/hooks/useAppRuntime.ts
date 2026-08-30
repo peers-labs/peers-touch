@@ -38,11 +38,11 @@ function useDeferredProjections(lifecycle: AppLifecycle): void {
   useEffect(() => {
     if (!lifecycle.authenticated) return;
     const session = useSessionStore.getState();
-    const actorId = session.authenticated ? session.currentUser?.actorId ?? null : null;
-    if (!actorId) return;
+    const actorPtid = session.authenticated ? session.currentUser?.actorPtid ?? null : null;
+    if (!actorPtid) return;
     return scheduleIdle(() => {
-      void installDeferredAppRuntimeProjections();
-      void installIdleRuntimes(actorId, CRITICAL_SESSION_RUNTIMES);
+      void installDeferredAppRuntimeProjections(actorPtid);
+      void installIdleRuntimes(actorPtid, CRITICAL_SESSION_RUNTIMES);
     });
   }, [lifecycle.authenticated]);
 }

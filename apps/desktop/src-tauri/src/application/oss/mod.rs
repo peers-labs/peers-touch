@@ -94,6 +94,18 @@ pub struct OssResolved {
 
 const INLINE_IMAGE_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
+fn validate_upload_source(file_path: &str) -> Result<std::fs::Metadata, String> {
+    if file_path.trim().is_empty() {
+        return Err("file_path is required".to_string());
+    }
+    let metadata =
+        std::fs::metadata(file_path).map_err(|error| format!("stat {file_path}: {error}"))?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        return Err("upload source must be a non-empty regular file".to_string());
+    }
+    Ok(metadata)
+}
+
 pub struct TempFileCleanup {
     path: PathBuf,
     label: &'static str,
@@ -164,9 +176,15 @@ pub fn upload_attachment_with_mime(
     chat_session_id: Option<&str>,
     mime_override: Option<&str>,
 ) -> AppResult<StubPayload> {
-    if file_path.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "file_path is required", None);
-    }
+    // Pre-flight the file size so we can route per-file instead of
+    // per-session. We resolve metadata via `std::fs` to avoid pulling
+    // a second open later.
+    let file_meta = match validate_upload_source(file_path) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            return AppResult::fail(ErrorCode::InvalidArgument, error, None);
+        }
+    };
     tracing::info!(file_path = %file_path, consumer = %consumer, "OSS attachment upload start");
 
     // Capability lookup is best-effort — if it fails we still want the
@@ -177,19 +195,6 @@ pub fn upload_attachment_with_mime(
     // are handled at the chat layer, not here.
     let caps = oss_cache::capabilities_ensure("self").ok();
 
-    // Pre-flight the file size so we can route per-file instead of
-    // per-session. We resolve metadata via `std::fs` to avoid pulling
-    // a second open later.
-    let file_meta = match std::fs::metadata(file_path) {
-        Ok(m) => m,
-        Err(e) => {
-            return AppResult::fail(
-                ErrorCode::InvalidArgument,
-                format!("stat {file_path}: {e}"),
-                None,
-            );
-        }
-    };
     let file_size = file_meta.len() as i64;
     let filename = std::path::Path::new(file_path)
         .file_name()
@@ -331,7 +336,7 @@ pub fn upload_attachment_with_mime(
 ///       → local flow (existing capabilities + bound-station fetch)
 ///
 ///   uri.origin != bound_station
-///       AND home token + actor DID supplied
+///       AND home token + actor PTID supplied
 ///       → federation flow:
 ///           1. mint peer JWT at bound station
 ///           2. GET bytes from foreign station with that JWT
@@ -345,13 +350,13 @@ pub fn upload_attachment_with_mime(
 /// ```
 ///
 /// `home_token` is the desktop user's HS256 session JWT for the
-/// bound station; `home_actor_did` is the same caller's DID. Both
+/// bound station; `home_actor_ptid` is the same caller's PTID. Both
 /// are required for federation; either being empty downgrades the
 /// resolve to a no-token best-effort.
 pub fn oss_resolve_url(
     input: &str,
     home_token: &str,
-    home_actor_did: &str,
+    home_actor_ptid: &str,
 ) -> AppResult<StubPayload> {
     let uri = match OssUri::parse(input) {
         Ok(u) => u,
@@ -405,15 +410,15 @@ pub fn oss_resolve_url(
     // distinguish "couldn't reach the network" from "denied by
     // policy" (the badge component renders different states).
     let local_path = if bound_station {
-        match oss_cache::attachment_ensure(&uri, None) {
+        match oss_cache::attachment_ensure(&uri, None, Some(home_token)) {
             Ok(p) => Some(p.to_string_lossy().to_string()),
             Err(err) => {
                 tracing::warn!(error = %err, uri = %input, "OSS attachment cache miss (local)");
                 None
             }
         }
-    } else if !home_token.trim().is_empty() && !home_actor_did.trim().is_empty() {
-        match oss_cache::attachment_ensure_federated(&uri, home_token, home_actor_did) {
+    } else if !home_token.trim().is_empty() && !home_actor_ptid.trim().is_empty() {
+        match oss_cache::attachment_ensure_federated(&uri, home_token, home_actor_ptid) {
             Ok(p) => Some(p.to_string_lossy().to_string()),
             Err(err) => {
                 tracing::warn!(error = %err, uri = %input, "OSS attachment cache miss (federated)");
@@ -1052,4 +1057,71 @@ fn json_payload(command: &'static str, value: &Value) -> AppResult<StubPayload> 
         command: command.to_string(),
         status: serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_upload_source;
+    use std::path::PathBuf;
+    use ulid::Ulid;
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("peers-oss-test-{}", Ulid::new()));
+            std::fs::create_dir_all(&path).expect("create OSS test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn validate_upload_source_rejects_invalid_sources() {
+        let fixture = TestDirectory::new();
+        let empty_file = fixture.0.join("empty.png");
+        std::fs::write(&empty_file, []).expect("create empty upload source");
+        let missing_file = fixture.0.join("missing.png");
+
+        let cases = [
+            ("", "file_path is required"),
+            (
+                fixture.0.to_str().expect("UTF-8 fixture directory"),
+                "upload source must be a non-empty regular file",
+            ),
+            (
+                empty_file.to_str().expect("UTF-8 empty file path"),
+                "upload source must be a non-empty regular file",
+            ),
+        ];
+        for (source, expected_error) in cases {
+            assert_eq!(
+                validate_upload_source(source).expect_err("source should be rejected"),
+                expected_error,
+            );
+        }
+        assert!(
+            validate_upload_source(missing_file.to_str().expect("UTF-8 missing file path"),)
+                .expect_err("missing source should be rejected")
+                .starts_with("stat "),
+        );
+    }
+
+    #[test]
+    fn validate_upload_source_accepts_nonempty_regular_file() {
+        let fixture = TestDirectory::new();
+        let source = fixture.0.join("image.png");
+        std::fs::write(&source, b"png").expect("create non-empty upload source");
+
+        let metadata = validate_upload_source(source.to_str().expect("UTF-8 upload source path"))
+            .expect("non-empty regular file should be accepted");
+
+        assert!(metadata.is_file());
+        assert_eq!(metadata.len(), 3);
+    }
 }

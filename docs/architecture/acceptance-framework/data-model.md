@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-08-16 | **Updated**: 2026-08-17
+> **Created**: 2026-08-16 | **Updated**: 2026-08-30
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -15,6 +15,7 @@
 - Environment Provisioning Contract 的机器可读字段。
 - Runtime Resource Manifest、Station Attestation、Actor Manifest 和 Gap Artifact。
 - Provisioning 生命周期状态及转换规则。
+- Native Desktop Runtime Cell、远端 transport、GUI session 与 platform adapter identity。
 - 敏感值与可持久化 evidence 的边界。
 - Evidence Store root、identity、ArtifactRef、run manifest和latest pointer。
 
@@ -36,7 +37,9 @@ profile:
   identity_match: true
 services:
   station:
+    kind: station
     required: true
+    runtime_identity_required: false
     ready_action: station
     health_action: station-check
     status_action: station-status
@@ -54,6 +57,8 @@ cleanup:
 约束：
 
 - `id` 必须与 `gates.yaml.environment` 一致。
+- 每个 service 必须声明 `kind`；需要稳定 peer/runtime identity 的环境必须设置
+  `runtime_identity_required: true`。
 - `source_ref` 只允许引用，不允许写具体 secret value。
 - destructive Fixture 必须声明 authorization 和 target verification。
 - Contract 缺失或字段不完整时，plan 可以生成，但 environment Gate 不得执行。
@@ -80,18 +85,48 @@ Manifest 是一次 provisioning 运行的不可变输出。
     "resolvedName": "three",
     "slot": 2
   },
-  "station": {
-    "url": "<redacted-safe-url>",
-    "liveCommit": "<commit>",
-    "protoDigest": "<sha256>",
-    "attestationArtifact": {
-      "artifactKind": "acceptance-artifact-ref",
-      "workspaceId": "<workspace-id>",
-      "gateId": "<gate-id>",
-      "runId": "<run-id>",
-      "path": "runtime/station-attestation.json",
-      "sha256": "<sha256>",
-      "mediaType": "application/json"
+  "services": {
+    "station-primary": {
+      "kind": "station",
+      "deploymentEnvironment": "station-two",
+      "endpoint": "<redacted-safe-url>",
+      "runtimeIdentity": "<station-peer-id>",
+      "liveCommit": "<commit>",
+      "protocolDigest": "<sha256>",
+      "workspaceDigest": "clean",
+      "attestationArtifact": {
+        "artifactKind": "acceptance-artifact-ref",
+        "workspaceId": "<workspace-id>",
+        "gateId": "<gate-id>",
+        "runId": "<run-id>",
+        "path": "runtime/services/station-primary/attestation.json",
+        "sha256": "<sha256>",
+        "mediaType": "application/json"
+      }
+    },
+    "station-secondary": {
+      "kind": "station",
+      "deploymentEnvironment": "station-three",
+      "endpoint": "<redacted-safe-url>",
+      "runtimeIdentity": "<station-peer-id>",
+      "liveCommit": "<commit>",
+      "protocolDigest": "<sha256>",
+      "workspaceDigest": "clean",
+      "attestationArtifact": {
+        "artifactKind": "acceptance-artifact-ref"
+      }
+    },
+    "relay": {
+      "kind": "relay",
+      "deploymentEnvironment": "relay-1",
+      "endpoint": "<redacted-safe-url>",
+      "runtimeIdentity": "<relay-peer-id>",
+      "liveCommit": "<commit>",
+      "protocolDigest": "<sha256>",
+      "workspaceDigest": "clean",
+      "attestationArtifact": {
+        "artifactKind": "acceptance-artifact-ref"
+      }
     }
   },
   "actorManifest": {
@@ -116,20 +151,38 @@ Manifest identity requirements:
 
 - `runId` 在同一 Acceptance run 内唯一。
 - `source.commit` 来自实际客户端 worktree。
-- `station.liveCommit` 来自 live endpoint，不由本地推断。
-- `station.attestationArtifact` 指向实际 deployment/runtime producer 的输出。
+- `services` 始终存在；provisioning 前可为空对象，ready manifest 必须覆盖所有
+  required Environment services。
+- service map key 必须等于 attestation `serviceId`，并且 kind 必须匹配
+  Environment Contract。
+- `services.*.liveCommit` 来自对应 live endpoint，不由本地推断。
+- `services.*.attestationArtifact` 指向实际 deployment/runtime producer 的输出。
 - `profile.requestedName` 与 `resolvedName` 不一致时状态必须为 `BLOCKED`。
+- 顶层 `station` 字段已删除；reader 遇到旧字段必须 fail closed。
+- `source.workspaceDigest` 覆盖所有可执行源码和手写契约，但不包含自动生成的
+  `docs/architecture/acceptance-framework/coverage-report.md`；生成覆盖报告不得使
+  刚验证的 source-bound evidence 自身失效。
+- `services.*.protocolDigest` 只覆盖 Git 跟踪的 proto source 与生成绑定；本地 codegen
+  产生但未进入 commit 的派生文件不得改变同一 source commit 的 attestation。
+- `env:`、`file:` 和 `auto:` credential references 必须对应已扫描的内存值；
+  `fixture:` references 指向仓库中已提交的 disposable 测试数据，不作为 secret
+  扫描输入，也不得用于生产运行时。
 
-## 4. Station Attestation
+## 4. Service Attestation
 
 ```json
 {
-  "artifactKind": "station-deployment-attestation",
+  "artifactKind": "service-deployment-attestation",
   "capturedAt": "<UTC timestamp>",
+  "serviceId": "station-primary",
+  "serviceKind": "station",
   "environmentId": "home-station",
+  "deploymentEnvironment": "station-two",
+  "endpoint": "<redacted-safe-url>",
   "commit": "<deployed-commit>",
   "workspaceDigest": "clean",
-  "protoDigest": "<sha256>",
+  "protocolDigest": "<sha256>",
+  "runtimeIdentity": "<station-peer-id>",
   "liveMetadata": {
     "buildCommit": "<live-endpoint-commit>"
   },
@@ -137,12 +190,26 @@ Manifest identity requirements:
 }
 ```
 
-规则：
+通用规则：
 
-- Producer 必须是 Station deployment/runtime owner。
+- Producer 必须是该 service 的 deployment/runtime owner。
+- service ID 必须是 Environment Contract 中的稳定角色，service kind 必须匹配。
+- artifact 必须写入
+  `runtime/services/<service-id>/attestation.json`，同一 run 内禁止覆盖。
+- Consumer Gate 按稳定 service ID 选择服务并验证 kind，不得按 map 顺序推断。
 - Consumer Gate 必须比较 attested commit、live commit 和 client commit。
 - `workspaceDigest != clean` 时 Native source-bound proof fail closed。
 - Attestation 不包含部署凭据、SSH target credential 或数据库 secret。
+
+Station-specific 规则：
+
+- Station producer 必须是 Station deployment/runtime owner。
+- `runtimeIdentity` 来自签名 Station identity，不得从 URL 推断。
+
+Relay-specific 规则：
+
+- Relay producer 必须是 Relay deployment/runtime owner。
+- Relay runtime identity、commit 和 protocol digest 必须来自 live runtime 与部署事实。
 
 ## 5. Actor Manifest
 
@@ -180,6 +247,10 @@ Manifest identity requirements:
 - `accountRef` 是逻辑引用，不要求暴露邮箱。
 - Manifest 禁止包含 password、PIN、token、private key 或 recovery phrase。
 - Gate 不允许覆盖 Actor Manifest 中的 PTID。
+- destructive Chat Fixture 的 `targetVerified=true` 仅在 deployment env 显式声明
+  disposable，且 live Station URL、Compose project、Station/PostgreSQL container
+  labels 与独立 PostgreSQL volume 全部精确匹配后成立；服务持久 Desktop 的 Station
+  不得作为 reset target。
 
 ## 6. Gap Artifact
 
@@ -441,3 +512,257 @@ Cleanup尝试non-blocking lock：
 
 Typed errors保留safe path role、errno class和remediation，不包含secret value。任何error
 都不得触发source-tree fallback。
+
+## 15. Native Desktop Runtime Cell Contract
+
+Runtime Cell Contract 是 repository 内的非敏感平台能力声明。具体 host、username、
+credential value 和远端绝对路径由 Profile/secret source 解析。
+
+```yaml
+id: desktop-linux-native
+platform: linux
+architecture: x86_64
+isolation:
+  kind: container
+  image_ref: local-profile:acceptance-linux-image
+  image_digest_required: true
+transport:
+  kind: ssh
+  target_ref: profile:acceptance-linux
+  webdriver_forward: local-loopback
+display:
+  session_type: x11
+  physical_monitor_required: false
+  connected_output_required: true
+  fixed_geometry: 1920x1080
+webdriver:
+  kind: tauri-embedded
+  bind: 127.0.0.1
+native_adapter:
+  input: x11-xtest
+  window: x11-ewmh
+  screenshot: webkitgtk-and-desktop
+source:
+  mode: git-object-sync
+  clean_commit_required_for_proof: true
+  binary_sha256_required: true
+lease:
+  scope: gui-session
+  ttl_seconds: 5400
+cleanup:
+  resources:
+    - ssh-tunnel
+    - processes
+    - ports
+    - storage
+    - source-workspace
+    - gui-session-lease
+```
+
+Validation rules:
+
+- `id`、`platform`、`architecture`、display、WebDriver、native adapter、source 和
+  cleanup fields 必须完整。
+- 容器化 cell 必须使用 digest-pinned image；tag-only image 不得产生最终 proof。
+- `transport.target_ref` 只允许逻辑引用；literal IP、username、password 或 private
+  key path 被 schema 拒绝。
+- `webdriver.bind` 对远端 cell 必须为 loopback。
+- `physical_monitor_required: false` 仍要求 connected virtual output 和 compositor。
+- Native proof 不接受 `session_type: xvfb`。
+- Cell contract 描述能力，不声明产品 actor、Fixture、selector 或 assertion。
+
+## 16. Runtime Cell Manifest
+
+每次 cell acquisition 产生不可变 manifest，并嵌入该 Gate 的 Runtime Resource
+Manifest：
+
+```json
+{
+  "artifactKind": "acceptance-runtime-cell-manifest",
+  "cellId": "desktop-linux-native",
+  "gateId": "chat-native-product-closure-e2e",
+  "runId": "<run-id>",
+  "state": "LEASED",
+  "platform": {
+    "os": "linux",
+    "hostDistribution": "<name/version>",
+    "hostKernel": "<version>",
+    "isolationKind": "container",
+    "imageDigest": "<sha256>",
+    "distribution": "<name/version>",
+    "architecture": "x86_64",
+    "webviewBackend": "WebKitGTK",
+    "webviewVersion": "<version>"
+  },
+  "transport": {
+    "kind": "ssh",
+    "hostIdentitySha256": "<sha256>",
+    "hostKeySha256": "<sha256>",
+    "webdriverLocalPort": 0,
+    "webdriverRemotePort": 0
+  },
+  "display": {
+    "sessionType": "x11",
+    "displayId": "<redacted-logical-id>",
+    "seat": "<seat>",
+    "geometry": {"width": 1920, "height": 1080},
+    "connectedOutput": true,
+    "desktopUserIdentitySha256": "<sha256>"
+  },
+  "source": {
+    "mode": "git-object-sync",
+    "commit": "<git-commit>",
+    "workspaceDigest": "clean",
+    "remoteSourceDigest": "<sha256>",
+    "remoteCheckoutClean": true,
+    "binarySha256": "<sha256>"
+  },
+  "nativeAdapter": {
+    "inputBackend": "x11-xtest",
+    "windowBackend": "x11-ewmh",
+    "screenshotBackend": "webkitgtk-and-desktop",
+    "inputProbe": true,
+    "focusProbe": true,
+    "pointOwnershipProbe": true,
+    "screenshotProbe": true
+  },
+  "lease": {
+    "ownerRunId": "<run-id>",
+    "expiresAt": "<UTC timestamp>"
+  },
+  "cleanup": {
+    "registered": true,
+    "resources": []
+  }
+}
+```
+
+Identity and proof rules:
+
+- `hostIdentitySha256` 与 `hostKeySha256` 用于身份核验，不持久化 literal SSH target。
+- local source、remote source 与 binary 三者 identity 不一致时不得进入
+  `FIXTURE_READY`。
+- `source.mode: git-object-sync` 要求 exact commit 可在远端 bare repository 中解析，
+  checkout 无 dirty/untracked build input；cache volumes 不参与 source digest。
+- 容器化 cell 必须同时记录 host kernel 与 userland image digest；宿主发行版不需要
+  提供 cell 内 Tauri build dependencies。
+- Gate result 必须记录 `cellId`。Reader/validator 只接受与 requested cell 完全一致
+  的 evidence。
+- Cell manifest 不能由业务 Gate 创建或修改。
+- `inputProbe`、`focusProbe`、`pointOwnershipProbe` 与 `screenshotProbe`
+  必须全部来自实际 platform adapter 操作并为 `true`；仅声明 backend 或查询
+  XTest extension 不构成 input proof。
+
+### 16.1 Native Adapter Diagnostic
+
+Native adapter observation 使用跨平台 typed fields；业务 Gate 不解析 AX、EWMH
+或 Win32 原生字段来决定成功条件：
+
+```json
+{
+  "platform": "macos",
+  "expectedProcessId": 1234,
+  "documentFocused": true,
+  "point": {"x": 320.0, "y": 24.0},
+  "pointOwned": true,
+  "focusedControl": {
+    "kind": "text-field",
+    "title": "",
+    "value": "",
+    "windowCount": 1,
+    "dialogCount": 0,
+    "frontmost": true,
+    "mainWindow": true,
+    "focusedWindow": true,
+    "actualFrontmostPid": 1234,
+    "platformRole": "AXTextField",
+    "platformSubrole": "",
+    "error": ""
+  },
+  "windowStack": {
+    "windows": [
+      {
+        "index": 0,
+        "ownerPid": 1234,
+        "ownerName": "Peers Touch",
+        "windowName": "",
+        "layer": 0,
+        "alpha": 1.0,
+        "bounds": {
+          "left": 0.0,
+          "top": 0.0,
+          "width": 1200.0,
+          "height": 800.0
+        }
+      }
+    ],
+    "error": ""
+  }
+}
+```
+
+Rules:
+
+- `kind`、window/dialog counts、focus booleans、PID、point ownership 和 bounds
+  是跨平台稳定字段。
+- `platformRole` 与 `platformSubrole` 仅保留底层诊断值，不得成为业务 Gate
+  的平台分支条件。
+- `pointOwned` 只由 point 上最上层的可见窗口决定；目标窗口被其他窗口遮挡时
+  必须为 `false`。
+- probe timeout、解析错误或平台调用失败必须进入 typed `error` 或抛出 typed
+  Driver error，不得降级为成功。
+- Desktop screenshot 是 adapter primitive；WebDriver viewport screenshot
+  不能替代 desktop ownership evidence。
+
+## 17. Runtime Cell Lifecycle
+
+```text
+DISCOVERED
+  -> HOST_VERIFIED
+  -> SESSION_READY
+  -> SOURCE_ALIGNED
+  -> BUILD_READY
+  -> DRIVER_READY
+  -> LEASED
+  -> GATE_RUNNING
+  -> EVIDENCE_JUDGED
+  -> CLEANING
+  -> CLEANED
+
+Any pre-Gate failure -> BLOCKED
+Gate failure          -> GATE_FAILED -> CLEANING
+Cleanup failure       -> CLEANUP_FAILED
+Lease timeout         -> REAPING -> CLEANED | CLEANUP_FAILED
+```
+
+同一 `cellId + displayId` 同时只能存在一个 active lease。远端 reaper 必须独立于
+发起 SSH connection 存活，确保 orchestrator crash 或网络中断后仍能按 TTL 回收。
+
+## 18. Platform Matrix Result
+
+同一产品 Gate 的跨平台状态由 cell results 聚合：
+
+```json
+{
+  "gateId": "chat-native-product-closure-e2e",
+  "sourceCommit": "<git-commit>",
+  "requiredRuntimeCells": [
+    "desktop-macos-native",
+    "desktop-linux-native",
+    "desktop-windows-native"
+  ],
+  "cells": {
+    "desktop-macos-native": {"proofStatus": "PROVEN"},
+    "desktop-linux-native": {"proofStatus": "UNPROVEN"},
+    "desktop-windows-native": {"proofStatus": "UNPROVEN"}
+  },
+  "proofStatus": "PARTIAL"
+}
+```
+
+Aggregation rules:
+
+- `PROVEN` requires every required cell to be `PROVEN` for the same source commit.
+- Missing、stale、blocked 或 failed cell 不能由其它平台结果替代。
+- Platform-specific subclaims may be reported independently, but the cross-platform
+  capability remains `PARTIAL/UNPROVEN` until the full required matrix closes.

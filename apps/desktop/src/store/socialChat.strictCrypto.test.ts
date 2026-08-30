@@ -137,6 +137,27 @@ describe('strict chat encryption source contract', () => {
     expect(socialChatSource).not.toContain('conversation.submitReceipt');
   });
 
+  it('sources group members from the durable Engine conversation projection', () => {
+    expect(socialChatSource).not.toContain('imServiceV1.conversation.getMembers');
+    expect(socialChatSource).toContain('activeConversationMembers(conversation.members)');
+    expect(socialChatSource).toContain('pendingGroupCreations');
+    expect(socialChatSource).toContain('projectedPendingGroup');
+    expect(socialChatSource).toContain('commandId: projectedPendingGroup.commandId');
+    expect(socialChatSource).toContain('activeGroupUlid: projectedPendingGroup.conversationId');
+    expect(socialChatSource).toContain('imServiceV1.messaging.getCommandStatus');
+    expect(socialChatSource).toContain("status.state === 'failed'");
+    expect(socialChatSource).toContain("status.state === 'superseded'");
+    expect(socialChatSource).not.toContain('api.groupChatGetMembers');
+    expect(desktopApiSource).not.toContain('groupChatGetMembers:');
+    expect(socialChatSource).toContain('member.memberStatus === MemberStatus.ACTIVE');
+    expect(socialChatSource).toContain('const profile = await api.actorGetMyProfile()');
+    expect(socialChatSource).not.toContain('member.ptid.includes(`:p:${actorUsername}:`)');
+    expect(socialChatSource).not.toContain('projectConversationMemberIds');
+    expect(socialChatSource).toContain('requestGeneration !== loadSessionsGeneration');
+    expect(socialChatSource).toContain('await get().loadSessions()');
+    expect(socialChatSource).toContain('if (lastReadSeq <= 0)');
+  });
+
   it('retires every Desktop Sender Keys command surface', () => {
     expect(desktopApiSource).not.toContain('cryptoGroupSkEmitSkdm');
     expect(desktopApiSource).not.toContain('cryptoGroupSkConsumeSkdm');

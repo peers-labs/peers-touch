@@ -2,15 +2,20 @@ import { registerIdentityHandler } from './identityPipeline';
 import { AuthCommandException } from './desktop_api';
 import { useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
+import { useNotificationStore } from '../store/notification';
+import { useNavigationBadgeStore } from '../store/navigationBadges';
 import { useAccountIdentityStore } from '../store/accountIdentity';
 import { useSidebarStore } from '../store/sidebar';
 import { useGlobalContextStore } from '../kernel/global-context/store';
 import { createDesktopClientStorageRuntime } from '../storage/desktopClientStorage';
 
 registerIdentityHandler('clear-zustand-stores', async (payload) => {
-  if (payload.reason === 'logout') {
+  const currentActorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
+  if (payload.reason === 'logout' || currentActorPtid !== payload.actorPtid) {
     useSessionStore.getState().reset();
     useSocialChatStore.getState().reset();
+    useNotificationStore.getState().reset();
+    useNavigationBadgeStore.getState().reset();
     useAccountIdentityStore.getState().reset();
     useSidebarStore.getState().reset();
     useGlobalContextStore.getState().reset();
@@ -18,7 +23,7 @@ registerIdentityHandler('clear-zustand-stores', async (payload) => {
 });
 
 registerIdentityHandler('clear-client-storage-caches', async (payload) => {
-  await createDesktopClientStorageRuntime({ ptid: payload.actorId ?? null }).kernel.invalidateDomains([
+  await createDesktopClientStorageRuntime({ ptid: payload.actorPtid ?? null }).kernel.invalidateDomains([
     'asset.avatar',
     'chat.conversation-settings',
     'chat.message',
@@ -30,7 +35,7 @@ registerIdentityHandler('clear-client-storage-caches', async (payload) => {
 });
 
 registerIdentityHandler('refresh-current-session', async (payload) => {
-  if (payload.reason === 'logout') {
+  if (payload.reason === 'logout' || payload.reason === 'switch') {
     return;
   }
   try {

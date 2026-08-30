@@ -16,20 +16,24 @@ import {
 } from './features/auth/authSession';
 import { AccessGateHost } from './features/auth/AccessGateHost';
 import { useAuthStore } from './features/auth/authStore';
-import { probeStation } from './features/station/stationConnection';
+import { probeStation, verifyStationIdentity } from './features/station/stationConnection';
 import { StationLaunchScreen } from './features/station/StationLaunchScreen';
 import {
   activateStationEntry,
+  activeStationEntry,
   addStationEntry,
   buildStationUrl,
   emptyStationRegistry,
   loadStationRegistry,
   persistStationRegistry,
   removeStationEntry,
+  requireMatchingStationIdentity,
   updateStationEntryStatus,
   type StationProtocol,
+  type MobileStationEntry,
   type StoredStationRegistry,
 } from './features/station/stationRegistry';
+import { purgeLegacyMobileIdentityStorage } from './storage/mobileClientStorage';
 
 type LaunchState = 'station-selection' | 'access-gate-chain' | 'shell';
 
@@ -54,9 +58,11 @@ function MobileAppRoot() {
   const setAccessDecision = useAuthStore((state) => state.setAccessDecision);
   const autoVerifiedStationUrls = useRef<Set<string>>(new Set());
   const stationUrlsKey = stationRegistry.entries.map((entry) => entry.url).join('\n');
+  const activeStation = activeStationEntry(stationRegistry);
 
   useEffect(() => {
     let mounted = true;
+    purgeLegacyMobileIdentityStorage();
 
     Promise.all([
       loadStationRegistry().catch(() => emptyStationRegistry()),
@@ -68,16 +74,9 @@ function MobileAppRoot() {
       .then(([registry, session]) => {
         if (!mounted) return;
         replaceStationRegistry(registry);
-        if (session?.actor?.email) {
-          void rememberLoginAccount(session, session.actor.email)
-            .then(() => loadRememberedLoginAccounts(session.stationUrl))
-            .then((accounts) => {
-              if (mounted) setRememberedAccounts(accounts);
-            })
-            .catch(() => undefined);
-        }
-        if (session && registry.activeUrl === session.stationUrl) {
-          void startAccessGateChainFor(registry.activeUrl, session);
+        const selectedStation = activeStationEntry(registry);
+        if (session && selectedStation?.stationPeerId === session.stationPeerId) {
+          void startAccessGateChainFor(selectedStation, session);
         }
       });
 
@@ -87,16 +86,16 @@ function MobileAppRoot() {
   }, []);
 
   useEffect(() => {
-    if (!authSession || !stationRegistry.activeUrl || authSession.stationUrl === stationRegistry.activeUrl) return;
+    if (!authSession || !activeStation || authSession.stationPeerId === activeStation.stationPeerId) return;
 
     clearSession().catch(() => setAuthSession(null));
-  }, [authSession, clearSession, setAuthSession, stationRegistry.activeUrl]);
+  }, [activeStation, authSession, clearSession, setAuthSession]);
 
   useEffect(() => {
-    if (!authSession || !stationRegistry.activeUrl || authSession.stationUrl !== stationRegistry.activeUrl) return;
+    if (!authSession || !activeStation || authSession.stationPeerId !== activeStation.stationPeerId) return;
     if (launchState !== 'station-selection') return;
     void startAccessGateChain(authSession);
-  }, [authSession, launchState, stationRegistry.activeUrl]);
+  }, [activeStation, authSession, launchState]);
 
   useEffect(() => {
     if (launchState !== 'station-selection') return;
@@ -108,14 +107,13 @@ function MobileAppRoot() {
   }, [launchState, stationUrlsKey]);
 
   useEffect(() => {
-    const activeUrl = stationRegistry.activeUrl;
-    if (!activeUrl) {
+    if (!activeStation) {
       setRememberedAccounts([]);
       return;
     }
 
     let mounted = true;
-    loadRememberedLoginAccounts(activeUrl)
+    loadRememberedLoginAccounts(activeStation.stationPeerId)
       .then((accounts) => {
         if (mounted) setRememberedAccounts(accounts);
       })
@@ -125,7 +123,7 @@ function MobileAppRoot() {
     return () => {
       mounted = false;
     };
-  }, [stationRegistry.activeUrl]);
+  }, [activeStation?.stationPeerId]);
 
   function replaceStationRegistry(registry: StoredStationRegistry) {
     stationRegistryRef.current = registry;
@@ -145,7 +143,9 @@ function MobileAppRoot() {
     probeStation(url)
       .then((probe) => {
         setStationRegistry((current) => {
-          const next = updateStationEntryStatus(current, url, {
+          const entry = current.entries.find((candidate) => candidate.url === url);
+          if (!entry) return current;
+          const next = updateStationEntryStatus(current, entry.stationPeerId, {
             checkedAt: probe.checkedAt,
             label: probe.label,
             online: probe.online,
@@ -161,8 +161,8 @@ function MobileAppRoot() {
       });
   }
 
-  async function login(input: Omit<StationLoginInput, 'stationUrl'>) {
-    if (!stationRegistry.activeUrl) {
+  async function login(input: Omit<StationLoginInput, 'stationPeerId' | 'stationUrl'>) {
+    if (!activeStation) {
       setAuthError(t('mobile.auth.selectStation'));
       return;
     }
@@ -175,16 +175,16 @@ function MobileAppRoot() {
         return;
       }
 
-      const { session, decision, persistenceError } = await submitStationLoginGate({
-        stationUrl: stationRegistry.activeUrl,
+      const { session, decision } = await submitStationLoginGate({
+        stationUrl: activeStation.url,
+        stationPeerId: activeStation.stationPeerId,
         attemptId: accessDecision.attemptId,
         ...input,
       });
       await rememberLoginAccount(session, input.email).catch(() => undefined);
-      setRememberedAccounts(await loadRememberedLoginAccounts(session.stationUrl).catch(() => []));
+      setRememberedAccounts(await loadRememberedLoginAccounts(session.stationPeerId).catch(() => []));
       setAuthSession(session);
       setAccessDecision(decision);
-      if (persistenceError) setAuthError(persistenceError);
       if (isAccessGranted(decision)) setLaunchState('shell');
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
@@ -197,16 +197,16 @@ function MobileAppRoot() {
   async function logout() {
     await clearSession();
     setAccessDecision(null);
-    const activeUrl = stationRegistryRef.current.activeUrl;
-    if (!activeUrl) {
+    const selectedStation = activeStationEntry(stationRegistryRef.current);
+    if (!selectedStation) {
       setLaunchState('station-selection');
       return;
     }
-    await startAccessGateChainFor(activeUrl, null);
+    await startAccessGateChainFor(selectedStation, null);
   }
 
   async function submitInviteCode(code: string) {
-    if (!stationRegistry.activeUrl) {
+    if (!activeStation) {
       setAuthError(t('mobile.auth.selectStation'));
       return;
     }
@@ -219,7 +219,7 @@ function MobileAppRoot() {
     setAuthError(null);
     try {
       const decision = await submitStationInviteCodeGate({
-        stationUrl: stationRegistry.activeUrl,
+        stationUrl: activeStation.url,
         attemptId: accessDecision.attemptId,
         inviteCode: code,
       });
@@ -234,16 +234,22 @@ function MobileAppRoot() {
   }
 
   async function startAccessGateChain(session?: MobileAuthSession | null) {
-    await startAccessGateChainFor(stationRegistryRef.current.activeUrl, session);
+    const selectedStation = activeStationEntry(stationRegistryRef.current);
+    if (!selectedStation) return;
+    await startAccessGateChainFor(selectedStation, session);
   }
 
-  async function startAccessGateChainFor(stationUrl: string, session?: MobileAuthSession | null) {
-    if (!stationUrl) return;
-
+  async function startAccessGateChainFor(station: MobileStationEntry, session?: MobileAuthSession | null) {
     setAuthLoading(true);
     setAuthError(null);
     try {
-      const decision = await startStationAccessAttempt(stationUrl, session?.sessionId);
+      const verified = await verifyStationIdentity(station.url);
+      requireMatchingStationIdentity(station, verified.stationPeerId);
+      const decision = await startStationAccessAttempt(
+        station.stationPeerId,
+        station.url,
+        session?.sessionId,
+      );
       setAccessDecision(decision);
       if (isAccessGranted(decision)) {
         setLaunchState('shell');
@@ -257,7 +263,7 @@ function MobileAppRoot() {
         setAuthSession(null);
         setAccessDecision(null);
         try {
-          const decision = await startStationAccessAttempt(stationUrl);
+          const decision = await startStationAccessAttempt(station.stationPeerId, station.url);
           setAccessDecision(decision);
           setLaunchState(isAccessGranted(decision) ? 'shell' : 'access-gate-chain');
           return;
@@ -286,12 +292,11 @@ function MobileAppRoot() {
   }
 
   if (launchState === 'access-gate-chain') {
-    const activeStation = stationRegistry.entries.find((entry) => entry.url === stationRegistry.activeUrl);
     return (
       <AccessGateHost
         decision={accessDecision}
-        stationLabel={activeStation?.label || stationRegistry.activeUrl || 'Station'}
-        stationUrl={stationRegistry.activeUrl || ''}
+        stationLabel={activeStation?.label || t('mobile.launch.station')}
+        stationUrl={activeStation?.url || ''}
         error={authError}
         loading={authLoading}
         rememberedAccounts={rememberedAccounts}
@@ -327,9 +332,10 @@ function MobileAppRoot() {
             return false;
           }
 
+          const identity = await verifyStationIdentity(normalizedUrl);
           const next = addStationEntry(
             stationRegistryRef.current,
-            { protocol, address },
+            { stationPeerId: identity.stationPeerId, url: normalizedUrl },
             { checkedAt: probe.checkedAt, label: probe.label, online: probe.online },
           );
           if (!next.ok) {
@@ -348,35 +354,42 @@ function MobileAppRoot() {
           setStationChecking(false);
         }
       }}
-      onSelectStation={(url) => {
+      onSelectStation={(stationPeerId) => {
         setStationError(null);
-        const next = activateStationEntry(stationRegistryRef.current, url);
+        const next = activateStationEntry(stationRegistryRef.current, stationPeerId);
         void commitStationRegistry(next);
       }}
-      onRemoveStation={(url) => {
+      onRemoveStation={(stationPeerId) => {
         setStationError(null);
-        const next = removeStationEntry(stationRegistryRef.current, url);
+        const next = removeStationEntry(stationRegistryRef.current, stationPeerId);
         if (next !== stationRegistryRef.current) void commitStationRegistry(next);
       }}
       onContinue={async () => {
-        const activeUrl = stationRegistryRef.current.activeUrl;
-        if (!activeUrl || stationChecking) return;
+        const selectedStation = activeStationEntry(stationRegistryRef.current);
+        if (!selectedStation || stationChecking) return;
 
         setStationChecking(true);
         setStationError(null);
         try {
-          const probe = await probeStation(activeUrl);
+          const probe = await probeStation(selectedStation.url);
           if (!probe.online) {
             setStationError(probe.error ?? t('mobile.launch.stationUnavailable'));
             return;
           }
-          const next = activateStationEntry(stationRegistryRef.current, activeUrl, {
+          const identity = await verifyStationIdentity(selectedStation.url);
+          requireMatchingStationIdentity(selectedStation, identity.stationPeerId);
+          const next = activateStationEntry(stationRegistryRef.current, selectedStation.stationPeerId, {
             checkedAt: probe.checkedAt,
             label: probe.label,
             online: probe.online,
           });
           await commitStationRegistry(next);
-          await startAccessGateChainFor(next.activeUrl, authSession?.stationUrl === next.activeUrl ? authSession : null);
+          const nextStation = activeStationEntry(next);
+          if (!nextStation) throw new Error('mobile.launch.stationIdentityInvalid');
+          await startAccessGateChainFor(
+            nextStation,
+            authSession?.stationPeerId === nextStation.stationPeerId ? authSession : null,
+          );
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
           setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));

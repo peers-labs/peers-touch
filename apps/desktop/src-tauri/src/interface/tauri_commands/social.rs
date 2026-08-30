@@ -28,11 +28,10 @@ use crate::contracts::{
     SocialCreateCommentInput, SocialCreateMomentInput, SocialDeleteCommentInput,
     SocialDeleteMomentInput, SocialFollowInput, SocialFriendRequestAcceptInput,
     SocialFriendRequestListInput, SocialFriendRequestRejectInput, SocialFriendRequestSendInput,
-    SocialGetCommentsInput, SocialGetFollowersInput, SocialGetFollowingInput,
-    SocialGetMomentInput, SocialGetRelationshipInput, SocialGetTimelineInput,
-    SocialListByAuthorInput, SocialReactInput, SocialStationModerationDeleteInput,
-    SocialStationModerationListInput, SocialStationModerationUpsertInput,
-    SocialSyncMomentsProjectionInput, SocialUnreactInput,
+    SocialGetCommentsInput, SocialGetFollowersInput, SocialGetFollowingInput, SocialGetMomentInput,
+    SocialGetRelationshipInput, SocialGetTimelineInput, SocialListByAuthorInput, SocialReactInput,
+    SocialStationModerationDeleteInput, SocialStationModerationListInput,
+    SocialStationModerationUpsertInput, SocialSyncMomentsProjectionInput, SocialUnreactInput,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -132,7 +131,7 @@ fn parse_circle_id(raw: &str) -> Result<u64, AppResult<Vec<u8>>> {
 /// them disabled until OSS / P3 land.
 ///
 /// Audience routing:
-///   - The proto `Audience { kind, target_id?, base_kind?, actor_dids[] }`
+///   - The proto `Audience { kind, target_id?, base_kind?, actor_ptids[] }`
 ///     is constructed on the TS side. The Rust shim is intentionally a
 ///     dumb forwarder so the audience contract isn't double-encoded.
 #[tauri::command]
@@ -396,8 +395,8 @@ pub fn social_list_by_author(
         Ok(t) => t,
         Err(e) => return e,
     };
-    if input.user_id.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "user_id is required", None);
+    if input.author_ptid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "author_ptid is required", None);
     }
     let mut query: Vec<(&str, String)> = Vec::new();
     if let Some(c) = input.cursor {
@@ -408,7 +407,7 @@ pub fn social_list_by_author(
     if let Some(l) = input.limit {
         query.push(("limit", l.to_string()));
     }
-    let path = format!("/api/v1/social/users/{}/posts", input.user_id);
+    let path = format!("/api/v1/social/users/{}/posts", input.author_ptid);
     let resp: model::social::ListPostsResponse = match get_proto(&path, &token, Some(&query)) {
         Ok(r) => r,
         Err(e) => return station_error_proto(e, "list by author failed"),
@@ -579,15 +578,15 @@ pub fn social_follow(
         Ok(t) => t,
         Err(e) => return e,
     };
-    if input.target_user_id.trim().is_empty() {
+    if input.target_actor_ptid.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "target_user_id is required",
+            "target_actor_ptid is required",
             None,
         );
     }
     let req = model::social::FollowRequest {
-        target_actor_id: input.target_user_id,
+        target_actor_ptid: input.target_actor_ptid,
     };
     let resp: model::social::FollowResponse =
         match post_proto("/api/v1/social/relationships/follow", &token, &req) {
@@ -599,7 +598,7 @@ pub fn social_follow(
 
 #[tauri::command]
 pub fn social_unfollow(
-    input: SocialFollowInput, // same shape — target_user_id only
+    input: SocialFollowInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Vec<u8>> {
@@ -607,15 +606,15 @@ pub fn social_unfollow(
         Ok(t) => t,
         Err(e) => return e,
     };
-    if input.target_user_id.trim().is_empty() {
+    if input.target_actor_ptid.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "target_user_id is required",
+            "target_actor_ptid is required",
             None,
         );
     }
     let req = model::social::UnfollowRequest {
-        target_actor_id: input.target_user_id,
+        target_actor_ptid: input.target_actor_ptid,
     };
     let resp: model::social::UnfollowResponse =
         match post_proto("/api/v1/social/relationships/unfollow", &token, &req) {
@@ -636,9 +635,9 @@ pub fn social_get_followers(
         Err(e) => return e,
     };
     let mut query: Vec<(&str, String)> = Vec::new();
-    if let Some(uid) = input.user_id {
-        if !uid.is_empty() {
-            query.push(("user_id", uid));
+    if let Some(actor_ptid) = input.actor_ptid {
+        if !actor_ptid.is_empty() {
+            query.push(("actor_ptid", actor_ptid));
         }
     }
     if let Some(c) = input.cursor {
@@ -671,9 +670,9 @@ pub fn social_get_following(
         Err(e) => return e,
     };
     let mut query: Vec<(&str, String)> = Vec::new();
-    if let Some(uid) = input.user_id {
-        if !uid.is_empty() {
-            query.push(("user_id", uid));
+    if let Some(actor_ptid) = input.actor_ptid {
+        if !actor_ptid.is_empty() {
+            query.push(("actor_ptid", actor_ptid));
         }
     }
     if let Some(c) = input.cursor {
@@ -705,14 +704,14 @@ pub fn social_get_relationship(
         Ok(t) => t,
         Err(e) => return e,
     };
-    if input.target_user_id.trim().is_empty() {
+    if input.target_actor_ptid.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "target_user_id is required",
+            "target_actor_ptid is required",
             None,
         );
     }
-    let query = vec![("target_user_id", input.target_user_id)];
+    let query = vec![("target_actor_ptid", input.target_actor_ptid)];
     let resp: model::social::GetRelationshipResponse =
         match get_proto("/api/v1/social/relationships", &token, Some(&query)) {
             Ok(r) => r,
@@ -741,7 +740,7 @@ pub fn social_circle_create(
     let req = model::social::CreateCircleRequest {
         name: input.name,
         description: input.description.unwrap_or_default(),
-        member_dids: input.member_dids.unwrap_or_default(),
+        member_ptids: input.member_ptids.unwrap_or_default(),
     };
     let resp: model::social::CreateCircleResponse =
         match post_proto("/api/v1/social/circles", &token, &req) {
@@ -839,8 +838,8 @@ pub fn social_circle_add_members(
     if input.circle_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "circle_id is required", None);
     }
-    if input.member_dids.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "member_dids is required", None);
+    if input.member_ptids.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "member_ptids is required", None);
     }
     let circle_id_num = match parse_circle_id(&input.circle_id) {
         Ok(v) => v,
@@ -848,7 +847,7 @@ pub fn social_circle_add_members(
     };
     let req = model::social::AddCircleMemberRequest {
         circle_id: circle_id_num,
-        member_dids: input.member_dids,
+        member_ptids: input.member_ptids,
     };
     let path = format!("/api/v1/social/circles/{}/members", input.circle_id);
     let resp: model::social::AddCircleMemberResponse = match post_proto(&path, &token, &req) {
@@ -871,8 +870,8 @@ pub fn social_circle_remove_members(
     if input.circle_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "circle_id is required", None);
     }
-    if input.member_dids.is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "member_dids is required", None);
+    if input.member_ptids.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "member_ptids is required", None);
     }
     let circle_id_num = match parse_circle_id(&input.circle_id) {
         Ok(v) => v,
@@ -880,7 +879,7 @@ pub fn social_circle_remove_members(
     };
     let req = model::social::RemoveCircleMemberRequest {
         circle_id: circle_id_num,
-        member_dids: input.member_dids,
+        member_ptids: input.member_ptids,
     };
     let path = format!("/api/v1/social/circles/{}/members", input.circle_id);
     let resp: model::social::RemoveCircleMemberResponse =
@@ -946,11 +945,15 @@ pub fn social_friend_request_send(
         Ok(t) => t,
         Err(e) => return e,
     };
-    if input.receiver_did.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "receiver_did is required", None);
+    if input.receiver_ptid.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "receiver_ptid is required",
+            None,
+        );
     }
     let req = model::chat::SendFriendRequestRequest {
-        receiver_did: input.receiver_did,
+        receiver_ptid: input.receiver_ptid,
         message: input.message.unwrap_or_default(),
     };
     let resp: model::chat::SendFriendRequestResponse =

@@ -20,6 +20,30 @@
       "require": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"]
     },
     {
+      "id": "chat-product-closure",
+      "features": ["chat-product-closure"],
+      "when": {
+        "paths": [
+          "model/domain/chat/conversation_api.proto",
+          "apps/station/app/subserver/conversation/**",
+          "apps/desktop/src-tauri/src/main.rs",
+          "apps/desktop/src-tauri/tauri.conf.json",
+          "apps/desktop/src-tauri/src/messaging/**",
+          "apps/desktop/src/services/im-service*",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/desktop/src/components/chat/**",
+          "tooling/acceptance/gates/chat/native_product_closure_runner.py",
+          "tooling/acceptance/gates/chat/native_product_closure_static_test.py"
+        ]
+      },
+      "require": [
+        "desktop-check",
+        "station-messaging-unit",
+        "chat-native-visible-static",
+        "chat-native-product-closure-e2e"
+      ]
+    },
+    {
       "id": "chat-direct-delivered-receipt",
       "features": ["chat-direct-delivered-receipt"],
       "when": {
@@ -38,8 +62,10 @@
           "apps/station/app/subserver/messaging/subserver.go",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
+          "tooling/acceptance/gates/chat/native_two_client_entry.py",
           "tooling/acceptance/gates/chat/native_two_client_runner.py",
-          "tooling/acceptance/gates/chat/native_two_client_e2e.py"
+          "tooling/acceptance/gates/chat/native_two_client_e2e.py",
+          "tooling/acceptance/gates/chat/native_two_client_e2e_test.py"
         ]
       },
       "require": [
@@ -164,7 +190,12 @@
       "when": {
         "paths": [
           "apps/desktop/src-tauri/src/interface/http_gateway/**",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/account.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
+          "apps/desktop/src-tauri/src/application/account/**",
           "apps/desktop/src-tauri/src/application/auth/service.rs",
+          "apps/desktop/src-tauri/src/domain/pin_lock/**",
+          "apps/desktop/src-tauri/src/infrastructure/auth_identity/**",
           "apps/desktop/src-tauri/src/messaging/**",
           "apps/desktop/src/services/desktop_api.ts",
           "apps/desktop/src/services/im-service.ts"
@@ -252,6 +283,164 @@
       ]
     },
     {
+      "id": "mobile-station-access",
+      "features": ["mobile-station-trust", "mobile-access-gate-oauth"],
+      "when": {
+        "paths": [
+          "model/domain/actor/**",
+          "model/domain/access_gate/**",
+          "model/domain/oauth/**",
+          "apps/mobile/src/features/station/**",
+          "apps/mobile/src/features/auth/**",
+          "apps/mobile/src-tauri/src/commands/station.rs"
+        ]
+      },
+      "require": [
+        "mobile-contract-static",
+        "mobile-identity-contract",
+        "mobile-native-access-e2e"
+      ]
+    },
+    {
+      "id": "mobile-access-gate-oauth-runtime",
+      "features": ["mobile-access-gate-oauth"],
+      "when": {
+        "paths": [
+          "apps/mobile/src/acceptance/**",
+          "apps/mobile/src/runtimes/authRuntime.ts",
+          "apps/mobile/src-tauri/src/runtime/oauth/**",
+          "apps/mobile/src-tauri/src/commands/oauth.rs",
+          "tooling/acceptance/gates/mobile/appium.py",
+          "tooling/acceptance/gates/mobile/native_e2e.py",
+          "tooling/acceptance/gates/mobile/native_e2e_test.py",
+          "tooling/acceptance/provisioners/mobile_native.py",
+          "tooling/acceptance/tests/test_mobile_native_preflight.py",
+          "tooling/acceptance/environments/mobile-native.yaml"
+        ]
+      },
+      "require": [
+        "mobile-contract-static",
+        "mobile-simulator-access-e2e",
+        "mobile-native-access-e2e"
+      ]
+    },
+    {
+      "id": "mobile-simulator-access-runtime",
+      "features": ["mobile-access-gate-oauth"],
+      "when": {
+        "paths": [
+          "tooling/acceptance/environments/mobile-simulator.yaml",
+          "tooling/acceptance/provisioners/mobile_simulator.py",
+          "tooling/acceptance/tests/test_mobile_simulator_provisioner.py"
+        ]
+      },
+      "require": [
+        "mobile-contract-static",
+        "mobile-simulator-access-e2e"
+      ]
+    },
+    {
+      "id": "mobile-runtime-lifecycle",
+      "features": ["mobile-session-lifecycle", "mobile-recovery-degraded-states"],
+      "when": {
+        "paths": [
+          "apps/mobile/src/App.tsx",
+          "apps/mobile/src/app/**",
+          "apps/mobile/src/components/MobileShell.tsx",
+          "apps/mobile/src/runtimes/runtimeRegistry.ts"
+        ]
+      },
+      "require": [
+        "mobile-contract-static",
+        "mobile-native-lifecycle-e2e",
+        "mobile-native-recovery-ui-e2e"
+      ]
+    },
+    {
+      "id": "mobile-command-recovery",
+      "features": ["mobile-command-draft-recovery", "mobile-recovery-degraded-states"],
+      "when": {
+        "paths": [
+          "apps/mobile/src/runtimes/commandRuntime.ts",
+          "apps/mobile/src-tauri/src/runtime/command_ledger/**",
+          "apps/mobile/src-tauri/src/runtime/draft_store/**",
+          "apps/mobile/src-tauri/src/messaging/adapter.rs"
+        ]
+      },
+      "require": [
+        "mobile-contract-static",
+        "mobile-native-recovery-e2e",
+        "mobile-native-recovery-ui-e2e"
+      ]
+    },
+    {
+      "id": "mobile-social-runtime",
+      "features": [
+        "mobile-chat-contacts-groups",
+        "mobile-moments-participation",
+        "mobile-profile-settings"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/social/**",
+          "apps/station/app/subserver/social/**",
+          "apps/mobile/src/features/social/**"
+        ]
+      },
+      "require": ["mobile-native-social-convergence-e2e"]
+    },
+    {
+      "id": "mobile-chat-contacts-groups",
+      "features": ["mobile-chat-contacts-groups"],
+      "when": {
+        "paths": [
+          "apps/mobile/src/features/group/**",
+          "apps/mobile/src/pages/ChatPage.tsx",
+          "apps/mobile/src/pages/ContactsPage.tsx"
+        ]
+      },
+      "require": [
+        "mobile-native-social-convergence-e2e",
+        "mobile-native-chat-contacts-e2e"
+      ]
+    },
+    {
+      "id": "mobile-moments",
+      "features": ["mobile-moments-participation"],
+      "when": {
+        "paths": ["apps/mobile/src/pages/MomentsPage.tsx"]
+      },
+      "require": [
+        "mobile-native-social-convergence-e2e",
+        "mobile-native-moments-e2e"
+      ]
+    },
+    {
+      "id": "mobile-profile-settings",
+      "features": ["mobile-profile-settings"],
+      "when": {
+        "paths": ["apps/mobile/src/pages/SettingsPage.tsx"]
+      },
+      "require": [
+        "mobile-native-social-convergence-e2e",
+        "mobile-native-settings-e2e"
+      ]
+    },
+    {
+      "id": "mobile-native-quality",
+      "features": ["mobile-native-accessibility-performance"],
+      "when": {
+        "paths": [
+          "apps/mobile/src-tauri/src/platform/**",
+          "apps/mobile/src-tauri/gen/apple/**",
+          "apps/mobile/src-tauri/gen/android/**",
+          "apps/mobile/src/styles.css",
+          "packages/locales/**"
+        ]
+      },
+      "require": ["mobile-native-platform-e2e", "mobile-hard-cut-static"]
+    },
+    {
       "id": "acceptance-framework",
       "features": ["acceptance-framework"],
       "when": {
@@ -266,7 +455,11 @@
           "Makefile"
         ]
       },
-      "require": ["acceptance-plan-self"]
+      "require": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-runtime-provisioning-self"
+      ]
     },
     {
       "id": "desktop-dev-runtime-isolation",

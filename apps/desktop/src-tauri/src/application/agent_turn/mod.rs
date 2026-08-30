@@ -251,7 +251,7 @@ fn collect_turn_text_via_stream(body: &Value, token: &str) -> Result<(String, St
 pub fn agent_execute_turn(
     mut input: AgentExecuteTurnInput,
     token: &str,
-    _actor_id: &str,
+    _actor_ptid: &str,
 ) -> AppResult<StubPayload> {
     if let Err(error) = apply_resolved_agent_workspace(&mut input) {
         return AppResult::fail(ErrorCode::InternalError, error, None);
@@ -429,7 +429,7 @@ pub fn agent_execute_turn_stream(
     stream_id: String,
     mut input: AgentExecuteTurnInput,
     token: String,
-    _actor_id: String,
+    _actor_ptid: String,
     cancel_flag: Arc<AtomicBool>,
 ) {
     let provider = input.provider.as_deref().unwrap_or("").trim().to_string();

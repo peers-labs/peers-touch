@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, toast } from '@lobehub/ui';
@@ -29,8 +34,16 @@ import {
   X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl } from '../../store/socialChat';
+import {
+  projectGroupAvatarSlots,
+  resolveActorIdentity,
+} from '../../store/socialProfileProjection';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
-import { CHAT_BACKGROUND_OPTIONS, type DesktopIMMessageProjection } from '../../store/socialProjection';
+import {
+  CHAT_BACKGROUND_OPTIONS,
+  projectDesktopIMMessages,
+  type DesktopIMMessageProjection,
+} from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';
@@ -42,6 +55,7 @@ import {
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useMessagingAttachmentUrl } from './AttachmentItem';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
+import { SquareAvatar } from '../common/SquareAvatar';
 import { getGroupMemberControlState } from './chatGroupPermissions';
 import { presentError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
@@ -124,6 +138,8 @@ function MemberAvatar({ member, size = 32 }: { member: GroupMemberDisplay; size?
   const { token } = theme.useToken();
   return (
     <Flexbox
+      data-chat-avatar-ptid={member.ptid}
+      data-chat-avatar-src={member.avatar || ''}
       align="center"
       justify="center"
       style={{
@@ -138,15 +154,15 @@ function MemberAvatar({ member, size = 32 }: { member: GroupMemberDisplay; size?
         overflow: 'hidden',
       }}
     >
-      {member.avatar ? (
-        <img
-          src={member.avatar}
-          alt={member.displayName}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-        />
-      ) : (
-        getInitial(member.displayName)
-      )}
+      <SquareAvatar
+        remoteUrl={member.avatar}
+        name={member.displayName}
+        size={size}
+        radius={Math.round(size * 0.32)}
+        style={{ display: 'block' }}
+      >
+        {getInitial(member.displayName)}
+      </SquareAvatar>
     </Flexbox>
   );
 }
@@ -247,11 +263,27 @@ function DetailSection({ title, children, gap = 8 }: { title?: string; children:
   );
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({
+  action,
+  checked,
+  disabled = false,
+  onChange,
+}: {
+  action: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+}) {
   const { token } = theme.useToken();
   return (
     <button
+      data-chat-conversation-action={action}
+      data-chat-conversation-action-state={checked ? 'on' : 'off'}
       type="button"
+      disabled={disabled}
+      aria-busy={disabled}
+      aria-checked={checked}
+      role="switch"
       onClick={() => onChange(!checked)}
       style={{
         appearance: 'none',
@@ -260,7 +292,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
         borderRadius: 10,
         border: 'none',
         padding: 2,
-        cursor: 'pointer',
+        cursor: disabled ? 'wait' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
         background: checked ? token.colorPrimary : token.colorFillSecondary,
         transition: 'background 0.2s',
         flexShrink: 0,
@@ -286,21 +319,29 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [previewFailed, setPreviewFailed] = useState(false);
-  const { src: openUrl, resolve } = useMessagingAttachmentUrl(
+  const { src: openUrl, openState, resolve } = useMessagingAttachmentUrl(
     item.attachment,
     item.kind === 'media',
   );
   const previewUrl = openUrl;
   const filename = item.attachment.filename?.trim() || t('chat.social.detail.unnamedAttachment');
   const sizeLabel = formatChatAttachmentSize(item.attachment.size);
-  const canOpen = Boolean(
+  const hasAttachmentIdentity = Boolean(
     (item.attachment as DetailAttachment & { attachmentId?: string }).attachmentId
       || item.attachment.cid?.startsWith('messaging:'),
   );
+  const canOpen = hasAttachmentIdentity && openState !== 'pending';
   const isMedia = item.kind === 'media';
-  const tooltip = canOpen
-    ? t('chat.social.detail.openAttachment')
-    : t('chat.social.detail.attachmentUnavailable');
+  const openStateLabel = openState === 'pending'
+    ? t('chat.social.messageArea.attachmentStateDownloading')
+    : openState === 'error'
+      ? t('chat.social.messageArea.attachmentDownloadFailed')
+      : '';
+  const tooltip = openStateLabel || (
+    hasAttachmentIdentity
+      ? t('chat.social.detail.openAttachment')
+      : t('chat.social.detail.attachmentUnavailable')
+  );
   const Icon = item.isImage ? ImageIcon : item.isVideo ? Film : FileText;
 
   useEffect(() => {
@@ -311,6 +352,7 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
   }, [previewUrl, item.attachment.cid]);
 
   const handleOpen = async () => {
+    if (openState === 'pending') return;
     const resolved = openUrl ?? await resolve();
     if (resolved) window.open(resolved, '_blank');
   };
@@ -320,6 +362,10 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
       <Tooltip title={tooltip}>
         <span style={{ display: 'inline-flex' }}>
           <button
+            data-chat-detail-attachment={item.id}
+            data-chat-detail-attachment-kind={item.kind}
+            data-chat-detail-attachment-open-state={openState}
+            aria-busy={openState === 'pending'}
             type="button"
             disabled={!canOpen}
             onClick={handleOpen}
@@ -364,6 +410,11 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
               <Text ellipsis style={{ fontSize: 11, fontWeight: 600, maxWidth: '100%' }}>
                 {filename}
               </Text>
+              {openStateLabel ? (
+                <Text type={openState === 'error' ? 'danger' : 'secondary'} ellipsis style={{ fontSize: 10 }}>
+                  {openStateLabel}
+                </Text>
+              ) : null}
               <Flexbox horizontal align="center" justify="space-between" gap={4}>
                 <Text type="secondary" ellipsis style={{ fontSize: 10, minWidth: 0 }}>
                   {sizeLabel || t('chat.social.detail.mediaAttachment')}
@@ -381,6 +432,10 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
     <Tooltip title={tooltip}>
       <span style={{ display: 'block', width: '100%' }}>
         <button
+          data-chat-detail-attachment={item.id}
+          data-chat-detail-attachment-kind={item.kind}
+          data-chat-detail-attachment-open-state={openState}
+          aria-busy={openState === 'pending'}
           type="button"
           disabled={!canOpen}
           onClick={handleOpen}
@@ -417,7 +472,7 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
                 {filename}
               </Text>
               <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-                {sizeLabel || t('chat.social.detail.fileAttachment')}
+                {openStateLabel || sizeLabel || t('chat.social.detail.fileAttachment')}
               </Text>
             </Flexbox>
             {canOpen ? <ExternalLink size={13} style={{ color: token.colorTextTertiary, flexShrink: 0 }} /> : null}
@@ -429,11 +484,13 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
 }
 
 function DetailAttachmentSection({
+  kind,
   title,
   emptyLabel,
   items,
   limit,
 }: {
+  kind: 'media' | 'files';
   title: string;
   emptyLabel: string;
   items: DetailAttachmentItem[];
@@ -446,7 +503,11 @@ function DetailAttachmentSection({
   const isFileSection = visibleItems[0]?.kind === 'file';
 
   return (
-    <Flexbox gap={8}>
+    <Flexbox
+      data-chat-detail-attachments={kind}
+      data-chat-detail-attachment-count={items.length}
+      gap={8}
+    >
       <Flexbox horizontal align="center" justify="space-between">
         <Text strong style={{ fontSize: 13 }}>{title}</Text>
         {hiddenCount > 0 ? (
@@ -488,58 +549,33 @@ function DetailAttachmentSection({
   );
 }
 
-function getFriendPeerDid(session: FriendChatSession | undefined, currentUserDid: string | null): string {
+function getFriendPeerDid(session: FriendChatSession | undefined, currentUserPtid: string | null): string {
   if (!session) return '';
-  if (currentUserDid) {
-    if (session.participantADid === currentUserDid) return session.participantBDid || '';
-    if (session.participantBDid === currentUserDid) return session.participantADid || '';
+  if (currentUserPtid) {
+    if (session.participantAPtid === currentUserPtid) return session.participantBPtid || '';
+    if (session.participantBPtid === currentUserPtid) return session.participantAPtid || '';
   }
-  return session.participantBDid || session.participantADid || '';
+  return session.participantBPtid || session.participantAPtid || '';
 }
 
-function getFriendPeerName(session: FriendChatSession | undefined, currentUserDid: string | null): string {
+function getFriendPeerName(session: FriendChatSession | undefined, currentUserPtid: string | null): string {
   if (!session) return '';
-  if (currentUserDid) {
-    if (session.participantADid === currentUserDid)
-      return session.participantBDisplayName || session.participantBDid || '';
-    if (session.participantBDid === currentUserDid)
-      return session.participantADisplayName || session.participantADid || '';
+  if (currentUserPtid) {
+    if (session.participantAPtid === currentUserPtid)
+      return session.participantBDisplayName || session.participantBPtid || '';
+    if (session.participantBPtid === currentUserPtid)
+      return session.participantADisplayName || session.participantAPtid || '';
   }
-  return session.participantBDisplayName || session.participantBDid || '';
+  return session.participantBDisplayName || session.participantBPtid || '';
 }
 
-function getFriendPeerAvatar(session: FriendChatSession | undefined, currentUserDid: string | null): string {
+function getFriendPeerAvatar(session: FriendChatSession | undefined, currentUserPtid: string | null): string {
   if (!session) return '';
-  if (currentUserDid) {
-    if (session.participantADid === currentUserDid) return session.participantBAvatar || '';
-    if (session.participantBDid === currentUserDid) return session.participantAAvatar || '';
+  if (currentUserPtid) {
+    if (session.participantAPtid === currentUserPtid) return session.participantBAvatar || '';
+    if (session.participantBPtid === currentUserPtid) return session.participantAAvatar || '';
   }
   return session.participantBAvatar || session.participantAAvatar || '';
-}
-
-function getFriendPeerDisplayProfile(
-  session: FriendChatSession,
-  currentUserDid: string | null,
-): { did: string; name: string; avatar: string } | null {
-  if (currentUserDid && session.participantADid === currentUserDid) {
-    return {
-      did: session.participantBDid || '',
-      name: session.participantBDisplayName?.trim() || '',
-      avatar: session.participantBAvatar || '',
-    };
-  }
-  if (currentUserDid && session.participantBDid === currentUserDid) {
-    return {
-      did: session.participantADid || '',
-      name: session.participantADisplayName?.trim() || '',
-      avatar: session.participantAAvatar || '',
-    };
-  }
-  return {
-    did: session.participantBDid || session.participantADid || '',
-    name: session.participantBDisplayName?.trim() || session.participantADisplayName?.trim() || '',
-    avatar: session.participantBAvatar || session.participantAAvatar || '',
-  };
 }
 
 export function ChatDetailPanel() {
@@ -548,14 +584,13 @@ export function ChatDetailPanel() {
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, groupMembers,
-    setShowDetail, loadSessions, loadGroupMembers, loadGroups, loadMessages,
+    setShowDetail, loadSessions, loadGroups, loadMessages,
     loadConversationPreviews, selectGroup,
     conversationLocalState, updateConversationLocalState,
-    getIMConversations,
-    getIMMessages,
+    getIMConversations, messages,
     encryptionEnabled,
     ownFingerprint,
-    currentUserDid,
+    currentUserPtid,
     currentUserProfile,
     peerOnline,
     peerProfiles,
@@ -570,7 +605,6 @@ export function ChatDetailPanel() {
     groupMembers: s.groupMembers,
     setShowDetail: s.setShowDetail,
     loadSessions: s.loadSessions,
-    loadGroupMembers: s.loadGroupMembers,
     loadGroups: s.loadGroups,
     loadMessages: s.loadMessages,
     loadConversationPreviews: s.loadConversationPreviews,
@@ -578,10 +612,10 @@ export function ChatDetailPanel() {
     conversationLocalState: s.conversationLocalState,
     updateConversationLocalState: s.updateConversationLocalState,
     getIMConversations: s.getIMConversations,
-    getIMMessages: s.getIMMessages,
+    messages: s.messages,
     encryptionEnabled: s.encryptionEnabled,
     ownFingerprint: s.ownFingerprint,
-    currentUserDid: s.currentUserDid,
+    currentUserPtid: s.currentUserPtid,
     currentUserProfile: s.currentUserProfile,
     peerOnline: s.peerOnline,
     peerProfiles: s.peerProfiles,
@@ -602,6 +636,7 @@ export function ChatDetailPanel() {
     : undefined;
   const groupAvatarUrl = groupAvatarRemoteUrl(activeGroup)
     || (activeConversation?.avatar || '');
+  const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
 
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [showAllMembers, setShowAllMembers] = useState(false);
@@ -614,62 +649,74 @@ export function ChatDetailPanel() {
   const [editingMyNickname, setEditingMyNickname] = useState(false);
   const [editMyNicknameValue, setEditMyNicknameValue] = useState('');
   const [historyActionPending, setHistoryActionPending] = useState(false);
+  const [conversationActionPending, setConversationActionPending] = useState<string | null>(null);
+  const [backgroundRetryPath, setBackgroundRetryPath] = useState<string | null>(null);
   const [historyNow, setHistoryNow] = useState(Date.now());
 
-  const peerDid = !isGroup
-    ? activeConversation?.peerDid || getFriendPeerDid(activeFriendSession, currentUserDid)
+  const peerPtid = !isGroup
+    ? activeConversation?.peerPtid || getFriendPeerDid(activeFriendSession, currentUserPtid)
     : '';
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
-  const myGroupMember = currentUserDid ? members.find((member) => member.ptid === currentUserDid) : undefined;
+  const myGroupMember = currentUserPtid ? members.find((member) => member.ptid === currentUserPtid) : undefined;
   const myGroupNickname = myGroupMember?.nickname?.trim() || '';
-  const memberProfiles = useMemo(() => {
-    const profiles = new Map<string, { name: string; avatar: string }>();
-    if (currentUserDid) {
-      profiles.set(currentUserDid, {
-        name: currentUserProfile?.displayName?.trim() || currentUserProfile?.username?.trim() || '',
-        avatar: currentUserProfile?.avatar || '',
-      });
-    }
-    sessions.forEach((session) => {
-      const peerProfile = getFriendPeerDisplayProfile(session, currentUserDid);
-      if (peerProfile?.did && peerProfile.name) {
-        profiles.set(peerProfile.did, { name: peerProfile.name, avatar: peerProfile.avatar });
-      }
-    });
-    for (const [did, profile] of Object.entries(peerProfiles)) {
-      if (profile && !profiles.has(did)) {
-        profiles.set(did, {
-          name: profile.display_name?.trim() || profile.username?.trim() || '',
-          avatar: profile.avatar || '',
-        });
-      }
-    }
-    return profiles;
-  }, [currentUserDid, currentUserProfile, sessions, peerProfiles]);
-  const displayMembers: GroupMemberDisplay[] = useMemo(() => {
-    const sourceMembers: GroupMemberLike[] = members.length > 0
+  const sourceMembers: GroupMemberLike[] = useMemo(
+    () => members.length > 0
       ? members
-      : activeGroup?.ownerDid
+      : activeGroup?.ownerPtid
         ? [{
-            ptid: activeGroup.ownerDid,
+            ptid: activeGroup.ownerPtid,
             nickname: '',
             role: GroupRole.OWNER,
             muted: false,
           }]
-        : [];
+        : [],
+    [activeGroup?.ownerPtid, members],
+  );
+  const displayMembers: GroupMemberDisplay[] = useMemo(() => {
     return sourceMembers.map((member) => {
-      const nickname = member.nickname?.trim() || '';
-      const profile = memberProfiles.get(member.ptid);
-      const profileName = profile?.name?.trim() || '';
-      const displayName = nickname || profileName || t('chat.social.detail.unknownMember');
+      const profile = resolveActorIdentity({
+        ptid: member.ptid,
+        currentUserPtid,
+        currentUserProfile,
+        peerProfiles,
+        sessions,
+        nickname: member.nickname,
+        fallbackName: t('chat.social.detail.unknownMember'),
+      });
+      const stationName = peerProfiles[member.ptid]?.display_name?.trim()
+        || peerProfiles[member.ptid]?.username?.trim()
+        || '';
       return {
         ...member,
-        displayName,
-        subtitle: nickname && profileName && nickname !== profileName ? profileName : undefined,
-        avatar: profile?.avatar || '',
+        displayName: profile.displayName,
+        subtitle: member.nickname?.trim() && stationName && member.nickname.trim() !== stationName
+          ? stationName
+          : undefined,
+        avatar: profile.avatarUrl,
       };
     });
-  }, [activeGroup?.ownerDid, memberProfiles, members, t]);
+  }, [
+    currentUserPtid,
+    currentUserProfile,
+    peerProfiles,
+    sessions,
+    sourceMembers,
+    t,
+  ]);
+  const groupAvatarMembers = useMemo(
+    () => projectGroupAvatarSlots(
+      sourceMembers,
+      (ptid, nickname) => resolveActorIdentity({
+        ptid,
+        currentUserPtid,
+        currentUserProfile,
+        peerProfiles,
+        sessions,
+        nickname,
+      }),
+    ),
+    [currentUserPtid, currentUserProfile, peerProfiles, sessions, sourceMembers],
+  );
   const memberDisplayByDid = useMemo(
     () => new Map(displayMembers.map((member) => [member.ptid, member])),
     [displayMembers],
@@ -678,22 +725,22 @@ export function ChatDetailPanel() {
     memberDisplayByDid.get(member.ptid)?.displayName
     || member.nickname?.trim()
     || t('chat.social.detail.unknownMember');
-  const memberDidSet = useMemo(() => new Set(members.map((member) => member.ptid)), [members]);
+  const memberPtidSet = useMemo(() => new Set(members.map((member) => member.ptid)), [members]);
   const inviteCandidates = useMemo(
     () => sessions
       .map((session) => ({
-        did: getFriendPeerDid(session, currentUserDid),
-        name: getFriendPeerName(session, currentUserDid),
+        did: getFriendPeerDid(session, currentUserPtid),
+        name: getFriendPeerName(session, currentUserPtid),
       }))
       .filter((candidate): candidate is { did: string; name: string } =>
-        Boolean(candidate.did && !memberDidSet.has(candidate.did)),
+        Boolean(candidate.did && !memberPtidSet.has(candidate.did)),
       ),
-    [currentUserDid, memberDidSet, sessions],
+    [currentUserPtid, memberPtidSet, sessions],
   );
   const groupMemberCount = isGroup ? (activeConversation?.memberCount || activeGroup?.memberCount || members.length) : 0;
-  const myGroupRole = activeGroup?.ownerDid === currentUserDid ? GroupRole.OWNER : Number(myGroupMember?.role ?? 0);
+  const myGroupRole = activeGroup?.ownerPtid === currentUserPtid ? GroupRole.OWNER : Number(myGroupMember?.role ?? 0);
   const canManageGroupMembers = Boolean(
-    activeGroup?.ownerDid === currentUserDid ||
+    activeGroup?.ownerPtid === currentUserPtid ||
     myGroupRole >= GroupRole.ADMIN,
   );
   const isGroupOwner = isGroup && myGroupRole === GroupRole.OWNER;
@@ -710,14 +757,21 @@ export function ChatDetailPanel() {
       : t('chat.social.detail.permissionMemberBody');
   const currentName = isGroup
     ? (activeConversation?.title || activeGroup?.name || t('chat.social.sessionList.unnamedGroup'))
-    : activeConversation?.title || getFriendPeerName(activeFriendSession, currentUserDid);
+    : activeConversation?.title || getFriendPeerName(activeFriendSession, currentUserPtid);
   const displayName = currentName || t('chat.social.sessionList.unknown');
-  const peerAvatar = activeConversation?.avatar || getFriendPeerAvatar(activeFriendSession, currentUserDid);
-  const peerPresenceKnown = peerDid ? peerDid in peerOnline : false;
-  const peerIsOnline = peerDid in peerOnline ? peerOnline[peerDid] : null;
+  const peerAvatar = activeConversation?.avatar || getFriendPeerAvatar(activeFriendSession, currentUserPtid);
+  const peerPresenceKnown = peerPtid ? peerPtid in peerOnline : false;
+  const peerIsOnline = peerPtid in peerOnline ? peerOnline[peerPtid] : null;
   const localStateKey = activeUlid ? `${activeTab}:${activeUlid}` : '';
   const activeLocalState = localStateKey ? conversationLocalState[localStateKey] : undefined;
-  const activeMessages = activeUlid ? getIMMessages(activeTab, activeUlid) : [];
+  const activeMessages = useMemo(
+    () => (
+      activeUlid
+        ? projectDesktopIMMessages(activeTab, activeUlid, messages[activeUlid] ?? [])
+        : []
+    ),
+    [activeTab, activeUlid, messages],
+  );
   const clearHistoryClearedAt = Number(activeLocalState?.clearedAt || 0);
   const clearHistoryExpiresAt = clearHistoryClearedAt > 0
     ? clearHistoryClearedAt + HISTORY_RESTORE_WINDOW_MS
@@ -741,9 +795,30 @@ export function ChatDetailPanel() {
     return () => window.clearInterval(timer);
   }, [clearHistoryClearedAt, clearHistoryExpiresAt, historyNow]);
 
-  const updateActiveLocalState = (patch: Parameters<typeof updateConversationLocalState>[2]) => {
-    if (!activeUlid) return;
-    void updateConversationLocalState(activeTab, activeUlid, patch).catch(() => undefined);
+  const runConversationAction = async (
+    action: string,
+    patch: Parameters<typeof updateConversationLocalState>[2],
+  ): Promise<boolean> => {
+    if (!activeUlid || conversationActionPending) return false;
+    setConversationActionPending(action);
+    try {
+      await updateConversationLocalState(activeTab, activeUlid, patch);
+      return true;
+    } catch (error) {
+      log.error('chat', 'conversation action failed', {
+        action,
+        kind: activeTab,
+        ulid: activeUlid,
+        error,
+      });
+      presentError(error, {
+        mapper: mapChatError,
+        context: { operation: 'conversationAction' },
+      });
+      return false;
+    } finally {
+      setConversationActionPending(null);
+    }
   };
 
   const applyHistoryClearedAt = async (clearedAt: number) => {
@@ -793,7 +868,7 @@ export function ChatDetailPanel() {
     const nextNickname = editMyNicknameValue.trim();
     try {
       await api.groupChatUpdateNickname(activeUlid, nextNickname);
-      await loadGroupMembers(activeUlid);
+      await loadGroups();
       toast.success(t('chat.social.detail.myNicknameUpdated'));
     } catch (error) {
       log.error('chat', 'update group nickname failed', { groupUlid: activeUlid, error });
@@ -827,27 +902,42 @@ export function ChatDetailPanel() {
     }
   };
 
-  const handleUploadBackgroundImage = async () => {
+  const handleUploadBackgroundImage = async (filePath: string) => {
     if (!activeUlid) return;
+    if (conversationActionPending) return;
+    setBackgroundRetryPath(filePath);
+    setConversationActionPending('background-image');
+    try {
+      const uploaded = await api.ossUploadLocalFile({
+        file_path: filePath,
+        bucket: 'personal',
+        visibility: 'private',
+        chat_session_id: null,
+      });
+      await updateConversationLocalState(activeTab, activeUlid, { backgroundImage: uploaded.cid });
+      setBackgroundRetryPath(null);
+      toast.success(t('chat.social.detail.backgroundImageUpdated'));
+    } catch (error) {
+      log.error('chat', 'update chat background image failed', { kind: activeTab, ulid: activeUlid, error });
+      presentError(error, {
+        mapper: mapChatError,
+        context: { operation: 'conversationAction' },
+      });
+    } finally {
+      setConversationActionPending(null);
+    }
+  };
+
+  const handleSelectBackgroundImage = async () => {
+    if (conversationActionPending) return;
     let filePath: string;
     try {
       filePath = await api.pickImageFile();
     } catch {
       return;
     }
-    try {
-      const uploaded = await api.ossUploadLocalFile({
-        file_path: filePath,
-        bucket: 'chat-backgrounds',
-        visibility: 'private',
-        chat_session_id: null,
-      });
-      await updateConversationLocalState(activeTab, activeUlid, { backgroundImage: uploaded.cid });
-      toast.success(t('chat.social.detail.backgroundImageUpdated'));
-    } catch (error) {
-      log.error('chat', 'update chat background image failed', { kind: activeTab, ulid: activeUlid, error });
-      toast.error(t('chat.social.detail.backgroundImageUpdateFailed'));
-    }
+    Modal.destroyAll();
+    await handleUploadBackgroundImage(filePath);
   };
 
   const confirmClearHistory = () => {
@@ -938,7 +1028,7 @@ export function ChatDetailPanel() {
     if (!activeUlid || !member.ptid) return;
     try {
       await api.groupChatUpdateMember(activeUlid, member.ptid, input);
-      await loadGroupMembers(activeUlid);
+      await loadGroups();
       toast.success(t('chat.social.detail.updateMemberSuccess'));
     } catch (error) {
       log.error('chat', 'update group member failed', { groupUlid: activeUlid, ptid: member.ptid, input, error });
@@ -976,10 +1066,10 @@ export function ChatDetailPanel() {
       onOk: async () => {
         try {
           await api.groupChatTransferOwnership(activeUlid, member.ptid);
-          await Promise.allSettled([loadGroupMembers(activeUlid), loadGroups()]);
+          await loadGroups();
           toast.success(t('chat.social.detail.transferOwnerSuccess'));
         } catch (error) {
-          log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerDid: member.ptid, error });
+          log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerPtid: member.ptid, error });
           toast.error(t('chat.social.detail.transferOwnerFailed'));
           throw error;
         }
@@ -1002,14 +1092,14 @@ export function ChatDetailPanel() {
             api.federationGetSelf(),
             api.accountGetDeviceId(),
           ]);
-          if (!currentUserDid) throw new Error('No authenticated actor');
+          if (!currentUserPtid) throw new Error('No authenticated actor');
           await imServiceV1.mlsGroup.requestLeaveIntent({
             federationId: conversation.federationId,
             authorityStationPeerId: conversation.authorityStationPeerId,
             authorityEpoch: Number(conversation.authorityEpoch),
             homeStationPeerId: federationSelf.homeStationPeerId,
             conversationId: activeUlid,
-            actorPtid: currentUserDid,
+            actorPtid: currentUserPtid,
             actorDeviceId: device.device_id,
             observedMembershipEpoch: Number(conversation.membershipEpoch),
             observedMlsEpoch: Number(conversation.mlsEpoch),
@@ -1058,35 +1148,57 @@ export function ChatDetailPanel() {
         <Flexbox gap={12}>
           <Text type="secondary">{t('chat.social.detail.backgroundDesc')}</Text>
           <Select
+            data-chat-background-select
             value={activeLocalState?.background || 'default'}
             options={CHAT_BACKGROUND_OPTIONS.map((value) => ({
               value,
               label: t(`chat.social.background.${value}`),
             }))}
             onChange={(value) => {
-              updateActiveLocalState({ background: value });
-              Modal.destroyAll();
+              void runConversationAction('background', { background: value }).then((updated) => {
+                if (updated) Modal.destroyAll();
+              });
             }}
+            disabled={Boolean(conversationActionPending)}
             style={{ width: '100%' }}
           />
           <Button
+            data-chat-background-upload
             block
             icon={<ImageIcon size={14} />}
+            loading={conversationActionPending === 'background-image'}
             onClick={() => {
-              Modal.destroyAll();
-              void handleUploadBackgroundImage();
+              void handleSelectBackgroundImage();
             }}
           >
             {t('chat.social.detail.uploadBackgroundImage')}
           </Button>
+          {backgroundRetryPath ? (
+            <Button
+              data-chat-background-retry
+              block
+              loading={conversationActionPending === 'background-image'}
+              onClick={() => {
+                Modal.destroyAll();
+                void handleUploadBackgroundImage(backgroundRetryPath);
+              }}
+            >
+              {t('chat.social.detail.retryBackgroundImage')}
+            </Button>
+          ) : null}
           {activeLocalState?.backgroundImage ? (
             <Button
+              data-chat-background-clear
               block
               type="text"
               danger
+              loading={conversationActionPending === 'background-image-clear'}
               onClick={() => {
-                updateActiveLocalState({ backgroundImage: '' });
-                Modal.destroyAll();
+                void runConversationAction('background-image-clear', {
+                  backgroundImage: '',
+                }).then((updated) => {
+                  if (updated) Modal.destroyAll();
+                });
               }}
             >
               {t('chat.social.detail.clearBackgroundImage')}
@@ -1100,30 +1212,35 @@ export function ChatDetailPanel() {
   };
 
   useEffect(() => {
-    if (isGroup && activeUlid) {
-      loadGroupMembers(activeUlid);
-    }
-  }, [isGroup, activeUlid, loadGroupMembers]);
-
-  useEffect(() => {
     setShowAllMembers(false);
     setMemberManagerOpen(false);
     setInviteModalOpen(false);
     setInviteDids([]);
     setEditingName(false);
+    setConversationActionPending(null);
+    setBackgroundRetryPath(null);
     setEditingMyNickname(false);
   }, [activeUlid]);
 
   useEffect(() => {
-    if (!isGroup && peerDid) {
-      void loadPeerProfile(peerDid);
+    if (!isGroup && peerPtid) {
+      void loadPeerProfile(peerPtid);
     }
-  }, [isGroup, peerDid, loadPeerProfile]);
+  }, [isGroup, peerPtid, loadPeerProfile]);
 
-  const cachedPeerProfile = !isGroup && peerDid ? peerProfiles[peerDid] : undefined;
+  const cachedPeerProfile = !isGroup && peerPtid ? peerProfiles[peerPtid] : undefined;
 
   return (
     <Flexbox
+      data-chat-detail-panel="open"
+      data-chat-detail-conversation={activeUlid}
+      data-chat-detail-muted={activeLocalState?.muted ? 'true' : 'false'}
+      data-chat-detail-pinned={activeLocalState?.sticky ? 'true' : 'false'}
+      data-chat-detail-background={activeLocalState?.background || 'default'}
+      data-chat-detail-background-image={activeLocalState?.backgroundImage || ''}
+      data-chat-detail-cleared-at={String(activeLocalState?.clearedAt || 0)}
+      data-chat-detail-action-pending={conversationActionPending || ''}
+      data-chat-detail-background-retry={backgroundRetryPath ? 'true' : 'false'}
       style={{
         width: 320,
         maxWidth: '100%',
@@ -1185,10 +1302,7 @@ export function ChatDetailPanel() {
               >
                 <GroupSquareAvatar
                   remoteUrl={groupAvatarUrl || undefined}
-                  members={members.slice(0, 4).map((m) => {
-                    const p = memberProfiles.get(m.ptid);
-                    return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
-                  })}
+                  members={groupAvatarMembers}
                   name={displayName}
                   size={72}
                   radius={18}
@@ -1264,7 +1378,7 @@ export function ChatDetailPanel() {
                 isGroup,
                 displayName,
                 peerAvatar,
-                peerDid,
+                peerPtid,
                 activeGroup,
                 groupMemberCount,
                 peerPresenceKnown,
@@ -1276,6 +1390,26 @@ export function ChatDetailPanel() {
             />
           </Flexbox>
         )}
+
+        <Flexbox
+          data-chat-station="authority"
+          data-chat-station-id={authorityStationId}
+          data-chat-station-state={authorityStationId ? 'available' : 'unavailable'}
+          horizontal
+          align="center"
+          justify="center"
+          style={{ padding: '0 16px 10px', minWidth: 0 }}
+        >
+          <Text
+            type="secondary"
+            ellipsis={authorityStationId ? { tooltip: authorityStationId } : false}
+            style={{ maxWidth: '100%', fontSize: 11 }}
+          >
+            {authorityStationId
+              ? t('chat.social.detail.authorityStation', { station: authorityStationId })
+              : t('chat.social.detail.authorityStationUnavailable')}
+          </Text>
+        </Flexbox>
 
         {isGroup ? (
           <DetailSection title={t('chat.social.detail.permissionLabel')} gap={10}>
@@ -1404,8 +1538,12 @@ export function ChatDetailPanel() {
               <Text style={{ fontSize: 13 }}>{t('chat.social.detail.muteNotifications')}</Text>
             </Flexbox>
             <Toggle
+              action="mute"
               checked={Boolean(activeLocalState?.muted)}
-              onChange={(v) => updateActiveLocalState({ muted: v })}
+              disabled={conversationActionPending === 'mute'}
+              onChange={(v) => {
+                void runConversationAction('mute', { muted: v });
+              }}
             />
           </Flexbox>
           <Flexbox horizontal align="center" justify="space-between">
@@ -1414,15 +1552,20 @@ export function ChatDetailPanel() {
               <Text style={{ fontSize: 13 }}>{t('chat.social.detail.pinConversation')}</Text>
             </Flexbox>
             <Toggle
+              action="pin"
               checked={Boolean(activeLocalState?.sticky)}
-              onChange={(v) => updateActiveLocalState({ sticky: v })}
+              disabled={conversationActionPending === 'pin'}
+              onChange={(v) => {
+                void runConversationAction('pin', { sticky: v });
+              }}
             />
           </Flexbox>
           <Flexbox
+            data-chat-conversation-action="background"
             horizontal
             align="center"
             justify="space-between"
-            style={{ cursor: 'pointer' }}
+            style={{ cursor: conversationActionPending ? 'wait' : 'pointer' }}
             onClick={openBackgroundModal}
           >
             <Flexbox horizontal align="center" gap={8}>
@@ -1449,12 +1592,14 @@ export function ChatDetailPanel() {
         {/* Shared Content section */}
         <DetailSection title={t('chat.social.detail.sharedContent')}>
           <DetailAttachmentSection
+            kind="media"
             title={t('chat.social.detail.mediaWithCount', { count: mediaAttachments.length })}
             emptyLabel={t('chat.social.detail.mediaEmpty')}
             items={mediaAttachments}
             limit={RECENT_MEDIA_LIMIT}
           />
           <DetailAttachmentSection
+            kind="files"
             title={t('chat.social.detail.filesWithCount', { count: fileAttachments.length })}
             emptyLabel={t('chat.social.detail.filesEmpty')}
             items={fileAttachments}
@@ -1473,7 +1618,7 @@ export function ChatDetailPanel() {
             <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all' }}>
               {ownFingerprint || '—'}
             </Text>
-            {!isGroup && peerDid ? (
+            {!isGroup && peerPtid ? (
               <Button
                 type={verifyOpen ? 'default' : 'primary'}
                 ghost={!verifyOpen}
@@ -1487,11 +1632,11 @@ export function ChatDetailPanel() {
                   : t('chat.social.verify.show')}
               </Button>
             ) : null}
-            {!isGroup && peerDid && verifyOpen && currentUserDid ? (
+            {!isGroup && peerPtid && verifyOpen && currentUserPtid ? (
               <SafetyVerificationPanel
-                localActorDid={currentUserDid}
+                localActorPtid={currentUserPtid}
                 localFingerprint={ownFingerprint || ''}
-                peerDid={peerDid}
+                peerPtid={peerPtid}
               />
             ) : null}
             {activeTab === 'friend' ? (
@@ -1510,6 +1655,7 @@ export function ChatDetailPanel() {
         {/* Danger zone */}
         <DetailSection title={t('chat.social.detail.dangerZone')}>
           <Button
+            data-chat-history-action="clear"
             type="text"
             danger
             icon={<Trash2 size={14} />}
@@ -1524,6 +1670,7 @@ export function ChatDetailPanel() {
           {canRestoreHistory ? (
             <Flexbox gap={4}>
               <Button
+                data-chat-history-action="restore"
                 type="text"
                 icon={<RotateCcw size={14} />}
                 style={{ justifyContent: 'flex-start', height: 36 }}
@@ -1572,7 +1719,7 @@ export function ChatDetailPanel() {
         <Flexbox gap={10} style={{ maxHeight: 'min(520px, 70vh)', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4 }}>
           {displayMembers.map((member) => {
             const memberRole = Number(member.role ?? GroupRole.MEMBER);
-            const targetIsSelf = member.ptid === currentUserDid;
+            const targetIsSelf = member.ptid === currentUserPtid;
             const controlState = getGroupMemberControlState({
               canManageGroupMembers,
               isSelf: targetIsSelf,
@@ -1669,7 +1816,7 @@ interface BuildChatDetailProfileArgs {
   isGroup: boolean;
   displayName: string;
   peerAvatar: string;
-  peerDid: string;
+  peerPtid: string;
   activeGroup: Group | undefined;
   groupMemberCount: number;
   peerPresenceKnown: boolean;
@@ -1688,7 +1835,7 @@ function buildChatDetailProfile({
   isGroup,
   displayName,
   peerAvatar,
-  peerDid,
+  peerPtid,
   activeGroup,
   groupMemberCount,
   peerPresenceKnown,
@@ -1756,7 +1903,7 @@ function buildChatDetailProfile({
     header: cachedPeerProfile?.header?.trim() || undefined,
     username: cachedPeerProfile?.username?.trim() || undefined,
     bio: cachedPeerProfile?.note?.trim() || undefined,
-    did: cachedPeerProfile?.id?.trim() || peerDid,
+    did: cachedPeerProfile?.id?.trim() || peerPtid,
     createdAt: cachedPeerProfile?.created_at?.trim() || undefined,
     region: cachedPeerProfile?.region?.trim() || undefined,
     tags: (cachedPeerProfile?.tags ?? []).filter(Boolean),

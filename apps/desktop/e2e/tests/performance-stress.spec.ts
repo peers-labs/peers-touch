@@ -9,7 +9,7 @@ import {
 } from '../performanceHarness';
 
 const EXPECTED_RUNTIME = (process.env.PT_PERFORMANCE_RUNTIME ?? 'tauri-webview-dev') as PerformanceRuntime;
-const EXPECTED_ACTOR = process.env.PT_PERFORMANCE_ACTOR_ID ?? '345662927891595266';
+const EXPECTED_ACTOR = process.env.PT_PERFORMANCE_ACTOR_PTID ?? '345662927891595266';
 
 test.describe('P0c3 stress tests', () => {
   test('rapid-click: 20 fast navigation clicks produce no >200ms outlier', async ({ tauriPage }) => {

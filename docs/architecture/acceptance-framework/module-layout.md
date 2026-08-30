@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-08-15 | **Updated**: 2026-08-17
+> **Created**: 2026-08-15 | **Updated**: 2026-08-30
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -25,29 +25,54 @@ tooling/acceptance/
 │   ├── harness.py                  # 通用 JS harness 桥接 helper
 │   ├── provisioning.py             # Environment contract、runtime manifest 与生命周期接口
 │   ├── provisioner.py              # EnvironmentProvisioner 生命周期与 fail-closed 公共逻辑
+│   ├── runtime_cell.py              # [D-13] Cell contract/manifest/matrix/lease schema
 │   ├── attestation.py              # Station deployment/runtime attestation producer
 │   ├── drivers/
 │   │   ├── __init__.py
-│   │   └── base.py                 # BaseDriver 生命周期 + DomDriver DOM 能力
+│   │   ├── base.py                 # BaseDriver 生命周期 + DomDriver DOM 能力
+│   │   └── launcher.py             # App launcher metadata 与资源生命周期契约
 │   └── fixtures/
 │       ├── __init__.py
 │       └── base.py                 # BaseFixture 抽象基类
 ├── drivers/                        # 具体 Driver 实现
 │   ├── __init__.py
-│   ├── tauri.py                    # macOS Tauri Desktop（从 tauri_webdriver.py 迁移重构）
+│   ├── tauri.py                    # launcher-neutral embedded WebDriver client
+│   ├── native/
+│   │   ├── __init__.py
+│   │   ├── base.py                 # NativeDesktopAdapter contract
+│   │   ├── macos.py                # AppKit/CoreGraphics/Accessibility
+│   │   ├── linux_x11.py            # X11 XTest/EWMH
+│   │   └── windows.py              # Win32 SendInput/UI Automation
 │   ├── chrome.py                   # [NEW] Selenium Chrome driver + CDP command bridge
 │   ├── station.py                  # [NEW] Station HTTP API driver
 │   └── mobile.py                   # [Phase 4] Mobile Tauri driver
+├── transports/
+│   ├── __init__.py
+│   └── ssh.py                      # verified host、bounded command、tunnel、cancel
 ├── fixtures/                       # 具体 Fixture 实现
 │   ├── chat_native_reset.py        # Chat 环境重置
 │   └── chat_native_actors.py       # Chat account/PTID actor manifest producer
 ├── environments/                   # 非 local Gate 的机器可读 provisioning contracts
 │   ├── local-desktop-gateway.yaml
 │   └── home-station.yaml
+├── runtime-cells/                  # Desktop platform capability contracts
+│   ├── desktop-macos-native.yaml
+│   ├── desktop-linux-native.yaml
+│   └── desktop-windows-native.yaml
+├── images/
+│   └── desktop-linux/
+│       ├── Containerfile           # Supported WebKitGTK 4.1 userland
+│       ├── entrypoint.sh           # Xorg/WM/DBus/keyring/app supervisor
+│       ├── remote_control.py       # run lease, TTL reaper and forced cleanup
+│       └── xorg-dummy.conf         # fixed connected 1920x1080 output
 ├── provisioners/                   # 环境生命周期实现，不承载产品断言
 │   ├── __init__.py
 │   ├── local_desktop_gateway.py
-│   └── home_station.py
+│   ├── home_station.py
+│   ├── native_desktop_macos.py
+│   ├── local_tunnel_supervisor.py # bounded local SSH-forward ownership
+│   ├── native_desktop_linux.py
+│   └── native_desktop_windows.py
 ├── behavior-rules/
 │   └── chat-receipts.yaml          # receiver-visible receipt/badge Gate 选择
 ├── gates/                          # 各域 Gate 实现（重构为继承 AcceptanceGate）
@@ -110,16 +135,26 @@ tooling/acceptance/
 | `core/errors.py` | GateError 统一异常，其他通用异常类型 |
 | `core/redaction.py` | 敏感字段、Bearer token、private key 和文本证据统一脱敏 |
 | `core/harness.py` | async_harness 通用 JS 桥接，支持命名空间调用 |
-| `core/provisioning.py` | 定义 EnvironmentProvisioner 生命周期、Runtime Resource Manifest、blocked artifact 和 cleanup result |
+| `core/provisioning.py` | 定义 EnvironmentProvisioner 生命周期、typed service topology、Runtime Resource Manifest、blocked artifact 和 cleanup result |
 | `core/provisioner.py` | 解析并验证 worktree Profile、管理 Provisioner 状态和 reverse-order cleanup |
+| `core/runtime_cell.py` | Runtime Cell contract、manifest、matrix result、lease state 与 typed validation |
 | `core/attestation.py` | 从 live Station 和 deployment worktree 生产 commit/workspace/proto attestation |
 | `core/drivers/base.py` | BaseDriver 定义生命周期；DomDriver 定义 DOM/JS/截图能力 |
+| `core/drivers/launcher.py` | 定义 launcher metadata、start/stop/alive 资源所有权契约 |
 | `core/fixtures/base.py` | BaseFixture 抽象基类，定义 setup/teardown/reset 接口 |
-| `drivers/tauri.py` | macOS Tauri 原生应用驱动，embedded WebDriver 连接，进程/端口/storage 隔离 |
+| `drivers/tauri.py` | 纯 W3C client、local/provisioned launcher 与 TauriSession 组合；只连接 local 或 forwarded loopback endpoint |
+| `drivers/native/base.py` | Native input、focus、window stack、point ownership 与 screenshot primitive contract |
+| `drivers/native/macos.py` | AppKit/CoreGraphics/Accessibility adapter |
+| `drivers/native/linux_x11.py` | X11 XTest/EWMH adapter |
+| `drivers/native/windows.py` | Win32 SendInput/UI Automation adapter |
+| `transports/ssh.py` | SSH host-key verification、bounded command、run-scoped port forward、cancel 与 teardown |
+| `tooling/scripts/deploy/source-sync.sh` | Station/Relay/Desktop 共用的 role-neutral incremental Git source sync |
 | `drivers/chrome.py` | Selenium Chrome/Chromium headless 驱动，支持 CDP command bridge；Dashboard 消费迁移由 WS5 完成 |
 | `drivers/station.py` | Station HTTP API 客户端，封装网关命令、认证、错误处理 |
 | `drivers/mobile.py` | Android/iOS Tauri Mobile 驱动（Phase 4 实现） |
 | `environments/*.yaml` | 把 Gate environment id 映射为 Profile、service、Fixture、credential reference、attestation 和 cleanup contract |
+| `runtime-cells/*.yaml` | 声明 Desktop OS、display、WebView、native adapter、source identity 与 cleanup capability |
+| `images/desktop-linux/` | Linux cell 的 digest-pinned userland 与独立 Xorg desktop lifecycle |
 | `provisioners/*.py` | 执行环境 contract，生成 runtime manifest；不得定义或修改 Gate 产品成功条件 |
 | `fixtures/chat_native_actors.py` | 发现/准备测试账号并产出 role、account reference、canonical PTID，不写入凭据值 |
 | `gates/<domain>/*.py` | 各域验收场景实现，继承 AcceptanceGate，只包含业务编排逻辑 |
@@ -131,14 +166,17 @@ core/gate.py → core/evidence.py → core/errors.py
 core/evidence.py → core/evidence_store.py → core/errors.py + core/redaction.py
 core/provisioning.py → core/errors.py + core/redaction.py
 core/provisioner.py → core/provisioning.py
+core/runtime_cell.py → core/errors.py + core/redaction.py
 core/attestation.py → core/provisioning.py
 core/harness.py → core/drivers/base.py
 core/drivers/base.py → core/errors.py
 core/fixtures/base.py → core/errors.py
 drivers/tauri.py → core/drivers/base.py
+drivers/native/*.py → drivers/native/base.py + platform APIs
+transports/ssh.py → core/errors.py
 drivers/chrome.py → core/drivers/base.py
 drivers/station.py → core/drivers/base.py
-provisioners/*.py → core/provisioning.py + drivers/* + fixtures/*
+provisioners/*.py → core/provisioning.py + core/runtime_cell.py + transports/* + drivers/* + fixtures/*
 gates/**/*.py → core/gate.py + 具体 Driver + core/harness.py
 fixtures/*.py → core/fixtures/base.py
 ```
@@ -146,16 +184,24 @@ fixtures/*.py → core/fixtures/base.py
 禁止的依赖方向：
 - core/ 下的任何模块不得导入 gates/、drivers/（具体实现）或 fixtures/
 - drivers/ 不得导入 gates/ 或 fixtures/
+- `drivers/native/base.py` 不得导入任一平台实现
+- platform native adapter 不得导入业务 Gate、Fixture 或 selector
+- SSH transport 不得解释 Gate result、产品状态或 credential value
 - gates/ 之间不得互相导入（场景独立）
 - gates/ 不得导入 `.local` Profile 或 deployment 实现
 - fixtures/ 不得调用 Gate 或修改 Gate 成功条件
 - provisioners/ 不得包含产品断言、DOM selector 或消息内容判断
 - attestation 不得由消费它的 Gate 或 validator 生产
+- Runtime Manifest 只允许 `services[service-id]` 表达服务拓扑；禁止 singular
+  `station`、dual-write 和按 map 顺序推断 primary service
 - `core/_paths.py`不得定义runtime report/evidence/manifest目录
 - 除`core/evidence_store.py`外不得解析`PT_ACCEPTANCE_ARTIFACT_ROOT`或platform default
 - runtime writers不得写repository、`tooling/`、`docs/`或`.git/`
 - readers不得通过字符串拼接解析ArtifactRef
 - cleanup不得删除active run或latest target
+- remote embedded WebDriver 不得监听非 loopback address
+- runtime cell contract 不得保存 literal host、username、password、key path 或远端绝对路径
+- cell matrix validator 不得用一个平台的 evidence 填补另一个 required cell
 
 ## Repository 外 Runtime Layout
 

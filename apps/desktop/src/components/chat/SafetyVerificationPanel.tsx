@@ -38,11 +38,11 @@ const { Text, Paragraph } = Typography;
 
 interface Props {
   /** The local actor's DID — used to scope the trust ledger. */
-  localActorDid: string;
+  localActorPtid: string;
   /** The local actor's hex fingerprint (Ed25519 SHA-256). */
   localFingerprint: string;
   /** The peer DID we're verifying against. */
-  peerDid: string;
+  peerPtid: string;
 }
 
 interface PeerMaterial {
@@ -73,7 +73,7 @@ function statusFor(state: PeerTrustState, t: ReturnType<typeof useTranslation>['
   }
 }
 
-export function SafetyVerificationPanel({ localActorDid, localFingerprint, peerDid }: Props) {
+export function SafetyVerificationPanel({ localActorPtid, localFingerprint, peerPtid }: Props) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [peerMat, setPeerMat] = useState<PeerMaterial | null>(null);
@@ -88,23 +88,23 @@ export function SafetyVerificationPanel({ localActorDid, localFingerprint, peerD
   // `fingerprint` field (SHA-256 hex over the verifying key) computed by the
   // desktop stub from `ik_pub`.
   useEffect(() => {
-    if (!peerDid) return;
+    if (!peerPtid) return;
     let cancelled = false;
     setLoading(true);
     api
-      .keyExchangeFetchBundle(peerDid)
+      .keyExchangeFetchBundle(peerPtid)
       .then((resp) => {
         if (cancelled) return;
         const bundle = pickLatestKeyExchangeBundle(resp);
         const fp = String(bundle?.fingerprint || '').trim();
         if (!fp) {
-          log.warn('safetyPanel', 'peer bundle missing fingerprint', { peerDid });
+          log.warn('safetyPanel', 'peer bundle missing fingerprint', { peerPtid });
         }
         setPeerMat({ fingerprint: fp, loadedAt: Date.now() });
       })
       .catch((err) => {
         if (cancelled) return;
-        log.warn('safetyPanel', 'fetch peer bundle failed', { peerDid, error: String(err) });
+        log.warn('safetyPanel', 'fetch peer bundle failed', { peerPtid, error: String(err) });
         setPeerMat({ fingerprint: '', loadedAt: Date.now() });
       })
       .finally(() => {
@@ -113,7 +113,7 @@ export function SafetyVerificationPanel({ localActorDid, localFingerprint, peerD
     return () => {
       cancelled = true;
     };
-  }, [peerDid]);
+  }, [peerPtid]);
 
   // Derive the safety number whenever either fingerprint changes.
   useEffect(() => {
@@ -138,29 +138,29 @@ export function SafetyVerificationPanel({ localActorDid, localFingerprint, peerD
 
   const trustState: PeerTrustState = useMemo(() => {
     if (!peerMat?.fingerprint) return 'unverified';
-    return evaluateTrust(localActorDid, peerDid, peerMat.fingerprint);
+    return evaluateTrust(localActorPtid, peerPtid, peerMat.fingerprint);
     // tick forces re-eval after mutation
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localActorDid, peerDid, peerMat?.fingerprint, tick]);
+  }, [localActorPtid, peerPtid, peerMat?.fingerprint, tick]);
 
   const trustRecord = useMemo(() => {
-    return getPeerTrust(localActorDid, peerDid);
+    return getPeerTrust(localActorPtid, peerPtid);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localActorDid, peerDid, tick]);
+  }, [localActorPtid, peerPtid, tick]);
 
   const qrPayload = useMemo(() => {
     if (!peerMat?.fingerprint || !localFingerprint) return '';
-    return buildSafetyQrPayload(localActorDid, localFingerprint, peerDid, peerMat.fingerprint);
-  }, [localActorDid, localFingerprint, peerDid, peerMat?.fingerprint]);
+    return buildSafetyQrPayload(localActorPtid, localFingerprint, peerPtid, peerMat.fingerprint);
+  }, [localActorPtid, localFingerprint, peerPtid, peerMat?.fingerprint]);
 
   const handleMarkVerified = () => {
     if (!peerMat?.fingerprint) return;
-    markVerified(localActorDid, peerDid, peerMat.fingerprint);
+    markVerified(localActorPtid, peerPtid, peerMat.fingerprint);
     setTick((n) => n + 1);
   };
 
   const handleReset = () => {
-    clearTrust(localActorDid, peerDid);
+    clearTrust(localActorPtid, peerPtid);
     setTick((n) => n + 1);
   };
 

@@ -19,21 +19,23 @@ import {
 import { FriendMessageStatus, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 import type { CommittedConversationEvent } from '../gen/proto/domain/chat/conversation_pb';
+import type { MlsRecipientStatusResult } from '../services/im-service-contract';
 
 export interface MessagePreview {
   content: string;
   type: number;
-	senderId: string;
+  senderPtid: string;
 }
 
 export interface DesktopUnifiedConversationLike {
   type: 'friend' | 'group';
   ulid: string;
+  authorityStationId?: string;
   name: string;
   avatar?: string;
   lastActivity: Date;
   unread: number;
-  peerDid?: string;
+  peerPtid?: string;
   memberCount?: number;
   muted?: boolean;
   alertEnabled?: boolean;
@@ -50,6 +52,26 @@ export interface ConversationLocalState {
   alertEnabled?: boolean;
   background?: ChatBackgroundId;
   backgroundImage?: string;
+}
+
+export type GroupSecurityState =
+  | 'idle'
+  | 'establishing'
+  | 'ready'
+  | 'crypto-desynced'
+  | 'error';
+
+export function projectGroupSecurityState(
+  status: MlsRecipientStatusResult['status'],
+): Exclude<GroupSecurityState, 'error'> {
+  switch (status) {
+    case 'active':
+      return 'ready';
+    case 'crypto_desynced':
+      return 'crypto-desynced';
+    default:
+      return status;
+  }
 }
 
 export const CHAT_BACKGROUND_OPTIONS = ['default', 'paper', 'mint', 'dusk', 'calm', 'graphite'] as const;
@@ -78,7 +100,7 @@ export function projectConversationMessageEvents(
         const payload = event.payload.value;
         const common = {
           ulid: payload.messageId,
-          senderDid: payload.senderPtid,
+          senderPtid: payload.senderPtid,
           type: payload.contentType as number,
           content: '',
           attachments: [],
@@ -99,7 +121,7 @@ export function projectConversationMessageEvents(
               ...common,
               $typeName: 'peers_touch.model.chat.v1.FriendChatMessage' as const,
               sessionUlid: event.conversationId,
-              receiverDid: '',
+              receiverPtid: '',
               status: FriendMessageStatus.SENT,
               deliveredAt: undefined,
               readAt: undefined,
@@ -108,7 +130,7 @@ export function projectConversationMessageEvents(
               ...common,
               $typeName: 'peers_touch.model.chat.v1.GroupMessage' as const,
               groupUlid: event.conversationId,
-              mentionedDids: [],
+              mentionedPtids: [],
               mentionAll: false,
             };
         messages.set(payload.messageId, message as unknown as SequencedSocialMessage);
@@ -160,7 +182,8 @@ export function messageGroupSeq(message: SocialMessage): number {
 }
 
 export type DesktopIMConversationProjection = IMConversationProjection & {
-  peerDid?: string;
+  authorityStationId: string;
+  peerPtid?: string;
   memberCount?: number;
 };
 
@@ -168,10 +191,11 @@ export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike>
   // Compatibility aliases for shared chat helpers that still use the legacy
   // `ulid` naming while Desktop renderers consume the IM projection contract.
   ulid: string;
-  senderDid: string;
+  senderPtid: string;
   replyToUlid?: string;
   threadRootUlid?: string;
   readByPtids: string[];
+  eventSequence: number;
 };
 
 export interface DesktopIMSenderProfileProjection {
@@ -253,7 +277,7 @@ export function previewFromMessage(message: SocialMessage): MessagePreview {
   return {
     content: message.content || attachmentName,
     type: Number(message.type ?? 1),
-		senderId: message.senderDid ?? '',
+    senderPtid: message.senderPtid ?? '',
   };
 }
 
@@ -272,13 +296,14 @@ export function projectDesktopIMConversation(conversation: DesktopUnifiedConvers
       ? {
         content: conversation.preview.content,
         type: conversation.preview.type,
-			senderId: conversation.preview.senderId,
+        senderPtid: conversation.preview.senderPtid,
       }
       : undefined,
   });
   return {
     ...projection,
-    peerDid: conversation.peerDid,
+    authorityStationId: conversation.authorityStationId ?? '',
+    peerPtid: conversation.peerPtid,
     memberCount: conversation.memberCount,
   };
 }
@@ -294,7 +319,7 @@ export function projectDesktopIMMessage(
     id: message.ulid ?? '',
     conversationKind: kind,
     conversationId,
-    senderId: message.senderDid ?? '',
+    senderPtid: message.senderPtid ?? '',
     type: Number(message.type ?? 1),
     content: message.content,
     attachments: message.attachments ?? [],
@@ -309,10 +334,11 @@ export function projectDesktopIMMessage(
   return {
     ...projection,
     ulid: projection.id,
-    senderDid: projection.senderId,
+    senderPtid: projection.senderPtid,
     replyToUlid: projection.replyToId,
     threadRootUlid: projection.threadRootId,
     readByPtids: (message as { readByPtids?: string[] }).readByPtids ?? [],
+    eventSequence: messageGroupSeq(message),
   };
 }
 
@@ -324,6 +350,12 @@ export function projectDesktopIMMessages(
   return messages
     .map((message) => projectDesktopIMMessage(kind, conversationId, message))
     .sort((a, b) => {
+      if (a.eventSequence > 0 && b.eventSequence > 0) {
+        const sequenceDelta = a.eventSequence - b.eventSequence;
+        if (sequenceDelta !== 0) return sequenceDelta;
+      } else if (a.eventSequence > 0 || b.eventSequence > 0) {
+        return a.eventSequence > 0 ? -1 : 1;
+      }
       const timestampDelta = a.sentAtMs - b.sentAtMs;
       if (timestampDelta !== 0) return timestampDelta;
       return a.id.localeCompare(b.id);
@@ -332,10 +364,10 @@ export function projectDesktopIMMessages(
 
 export function applyPresenceToMap(
   presence: Record<string, boolean>,
-  actorId: string,
+  actorPtid: string,
   online: boolean,
 ): Record<string, boolean> | null {
-  return applyChatPresenceToMap(presence, actorId, online);
+  return applyChatPresenceToMap(presence, actorPtid, online);
 }
 
 export function receiptStatus(kind: 'DELIVERED' | 'READ'): FriendMessageStatus | null {
@@ -368,10 +400,10 @@ export function applyMessageMutationToList(
 export function applyTypingStateToMap(
   typingPeers: TypingPeers,
   sessionUlid: string,
-  fromActorId: string,
+  fromActorPtid: string,
   typing: boolean,
 ): TypingPeers | null {
-  return applyChatTypingStateToMap(typingPeers, sessionUlid, fromActorId, typing);
+  return applyChatTypingStateToMap(typingPeers, sessionUlid, fromActorPtid, typing);
 }
 
 export function pruneTypingPeers(typingPeers: TypingPeers, staleBefore: number): TypingPeers | null {

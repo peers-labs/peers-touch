@@ -20,29 +20,17 @@ import (
 // CUSTOM_* deny-list short-circuit checks during point reads. The grants
 // repo is injected (not constructed inside) so tests can stub it.
 type privatePostRepo struct {
-	db     *gorm.DB
-	conv   *domain.PostConverter
-	grants domain.AudienceGrantRepository
-
-	// resolveID maps a numeric viewer id to its DID for the
-	// CUSTOM_DENY fast path. P1 uses a default no-op resolver that
-	// returns ""; the application layer wires a real ActorResolver in
-	// `subserver.go` once chat / actor surfaces ratify the API.
-	resolveID func(ctx context.Context, viewerID uint64) (string, error)
+	db       *gorm.DB
+	conv     *domain.PostConverter
+	grants   domain.AudienceGrantRepository
+	identity *ActorIdentity
 }
 
 func NewPrivatePostRepository(
 	gdb *gorm.DB,
 	grants domain.AudienceGrantRepository,
-	resolveID func(context.Context, uint64) (string, error),
 ) domain.PrivatePostRepository {
-	if resolveID == nil {
-		// Default resolver: no DID known. CUSTOM_DENY will not
-		// short-circuit at the SQL fast path; CanRead in the application
-		// layer handles the final decision (third defense line).
-		resolveID = func(context.Context, uint64) (string, error) { return "", nil }
-	}
-	return &privatePostRepo{db: gdb, conv: domain.NewPostConverter(), grants: grants, resolveID: resolveID}
+	return &privatePostRepo{db: gdb, conv: domain.NewPostConverter(), grants: grants, identity: NewActorIdentity(gdb)}
 }
 
 // Create persists a private post. Panics if the supplied Post has
@@ -55,6 +43,11 @@ func (r *privatePostRepo) Create(ctx context.Context, p *domain.Post) error {
 	if err != nil {
 		return err
 	}
+	authorID, err := r.identity.RequireID(ctx, p.AuthorPTID)
+	if err != nil {
+		return err
+	}
+	row.AuthorID = authorID
 	if err := r.db.WithContext(ctx).Create(row).Error; err != nil {
 		return err
 	}
@@ -69,17 +62,17 @@ func (r *privatePostRepo) Create(ctx context.Context, p *domain.Post) error {
 //  1. Fetch the candidate row by id (single PK lookup).
 //  2. If author == viewer: return immediately (author-shortcut).
 //  3. SELF audience: return nil (only author can read).
-//  4. CUSTOM_DENY: short-circuit if `(post_id, viewer_did, 'deny')`
+//  4. CUSTOM_DENY: short-circuit if `(post_id, viewer_ptid, 'deny')`
 //     exists in `social_private_audience_grants`.
-//  5. CUSTOM_ALLOW: short-circuit if `(post_id, viewer_did, 'allow')`
+//  5. CUSTOM_ALLOW: short-circuit if `(post_id, viewer_ptid, 'allow')`
 //     does NOT exist.
 //  6. FOLLOWERS / CIRCLE / GROUP: visibility is the application
 //     layer's call (it has the relationship graph) — repo returns the
 //     row and lets `CanRead` make the final decision (third line).
 //
 // The hydrated Post carries any matching grants so the converter can
-// reconstruct `Audience.actor_dids` for the wire response.
-func (r *privatePostRepo) GetByID(ctx context.Context, id, viewerID uint64) (*domain.Post, error) {
+// reconstruct `Audience.actor_ptids` for the wire response.
+func (r *privatePostRepo) GetByID(ctx context.Context, id uint64, viewerPTID string) (*domain.Post, error) {
 	var row db.SocialPrivatePost
 	err := r.db.WithContext(ctx).
 		Where("id = ? AND deleted_at IS NULL", id).
@@ -91,8 +84,12 @@ func (r *privatePostRepo) GetByID(ctx context.Context, id, viewerID uint64) (*do
 		return nil, err
 	}
 
-	if row.AuthorID == viewerID {
-		return r.hydrateOne(ctx, &row), nil
+	authorPTID, err := r.identity.ResolveID(ctx, row.AuthorID)
+	if err != nil {
+		return nil, err
+	}
+	if authorPTID == viewerPTID {
+		return r.hydrateOne(ctx, &row)
 	}
 
 	switch row.AudienceKind {
@@ -100,18 +97,14 @@ func (r *privatePostRepo) GetByID(ctx context.Context, id, viewerID uint64) (*do
 		return nil, nil
 
 	case model.Audience_CUSTOM_DENY.String(), model.Audience_CUSTOM_ALLOW.String():
-		viewerDID, derr := r.resolveID(ctx, viewerID)
-		if derr != nil {
-			return nil, derr
-		}
-		if viewerDID == "" {
-			// Without a viewer DID we can't enforce the list; fall
+		if viewerPTID == "" {
+			// Without a viewer PTID we can't enforce the list; fall
 			// through to base-kind eligibility (and ultimately the
 			// application-layer CanRead).
 			break
 		}
 		if row.AudienceKind == model.Audience_CUSTOM_DENY.String() {
-			isDenied, gerr := r.grants.HasDenyGrant(ctx, row.ID, viewerDID)
+			isDenied, gerr := r.grants.HasDenyGrant(ctx, row.ID, viewerPTID)
 			if gerr != nil {
 				return nil, gerr
 			}
@@ -128,7 +121,7 @@ func (r *privatePostRepo) GetByID(ctx context.Context, id, viewerID uint64) (*do
 			}
 			allowed := false
 			for _, g := range grants {
-				if g.Role == domain.GrantRoleAllow && g.ActorDID == viewerDID {
+				if g.Role == domain.GrantRoleAllow && g.ActorPTID == viewerPTID {
 					allowed = true
 					break
 				}
@@ -139,19 +132,27 @@ func (r *privatePostRepo) GetByID(ctx context.Context, id, viewerID uint64) (*do
 		}
 	}
 
-	return r.hydrateOne(ctx, &row), nil
+	return r.hydrateOne(ctx, &row)
 }
 
-func (r *privatePostRepo) Delete(ctx context.Context, id, authorID uint64) error {
+func (r *privatePostRepo) Delete(ctx context.Context, id uint64, authorPTID string) error {
+	authorID, err := r.identity.RequireID(ctx, authorPTID)
+	if err != nil {
+		return err
+	}
 	return r.db.WithContext(ctx).
 		Model(&db.SocialPrivatePost{}).
 		Where("id = ? AND author_id = ? AND deleted_at IS NULL", id, authorID).
 		Update("deleted_at", gorm.Expr("CURRENT_TIMESTAMP")).Error
 }
 
-func (r *privatePostRepo) ListByFollowingForViewer(ctx context.Context, viewerID uint64, followedAuthorIDs []uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
-	if len(followedAuthorIDs) == 0 {
+func (r *privatePostRepo) ListByFollowingForViewer(ctx context.Context, viewerPTID string, followedAuthorPTIDs []string, c domain.Cursor, limit int) ([]*domain.Post, error) {
+	if len(followedAuthorPTIDs) == 0 {
 		return nil, nil
+	}
+	followedAuthorIDs, err := r.identity.RequireIDs(ctx, followedAuthorPTIDs)
+	if err != nil {
+		return nil, err
 	}
 	q := r.db.WithContext(ctx).
 		Where("author_id IN ? AND audience_kind = ? AND deleted_at IS NULL",
@@ -163,10 +164,14 @@ func (r *privatePostRepo) ListByFollowingForViewer(ctx context.Context, viewerID
 	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return r.hydrate(ctx, rows), nil
+	return r.hydrate(ctx, rows)
 }
 
-func (r *privatePostRepo) ListSelfByAuthor(ctx context.Context, authorID uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
+func (r *privatePostRepo) ListSelfByAuthor(ctx context.Context, authorPTID string, c domain.Cursor, limit int) ([]*domain.Post, error) {
+	authorID, err := r.identity.RequireID(ctx, authorPTID)
+	if err != nil {
+		return nil, err
+	}
 	q := r.db.WithContext(ctx).
 		Where("author_id = ? AND audience_kind = ? AND deleted_at IS NULL",
 			authorID, model.Audience_SELF.String())
@@ -177,10 +182,10 @@ func (r *privatePostRepo) ListSelfByAuthor(ctx context.Context, authorID uint64,
 	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return r.hydrate(ctx, rows), nil
+	return r.hydrate(ctx, rows)
 }
 
-func (r *privatePostRepo) ListByCircleForViewer(ctx context.Context, viewerID, circleID uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
+func (r *privatePostRepo) ListByCircleForViewer(ctx context.Context, viewerPTID string, circleID uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
 	q := r.db.WithContext(ctx).
 		Where("audience_kind = ? AND audience_target_id = ? AND deleted_at IS NULL",
 			model.Audience_CIRCLE.String(), circleID)
@@ -191,10 +196,10 @@ func (r *privatePostRepo) ListByCircleForViewer(ctx context.Context, viewerID, c
 	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return r.hydrate(ctx, rows), nil
+	return r.hydrate(ctx, rows)
 }
 
-func (r *privatePostRepo) ListByCirclesForViewer(ctx context.Context, viewerID uint64, circleIDs []uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
+func (r *privatePostRepo) ListByCirclesForViewer(ctx context.Context, viewerPTID string, circleIDs []uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
 	if len(circleIDs) == 0 {
 		return nil, nil
 	}
@@ -208,10 +213,10 @@ func (r *privatePostRepo) ListByCirclesForViewer(ctx context.Context, viewerID u
 	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return r.hydrate(ctx, rows), nil
+	return r.hydrate(ctx, rows)
 }
 
-func (r *privatePostRepo) ListByGroupForViewer(ctx context.Context, viewerID, groupID uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
+func (r *privatePostRepo) ListByGroupForViewer(ctx context.Context, viewerPTID string, groupID uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
 	q := r.db.WithContext(ctx).
 		Where("audience_kind = ? AND audience_target_id = ? AND deleted_at IS NULL",
 			model.Audience_GROUP.String(), groupID)
@@ -222,10 +227,10 @@ func (r *privatePostRepo) ListByGroupForViewer(ctx context.Context, viewerID, gr
 	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return r.hydrate(ctx, rows), nil
+	return r.hydrate(ctx, rows)
 }
 
-func (r *privatePostRepo) ListByGroupsForViewer(ctx context.Context, viewerID uint64, groupIDs []uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
+func (r *privatePostRepo) ListByGroupsForViewer(ctx context.Context, viewerPTID string, groupIDs []uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
 	if len(groupIDs) == 0 {
 		return nil, nil
 	}
@@ -239,7 +244,7 @@ func (r *privatePostRepo) ListByGroupsForViewer(ctx context.Context, viewerID ui
 	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return r.hydrate(ctx, rows), nil
+	return r.hydrate(ctx, rows)
 }
 
 // ListByAuthorVisibleTo serves "render someone else's profile" — a
@@ -252,15 +257,20 @@ func (r *privatePostRepo) ListByGroupsForViewer(ctx context.Context, viewerID ui
 //     relationship lookup; this method trusts the caller).
 //   - CIRCLE / GROUP posts: included only when viewer is a member
 //     (again, application layer trust).
-//   - CUSTOM_ALLOW: included only when viewer's DID is on the list.
-//   - CUSTOM_DENY: excluded when viewer's DID is on the deny list.
+//   - CUSTOM_ALLOW: included only when viewer's PTID is on the list.
+//   - CUSTOM_DENY: excluded when viewer's PTID is on the deny list.
 //
 // To keep the SQL simple, this method returns ALL non-deleted posts
 // authored by `authorID` (excluding SELF unless viewer==author) and
 // lets the application layer call `CanRead` per row to filter. That
 // is O(N) per page where N is the page limit — acceptable because
 // profile pages are not high-throughput.
-func (r *privatePostRepo) ListByAuthorVisibleTo(ctx context.Context, authorID, viewerID uint64, c domain.Cursor, limit int) ([]*domain.Post, error) {
+func (r *privatePostRepo) ListByAuthorVisibleTo(ctx context.Context, authorPTID, viewerPTID string, c domain.Cursor, limit int) ([]*domain.Post, error) {
+	ids, err := r.identity.RequireIDs(ctx, []string{authorPTID, viewerPTID})
+	if err != nil {
+		return nil, err
+	}
+	authorID, viewerID := ids[0], ids[1]
 	q := r.db.WithContext(ctx).
 		Where("author_id = ? AND deleted_at IS NULL", authorID)
 	if authorID != viewerID {
@@ -273,7 +283,7 @@ func (r *privatePostRepo) ListByAuthorVisibleTo(ctx context.Context, authorID, v
 	if err := q.Order("created_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	return r.hydrate(ctx, rows), nil
+	return r.hydrate(ctx, rows)
 }
 
 func (r *privatePostRepo) UpdateCommentsCount(ctx context.Context, id uint64, delta int64) (int64, error) {
@@ -301,15 +311,19 @@ func (r *privatePostRepo) UpdateReactionsCount(ctx context.Context, id uint64, s
 
 // hydrate fills CUSTOM_* posts with their grants in a single round-trip
 // per slice (rather than N+1).
-func (r *privatePostRepo) hydrate(ctx context.Context, rows []*db.SocialPrivatePost) []*domain.Post {
+func (r *privatePostRepo) hydrate(ctx context.Context, rows []*db.SocialPrivatePost) ([]*domain.Post, error) {
 	out := make([]*domain.Post, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, r.hydrateOne(ctx, row))
+		post, err := r.hydrateOne(ctx, row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, post)
 	}
-	return out
+	return out, nil
 }
 
-func (r *privatePostRepo) hydrateOne(ctx context.Context, row *db.SocialPrivatePost) *domain.Post {
+func (r *privatePostRepo) hydrateOne(ctx context.Context, row *db.SocialPrivatePost) (*domain.Post, error) {
 	var grants []db.SocialPrivateAudienceGrant
 	if row.AudienceKind == model.Audience_CUSTOM_ALLOW.String() ||
 		row.AudienceKind == model.Audience_CUSTOM_DENY.String() {
@@ -318,15 +332,21 @@ func (r *privatePostRepo) hydrateOne(ctx context.Context, row *db.SocialPrivateP
 			grants = make([]db.SocialPrivateAudienceGrant, 0, len(got))
 			for _, g := range got {
 				grants = append(grants, db.SocialPrivateAudienceGrant{
-					PostID:   g.PostID,
-					ActorDID: g.ActorDID,
-					Role:     string(g.Role),
+					PostID:    g.PostID,
+					ActorPtid: g.ActorPTID,
+					Role:      string(g.Role),
 				})
 			}
 		}
 		// On grant load error we still return the post (with empty
-		// actor_dids on the audience); the caller's CanRead will
+		// actor_ptids on the audience); the caller's CanRead will
 		// fail-closed. Logging is the application layer's job.
 	}
-	return r.conv.PrivateDBToDomain(row, grants)
+	authorPTID, err := r.identity.ResolveID(ctx, row.AuthorID)
+	if err != nil {
+		return nil, err
+	}
+	post := r.conv.PrivateDBToDomain(row, grants)
+	post.AuthorPTID = authorPTID
+	return post, nil
 }

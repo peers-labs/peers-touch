@@ -1,0 +1,149 @@
+syntax = "proto3";
+
+package peers_touch.model.oauth.mobile.v1;
+
+import "google/protobuf/timestamp.proto";
+import "domain/access_gate/access_gate.proto";
+import "domain/actor/actor.proto";
+import "domain/auth/auth.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/oauth;oauth";
+
+enum OAuthAttemptState {
+  OAUTH_ATTEMPT_STATE_UNSPECIFIED = 0;
+  OAUTH_ATTEMPT_STATE_AWAITING_PROVIDER = 1;
+  OAUTH_ATTEMPT_STATE_CALLBACK_CLAIMED = 2;
+  OAUTH_ATTEMPT_STATE_SESSION_CANDIDATE_ISSUED = 3;
+  OAUTH_ATTEMPT_STATE_FOLLOWING_GATE = 4;
+  OAUTH_ATTEMPT_STATE_ACTIVATED = 5;
+  OAUTH_ATTEMPT_STATE_CANCELLED = 6;
+  OAUTH_ATTEMPT_STATE_EXPIRED = 7;
+  OAUTH_ATTEMPT_STATE_FAILED = 8;
+}
+
+enum OAuthAttemptResult {
+  OAUTH_ATTEMPT_RESULT_UNSPECIFIED = 0;
+  OAUTH_ATTEMPT_RESULT_PENDING = 1;
+  OAUTH_ATTEMPT_RESULT_SESSION_CANDIDATE_ISSUED = 2;
+  OAUTH_ATTEMPT_RESULT_ACCESS_GRANTED = 3;
+  OAUTH_ATTEMPT_RESULT_CANCELLED = 4;
+  OAUTH_ATTEMPT_RESULT_EXPIRED = 5;
+  OAUTH_ATTEMPT_RESULT_REPLAYED = 6;
+  OAUTH_ATTEMPT_RESULT_BINDING_MISMATCH = 7;
+  OAUTH_ATTEMPT_RESULT_PROVIDER_ERROR = 8;
+  OAUTH_ATTEMPT_RESULT_ACCESS_DENIED = 9;
+}
+
+// OAuthCredentialEnvelope carries public session metadata and opaque encrypted
+// credential bytes. Bearer and refresh credentials are never represented as
+// public fields.
+message OAuthCredentialEnvelope {
+  string candidate_id = 1;
+  string session_id = 2;
+  peers_touch.model.actor.v1.ActorRef actor_ref = 3 [json_name = "actor_ref"];
+  string station_peer_id = 4;
+  string device_id = 5;
+  uint64 lifecycle_generation = 6;
+  bytes server_ephemeral_public_key = 7;
+  bytes nonce = 8;
+  bytes ciphertext = 9;
+  google.protobuf.Timestamp expires_at = 10;
+}
+
+message StartOAuthAttemptRequest {
+  string provider = 1;
+  string station_peer_id = 2;
+  string access_attempt_id = 3;
+  // The exact parent AUTH_LOGIN credential-stage gate.
+  string gate_id = 4;
+  string redirect_uri = 5;
+  string pkce_challenge = 6;
+  string pkce_method = 7;
+  string nonce_hash = 8;
+  // Required and must be ACCESS_GATE_TYPE_AUTH_OAUTH.
+  peers_touch.model.access_gate.v1.AccessGateType action_type = 9;
+  string device_id = 10;
+  uint64 lifecycle_generation = 11;
+  bytes attempt_secret_hash = 12;
+  bytes credential_delivery_public_key = 13;
+}
+
+message StartOAuthAttemptResponse {
+  string oauth_attempt_id = 1;
+  string state = 2;
+  string authorize_url = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message CompleteOAuthAttemptRequest {
+  string oauth_attempt_id = 1;
+  string state = 2;
+  string code = 3;
+  string pkce_verifier = 4;
+  string nonce = 5;
+  string provider = 6;
+  string station_peer_id = 7;
+  string access_attempt_id = 8;
+  string gate_id = 9;
+  string redirect_uri = 10;
+  bytes attempt_secret = 11;
+  string device_id = 12;
+  uint64 lifecycle_generation = 13;
+}
+
+message CompleteOAuthAttemptResponse {
+  OAuthAttemptResult result = 1;
+  peers_touch.model.auth.v1.AuthSessionCandidate session_candidate = 2;
+  peers_touch.model.access_gate.v1.AccessDecision access_decision = 3;
+  reserved 4;
+  reserved "activated_session";
+  string error_code = 5;
+  OAuthCredentialEnvelope credential_envelope = 6;
+}
+
+message GetOAuthAttemptRequest {
+  string oauth_attempt_id = 1;
+  string station_peer_id = 2;
+  string access_attempt_id = 3;
+  bytes attempt_secret = 4;
+  string device_id = 5;
+  uint64 lifecycle_generation = 6;
+}
+
+message GetOAuthAttemptResponse {
+  OAuthAttemptState state = 1;
+  OAuthAttemptResult result = 2;
+  peers_touch.model.auth.v1.AuthSessionCandidate session_candidate = 3;
+  peers_touch.model.access_gate.v1.AccessDecision access_decision = 4;
+  reserved 5;
+  reserved "activated_session";
+  google.protobuf.Timestamp expires_at = 6;
+  string error_code = 7;
+  OAuthCredentialEnvelope credential_envelope = 8;
+}
+
+message CancelOAuthAttemptRequest {
+  string oauth_attempt_id = 1;
+  string station_peer_id = 2;
+  string access_attempt_id = 3;
+  bytes attempt_secret = 4;
+  string device_id = 5;
+  uint64 lifecycle_generation = 6;
+}
+
+message CancelOAuthAttemptResponse {
+  OAuthAttemptResult result = 1;
+}
+
+message AcknowledgeOAuthCredentialRequest {
+  string oauth_attempt_id = 1;
+  string station_peer_id = 2;
+  string access_attempt_id = 3;
+  bytes attempt_secret = 4;
+  string device_id = 5;
+  uint64 lifecycle_generation = 6;
+}
+
+message AcknowledgeOAuthCredentialResponse {
+  OAuthAttemptResult result = 1;
+}

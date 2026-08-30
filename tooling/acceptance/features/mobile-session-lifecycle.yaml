@@ -1,0 +1,14 @@
+{
+  "id": "mobile-session-lifecycle",
+  "status": "active",
+  "product_area": "mobile",
+  "owners": ["apps/mobile/src/App.tsx", "apps/mobile/src/components/MobileShell.tsx", "apps/mobile/src/runtimes/**"],
+  "truth_sources": ["MobileLifecycleKernel", "Mobile runtime registry", "Station session validation"],
+  "visible_surfaces": [{"type": "mobile", "route": "shell"}, {"type": "mobile", "route": "detail"}],
+  "required_gates": ["mobile-contract-static", "mobile-native-lifecycle-e2e"],
+  "acceptance": {
+    "product_assertions": ["MS-PA04", "MS-PA05", "MS-PA13", "MS-PA14"],
+    "visible": ["cold start, resume, navigation, Station change, logout, and revocation preserve generation isolation"]
+  },
+  "negative": ["pages must not own long-lived freshness", "old-generation results must not become visible"]
+}

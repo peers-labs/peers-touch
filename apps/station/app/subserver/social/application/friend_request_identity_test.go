@@ -8,24 +8,24 @@ import (
 
 func TestEnrichFriendRequestReplacesInternalIDsWithPTIDs(t *testing.T) {
 	request := &chat.FriendRequest{
-		SenderId:   "101",
-		ReceiverId: "202",
+		SenderPtid:   "ptid:v1:actor:peers:p:alice",
+		ReceiverPtid: "ptid:v1:actor:peers:p:bob",
 	}
-	enrichFriendRequest(request, map[uint64]actorProfile{
-		101: {
+	enrichFriendRequest(request, map[string]actorProfile{
+		"ptid:v1:actor:peers:p:alice": {
 			Name: "Alice",
 			Ptid: "ptid:v1:actor:peers:p:alice",
 		},
-		202: {
+		"ptid:v1:actor:peers:p:bob": {
 			Name: "Bob",
 			Ptid: "ptid:v1:actor:peers:p:bob",
 		},
 	})
 
-	if request.SenderId != "ptid:v1:actor:peers:p:alice" {
-		t.Fatalf("sender identity leaked internal actor id: %q", request.SenderId)
+	if request.SenderPtid != "ptid:v1:actor:peers:p:alice" {
+		t.Fatalf("sender identity leaked internal actor id: %q", request.SenderPtid)
 	}
-	if request.ReceiverId != "ptid:v1:actor:peers:p:bob" {
-		t.Fatalf("receiver identity leaked internal actor id: %q", request.ReceiverId)
+	if request.ReceiverPtid != "ptid:v1:actor:peers:p:bob" {
+		t.Fatalf("receiver identity leaked internal actor id: %q", request.ReceiverPtid)
 	}
 }

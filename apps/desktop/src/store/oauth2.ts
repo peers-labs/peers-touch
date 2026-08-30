@@ -9,6 +9,7 @@ interface OAuth2Store {
   connections: OAuth2Connection[];
   loading: boolean;
   error: string | null;
+  completedLoopbackSessionId: string | null;
 
   loadProviders: () => Promise<void>;
   loadConnections: () => Promise<void>;
@@ -21,6 +22,7 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
   connections: [],
   loading: false,
   error: null,
+  completedLoopbackSessionId: null,
 
   loadProviders: async () => {
     try {
@@ -65,6 +67,7 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
   },
 
   startAuth: async (id, environment) => {
+    set({ completedLoopbackSessionId: null });
     const { auth_url, session_id } = await api.oauth2StartLoopback(id, environment);
     await api.openExternalUrl(auth_url);
     return new Promise<void>((resolve, reject) => {
@@ -89,6 +92,9 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
           const polled = await api.oauth2PollLoopback(session_id);
           if (polled.completed) {
             const errorMessage = polled.status === 'completed' ? undefined : (polled.error || 'oauth authorization failed');
+            if (!errorMessage) {
+              set({ completedLoopbackSessionId: session_id });
+            }
             void finish(errorMessage);
           }
         } catch {}

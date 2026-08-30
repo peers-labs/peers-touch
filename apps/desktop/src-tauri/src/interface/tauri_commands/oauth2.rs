@@ -36,8 +36,11 @@ pub fn oauth2_authorize(input: OAuthAuthorizeInput) -> AppResult<StubPayload> {
 }
 
 #[tauri::command]
-pub fn oauth2_handle_callback(input: OAuthCallbackInput) -> AppResult<StubPayload> {
-    application_oauth2::oauth2_handle_callback(input)
+pub fn oauth2_handle_callback(
+    input: OAuthCallbackInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    application_oauth2::oauth2_handle_callback(input, state.inner())
 }
 
 #[tauri::command]
@@ -80,7 +83,11 @@ pub fn oauth2_start_loopback(
     state: State<'_, Arc<AppState>>,
     input: OAuthLoopbackStartInput,
 ) -> AppResult<StubPayload> {
-    application_oauth2::oauth2_start_loopback(input, state.i18n.clone())
+    application_oauth2::oauth2_start_loopback(
+        input,
+        state.i18n.clone(),
+        state.identity_transition.clone(),
+    )
 }
 
 #[tauri::command]

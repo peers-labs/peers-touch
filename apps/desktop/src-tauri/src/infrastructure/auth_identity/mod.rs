@@ -1,3 +1,4 @@
+use crate::domain::auth::session::validate_token;
 use crate::domain::pin_lock::{self, EncryptedSession, PinProtection};
 use crate::infrastructure::avatar_cache;
 use crate::infrastructure::local_scope;
@@ -17,6 +18,7 @@ pub struct AccountIdentityState {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AccountIdentity {
     pub id: String,
+    pub actor_ptid: String,
     pub provider: String,
     pub provider_user_id: String,
     pub name: String,
@@ -42,6 +44,31 @@ pub struct AccountIdentity {
     /// Whether this account has an active (restorable) session, regardless of PIN.
     #[serde(default)]
     pub has_session: bool,
+}
+
+pub struct UnlockedAccountSession {
+    pub token: String,
+    pub account_id: String,
+    pub actor_ptid: String,
+}
+
+fn token_actor_ptid(token: &str) -> Result<String, String> {
+    let session =
+        validate_token(token).map_err(|_| "session token is invalid or expired".to_string())?;
+    if session.actor_ptid.trim().is_empty() {
+        return Err("session token is missing its actor subject".to_string());
+    }
+    Ok(session.actor_ptid)
+}
+
+fn encrypted_session_actor_ptid(
+    encrypted: &EncryptedSession,
+) -> Result<String, pin_lock::PinVerifyError> {
+    let actor_ptid = encrypted.actor_ptid.trim();
+    if actor_ptid.is_empty() {
+        return Err(pin_lock::PinVerifyError::ActorBindingMissing);
+    }
+    Ok(actor_ptid.to_string())
 }
 
 pub fn account_identity_path() -> Result<PathBuf, String> {
@@ -77,6 +104,7 @@ pub fn write_state(state: &AccountIdentityState) -> Result<(), String> {
 }
 
 pub fn upsert_oauth(
+    actor_ptid: &str,
     provider: &str,
     provider_user_id: &str,
     name: &str,
@@ -85,13 +113,17 @@ pub fn upsert_oauth(
     avatar_url: Option<&str>,
     profile_url: Option<&str>,
 ) -> Result<String, String> {
+    if !actor_ptid.trim().starts_with("ptid:") {
+        return Err("canonical actor PTID is required".to_string());
+    }
     let mut state = read_state()?;
     let station_scope = local_scope::active_station_scope();
-    let provider_scope = storage::resolve_user_scope(Some(provider));
-    let provider_user_scope = storage::resolve_user_scope(Some(provider_user_id));
+    let provider_scope = storage::sanitize_storage_segment(provider);
+    let provider_user_scope = storage::sanitize_storage_segment(provider_user_id);
     let account_id = format!("station:{station_scope}:{provider_scope}:{provider_user_scope}");
     let now = unix_to_rfc3339(chrono_like_now_unix());
     if let Some(existing) = state.accounts.iter_mut().find(|item| item.id == account_id) {
+        existing.actor_ptid = actor_ptid.to_string();
         existing.name = name.to_string();
         existing.email = email.unwrap_or_default().to_string();
         existing.avatar_url = avatar_url.unwrap_or_default().to_string();
@@ -110,6 +142,7 @@ pub fn upsert_oauth(
             .unwrap_or_else(|| now.clone());
         state.accounts.push(AccountIdentity {
             id: account_id.clone(),
+            actor_ptid: actor_ptid.to_string(),
             provider: provider.to_string(),
             provider_user_id: provider_user_id.to_string(),
             name: name.to_string(),
@@ -145,19 +178,22 @@ fn unix_to_rfc3339(sec: i64) -> String {
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
 }
 
-/// Persist a password-login identity into `identities.json`, mirroring what
-/// `upsert_oauth` does for OAuth providers.  Sets the account as active and
-/// returns the canonical station-scoped `account_id`.
-pub fn upsert_password(
-    actor_id: &str,
+/// Prepare a password-login identity update for the coordinated auth commit.
+/// No durable state changes until the caller commits the returned state.
+pub fn prepare_password_upsert(
+    actor_ptid: &str,
     name: &str,
     email: &str,
     avatar_url: Option<&str>,
-) -> Result<String, String> {
+) -> Result<(String, AccountIdentityState), String> {
+    if !actor_ptid.trim().starts_with("ptid:") {
+        return Err("canonical actor PTID is required".to_string());
+    }
     let mut state = read_state()?;
-    let account_id = local_scope::account_id_for_password_actor(actor_id);
+    let account_id = local_scope::account_id_for_password_ptid(actor_ptid);
     let now = unix_to_rfc3339(chrono_like_now_unix());
     if let Some(existing) = state.accounts.iter_mut().find(|item| item.id == account_id) {
+        existing.actor_ptid = actor_ptid.to_string();
         if !name.is_empty() {
             existing.name = name.to_string();
         }
@@ -171,8 +207,9 @@ pub fn upsert_password(
     } else {
         state.accounts.push(AccountIdentity {
             id: account_id.clone(),
+            actor_ptid: actor_ptid.to_string(),
             provider: "password".to_string(),
-            provider_user_id: actor_id.to_string(),
+            provider_user_id: actor_ptid.to_string(),
             name: name.to_string(),
             email: email.to_string(),
             avatar_url: avatar_url.unwrap_or_default().to_string(),
@@ -187,30 +224,19 @@ pub fn upsert_password(
         });
     }
     state.active_account_id = Some(account_id.clone());
-    write_state(&state)?;
-    Ok(account_id)
+    Ok((account_id, state))
 }
 
-/// Look up an account profile by `actor_id`.
-/// Search order: station-scoped password account → active matching account.
-pub fn find_profile_by_actor_id(actor_id: &str) -> Option<AccountIdentity> {
+pub fn find_profile_by_actor_ptid(actor_ptid: &str) -> Option<AccountIdentity> {
     let state = read_state().ok()?;
-    let password_account_id = local_scope::account_id_for_password_actor(actor_id);
-    if let Some(acc) = state.accounts.iter().find(|a| a.id == password_account_id) {
-        return Some(acc.clone());
-    }
-    if let Some(active_id) = &state.active_account_id {
-        if let Some(acc) = state.accounts.iter().find(|a| &a.id == active_id) {
-            if acc.provider_user_id == actor_id {
-                return Some(acc.clone());
-            }
-        }
-    }
-    None
+    state
+        .accounts
+        .into_iter()
+        .find(|account| account.actor_ptid == actor_ptid)
 }
 
 /// Resolve the canonical `account_id` (e.g. `password:123`, `github:456`) for a
-/// Station `actor_id`. Used by token-bound writers (profile sync, avatar sync)
+/// Station `actor_ptid`. Used by token-bound writers (profile sync, avatar sync)
 /// to pick the correct LocalAccount record without trusting the volatile
 /// `active_account_id` pointer.
 ///
@@ -218,24 +244,16 @@ pub fn find_profile_by_actor_id(actor_id: &str) -> Option<AccountIdentity> {
 /// 1. The station-scoped password account.
 /// 2. The currently-active account, if its `provider_user_id` matches.
 /// 3. `None` if no active-station record holds this actor.
-pub fn find_account_id_by_actor_id(actor_id: &str) -> Option<String> {
-    if actor_id.trim().is_empty() {
+pub fn find_account_id_by_actor_ptid(actor_ptid: &str) -> Option<String> {
+    if !actor_ptid.trim().starts_with("ptid:") {
         return None;
     }
     let state = read_state().ok()?;
-    let password_account_id = local_scope::account_id_for_password_actor(actor_id);
-    if state.accounts.iter().any(|a| a.id == password_account_id) {
-        return Some(password_account_id);
-    }
-
-    if let Some(active_id) = state.active_account_id.as_deref() {
-        if let Some(acc) = state.accounts.iter().find(|a| a.id == active_id) {
-            if acc.provider_user_id == actor_id {
-                return Some(acc.id.clone());
-            }
-        }
-    }
-    None
+    state
+        .accounts
+        .into_iter()
+        .find(|account| account.actor_ptid == actor_ptid)
+        .map(|account| account.id)
 }
 
 /// Update the avatar URL for the currently active account identity.
@@ -271,7 +289,9 @@ pub fn set_account_pin(
     let protection = pin_lock::create_pin_protection(pin)?;
 
     if let Some(token) = current_token {
-        let encrypted = pin_lock::encrypt_session(pin, &protection.enc_salt, account_id, token)?;
+        let actor_ptid = token_actor_ptid(token)?;
+        let encrypted =
+            pin_lock::encrypt_session(pin, &protection.enc_salt, account_id, &actor_ptid, token)?;
         account.encrypted_session = Some(encrypted);
         account.has_session = true;
     }
@@ -294,7 +314,9 @@ pub fn save_encrypted_session(account_id: &str, pin: &str, token: &str) -> Resul
         .as_ref()
         .ok_or_else(|| "no PIN set for this account".to_string())?;
 
-    let encrypted = pin_lock::encrypt_session(pin, &protection.enc_salt, account_id, token)?;
+    let actor_ptid = token_actor_ptid(token)?;
+    let encrypted =
+        pin_lock::encrypt_session(pin, &protection.enc_salt, account_id, &actor_ptid, token)?;
     account.encrypted_session = Some(encrypted);
     account.session_expires_at = extract_jwt_exp(token);
     account.has_session = true;
@@ -327,7 +349,7 @@ pub fn verify_account_pin(account_id: &str, pin: &str) -> Result<(), pin_lock::P
 pub fn unlock_account_session(
     account_id: &str,
     pin: &str,
-) -> Result<String, pin_lock::PinVerifyError> {
+) -> Result<UnlockedAccountSession, pin_lock::PinVerifyError> {
     let mut state = read_state().map_err(|e| pin_lock::PinVerifyError::Internal(e))?;
     let account = state
         .accounts
@@ -344,8 +366,8 @@ pub fn unlock_account_session(
 
     pin_lock::verify_pin(pin, protection)?;
 
-    // Persist updated failure counters (reset on success)
-    let _ = write_state(&state);
+    // Persist updated failure counters (reset on success).
+    write_state(&state).map_err(pin_lock::PinVerifyError::Internal)?;
 
     // Re-read for decryption (ownership was moved)
     let state = read_state().map_err(|e| pin_lock::PinVerifyError::Internal(e))?;
@@ -359,6 +381,12 @@ pub fn unlock_account_session(
         .encrypted_session
         .as_ref()
         .ok_or_else(|| pin_lock::PinVerifyError::Internal("no encrypted session".to_string()))?;
+    if encrypted.account_id != account_id {
+        return Err(pin_lock::PinVerifyError::Internal(
+            "encrypted session account does not match the selected account".to_string(),
+        ));
+    }
+    let actor_ptid = encrypted_session_actor_ptid(encrypted)?;
 
     let enc_salt = account
         .pin_protection
@@ -366,8 +394,13 @@ pub fn unlock_account_session(
         .map(|p| p.enc_salt.as_str())
         .unwrap_or("");
 
-    pin_lock::decrypt_session(pin, enc_salt, encrypted)
-        .map_err(|e| pin_lock::PinVerifyError::Internal(e))
+    let token = pin_lock::decrypt_session(pin, enc_salt, encrypted)
+        .map_err(pin_lock::PinVerifyError::Internal)?;
+    Ok(UnlockedAccountSession {
+        token,
+        account_id: encrypted.account_id.clone(),
+        actor_ptid,
+    })
 }
 
 /// Clear stored session for an account (e.g. on explicit logout).
@@ -403,6 +436,9 @@ pub fn remove_account_pin(account_id: &str, pin: &str) -> Result<(), String> {
             }
             pin_lock::PinVerifyError::LockedOut { remaining_secs } => {
                 format!("account locked, retry in {remaining_secs}s")
+            }
+            pin_lock::PinVerifyError::ActorBindingMissing => {
+                "encrypted session has no persisted actor binding".to_string()
             }
             pin_lock::PinVerifyError::Internal(msg) => msg,
         })?;
@@ -505,4 +541,28 @@ fn extract_jwt_exp(token: &str) -> Option<u64> {
     let decoded = URL_SAFE_NO_PAD.decode(payload_b64).ok()?;
     let v: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
     v.get("exp").and_then(|e| e.as_u64())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encrypted_session_actor_ptid;
+    use crate::domain::pin_lock::EncryptedSession;
+
+    #[test]
+    fn legacy_encrypted_session_without_actor_binding_requires_login() {
+        let encrypted: EncryptedSession = serde_json::from_value(serde_json::json!({
+            "ciphertext": "00",
+            "nonce": "00",
+            "account_id": "station:scope:oauth:provider-user"
+        }))
+        .expect("legacy encrypted session should deserialize");
+
+        let error = encrypted_session_actor_ptid(&encrypted)
+            .expect_err("legacy encrypted session must fail closed");
+
+        assert!(matches!(
+            error,
+            crate::domain::pin_lock::PinVerifyError::ActorBindingMissing
+        ));
+    }
 }
