@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -14,8 +15,8 @@ type jwtProvider struct {
 }
 
 type jwtClaims struct {
-	SubjectID string `json:"subject_id"`
-	SessionID string `json:"session_id,omitempty"`
+	SubjectPTID string `json:"subject_ptid"`
+	SessionID   string `json:"session_id,omitempty"`
 	// Attributes carries arbitrary string→string metadata the
 	// caller passed via Credentials.Attributes. Round-tripped
 	// verbatim. Intended for per-module business fields
@@ -57,7 +58,7 @@ func (p *jwtProvider) Authenticate(ctx context.Context, cred Credentials) (*Subj
 	now := time.Now()
 	exp := now.Add(p.accessTTL)
 	claims := jwtClaims{
-		SubjectID:        cred.SubjectID,
+		SubjectPTID:      cred.SubjectID,
 		SessionID:        cred.SessionID,
 		Attributes:       cred.Attributes,
 		RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(exp)},
@@ -84,13 +85,16 @@ func (p *jwtProvider) Validate(ctx context.Context, token string) (*Subject, err
 	}
 	c, ok := tok.Claims.(*jwtClaims)
 	if !ok || !tok.Valid {
-		return nil, err
+		return nil, errors.New("jwt: invalid claims")
+	}
+	if c.SubjectPTID == "" {
+		return nil, errors.New("jwt: subject_ptid is required")
 	}
 	attrs := c.Attributes
 	if attrs == nil {
 		attrs = map[string]string{}
 	}
-	return &Subject{ID: c.SubjectID, SessionID: c.SessionID, Attributes: attrs}, nil
+	return &Subject{ID: c.SubjectPTID, SessionID: c.SessionID, Attributes: attrs}, nil
 }
 
 func (p *jwtProvider) Revoke(ctx context.Context, token string) error { return nil }

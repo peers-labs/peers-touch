@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package peers_touch.model.federation.v1;
 
+import "domain/actor/actor.proto";
+
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/federation/api/pb;pb";
 
 // federation_self.proto — wire shapes for /actor/federation/{me,visibility}.
@@ -48,14 +50,9 @@ enum FederationVisibility {
 // post-mutation reply of PUT /actor/federation/visibility, so a UI
 // can render the new state without a follow-up GET.
 //
-// `actor_id` is a string (decimal) because uint64 is not safely
-// representable in JavaScript number. The companion `actor_id_uint`
-// field carries the raw uint64 for proto consumers (Rust station
-// gateway, future mobile clients) that prefer not to re-parse the
-// decimal — both are populated identically and never disagree.
 message FederationSelfView {
-  string actor_id = 1 [json_name = "actor_id"];
-  uint64 actor_id_uint = 2 [json_name = "actor_id_uint"];
+  reserved 1, 2;
+  reserved "actor_id", "actor_id_uint";
 
   // Local handle without the "@user@host" suffix.
   string preferred_username = 3 [json_name = "preferred_username"];
@@ -97,6 +94,7 @@ message FederationSelfView {
   // Federations this actor's home station has joined.
   // Populated from the governance subserver's materialized state.
   repeated JoinedFederationRef joined_federations = 12 [json_name = "joined_federations"];
+  peers_touch.model.actor.v1.ActorRef actor_ref = 13 [json_name = "actor_ref"];
 }
 
 // JoinedFederationRef is a lightweight reference to a joined federation,

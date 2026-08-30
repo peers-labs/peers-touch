@@ -18,10 +18,9 @@ func ProtoActorRef(a *db.Actor, baseURL string) *model.ActorRef {
 		return nil
 	}
 	return &model.ActorRef{
-		ActorId: a.ID,
-		Ptid:    a.PTID,
-		Acct:    acctFromBaseURL(a.PreferredUsername, baseURL),
-		Kind:    db.ActorKindFromShorthand(a.Kind),
+		Ptid: a.PTID,
+		Acct: acctFromBaseURL(a.PreferredUsername, baseURL),
+		Kind: db.ActorKindFromShorthand(a.Kind),
 	}
 }
 

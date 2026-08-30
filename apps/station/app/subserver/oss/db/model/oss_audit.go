@@ -63,7 +63,7 @@ const (
 // time-based — the `AuditTrim` worker deletes rows older than the
 // configured `audit-retention-days` window.
 //
-// We deliberately store FileKey / BucketID / ActorID by value rather
+// We deliberately store FileKey / BucketID / ActorPTID by value rather
 // than as foreign keys: audit rows must survive bucket / object
 // deletion. They are append-only — there is no UPDATE path through
 // the audit_repo.
@@ -73,7 +73,7 @@ type Audit struct {
 	Action        string    `json:"action"           gorm:"type:varchar(32);index"`
 	FileKey       string    `json:"file_key"         gorm:"type:varchar(255);index"`
 	BucketID      string    `json:"bucket_id"        gorm:"type:varchar(64);index"`
-	ActorID       string    `json:"actor_id"         gorm:"type:varchar(255);index"`
+	ActorPTID     string    `json:"actor_ptid"       gorm:"column:actor_ptid;type:varchar(255);index"`
 	PeerStationID string    `json:"peer_station_id"  gorm:"type:varchar(255);index"`
 	SizeBytes     int64     `json:"size_bytes"       gorm:"type:bigint"`
 	Outcome       string    `json:"outcome"          gorm:"type:varchar(16);index"`
@@ -87,7 +87,7 @@ type Audit struct {
 	FileID string `json:"file_id,omitempty" gorm:"type:varchar(64);index"`
 
 	// DashboardActorID is the operator (admin) who triggered an
-	// `admin_*` action via the dashboard. Distinct from ActorID
+	// `admin_*` action via the dashboard. Distinct from ActorPTID
 	// (the file's owner / target user) — a row may carry both,
 	// e.g. `admin_visibility_override` records both the operator
 	// who pushed the button and the owner of the affected file.

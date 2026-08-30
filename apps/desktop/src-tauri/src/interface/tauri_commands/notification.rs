@@ -51,8 +51,8 @@ fn notification_to_value(n: &model::notification::Notification) -> Value {
     }
     json!({
         "id": n.id,
-        "recipientId": n.recipient_id,
-        "actorId": n.actor_id,
+        "recipientPtid": n.recipient_ptid,
+        "actorPtid": n.actor_ptid,
         "type": n.r#type,
         "category": n.category,
         "status": n.status,
@@ -69,7 +69,7 @@ fn notification_to_value(n: &model::notification::Notification) -> Value {
 
 fn notification_preference_to_value(p: &model::notification::NotificationPreference) -> Value {
     json!({
-        "actorId": p.actor_id,
+        "actorPtid": p.actor_ptid,
         "category": p.category,
         "enabled": p.enabled,
         "pushEnabled": p.push_enabled,

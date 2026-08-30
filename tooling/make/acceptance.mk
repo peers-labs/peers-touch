@@ -97,6 +97,9 @@ acceptance-infra-validate:
 acceptance-validate:
 	python3 tooling/scripts/acceptance-validate.py $(if $(DOMAIN),--domain $(DOMAIN),)
 
+acceptance-infra-validate:
+	python3 tooling/scripts/acceptance-validate.py --infra
+
 acceptance-coverage-report:
 	python3 tooling/scripts/acceptance-coverage-report.py
 

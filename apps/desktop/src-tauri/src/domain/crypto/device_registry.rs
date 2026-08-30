@@ -34,7 +34,7 @@ pub struct DeviceInfo {
 #[derive(Clone, Debug)]
 pub struct PeerDeviceList {
     /// Peer actor DID.
-    pub peer_did: String,
+    pub peer_ptid: String,
     /// Known devices for this peer.
     pub devices: Vec<DeviceInfo>,
     /// When this list was last fetched from Station (unix millis).
@@ -69,13 +69,13 @@ impl DeviceRegistry {
 
     /// Update or insert the device list for a peer.
     pub fn upsert(&mut self, list: PeerDeviceList) {
-        self.entries.insert(list.peer_did.clone(), list);
+        self.entries.insert(list.peer_ptid.clone(), list);
     }
 
     /// Get the device list for a peer if it exists and is not stale.
-    pub fn get_fresh(&self, peer_did: &str) -> Result<&PeerDeviceList, CryptoError> {
-        let list = self.entries.get(peer_did).ok_or_else(|| {
-            CryptoError::DeviceListUnavailable(format!("no entry for {peer_did}"))
+    pub fn get_fresh(&self, peer_ptid: &str) -> Result<&PeerDeviceList, CryptoError> {
+        let list = self.entries.get(peer_ptid).ok_or_else(|| {
+            CryptoError::DeviceListUnavailable(format!("no entry for {peer_ptid}"))
         })?;
 
         let now_ms = SystemTime::now()
@@ -87,7 +87,7 @@ impl DeviceRegistry {
 
         if age_ms > threshold_ms {
             return Err(CryptoError::DeviceListUnavailable(format!(
-                "device list for {peer_did} is stale (age={age_ms}ms > threshold={threshold_ms}ms)"
+                "device list for {peer_ptid} is stale (age={age_ms}ms > threshold={threshold_ms}ms)"
             )));
         }
 
@@ -95,30 +95,30 @@ impl DeviceRegistry {
     }
 
     /// Get device list regardless of staleness (for best-effort operations).
-    pub fn get_any(&self, peer_did: &str) -> Option<&PeerDeviceList> {
-        self.entries.get(peer_did)
+    pub fn get_any(&self, peer_ptid: &str) -> Option<&PeerDeviceList> {
+        self.entries.get(peer_ptid)
     }
 
     /// Check if a specific device is known for a peer.
-    pub fn has_device(&self, peer_did: &str, device_id: &str) -> bool {
+    pub fn has_device(&self, peer_ptid: &str, device_id: &str) -> bool {
         self.entries
-            .get(peer_did)
+            .get(peer_ptid)
             .map(|list| list.devices.iter().any(|d| d.device_id == device_id))
             .unwrap_or(false)
     }
 
     /// Get all device IDs for a peer (even if stale).
-    pub fn device_ids(&self, peer_did: &str) -> Vec<String> {
+    pub fn device_ids(&self, peer_ptid: &str) -> Vec<String> {
         self.entries
-            .get(peer_did)
+            .get(peer_ptid)
             .map(|list| list.devices.iter().map(|d| d.device_id.clone()).collect())
             .unwrap_or_default()
     }
 
     /// Mark a device as verified by the local user.
-    pub fn mark_verified(&mut self, peer_did: &str, device_id: &str) -> Result<(), CryptoError> {
-        let list = self.entries.get_mut(peer_did).ok_or_else(|| {
-            CryptoError::DeviceListUnavailable(format!("no entry for {peer_did}"))
+    pub fn mark_verified(&mut self, peer_ptid: &str, device_id: &str) -> Result<(), CryptoError> {
+        let list = self.entries.get_mut(peer_ptid).ok_or_else(|| {
+            CryptoError::DeviceListUnavailable(format!("no entry for {peer_ptid}"))
         })?;
         let device = list
             .devices
@@ -126,7 +126,7 @@ impl DeviceRegistry {
             .find(|d| d.device_id == device_id)
             .ok_or_else(|| {
                 CryptoError::DeviceListUnavailable(format!(
-                    "device {device_id} not found for {peer_did}"
+                    "device {device_id} not found for {peer_ptid}"
                 ))
             })?;
         device.verified = true;
@@ -134,21 +134,21 @@ impl DeviceRegistry {
     }
 
     /// Remove a device from the registry (e.g. device revoked).
-    pub fn remove_device(&mut self, peer_did: &str, device_id: &str) {
-        if let Some(list) = self.entries.get_mut(peer_did) {
+    pub fn remove_device(&mut self, peer_ptid: &str, device_id: &str) {
+        if let Some(list) = self.entries.get_mut(peer_ptid) {
             list.devices.retain(|d| d.device_id != device_id);
         }
     }
 
     /// Remove all data for a peer.
-    pub fn remove_peer(&mut self, peer_did: &str) {
-        self.entries.remove(peer_did);
+    pub fn remove_peer(&mut self, peer_ptid: &str) {
+        self.entries.remove(peer_ptid);
     }
 
     /// Check if any device for a peer is unverified (for UI warnings).
-    pub fn has_unverified_devices(&self, peer_did: &str) -> bool {
+    pub fn has_unverified_devices(&self, peer_ptid: &str) -> bool {
         self.entries
-            .get(peer_did)
+            .get(peer_ptid)
             .map(|list| list.devices.iter().any(|d| !d.verified))
             .unwrap_or(false)
     }
@@ -189,7 +189,7 @@ mod tests {
     fn upsert_and_get_fresh() {
         let mut reg = DeviceRegistry::with_default_staleness();
         let list = PeerDeviceList {
-            peer_did: "peer-1".into(),
+            peer_ptid: "peer-1".into(),
             devices: vec![sample_device("dev-a"), sample_device("dev-b")],
             fetched_at_ms: now_ms(),
         };
@@ -202,7 +202,7 @@ mod tests {
     fn stale_list_rejected() {
         let mut reg = DeviceRegistry::new(Duration::from_millis(1));
         let list = PeerDeviceList {
-            peer_did: "peer-2".into(),
+            peer_ptid: "peer-2".into(),
             devices: vec![sample_device("dev-x")],
             fetched_at_ms: now_ms() - 1000, // 1 second ago, threshold is 1ms.
         };
@@ -214,7 +214,7 @@ mod tests {
     fn device_verification() {
         let mut reg = DeviceRegistry::with_default_staleness();
         let list = PeerDeviceList {
-            peer_did: "peer-3".into(),
+            peer_ptid: "peer-3".into(),
             devices: vec![sample_device("dev-v")],
             fetched_at_ms: now_ms(),
         };

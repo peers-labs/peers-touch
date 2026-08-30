@@ -7,32 +7,32 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 )
 
-func buildInteractionVisibility(ctx context.Context, repos *infrastructure.Repos, viewerID, postAuthorID uint64) (domain.InteractionVisibility, error) {
+func buildInteractionVisibility(ctx context.Context, repos *infrastructure.Repos, viewerPTID, postAuthorPTID string) (domain.InteractionVisibility, error) {
 	v := domain.InteractionVisibility{
-		ViewerID:       viewerID,
-		PostAuthorID:   postAuthorID,
-		MutualActorIDs: make(map[uint64]struct{}),
+		ViewerPTID:       viewerPTID,
+		PostAuthorPTID:   postAuthorPTID,
+		MutualActorPTIDs: make(map[string]struct{}),
 	}
-	if viewerID == 0 || repos == nil || repos.Follows == nil {
+	if viewerPTID == "" || repos == nil || repos.Follows == nil {
 		return v, nil
 	}
 
-	following, err := repos.Follows.FollowingActorIDs(ctx, viewerID)
+	following, err := repos.Follows.FollowingActorPTIDs(ctx, viewerPTID)
 	if err != nil {
 		return v, err
 	}
-	followers, err := repos.Follows.FollowerActorIDs(ctx, viewerID)
+	followers, err := repos.Follows.FollowerActorPTIDs(ctx, viewerPTID)
 	if err != nil {
 		return v, err
 	}
 
-	followingSet := make(map[uint64]struct{}, len(following))
-	for _, id := range following {
-		followingSet[id] = struct{}{}
+	followingSet := make(map[string]struct{}, len(following))
+	for _, ptid := range following {
+		followingSet[ptid] = struct{}{}
 	}
-	for _, id := range followers {
-		if _, ok := followingSet[id]; ok {
-			v.MutualActorIDs[id] = struct{}{}
+	for _, ptid := range followers {
+		if _, ok := followingSet[ptid]; ok {
+			v.MutualActorPTIDs[ptid] = struct{}{}
 		}
 	}
 	return v, nil

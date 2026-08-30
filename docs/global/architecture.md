@@ -35,7 +35,7 @@ For those, follow:
 │                       CLIENT LAYER                           │
 │                                                              │
 │  Desktop = desktop-web + desktop-rust + desktop-app         │
-│  Mobile  = Android native + iOS native                      │
+│  Mobile  = mobile-web + mobile-rust + native plugins        │
 └──────────────────────────────┬───────────────────────────────┘
                                │
                                │ consumes generated contracts
@@ -234,7 +234,12 @@ The source of truth is always the `.proto`, never the generated file.
   - `docs/global/project-identity.md`
 
 ### Mobile Relay Security
-- **TLS**: All Mobile ↔ Station communication over TLS
+- **TLS**: Production Mobile ↔ Station communication uses TLS. Plain HTTP is
+  permitted only by an explicit development profile and cannot establish
+  production credential/OAuth trust.
+- **Station identity (proposed Mobile amendment)**: Client scope is pinned to a
+  signed `station_peer_id`; URL is a connection hint, not identity. This becomes
+  active with explicit Mobile PRODUCT/DESIGN acceptance.
 - **Station Relay Authentication**: Relay messages authenticated via JWT
 - **No direct peer exposure**: Mobile clients never expose network endpoints
 
@@ -280,8 +285,8 @@ The source of truth is always the `.proto`, never the generated file.
 
 ### 2. **Dependency Injection**
 - Desktop: Services registered via Rust command bridge
-- Android: Hilt / manual DI
-- iOS: Swift native DI patterns
+- Mobile Web/Rust: runtime registry + typed Tauri ports
+- Android/iOS: native plugin adapters only
 - No hardcoded instantiation
 - Easy to mock for testing
 

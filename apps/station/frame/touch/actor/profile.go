@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -24,19 +23,20 @@ type UserLink struct {
 }
 
 type ProfileResponse struct {
-	ID             string    `json:"id"`
-	Username       string    `json:"username"`
-	Acct           string    `json:"acct"`
-	DisplayName    string    `json:"display_name"`
-	Note           string    `json:"note"`
-	URL            string    `json:"url"`
-	Avatar         string    `json:"avatar"`
-	Header         string    `json:"header"`
-	Locked         bool      `json:"locked"`
-	CreatedAt      time.Time `json:"created_at"`
-	StatusesCount  int64     `json:"statuses_count"`
-	FollowingCount int64     `json:"following_count"`
-	FollowersCount int64     `json:"followers_count"`
+	ID             string            `json:"id"`
+	Ref            *modelpb.ActorRef `json:"ref"`
+	Username       string            `json:"username"`
+	Acct           string            `json:"acct"`
+	DisplayName    string            `json:"display_name"`
+	Note           string            `json:"note"`
+	URL            string            `json:"url"`
+	Avatar         string            `json:"avatar"`
+	Header         string            `json:"header"`
+	Locked         bool              `json:"locked"`
+	CreatedAt      time.Time         `json:"created_at"`
+	StatusesCount  int64             `json:"statuses_count"`
+	FollowingCount int64             `json:"following_count"`
+	FollowersCount int64             `json:"followers_count"`
 
 	Region                    string     `json:"region"`
 	Timezone                  string     `json:"timezone"`
@@ -151,7 +151,8 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 	}
 
 	response := &ProfileResponse{
-		ID:                        strconv.FormatUint(actor.ID, 10),
+		ID:                        activityPubID,
+		Ref:                       ProtoActorRef(actor, baseURL),
 		Username:                  actor.PreferredUsername,
 		Acct:                      actor.PreferredUsername,
 		DisplayName:               actor.Name,
@@ -303,6 +304,7 @@ func WebProfileToActorProfileProto(p *ProfileResponse) *modelpb.ActorProfile {
 	}
 	return &modelpb.ActorProfile{
 		Id:                        p.ID,
+		Ref:                       p.Ref,
 		DisplayName:               p.DisplayName,
 		Username:                  p.Username,
 		Note:                      p.Note,

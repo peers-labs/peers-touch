@@ -21,13 +21,17 @@ use crate::model::chat::{DeviceEncryptedPayload, SendMessageCommand};
 use crate::state::AppState;
 use ed25519_dalek::Signer;
 
-fn actor_id_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Option<String> {
-    session_resolver::actor_id_for_window(state.inner(), window)
+fn actor_ptid_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> Option<String> {
+    session_resolver::ptid_for_window(state.inner(), window)
 }
 
-fn user_scope_from_state(state: &State<'_, Arc<AppState>>, window: &Window) -> String {
-    let actor_id = actor_id_from_state(state, window);
-    crate::infrastructure::local_scope::user_scope_for_actor(actor_id.as_deref())
+fn user_scope_from_state(
+    state: &State<'_, Arc<AppState>>,
+    window: &Window,
+) -> Result<String, AppResult<StubPayload>> {
+    let actor_ptid = actor_ptid_from_state(state, window)
+        .ok_or_else(|| AppResult::fail(ErrorCode::Unauthorized, "authentication required", None))?;
+    Ok(crate::infrastructure::local_scope::user_scope_for_actor_ptid(&actor_ptid))
 }
 
 fn now_ms() -> i64 {
@@ -42,7 +46,7 @@ fn actor_ptid_bindings() -> &'static RwLock<HashMap<String, String>> {
     BINDINGS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-fn bind_actor_ptid(actor_id: &str, ptid: &str) -> Result<(), String> {
+fn bind_actor_ptid(actor_ptid: &str, ptid: &str) -> Result<(), String> {
     let ptid = ptid.trim();
     if !ptid.starts_with("ptid:") {
         return Err("canonical PTID is required for crypto identity".to_string());
@@ -50,19 +54,19 @@ fn bind_actor_ptid(actor_id: &str, ptid: &str) -> Result<(), String> {
     actor_ptid_bindings()
         .write()
         .map_err(|_| "crypto identity binding lock poisoned".to_string())?
-        .insert(actor_id.to_string(), ptid.to_string());
+        .insert(actor_ptid.to_string(), ptid.to_string());
     Ok(())
 }
 
-fn local_endpoint(actor_id: &str) -> Result<CryptoEndpoint, String> {
+fn local_endpoint(actor_ptid: &str) -> Result<CryptoEndpoint, String> {
     let ptid = actor_ptid_bindings()
         .read()
         .map_err(|_| "crypto identity binding lock poisoned".to_string())?
-        .get(actor_id)
+        .get(actor_ptid)
         .cloned()
         .ok_or_else(|| "crypto identity has no canonical PTID binding".to_string())?;
-    let device_id =
-        device_install::get_or_create_device_id(actor_id).map_err(|error| format!("{error:?}"))?;
+    let device_id = device_install::get_or_create_device_id(actor_ptid)
+        .map_err(|error| format!("{error:?}"))?;
     CryptoEndpoint::new(ptid, device_id).map_err(|error| error.to_string())
 }
 
@@ -91,7 +95,7 @@ pub fn crypto_generate_identity(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_id = match actor_id_from_state(&state, &window) {
+    let actor_ptid = match actor_ptid_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -101,11 +105,11 @@ pub fn crypto_generate_identity(
             );
         }
     };
-    if let Err(reason) = bind_actor_ptid(&actor_id, &ptid) {
+    if let Err(reason) = bind_actor_ptid(&actor_ptid, &ptid) {
         return AppResult::fail(ErrorCode::InvalidArgument, reason, None);
     }
     let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+        crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid.as_str())
             .identity_key_ref();
     let kp = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
         Ok(k) => k,
@@ -118,7 +122,7 @@ pub fn crypto_generate_identity(
         }
     };
     let fp = crypto::identity_fingerprint_hex(&kp.verifying_key);
-    let endpoint = match local_endpoint(&actor_id) {
+    let endpoint = match local_endpoint(&actor_ptid) {
         Ok(endpoint) => endpoint,
         Err(reason) => {
             return AppResult::fail(
@@ -154,7 +158,7 @@ pub fn crypto_get_fingerprint(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_id = match actor_id_from_state(&state, &window) {
+    let actor_ptid = match actor_ptid_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -165,7 +169,7 @@ pub fn crypto_get_fingerprint(
         }
     };
     let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+        crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid.as_str())
             .identity_key_ref();
     let kp = match crypto::load_identity_key(identity_key_ref.as_str()) {
         Ok(Some(k)) => k,
@@ -201,7 +205,7 @@ pub fn crypto_generate_key_bundle(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_id = match actor_id_from_state(&state, &window) {
+    let actor_ptid = match actor_ptid_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -211,9 +215,12 @@ pub fn crypto_generate_key_bundle(
             );
         }
     };
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+        crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid.as_str())
             .identity_key_ref();
     let ik = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
         Ok(k) => k,
@@ -322,7 +329,7 @@ pub fn crypto_init_session(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_id = match actor_id_from_state(&state, &window) {
+    let actor_ptid = match actor_ptid_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -332,7 +339,10 @@ pub fn crypto_init_session(
             );
         }
     };
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     crypto_init_session_for_context(
         session_id,
         conversation_id,
@@ -346,7 +356,7 @@ pub fn crypto_init_session(
         peer_one_time_pre_key_id,
         peer_one_time_pre_key,
         supported_versions,
-        actor_id,
+        actor_ptid,
         user_scope,
     )
 }
@@ -365,7 +375,7 @@ pub(crate) fn crypto_init_session_for_context(
     peer_one_time_pre_key_id: Option<String>,
     peer_one_time_pre_key: Option<String>,
     supported_versions: Vec<u32>,
-    actor_id: String,
+    actor_ptid: String,
     user_scope: String,
 ) -> AppResult<StubPayload> {
     if session_id.trim().is_empty() {
@@ -378,7 +388,7 @@ pub(crate) fn crypto_init_session_for_context(
             None,
         );
     }
-    let local = match local_endpoint(&actor_id) {
+    let local = match local_endpoint(&actor_ptid) {
         Ok(endpoint) => endpoint,
         Err(reason) => {
             return AppResult::fail(ErrorCode::InternalError, reason, None);
@@ -402,7 +412,7 @@ pub(crate) fn crypto_init_session_for_context(
         }
     };
     let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+        crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid.as_str())
             .identity_key_ref();
     let ik = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
         Ok(k) => k,
@@ -558,7 +568,7 @@ pub fn crypto_accept_session(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_id = match actor_id_from_state(&state, &window) {
+    let actor_ptid = match actor_ptid_from_state(&state, &window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return AppResult::fail(
@@ -568,7 +578,10 @@ pub fn crypto_accept_session(
             );
         }
     };
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     crypto_accept_session_for_context(
         session_id,
         conversation_id,
@@ -580,7 +593,7 @@ pub fn crypto_accept_session(
         recipient_signed_pre_key_id,
         recipient_one_time_pre_key_id,
         negotiated_version,
-        actor_id,
+        actor_ptid,
         user_scope,
     )
 }
@@ -597,7 +610,7 @@ pub(crate) fn crypto_accept_session_for_context(
     recipient_signed_pre_key_id: String,
     recipient_one_time_pre_key_id: Option<String>,
     negotiated_version: u32,
-    actor_id: String,
+    actor_ptid: String,
     user_scope: String,
 ) -> AppResult<StubPayload> {
     if session_id.trim().is_empty() {
@@ -610,7 +623,7 @@ pub(crate) fn crypto_accept_session_for_context(
             None,
         );
     }
-    let local = match local_endpoint(&actor_id) {
+    let local = match local_endpoint(&actor_ptid) {
         Ok(endpoint) => endpoint,
         Err(reason) => return AppResult::fail(ErrorCode::InternalError, reason, None),
     };
@@ -697,7 +710,7 @@ pub(crate) fn crypto_accept_session_for_context(
         None => None,
     };
     let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+        crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid.as_str())
             .identity_key_ref();
     let identity = match crypto::get_or_create_identity(identity_key_ref.as_str()) {
         Ok(value) => value,
@@ -759,7 +772,10 @@ pub fn crypto_session_status(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     crypto_session_status_for_scope(session_id, user_scope)
 }
 
@@ -804,7 +820,10 @@ pub fn crypto_mark_session_ready(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     crypto_mark_session_ready_for_scope(session_id, user_scope)
 }
 
@@ -857,15 +876,18 @@ fn crypto_list_sessions_for_context(
     state: &State<'_, Arc<AppState>>,
     window: &Window,
 ) -> AppResult<StubPayload> {
-    let actor_id = match actor_id_from_state(state, window) {
-        Some(actor_id) if !actor_id.trim().is_empty() => actor_id,
+    let actor_ptid = match actor_ptid_from_state(state, window) {
+        Some(actor_ptid) if !actor_ptid.trim().is_empty() => actor_ptid,
         _ => return AppResult::fail(ErrorCode::Unauthorized, "Authentication required", None),
     };
-    let local = match local_endpoint(&actor_id) {
+    let local = match local_endpoint(&actor_ptid) {
         Ok(endpoint) => endpoint,
         Err(reason) => return AppResult::fail(ErrorCode::InternalError, reason, None),
     };
-    let user_scope = user_scope_from_state(state, window);
+    let user_scope = match user_scope_from_state(state, window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     match local_chat_store::list_direct_sessions(&user_scope, &local, peer_ptid.as_deref()) {
         Ok(sessions) => to_stub(
             if peer_ptid.is_some() {
@@ -901,7 +923,10 @@ pub fn crypto_encrypt(
         content_type,
         reply_to_message_id,
         thread_root_message_id,
-        user_scope_from_state(&state, &window),
+        match user_scope_from_state(&state, &window) {
+            Ok(scope) => scope,
+            Err(error) => return error,
+        },
     )
 }
 
@@ -1028,7 +1053,10 @@ pub fn crypto_decrypt(
     let _guard = dr_operation_lock()
         .lock()
         .expect("crypto operation lock poisoned");
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     let mut session = match local_chat_store::load_direct_session(&user_scope, &session_id) {
         Ok(Some(session)) => session,
         Ok(None) => return AppResult::fail(ErrorCode::NotFound, "Direct session not found", None),
@@ -1095,7 +1123,10 @@ pub fn dr_encrypt(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     dr_encrypt_for_scope(session_id, plaintext, user_scope)
 }
 
@@ -1171,7 +1202,10 @@ pub fn dr_decrypt(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let user_scope = user_scope_from_state(&state, &window);
+    let user_scope = match user_scope_from_state(&state, &window) {
+        Ok(scope) => scope,
+        Err(error) => return error,
+    };
     dr_decrypt_for_scope(
         session_id,
         ciphertext,
@@ -1300,7 +1334,7 @@ fn local_identity_x25519(
     state: &State<'_, Arc<AppState>>,
     window: &Window,
 ) -> Result<(StaticSecret, PublicKey), AppResult<StubPayload>> {
-    let actor_id = match actor_id_from_state(state, window) {
+    let actor_ptid = match actor_ptid_from_state(state, window) {
         Some(id) if !id.trim().is_empty() => id,
         _ => {
             return Err(AppResult::fail(
@@ -1311,7 +1345,7 @@ fn local_identity_x25519(
         }
     };
     let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor(actor_id.as_str())
+        crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid.as_str())
             .identity_key_ref();
     let ik = match crypto::load_identity_key(identity_key_ref.as_str()) {
         Ok(Some(k)) => k,

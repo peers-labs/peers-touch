@@ -26,9 +26,9 @@ export type RealtimeWireEvent =
     newCiphertext: Uint8Array<ArrayBufferLike>;
     mutatedTsUnixMs: number;
   }
-  | { kind: 'typing'; sessionUlid: string; fromActorId: string; typing: boolean }
-  | { kind: 'presence'; actorId: string; online: boolean }
-  | { kind: 'group-membership'; groupUlid: string; actorDid: string; membershipKind: GroupMembershipKind }
+  | { kind: 'typing'; sessionUlid: string; fromActorPtid: string; typing: boolean }
+  | { kind: 'presence'; ptid: string; online: boolean }
+  | { kind: 'group-membership'; groupUlid: string; actorPtid: string; membershipKind: GroupMembershipKind }
   | { kind: 'settings-changed'; conversationKind: 'friend' | 'group'; containerUlid: string }
   | { kind: 'resync' };
 
@@ -78,12 +78,12 @@ function decodeRealtimeEvent(bytes: Uint8Array): RealtimeWireEvent | null {
     return {
       kind: 'typing',
       sessionUlid: frame.value.sessionUlid,
-      fromActorId: frame.value.fromActorId,
+      fromActorPtid: frame.value.fromActorPtid,
       typing: frame.value.typing,
     };
   }
   if (frame.case === 'presence') {
-    return { kind: 'presence', actorId: frame.value.actorId, online: frame.value.online };
+    return { kind: 'presence', ptid: frame.value.actorPtid, online: frame.value.online };
   }
   if (frame.case === 'groupMembershipChange') {
     const membershipKind = groupMembershipKindFromEnum(frame.value.kind);
@@ -91,7 +91,7 @@ function decodeRealtimeEvent(bytes: Uint8Array): RealtimeWireEvent | null {
     return {
       kind: 'group-membership',
       groupUlid: frame.value.groupUlid,
-      actorDid: frame.value.actorDid,
+      actorPtid: frame.value.actorPtid,
       membershipKind,
     };
   }
@@ -119,7 +119,7 @@ function parseSseData(chunk: string): string[] {
 
 function decodeFriendChatMessage(bytes: Uint8Array): FriendChatMessage | null {
   const message = fromBinary(FriendChatMessageSchema, bytes);
-  if (!message.ulid || !message.receiverDid) return null;
+  if (!message.ulid || !message.receiverPtid) return null;
   return adaptFriendChatMessage(message);
 }
 
@@ -156,8 +156,8 @@ function adaptFriendChatMessage(message: ProtoFriendChatMessage): FriendChatMess
   return {
     ulid: message.ulid,
     sessionUlid: message.sessionUlid,
-    senderDid: message.senderDid,
-    receiverDid: message.receiverDid,
+    senderPtid: message.senderPtid,
+    receiverPtid: message.receiverPtid,
     type: message.type,
     content: message.content,
     status: message.status,

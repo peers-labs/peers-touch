@@ -91,7 +91,7 @@ type AppletVersionChannel struct {
 
 type AppletInstallState struct {
 	ID           string    `gorm:"primaryKey;type:varchar(64)" json:"id"`
-	ActorID      string    `gorm:"type:varchar(64);not null;index:idx_applet_install_actor_device" json:"actor_id"`
+	ActorPTID    string    `gorm:"column:actor_ptid;type:varchar(255);not null;index:idx_applet_install_actor_device" json:"actor_ptid"`
 	DeviceID     string    `gorm:"type:varchar(128);index:idx_applet_install_actor_device" json:"device_id"`
 	AppletID     string    `gorm:"type:varchar(64);not null;index:idx_applet_install_identity,unique" json:"applet_id"`
 	Version      string    `gorm:"type:varchar(32);not null" json:"version"`
@@ -136,7 +136,7 @@ type AppletServicePolicy struct {
 type AppletAuditRecord struct {
 	ID           string    `gorm:"primaryKey;type:varchar(64)" json:"id"`
 	AuditID      string    `gorm:"type:varchar(128);not null;uniqueIndex" json:"audit_id"`
-	ActorID      string    `gorm:"type:varchar(64);index" json:"actor_id"`
+	ActorPTID    string    `gorm:"column:actor_ptid;type:varchar(255);index" json:"actor_ptid"`
 	DeviceID     string    `gorm:"type:varchar(128);index" json:"device_id"`
 	AppletID     string    `gorm:"type:varchar(64);index" json:"applet_id"`
 	Version      string    `gorm:"type:varchar(32)" json:"version"`

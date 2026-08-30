@@ -27,7 +27,7 @@ const MOMENTS_RECONNECT_REFRESH_MIN_INTERVAL_MS = 5_000;
 
 let teardownRuntime: (() => void) | null = null;
 let reconcileTimer: number | null = null;
-let bootstrappedActorId: string | null = null;
+let bootstrappedActorPtid: string | null = null;
 let bootstrapSequence = 0;
 let refreshInFlight: Promise<void> | null = null;
 let realtimeWasDisconnected = false;
@@ -97,23 +97,23 @@ export async function ensureMomentDetailProjection(postId: string): Promise<void
   log.info('momentsRuntime', 'moment detail projection refresh completed', { postId: trimmedPostId });
 }
 
-export async function ensureUserMomentsProjection(actorId: string): Promise<void> {
-  const trimmedActorId = actorId.trim();
-  if (!trimmedActorId) return;
+export async function ensureUserMomentsProjection(actorPtid: string): Promise<void> {
+  const trimmedActorPtid = actorPtid.trim();
+  if (!trimmedActorPtid) return;
 
   const moments = useMomentsStore.getState();
   const relationships = useRelationshipsStore.getState();
-  log.info('momentsRuntime', 'user moments projection refresh started', { actorId: trimmedActorId });
+  log.info('momentsRuntime', 'user moments projection refresh started', { actorPtid: trimmedActorPtid });
   await Promise.allSettled([
-    moments.loadUserFeed(trimmedActorId, true),
-    relationships.loadFollowers(trimmedActorId, true),
-    relationships.loadFollowing(trimmedActorId, true),
+    moments.loadUserFeed(trimmedActorPtid, true),
+    relationships.loadFollowers(trimmedActorPtid, true),
+    relationships.loadFollowing(trimmedActorPtid, true),
   ]);
-  log.info('momentsRuntime', 'user moments projection refresh completed', { actorId: trimmedActorId });
+  log.info('momentsRuntime', 'user moments projection refresh completed', { actorPtid: trimmedActorPtid });
 }
 
 function onMomentCreated(payload: MomentCreatedPayload): void {
-  if (!bootstrappedActorId) return;
+  if (!bootstrappedActorPtid) return;
   if (!rememberMomentEvent(payload.eventId)) return;
   runDetached('moment created projection refresh', async () => {
     await ensureMomentDetailProjection(payload.postId);
@@ -122,7 +122,7 @@ function onMomentCreated(payload: MomentCreatedPayload): void {
 }
 
 function onMomentDeleted(payload: MomentDeletedPayload): void {
-  if (!bootstrappedActorId) return;
+  if (!bootstrappedActorPtid) return;
   if (!rememberMomentEvent(payload.eventId)) return;
   runDetached('moment deleted projection refresh', async () => {
     await refreshMomentsProjection('event:moment.deleted');
@@ -130,7 +130,7 @@ function onMomentDeleted(payload: MomentDeletedPayload): void {
 }
 
 function onMomentCommented(payload: MomentCommentedPayload): void {
-  if (!bootstrappedActorId) return;
+  if (!bootstrappedActorPtid) return;
   if (!rememberMomentEvent(payload.eventId)) return;
   runDetached('moment commented projection refresh', async () => {
     await ensureMomentDetailProjection(payload.postId);
@@ -138,7 +138,7 @@ function onMomentCommented(payload: MomentCommentedPayload): void {
 }
 
 function onMomentReacted(payload: MomentReactedPayload): void {
-  if (!bootstrappedActorId) return;
+  if (!bootstrappedActorPtid) return;
   if (!rememberMomentEvent(payload.eventId)) return;
   runDetached('moment reacted projection refresh', async () => {
     await ensureMomentDetailProjection(payload.postId);
@@ -146,33 +146,33 @@ function onMomentReacted(payload: MomentReactedPayload): void {
 }
 
 function onRelationshipChanged(payload: RelationshipChangedPayload): void {
-  if (!bootstrappedActorId) return;
+  if (!bootstrappedActorPtid) return;
   runDetached('relationship changed moments projection refresh', async () => {
     const relationships = useRelationshipsStore.getState();
     await Promise.allSettled([
-      relationships.loadRelationship(payload.targetActorId),
-      relationships.loadFollowers(payload.targetActorId, true),
+      relationships.loadRelationship(payload.targetActorPtid),
+      relationships.loadFollowers(payload.targetActorPtid, true),
       refreshMomentsProjection(`event:relationship.changed:${payload.action}`),
     ]);
   });
 }
 
 function onMomentResyncRequested(payload: MomentResyncRequestedPayload): void {
-  if (!bootstrappedActorId) return;
+  if (!bootstrappedActorPtid) return;
   runDetached('moment resync projection refresh', async () => {
     await refreshMomentsProjection(`event:moment.resync:${payload.reason}`);
   });
 }
 
 function onRealtimeResync(payload: RealtimeResyncPayload): void {
-  if (!bootstrappedActorId) return;
+  if (!bootstrappedActorPtid) return;
   runDetached('realtime resync moments projection refresh', async () => {
     await refreshMomentsProjection(`event:realtime.resync:${payload.reason}`);
   });
 }
 
 function onRealtimeConnectionState(payload: RealtimeConnectionStatePayload): void {
-  if (!bootstrappedActorId) return;
+  if (!bootstrappedActorPtid) return;
   if (!payload.connected) {
     realtimeWasDisconnected = true;
     return;
@@ -190,25 +190,25 @@ function onRealtimeConnectionState(payload: RealtimeConnectionStatePayload): voi
   });
 }
 
-async function bootstrapForActor(actorId: string, sequence: number): Promise<void> {
-  if (bootstrappedActorId && bootstrappedActorId !== actorId) {
+async function bootstrapForActor(actorPtid: string, sequence: number): Promise<void> {
+  if (bootstrappedActorPtid && bootstrappedActorPtid !== actorPtid) {
     useMomentsStore.getState().reset();
     useDiscoveryStore.getState().reset();
     useRelationshipsStore.getState().reset();
   }
 
-  bootstrappedActorId = actorId;
+  bootstrappedActorPtid = actorPtid;
   await refreshMomentsProjection('bootstrap');
 
   if (sequence !== bootstrapSequence) return;
-  log.info('momentsRuntime', 'moments projection bootstrap completed', { actorId });
+  log.info('momentsRuntime', 'moments projection bootstrap completed', { actorPtid });
 }
 
 function reconcileAuthenticatedRuntime(): void {
   const session = useSessionStore.getState();
-  const actorId = session.authenticated ? session.currentUser?.actorId ?? null : null;
-  if (!actorId) {
-    bootstrappedActorId = null;
+  const actorPtid = session.authenticated ? session.currentUser?.actorPtid ?? null : null;
+  if (!actorPtid) {
+    bootstrappedActorPtid = null;
     realtimeWasDisconnected = false;
     lastReconnectRefreshAt = 0;
     bootstrapSequence += 1;
@@ -218,15 +218,15 @@ function reconcileAuthenticatedRuntime(): void {
     return;
   }
 
-  if (bootstrappedActorId === actorId) return;
+  if (bootstrappedActorPtid === actorPtid) return;
   const sequence = ++bootstrapSequence;
-  runDetached('moments projection bootstrap', () => bootstrapForActor(actorId, sequence));
+  runDetached('moments projection bootstrap', () => bootstrapForActor(actorPtid, sequence));
 }
 
 function startReconcileTimer(): void {
   if (reconcileTimer) return;
   reconcileTimer = window.setInterval(() => {
-    if (!bootstrappedActorId) return;
+    if (!bootstrappedActorPtid) return;
     runDetached('periodic moments projection refresh', () => (
       refreshMomentsProjection('periodic reconcile')
     ));
@@ -240,7 +240,7 @@ function stopReconcileTimer(): void {
 }
 
 export async function reconcileMomentsProjection(reason: string): Promise<void> {
-  if (!bootstrappedActorId) return;
+  if (!bootstrappedActorPtid) return;
   await refreshMomentsProjection(reason);
 }
 
@@ -269,7 +269,7 @@ export const momentsRuntime: RuntimeDescriptor = {
       unsubs.forEach((unsubscribe) => unsubscribe());
       stopReconcileTimer();
       teardownRuntime = null;
-      bootstrappedActorId = null;
+      bootstrappedActorPtid = null;
       realtimeWasDisconnected = false;
       lastReconnectRefreshAt = 0;
       bootstrapSequence += 1;

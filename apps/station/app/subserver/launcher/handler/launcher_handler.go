@@ -15,9 +15,9 @@ func NewLauncherHandlers() *LauncherHandlers {
 }
 
 func (h *LauncherHandlers) HandleGetFeed(ctx context.Context, req *model.GetFeedRequest) (*model.GetFeedResponse, error) {
-	userID := req.UserId
-	if userID == "" {
-		userID = "default_user"
+	actorPTID := req.GetActorPtid()
+	if actorPTID == "" {
+		return nil, &searchError{message: "actor_ptid is required"}
 	}
 
 	limit := int(req.Limit)
@@ -25,7 +25,7 @@ func (h *LauncherHandlers) HandleGetFeed(ctx context.Context, req *model.GetFeed
 		limit = 20
 	}
 
-	return service.GetPersonalizedFeed(ctx, userID, limit)
+	return service.GetPersonalizedFeed(ctx, actorPTID, limit)
 }
 
 func (h *LauncherHandlers) HandleSearch(ctx context.Context, req *model.SearchRequest) (*model.SearchResponse, error) {

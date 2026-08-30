@@ -43,7 +43,7 @@ var ErrBusClosed = errors.New("events: bus closed")
 type EventBus interface {
 	// Publish clones ev, stamps the clone with a fresh event_id and
 	// current ts_unix_ms, appends it to the actor's ring buffer, and
-	// fans out to every live subscriber for actor_id. Returns the
+	// fans out to every live subscriber for actor_ptid. Returns the
 	// stamped event_id.
 	//
 	// Caller fills in ev.Kind (and any payload fields). ev.EventId and
@@ -51,16 +51,16 @@ type EventBus interface {
 	// clone is taken so the caller can re-publish the same logical
 	// event to multiple actor streams (e.g. sender + recipient
 	// multi-device echo) safely.
-	Publish(actorID string, ev *realtime.StreamEvent) (string, error)
+	Publish(actorPTID string, ev *realtime.StreamEvent) (string, error)
 
 	// PublishEphemeral stamps and fans out an event only to current live
 	// subscribers. It does not persist or enter the replay ring.
-	PublishEphemeral(actorID string, ev *realtime.StreamEvent) (string, error)
+	PublishEphemeral(actorPTID string, ev *realtime.StreamEvent) (string, error)
 
 	// PublishToDevice is the per-device variant of Publish. It stamps and
 	// buffers the event on the actor stream, but live fan-out and cursor
 	// replay are restricted to subscribers whose DeviceID matches deviceID.
-	PublishToDevice(actorID, deviceID string, ev *realtime.StreamEvent) (string, error)
+	PublishToDevice(actorPTID, deviceID string, ev *realtime.StreamEvent) (string, error)
 
 	// Subscribe registers a new realtime stream subscriber. cursor is
 	// the client's Last-Event-ID; pass empty string for first connect.
@@ -70,7 +70,7 @@ type EventBus interface {
 	//     Resync) before any live event.
 	//   - cancel must be called by the caller when the SSE handler exits
 	//     so the subscriber is unregistered and its channel is closed.
-	Subscribe(ctx context.Context, actorID, deviceID, cursor string) (*Subscription, context.CancelFunc, error)
+	Subscribe(ctx context.Context, actorPTID, deviceID, cursor string) (*Subscription, context.CancelFunc, error)
 
 	// Stats returns operator-facing counters.
 	Stats() Stats
@@ -82,8 +82,8 @@ type EventBus interface {
 
 // Subscription is the per-connection handle returned by Subscribe.
 type Subscription struct {
-	ActorID  string
-	DeviceID string
+	ActorPTID string
+	DeviceID  string
 
 	// Events delivers in-order events for the subscriber. Closed when
 	// the subscription ends (handler-cancelled or wedged-and-dropped).
@@ -233,9 +233,9 @@ type bufferedEvent struct {
 	targetDeviceID string
 }
 
-func (b *eventBus) getOrCreateActor(actorID string) *actorState {
+func (b *eventBus) getOrCreateActor(actorPTID string) *actorState {
 	b.mu.RLock()
-	if a, ok := b.actors[actorID]; ok {
+	if a, ok := b.actors[actorPTID]; ok {
 		b.mu.RUnlock()
 		return a
 	}
@@ -243,27 +243,27 @@ func (b *eventBus) getOrCreateActor(actorID string) *actorState {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if a, ok := b.actors[actorID]; ok {
+	if a, ok := b.actors[actorPTID]; ok {
 		return a
 	}
 	a := &actorState{
 		subs: make(map[*Subscription]struct{}),
 	}
-	b.actors[actorID] = a
+	b.actors[actorPTID] = a
 	return a
 }
 
 // Publish — see EventBus.
-func (b *eventBus) Publish(actorID string, ev *realtime.StreamEvent) (string, error) {
-	return b.publish(actorID, "", ev)
+func (b *eventBus) Publish(actorPTID string, ev *realtime.StreamEvent) (string, error) {
+	return b.publish(actorPTID, "", ev)
 }
 
 func (b *eventBus) PublishEphemeral(
-	actorID string,
+	actorPTID string,
 	ev *realtime.StreamEvent,
 ) (string, error) {
-	if actorID == "" {
-		return "", fmt.Errorf("events: empty actorID")
+	if actorPTID == "" {
+		return "", fmt.Errorf("events: empty actorPTID")
 	}
 	if ev == nil {
 		return "", fmt.Errorf("events: nil event")
@@ -279,7 +279,7 @@ func (b *eventBus) PublishEphemeral(
 	cloned.EventId = b.cfg.idGen()
 	cloned.TsUnixMs = b.cfg.now().UnixMilli()
 
-	a := b.getOrCreateActor(actorID)
+	a := b.getOrCreateActor(actorPTID)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for sub := range a.subs {
@@ -293,16 +293,16 @@ func (b *eventBus) PublishEphemeral(
 }
 
 // PublishToDevice — see EventBus.
-func (b *eventBus) PublishToDevice(actorID, deviceID string, ev *realtime.StreamEvent) (string, error) {
+func (b *eventBus) PublishToDevice(actorPTID, deviceID string, ev *realtime.StreamEvent) (string, error) {
 	if deviceID == "" {
 		return "", fmt.Errorf("events: empty deviceID")
 	}
-	return b.publish(actorID, deviceID, ev)
+	return b.publish(actorPTID, deviceID, ev)
 }
 
-func (b *eventBus) publish(actorID, targetDeviceID string, ev *realtime.StreamEvent) (string, error) {
-	if actorID == "" {
-		return "", fmt.Errorf("events: empty actorID")
+func (b *eventBus) publish(actorPTID, targetDeviceID string, ev *realtime.StreamEvent) (string, error) {
+	if actorPTID == "" {
+		return "", fmt.Errorf("events: empty actorPTID")
 	}
 	if ev == nil {
 		return "", fmt.Errorf("events: nil event")
@@ -326,12 +326,12 @@ func (b *eventBus) publish(actorID, targetDeviceID string, ev *realtime.StreamEv
 	cloned.TsUnixMs = b.cfg.now().UnixMilli()
 	ev = cloned
 
-	a := b.getOrCreateActor(actorID)
+	a := b.getOrCreateActor(actorPTID)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if b.cfg.store != nil {
-		if err := b.cfg.store.Persist(actorID, ev); err != nil {
+		if err := b.cfg.store.Persist(actorPTID, ev); err != nil {
 			return "", err
 		}
 	}
@@ -384,9 +384,9 @@ func (b *eventBus) dropLocked(a *actorState, sub *Subscription) {
 }
 
 // Subscribe — see EventBus.
-func (b *eventBus) Subscribe(ctx context.Context, actorID, deviceID, cursor string) (*Subscription, context.CancelFunc, error) {
-	if actorID == "" {
-		return nil, nil, fmt.Errorf("events: empty actorID")
+func (b *eventBus) Subscribe(ctx context.Context, actorPTID, deviceID, cursor string) (*Subscription, context.CancelFunc, error) {
+	if actorPTID == "" {
+		return nil, nil, fmt.Errorf("events: empty actorPTID")
 	}
 
 	b.mu.RLock()
@@ -396,14 +396,14 @@ func (b *eventBus) Subscribe(ctx context.Context, actorID, deviceID, cursor stri
 	}
 	b.mu.RUnlock()
 
-	a := b.getOrCreateActor(actorID)
+	a := b.getOrCreateActor(actorPTID)
 
 	a.mu.Lock()
 	// Replay (or Resync sentinel) BEFORE registering for live fan-out.
 	// This preserves ordering: every event the subscriber sees came
 	// either from replay (with eventId <= newest at subscribe time) or
 	// from live publish (with eventId strictly after).
-	replay, err := b.replayLocked(a, actorID, deviceID, cursor)
+	replay, err := b.replayLocked(a, actorPTID, deviceID, cursor)
 	if err != nil {
 		a.mu.Unlock()
 		return nil, nil, err
@@ -415,11 +415,11 @@ func (b *eventBus) Subscribe(ctx context.Context, actorID, deviceID, cursor stri
 	}
 
 	sub := &Subscription{
-		ActorID:  actorID,
-		DeviceID: deviceID,
-		send:     make(chan *realtime.StreamEvent, queueCap),
-		bus:      b,
-		state:    a,
+		ActorPTID: actorPTID,
+		DeviceID:  deviceID,
+		send:      make(chan *realtime.StreamEvent, queueCap),
+		bus:       b,
+		state:     a,
 	}
 	sub.Events = sub.send
 
@@ -455,12 +455,12 @@ func (b *eventBus) Subscribe(ctx context.Context, actorID, deviceID, cursor stri
 //   - cursor matches the newest event: no replay.
 //   - cursor at-or-after newest (e.g. process restart):
 //     emit a single Resync sentinel.
-func (b *eventBus) replayLocked(a *actorState, actorID, deviceID, cursor string) ([]*realtime.StreamEvent, error) {
+func (b *eventBus) replayLocked(a *actorState, actorPTID, deviceID, cursor string) ([]*realtime.StreamEvent, error) {
 	if cursor == "" {
 		return nil, nil
 	}
 	if b.cfg.store != nil {
-		newest, ok, err := b.cfg.store.NewestEventID(actorID)
+		newest, ok, err := b.cfg.store.NewestEventID(actorPTID)
 		if err != nil {
 			return nil, err
 		}
@@ -473,7 +473,7 @@ func (b *eventBus) replayLocked(a *actorState, actorID, deviceID, cursor string)
 		if cursor > newest {
 			return []*realtime.StreamEvent{newResync(newest, "cursor newer than durable log", b)}, nil
 		}
-		events, err := b.cfg.store.ReplayAfter(actorID, cursor, 0)
+		events, err := b.cfg.store.ReplayAfter(actorPTID, cursor, 0)
 		if err != nil {
 			return nil, err
 		}

@@ -38,7 +38,7 @@ func TestTimelineHot_RanksByEngagementOverRecency(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("popular old post"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create old: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestTimelineHot_RanksByEngagementOverRecency(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("medium engagement"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create mid: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestTimelineHot_RanksByEngagementOverRecency(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("freshest post — no engagement yet"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create newest: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestTimelineHot_RanksByEngagementOverRecency(t *testing.T) {
 		Type:  model.TimelineType_TIMELINE_PUBLIC,
 		Sort:  model.TimelineSort_TIMELINE_SORT_HOT,
 		Limit: 10,
-	}, /*viewer*/ 0)
+	}, "")
 	if err != nil {
 		t.Fatalf("get hot timeline: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestTimelineHot_RecentSortStillUsesCreatedAt(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("first"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create first: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestTimelineHot_RecentSortStillUsesCreatedAt(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("second"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create second: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestTimelineHot_RecentSortStillUsesCreatedAt(t *testing.T) {
 	resp, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{
 		Type:  model.TimelineType_TIMELINE_PUBLIC,
 		Limit: 10,
-	}, 0)
+	}, "")
 	if err != nil {
 		t.Fatalf("get recent timeline: %v", err)
 	}

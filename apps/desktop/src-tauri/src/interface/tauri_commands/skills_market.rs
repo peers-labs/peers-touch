@@ -120,9 +120,8 @@ pub fn skills_market_install(
         Ok(token) => token,
         Err(result) => return result,
     };
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_skills_market::skills_market_install(&actor_id, input, &token)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_skills_market::skills_market_install(&actor_ptid, input, &token)
 }
 
 #[tauri::command]
@@ -135,7 +134,6 @@ pub fn skills_market_uninstall(
         Ok(token) => token,
         Err(result) => return result,
     };
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_skills_market::skills_market_uninstall(&actor_id, input, &token)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_skills_market::skills_market_uninstall(&actor_ptid, input, &token)
 }

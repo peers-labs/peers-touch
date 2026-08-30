@@ -44,7 +44,7 @@ impl KeyBundleTransport for StationKeyBundleTransport {
             &self.token,
             None,
             Some(&FetchKeyBundleRequest {
-                did: endpoint.ptid.clone(),
+                ptid: endpoint.ptid.clone(),
                 device_id: endpoint.device_id.clone(),
                 home_station_peer_id: String::new(),
             }),
@@ -59,7 +59,7 @@ impl KeyBundleTransport for StationKeyBundleTransport {
             .into_iter()
             .next()
             .ok_or_else(|| "messaging endpoint key bundle is unavailable".to_string())?;
-        if bundle.did != endpoint.ptid || bundle.device_id != endpoint.device_id {
+        if bundle.ptid != endpoint.ptid || bundle.device_id != endpoint.device_id {
             return Err("messaging endpoint key bundle binding mismatch".to_string());
         }
         Ok(bundle)
@@ -211,7 +211,7 @@ mod tests {
         let bob_spk = X25519KeyPair::generate();
         let bob_opk = X25519KeyPair::generate();
         let transport = FixedTransport(KeyBundle {
-            did: "ptid:bob".to_string(),
+            ptid: "ptid:bob".to_string(),
             device_id: "bob-device".to_string(),
             ik_pub: B64.encode(bob.verifying_key().to_bytes()),
             spk_pub: B64.encode(bob_spk.public_bytes()),

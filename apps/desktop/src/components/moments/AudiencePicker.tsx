@@ -68,7 +68,7 @@ export function AudiencePicker({ value, onChange, disabled }: AudiencePickerProp
         const next = create(AudienceSchema, {
           kind,
           targetId: 0n,
-          actorDids: [],
+          actorPtids: [],
         });
         onChange(next);
       }}

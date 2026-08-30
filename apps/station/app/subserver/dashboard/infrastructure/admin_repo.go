@@ -8,10 +8,28 @@ package infrastructure
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"gorm.io/gorm"
 )
+
+// MigrateDashboardPTIDColumn performs the one-way dashboard identity cut
+// before AutoMigrate sees the canonical model. It is safe to call repeatedly.
+func MigrateDashboardPTIDColumn(db *gorm.DB) error {
+	const legacy, canonical = "did", "ptid"
+	table := domain.DashboardAdmin{}.TableName()
+	if !db.Migrator().HasTable(table) || !db.Migrator().HasColumn(table, legacy) {
+		return nil
+	}
+	if db.Migrator().HasColumn(table, canonical) {
+		return fmt.Errorf("[dashboard] %s contains both %s and %s", table, legacy, canonical)
+	}
+	if err := db.Migrator().RenameColumn(table, legacy, canonical); err != nil {
+		return fmt.Errorf("[dashboard] rename admin PTID column: %w", err)
+	}
+	return nil
+}
 
 // AdminRepository defines persistence operations for DashboardAdmin.
 type AdminRepository interface {

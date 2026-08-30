@@ -21,7 +21,7 @@ export function ContactsPage() {
   const groups = useSocialChatStore(s => s.groups);
   const friendRequests = useSocialChatStore(s => s.friendRequests);
   const peerProfiles = useSocialChatStore(s => s.peerProfiles);
-  const currentUserDid = useSocialChatStore(s => s.currentUserDid);
+  const currentUserPtid = useSocialChatStore(s => s.currentUserPtid);
   const selectSession = useSocialChatStore(s => s.selectSession);
   const selectGroup = useSocialChatStore(s => s.selectGroup);
   const setActiveTab = useSocialChatStore(s => s.setActiveTab);
@@ -52,7 +52,7 @@ export function ContactsPage() {
         ) : (
           <Flexbox gap={8}>
             {pendingRequests.map((req) => {
-              const cachedProfile = peerProfiles[req.senderId];
+              const cachedProfile = peerProfiles[req.senderPtid];
               const peerLabel = cachedProfile?.display_name?.trim()
                 || cachedProfile?.username?.trim()
                 || req.senderDisplayName
@@ -195,7 +195,7 @@ export function ContactsPage() {
         ) : (
           <Flexbox gap={2}>
             {sessions.map((s) => {
-              const peer = peerOfSession(s, currentUserDid);
+              const peer = peerOfSession(s, currentUserPtid);
               const label = peer.name || t('chat.social.sessionList.unknown');
               return (
                 <Flexbox
