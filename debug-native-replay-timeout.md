@@ -60,3 +60,12 @@ producer still queried Station from the stale injection cursor and obtained
 must derive its replay comparison boundary from the first accepted
 `REPLAYING` transition while retaining cursor 3 for the earlier duplicate and
 out-of-order injection proof.
+
+Exact-source run
+`20260830T154703060073Z-5ec0d1b6ce4880d6a1e73af571e369d5`
+on `30c0fdb99ec8ad166985366fb4aa223867c3bb74` completed enough
+AS-F06 recovery work to advance to Browser AS-F07. The candidate cleanup then
+reported a Native logout WebDriver script timeout while still releasing all
+Native and Browser ports and storage. This is cleanup evidence only; it does
+not reopen the corrected replay-boundary product behavior, but cleanup remains
+failed until a later run proves logout completion.

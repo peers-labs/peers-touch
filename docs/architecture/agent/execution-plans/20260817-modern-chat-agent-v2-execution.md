@@ -2286,6 +2286,20 @@ AS-F04 implementation progress (2026-08-28):
   Domain validation, and `git diff --check` pass. Independent final review
   approved the code and exact static guards. Runtime proof remains `UNPROVEN`
   pending checkpoint commit and exact-source rerun.
+- Exact-source run
+  `20260830T154703060073Z-5ec0d1b6ce4880d6a1e73af571e369d5`
+  on checkpoint `30c0fdb99ec8ad166985366fb4aa223867c3bb74` advanced
+  through the prior Browser AS-F04 stale-session failure and all AS-F06
+  restart/recovery preparation, then failed first at Browser AS-F07 with
+  `agent_retry_turn failed`. Source, Station, and provisioned runtime commits
+  matched. The candidate cleanup released all client ports and storage, but
+  the Native logout script timed out, so candidate cleanup is `FAILED` even
+  though the outer run summarized cleanup as passed. The AS-F07 Debug Server
+  exited during the long run and emitted no revision checkpoint, so the retry
+  failure has no sufficiently specific post-fix transport/Station evidence.
+  Foundation remains `PARTIAL / UNPROVEN`; retain instrumentation, restore the
+  Debug Server, and repeat the same exact-source run before changing product
+  behavior.
 
 **W8a checks**:
 

@@ -118,3 +118,12 @@
   transport policy and moves native blocking work off the Tauri main thread.
   Branch/tombstone remain short interactive requests. Post-fix runtime
   comparison is pending.
+- Exact-source run
+  `20260830T154703060073Z-5ec0d1b6ce4880d6a1e73af571e369d5`
+  on `30c0fdb99ec8ad166985366fb4aa223867c3bb74` passed the prior
+  Browser AS-F04 failure and reached Browser AS-F07, where
+  `agent_retry_turn failed`. The Debug Server had exited during the long
+  Foundation run, so `.dbg/trae-debug-log-as-f07-revision-flow.ndjson`
+  remained empty and this run cannot distinguish a Station response,
+  Turn-execution transport timeout, or native command failure. The same
+  exact-source run must be repeated with the Debug Server retained.
