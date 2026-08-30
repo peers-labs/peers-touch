@@ -97,7 +97,7 @@ func (s *subServer) handleCatalogSearch(ctx context.Context, req *pb.FederationC
 		}
 
 		entries = append(entries, &pb.FederationCatalogEntry{
-			ActorId:           fmt.Sprintf("%d", a.ID),
+			ActorPtid:         a.PTID,
 			FederatedHandle:   handle,
 			DisplayName:       a.Name,
 			AvatarUrl:         a.Icon,

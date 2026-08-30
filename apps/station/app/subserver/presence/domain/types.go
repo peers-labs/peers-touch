@@ -10,7 +10,7 @@ const (
 )
 
 type Status struct {
-	ActorID        string
+	ActorPTID      string
 	State          State
 	LastSeenAt     time.Time
 	LeaseExpiresAt time.Time

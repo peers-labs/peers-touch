@@ -10,8 +10,8 @@ import { useGlobalContextStore } from '../kernel/global-context/store';
 import { createDesktopClientStorageRuntime } from '../storage/desktopClientStorage';
 
 registerIdentityHandler('clear-zustand-stores', async (payload) => {
-  const currentActorId = useSessionStore.getState().currentUser?.actorId ?? null;
-  if (payload.reason === 'logout' || currentActorId !== payload.actorId) {
+  const currentActorPtid = useSessionStore.getState().currentUser?.actorPtid ?? null;
+  if (payload.reason === 'logout' || currentActorPtid !== payload.actorPtid) {
     useSessionStore.getState().reset();
     useSocialChatStore.getState().reset();
     useNotificationStore.getState().reset();
@@ -23,7 +23,7 @@ registerIdentityHandler('clear-zustand-stores', async (payload) => {
 });
 
 registerIdentityHandler('clear-client-storage-caches', async (payload) => {
-  await createDesktopClientStorageRuntime({ ptid: payload.actorId ?? null }).kernel.invalidateDomains([
+  await createDesktopClientStorageRuntime({ ptid: payload.actorPtid ?? null }).kernel.invalidateDomains([
     'asset.avatar',
     'chat.conversation-settings',
     'chat.message',

@@ -223,27 +223,16 @@ fn save_oauth_callback(
         },
     );
     write_connections(&map)?;
-    let account_id = auth_identity::upsert_oauth(
-        provider_id,
-        provider_user_id.as_str(),
-        user_name.as_str(),
-        input.created_at.as_deref(),
-        Some(email.as_str()),
-        Some(avatar_url.as_str()),
-        Some(profile_url.as_str()),
-    )
-    .map_err(internal_error)?;
-
     // Bridge the OAuth identity to Station via oauth-bridge API.
     // On success, persist the returned JWT so the app can load it later
     // via `ensure_station_session`.
     let bridge_req = OAuthBridgeRequest {
         provider: provider_id.to_string(),
         provider_user_id: input.provider_user_id.clone(),
-        email,
-        username: user_name,
+        email: email.clone(),
+        username: user_name.clone(),
         display_name: display_name_value,
-        avatar_url,
+        avatar_url: avatar_url.clone(),
         ts: ts.clone().unwrap_or_default(),
         sig: sig.clone().unwrap_or_default(),
     };
@@ -253,17 +242,31 @@ fn save_oauth_callback(
             &bridge_req,
         )
         .map_err(|error| internal_error(format!("station oauth bridge failed: {error}")))?;
-    if bridge.actor_id.trim().is_empty() {
-        return Err(internal_error("station oauth bridge returned no actor"));
-    }
+    let actor_ptid = bridge
+        .actor_ref
+        .as_ref()
+        .map(|actor| actor.ptid.trim())
+        .filter(|ptid| ptid.starts_with("ptid:"))
+        .ok_or_else(|| internal_error("station oauth bridge returned no canonical actor PTID"))?;
     if bridge.access_token.trim().is_empty() {
         return Err(internal_error(
             "station oauth bridge returned no access token",
         ));
     }
+    let account_id = auth_identity::upsert_oauth(
+        actor_ptid,
+        provider_id,
+        provider_user_id.as_str(),
+        user_name.as_str(),
+        input.created_at.as_deref(),
+        Some(email.as_str()),
+        Some(avatar_url.as_str()),
+        Some(profile_url.as_str()),
+    )
+    .map_err(internal_error)?;
     session_vault::persist_raw_session_for_account(
         &account_id,
-        &bridge.actor_id,
+        actor_ptid,
         &bridge.access_token,
         SessionSource::OauthBridge,
     )
@@ -271,7 +274,7 @@ fn save_oauth_callback(
 
     Ok(OAuthCallbackSession {
         account_id,
-        actor_id: bridge.actor_id,
+        actor_id: actor_ptid.to_string(),
     })
 }
 
@@ -284,7 +287,7 @@ fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayl
 
 /// Attempt to obtain a Station JWT by calling the oauth-bridge endpoint
 /// with the first active OAuth connection found locally.
-/// Returns `Some((actor_id, token))` on success, `None` on any failure.
+/// Returns `Some((actor_ptid, token))` on success, `None` on any failure.
 pub fn try_bridge_from_connections() -> Option<(String, String)> {
     let map = read_connections().ok()?;
     let conn = map.values().find(|c| c.status == "active")?;
@@ -310,14 +313,31 @@ pub fn try_bridge_from_connections() -> Option<(String, String)> {
         return None;
     }
 
-    let account_id = format!("{}:{}", conn.provider_id, conn.user_id);
-    let _ = session_vault::persist_raw_session_for_account(
+    let actor_ptid = bridge
+        .actor_ref
+        .as_ref()
+        .map(|actor| actor.ptid.trim())
+        .filter(|ptid| ptid.starts_with("ptid:"))?
+        .to_string();
+    let account_id = auth_identity::upsert_oauth(
+        &actor_ptid,
+        &conn.provider_id,
+        &conn.user_id,
+        &conn.user_name,
+        None,
+        Some(&conn.email),
+        Some(&conn.avatar_url),
+        Some(&conn.profile_url),
+    )
+    .ok()?;
+    session_vault::persist_raw_session_for_account(
         &account_id,
-        &bridge.actor_id,
+        &actor_ptid,
         &bridge.access_token,
         SessionSource::OauthBridge,
-    );
-    Some((bridge.actor_id, bridge.access_token))
+    )
+    .ok()?;
+    Some((actor_ptid, bridge.access_token))
 }
 
 fn invalid_argument(message: &str) -> AppResult<StubPayload> {

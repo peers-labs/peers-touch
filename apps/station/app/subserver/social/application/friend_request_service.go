@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"errors"
-	"strconv"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -17,13 +16,13 @@ import (
 // request events can push real-time notifications without importing the
 // notification subserver directly.
 type NotificationProducer interface {
-	Produce(recipientID, actorID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) error
+	Produce(recipientPTID, actorPTID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) error
 }
 
 // ConversationCreator abstracts the conversation subsystem so that
 // accepting a friend request can auto-create the DM conversation.
 type ConversationCreator interface {
-	CreateDirect(ctx context.Context, actorAID, actorBID uint64) error
+	CreateDirect(ctx context.Context, actorAPTID, actorBPTID string) error
 }
 
 var (
@@ -58,11 +57,11 @@ func NewFriendRequestService(
 	}
 }
 
-func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderID, receiverID uint64, message string) (*chat.FriendRequest, error) {
-	if senderID == receiverID {
+func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderPTID, receiverPTID, message string) (*chat.FriendRequest, error) {
+	if senderPTID == receiverPTID {
 		return nil, ErrFriendRequestSelf
 	}
-	blocked, err := s.blocks.IsBlockedBetween(ctx, senderID, receiverID)
+	blocked, err := s.blocks.IsBlockedBetween(ctx, senderPTID, receiverPTID)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +69,7 @@ func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderID, 
 		return nil, ErrFriendRequestBlocked
 	}
 
-	fr, err := s.repo.CreateFriendRequest(ctx, senderID, receiverID, message)
+	fr, err := s.repo.CreateFriendRequest(ctx, senderPTID, receiverPTID, message)
 	if err != nil {
 		if err.Error() == "already friends" {
 			return nil, ErrAlreadyFriends
@@ -79,20 +78,18 @@ func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderID, 
 	}
 
 	if s.notif != nil {
-		receiverDID := strconv.FormatUint(receiverID, 10)
-		senderDID := strconv.FormatUint(senderID, 10)
-		senderName := senderDID
-		profiles := resolveProfiles(ctx, []uint64{senderID})
-		if p, ok := profiles[senderID]; ok && p.Name != "" {
+		senderName := senderPTID
+		profiles := resolveProfiles(ctx, []string{senderPTID})
+		if p, ok := profiles[senderPTID]; ok && p.Name != "" {
 			senderName = p.Name
 		}
 		if err := s.notif.Produce(
-			receiverDID, senderDID,
+			receiverPTID, senderPTID,
 			200, 1,
 			"friend_request", fr.ID,
 			senderName+" sent you a friend request", message,
-			"friend_request:"+senderDID,
-			map[string]string{"sender_did": senderDID, "request_id": fr.ID, "sender_name": senderName},
+			"friend_request:"+senderPTID,
+			map[string]string{"sender_ptid": senderPTID, "request_id": fr.ID, "sender_name": senderName},
 		); err != nil {
 			logger.Error(ctx, "friend request notification failed", "error", err)
 		}
@@ -101,21 +98,16 @@ func (s *FriendRequestService) SendFriendRequest(ctx context.Context, senderID, 
 	return domainToProtoFriendRequest(fr), nil
 }
 
-func (s *FriendRequestService) AcceptFriendRequest(ctx context.Context, actorID uint64, requestID string) (*chat.FriendRequest, error) {
+func (s *FriendRequestService) AcceptFriendRequest(ctx context.Context, actorPTID, requestID string) (*chat.FriendRequest, error) {
 	existing, err := s.repo.GetFriendRequest(ctx, requestID)
 	if err != nil {
 		return nil, ErrFriendRequestNotFound
 	}
-	actorDID := strconv.FormatUint(actorID, 10)
-	if existing.ReceiverDID != actorDID {
+	if existing.ReceiverPtid != actorPTID {
 		return nil, ErrNotRequestReceiver
 	}
 
-	senderID, err := strconv.ParseUint(existing.SenderDID, 10, 64)
-	if err != nil {
-		return nil, err
-	}
-	blocked, err := s.blocks.IsBlockedBetween(ctx, actorID, senderID)
+	blocked, err := s.blocks.IsBlockedBetween(ctx, actorPTID, existing.SenderPtid)
 	if err != nil {
 		return nil, err
 	}
@@ -129,16 +121,16 @@ func (s *FriendRequestService) AcceptFriendRequest(ctx context.Context, actorID 
 	}
 
 	// Establish mutual follow
-	if _, err := s.relationshipSvc.Follow(ctx, senderID, actorDID); err != nil {
+	if _, err := s.relationshipSvc.Follow(ctx, existing.SenderPtid, actorPTID); err != nil {
 		logger.Error(ctx, "friend accept: failed to create follow sender→receiver", "error", err)
 	}
-	if _, err := s.relationshipSvc.Follow(ctx, actorID, existing.SenderDID); err != nil {
+	if _, err := s.relationshipSvc.Follow(ctx, actorPTID, existing.SenderPtid); err != nil {
 		logger.Error(ctx, "friend accept: failed to create follow receiver→sender", "error", err)
 	}
 
 	// Auto-create DM conversation so both parties can message immediately.
 	if s.conv != nil {
-		if err := s.conv.CreateDirect(ctx, senderID, actorID); err != nil {
+		if err := s.conv.CreateDirect(ctx, existing.SenderPtid, actorPTID); err != nil {
 			logger.Error(ctx, "friend accept: failed to create DM conversation", "error", err)
 		}
 	}
@@ -146,13 +138,12 @@ func (s *FriendRequestService) AcceptFriendRequest(ctx context.Context, actorID 
 	return domainToProtoFriendRequest(*fr), nil
 }
 
-func (s *FriendRequestService) RejectFriendRequest(ctx context.Context, actorID uint64, requestID string) (*chat.FriendRequest, error) {
+func (s *FriendRequestService) RejectFriendRequest(ctx context.Context, actorPTID, requestID string) (*chat.FriendRequest, error) {
 	existing, err := s.repo.GetFriendRequest(ctx, requestID)
 	if err != nil {
 		return nil, ErrFriendRequestNotFound
 	}
-	actorDID := strconv.FormatUint(actorID, 10)
-	if existing.ReceiverDID != actorDID {
+	if existing.ReceiverPtid != actorPTID {
 		return nil, ErrNotRequestReceiver
 	}
 
@@ -163,14 +154,14 @@ func (s *FriendRequestService) RejectFriendRequest(ctx context.Context, actorID 
 	return domainToProtoFriendRequest(*fr), nil
 }
 
-func (s *FriendRequestService) ListFriendRequests(ctx context.Context, actorID uint64, status int32, limit, offset int) ([]*chat.FriendRequest, int, error) {
-	requests, total, err := s.repo.ListFriendRequests(ctx, actorID, status, limit, offset)
+func (s *FriendRequestService) ListFriendRequests(ctx context.Context, actorPTID string, status int32, limit, offset int) ([]*chat.FriendRequest, int, error) {
+	requests, total, err := s.repo.ListFriendRequests(ctx, actorPTID, status, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	actorIDs := collectActorIDs(requests)
-	profiles := resolveProfiles(ctx, actorIDs)
+	actorPTIDs := collectActorPTIDs(requests)
+	profiles := resolveProfiles(ctx, actorPTIDs)
 
 	out := make([]*chat.FriendRequest, 0, len(requests))
 	for _, r := range requests {
@@ -183,28 +174,28 @@ func (s *FriendRequestService) ListFriendRequests(ctx context.Context, actorID u
 
 func domainToProtoFriendRequest(fr domain.FriendRequest) *chat.FriendRequest {
 	return &chat.FriendRequest{
-		Id:         fr.ID,
-		SenderId:   fr.SenderDID,
-		ReceiverId: fr.ReceiverDID,
-		Message:    fr.Message,
-		Status:     chat.FriendRequestStatus(fr.Status),
-		CreatedAt:  timestamppb.New(fr.CreatedAt),
+		Id:           fr.ID,
+		SenderPtid:   fr.SenderPtid,
+		ReceiverPtid: fr.ReceiverPtid,
+		Message:      fr.Message,
+		Status:       chat.FriendRequestStatus(fr.Status),
+		CreatedAt:    timestamppb.New(fr.CreatedAt),
 	}
 }
 
-func collectActorIDs(requests []domain.FriendRequest) []uint64 {
-	seen := make(map[uint64]struct{})
+func collectActorPTIDs(requests []domain.FriendRequest) []string {
+	seen := make(map[string]struct{})
 	for _, r := range requests {
-		if id, err := strconv.ParseUint(r.SenderDID, 10, 64); err == nil {
-			seen[id] = struct{}{}
+		if r.SenderPtid != "" {
+			seen[r.SenderPtid] = struct{}{}
 		}
-		if id, err := strconv.ParseUint(r.ReceiverDID, 10, 64); err == nil {
-			seen[id] = struct{}{}
+		if r.ReceiverPtid != "" {
+			seen[r.ReceiverPtid] = struct{}{}
 		}
 	}
-	out := make([]uint64, 0, len(seen))
-	for id := range seen {
-		out = append(out, id)
+	out := make([]string, 0, len(seen))
+	for ptid := range seen {
+		out = append(out, ptid)
 	}
 	return out
 }
@@ -215,38 +206,34 @@ type actorProfile struct {
 	Ptid   string
 }
 
-func resolveProfiles(ctx context.Context, ids []uint64) map[uint64]actorProfile {
-	out := make(map[uint64]actorProfile, len(ids))
-	if len(ids) == 0 {
+func resolveProfiles(ctx context.Context, ptids []string) map[string]actorProfile {
+	out := make(map[string]actorProfile, len(ptids))
+	if len(ptids) == 0 {
 		return out
 	}
-	actors, err := actor.GetActorsByIDs(ctx, ids)
+	actors, err := actor.GetActorsByPTIDs(ctx, ptids)
 	if err != nil {
 		return out
 	}
-	for id, a := range actors {
+	for ptid, a := range actors {
 		name := a.Name
 		if name == "" {
 			name = a.PreferredUsername
 		}
-		out[id] = actorProfile{Name: name, Avatar: a.Icon, Ptid: a.PTID}
+		out[ptid] = actorProfile{Name: name, Avatar: a.Icon, Ptid: a.PTID}
 	}
 	return out
 }
 
-func enrichFriendRequest(fr *chat.FriendRequest, profiles map[uint64]actorProfile) {
-	if senderID, err := strconv.ParseUint(fr.SenderId, 10, 64); err == nil {
-		if p, ok := profiles[senderID]; ok {
-			fr.SenderId = p.Ptid
-			fr.SenderDisplayName = p.Name
-			fr.SenderAvatar = p.Avatar
-		}
+func enrichFriendRequest(fr *chat.FriendRequest, profiles map[string]actorProfile) {
+	if p, ok := profiles[fr.SenderPtid]; ok {
+		fr.SenderPtid = p.Ptid
+		fr.SenderDisplayName = p.Name
+		fr.SenderAvatar = p.Avatar
 	}
-	if receiverID, err := strconv.ParseUint(fr.ReceiverId, 10, 64); err == nil {
-		if p, ok := profiles[receiverID]; ok {
-			fr.ReceiverId = p.Ptid
-			fr.ReceiverDisplayName = p.Name
-			fr.ReceiverAvatar = p.Avatar
-		}
+	if p, ok := profiles[fr.ReceiverPtid]; ok {
+		fr.ReceiverPtid = p.Ptid
+		fr.ReceiverDisplayName = p.Name
+		fr.ReceiverAvatar = p.Avatar
 	}
 }

@@ -106,6 +106,9 @@ fn account_upsert_oauth_during_transition(
     input: AccountUpsertOAuthInput,
     _transition: &MutexGuard<'_, ()>,
 ) -> AppResult<StubPayload> {
+    if !input.actor_ptid.trim().starts_with("ptid:") {
+        return invalid_argument("actor_ptid is required");
+    }
     if input.provider.trim().is_empty() {
         return invalid_argument("provider is required");
     }
@@ -119,6 +122,7 @@ fn account_upsert_oauth_during_transition(
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| provider_user_id.clone());
     let account_id = try_cmd!(auth_identity::upsert_oauth(
+        &input.actor_ptid,
         &provider,
         &provider_user_id,
         &name,
@@ -172,7 +176,7 @@ pub fn account_unlock(input: AccountUnlockInput) -> AppResult<StubPayload> {
                 "ok": true,
                 "token": unlocked.token,
                 "account_id": unlocked.account_id,
-                "actor_id": unlocked.actor_id,
+                "actor_ptid": unlocked.actor_ptid,
             }),
         ),
         Err(PinVerifyError::WrongPin { attempts_remaining }) => AppResult::fail(

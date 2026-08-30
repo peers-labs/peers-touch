@@ -10,7 +10,7 @@ import { AudienceKeyEnvelopeSchema } from '../gen/proto/domain/social/media_pb';
 import { EncryptedMediaDescriptorSchema } from '../gen/proto/domain/common/common_pb';
 import { api } from './desktop_api';
 import { socialGetFollowers, type MomentDraft } from './social_api';
-import { currentAuthenticatedActorId } from '../store/session';
+import { currentAuthenticatedActorPtid } from '../store/session';
 import { log } from '../utils/logger';
 
 const TAG = 'moment-audience-keys';
@@ -27,13 +27,13 @@ interface SealedMomentMediaKeyPayload {
 
 export async function sealMomentDraftAudienceKeys(
   draft: MomentDraft,
-  authorDid: string | null | undefined,
+  authorPtid: string | null | undefined,
 ): Promise<MomentDraft> {
   if (draft.kind !== 'image') return draft;
   if (!draft.images?.length) return draft;
   if (!draft.audience || draft.audience.kind === Audience_Kind.PUBLIC) return draft;
 
-  const normalizedAuthorDid = String(authorDid ?? '').trim();
+  const normalizedAuthorDid = String(authorPtid ?? '').trim();
   if (!normalizedAuthorDid) throw new Error('moment-audience-keys:missing-author-did');
 
   const recipients = await resolveAudienceRecipientDids(draft.audience, normalizedAuthorDid);
@@ -53,8 +53,8 @@ export async function sealMomentDraftAudienceKeys(
     const plaintext = JSON.stringify(payload);
     const sessionUlid = momentMediaKeySession(normalizedAuthorDid, cid);
 
-    for (const recipientDid of recipients) {
-      const bundles = await fetchRecipientBundles(recipientDid);
+    for (const recipientPtid of recipients) {
+      const bundles = await fetchRecipientBundles(recipientPtid);
       for (const bundle of bundles) {
         const peerIk = String(bundle.ik_pub ?? '').trim();
         const deviceId = String(bundle.device_id ?? '').trim();
@@ -66,7 +66,7 @@ export async function sealMomentDraftAudienceKeys(
           plaintext,
         );
         keyEnvelopes.push(create(AudienceKeyEnvelopeSchema, {
-          recipientDid,
+          recipientPtid: recipientPtid,
           deviceId,
           keyId: cid,
           encryptedKey: base64ToBytes(sealed.payload_b64),
@@ -90,13 +90,13 @@ export async function openMomentMediaKeyFromAudience(
   input: {
     cid: string;
     audience?: Audience | null;
-    authorDid?: string | null;
+    authorPtid?: string | null;
   },
 ): Promise<string | null> {
   const cid = input.cid.trim();
   if (!cid || !input.audience?.keyEnvelopes?.length) return null;
 
-  const localDid = currentAuthenticatedActorId();
+  const localDid = currentAuthenticatedActorPtid();
   if (!localDid) return null;
 
   let localDeviceId = '';
@@ -109,24 +109,24 @@ export async function openMomentMediaKeyFromAudience(
 
   const envelope = input.audience.keyEnvelopes.find((item) => {
     if (item.keyId !== cid) return false;
-    if (item.recipientDid && item.recipientDid !== localDid) return false;
+    if (item.recipientPtid && item.recipientPtid !== localDid) return false;
     return !localDeviceId || !item.deviceId || item.deviceId === localDeviceId;
   });
   if (!envelope) return null;
 
-  const authorDid = String(input.authorDid ?? '').trim();
-  if (!authorDid) return null;
+  const authorPtid = String(input.authorPtid ?? '').trim();
+  if (!authorPtid) return null;
 
   let authorBundles;
   try {
-    authorBundles = (await api.keyExchangeFetchBundle(authorDid)).bundles ?? [];
+    authorBundles = (await api.keyExchangeFetchBundle(authorPtid)).bundles ?? [];
   } catch (err) {
     log.warn(TAG, 'fetch author bundles failed while opening moment media key', err);
     return null;
   }
 
   const payloadB64 = bytesToBase64(envelope.encryptedKey);
-  const sessionUlid = momentMediaKeySession(authorDid, cid);
+  const sessionUlid = momentMediaKeySession(authorPtid, cid);
   for (const bundle of authorBundles) {
     const senderIk = String(bundle.ik_pub ?? '').trim();
     if (!senderIk) continue;
@@ -149,13 +149,13 @@ export async function openMomentMediaKeyFromAudience(
   return null;
 }
 
-async function resolveAudienceRecipientDids(audience: Audience, authorDid: string): Promise<string[]> {
-  const recipients = new Set<string>([authorDid]);
+async function resolveAudienceRecipientDids(audience: Audience, authorPtid: string): Promise<string[]> {
+  const recipients = new Set<string>([authorPtid]);
   switch (audience.kind) {
     case Audience_Kind.SELF:
       break;
     case Audience_Kind.CUSTOM_ALLOW:
-      for (const did of audience.actorDids) addDid(recipients, did);
+      for (const did of audience.actorPtids) addDid(recipients, did);
       break;
     case Audience_Kind.FOLLOWERS:
       for (const did of await listAllFollowerDids()) addDid(recipients, did);
@@ -165,7 +165,7 @@ async function resolveAudienceRecipientDids(audience: Audience, authorDid: strin
         throw new Error('moment-audience-keys:custom-deny-public-not-enumerable');
       }
       for (const did of await listAllFollowerDids()) addDid(recipients, did);
-      for (const did of audience.actorDids) recipients.delete(did);
+      for (const did of audience.actorPtids) recipients.delete(did);
       break;
     }
     case Audience_Kind.CIRCLE:
@@ -182,7 +182,7 @@ async function listAllFollowerDids(): Promise<string[]> {
   let cursor = '';
   do {
     const page = await socialGetFollowers(undefined, cursor || undefined, FOLLOWER_PAGE_SIZE);
-    for (const follower of page.followers) addDidToArray(out, follower.actorId);
+    for (const follower of page.followers) addDidToArray(out, follower.actorPtid);
     cursor = page.nextCursor || '';
   } while (cursor);
   return out;
@@ -206,8 +206,8 @@ function stripInlineImageKey(image: ImageAttachment): ImageAttachment {
   });
 }
 
-function momentMediaKeySession(authorDid: string, cid: string): string {
-  return `moment-media-key:${authorDid}:${cid}`;
+function momentMediaKeySession(authorPtid: string, cid: string): string {
+  return `moment-media-key:${authorPtid}:${cid}`;
 }
 
 function addDid(target: Set<string>, did: string): void {

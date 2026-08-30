@@ -2,9 +2,9 @@ package domain
 
 import "time"
 
-// KeyBundle is one device-scoped publish for a DID.
+// KeyBundle is one device-scoped publish for a PTID.
 type KeyBundle struct {
-	ActorDID          string
+	ActorPtid         string
 	DeviceID          string // authenticated, non-empty device address
 	IdentityKeyPub    []byte // Ed25519 public key (32 bytes)
 	KeyFingerprint    string // hex-encoded fingerprint

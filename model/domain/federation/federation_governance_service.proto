@@ -18,7 +18,7 @@ message SubmitProposalRequest {
   EventType proposed_event_type = 2;
   bytes     payload_bytes = 3;
   bytes     payload_hash = 4;
-  string    actor_id = 5;
+  string    actor_ptid = 5;
   string    actor_federated_handle = 6;
   string    station_peer_id = 7;
   bytes     actor_signature = 8;

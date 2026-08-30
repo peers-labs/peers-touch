@@ -4,7 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Tag } from '@lobehub/ui';
 import { Collapse, Empty, theme, Typography } from 'antd';
 import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
-import { currentAuthenticatedActorId } from '../../store/session';
+import { currentAuthenticatedActorPtid } from '../../store/session';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { log } from '../../utils/logger';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
@@ -33,7 +33,7 @@ export function ChatContactsPanel({
   const {
     friendRequests,
     peerProfiles,
-    currentUserDid,
+    currentUserPtid,
     conversationRecords,
     conversationMembers,
     groupMembers,
@@ -45,7 +45,7 @@ export function ChatContactsPanel({
   } = useActiveSocialChatSlice((s) => ({
     friendRequests: s.friendRequests,
     peerProfiles: s.peerProfiles,
-    currentUserDid: s.currentUserDid,
+    currentUserPtid: s.currentUserPtid,
     conversationRecords: s.conversations,
     conversationMembers: s.conversationMembers,
     groupMembers: s.groupMembers,
@@ -65,7 +65,7 @@ export function ChatContactsPanel({
       void conversationRecords;
       void conversationMembers;
       void groupMembers;
-      void currentUserDid;
+      void currentUserPtid;
       void friendRequests;
       void peerProfiles;
       return getIMConversations();
@@ -73,7 +73,7 @@ export function ChatContactsPanel({
     [
       conversationMembers,
       conversationRecords,
-      currentUserDid,
+      currentUserPtid,
       friendRequests,
       getIMConversations,
       groupMembers,
@@ -83,15 +83,15 @@ export function ChatContactsPanel({
   const groupConversations = conversations.filter((conversation) => conversation.kind === 'group');
   const friendConversations = conversations.filter((conversation) => conversation.kind === 'friend');
 
-  const myDid = currentUserDid || currentAuthenticatedActorId() || '';
+  const myDid = currentUserPtid || currentAuthenticatedActorPtid() || '';
 
   const acceptedContacts = (() => {
-    const existingPeerIds = new Set(friendConversations.map((c) => c.peerDid).filter(Boolean));
+    const existingPeerIds = new Set(friendConversations.map((c) => c.peerPtid).filter(Boolean));
     return friendRequests
       .filter((r) => r.status === 2)
       .map((r) => {
-        const isSender = r.senderId === myDid;
-        const peerId = isSender ? r.receiverId : r.senderId;
+        const isSender = r.senderPtid === myDid;
+        const peerId = isSender ? r.receiverPtid : r.senderPtid;
         const peerName = isSender ? r.receiverDisplayName : r.senderDisplayName;
         const peerAvatar = isSender ? r.receiverAvatar : r.senderAvatar;
         return { peerId, peerName, peerAvatar };
@@ -104,13 +104,13 @@ export function ChatContactsPanel({
   const unifiedRequests = useMemo(() => {
     if (!myDid) return [];
     return friendRequests
-      .filter((request) => request.senderId === myDid || request.receiverId === myDid)
+      .filter((request) => request.senderPtid === myDid || request.receiverPtid === myDid)
       .map((request) => {
-        const outgoing = request.senderId === myDid;
+        const outgoing = request.senderPtid === myDid;
         return {
           request,
           direction: outgoing ? 'outgoing' as const : 'incoming' as const,
-          peerDid: outgoing ? request.receiverId : request.senderId,
+          peerPtid: outgoing ? request.receiverPtid : request.senderPtid,
           peerName: outgoing ? request.receiverDisplayName : request.senderDisplayName,
           peerAvatar: outgoing ? request.receiverAvatar : request.senderAvatar,
         };
@@ -168,12 +168,12 @@ export function ChatContactsPanel({
   }
 
   const selectAcceptedActor = (
-    peerDid: string,
+    peerPtid: string,
     displayName: string,
     avatar?: string,
   ) => {
     const selection = friendContactSelection(
-      peerDid,
+      peerPtid,
       displayName,
       avatar,
       friendConversations,
@@ -189,8 +189,8 @@ export function ChatContactsPanel({
     />
   ) : (
     <Flexbox gap={8}>
-      {unifiedRequests.map(({ request, direction, peerDid, peerName, peerAvatar }) => {
-        const cachedProfile = peerProfiles[peerDid];
+      {unifiedRequests.map(({ request, direction, peerPtid, peerName, peerAvatar }) => {
+        const cachedProfile = peerProfiles[peerPtid];
         const peerLabel = cachedProfile?.display_name?.trim()
           || cachedProfile?.username?.trim()
           || peerName
@@ -199,7 +199,7 @@ export function ChatContactsPanel({
         const isPendingIncoming = direction === 'incoming' && request.status === 1;
         const isAccepted = request.status === 2;
         const isSelected = selectedContact?.kind === 'friend'
-          && selectedContact.peerDid === peerDid;
+          && selectedContact.peerPtid === peerPtid;
         return (
           <Flexbox
             key={request.id}
@@ -210,13 +210,13 @@ export function ChatContactsPanel({
             role={isAccepted ? 'button' : undefined}
             tabIndex={isAccepted ? 0 : undefined}
             onClick={isAccepted
-              ? () => selectAcceptedActor(peerDid, peerLabel, resolvedAvatar)
+              ? () => selectAcceptedActor(peerPtid, peerLabel, resolvedAvatar)
               : undefined}
             onKeyDown={isAccepted
               ? (event) => {
                   if (event.key !== 'Enter' && event.key !== ' ') return;
                   event.preventDefault();
-                  selectAcceptedActor(peerDid, peerLabel, resolvedAvatar);
+                  selectAcceptedActor(peerPtid, peerLabel, resolvedAvatar);
                 }
               : undefined}
             style={{
@@ -338,7 +338,7 @@ export function ChatContactsPanel({
               return (
                 <Flexbox
                   key={conversation.id}
-                  data-chat-contact-ptid={conversation.peerDid}
+                  data-chat-contact-ptid={conversation.peerPtid}
                   horizontal
                   align="center"
                   gap={9}
@@ -430,7 +430,7 @@ export function ChatContactsPanel({
                     onSelectContact({
                       kind: 'friend',
                       conversationId: conversation.id,
-                      peerDid: conversation.peerDid || '',
+                      peerPtid: conversation.peerPtid || '',
                       displayName: label,
                       avatar: conversation.avatar,
                     });
@@ -439,7 +439,7 @@ export function ChatContactsPanel({
                     onStartChat?.({
                       kind: 'friend',
                       conversationId: conversation.id,
-                      peerDid: conversation.peerDid || '',
+                      peerPtid: conversation.peerPtid || '',
                       displayName: label,
                       avatar: conversation.avatar,
                     });
@@ -480,7 +480,7 @@ export function ChatContactsPanel({
               const avatar = cachedProfile?.avatar?.trim() || peerAvatar;
               const isSelected = selectedContact?.kind === 'friend'
                 && !selectedContact.conversationId
-                && selectedContact.peerDid === peerId;
+                && selectedContact.peerPtid === peerId;
               return (
                 <Flexbox
                   key={peerId}
@@ -490,7 +490,7 @@ export function ChatContactsPanel({
                   gap={9}
                   onClick={() => onSelectContact({
                     kind: 'friend',
-                    peerDid: peerId,
+                    peerPtid: peerId,
                     displayName: label,
                     avatar,
                   })}

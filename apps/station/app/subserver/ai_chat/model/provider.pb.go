@@ -83,7 +83,7 @@ type Provider struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                          // 唯一ID
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                      // 显示名称
-	PeersUserId   string                 `protobuf:"bytes,3,opt,name=peers_user_id,json=peersUserId,proto3" json:"peers_user_id,omitempty"`   // 关联的用户ID
+	ActorPtid     string                 `protobuf:"bytes,3,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`           // 关联的用户ID
 	Sort          int32                  `protobuf:"varint,4,opt,name=sort,proto3" json:"sort,omitempty"`                                     // 排序
 	Enabled       bool                   `protobuf:"varint,5,opt,name=enabled,proto3" json:"enabled,omitempty"`                               // 是否启用
 	CheckModel    string                 `protobuf:"bytes,6,opt,name=check_model,json=checkModel,proto3" json:"check_model,omitempty"`        // 用于连接检查的模型
@@ -148,9 +148,9 @@ func (x *Provider) GetName() string {
 	return ""
 }
 
-func (x *Provider) GetPeersUserId() string {
+func (x *Provider) GetActorPtid() string {
 	if x != nil {
-		return x.PeersUserId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -1167,11 +1167,12 @@ var File_domain_ai_chat_provider_proto protoreflect.FileDescriptor
 
 const file_domain_ai_chat_provider_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddomain/ai_chat/provider.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8a\x05\n" +
+	"\x1ddomain/ai_chat/provider.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x85\x05\n" +
 	"\bProvider\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\"\n" +
-	"\rpeers_user_id\x18\x03 \x01(\tR\vpeersUserId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x03 \x01(\tR\tactorPtid\x12\x12\n" +
 	"\x04sort\x18\x04 \x01(\x05R\x04sort\x12\x18\n" +
 	"\aenabled\x18\x05 \x01(\bR\aenabled\x12\x1f\n" +
 	"\vcheck_model\x18\x06 \x01(\tR\n" +

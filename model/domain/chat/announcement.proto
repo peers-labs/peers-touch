@@ -12,7 +12,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 message GroupAnnouncement {
   string ulid = 1;                            // 公告唯一ID
   string group_ulid = 2;                      // 所属群组ID
-  string author_did = 3;                      // 发布者DID
+  string author_ptid = 3;                      // 发布者PTID
   string title = 4;                           // 标题
   string content = 5;                         // 内容
   bool is_pinned = 6;                         // 是否置顶
@@ -25,7 +25,7 @@ message GroupAnnouncement {
 // 公告已读记录
 message AnnouncementReadRecord {
   string announcement_ulid = 1;
-  string reader_did = 2;
+  string reader_ptid = 2;
   google.protobuf.Timestamp read_at = 3;
 }
 

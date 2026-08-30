@@ -942,7 +942,7 @@ func (s *DefaultService) processCommand(ctx context.Context, repo Repository, co
 	return event, nil
 }
 
-// DeterministicDirectID generates a stable conversation ID from a sorted DID pair (DP-4).
+// DeterministicDirectID generates a stable conversation ID from a sorted PTID pair (DP-4).
 func DeterministicDirectID(actorA, actorB string) string {
 	pair := []string{actorA, actorB}
 	sort.Strings(pair)

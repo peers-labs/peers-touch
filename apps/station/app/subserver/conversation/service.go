@@ -11,7 +11,7 @@ import (
 // Service is the application-layer interface for the conversation domain.
 type Service interface {
 	// CreateDirect establishes a deterministic direct conversation between two actors.
-	// The conversation ID is deterministic per DP-4 (sorted DID pair).
+	// The conversation ID is deterministic per DP-4 (sorted PTID pair).
 	// Idempotent: returns existing conversation if already created.
 	CreateDirect(ctx context.Context, actorA, actorB string, actorAStation, actorBStation string) (*chat.Conversation, error)
 

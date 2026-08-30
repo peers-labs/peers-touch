@@ -77,7 +77,7 @@ func (x *Peer) GetMultiaddrs() []string {
 // Profile: 用户的详细资料
 type Profile struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Bio           string                 `protobuf:"bytes,2,opt,name=bio,proto3" json:"bio,omitempty"`
 	Fields        map[string]string      `protobuf:"bytes,3,rep,name=fields,proto3" json:"fields,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
@@ -114,9 +114,9 @@ func (*Profile) Descriptor() ([]byte, []int) {
 	return file_domain_core_core_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *Profile) GetActorId() string {
+func (x *Profile) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -144,9 +144,10 @@ const file_domain_core_core_proto_rawDesc = "" +
 	"\apeer_id\x18\x01 \x01(\tR\x06peerId\x12\x1e\n" +
 	"\n" +
 	"multiaddrs\x18\x02 \x03(\tR\n" +
-	"multiaddrs\"\xb9\x01\n" +
-	"\aProfile\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x10\n" +
+	"multiaddrs\"\xbd\x01\n" +
+	"\aProfile\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x10\n" +
 	"\x03bio\x18\x02 \x01(\tR\x03bio\x12F\n" +
 	"\x06fields\x18\x03 \x03(\v2..peers_touch.model.core.v1.Profile.FieldsEntryR\x06fields\x1a9\n" +
 	"\vFieldsEntry\x12\x10\n" +

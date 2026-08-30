@@ -99,33 +99,33 @@ func (s *subServer) handleSubmitProposal(ctx context.Context, req *pb.SubmitProp
 	}
 
 	actorKeySvc := s.actorKeySvc
-	_, actorPriv, err := actorKeySvc.GenerateKeyPair(ctx, req.ActorId)
+	_, actorPriv, err := actorKeySvc.GenerateKeyPair(ctx, req.ActorPtid)
 	if err != nil {
-		actorPriv, err = actorKeySvc.GetPrivateKey(ctx, req.ActorId)
+		actorPriv, err = actorKeySvc.GetPrivateKey(ctx, req.ActorPtid)
 		if err != nil {
 			actorPriv = nil
 		}
 	}
 
-	sequencerActorID := fed.CreatedByActorID
-	_, seqPriv, keyErr := actorKeySvc.GenerateKeyPair(ctx, sequencerActorID)
+	sequencerActorPTID := fed.CreatedByActorPTID
+	_, seqPriv, keyErr := actorKeySvc.GenerateKeyPair(ctx, sequencerActorPTID)
 	if keyErr != nil {
-		seqPriv, keyErr = actorKeySvc.GetPrivateKey(ctx, sequencerActorID)
+		seqPriv, keyErr = actorKeySvc.GetPrivateKey(ctx, sequencerActorPTID)
 		if keyErr != nil {
 			return nil, errors.New("sequencer key not available")
 		}
 	}
 
 	membership, err := s.federationSvc.ApproveJoin(ctx, &application.ApproveJoinInput{
-		FederationID:          req.FederationId,
-		JoiningStationPeerID:  req.StationPeerId,
-		JoiningStationName:    req.JoiningStationName,
-		JoiningStationURL:     req.JoiningStationUrl,
-		ApproverActorID:       sequencerActorID,
-		ApproverActorHandle:   sequencerActorID,
-		ApproverStationPeerID: localPeerID,
-		ActorPrivateKey:       seqPriv,
-		StationPrivateKey:     seqPriv,
+		FederationID:                 req.FederationId,
+		JoiningStationPeerID:         req.StationPeerId,
+		JoiningStationName:           req.JoiningStationName,
+		JoiningStationURL:            req.JoiningStationUrl,
+		ApproverActorPTID:            sequencerActorPTID,
+		ApproverActorFederatedHandle: sequencerActorPTID,
+		ApproverStationPeerID:        localPeerID,
+		ActorPrivateKey:              seqPriv,
+		StationPrivateKey:            seqPriv,
 	})
 	if err != nil {
 		return nil, err

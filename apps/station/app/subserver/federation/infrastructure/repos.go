@@ -6,6 +6,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
+	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -30,6 +31,24 @@ func NewRepos(db *gorm.DB) *Repos {
 	}
 }
 
+func MigrateIdentityColumns(db *gorm.DB) error {
+	for _, rename := range []struct {
+		table string
+		from  string
+		to    string
+	}{
+		{table: "federation", from: "created_by_actor_id", to: "created_by_actor_ptid"},
+		{table: "federation_ledger_event", from: "actor_id", to: "actor_ptid"},
+		{table: "federation_actor_role", from: "actor_id", to: "actor_ptid"},
+		{table: "actor_signing_key", from: "actor_id", to: "actor_ptid"},
+	} {
+		if err := modeldb.MigrateStringIdentityColumn(db, rename.table, rename.from, rename.to); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ═══ GORM Models ═══════════════════════════════════════════════════════════
 
 type federationModel struct {
@@ -43,7 +62,7 @@ type federationModel struct {
 	GenesisHash            []byte    `gorm:"type:bytea;not null"`
 	HeadHash               []byte    `gorm:"type:bytea;not null"`
 	HeadSeq                int64     `gorm:"not null;default:0"`
-	CreatedByActorID       string    `gorm:"type:varchar(64);not null"`
+	CreatedByActorPTID     string    `gorm:"column:created_by_actor_ptid;type:varchar(255);not null"`
 	CreatedByStationPeerID string    `gorm:"type:varchar(128);not null"`
 	CreatedAt              time.Time `gorm:"not null;autoCreateTime"`
 	UpdatedAt              time.Time `gorm:"not null;autoUpdateTime"`
@@ -61,7 +80,7 @@ type ledgerEventModel struct {
 	EventType              int32  `gorm:"type:smallint;not null"`
 	PayloadBytes           []byte `gorm:"type:bytea;not null"`
 	PayloadHash            []byte `gorm:"type:bytea;not null"`
-	ActorID                string `gorm:"type:varchar(64);not null"`
+	ActorPTID              string `gorm:"column:actor_ptid;type:varchar(255);not null"`
 	ActorFederatedHandle   string `gorm:"type:varchar(255);not null;default:''"`
 	StationPeerID          string `gorm:"type:varchar(128);not null"`
 	SequencerStationPeerID string `gorm:"type:varchar(128);not null"`
@@ -90,7 +109,7 @@ func (membershipModel) TableName() string { return "federation_station_membershi
 type actorRoleModel struct {
 	ID                   int64      `gorm:"primaryKey;autoIncrement"`
 	FederationID         string     `gorm:"type:varchar(30);not null;uniqueIndex:idx_actor_role_fed_actor;index"`
-	ActorID              string     `gorm:"type:varchar(64);not null;uniqueIndex:idx_actor_role_fed_actor"`
+	ActorPTID            string     `gorm:"column:actor_ptid;type:varchar(255);not null;uniqueIndex:idx_actor_role_fed_actor"`
 	ActorFederatedHandle string     `gorm:"type:varchar(255);not null;default:''"`
 	StationPeerID        string     `gorm:"type:varchar(128);not null"`
 	Role                 string     `gorm:"type:varchar(30);not null"`
@@ -103,7 +122,7 @@ func (actorRoleModel) TableName() string { return "federation_actor_role" }
 
 type actorSigningKeyModel struct {
 	ID        int64      `gorm:"primaryKey;autoIncrement"`
-	ActorID   string     `gorm:"uniqueIndex;type:varchar(64);not null"`
+	ActorPTID string     `gorm:"column:actor_ptid;uniqueIndex;type:varchar(255);not null"`
 	PublicKey []byte     `gorm:"type:bytea;not null"`
 	Seed      []byte     `gorm:"column:encrypted_private_key;type:bytea;not null"`
 	CreatedAt time.Time  `gorm:"not null;autoCreateTime"`
@@ -142,7 +161,7 @@ func (r *federationRepo) Create(ctx context.Context, record *domain.FederationRe
 		GenesisHash:            record.GenesisHash,
 		HeadHash:               record.HeadHash,
 		HeadSeq:                int64(record.HeadSeq),
-		CreatedByActorID:       record.CreatedByActorID,
+		CreatedByActorPTID:     record.CreatedByActorPTID,
 		CreatedByStationPeerID: record.CreatedByStationPeerID,
 	}
 	return r.db.WithContext(ctx).Create(m).Error
@@ -216,7 +235,7 @@ func toFederationRecord(m *federationModel) *domain.FederationRecord {
 		GenesisHash:            m.GenesisHash,
 		HeadHash:               m.HeadHash,
 		HeadSeq:                uint64(m.HeadSeq),
-		CreatedByActorID:       m.CreatedByActorID,
+		CreatedByActorPTID:     m.CreatedByActorPTID,
 		CreatedByStationPeerID: m.CreatedByStationPeerID,
 	}
 }
@@ -235,7 +254,7 @@ func (r *ledgerEventRepo) Append(ctx context.Context, event *pb.LedgerEvent) err
 		EventType:              int32(event.EventType),
 		PayloadBytes:           event.PayloadBytes,
 		PayloadHash:            event.PayloadHash,
-		ActorID:                event.ActorId,
+		ActorPTID:              event.ActorPtid,
 		ActorFederatedHandle:   event.ActorFederatedHandle,
 		StationPeerID:          event.StationPeerId,
 		SequencerStationPeerID: event.SequencerStationPeerId,
@@ -319,7 +338,7 @@ func toLedgerEventPb(m *ledgerEventModel) *pb.LedgerEvent {
 		EventType:              pb.EventType(m.EventType),
 		PayloadBytes:           m.PayloadBytes,
 		PayloadHash:            m.PayloadHash,
-		ActorId:                m.ActorID,
+		ActorPtid:              m.ActorPTID,
 		ActorFederatedHandle:   m.ActorFederatedHandle,
 		StationPeerId:          m.StationPeerID,
 		SequencerStationPeerId: m.SequencerStationPeerID,
@@ -405,22 +424,22 @@ type actorRoleRepo struct{ db *gorm.DB }
 func (r *actorRoleRepo) Upsert(ctx context.Context, record *domain.ActorRoleRecord) error {
 	m := &actorRoleModel{
 		FederationID:         record.FederationID,
-		ActorID:              record.ActorID,
+		ActorPTID:            record.ActorPTID,
 		ActorFederatedHandle: record.ActorFederatedHandle,
 		StationPeerID:        record.StationPeerID,
 		Role:                 record.Role,
 		GrantedByEventID:     record.GrantedByEventID,
 	}
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "federation_id"}, {Name: "actor_id"}},
+		Columns:   []clause.Column{{Name: "federation_id"}, {Name: "actor_ptid"}},
 		DoUpdates: clause.AssignmentColumns([]string{"role", "actor_federated_handle", "station_peer_id", "granted_by_event_id"}),
 	}).Create(m).Error
 }
 
-func (r *actorRoleRepo) GetByActor(ctx context.Context, federationID, actorID string) (*domain.ActorRoleRecord, error) {
+func (r *actorRoleRepo) GetByActor(ctx context.Context, federationID, actorPTID string) (*domain.ActorRoleRecord, error) {
 	var m actorRoleModel
 	err := r.db.WithContext(ctx).
-		Where("federation_id = ? AND actor_id = ? AND revoked_at IS NULL", federationID, actorID).
+		Where("federation_id = ? AND actor_ptid = ? AND revoked_at IS NULL", federationID, actorPTID).
 		First(&m).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -430,7 +449,7 @@ func (r *actorRoleRepo) GetByActor(ctx context.Context, federationID, actorID st
 	}
 	return &domain.ActorRoleRecord{
 		FederationID:         m.FederationID,
-		ActorID:              m.ActorID,
+		ActorPTID:            m.ActorPTID,
 		ActorFederatedHandle: m.ActorFederatedHandle,
 		StationPeerID:        m.StationPeerID,
 		Role:                 m.Role,
@@ -450,7 +469,7 @@ func (r *actorRoleRepo) ListByFederation(ctx context.Context, federationID strin
 	for i := range models {
 		result[i] = &domain.ActorRoleRecord{
 			FederationID:         models[i].FederationID,
-			ActorID:              models[i].ActorID,
+			ActorPTID:            models[i].ActorPTID,
 			ActorFederatedHandle: models[i].ActorFederatedHandle,
 			StationPeerID:        models[i].StationPeerID,
 			Role:                 models[i].Role,
@@ -460,10 +479,10 @@ func (r *actorRoleRepo) ListByFederation(ctx context.Context, federationID strin
 	return result, nil
 }
 
-func (r *actorRoleRepo) Revoke(ctx context.Context, federationID, actorID string) error {
+func (r *actorRoleRepo) Revoke(ctx context.Context, federationID, actorPTID string) error {
 	now := time.Now()
 	return r.db.WithContext(ctx).Model(&actorRoleModel{}).
-		Where("federation_id = ? AND actor_id = ? AND revoked_at IS NULL", federationID, actorID).
+		Where("federation_id = ? AND actor_ptid = ? AND revoked_at IS NULL", federationID, actorPTID).
 		Update("revoked_at", &now).Error
 }
 
@@ -473,19 +492,19 @@ type actorSigningKeyRepo struct{ db *gorm.DB }
 
 func (r *actorSigningKeyRepo) Store(ctx context.Context, record *domain.ActorSigningKeyRecord) error {
 	m := &actorSigningKeyModel{
-		ActorID:   record.ActorID,
+		ActorPTID: record.ActorPTID,
 		PublicKey: record.PublicKey,
 		Seed:      record.EncryptedPrivateKey,
 	}
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "actor_id"}},
+		Columns:   []clause.Column{{Name: "actor_ptid"}},
 		DoUpdates: clause.AssignmentColumns([]string{"public_key", "encrypted_private_key"}),
 	}).Create(m).Error
 }
 
-func (r *actorSigningKeyRepo) Get(ctx context.Context, actorID string) (*domain.ActorSigningKeyRecord, error) {
+func (r *actorSigningKeyRepo) Get(ctx context.Context, actorPTID string) (*domain.ActorSigningKeyRecord, error) {
 	var m actorSigningKeyModel
-	err := r.db.WithContext(ctx).Where("actor_id = ?", actorID).First(&m).Error
+	err := r.db.WithContext(ctx).Where("actor_ptid = ?", actorPTID).First(&m).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
@@ -493,7 +512,7 @@ func (r *actorSigningKeyRepo) Get(ctx context.Context, actorID string) (*domain.
 		return nil, err
 	}
 	return &domain.ActorSigningKeyRecord{
-		ActorID:             m.ActorID,
+		ActorPTID:           m.ActorPTID,
 		PublicKey:           m.PublicKey,
 		EncryptedPrivateKey: m.Seed,
 	}, nil

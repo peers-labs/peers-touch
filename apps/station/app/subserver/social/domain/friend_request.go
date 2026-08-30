@@ -3,13 +3,13 @@ package domain
 import "time"
 
 type FriendRequest struct {
-	ID          string
-	SenderDID   string
-	ReceiverDID string
-	Status      int32
-	Message     string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID           string
+	SenderPtid   string
+	ReceiverPtid string
+	Status       int32
+	Message      string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 const (
