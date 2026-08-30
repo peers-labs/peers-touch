@@ -160,6 +160,14 @@ class EnvironmentContractTests(unittest.TestCase):
             "fixture:apps/station/app/conf/actor.yml#preset_users",
         )
 
+    def test_load_native_tauri_contract(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "native-tauri-embedded-webdriver.yaml"
+        )
+        self.assertEqual(contract.id, "native-tauri-embedded-webdriver")
+        self.assertEqual(set(contract.services), {"station"})
+        self.assertEqual(contract.services["station"].kind, "station")
+
     def test_load_mobile_native_contract(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "mobile-native.yaml"
