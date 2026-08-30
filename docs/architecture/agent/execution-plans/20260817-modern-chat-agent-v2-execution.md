@@ -4092,6 +4092,11 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   49 pre-existing stale contract assertions, including four removed source
   paths. Foundation remains `PARTIAL / UNPROVEN` until the approved checkpoint
   is deployed exact-source and the serial Gate is rerun.
+- Checkpoint `4121fc009` contains the approved AS-F07 revision cleanup
+  closure. The next dependency-ready action is to commit this tracking update,
+  deploy that resulting clean HEAD to profile `two`, verify Station and Desktop
+  source identity, clear only the retained AS-F07 NDJSON trace, and run the
+  Foundation Gate serially.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
