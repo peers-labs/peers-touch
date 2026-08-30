@@ -17,7 +17,6 @@ from tooling.acceptance.core import (
     GateError,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
-from tooling.acceptance.drivers.station import StationDriver
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
     acceptance_station_environment,
@@ -461,10 +460,6 @@ class NativeInteractionsGate(AcceptanceGate):
                 ptid = expected_ptid
             else:
                 configure_station(client, self.station_url)
-                with StationDriver(
-                    f"http://127.0.0.1:{client.gateway_port}"
-                ) as station:
-                    station.auth_logout()
                 account_ref = str(
                     self.actor_specs[actor].get("accountRef") or ""
                 )
