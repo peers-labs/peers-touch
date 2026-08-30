@@ -1458,6 +1458,14 @@ The next mechanical correction updates the Fixture and every affected Gate
 consumer to the accepted PTID and `services.station` contracts, then reruns the
 same source-bound 18-Gate closure.
 
+Candidate `fde961da4bbe787d0053e778467005d60af9e8f2` contains that
+correction. It also makes malformed preset PTIDs and malformed Station protocol
+digests fail closed. Chat Native static, Chat and Acceptance Infra structural
+validation, Desktop check/test/build, Station messaging package tests, runtime
+provisioning self-validation, and the real disposable Station `18132` reset
+pass. MP-W13-F remains `PARTIAL/UNPROVEN` until the candidate passes the full
+exact-source 18-Gate aggregate and all downstream closure checks.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
