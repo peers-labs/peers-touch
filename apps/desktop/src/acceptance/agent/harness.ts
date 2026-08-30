@@ -3216,6 +3216,28 @@ async function runFoundationF06Complete(
     turnId: stationAssistant.turnId,
     content: stationAssistant.content,
   }));
+  // #region debug-point A-D:final-terminal-projection
+  void fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'browser-terminal-projection',
+      runId: 'pre-fix',
+      hypothesisId: 'A-D',
+      location: 'harness.ts:runFoundationF06Complete',
+      msg: '[DEBUG] final terminal projection sampled',
+      data: {
+        operationStatus: operation?.status ?? null,
+        messageTerminalStatus: projectedAssistant.terminalStatus ?? null,
+        clientContentLength: projectedAssistant.content.length,
+        clientHash: projectionHash,
+        stationStatus: terminalStatus,
+        stationContentLength: stationAssistant.content.length,
+        stationHash,
+      },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   const runtimeEvent = replayedEvents[replayedEvents.length - 1]
     ?? latestHandoff.transitions[latestHandoff.transitions.length - 1];
   if (!runtimeEvent) {

@@ -619,6 +619,29 @@ export async function reloadAgentTurnSnapshot(
         current.turnId,
         snapshot.terminal,
       );
+    // #region debug-point A-D:post-snapshot-reconcile
+    const reconciledChatState = useChatStore.getState();
+    const reconciledMessages = Array.isArray(reconciledChatState.messages)
+      ? reconciledChatState.messages
+      : [];
+    const reconciledMessage = [...reconciledMessages]
+      .reverse()
+      .find((message) => message.turnId === current?.turnId);
+    reportNativeReplayDebug(
+      'A-D',
+      'chatRuntime.ts:reloadAgentTurnSnapshot.reconciled',
+      'snapshot reconcile projected',
+      {
+        snapshotStatus: snapshot.status,
+        snapshotTerminalStatus: snapshot.terminal?.status ?? null,
+        snapshotContentLength: snapshot.terminal?.content?.length ?? null,
+        operationStatus:
+          reconciledChatState.operations?.[current.conversationId]?.status ?? null,
+        messageTerminalStatus: reconciledMessage?.terminalStatus ?? null,
+        messageContentLength: reconciledMessage?.content.length ?? null,
+      },
+    );
+    // #endregion
     current = currentRecord(
       record.conversationId,
       record.turnId,

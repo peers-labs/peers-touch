@@ -3695,6 +3695,24 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   ports and storage were released; candidate cleanup still reports `FAILED`
   because Native logout times out after the primary failure. AS-F06 and G-F
   remain `PARTIAL / UNPROVEN`.
+- Checkpoint `5f2a6f5f4f0de7b4d76a24a466e896e01a4d3c74` was deployed
+  exact-source to profile `two`. A preflight run
+  `20260830T053358739674Z-bb5016e2c3e39ffd863392a7d0e43d6e`
+  correctly blocked because an Acceptance Driver smoke process still owned
+  gateway port `3130`; that process was released before the accepted rerun.
+  Run `20260830T053507185569Z-beae2d48d453d4fb6921bc125303e699`
+  crossed the durable-reload evidence handoff and passed AS-F06 replay
+  sequence equality, source identity, payload hashes, stale-generation,
+  stale-revision, and stale-terminal checks. The new first failure is Browser
+  AS-F06 `terminalProjectionEqualsStation`: the client retained status
+  `failed` and content hash
+  `e19e95e4d531ca39a171b3900306e1015fbd1a60b693acd770a4fd373c7ca846`,
+  while Station authoritatively reported `interrupted` and hash
+  `21f98f1c3b3c5a596b9e9e67c61289115f1fbdbf2f357b74847cc8722eff7cbd`.
+  Runtime and evidence source commits matched, redaction passed, and all
+  allocated ports were released. The outer cleanup status was `passed`; the
+  candidate cleanup artifact requires separate inspection before cleanup can
+  be claimed. AS-F06 and G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
