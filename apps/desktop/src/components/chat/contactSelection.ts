@@ -4,7 +4,7 @@ export type ContactSelection =
   | {
       kind: 'friend';
       conversationId?: string;
-      peerDid: string;
+      peerPtid: string;
       displayName: string;
       avatar?: string;
     }
@@ -34,24 +34,24 @@ export function findContactConversation(
   return conversations.find(
     (conversation) => (
       conversation.kind === 'friend'
-      && conversation.peerDid === selection.peerDid
+      && conversation.peerPtid === selection.peerPtid
     ),
   );
 }
 
 export function friendContactSelection(
-  peerDid: string,
+  peerPtid: string,
   displayName: string,
   avatar: string | undefined,
   conversations: DesktopIMConversationProjection[],
 ): ContactSelection {
   const conversation = conversations.find(
-    (item) => item.kind === 'friend' && item.peerDid === peerDid,
+    (item) => item.kind === 'friend' && item.peerPtid === peerPtid,
   );
   return {
     kind: 'friend',
     ...(conversation ? { conversationId: conversation.id } : {}),
-    peerDid,
+    peerPtid,
     displayName,
     avatar,
   };

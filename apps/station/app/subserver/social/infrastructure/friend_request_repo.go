@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -14,25 +13,25 @@ import (
 )
 
 type friendRequestModel struct {
-	ID          uint      `gorm:"column:id;primaryKey"`
-	RequestID   string    `gorm:"column:request_id;size:64;uniqueIndex"`
-	PairKey     string    `gorm:"column:pair_key;size:255;uniqueIndex:idx_fr_pair_status"`
-	SenderDID   string    `gorm:"column:sender_did;size:255;index"`
-	ReceiverDID string    `gorm:"column:receiver_did;size:255;index"`
-	Status      int32     `gorm:"column:status;uniqueIndex:idx_fr_pair_status"`
-	Message     string    `gorm:"column:message;type:text"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at"`
+	ID           uint      `gorm:"column:id;primaryKey"`
+	RequestID    string    `gorm:"column:request_id;size:64;uniqueIndex"`
+	PairKey      string    `gorm:"column:pair_key;size:255;uniqueIndex:idx_fr_pair_status"`
+	SenderPtid   string    `gorm:"column:sender_ptid;size:255;index"`
+	ReceiverPtid string    `gorm:"column:receiver_ptid;size:255;index"`
+	Status       int32     `gorm:"column:status;uniqueIndex:idx_fr_pair_status"`
+	Message      string    `gorm:"column:message;type:text"`
+	CreatedAt    time.Time `gorm:"column:created_at"`
+	UpdatedAt    time.Time `gorm:"column:updated_at"`
 }
 
 func (*friendRequestModel) TableName() string { return "friend_chat_friend_requests" }
 
 type FriendRequestRepository interface {
-	CreateFriendRequest(ctx context.Context, senderID, receiverID uint64, message string) (domain.FriendRequest, error)
+	CreateFriendRequest(ctx context.Context, senderPTID, receiverPTID, message string) (domain.FriendRequest, error)
 	GetFriendRequest(ctx context.Context, requestID string) (*domain.FriendRequest, error)
 	AcceptFriendRequest(ctx context.Context, requestID string) (*domain.FriendRequest, error)
 	RejectFriendRequest(ctx context.Context, requestID string) (*domain.FriendRequest, error)
-	ListFriendRequests(ctx context.Context, actorID uint64, status int32, limit, offset int) ([]domain.FriendRequest, int, error)
+	ListFriendRequests(ctx context.Context, actorPTID string, status int32, limit, offset int) ([]domain.FriendRequest, int, error)
 }
 
 type friendRequestRepository struct {
@@ -51,21 +50,19 @@ func friendRequestPairKey(a, b string) string {
 
 func toDomainFriendRequest(m friendRequestModel) domain.FriendRequest {
 	return domain.FriendRequest{
-		ID:          m.RequestID,
-		SenderDID:   m.SenderDID,
-		ReceiverDID: m.ReceiverDID,
-		Status:      m.Status,
-		Message:     m.Message,
-		CreatedAt:   m.CreatedAt,
-		UpdatedAt:   m.UpdatedAt,
+		ID:           m.RequestID,
+		SenderPtid:   m.SenderPtid,
+		ReceiverPtid: m.ReceiverPtid,
+		Status:       m.Status,
+		Message:      m.Message,
+		CreatedAt:    m.CreatedAt,
+		UpdatedAt:    m.UpdatedAt,
 	}
 }
 
-func (r *friendRequestRepository) CreateFriendRequest(ctx context.Context, senderID, receiverID uint64, message string) (domain.FriendRequest, error) {
-	senderDID := strconv.FormatUint(senderID, 10)
-	receiverDID := strconv.FormatUint(receiverID, 10)
+func (r *friendRequestRepository) CreateFriendRequest(ctx context.Context, senderPTID, receiverPTID, message string) (domain.FriendRequest, error) {
 	now := time.Now()
-	key := friendRequestPairKey(senderDID, receiverDID)
+	key := friendRequestPairKey(senderPTID, receiverPTID)
 
 	var existing friendRequestModel
 	err := r.db.WithContext(ctx).Where("pair_key = ? AND status = ?", key, domain.FriendRequestStatusPending).First(&existing).Error
@@ -82,14 +79,14 @@ func (r *friendRequestRepository) CreateFriendRequest(ctx context.Context, sende
 	}
 
 	record := friendRequestModel{
-		RequestID:   fmt.Sprintf("fr-%d", now.UnixNano()),
-		PairKey:     key,
-		SenderDID:   senderDID,
-		ReceiverDID: receiverDID,
-		Status:      domain.FriendRequestStatusPending,
-		Message:     message,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		RequestID:    fmt.Sprintf("fr-%d", now.UnixNano()),
+		PairKey:      key,
+		SenderPtid:   senderPTID,
+		ReceiverPtid: receiverPTID,
+		Status:       domain.FriendRequestStatusPending,
+		Message:      message,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 	if err := r.db.WithContext(ctx).Create(&record).Error; err != nil {
 		return domain.FriendRequest{}, err
@@ -141,9 +138,8 @@ func (r *friendRequestRepository) RejectFriendRequest(ctx context.Context, reque
 	return &fr, nil
 }
 
-func (r *friendRequestRepository) ListFriendRequests(ctx context.Context, actorID uint64, status int32, limit, offset int) ([]domain.FriendRequest, int, error) {
-	actorDID := strconv.FormatUint(actorID, 10)
-	query := r.db.WithContext(ctx).Model(&friendRequestModel{}).Where("(receiver_did = ? OR sender_did = ?)", actorDID, actorDID)
+func (r *friendRequestRepository) ListFriendRequests(ctx context.Context, actorPTID string, status int32, limit, offset int) ([]domain.FriendRequest, int, error) {
+	query := r.db.WithContext(ctx).Model(&friendRequestModel{}).Where("(receiver_ptid = ? OR sender_ptid = ?)", actorPTID, actorPTID)
 	if status > 0 {
 		query = query.Where("status = ?", status)
 	}

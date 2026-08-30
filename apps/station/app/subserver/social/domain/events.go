@@ -20,12 +20,12 @@ import "time"
 //   - events broker (SSE/WebSocket push to followers in the audience)
 //   - outbox dispatcher (P3+, ActivityPub fan-out for IsPublic posts)
 type MomentCreated struct {
-	PostID        uint64
-	AuthorID      uint64
-	IsPublic      bool
-	AudienceTag   string // e.g. "PUBLIC" / "FOLLOWERS" / "CIRCLE:42"
-	MentionedDIDs []string
-	CreatedAt     time.Time
+	PostID         uint64
+	AuthorPTID     string
+	IsPublic       bool
+	AudienceTag    string // e.g. "PUBLIC" / "FOLLOWERS" / "CIRCLE:42"
+	MentionedPTIDs []string
+	CreatedAt      time.Time
 }
 
 // MomentDeleted fires after a soft-delete (DeletedAt set). Comments,
@@ -34,31 +34,31 @@ type MomentCreated struct {
 // does the local cascade in the same transaction; cross-subserver
 // listeners (notification, federation outbox) cascade lazily on receive.
 type MomentDeleted struct {
-	PostID    uint64
-	AuthorID  uint64
-	IsPublic  bool
-	DeletedAt time.Time
+	PostID     uint64
+	AuthorPTID string
+	IsPublic   bool
+	DeletedAt  time.Time
 }
 
 // Reacted fires when an actor adds a reaction. Toggling-off (Unreact)
 // fires a Reacted event with `Removed: true`.
 type Reacted struct {
-	PostID       uint64
-	PostAuthorID uint64
-	ActorID      uint64
-	Kind         string // ReactionKind String() form
-	Removed      bool
-	At           time.Time
+	PostID         uint64
+	PostAuthorPTID string
+	ActorPTID      string
+	Kind           string // ReactionKind String() form
+	Removed        bool
+	At             time.Time
 }
 
 // Commented fires when a top-level comment or 1-level reply is created.
 // `ParentCommentID == 0` for top-level.
 type Commented struct {
-	PostID          uint64
-	PostAuthorID    uint64
-	CommentID       uint64
-	CommentAuthorID uint64
-	ParentCommentID uint64
-	MentionedDIDs   []string
-	At              time.Time
+	PostID            uint64
+	PostAuthorPTID    string
+	CommentID         uint64
+	CommentAuthorPTID string
+	ParentCommentID   uint64
+	MentionedPTIDs    []string
+	At                time.Time
 }

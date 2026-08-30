@@ -80,8 +80,8 @@ func (h *ConversationHandlers) HandleListConversations(ctx context.Context, req 
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
 		return nil
 	}
-	actorID := subjectActorID(ctx)
-	conversations, total, err := h.convService.ListConversations(ctx, input.AgentID, actorID, input.Status, input.Page, input.PageSize)
+	actorPTID := subjectActorPTID(ctx)
+	conversations, total, err := h.convService.ListConversations(ctx, input.AgentID, actorPTID, input.Status, input.Page, input.PageSize)
 	if err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
@@ -128,8 +128,8 @@ func (h *ConversationHandlers) HandleCreateConversation(ctx context.Context, req
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "agent_id is required"})
 		return nil
 	}
-	actorID := subjectActorID(ctx)
-	conv, err := h.convService.CreateConversation(ctx, input.AgentID, actorID, input.Title, input.Description, input.ModelName, input.ProviderID)
+	actorPTID := subjectActorPTID(ctx)
+	conv, err := h.convService.CreateConversation(ctx, input.AgentID, actorPTID, input.Title, input.Description, input.ModelName, input.ProviderID)
 	if err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
@@ -249,7 +249,7 @@ func conversationToJSON(c *domain.Conversation) map[string]any {
 	return map[string]any{
 		"conversation_id": c.ConversationID,
 		"agent_id":        c.AgentID,
-		"user_id":         c.UserID,
+		"actor_ptid":      c.ActorPTID,
 		"title":           c.Title,
 		"description":     c.Description,
 		"provider_id":     c.ProviderID,

@@ -7,6 +7,7 @@ import (
 
 	cfg "github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
@@ -18,6 +19,7 @@ type PresetActor struct {
 	Inbox       string            `json:"inbox"`
 	Outbox      string            `json:"outbox"`
 	Endpoints   map[string]string `json:"endpoints"`
+	Ref         *modelpb.ActorRef `json:"ref"`
 }
 
 func LoadPresetActors(ctx context.Context) ([]PresetActor, error) {
@@ -73,6 +75,7 @@ func ListActorsAsPreset(ctx context.Context, excludeActorID uint64) ([]PresetAct
 			Inbox:       inbox,
 			Outbox:      outbox,
 			Endpoints:   endpoints,
+			Ref:         ProtoActorRef(&a, base),
 		})
 	}
 	return out, nil
@@ -125,6 +128,7 @@ func SearchActorsAsPreset(ctx context.Context, query string, excludeActorID uint
 			Inbox:       inbox,
 			Outbox:      outbox,
 			Endpoints:   endpoints,
+			Ref:         ProtoActorRef(&a, base),
 		})
 	}
 	return out, nil

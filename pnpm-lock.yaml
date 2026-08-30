@@ -873,6 +873,9 @@ importers:
 
   packages/prototypes/mobile/chat:
     dependencies:
+      antd:
+        specifier: 6.5.3
+        version: 6.5.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       lucide-react:
         specifier: ^0.577.0
         version: 0.577.0(react@19.2.8)

@@ -9,12 +9,12 @@ const (
 )
 
 type StationModerationPolicy struct {
-	ID               uint64
-	StationDomain    string
-	StationPeerID    string
-	Kind             StationModerationPolicyKind
-	Reason           string
-	CreatedByActorID uint64
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                 uint64
+	StationDomain      string
+	StationPeerID      string
+	Kind               StationModerationPolicyKind
+	Reason             string
+	CreatedByActorPTID string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }

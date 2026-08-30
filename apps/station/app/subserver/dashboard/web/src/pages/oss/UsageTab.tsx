@@ -65,8 +65,8 @@ export function UsageTab() {
   const ownerColumns: ColumnsType<ossApi.OSSOwnerUsage> = [
     {
       title: 'Owner actor',
-      dataIndex: 'owner_actor_id',
-      key: 'owner_actor_id',
+      dataIndex: 'owner_ptid',
+      key: 'owner_ptid',
       render: (v: string) => v
         ? <Tooltip title={v}><Text code>{shortHash(v, 14, 6)}</Text></Tooltip>
         : <Text type="secondary">—</Text>,
@@ -194,7 +194,7 @@ export function UsageTab() {
         <Table
           dataSource={topOwners}
           columns={ownerColumns}
-          rowKey={(r) => r.owner_actor_id || 'unknown'}
+          rowKey={(r) => r.owner_ptid || 'unknown'}
           size="small"
           loading={loading}
           pagination={false}

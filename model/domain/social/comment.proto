@@ -8,9 +8,11 @@ import "domain/social/post.proto";
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
 message Comment {
+  reserved "author_id";
+
   string id = 1;
   string post_id = 2;
-  string author_id = 3;
+  string author_ptid = 3;
   string content = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;

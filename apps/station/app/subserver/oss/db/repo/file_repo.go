@@ -14,7 +14,7 @@ import (
 // exposes two read paths because the (owner, key) tuple is the new
 // uniqueness contract while plain `key` lookups remain useful for
 // federation/public reads where the caller may not yet know the
-// owner DID.
+// owner PTID.
 //
 // All "Find" methods return only *live* rows by default — soft-
 // deleted rows are filtered out so user-visible reads behave
@@ -216,7 +216,7 @@ func (r *fileRepo) FindByOwnerKey(ctx context.Context, owner, key string) (*ossm
 		return nil, err
 	}
 	var meta ossmodel.FileMeta
-	err = db.Where("owner_actor_id = ? AND key = ? AND deleted_at IS NULL", owner, key).
+	err = db.Where("owner_ptid = ? AND key = ? AND deleted_at IS NULL", owner, key).
 		First(&meta).Error
 	return &meta, err
 }
@@ -227,7 +227,7 @@ func (r *fileRepo) FindByOwnerKeyIncludeDeleted(ctx context.Context, owner, key 
 		return nil, err
 	}
 	var meta ossmodel.FileMeta
-	err = db.Where("owner_actor_id = ? AND key = ?", owner, key).First(&meta).Error
+	err = db.Where("owner_ptid = ? AND key = ?", owner, key).First(&meta).Error
 	return &meta, err
 }
 
@@ -375,7 +375,7 @@ func (r *fileRepo) ListByOwner(ctx context.Context, owner string, filter ListByO
 		return nil, 0, err
 	}
 
-	q := db.Model(&ossmodel.FileMeta{}).Where("owner_actor_id = ?", owner)
+	q := db.Model(&ossmodel.FileMeta{}).Where("owner_ptid = ?", owner)
 	if !filter.IncludeDeleted {
 		q = q.Where("deleted_at IS NULL")
 	}

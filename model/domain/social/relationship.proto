@@ -11,7 +11,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 // ============================================================================
 
 message FollowRequest {
-  string target_actor_id = 1;
+  string target_actor_ptid = 1;
 }
 
 message FollowResponse {
@@ -20,7 +20,7 @@ message FollowResponse {
 }
 
 message UnfollowRequest {
-  string target_actor_id = 1;
+  string target_actor_ptid = 1;
 }
 
 message UnfollowResponse {
@@ -28,7 +28,7 @@ message UnfollowResponse {
 }
 
 message GetRelationshipRequest {
-  string target_actor_id = 1;
+  string target_actor_ptid = 1;
 }
 
 message GetRelationshipResponse {
@@ -36,7 +36,7 @@ message GetRelationshipResponse {
 }
 
 message GetRelationshipsRequest {
-  repeated string target_actor_ids = 1;
+  repeated string target_actor_ptids = 1;
 }
 
 message GetRelationshipsResponse {
@@ -45,14 +45,14 @@ message GetRelationshipsResponse {
 
 message Relationship {
   string id = 1;
-  string target_actor_id = 2;
+  string target_actor_ptid = 2;
   bool following = 3;
   bool followed_by = 4;
   google.protobuf.Timestamp followed_at = 5;
 }
 
 message GetFollowersRequest {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string cursor = 2;
   int32 limit = 3;
 }
@@ -64,7 +64,7 @@ message GetFollowersResponse {
 }
 
 message GetFollowingRequest {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string cursor = 2;
   int32 limit = 3;
 }
@@ -76,7 +76,7 @@ message GetFollowingResponse {
 }
 
 message Follower {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string username = 2;
   string display_name = 3;
   string avatar_url = 4;
@@ -90,7 +90,7 @@ message Follower {
 }
 
 message Following {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string username = 2;
   string display_name = 3;
   string avatar_url = 4;

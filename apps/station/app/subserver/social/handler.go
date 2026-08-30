@@ -3,7 +3,7 @@ package social
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
@@ -149,17 +149,25 @@ func getUserID(c context.Context) (uint64, bool) {
 	if subject == nil {
 		return 0, false
 	}
-	userID, err := strconv.ParseUint(subject.ID, 10, 64)
-	if err != nil {
+	record, err := actor.GetActorByPTID(c, subject.ID)
+	if err != nil || record == nil {
 		return 0, false
 	}
-	return userID, true
+	return record.ID, true
+}
+
+func getActorPTID(c context.Context) (string, bool) {
+	subject := coreauth.GetSubject(c)
+	if subject == nil || strings.TrimSpace(subject.ID) == "" {
+		return "", false
+	}
+	return subject.ID, true
 }
 
 // --- Post / Moment handlers --------------------------------------------------
 
 func (s *subServer) handleCreatePost(ctx context.Context, req *model.CreatePostRequest) (*model.CreatePostResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
@@ -171,7 +179,7 @@ func (s *subServer) handleCreatePost(ctx context.Context, req *model.CreatePostR
 		// `visibility` field for clients that haven't migrated yet.
 		req.Audience = audienceFromLegacyVisibility(req.Visibility)
 	}
-	post, err := s.momentSvc.CreateMoment(ctx, req, userID)
+	post, err := s.momentSvc.CreateMoment(ctx, req, actorPTID)
 	if err != nil {
 		logger.Error(ctx, "failed to create moment", "error", err, "audience_kind", req.Audience.Kind)
 		return nil, server.InternalErrorWithCause("failed to create moment", err)
@@ -188,14 +196,14 @@ func (s *subServer) handleUpdatePost(_ context.Context, _ *model.UpdatePostReque
 }
 
 func (s *subServer) handleDeletePost(ctx context.Context, req *model.DeletePostRequest) (*model.DeletePostResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
 	}
-	if err := s.momentSvc.DeleteMoment(ctx, req.PostId, userID); err != nil {
+	if err := s.momentSvc.DeleteMoment(ctx, req.PostId, actorPTID); err != nil {
 		logger.Error(ctx, "failed to delete moment", "error", err, "post_id", req.PostId)
 		return nil, server.InternalErrorWithCause("failed to delete moment", err)
 	}
@@ -205,7 +213,7 @@ func (s *subServer) handleDeletePost(ctx context.Context, req *model.DeletePostR
 // handleRepostPost wraps the legacy `/repost` endpoint by constructing
 // a CreatePostRequest with `Type=REPOST` and forwarding to MomentService.
 func (s *subServer) handleRepostPost(ctx context.Context, req *model.RepostRequest) (*model.RepostResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
@@ -222,7 +230,7 @@ func (s *subServer) handleRepostPost(ctx context.Context, req *model.RepostReque
 			},
 		},
 	}
-	post, err := s.momentSvc.CreateMoment(ctx, createReq, userID)
+	post, err := s.momentSvc.CreateMoment(ctx, createReq, actorPTID)
 	if err != nil {
 		logger.Error(ctx, "failed to repost", "error", err, "original_post_id", req.PostId)
 		return nil, server.InternalErrorWithCause("failed to repost", err)
@@ -234,11 +242,11 @@ func (s *subServer) handleGetPost(ctx context.Context, req *model.GetPostRequest
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
 	}
-	var viewerID uint64
-	if id, ok := getUserID(ctx); ok {
-		viewerID = id
+	var viewerPTID string
+	if ptid, ok := getActorPTID(ctx); ok {
+		viewerPTID = ptid
 	}
-	post, err := s.momentSvc.GetMoment(ctx, req.PostId, viewerID)
+	post, err := s.momentSvc.GetMoment(ctx, req.PostId, viewerPTID)
 	if err != nil {
 		logger.Error(ctx, "failed to get post", "error", err, "post_id", req.PostId)
 		return nil, server.InternalErrorWithCause("failed to get post", err)
@@ -261,27 +269,16 @@ func (s *subServer) handleGetUserPosts(ctx context.Context, req *model.ListPosts
 	if req.Filter == nil {
 		req.Filter = &model.PostFilter{}
 	}
-	authorID := req.Filter.AuthorId
-	if authorID == "" {
-		return nil, server.BadRequest("author_id is required")
+	authorPTID := req.Filter.AuthorPtid
+	if authorPTID == "" {
+		return nil, server.BadRequest("author_ptid is required")
+	}
+	var viewerPTID string
+	if ptid, ok := getActorPTID(ctx); ok {
+		viewerPTID = ptid
 	}
 
-	authorActorID, err := strconv.ParseUint(authorID, 10, 64)
-	if err != nil {
-		// Treat the parameter as a username and resolve it.
-		actorInfo, err := actor.GetActorByUsername(ctx, authorID)
-		if err != nil || actorInfo == nil {
-			return nil, server.NotFound("user not found")
-		}
-		authorActorID = actorInfo.ID
-	}
-
-	var viewerID uint64
-	if id, ok := getUserID(ctx); ok {
-		viewerID = id
-	}
-
-	posts, nextCursor, hasMore, err := s.momentSvc.ListByAuthor(ctx, authorActorID, viewerID, "", int(req.Limit))
+	posts, nextCursor, hasMore, err := s.momentSvc.ListByAuthor(ctx, authorPTID, viewerPTID, "", int(req.Limit))
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to list user posts", err)
 	}
@@ -311,7 +308,7 @@ func buildProfileExplanations(posts []*model.Post) []*model.FeedObjectExplanatio
 // --- Reaction handlers ----------------------------------------------------
 
 func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostRequest) (*model.ReactToPostResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
@@ -321,10 +318,10 @@ func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostReque
 	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED {
 		return nil, server.BadRequest("reaction kind is required")
 	}
-	if err := s.assertReadable(ctx, req.PostId, userID); err != nil {
+	if err := s.assertReadable(ctx, req.PostId, actorPTID); err != nil {
 		return nil, err
 	}
-	summaries, err := s.reactionSvc.React(ctx, req.PostId, userID, req.Kind)
+	summaries, err := s.reactionSvc.React(ctx, req.PostId, actorPTID, req.Kind)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("react failed", err)
 	}
@@ -332,17 +329,17 @@ func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostReque
 }
 
 func (s *subServer) handleUnreact(ctx context.Context, req *model.UnreactToPostRequest) (*model.UnreactToPostResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
 	}
-	if err := s.assertReadable(ctx, req.PostId, userID); err != nil {
+	if err := s.assertReadable(ctx, req.PostId, actorPTID); err != nil {
 		return nil, err
 	}
-	summaries, err := s.reactionSvc.Unreact(ctx, req.PostId, userID, req.Kind)
+	summaries, err := s.reactionSvc.Unreact(ctx, req.PostId, actorPTID, req.Kind)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("unreact failed", err)
 	}
@@ -364,8 +361,8 @@ func (s *subServer) handleUnreact(ctx context.Context, req *model.UnreactToPostR
 // relationship graph. A nil result here means "post doesn't exist OR
 // caller can't read it" — surfaced as 404, never 403, so the wire
 // shape doesn't disclose existence to non-readers.
-func (s *subServer) assertReadable(ctx context.Context, postID string, viewerID uint64) error {
-	post, err := s.momentSvc.GetMoment(ctx, postID, viewerID)
+func (s *subServer) assertReadable(ctx context.Context, postID, viewerPTID string) error {
+	post, err := s.momentSvc.GetMoment(ctx, postID, viewerPTID)
 	if err != nil {
 		return server.InternalErrorWithCause("visibility check failed", err)
 	}
@@ -390,11 +387,11 @@ func (s *subServer) handleGetPostComments(ctx context.Context, req *model.GetCom
 	// SELF post's comment thread to anyone holding the post id.
 	// Anonymous viewers (viewerID == 0) get the same gate; PUBLIC
 	// posts pass, anything else 404s on them.
-	var viewerID uint64
-	if id, ok := getUserID(ctx); ok {
-		viewerID = id
+	var viewerPTID string
+	if ptid, ok := getActorPTID(ctx); ok {
+		viewerPTID = ptid
 	}
-	resp, err := s.commentSvc.ListByPost(ctx, postID, viewerID, req.Cursor, int(req.Limit))
+	resp, err := s.commentSvc.ListByPost(ctx, postID, viewerPTID, req.Cursor, int(req.Limit))
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to list comments", err)
 	}
@@ -402,7 +399,7 @@ func (s *subServer) handleGetPostComments(ctx context.Context, req *model.GetCom
 }
 
 func (s *subServer) handleCreateComment(ctx context.Context, req *model.CreateCommentRequest) (*model.CreateCommentResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
@@ -413,7 +410,7 @@ func (s *subServer) handleCreateComment(ctx context.Context, req *model.CreateCo
 	if postID == 0 {
 		return nil, server.BadRequest("invalid post_id")
 	}
-	comment, err := s.commentSvc.CreateComment(ctx, req, postID, userID)
+	comment, err := s.commentSvc.CreateComment(ctx, req, postID, actorPTID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to create comment", err)
 	}
@@ -421,7 +418,7 @@ func (s *subServer) handleCreateComment(ctx context.Context, req *model.CreateCo
 }
 
 func (s *subServer) handleDeleteComment(ctx context.Context, req *model.DeleteCommentRequest) (*model.DeleteCommentResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
@@ -432,7 +429,7 @@ func (s *subServer) handleDeleteComment(ctx context.Context, req *model.DeleteCo
 	if commentID == 0 {
 		return nil, server.BadRequest("invalid comment_id")
 	}
-	if err := s.commentSvc.DeleteComment(ctx, commentID, userID); err != nil {
+	if err := s.commentSvc.DeleteComment(ctx, commentID, actorPTID); err != nil {
 		return nil, server.InternalErrorWithCause("failed to delete comment", err)
 	}
 	return &model.DeleteCommentResponse{Success: true}, nil
@@ -441,11 +438,11 @@ func (s *subServer) handleDeleteComment(ctx context.Context, req *model.DeleteCo
 // --- Timeline handler ----------------------------------------------------
 
 func (s *subServer) handleGetTimeline(ctx context.Context, req *model.GetTimelineRequest) (*model.GetTimelineResponse, error) {
-	var viewerID uint64
-	if id, ok := getUserID(ctx); ok {
-		viewerID = id
+	var viewerPTID string
+	if ptid, ok := getActorPTID(ctx); ok {
+		viewerPTID = ptid
 	}
-	resp, err := s.timelineSvc.GetTimeline(ctx, req, viewerID)
+	resp, err := s.timelineSvc.GetTimeline(ctx, req, viewerPTID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to get timeline", err)
 	}
@@ -453,7 +450,7 @@ func (s *subServer) handleGetTimeline(ctx context.Context, req *model.GetTimelin
 }
 
 func (s *subServer) handleSyncMomentsProjection(ctx context.Context, req *model.SyncMomentsProjectionRequest) (*model.SyncMomentsProjectionResponse, error) {
-	viewerID, ok := getUserID(ctx)
+	viewerPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
@@ -472,7 +469,7 @@ func (s *subServer) handleSyncMomentsProjection(ctx context.Context, req *model.
 		Type:   model.TimelineType_TIMELINE_HOME,
 		Cursor: req.HomeCursor,
 		Limit:  limit,
-	}, viewerID)
+	}, viewerPTID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to sync home moments projection", err)
 	}
@@ -482,7 +479,7 @@ func (s *subServer) handleSyncMomentsProjection(ctx context.Context, req *model.
 		Cursor: req.PublicCursor,
 		Limit:  limit,
 		Sort:   req.PublicSort,
-	}, viewerID)
+	}, viewerPTID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to sync public moments projection", err)
 	}
@@ -497,14 +494,14 @@ func (s *subServer) handleSyncMomentsProjection(ctx context.Context, req *model.
 // --- Relationship handlers ----------------------------------------------------
 
 func (s *subServer) handleFollow(ctx context.Context, req *model.FollowRequest) (*model.FollowResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.TargetActorId == "" {
-		return nil, server.BadRequest("target_actor_id is required")
+	if req.TargetActorPtid == "" {
+		return nil, server.BadRequest("target_actor_ptid is required")
 	}
-	relationship, err := s.relationshipSvc.Follow(ctx, userID, req.TargetActorId)
+	relationship, err := s.relationshipSvc.Follow(ctx, actorPTID, req.TargetActorPtid)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to follow", err)
 	}
@@ -512,28 +509,28 @@ func (s *subServer) handleFollow(ctx context.Context, req *model.FollowRequest) 
 }
 
 func (s *subServer) handleUnfollow(ctx context.Context, req *model.UnfollowRequest) (*model.UnfollowResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.TargetActorId == "" {
-		return nil, server.BadRequest("target_actor_id is required")
+	if req.TargetActorPtid == "" {
+		return nil, server.BadRequest("target_actor_ptid is required")
 	}
-	if err := s.relationshipSvc.Unfollow(ctx, userID, req.TargetActorId); err != nil {
+	if err := s.relationshipSvc.Unfollow(ctx, actorPTID, req.TargetActorPtid); err != nil {
 		return nil, server.InternalErrorWithCause("failed to unfollow", err)
 	}
 	return &model.UnfollowResponse{Success: true}, nil
 }
 
 func (s *subServer) handleGetRelationship(ctx context.Context, req *model.GetRelationshipRequest) (*model.GetRelationshipResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.TargetActorId == "" {
-		return nil, server.BadRequest("target_actor_id is required")
+	if req.TargetActorPtid == "" {
+		return nil, server.BadRequest("target_actor_ptid is required")
 	}
-	rel, err := s.relationshipSvc.GetRelationship(ctx, userID, req.TargetActorId)
+	rel, err := s.relationshipSvc.GetRelationship(ctx, actorPTID, req.TargetActorPtid)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to get relationship", err)
 	}
@@ -541,11 +538,11 @@ func (s *subServer) handleGetRelationship(ctx context.Context, req *model.GetRel
 }
 
 func (s *subServer) handleGetRelationships(ctx context.Context, req *model.GetRelationshipsRequest) (*model.GetRelationshipsResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	rels, err := s.relationshipSvc.GetRelationships(ctx, userID, req.TargetActorIds)
+	rels, err := s.relationshipSvc.GetRelationships(ctx, actorPTID, req.TargetActorPtids)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to get relationships", err)
 	}
@@ -553,23 +550,19 @@ func (s *subServer) handleGetRelationships(ctx context.Context, req *model.GetRe
 }
 
 func (s *subServer) handleGetFollowers(ctx context.Context, req *model.GetFollowersRequest) (*model.GetFollowersResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	actorID := userID
-	if req.ActorId != "" {
-		var err error
-		actorID, err = strconv.ParseUint(req.ActorId, 10, 64)
-		if err != nil {
-			return nil, server.BadRequest("invalid actor_id")
-		}
+	targetActorPTID := actorPTID
+	if req.ActorPtid != "" {
+		targetActorPTID = req.ActorPtid
 	}
 	limit := int(req.Limit)
 	if limit <= 0 {
 		limit = 20
 	}
-	followers, nextCursor, total, err := s.relationshipSvc.GetFollowers(ctx, actorID, req.Cursor, limit)
+	followers, nextCursor, total, err := s.relationshipSvc.GetFollowers(ctx, targetActorPTID, req.Cursor, limit)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to get followers", err)
 	}
@@ -577,23 +570,19 @@ func (s *subServer) handleGetFollowers(ctx context.Context, req *model.GetFollow
 }
 
 func (s *subServer) handleGetFollowing(ctx context.Context, req *model.GetFollowingRequest) (*model.GetFollowingResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	actorID := userID
-	if req.ActorId != "" {
-		var err error
-		actorID, err = strconv.ParseUint(req.ActorId, 10, 64)
-		if err != nil {
-			return nil, server.BadRequest("invalid actor_id")
-		}
+	targetActorPTID := actorPTID
+	if req.ActorPtid != "" {
+		targetActorPTID = req.ActorPtid
 	}
 	limit := int(req.Limit)
 	if limit <= 0 {
 		limit = 20
 	}
-	following, nextCursor, total, err := s.relationshipSvc.GetFollowing(ctx, actorID, req.Cursor, limit)
+	following, nextCursor, total, err := s.relationshipSvc.GetFollowing(ctx, targetActorPTID, req.Cursor, limit)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to get following", err)
 	}
@@ -630,7 +619,6 @@ func (s *subServer) handleSearchUsers(ctx context.Context, req *model.SearchUser
 
 func actorSearchResult(a *db.Actor) *model.Actor {
 	return &model.Actor{
-		Id:                a.PTID,
 		Username:          a.PreferredUsername,
 		DisplayName:       a.Name,
 		Email:             a.Email,
@@ -638,15 +626,16 @@ func actorSearchResult(a *db.Actor) *model.Actor {
 		FederatedHandle:   a.FederatedHandle,
 		HomeStationPeerId: a.HomeStationPeerID,
 		HomeStationDomain: a.HomeStationDomain,
+		Ref:               actor.ProtoActorRef(a, ""),
 	}
 }
 
 func (s *subServer) handleGetMe(ctx context.Context, _ *model.GetMeRequest) (*model.ActorProfile, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	a, err := actor.GetActorByID(ctx, userID)
+	a, err := actor.GetActorByPTID(ctx, actorPTID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to get current user", err)
 	}
@@ -664,11 +653,11 @@ func (s *subServer) handleGetMe(ctx context.Context, _ *model.GetMeRequest) (*mo
 // --- Circle handlers ----------------------------------------------------
 
 func (s *subServer) handleCreateCircle(ctx context.Context, req *model.CreateCircleRequest) (*model.CreateCircleResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	c, err := s.circleSvc.Create(ctx, req, userID)
+	c, err := s.circleSvc.Create(ctx, req, actorPTID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to create circle", err)
 	}
@@ -676,11 +665,11 @@ func (s *subServer) handleCreateCircle(ctx context.Context, req *model.CreateCir
 }
 
 func (s *subServer) handleListMyCircles(ctx context.Context, req *model.ListMyCirclesRequest) (*model.ListMyCirclesResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	resp, err := s.circleSvc.ListMine(ctx, userID, req.Cursor, int(req.Limit))
+	resp, err := s.circleSvc.ListMine(ctx, actorPTID, req.Cursor, int(req.Limit))
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to list circles", err)
 	}
@@ -688,11 +677,11 @@ func (s *subServer) handleListMyCircles(ctx context.Context, req *model.ListMyCi
 }
 
 func (s *subServer) handleRenameCircle(ctx context.Context, req *model.RenameCircleRequest) (*model.RenameCircleResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	c, err := s.circleSvc.Rename(ctx, req, userID)
+	c, err := s.circleSvc.Rename(ctx, req, actorPTID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to rename circle", err)
 	}
@@ -700,22 +689,22 @@ func (s *subServer) handleRenameCircle(ctx context.Context, req *model.RenameCir
 }
 
 func (s *subServer) handleDeleteCircle(ctx context.Context, req *model.DeleteCircleRequest) (*model.DeleteCircleResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if err := s.circleSvc.Delete(ctx, req.CircleId, userID); err != nil {
+	if err := s.circleSvc.Delete(ctx, req.CircleId, actorPTID); err != nil {
 		return nil, server.InternalErrorWithCause("failed to delete circle", err)
 	}
 	return &model.DeleteCircleResponse{Success: true}, nil
 }
 
 func (s *subServer) handleAddCircleMembers(ctx context.Context, req *model.AddCircleMemberRequest) (*model.AddCircleMemberResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	added, total, err := s.circleSvc.AddMembers(ctx, req, userID)
+	added, total, err := s.circleSvc.AddMembers(ctx, req, actorPTID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to add circle members", err)
 	}
@@ -723,11 +712,11 @@ func (s *subServer) handleAddCircleMembers(ctx context.Context, req *model.AddCi
 }
 
 func (s *subServer) handleRemoveCircleMembers(ctx context.Context, req *model.RemoveCircleMemberRequest) (*model.RemoveCircleMemberResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	removed, total, err := s.circleSvc.RemoveMembers(ctx, req, userID)
+	removed, total, err := s.circleSvc.RemoveMembers(ctx, req, actorPTID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to remove circle members", err)
 	}
@@ -735,11 +724,11 @@ func (s *subServer) handleRemoveCircleMembers(ctx context.Context, req *model.Re
 }
 
 func (s *subServer) handleListCircleMembers(ctx context.Context, req *model.ListCircleMembersRequest) (*model.ListCircleMembersResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	resp, err := s.circleSvc.ListMembers(ctx, req, userID)
+	resp, err := s.circleSvc.ListMembers(ctx, req, actorPTID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to list circle members", err)
 	}
@@ -749,11 +738,11 @@ func (s *subServer) handleListCircleMembers(ctx context.Context, req *model.List
 // --- Stats ---------------------------------------------------------
 
 func (s *subServer) handleGetMyStats(ctx context.Context, _ *model.GetMyMomentsStatsRequest) (*model.GetMyMomentsStatsResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	stats, err := s.statsSvc.MyStats(ctx, userID)
+	stats, err := s.statsSvc.MyStats(ctx, actorPTID)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to compute moments stats", err)
 	}
@@ -775,11 +764,11 @@ func (s *subServer) handleUpsertStationModerationPolicy(
 	ctx context.Context,
 	req *model.UpsertStationModerationPolicyRequest,
 ) (*model.UpsertStationModerationPolicyResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	policy, err := s.moderationSvc.UpsertStationPolicy(ctx, req, userID)
+	policy, err := s.moderationSvc.UpsertStationPolicy(ctx, req, actorPTID)
 	if err != nil {
 		return nil, server.BadRequest(err.Error())
 	}
@@ -790,7 +779,7 @@ func (s *subServer) handleDeleteStationModerationPolicy(
 	ctx context.Context,
 	req *model.DeleteStationModerationPolicyRequest,
 ) (*model.DeleteStationModerationPolicyResponse, error) {
-	if _, ok := getUserID(ctx); !ok {
+	if _, ok := getActorPTID(ctx); !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
 	if err := s.moderationSvc.DeleteStationPolicy(ctx, req); err != nil {
@@ -803,7 +792,7 @@ func (s *subServer) handleListStationModerationPolicies(
 	ctx context.Context,
 	req *model.ListStationModerationPoliciesRequest,
 ) (*model.ListStationModerationPoliciesResponse, error) {
-	if _, ok := getUserID(ctx); !ok {
+	if _, ok := getActorPTID(ctx); !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
 	resp, err := s.moderationSvc.ListStationPolicies(ctx, req)
@@ -832,21 +821,14 @@ func audienceFromLegacyVisibility(v model.PostVisibility) *model.Audience {
 // --- Friend Request handlers -------------------------------------------------
 
 func (s *subServer) handleSendFriendRequest(ctx context.Context, req *chat.SendFriendRequestRequest) (*chat.SendFriendRequestResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	if req.ReceiverDid == "" {
-		return nil, server.BadRequest("receiver_did is required")
+	if req.ReceiverPtid == "" {
+		return nil, server.BadRequest("receiver_ptid is required")
 	}
-	receiver, err := actor.GetActorByPTID(ctx, req.ReceiverDid)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to resolve receiver PTID", err)
-	}
-	if receiver == nil {
-		return nil, server.BadRequest("invalid receiver_did")
-	}
-	fr, err := s.friendRequestSvc.SendFriendRequest(ctx, userID, receiver.ID, req.Message)
+	fr, err := s.friendRequestSvc.SendFriendRequest(ctx, actorPTID, req.ReceiverPtid, req.Message)
 	if err != nil {
 		switch err {
 		case application.ErrFriendRequestSelf:
@@ -863,14 +845,14 @@ func (s *subServer) handleSendFriendRequest(ctx context.Context, req *chat.SendF
 }
 
 func (s *subServer) handleAcceptFriendRequest(ctx context.Context, req *chat.AcceptFriendRequestRequest) (*chat.AcceptFriendRequestResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
 	if req.RequestId == "" {
 		return nil, server.BadRequest("request_id is required")
 	}
-	fr, err := s.friendRequestSvc.AcceptFriendRequest(ctx, userID, req.RequestId)
+	fr, err := s.friendRequestSvc.AcceptFriendRequest(ctx, actorPTID, req.RequestId)
 	if err != nil {
 		switch err {
 		case application.ErrFriendRequestNotFound:
@@ -887,14 +869,14 @@ func (s *subServer) handleAcceptFriendRequest(ctx context.Context, req *chat.Acc
 }
 
 func (s *subServer) handleRejectFriendRequest(ctx context.Context, req *chat.RejectFriendRequestRequest) (*chat.RejectFriendRequestResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
 	if req.RequestId == "" {
 		return nil, server.BadRequest("request_id is required")
 	}
-	fr, err := s.friendRequestSvc.RejectFriendRequest(ctx, userID, req.RequestId)
+	fr, err := s.friendRequestSvc.RejectFriendRequest(ctx, actorPTID, req.RequestId)
 	if err != nil {
 		switch err {
 		case application.ErrFriendRequestNotFound:
@@ -909,11 +891,11 @@ func (s *subServer) handleRejectFriendRequest(ctx context.Context, req *chat.Rej
 }
 
 func (s *subServer) handleListFriendRequests(ctx context.Context, req *chat.ListFriendRequestsRequest) (*chat.ListFriendRequestsResponse, error) {
-	userID, ok := getUserID(ctx)
+	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
-	requests, total, err := s.friendRequestSvc.ListFriendRequests(ctx, userID, int32(req.Status), int(req.Limit), int(req.Offset))
+	requests, total, err := s.friendRequestSvc.ListFriendRequests(ctx, actorPTID, int32(req.Status), int(req.Limit), int(req.Offset))
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to list friend requests", err)
 	}

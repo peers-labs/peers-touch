@@ -9,7 +9,7 @@ export type PipelineName =
 
 // TODO(unified-actor): align projection fields with AccountIdentity / actor model (see desktop_api.AccountIdentity).
 export interface IdentitySlice {
-  userId: string | null
+  actorPtid: string | null
   displayName: string | null
   provider: string | null
   email: string | null

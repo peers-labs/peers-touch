@@ -55,7 +55,7 @@ export interface DesktopFrontendTelemetryEvent {
   source: FrontendTelemetrySource;
   module: string;
   runtime: FrontendTelemetryRuntime;
-  actorId?: string;
+  actorPtid?: string;
   deviceId?: string;
   sessionId?: string;
   owner?: string;

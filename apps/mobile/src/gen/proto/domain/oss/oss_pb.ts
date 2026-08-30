@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/oss/oss.proto.
  */
 export const file_domain_oss_oss: GenFile = /*@__PURE__*/
-  fileDesc("ChRkb21haW4vb3NzL29zcy5wcm90bxIYcGVlcnNfdG91Y2gubW9kZWwub3NzLnYxIpEBCghGaWxlTWV0YRILCgNrZXkYASABKAkSEAoIZmlsZW5hbWUYAiABKAkSEQoJbWltZV90eXBlGAMgASgJEgwKBHNpemUYBCABKAMSFAoMdXBsb2FkZXJfZGlkGAUgASgJEi8KC3VwbG9hZGVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIhChJHZXRGaWxlTWV0YVJlcXVlc3QSCwoDa2V5GAEgASgJIkcKE0dldEZpbGVNZXRhUmVzcG9uc2USMAoEbWV0YRgBIAEoCzIiLnBlZXJzX3RvdWNoLm1vZGVsLm9zcy52MS5GaWxlTWV0YSI8ChJVcGxvYWRGaWxlUmVzcG9uc2USCwoDa2V5GAEgASgJEgsKA3VybBgCIAEoCRIMCgRzaXplGAMgASgDQkVaQ2dpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL29zcztvc3NiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChRkb21haW4vb3NzL29zcy5wcm90bxIYcGVlcnNfdG91Y2gubW9kZWwub3NzLnYxIpIBCghGaWxlTWV0YRILCgNrZXkYASABKAkSEAoIZmlsZW5hbWUYAiABKAkSEQoJbWltZV90eXBlGAMgASgJEgwKBHNpemUYBCABKAMSFQoNdXBsb2FkZXJfcHRpZBgFIAEoCRIvCgt1cGxvYWRlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiIQoSR2V0RmlsZU1ldGFSZXF1ZXN0EgsKA2tleRgBIAEoCSJHChNHZXRGaWxlTWV0YVJlc3BvbnNlEjAKBG1ldGEYASABKAsyIi5wZWVyc190b3VjaC5tb2RlbC5vc3MudjEuRmlsZU1ldGEiPAoSVXBsb2FkRmlsZVJlc3BvbnNlEgsKA2tleRgBIAEoCRILCgN1cmwYAiABKAkSDAoEc2l6ZRgDIAEoA0JFWkNnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9vc3M7b3NzYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * File metadata
@@ -41,9 +41,9 @@ export type FileMeta = Message<"peers_touch.model.oss.v1.FileMeta"> & {
   size: bigint;
 
   /**
-   * @generated from field: string uploader_did = 5;
+   * @generated from field: string uploader_ptid = 5;
    */
-  uploaderDid: string;
+  uploaderPtid: string;
 
   /**
    * @generated from field: google.protobuf.Timestamp uploaded_at = 6;

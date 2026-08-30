@@ -29,11 +29,11 @@ type AuditRepository interface {
 // `/dashboard/api/oss/audit` endpoint and by manual ops queries.
 // Empty fields mean "no filter".
 type AuditQuery struct {
-	Action   string
-	ActorID  string
-	BucketID string
-	FileKey  string
-	Outcome  string
+	Action    string
+	ActorPTID string
+	BucketID  string
+	FileKey   string
+	Outcome   string
 
 	Since time.Time
 	Until time.Time
@@ -84,8 +84,8 @@ func (r *auditRepo) Query(ctx context.Context, q AuditQuery) ([]ossmodel.Audit, 
 	if q.Action != "" {
 		tx = tx.Where("action = ?", q.Action)
 	}
-	if q.ActorID != "" {
-		tx = tx.Where("actor_id = ?", q.ActorID)
+	if q.ActorPTID != "" {
+		tx = tx.Where("actor_ptid = ?", q.ActorPTID)
 	}
 	if q.BucketID != "" {
 		tx = tx.Where("bucket_id = ?", q.BucketID)

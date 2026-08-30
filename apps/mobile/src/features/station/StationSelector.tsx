@@ -13,7 +13,7 @@ import {
 const { Text } = Typography;
 
 export function StationSelector({
-  activeUrl,
+  activeStationPeerId,
   entries,
   error,
   checking,
@@ -22,14 +22,14 @@ export function StationSelector({
   onSelect,
   onRemove,
 }: {
-  activeUrl: string;
+  activeStationPeerId: string;
   entries: MobileStationEntry[];
   error: string | null;
   checking: boolean;
   verifyingUrls: string[];
   onAdd: (protocol: StationProtocol, address: string) => boolean | Promise<boolean>;
-  onSelect: (url: string) => void | Promise<void>;
-  onRemove: (url: string) => void;
+  onSelect: (stationPeerId: string) => void | Promise<void>;
+  onRemove: (stationPeerId: string) => void;
 }) {
   const { t } = useMobileI18n();
   const [protocol, setProtocol] = useState<StationProtocol>('https');
@@ -70,8 +70,8 @@ export function StationSelector({
             <span>{isHttp ? t('mobile.launch.helperHttpWarning') : t('mobile.launch.changeTarget')}</span>
           </Text>
         </div>
-        <Tag color={activeUrl ? 'green' : 'default'}>
-          {activeUrl ? t('mobile.launch.selected') : t('mobile.launch.required')}
+        <Tag color={activeStationPeerId ? 'green' : 'default'}>
+          {activeStationPeerId ? t('mobile.launch.selected') : t('mobile.launch.required')}
         </Tag>
       </div>
 
@@ -115,19 +115,19 @@ export function StationSelector({
           </div>
         ) : (
           entries.map((entry) => {
-            const isActive = entry.url === activeUrl;
+            const isActive = entry.stationPeerId === activeStationPeerId;
             const status = getStationStatus(entry, verifyingUrls.includes(entry.url), t);
             return (
               <div
-                key={entry.url}
+                key={entry.stationPeerId}
                 role="button"
                 tabIndex={0}
                 className={`station-entry ${isActive ? 'active' : ''}`}
-                onClick={() => onSelect(entry.url)}
+                onClick={() => onSelect(entry.stationPeerId)}
                 onKeyDown={(event) => {
                   if (event.key !== 'Enter' && event.key !== ' ') return;
                   event.preventDefault();
-                  onSelect(entry.url);
+                  onSelect(entry.stationPeerId);
                 }}
               >
                 <Server size={18} />
@@ -146,13 +146,13 @@ export function StationSelector({
                   aria-label={t('common.action.delete')}
                   onClick={(event) => {
                     event.stopPropagation();
-                    onRemove(entry.url);
+                    onRemove(entry.stationPeerId);
                   }}
                   onKeyDown={(event) => {
                     if (event.key !== 'Enter' && event.key !== ' ') return;
                     event.preventDefault();
                     event.stopPropagation();
-                    onRemove(entry.url);
+                    onRemove(entry.stationPeerId);
                   }}
                 >
                   <Trash2 size={15} />

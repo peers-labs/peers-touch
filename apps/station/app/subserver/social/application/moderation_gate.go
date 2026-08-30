@@ -34,12 +34,12 @@ func stationModerationBlocksStation(
 func actorStationModerated(
 	ctx context.Context,
 	repo domain.StationModerationRepository,
-	actorID uint64,
+	actorPTID string,
 ) (bool, error) {
-	if repo == nil || actorID == 0 {
+	if repo == nil || actorPTID == "" {
 		return false, nil
 	}
-	a, err := actor.GetActorByID(ctx, actorID)
+	a, err := actor.GetActorByPTID(ctx, actorPTID)
 	if err != nil {
 		return false, fmt.Errorf("lookup actor station: %w", err)
 	}
@@ -62,9 +62,9 @@ func postAuthorStationModerated(
 			return blocked, err
 		}
 	}
-	authorID := parseActorID(post.GetAuthorId())
-	if authorID == 0 && post.GetAuthor() != nil {
-		authorID = parseActorID(post.GetAuthor().GetId())
+	authorPTID := post.GetAuthorPtid()
+	if authorPTID == "" && post.GetAuthor() != nil {
+		authorPTID = post.GetAuthor().GetId()
 	}
-	return actorStationModerated(ctx, repo, authorID)
+	return actorStationModerated(ctx, repo, authorPTID)
 }

@@ -49,10 +49,10 @@ const (
 
 	// Actors
 	routeActors             = "/dashboard/api/actors"
-	routeActorDetail        = "/dashboard/api/actors/:id"
-	routeActorSessions      = "/dashboard/api/actors/:id/sessions"
-	routeActorResetPassword = "/dashboard/api/actors/:id/reset-password"
-	routeActorRevokeSession = "/dashboard/api/actors/:id/sessions/:sid/revoke"
+	routeActorDetail        = "/dashboard/api/actors/:ptid"
+	routeActorSessions      = "/dashboard/api/actors/:ptid/sessions"
+	routeActorResetPassword = "/dashboard/api/actors/:ptid/reset-password"
+	routeActorRevokeSession = "/dashboard/api/actors/:ptid/sessions/:sid/revoke"
 
 	// Admins
 	routeAdmins       = "/dashboard/api/admins"
@@ -75,7 +75,7 @@ const (
 
 	// Peers actor sessions
 	routePeersSessions      = "/dashboard/api/sessions/active"
-	routePeersRevokeSession = "/dashboard/api/sessions/:sid/revoke"
+	routePeersRevokeSession = "/dashboard/api/sessions/:ptid/:sid/revoke"
 
 	// Dashboard admin sessions
 	routeDashboardSessions      = "/dashboard/api/dashboard-sessions"
@@ -412,14 +412,14 @@ func (h *dashboardHandler) handleListActors(ctx context.Context, _ *domain.Empty
 	return result, nil
 }
 
-// handleGetActor — GET /dashboard/api/actors/:id
+// handleGetActor — GET /dashboard/api/actors/:ptid
 func (h *dashboardHandler) handleGetActor(ctx context.Context, _ *domain.EmptyRequest) (*domain.ActorDetail, error) {
-	actorID, err := parsePathParamUint64(ctx, "id")
-	if err != nil {
-		return nil, server.BadRequest("invalid actor id")
+	actorPTID := strings.TrimSpace(pathParam(ctx, "ptid"))
+	if actorPTID == "" {
+		return nil, server.BadRequest("actor PTID is required")
 	}
 
-	detail, err := h.sub.actorsSvc.GetActorDetail(ctx, actorID)
+	detail, err := h.sub.actorsSvc.GetActorDetail(ctx, actorPTID)
 	if err != nil {
 		return nil, server.NotFound("actor not found")
 	}
@@ -427,14 +427,14 @@ func (h *dashboardHandler) handleGetActor(ctx context.Context, _ *domain.EmptyRe
 	return detail, nil
 }
 
-// handleGetActorSessions — GET /dashboard/api/actors/:id/sessions
+// handleGetActorSessions — GET /dashboard/api/actors/:ptid/sessions
 func (h *dashboardHandler) handleGetActorSessions(ctx context.Context, _ *domain.EmptyRequest) (*domain.ActorSessionsResponse, error) {
-	actorID, err := parsePathParamUint64(ctx, "id")
-	if err != nil {
-		return nil, server.BadRequest("invalid actor id")
+	actorPTID := strings.TrimSpace(pathParam(ctx, "ptid"))
+	if actorPTID == "" {
+		return nil, server.BadRequest("actor PTID is required")
 	}
 
-	sessions, err := h.sub.actorsSvc.GetActorSessions(ctx, actorID)
+	sessions, err := h.sub.actorsSvc.GetActorSessions(ctx, actorPTID)
 	if err != nil {
 		log.Errorf(ctx, "[dashboard] actor sessions error: %v", err)
 		return nil, server.InternalError("failed to get actor sessions")
@@ -443,40 +443,44 @@ func (h *dashboardHandler) handleGetActorSessions(ctx context.Context, _ *domain
 	return &domain.ActorSessionsResponse{Items: sessions}, nil
 }
 
-// handleResetActorPassword — POST /dashboard/api/actors/:id/reset-password
+// handleResetActorPassword — POST /dashboard/api/actors/:ptid/reset-password
 func (h *dashboardHandler) handleResetActorPassword(ctx context.Context, req *domain.ResetPasswordRequest) (*domain.MessageResponse, error) {
 	claims := getClaims(ctx)
 
-	actorID, err := parsePathParamUint64(ctx, "id")
-	if err != nil {
-		return nil, server.BadRequest("invalid actor id")
+	actorPTID := strings.TrimSpace(pathParam(ctx, "ptid"))
+	if actorPTID == "" {
+		return nil, server.BadRequest("actor PTID is required")
 	}
 
 	if len(req.NewPassword) < 8 {
 		return nil, server.BadRequest("password must be at least 8 characters")
 	}
 
-	if err := h.sub.actorsSvc.ResetActorPassword(ctx, actorID, req.NewPassword); err != nil {
+	if err := h.sub.actorsSvc.ResetActorPassword(ctx, actorPTID, req.NewPassword); err != nil {
 		log.Errorf(ctx, "[dashboard] reset actor password error: %v", err)
 		return nil, server.InternalError("failed to reset password")
 	}
 
 	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "reset_actor_password", "actor",
-		"actor_id="+strconv.FormatUint(actorID, 10), getClientIP(ctx), getUserAgent(ctx))
+		"actor_ptid="+actorPTID, getClientIP(ctx), getUserAgent(ctx))
 
 	return &domain.MessageResponse{Message: "password reset successfully"}, nil
 }
 
-// handleRevokeActorSession — POST /dashboard/api/actors/:id/sessions/:sid/revoke
+// handleRevokeActorSession — POST /dashboard/api/actors/:ptid/sessions/:sid/revoke
 func (h *dashboardHandler) handleRevokeActorSession(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
 	claims := getClaims(ctx)
 
+	actorPTID := strings.TrimSpace(pathParam(ctx, "ptid"))
+	if actorPTID == "" {
+		return nil, server.BadRequest("actor PTID is required")
+	}
 	sid := pathParam(ctx, "sid")
 	if sid == "" {
 		return nil, server.BadRequest("session id is required")
 	}
 
-	if err := h.sub.actorsSvc.RevokeActorSession(ctx, sid); err != nil {
+	if err := h.sub.actorsSvc.RevokeActorSession(ctx, actorPTID, sid); err != nil {
 		log.Errorf(ctx, "[dashboard] revoke actor session error: %v", err)
 		return nil, server.InternalError("failed to revoke session")
 	}
@@ -632,7 +636,7 @@ func (h *dashboardHandler) handleUpdateAccessPolicy(ctx context.Context, req *ga
 		Mode:              accessPolicyModeName(req.GetPolicy().GetMode()),
 		AllowedEmails:     req.GetPolicy().GetAllowedEmails(),
 		AllowedUsernames:  req.GetPolicy().GetAllowedUsernames(),
-		AllowedActorIDs:   req.GetPolicy().GetAllowedActorIds(),
+		AllowedActorPTIDs: req.GetPolicy().GetAllowedActorPtids(),
 		EnabledGates:      req.GetPolicy().GetEnabledGates(),
 		SelfServiceInvite: req.GetPolicy().GetSelfServiceInvite(),
 		UpdatedBy:         updatedBy,
@@ -812,16 +816,20 @@ func (h *dashboardHandler) handleGetActivePeersSessions(ctx context.Context, _ *
 	}, nil
 }
 
-// handleRevokePeersSession — POST /dashboard/api/sessions/:sid/revoke
+// handleRevokePeersSession — POST /dashboard/api/sessions/:ptid/:sid/revoke
 func (h *dashboardHandler) handleRevokePeersSession(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
 	claims := getClaims(ctx)
 
+	actorPTID := strings.TrimSpace(pathParam(ctx, "ptid"))
+	if actorPTID == "" {
+		return nil, server.BadRequest("actor PTID is required")
+	}
 	sid := pathParam(ctx, "sid")
 	if sid == "" {
 		return nil, server.BadRequest("session id is required")
 	}
 
-	if err := h.sub.actorsSvc.RevokeActorSession(ctx, sid); err != nil {
+	if err := h.sub.actorsSvc.RevokeActorSession(ctx, actorPTID, sid); err != nil {
 		log.Errorf(ctx, "[dashboard] revoke peers session error: %v", err)
 		return nil, server.InternalError("failed to revoke session")
 	}
@@ -988,7 +996,7 @@ func (h *dashboardHandler) handleOSSCreateBucket(ctx context.Context, req *domai
 	if err != nil {
 		switch {
 		case errors.Is(err, infrastructure.ErrBucketExists):
-			h.recordOSSBucketAudit(ctx, claims, "bucket_create", "", req.OwnerActorID,
+			h.recordOSSBucketAudit(ctx, claims, "bucket_create", "", req.OwnerPTID,
 				"denied", "already_exists")
 			return nil, server.Conflict("bucket already exists")
 		case errors.Is(err, infrastructure.ErrBucketBadInput):
@@ -998,7 +1006,7 @@ func (h *dashboardHandler) handleOSSCreateBucket(ctx context.Context, req *domai
 		// surface as plain `errors.New("…")` strings; treat them
 		// as 400 so admins see the precise complaint rather than
 		// a 500 mystery.
-		if strings.HasPrefix(err.Error(), "owner_actor_id") ||
+		if strings.HasPrefix(err.Error(), "owner_ptid") ||
 			strings.HasPrefix(err.Error(), "name") ||
 			strings.HasPrefix(err.Error(), "default_visibility") ||
 			strings.HasPrefix(err.Error(), "quota_bytes") ||
@@ -1009,7 +1017,7 @@ func (h *dashboardHandler) handleOSSCreateBucket(ctx context.Context, req *domai
 		log.Errorf(ctx, "[dashboard] oss create bucket error: %v", err)
 		return nil, server.InternalError("failed to create bucket")
 	}
-	h.recordOSSBucketAudit(ctx, claims, "bucket_create", row.ID, row.OwnerActorID, "ok", "")
+	h.recordOSSBucketAudit(ctx, claims, "bucket_create", row.ID, row.OwnerPTID, "ok", "")
 	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "oss_bucket_create", "oss_bucket",
 		"bucket_id="+row.ID+" name="+row.Name, getClientIP(ctx), getUserAgent(ctx))
 	return row, nil
@@ -1052,7 +1060,7 @@ func (h *dashboardHandler) handleOSSUpdateBucket(ctx context.Context, req *domai
 		log.Errorf(ctx, "[dashboard] oss update bucket error: %v", err)
 		return nil, server.InternalError("failed to update bucket")
 	}
-	h.recordOSSBucketAudit(ctx, claims, "bucket_update", row.ID, row.OwnerActorID, "ok", "")
+	h.recordOSSBucketAudit(ctx, claims, "bucket_update", row.ID, row.OwnerPTID, "ok", "")
 	h.sub.authSvc.RecordAudit(ctx, claims.AdminID, claims.Username, "oss_bucket_update", "oss_bucket",
 		"bucket_id="+row.ID, getClientIP(ctx), getUserAgent(ctx))
 	return row, nil
@@ -1106,7 +1114,7 @@ func (h *dashboardHandler) handleOSSDeleteBucket(ctx context.Context, _ *domain.
 // downstream audit outage cannot turn a successful mutation into
 // a 500.
 func (h *dashboardHandler) recordOSSBucketAudit(ctx context.Context, claims *domain.DashboardClaims,
-	action, bucketID, ownerActorID, outcome, reason string) {
+	action, bucketID, ownerPTID, outcome, reason string) {
 	if h.sub.ossSvc == nil {
 		return
 	}
@@ -1117,7 +1125,7 @@ func (h *dashboardHandler) recordOSSBucketAudit(ctx context.Context, claims *dom
 	if err := h.sub.ossSvc.RecordOSSAudit(ctx, infrastructure.OSSAuditAppend{
 		Action:           action,
 		BucketID:         bucketID,
-		ActorID:          ownerActorID,
+		ActorPTID:        ownerPTID,
 		DashboardActorID: dashID,
 		Outcome:          outcome,
 		Reason:           reason,
@@ -1134,13 +1142,13 @@ func ownerID(b *domain.OSSBucketSummary) string {
 	if b == nil {
 		return ""
 	}
-	return b.OwnerActorID
+	return b.OwnerPTID
 }
 
 // handleOSSAdminUpload — POST /dashboard/api/oss/buckets/:id/upload
 //
 // Operator-driven upload to a specific bucket. The bucket's
-// `OwnerActorID` is what the OSS subserver stamps on the resulting
+// `OwnerPTID` is what the OSS subserver stamps on the resulting
 // `oss_files` row — the operator is acting on behalf of that owner,
 // the same model that backs the existing
 // `admin_visibility_override` and `admin_delete` paths.
@@ -1258,7 +1266,7 @@ func (h *dashboardHandler) translateAdminUploadError(ctx context.Context, w http
 	case errors.Is(err, application.ErrAdminUploadBucketRequired):
 		writeJSONError(w, http.StatusBadRequest, "bucket_required", msg)
 	case strings.HasPrefix(msg, "bucket not found"),
-		strings.HasPrefix(msg, "bucket has no owner_actor_id"):
+		strings.HasPrefix(msg, "bucket has no owner_ptid"):
 		h.recordOSSBucketAudit(ctx, claims, "admin_upload", bucketID, "", "denied", "bucket_not_found")
 		writeJSONError(w, http.StatusNotFound, "bucket_not_found", msg)
 	case strings.HasPrefix(msg, "visibility"):
@@ -1314,12 +1322,12 @@ func (h *dashboardHandler) handleOSSListBucketObjects(ctx context.Context, _ *do
 		return nil, server.NotFound("bucket not found")
 	}
 	q := infrastructure.OSSObjectQuery{
-		BucketID:     id,
-		OwnerActorID: queryParam(ctx, "owner_actor_id"),
-		Visibility:   queryParam(ctx, "visibility"),
-		Mime:         queryParam(ctx, "mime"),
-		Page:         queryParamInt(ctx, "page", 1),
-		PageSize:     queryParamInt(ctx, "page_size", 50),
+		BucketID:   id,
+		OwnerPTID:  queryParam(ctx, "owner_ptid"),
+		Visibility: queryParam(ctx, "visibility"),
+		Mime:       queryParam(ctx, "mime"),
+		Page:       queryParamInt(ctx, "page", 1),
+		PageSize:   queryParamInt(ctx, "page_size", 50),
 	}
 	if q.PageSize > 200 {
 		q.PageSize = 200
@@ -1475,7 +1483,7 @@ func (h *dashboardHandler) recordOSSObjectAudit(ctx context.Context, claims *dom
 	if row != nil {
 		evt.FileKey = row.Key
 		evt.BucketID = row.BucketID
-		evt.ActorID = row.OwnerActorID
+		evt.ActorPTID = row.OwnerPTID
 		evt.SizeBytes = row.Size
 	}
 	if err := h.sub.ossSvc.RecordOSSAudit(ctx, evt); err != nil {
@@ -1486,7 +1494,7 @@ func (h *dashboardHandler) recordOSSObjectAudit(ctx context.Context, claims *dom
 
 // handleOSSListObjects — GET /dashboard/api/oss/objects
 //
-// Filters: bucket_id, owner_actor_id, visibility, mime, page,
+// Filters: bucket_id, owner_ptid, visibility, mime, page,
 // page_size. All optional; an unfiltered call returns the most
 // recent N rows across all buckets.
 func (h *dashboardHandler) handleOSSListObjects(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSObjectListResponse, error) {
@@ -1494,12 +1502,12 @@ func (h *dashboardHandler) handleOSSListObjects(ctx context.Context, _ *domain.E
 		return nil, serviceUnavailable("oss service unavailable")
 	}
 	q := infrastructure.OSSObjectQuery{
-		BucketID:     queryParam(ctx, "bucket_id"),
-		OwnerActorID: queryParam(ctx, "owner_actor_id"),
-		Visibility:   queryParam(ctx, "visibility"),
-		Mime:         queryParam(ctx, "mime"),
-		Page:         queryParamInt(ctx, "page", 1),
-		PageSize:     queryParamInt(ctx, "page_size", 50),
+		BucketID:   queryParam(ctx, "bucket_id"),
+		OwnerPTID:  queryParam(ctx, "owner_ptid"),
+		Visibility: queryParam(ctx, "visibility"),
+		Mime:       queryParam(ctx, "mime"),
+		Page:       queryParamInt(ctx, "page", 1),
+		PageSize:   queryParamInt(ctx, "page_size", 50),
 	}
 	if q.PageSize > 200 {
 		q.PageSize = 200
@@ -1514,7 +1522,7 @@ func (h *dashboardHandler) handleOSSListObjects(ctx context.Context, _ *domain.E
 
 // handleOSSListAudit — GET /dashboard/api/oss/audit
 //
-// Filters: action, actor_id, bucket_id, file_key, outcome, since,
+// Filters: action, actor_ptid, bucket_id, file_key, outcome, since,
 // until, page, page_size. `since`/`until` accept RFC3339 timestamps;
 // unparseable values are treated as zero (i.e. no bound).
 func (h *dashboardHandler) handleOSSListAudit(ctx context.Context, _ *domain.EmptyRequest) (*domain.OSSAuditListResponse, error) {
@@ -1522,13 +1530,13 @@ func (h *dashboardHandler) handleOSSListAudit(ctx context.Context, _ *domain.Emp
 		return nil, serviceUnavailable("oss service unavailable")
 	}
 	q := infrastructure.OSSAuditQuery{
-		Action:   queryParam(ctx, "action"),
-		ActorID:  queryParam(ctx, "actor_id"),
-		BucketID: queryParam(ctx, "bucket_id"),
-		FileKey:  queryParam(ctx, "file_key"),
-		Outcome:  queryParam(ctx, "outcome"),
-		Page:     queryParamInt(ctx, "page", 1),
-		PageSize: queryParamInt(ctx, "page_size", 50),
+		Action:    queryParam(ctx, "action"),
+		ActorPTID: queryParam(ctx, "actor_ptid"),
+		BucketID:  queryParam(ctx, "bucket_id"),
+		FileKey:   queryParam(ctx, "file_key"),
+		Outcome:   queryParam(ctx, "outcome"),
+		Page:      queryParamInt(ctx, "page", 1),
+		PageSize:  queryParamInt(ctx, "page_size", 50),
 	}
 	if q.PageSize > 200 {
 		q.PageSize = 200

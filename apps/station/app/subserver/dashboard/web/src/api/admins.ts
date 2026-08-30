@@ -9,7 +9,7 @@ export interface CreateAdminRequest {
   username: string;
   password: string;
   display_name: string;
-  did?: string;
+  ptid?: string;
 }
 
 export interface DashboardAdmin {
@@ -18,7 +18,7 @@ export interface DashboardAdmin {
   display_name: string;
   role: string;
   is_super_user: boolean;
-  did: string;
+  ptid: string;
   disabled: boolean;
   last_login_at?: string;
   last_login_ip?: string;

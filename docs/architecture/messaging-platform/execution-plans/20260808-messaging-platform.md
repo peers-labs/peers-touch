@@ -988,8 +988,8 @@ Closure enforcement (deterministic):
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
 | MP-W10-E | reopened by W13 | W05/W10-D | Prior byte-exact Engine evidence remains valid for its recorded runtime, but current product use proves the Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, and count conservation are not closed. W13-E/F must replace the product-proof claim with real UI evidence. |
 | MP-W12 | reopened by W13 (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | Prior authority/Engine interaction evidence remains useful, but current product use proves thread panel, reaction picker, hover toolbar, and complete transcript convergence were bypassed or unasserted. W13-A/B/F must rerun through real Native UI actions. Mobile remains pending W09. |
-| MP-W13 | completed (Linux Desktop); macOS, Windows, and Mobile `UNPROVEN` | W10-E/W12 + Social Runtime Phase 3 | Unified exact-source aggregate `20260830T052209499498Z-ff6c99fc6e262b23e876f2c2e191a067` at `c69ed69bb6d8d6e7cf2275f0ce2c76a39f35049b` passed all 18 selected Gates with `DONE/PROVEN`, source/Station/runtime-cell identity, and successful cleanup. Chat required-proven validation passed all nine capabilities, and Gap Detector found no gap in the exact Linux claim. |
-| MP-W11 | reopened pending W13 | W02-W10/W12/W13 | The previous closure verdict is invalid for full product readiness because its Native evidence did not prove the receiver-visible paths exposed by W13. Rerun only after W13-F passes and stale reports are rejected by source/build/runtime identity. |
+| MP-W13 | current Linux delivery candidate pending exact-source revalidation; macOS, Windows, and Mobile `UNPROVEN` | W10-E/W12 + Social Runtime Phase 3 | Historical aggregate `20260830T052209499498Z-ff6c99fc6e262b23e876f2c2e191a067` proved commit `c69ed69bb6d8d6e7cf2275f0ce2c76a39f35049b`. The current candidate semantically overlays that search-selection fix onto the canonical `peerPtid` migration from `origin/master`; it must produce a new source/Station/runtime-cell-bound 18-Gate aggregate before delivery. |
+| MP-W11 | pending current Linux delivery-candidate revalidation | W02-W10/W12/W13 | Run final closure only after the integrated MP-W13-F candidate passes the exact-source aggregate and stale reports are rejected by source/build/runtime identity. Platform-wide readiness remains open because macOS, Windows, and Mobile are independent `UNPROVEN` claims. |
 
 The 2026-08-27 persistent Linux Desktop handoff exposed four additional MP-W13-F
 gaps: the installed runtime did not preserve the runtime-cell keyring boundary,
@@ -1413,6 +1413,27 @@ marks all nine Chat capabilities `PROVEN`. Gap Detector accepted the exact
 Linux MP-W13-F claim with all 18 selected Gates present and no gaps. MP-W13 is
 therefore complete for Linux Desktop only; macOS, Windows, and Mobile remain
 independent `UNPROVEN` platform claims.
+
+### 2026-08-30 Current-Master Semantic Overlay
+
+The Linux proof at `c69ed69bb6d8d6e7cf2275f0ce2c76a39f35049b` remains valid
+only for that historical source identity. The delivery branch now integrates
+the canonical `peerDid` to `peerPtid` migration from `origin/master` with the
+already-proven interaction ordering:
+
+```text
+messaging_create_direct canonical result
+  -> immediate canonical selection
+  -> restore hidden local state
+  -> background reconciliation
+```
+
+This is an implementation-level semantic overlay within `MP-W13-F`; it does
+not change product behavior, runtime ownership, or the Linux-only platform
+boundary. The integrated commit must rerun the same 18-Gate exact-source
+aggregate, Chat required-proven validation, Gap Detector, Completion Audit, and
+submit-time review before `MP-W13` and `MP-W11` can close for the current
+delivery candidate.
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 

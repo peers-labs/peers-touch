@@ -15,9 +15,9 @@ pub fn admin_health(state: State<'_, Arc<AppState>>, window: Window) -> AppResul
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window);
     let context = AccessContext {
-        actor_id,
+        actor_ptid,
         token: Some(token),
     };
     application_admin::admin_health(context)
@@ -33,9 +33,9 @@ pub fn admin_network_probe(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window);
     let context = AccessContext {
-        actor_id,
+        actor_ptid,
         token: Some(token),
     };
     application_admin::admin_network_probe(context, input)
@@ -51,9 +51,9 @@ pub fn admin_execute_action(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let actor_id = session_resolver::actor_id_for_window(state.inner(), &window);
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window);
     let context = AccessContext {
-        actor_id,
+        actor_ptid,
         token: Some(token),
     };
     application_admin::admin_execute_action(context, input)

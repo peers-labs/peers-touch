@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-03 | **Updated**: 2026-06-07
+> **Created**: 2026-06-03 | **Updated**: 2026-08-27
 > **Owner**: Client Architecture Team
 > **Module**: `apps/desktop/src/runtimes/socialRuntime.ts`, `apps/mobile/src/features/social/`
 
@@ -54,11 +54,15 @@
                              |
                              v
                   Social Projection Store
-       long-lived state, commands, optimistic projection updates
+       long-lived state, derived command status, projection updates
                              |
                              v
                  Social Runtime Supervisor
-      bootstrap, streams, timers, reconcile, teardown, repair
+      shared event ingress, bootstrap, reconcile, teardown, repair
+                             |
+                             v
+                 InteractionAdmission
+       platform command runtime + durable ledger adapter
                              |
                 +------------+------------+
                 |                         |
@@ -75,6 +79,10 @@
 - 上图从上到下是依赖方向；下层不得绕过上层直接读写 Station truth。
 - Desktop/Mobile 不一定共享同一个 TypeScript 文件，但必须共享同一语义接口。
 - Host Adapter 只翻译宿主事件，不定义社交业务规则。
+- `groupRuntime` may be a separate Mobile descriptor, but it remains a
+  subordinate group projection owner under the shared social event supervisor.
+- Offline command reducers project the platform command ledger; they do not
+  persist or replay a second outbox.
 
 ---
 
@@ -220,7 +228,7 @@ Rules:
 | Presence | Station presence stream + session seed | peer online map | 否 |
 | Typing | realtime event | ephemeral typing map + TTL prune | 否 |
 | Group chat | Station group-chat API + event stream | group projection domain | 否 |
-| Offline command | Station command APIs | outbox/pending command projection | network-online 作为 wakeup |
+| Offline command | Station command APIs + Frontend `InteractionAdmission` | derived outbox/pending/unknown projection | network-online 作为 wakeup |
 | E2EE | Station key distribution + local crypto | key/device/message crypto projection | host secure storage 只存本地 secret |
 
 ---

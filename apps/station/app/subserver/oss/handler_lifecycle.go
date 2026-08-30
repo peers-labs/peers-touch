@@ -355,7 +355,7 @@ func parseBoolQuery(v string) bool {
 //
 // Endpoint: `POST /sub-oss/file/restore?key=...`
 //
-// Auth: JWT required; subject must match the row's `OwnerActorID`.
+// Auth: JWT required; subject must match the row's `OwnerPTID`.
 // Outside the grace window the row stays deleted and the response
 // is 410 Gone with reason `restore_window_expired`.
 func (s *ossSubServer) handleFileRestore(w http.ResponseWriter, r *http.Request) {
@@ -466,7 +466,7 @@ func (s *ossSubServer) writeLifecycleError(ctx context.Context, w http.ResponseW
 // recordLifecycleAudit writes a row matching the lifecycle action.
 // Failures are logged but do not propagate — auditing is best-
 // effort observability and must never block a user-facing mutate.
-func (s *ossSubServer) recordLifecycleAudit(ctx context.Context, meta *ossdb.FileMeta, actorID, action, outcome, reason string) {
+func (s *ossSubServer) recordLifecycleAudit(ctx context.Context, meta *ossdb.FileMeta, actorPTID, action, outcome, reason string) {
 	if s.auditRepo == nil || meta == nil {
 		return
 	}
@@ -475,7 +475,7 @@ func (s *ossSubServer) recordLifecycleAudit(ctx context.Context, meta *ossdb.Fil
 		FileKey:   meta.Key,
 		FileID:    meta.ID,
 		BucketID:  meta.BucketID,
-		ActorID:   actorID,
+		ActorPTID: actorPTID,
 		SizeBytes: meta.Size,
 		Outcome:   outcome,
 		Reason:    reason,

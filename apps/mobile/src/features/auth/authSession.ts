@@ -3,36 +3,28 @@ import {
   removeSecureStorageValue,
   setSecureStorageValue,
 } from '../../services/mobileCommands';
+import {
+  mobileAuthScope,
+  mobileAuthScopeKey,
+  parseMobileAuthSession,
+  type MobileActorRef,
+  type MobileAuthSession,
+} from './mobileAuthIdentity';
 
-export interface MobileAuthSession {
-  stationUrl: string;
-  sessionId: string;
-  accessToken: string;
-  refreshToken?: string;
-  tokenType?: string;
-  expiresAt?: string;
-  actor?: {
-    id?: string;
-    actorId?: number | string;
-    actor_id?: number | string;
-    username?: string;
-    displayName?: string;
-    display_name?: string;
-    email?: string;
-  };
-  authenticatedAt: number;
-}
+export type { MobileActorRef, MobileAuthSession } from './mobileAuthIdentity';
 
 export interface StationLoginInput {
+  stationPeerId: string;
   stationUrl: string;
   email: string;
   password: string;
 }
 
 export interface RememberedLoginAccount {
+  stationPeerId: string;
   stationUrl: string;
   email: string;
-  actorId: string;
+  ptid: string;
   displayName: string;
   lastUsedAt: number;
 }
@@ -104,7 +96,7 @@ interface StationLoginEnvelope {
   data?: StationLoginPayload | AccessStartPayload | AccessSubmitPayload;
 }
 
-interface StationLoginPayload {
+export interface StationLoginPayload {
   tokens?: {
     token?: string;
     access_token?: string;
@@ -118,7 +110,8 @@ interface StationLoginPayload {
   };
   session_id?: string;
   sessionId?: string;
-  actor?: MobileAuthSession['actor'];
+  actor_ref?: MobileActorRef;
+  actorRef?: MobileActorRef;
 }
 
 interface AccessStartPayload {
@@ -158,8 +151,12 @@ interface RawAccessGate {
   inputSchemaJson?: string;
 }
 
-const AUTH_SESSION_KEY = 'peers-touch.mobile.auth-session.v1';
-const AUTH_ACCOUNT_HISTORY_KEY = 'peers-touch.mobile.auth-accounts.v1';
+const LEGACY_AUTH_SESSION_KEY = 'peers-touch.mobile.auth-session.v1';
+const LEGACY_AUTH_ACCOUNT_HISTORY_KEY = 'peers-touch.mobile.auth-accounts.v1';
+const ACTIVE_AUTH_SCOPE_KEY = 'peers-touch.mobile.auth-active-scope.v1';
+const AUTH_SESSION_KEY_PREFIX = 'peers-touch.mobile.auth-session.v1';
+const AUTH_ACCOUNT_HISTORY_KEY_PREFIX = 'peers-touch.mobile.auth-accounts.v1';
+let oauthAccessGrantFinalizer: (() => Promise<void>) | null = null;
 
 // Locale keys used as error identifiers. Callers should translate with t().
 export const AUTH_ERROR_KEYS = {
@@ -169,13 +166,15 @@ export const AUTH_ERROR_KEYS = {
   GATE_NOT_READY: 'mobile.auth.gateNotReady',
   ACCESS_DENIED: 'mobile.auth.accessDenied',
   MISSING_SESSION: 'mobile.auth.missingSession',
+  MISSING_IDENTITY_SCOPE: 'mobile.auth.missingIdentityScope',
   INVITE_CODE_REQUIRED: 'mobile.auth.inviteCodeRequired',
   INVITE_CODE_REJECTED: 'mobile.auth.inviteCodeRejected',
 } as const;
 
 export async function loginToStation(input: StationLoginInput): Promise<MobileAuthSession> {
-  const decision = await startStationAccessAttempt(input.stationUrl);
+  const decision = await startStationAccessAttempt(input.stationPeerId, input.stationUrl);
   const result = await submitStationLoginGate({
+    stationPeerId: input.stationPeerId,
     stationUrl: input.stationUrl,
     attemptId: decision.attemptId,
     email: input.email,
@@ -184,12 +183,17 @@ export async function loginToStation(input: StationLoginInput): Promise<MobileAu
   return result.session;
 }
 
-export async function startStationAccessAttempt(stationUrl: string, sessionId?: string): Promise<AccessDecision> {
+export async function startStationAccessAttempt(
+  stationPeerId: string,
+  stationUrl: string,
+  sessionId?: string,
+): Promise<AccessDecision> {
   const baseUrl = stationUrl.replace(/\/+$/, '');
   let response: Response;
   try {
     response = await fetch(`${baseUrl}/actor/access/start`, {
       body: JSON.stringify({
+        station_peer_id: stationPeerId.trim(),
         station_url: baseUrl,
         client: {
           platform: 'mobile',
@@ -225,7 +229,6 @@ export async function startStationAccessAttempt(stationUrl: string, sessionId?: 
 export async function submitStationLoginGate(input: StationLoginInput & { attemptId: string }): Promise<{
   decision: AccessDecision;
   session: MobileAuthSession;
-  persistenceError?: string;
 }> {
   const stationUrl = input.stationUrl.replace(/\/+$/, '');
   let response: Response;
@@ -272,25 +275,36 @@ export async function submitStationLoginGate(input: StationLoginInput & { attemp
     throw new Error(AUTH_ERROR_KEYS.MISSING_SESSION);
   }
 
+  const session = await activateStationSession(input.stationPeerId, stationUrl, loginResponse);
+  return { decision, session };
+}
+
+export async function activateStationSession(
+  stationPeerId: string,
+  stationUrl: string,
+  loginResponse: StationLoginPayload,
+): Promise<MobileAuthSession> {
   const accessToken = loginResponse.tokens?.access_token || loginResponse.tokens?.accessToken || loginResponse.tokens?.token;
   const sessionId = loginResponse.session_id || loginResponse.sessionId;
-  if (!accessToken || !sessionId) {
+  const actorRef = normalizeActorRef(loginResponse.actor_ref ?? loginResponse.actorRef);
+  if (!accessToken || !sessionId || !actorRef) {
     throw new Error(AUTH_ERROR_KEYS.MISSING_SESSION);
   }
 
   const session: MobileAuthSession = {
-    stationUrl,
+    stationPeerId: stationPeerId.trim(),
+    stationUrl: stationUrl.replace(/\/+$/, ''),
     sessionId,
     accessToken,
     refreshToken: loginResponse.tokens?.refresh_token || loginResponse.tokens?.refreshToken,
     tokenType: loginResponse.tokens?.token_type || loginResponse.tokens?.tokenType,
     expiresAt: loginResponse.tokens?.expires_at || loginResponse.tokens?.expiresAt,
-    actor: normalizeAuthActor(loginResponse.actor),
+    actorRef,
     authenticatedAt: Date.now(),
   };
-
-  const persistenceError = await persistAuthSession(session);
-  return { decision, session, persistenceError };
+  mobileAuthScope(session);
+  await persistAuthSession(session);
+  return session;
 }
 
 // submitStationInviteCodeGate redeems a self-service invite code for the live
@@ -333,98 +347,151 @@ export async function submitStationInviteCodeGate(input: {
     throw new Error(serverMsg || AUTH_ERROR_KEYS.INVITE_CODE_REJECTED);
   }
 
-  return normalizeDecision((envelope.data as AccessSubmitPayload).decision);
+  const decision = normalizeDecision((envelope.data as AccessSubmitPayload).decision);
+  if (isAccessGranted(decision) && oauthAccessGrantFinalizer) {
+    await oauthAccessGrantFinalizer();
+  }
+  return decision;
 }
 
-function normalizeAuthActor(actor: MobileAuthSession['actor']): MobileAuthSession['actor'] {
-  if (!actor) return undefined;
-  const id = actor.id || (actor.actor_id ? String(actor.actor_id) : '') || (actor.actorId ? String(actor.actorId) : '');
+export function registerOAuthAccessGrantFinalizer(finalizer: () => Promise<void>): () => void {
+  oauthAccessGrantFinalizer = finalizer;
+  return () => {
+    if (oauthAccessGrantFinalizer === finalizer) oauthAccessGrantFinalizer = null;
+  };
+}
+
+function normalizeActorRef(actorRef: MobileActorRef | undefined): MobileActorRef | null {
+  const ptid = actorRef?.ptid?.trim();
+  if (!ptid) return null;
   return {
-    id,
-    actorId: id || actor.actorId,
-    username: actor.username,
-    displayName: actor.displayName || actor.display_name,
-    email: actor.email,
+    ptid,
+    acct: actorRef?.acct,
+    kind: actorRef?.kind,
   };
 }
 
 export async function restoreAuthSession(): Promise<MobileAuthSession | null> {
-  const raw = await getSecureStorageValue(AUTH_SESSION_KEY);
-  if (!raw) return null;
-
+  await removeSecureStorageValue(LEGACY_AUTH_SESSION_KEY);
+  const activeScopeRaw = await getSecureStorageValue(ACTIVE_AUTH_SCOPE_KEY);
+  if (!activeScopeRaw) return null;
+  let sessionKey = '';
   try {
-    const parsed = JSON.parse(raw) as Partial<MobileAuthSession>;
-    if (!parsed.stationUrl || !parsed.sessionId || !parsed.accessToken || !parsed.authenticatedAt) return null;
-    return { ...parsed, actor: normalizeAuthActor(parsed.actor) } as MobileAuthSession;
+    const activeScope = JSON.parse(activeScopeRaw) as Partial<{ stationPeerId: string; ptid: string }>;
+    const stationPeerId = String(activeScope.stationPeerId ?? '').trim();
+    const ptid = String(activeScope.ptid ?? '').trim();
+    if (!stationPeerId || !ptid) {
+      await removeSecureStorageValue(ACTIVE_AUTH_SCOPE_KEY);
+      return null;
+    }
+
+    sessionKey = scopedAuthSessionKey(stationPeerId, ptid);
+    const raw = await getSecureStorageValue(sessionKey);
+    const session = raw ? parseMobileAuthSession(JSON.parse(raw)) : null;
+    if (!session || session.stationPeerId !== stationPeerId || session.actorRef.ptid !== ptid) {
+      await removeSecureStorageValue(sessionKey);
+      await removeSecureStorageValue(ACTIVE_AUTH_SCOPE_KEY);
+      return null;
+    }
+    return session;
   } catch {
+    if (sessionKey) await removeSecureStorageValue(sessionKey);
+    await removeSecureStorageValue(ACTIVE_AUTH_SCOPE_KEY);
     return null;
   }
 }
 
 export async function clearAuthSession(): Promise<void> {
-  await removeSecureStorageValue(AUTH_SESSION_KEY);
+  const activeScopeRaw = await getSecureStorageValue(ACTIVE_AUTH_SCOPE_KEY);
+  if (activeScopeRaw) {
+    try {
+      const activeScope = JSON.parse(activeScopeRaw) as Partial<{ stationPeerId: string; ptid: string }>;
+      const stationPeerId = String(activeScope.stationPeerId ?? '').trim();
+      const ptid = String(activeScope.ptid ?? '').trim();
+      if (stationPeerId && ptid) {
+        await removeSecureStorageValue(scopedAuthSessionKey(stationPeerId, ptid));
+      }
+    } catch {
+      // Invalid active scope contains no usable scoped credential locator.
+    }
+  }
+  await removeSecureStorageValue(ACTIVE_AUTH_SCOPE_KEY);
+  await removeSecureStorageValue(LEGACY_AUTH_SESSION_KEY);
 }
 
-export async function loadRememberedLoginAccounts(stationUrl?: string): Promise<RememberedLoginAccount[]> {
-  const raw = await getSecureStorageValue(AUTH_ACCOUNT_HISTORY_KEY);
+export async function loadRememberedLoginAccounts(stationPeerId?: string): Promise<RememberedLoginAccount[]> {
+  await removeSecureStorageValue(LEGACY_AUTH_ACCOUNT_HISTORY_KEY);
+  const scope = stationPeerId?.trim();
+  if (!scope) return [];
+  const raw = await getSecureStorageValue(scopedAccountHistoryKey(scope));
   if (!raw) return [];
 
   try {
     const parsed = JSON.parse(raw) as Partial<RememberedLoginAccount>[];
     const normalized = parsed
       .map(normalizeRememberedAccount)
-      .filter((account): account is RememberedLoginAccount => Boolean(account?.stationUrl && account.email))
+      .filter((account): account is RememberedLoginAccount => account?.stationPeerId === scope)
       .sort((a, b) => b.lastUsedAt - a.lastUsedAt);
-    const normalizedStationUrl = stationUrl?.replace(/\/+$/, '');
-    return normalizedStationUrl
-      ? normalized.filter((account) => account.stationUrl === normalizedStationUrl)
-      : normalized;
+    return normalized;
   } catch {
+    await removeSecureStorageValue(scopedAccountHistoryKey(scope));
     return [];
   }
 }
 
 export async function rememberLoginAccount(session: MobileAuthSession, email: string): Promise<void> {
   const account = normalizeRememberedAccount({
+    stationPeerId: session.stationPeerId,
     stationUrl: session.stationUrl,
     email,
-    actorId: String(session.actor?.id || session.actor?.actorId || session.actor?.actor_id || ''),
-    displayName: session.actor?.displayName || session.actor?.display_name || session.actor?.username || email,
+    ptid: session.actorRef.ptid,
+    displayName: session.actorRef.acct || email,
     lastUsedAt: Date.now(),
   });
   if (!account) return;
 
-  const current = await loadRememberedLoginAccounts();
+  const current = await loadRememberedLoginAccounts(session.stationPeerId);
   const next = [
     account,
-    ...current.filter((item) => !(item.stationUrl === account.stationUrl && item.email === account.email)),
+    ...current.filter((item) => item.ptid !== account.ptid && item.email !== account.email),
   ].slice(0, 12);
-  await setSecureStorageValue(AUTH_ACCOUNT_HISTORY_KEY, JSON.stringify(next));
+  await setSecureStorageValue(scopedAccountHistoryKey(session.stationPeerId), JSON.stringify(next));
 }
 
-async function persistAuthSession(session: MobileAuthSession): Promise<string | undefined> {
-  try {
-    await setSecureStorageValue(AUTH_SESSION_KEY, JSON.stringify(session));
-    return undefined;
-  } catch (error) {
-    if (error instanceof Error) return error.message;
-    if (typeof error === 'string') return error;
-    return JSON.stringify(error);
-  }
+async function persistAuthSession(session: MobileAuthSession): Promise<void> {
+  const scope = mobileAuthScope(session);
+  await setSecureStorageValue(scopedAuthSessionKey(scope.stationPeerId, scope.ptid), JSON.stringify(session));
+  await setSecureStorageValue(ACTIVE_AUTH_SCOPE_KEY, JSON.stringify(scope));
+  await removeSecureStorageValue(LEGACY_AUTH_SESSION_KEY);
 }
 
 function normalizeRememberedAccount(input: Partial<RememberedLoginAccount> | undefined): RememberedLoginAccount | null {
   if (!input) return null;
+  const stationPeerId = String(input.stationPeerId ?? '').trim();
   const stationUrl = String(input.stationUrl ?? '').replace(/\/+$/, '');
   const email = String(input.email ?? '').trim();
-  if (!stationUrl || !email) return null;
+  const ptid = String(input.ptid ?? '').trim();
+  if (!stationPeerId || !stationUrl || !email || !ptid) return null;
   return {
+    stationPeerId,
     stationUrl,
     email,
-    actorId: String(input.actorId ?? ''),
+    ptid,
     displayName: String(input.displayName ?? email),
     lastUsedAt: Number(input.lastUsedAt ?? 0),
   };
+}
+
+function scopedAuthSessionKey(stationPeerId: string, ptid: string): string {
+  return `${AUTH_SESSION_KEY_PREFIX}.${safeScopePart(stationPeerId)}.${safeScopePart(ptid)}`;
+}
+
+function scopedAccountHistoryKey(stationPeerId: string): string {
+  return `${AUTH_ACCOUNT_HISTORY_KEY_PREFIX}.${safeScopePart(stationPeerId)}`;
+}
+
+function safeScopePart(value: string): string {
+  return encodeURIComponent(value);
 }
 
 export function isAccessGranted(decision: AccessDecision | null): boolean {
@@ -445,7 +512,7 @@ export function accessDecisionMessage(decision: AccessDecision | null): string {
   return decision.gates.map((gate) => gate.blockingReason).find(Boolean) ?? '';
 }
 
-function normalizeDecision(raw?: RawAccessDecision): AccessDecision {
+export function normalizeDecision(raw?: RawAccessDecision): AccessDecision {
   return {
     state: raw?.state ?? 0,
     attemptId: raw?.attempt_id ?? raw?.attemptId ?? '',

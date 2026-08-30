@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/driver/sqlite"
@@ -22,6 +25,34 @@ import (
 // without per-test isolation that single shared cache leaks state
 // across tests run in the same package binary.
 var fixtureDBSeq atomic.Uint64
+
+type applicationTestStore struct {
+	mu sync.RWMutex
+	db *gorm.DB
+}
+
+func (*applicationTestStore) Init(context.Context, ...option.Option) error { return nil }
+
+func (s *applicationTestStore) RDS(context.Context, ...store.RDSDMLOption) (*gorm.DB, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.db, nil
+}
+
+func (*applicationTestStore) Name() string { return "social-application-test-store" }
+
+func (s *applicationTestStore) setDB(db *gorm.DB) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.db = db
+}
+
+var (
+	applicationFixtureMu    sync.Mutex
+	applicationStore        = &applicationTestStore{}
+	applicationStoreOnce    sync.Once
+	applicationStoreInitErr error
+)
 
 // These tests exercise the full Moments stack — repository ↔ application
 // service ↔ domain validation ↔ CanRead — against an ephemeral sqlite
@@ -58,12 +89,14 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+
 	dsn := fmt.Sprintf("file:moments_test_%d?mode=memory&cache=shared&_pragma=foreign_keys(1)", fixtureDBSeq.Add(1))
 	gdb, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	if err := gdb.AutoMigrate(
+		&db.Actor{},
 		&db.SocialPublicPost{},
 		&db.SocialPrivatePost{},
 		&db.SocialMomentDelivery{},
@@ -80,18 +113,20 @@ func newFixture(t *testing.T) *fixture {
 	if err := gdb.Exec(`
 CREATE TABLE friend_chat_friendships (
 	id integer primary key autoincrement,
-	actor_did text,
-	peer_did text,
+	actor_ptid text,
+	peer_ptid text,
 	status integer,
 	created_at datetime,
 	updated_at datetime
 )`).Error; err != nil {
 		t.Fatalf("migrate friendships: %v", err)
 	}
+	bindApplicationActorStore(t, gdb)
+	seedFixtureActors(t, gdb)
 
 	resolver := NewNoopActorResolver()
 	groups := NewNoopGroupMembershipChecker()
-	repos := infrastructure.NewRepos(gdb, resolver.ResolveID)
+	repos := infrastructure.NewRepos(gdb)
 
 	reactions := NewReactionService(gdb, repos)
 	// Tests use the no-op MediaResolver so existing fixtures can keep
@@ -113,12 +148,45 @@ CREATE TABLE friend_chat_friendships (
 	}
 }
 
+func bindApplicationActorStore(t *testing.T, gdb *gorm.DB) {
+	t.Helper()
+	applicationFixtureMu.Lock()
+	t.Cleanup(applicationFixtureMu.Unlock)
+	applicationStoreOnce.Do(func() {
+		applicationStoreInitErr = store.InjectStore(context.Background(), applicationStore)
+	})
+	if applicationStoreInitErr != nil {
+		t.Fatalf("inject actor store: %v", applicationStoreInitErr)
+	}
+	applicationStore.setDB(gdb)
+}
+
+func seedFixtureActors(t *testing.T, gdb *gorm.DB) {
+	t.Helper()
+	for _, actorID := range []uint64{1, 2, 3, 7, 9, 42, 100, 101, 200, 300, 400, 500, 600, 700, 999} {
+		record := &db.Actor{
+			ID:                actorID,
+			PTID:              fixturePTID(actorID),
+			Namespace:         "peers",
+			PreferredUsername: fmt.Sprintf("user-%d", actorID),
+			Email:             fmt.Sprintf("user-%d@example.test", actorID),
+			PasswordHash:      "test-only",
+			FederatedHandle:   fmt.Sprintf("@user-%d@test.local", actorID),
+		}
+		if err := gdb.Create(record).Error; err != nil {
+			t.Fatalf("seed actor %d: %v", actorID, err)
+		}
+	}
+}
+
 // seedFollow records `follower → following` directly via the repo (skipping
 // RelationshipService to keep the test free of subject-extraction
 // concerns).
 func seedFollow(t *testing.T, f *fixture, follower, following uint64) {
 	t.Helper()
-	if err := f.repos.Follows.Follow(context.Background(), follower, following); err != nil {
+	followerPTID := fixturePTID(follower)
+	followingPTID := fixturePTID(following)
+	if err := f.repos.Follows.Follow(context.Background(), followerPTID, followingPTID); err != nil {
 		t.Fatalf("seed follow %d->%d: %v", follower, following, err)
 	}
 }
@@ -126,9 +194,9 @@ func seedFollow(t *testing.T, f *fixture, follower, following uint64) {
 func seedBlock(t *testing.T, f *fixture, actorID, peerID uint64) {
 	t.Helper()
 	if err := f.gdb.Exec(
-		"INSERT INTO friend_chat_friendships (actor_did, peer_did, status) VALUES (?, ?, 3)",
-		fmt.Sprintf("%d", actorID),
-		fmt.Sprintf("%d", peerID),
+		"INSERT INTO friend_chat_friendships (actor_ptid, peer_ptid, status) VALUES (?, ?, 3)",
+		fixturePTID(actorID),
+		fixturePTID(peerID),
 	).Error; err != nil {
 		t.Fatalf("seed block %d->%d: %v", actorID, peerID, err)
 	}
@@ -150,7 +218,7 @@ func TestStorageSeparation_PublicLandsInPublicTable(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("hello world"),
-	}, /*authorID*/ 100)
+	}, fixturePTID(100))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -175,7 +243,7 @@ func TestStorageSeparation_FollowersLandsInPrivateTable(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
 		Content:  textBody("for my followers"),
-	}, 100); err != nil {
+	}, fixturePTID(100)); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
@@ -199,12 +267,12 @@ func TestRead_PublicVisibleToAnonymous(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("public note"),
-	}, 100)
+	}, fixturePTID(100))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	got, err := f.moments.GetMoment(ctx, created.Id, 0 /* anonymous */)
+	got, err := f.moments.GetMoment(ctx, created.Id, "")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -221,18 +289,18 @@ func TestRead_SelfOnlyVisibleToAuthor(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_SELF},
 		Content:  textBody("dear diary"),
-	}, 100)
+	}, fixturePTID(100))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, 100); got == nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(100)); got == nil {
 		t.Fatal("author should always see their own SELF post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, 200); got != nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(200)); got != nil {
 		t.Fatal("non-author must not see SELF post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, 0); got != nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id, ""); got != nil {
 		t.Fatal("anonymous viewer must not see SELF post")
 	}
 }
@@ -248,21 +316,21 @@ func TestRead_FollowersOnlyVisibleToFollowers(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
 		Content:  textBody("followers only"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, author); got == nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(author)); got == nil {
 		t.Fatal("author must see their own FOLLOWERS post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, follower); got == nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(follower)); got == nil {
 		t.Fatal("follower must see FOLLOWERS post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, stranger); got != nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(stranger)); got != nil {
 		t.Fatal("stranger must not see FOLLOWERS post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, 0); got != nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id, ""); got != nil {
 		t.Fatal("anonymous viewer must not see FOLLOWERS post")
 	}
 }
@@ -279,12 +347,12 @@ func TestRead_BlockedViewerCannotReadFollowersOnlyPost(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
 		Content:  textBody("blocked followers cannot read"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, follower); got != nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(follower)); got != nil {
 		t.Fatal("blocked follower must not read FOLLOWERS post")
 	}
 }
@@ -301,19 +369,19 @@ func TestRead_BlockCannotBeBypassedByAudienceKinds(t *testing.T) {
 		audience *model.Audience
 	}{
 		{"public", &model.Audience{Kind: model.Audience_PUBLIC}},
-		{"custom_allow", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorDids: []string{"200"}}},
-		{"custom_deny_public", &model.Audience{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC, ActorDids: []string{"300"}}},
+		{"custom_allow", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW, ActorPtids: []string{fixturePTID(viewer)}}},
+		{"custom_deny_public", &model.Audience{Kind: model.Audience_CUSTOM_DENY, BaseKind: model.Audience_PUBLIC, ActorPtids: []string{fixturePTID(300)}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
 				Type:     model.PostType_TEXT,
 				Audience: tc.audience,
 				Content:  textBody(tc.name),
-			}, author)
+			}, fixturePTID(author))
 			if err != nil {
 				t.Fatalf("create: %v", err)
 			}
-			if got, _ := f.moments.GetMoment(ctx, created.Id, viewer); got != nil {
+			if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(viewer)); got != nil {
 				t.Fatalf("blocked viewer must not read %s post", tc.name)
 			}
 		})
@@ -332,7 +400,7 @@ func TestTimeline_BlockGraphFiltersPublicAndHomeFeeds(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("public but blocked"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create public: %v", err)
 	}
@@ -340,18 +408,18 @@ func TestTimeline_BlockGraphFiltersPublicAndHomeFeeds(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
 		Content:  textBody("followers but blocked"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create followers: %v", err)
 	}
 
-	publicTimeline, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{Type: model.TimelineType_TIMELINE_PUBLIC, Limit: 20}, viewer)
+	publicTimeline, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{Type: model.TimelineType_TIMELINE_PUBLIC, Limit: 20}, fixturePTID(viewer))
 	if err != nil {
 		t.Fatalf("public timeline: %v", err)
 	}
 	assertPostAbsent(t, publicTimeline.Posts, publicPost.Id)
 
-	homeTimeline, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{Type: model.TimelineType_TIMELINE_HOME, Limit: 20}, viewer)
+	homeTimeline, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{Type: model.TimelineType_TIMELINE_HOME, Limit: 20}, fixturePTID(viewer))
 	if err != nil {
 		t.Fatalf("home timeline: %v", err)
 	}
@@ -381,19 +449,19 @@ func TestDelete_TombstonesPostFromEveryone(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("ephemeral"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	if err := f.moments.DeleteMoment(ctx, created.Id, author); err != nil {
+	if err := f.moments.DeleteMoment(ctx, created.Id, fixturePTID(author)); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, author); got != nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(author)); got != nil {
 		t.Fatal("author must not see deleted post (CanRead invariant 1)")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, 0); got != nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id, ""); got != nil {
 		t.Fatal("anonymous viewer must not see deleted post")
 	}
 }
@@ -406,18 +474,18 @@ func TestDelete_ByNonAuthorIsNoop(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("not yours"),
-	}, /*author*/ 100)
+	}, fixturePTID(100))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
 	// Different actor attempts to delete — silently no-op (no error,
 	// no tombstone applied).
-	if err := f.moments.DeleteMoment(ctx, created.Id /*non-author*/, 200); err != nil {
+	if err := f.moments.DeleteMoment(ctx, created.Id /*non-author*/, fixturePTID(200)); err != nil {
 		t.Fatalf("non-author delete should not error: %v", err)
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, 0); got == nil {
+	if got, _ := f.moments.GetMoment(ctx, created.Id, ""); got == nil {
 		t.Fatal("post must remain visible after non-author delete attempt")
 	}
 }
@@ -435,12 +503,12 @@ func TestReact_AddRemoveAndSnapshotRefresh(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("react to me"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	summaries, err := f.reactions.React(ctx, created.Id, viewer, model.ReactionKind_REACTION_LIKE)
+	summaries, err := f.reactions.React(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LIKE)
 	if err != nil {
 		t.Fatalf("react: %v", err)
 	}
@@ -452,7 +520,7 @@ func TestReact_AddRemoveAndSnapshotRefresh(t *testing.T) {
 	}
 
 	// Idempotent: re-reacting with same kind shouldn't duplicate.
-	if _, err := f.reactions.React(ctx, created.Id, viewer, model.ReactionKind_REACTION_LIKE); err != nil {
+	if _, err := f.reactions.React(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LIKE); err != nil {
 		t.Fatalf("re-react: %v", err)
 	}
 	var n int64
@@ -462,7 +530,7 @@ func TestReact_AddRemoveAndSnapshotRefresh(t *testing.T) {
 	}
 
 	// Different kind from same viewer — second reaction allowed.
-	if _, err := f.reactions.React(ctx, created.Id, viewer, model.ReactionKind_REACTION_LOVE); err != nil {
+	if _, err := f.reactions.React(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LOVE); err != nil {
 		t.Fatalf("react LOVE: %v", err)
 	}
 	f.gdb.Model(&db.SocialReaction{}).Count(&n)
@@ -483,7 +551,7 @@ func TestReact_AddRemoveAndSnapshotRefresh(t *testing.T) {
 
 	// Unreact LIKE: should drop the count to zero for LIKE but keep
 	// LOVE.
-	if _, err := f.reactions.Unreact(ctx, created.Id, viewer, model.ReactionKind_REACTION_LIKE); err != nil {
+	if _, err := f.reactions.Unreact(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LIKE); err != nil {
 		t.Fatalf("unreact: %v", err)
 	}
 	f.gdb.Model(&db.SocialReaction{}).Count(&n)
@@ -505,7 +573,7 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("discussion starter"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create post: %v", err)
 	}
@@ -514,7 +582,7 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 	top, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
 		PostId:  post.Id,
 		Content: "first!",
-	}, postID /*viewer*/, 200)
+	}, postID /*viewer*/, fixturePTID(200))
 	if err != nil {
 		t.Fatalf("create top-level comment: %v", err)
 	}
@@ -524,7 +592,7 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 		PostId:           post.Id,
 		Content:          "second",
 		ReplyToCommentId: top.Id,
-	}, postID /*viewer*/, 300); err != nil {
+	}, postID /*viewer*/, fixturePTID(300)); err != nil {
 		t.Fatalf("reply to top-level: %v", err)
 	}
 
@@ -532,7 +600,7 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 	var lastReplyID string
 	{
 		// Re-fetch the second comment so we have its id.
-		resp, _ := f.comments.ListByPost(ctx, postID, author, "", 50)
+		resp, _ := f.comments.ListByPost(ctx, postID, fixturePTID(author), "", 50)
 		for _, c := range resp.Comments {
 			if c.ReplyToCommentId == top.Id {
 				lastReplyID = c.Id
@@ -547,7 +615,7 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 		PostId:           post.Id,
 		Content:          "third",
 		ReplyToCommentId: lastReplyID,
-	}, postID /*viewer*/, 400)
+	}, postID /*viewer*/, fixturePTID(400))
 	if err == nil || !strings.Contains(err.Error(), "one-level nesting") {
 		t.Fatalf("two-level reply must be rejected, got err=%v", err)
 	}
@@ -562,7 +630,7 @@ func TestComment_VisibilityInheritsFromPost(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_SELF},
 		Content:  textBody("private thought"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -573,7 +641,7 @@ func TestComment_VisibilityInheritsFromPost(t *testing.T) {
 	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
 		PostId:  post.Id,
 		Content: "hi",
-	}, postID /*non-author*/, 200); err == nil {
+	}, postID /*non-author*/, fixturePTID(200)); err == nil {
 		t.Fatal("non-author must not be able to comment on SELF post")
 	}
 
@@ -581,7 +649,7 @@ func TestComment_VisibilityInheritsFromPost(t *testing.T) {
 	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
 		PostId:  post.Id,
 		Content: "self-note",
-	}, postID, author); err != nil {
+	}, postID, fixturePTID(author)); err != nil {
 		t.Fatalf("author comment on SELF post: %v", err)
 	}
 }
@@ -595,11 +663,11 @@ func TestComment_DecrementsCountOnDelete(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("counter"),
-	}, author)
+	}, fixturePTID(author))
 	postID := domain.ParseID(post.Id)
 
-	c, _ := f.comments.CreateComment(ctx, &model.CreateCommentRequest{PostId: post.Id, Content: "a"}, postID, 200)
-	c2, _ := f.comments.CreateComment(ctx, &model.CreateCommentRequest{PostId: post.Id, Content: "b"}, postID, 300)
+	c, _ := f.comments.CreateComment(ctx, &model.CreateCommentRequest{PostId: post.Id, Content: "a"}, postID, fixturePTID(200))
+	c2, _ := f.comments.CreateComment(ctx, &model.CreateCommentRequest{PostId: post.Id, Content: "b"}, postID, fixturePTID(300))
 
 	var afterCreate int64
 	f.gdb.Model(&db.SocialPublicPost{}).Select("comments_count").Where("id = ?", postID).Scan(&afterCreate)
@@ -608,7 +676,7 @@ func TestComment_DecrementsCountOnDelete(t *testing.T) {
 	}
 	_ = c2
 
-	if err := f.comments.DeleteComment(ctx, domain.ParseID(c.Id), 200); err != nil {
+	if err := f.comments.DeleteComment(ctx, domain.ParseID(c.Id), fixturePTID(200)); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	var afterDelete int64
@@ -627,7 +695,7 @@ func TestCreateMoment_RejectsMissingAudience(t *testing.T) {
 	_, err := f.moments.CreateMoment(context.Background(), &model.CreatePostRequest{
 		Type:    model.PostType_TEXT,
 		Content: textBody("no audience"),
-	}, 100)
+	}, fixturePTID(100))
 	if err == nil {
 		t.Fatal("missing audience must be rejected")
 	}
@@ -642,9 +710,9 @@ func TestCreateMoment_RejectsInvalidAudienceShape(t *testing.T) {
 		{"circle missing target", &model.Audience{Kind: model.Audience_CIRCLE}},
 		{"custom_allow empty list", &model.Audience{Kind: model.Audience_CUSTOM_ALLOW}},
 		{"custom_deny base CIRCLE", &model.Audience{
-			Kind:      model.Audience_CUSTOM_DENY,
-			BaseKind:  model.Audience_CIRCLE,
-			ActorDids: []string{"did:peers:x"},
+			Kind:       model.Audience_CUSTOM_DENY,
+			BaseKind:   model.Audience_CIRCLE,
+			ActorPtids: []string{"did:peers:x"},
 		}},
 	}
 	for _, tc := range cases {
@@ -653,7 +721,7 @@ func TestCreateMoment_RejectsInvalidAudienceShape(t *testing.T) {
 				Type:     model.PostType_TEXT,
 				Audience: tc.a,
 				Content:  textBody("invalid"),
-			}, 100)
+			}, fixturePTID(100))
 			if err == nil {
 				t.Fatalf("expected reject for %s", tc.name)
 			}
@@ -662,7 +730,7 @@ func TestCreateMoment_RejectsInvalidAudienceShape(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Circle service basics (no DID resolver in P1 — owner ops only)
+// Circle service basics (no PTID resolver in P1 — owner ops only)
 // ---------------------------------------------------------------------------
 
 func TestCircle_CreateRenameDelete(t *testing.T) {
@@ -674,11 +742,11 @@ func TestCircle_CreateRenameDelete(t *testing.T) {
 	created, err := f.circles.Create(ctx, &model.CreateCircleRequest{
 		Name:        "Family",
 		Description: "Parents + sibling",
-	}, owner)
+	}, fixturePTID(owner))
 	if err != nil {
 		t.Fatalf("create circle: %v", err)
 	}
-	if created.OwnerId != owner || created.Name != "Family" {
+	if created.GetOwnerPtid() != fixturePTID(owner) || created.Name != "Family" {
 		t.Fatalf("created circle = %+v", created)
 	}
 
@@ -687,7 +755,7 @@ func TestCircle_CreateRenameDelete(t *testing.T) {
 		CircleId:    created.Id,
 		Name:        "Close Family",
 		Description: &desc,
-	}, owner)
+	}, fixturePTID(owner))
 	if err != nil {
 		t.Fatalf("rename: %v", err)
 	}
@@ -696,10 +764,10 @@ func TestCircle_CreateRenameDelete(t *testing.T) {
 	}
 
 	// A different actor cannot delete.
-	if err := f.circles.Delete(ctx, created.Id /*not-owner*/, 200); err == nil {
+	if err := f.circles.Delete(ctx, created.Id /*not-owner*/, fixturePTID(200)); err == nil {
 		t.Fatal("non-owner delete must be rejected")
 	}
-	if err := f.circles.Delete(ctx, created.Id, owner); err != nil {
+	if err := f.circles.Delete(ctx, created.Id, fixturePTID(owner)); err != nil {
 		t.Fatalf("owner delete: %v", err)
 	}
 }
@@ -709,12 +777,12 @@ func TestCircle_AddRemoveMembersUpdatesDenormalCount(t *testing.T) {
 	ctx := context.Background()
 
 	const owner = uint64(100)
-	created, _ := f.circles.Create(ctx, &model.CreateCircleRequest{Name: "Friends"}, owner)
+	created, _ := f.circles.Create(ctx, &model.CreateCircleRequest{Name: "Friends"}, fixturePTID(owner))
 
 	added, total, err := f.circles.AddMembers(ctx, &model.AddCircleMemberRequest{
-		CircleId:   created.Id,
-		MemberDids: []string{"did:peers:a", "did:peers:b", "did:peers:c"},
-	}, owner)
+		CircleId:    created.Id,
+		MemberPtids: []string{"did:peers:a", "did:peers:b", "did:peers:c"},
+	}, fixturePTID(owner))
 	if err != nil {
 		t.Fatalf("add members: %v", err)
 	}
@@ -724,9 +792,9 @@ func TestCircle_AddRemoveMembersUpdatesDenormalCount(t *testing.T) {
 
 	// Re-add overlapping list — duplicates excluded from added_count.
 	added, total, err = f.circles.AddMembers(ctx, &model.AddCircleMemberRequest{
-		CircleId:   created.Id,
-		MemberDids: []string{"did:peers:b", "did:peers:c", "did:peers:d"},
-	}, owner)
+		CircleId:    created.Id,
+		MemberPtids: []string{"did:peers:b", "did:peers:c", "did:peers:d"},
+	}, fixturePTID(owner))
 	if err != nil {
 		t.Fatalf("re-add: %v", err)
 	}
@@ -735,9 +803,9 @@ func TestCircle_AddRemoveMembersUpdatesDenormalCount(t *testing.T) {
 	}
 
 	removed, total, err := f.circles.RemoveMembers(ctx, &model.RemoveCircleMemberRequest{
-		CircleId:   created.Id,
-		MemberDids: []string{"did:peers:a", "did:peers:zzz" /* not present */},
-	}, owner)
+		CircleId:    created.Id,
+		MemberPtids: []string{"did:peers:a", "did:peers:zzz" /* not present */},
+	}, fixturePTID(owner))
 	if err != nil {
 		t.Fatalf("remove: %v", err)
 	}
@@ -776,15 +844,15 @@ func TestVisibilityGate_GetMomentIsNilForUnauthorisedViewer(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_SELF},
 		Content:  textBody("dear diary"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create SELF: %v", err)
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, selfPost.Id, stranger); got != nil {
+	if got, _ := f.moments.GetMoment(ctx, selfPost.Id, fixturePTID(stranger)); got != nil {
 		t.Fatalf("SELF post must be nil for stranger; got %+v", got)
 	}
-	if got, _ := f.moments.GetMoment(ctx, selfPost.Id, author); got == nil {
+	if got, _ := f.moments.GetMoment(ctx, selfPost.Id, fixturePTID(author)); got == nil {
 		t.Fatal("SELF post must be visible to author")
 	}
 
@@ -793,18 +861,18 @@ func TestVisibilityGate_GetMomentIsNilForUnauthorisedViewer(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
 		Content:  textBody("for the inner circle"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create FOLLOWERS: %v", err)
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, followersPost.Id, stranger); got != nil {
+	if got, _ := f.moments.GetMoment(ctx, followersPost.Id, fixturePTID(stranger)); got != nil {
 		t.Fatalf("FOLLOWERS post must be nil for non-follower; got %+v", got)
 	}
 
 	// Become a follower; now visible.
 	seedFollow(t, f /*follower*/, stranger /*following*/, author)
-	if got, _ := f.moments.GetMoment(ctx, followersPost.Id, stranger); got == nil {
+	if got, _ := f.moments.GetMoment(ctx, followersPost.Id, fixturePTID(stranger)); got == nil {
 		t.Fatal("FOLLOWERS post must be visible after follow")
 	}
 }
@@ -822,7 +890,7 @@ func TestDeliveryInbox_FollowersMomentLandsInFollowerHome(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
 		Content:  textBody("followers only"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create FOLLOWERS: %v", err)
 	}
@@ -830,7 +898,7 @@ func TestDeliveryInbox_FollowersMomentLandsInFollowerHome(t *testing.T) {
 	got, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{
 		Type:  model.TimelineType_TIMELINE_HOME,
 		Limit: 20,
-	}, follower)
+	}, fixturePTID(follower))
 	if err != nil {
 		t.Fatalf("follower home: %v", err)
 	}
@@ -841,7 +909,7 @@ func TestDeliveryInbox_FollowersMomentLandsInFollowerHome(t *testing.T) {
 	got, err = f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{
 		Type:  model.TimelineType_TIMELINE_HOME,
 		Limit: 20,
-	}, stranger)
+	}, fixturePTID(stranger))
 	if err != nil {
 		t.Fatalf("stranger home: %v", err)
 	}
@@ -862,18 +930,18 @@ func TestDeliveryInbox_DeleteRevokesDeliveredMoment(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_FOLLOWERS},
 		Content:  textBody("temporary"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create FOLLOWERS: %v", err)
 	}
-	if err := f.moments.DeleteMoment(ctx, post.Id, author); err != nil {
+	if err := f.moments.DeleteMoment(ctx, post.Id, fixturePTID(author)); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
 	got, err := f.timeline.GetTimeline(ctx, &model.GetTimelineRequest{
 		Type:  model.TimelineType_TIMELINE_HOME,
 		Limit: 20,
-	}, follower)
+	}, fixturePTID(follower))
 	if err != nil {
 		t.Fatalf("follower home: %v", err)
 	}
@@ -910,7 +978,7 @@ func TestInteractionVisibility_FiltersThirdPartyCommentsAndReactions(t *testing.
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("public, private interactions"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -919,17 +987,17 @@ func TestInteractionVisibility_FiltersThirdPartyCommentsAndReactions(t *testing.
 	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
 		PostId:  post.Id,
 		Content: "mutual can be seen",
-	}, postID, mutual); err != nil {
+	}, postID, fixturePTID(mutual)); err != nil {
 		t.Fatalf("mutual comment: %v", err)
 	}
 	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
 		PostId:  post.Id,
 		Content: "stranger must be hidden",
-	}, postID, stranger); err != nil {
+	}, postID, fixturePTID(stranger)); err != nil {
 		t.Fatalf("stranger comment: %v", err)
 	}
 
-	viewerComments, err := f.comments.ListByPost(ctx, postID, viewer, "", 20)
+	viewerComments, err := f.comments.ListByPost(ctx, postID, fixturePTID(viewer), "", 20)
 	if err != nil {
 		t.Fatalf("viewer comments: %v", err)
 	}
@@ -937,7 +1005,7 @@ func TestInteractionVisibility_FiltersThirdPartyCommentsAndReactions(t *testing.
 		t.Fatalf("viewer comments = %+v, want only mutual comment", viewerComments.Comments)
 	}
 
-	authorComments, err := f.comments.ListByPost(ctx, postID, author, "", 20)
+	authorComments, err := f.comments.ListByPost(ctx, postID, fixturePTID(author), "", 20)
 	if err != nil {
 		t.Fatalf("author comments: %v", err)
 	}
@@ -945,14 +1013,14 @@ func TestInteractionVisibility_FiltersThirdPartyCommentsAndReactions(t *testing.
 		t.Fatalf("author should see all comments, got %d", len(authorComments.Comments))
 	}
 
-	if _, err := f.reactions.React(ctx, post.Id, mutual, model.ReactionKind_REACTION_LIKE); err != nil {
+	if _, err := f.reactions.React(ctx, post.Id, fixturePTID(mutual), model.ReactionKind_REACTION_LIKE); err != nil {
 		t.Fatalf("mutual react: %v", err)
 	}
-	if _, err := f.reactions.React(ctx, post.Id, stranger, model.ReactionKind_REACTION_LIKE); err != nil {
+	if _, err := f.reactions.React(ctx, post.Id, fixturePTID(stranger), model.ReactionKind_REACTION_LIKE); err != nil {
 		t.Fatalf("stranger react: %v", err)
 	}
 
-	viewerPost, err := f.moments.GetMoment(ctx, post.Id, viewer)
+	viewerPost, err := f.moments.GetMoment(ctx, post.Id, fixturePTID(viewer))
 	if err != nil {
 		t.Fatalf("viewer get moment: %v", err)
 	}
@@ -960,7 +1028,7 @@ func TestInteractionVisibility_FiltersThirdPartyCommentsAndReactions(t *testing.
 		t.Fatalf("viewer LIKE count = %d, want 1", got)
 	}
 
-	authorPost, err := f.moments.GetMoment(ctx, post.Id, author)
+	authorPost, err := f.moments.GetMoment(ctx, post.Id, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("author get moment: %v", err)
 	}
@@ -1006,7 +1074,7 @@ func TestImagePost_AttachmentsCarryCID(t *testing.T) {
 				ImageIds: cids,
 			},
 		},
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create IMAGE: %v", err)
 	}
@@ -1040,7 +1108,7 @@ func TestVisibilityGate_RepostRejectsUnreadableSource(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_SELF},
 		Content:  textBody("private musing"),
-	}, author)
+	}, fixturePTID(author))
 	if err != nil {
 		t.Fatalf("create SELF: %v", err)
 	}
@@ -1057,7 +1125,7 @@ func TestVisibilityGate_RepostRejectsUnreadableSource(t *testing.T) {
 				Comment:        "look at this",
 			},
 		},
-	}, reposter)
+	}, fixturePTID(reposter))
 	if err == nil {
 		t.Fatal("repost of unreadable source must be rejected")
 	}
@@ -1068,7 +1136,7 @@ func TestVisibilityGate_RepostRejectsUnreadableSource(t *testing.T) {
 		Type:     model.PostType_TEXT,
 		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
 		Content:  textBody("public statement"),
-	}, reposter)
+	}, fixturePTID(reposter))
 	if err != nil {
 		t.Fatalf("create PUBLIC: %v", err)
 	}
@@ -1078,7 +1146,7 @@ func TestVisibilityGate_RepostRejectsUnreadableSource(t *testing.T) {
 		Content: &model.CreatePostRequest_Repost{
 			Repost: &model.CreateRepostRequest{OriginalPostId: pub.Id, Comment: "self-quote"},
 		},
-	}, reposter); err != nil {
+	}, fixturePTID(reposter)); err != nil {
 		t.Fatalf("legitimate repost must succeed: %v", err)
 	}
 }
