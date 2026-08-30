@@ -79,6 +79,8 @@ export function PublicProfileCard({ compact, profile, avatarNode, actions }: Pub
       {avatarNode ?? (
         profile.avatar ? (
           <img
+            data-chat-avatar-ptid={profile.did || ''}
+            data-chat-avatar-src={profile.avatar}
             src={profile.avatar}
             alt={profile.displayName}
             style={{
@@ -91,6 +93,8 @@ export function PublicProfileCard({ compact, profile, avatarNode, actions }: Pub
           />
         ) : (
           <Flexbox
+            data-chat-avatar-ptid={profile.did || ''}
+            data-chat-avatar-src=""
             align="center"
             justify="center"
             style={{
