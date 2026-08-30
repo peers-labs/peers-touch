@@ -1,0 +1,14 @@
+{
+  "id": "mobile-command-draft-recovery",
+  "status": "active",
+  "product_area": "mobile",
+  "owners": ["apps/mobile/src/runtimes/commandRuntime.ts", "apps/mobile/src-tauri/src/runtime/command_ledger/**", "apps/mobile/src-tauri/src/runtime/draft_store/**"],
+  "truth_sources": ["Station mutation outcome readback", "Mobile Rust encrypted command ledger", "Mobile Rust encrypted draft store"],
+  "visible_surfaces": [{"type": "mobile", "state": "pending-or-unknown-command"}, {"type": "mobile", "state": "draft-restored"}],
+  "required_gates": ["mobile-contract-static", "mobile-native-recovery-e2e"],
+  "acceptance": {
+    "product_assertions": ["MS-PA07", "MS-PA08", "MS-PA23", "MS-PA26"],
+    "visible": ["uncertain writes converge before retry and exact-scope drafts survive restart"]
+  },
+  "negative": ["non-idempotent writes must not replay blindly", "Social and native layers must not persist a second queue"]
+}

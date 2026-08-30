@@ -10,11 +10,12 @@ import (
 )
 
 type momentDeliveryRepo struct {
-	db *gorm.DB
+	db       *gorm.DB
+	identity *ActorIdentity
 }
 
 func NewMomentDeliveryRepository(gdb *gorm.DB) domain.MomentDeliveryRepository {
-	return &momentDeliveryRepo{db: gdb}
+	return &momentDeliveryRepo{db: gdb, identity: NewActorIdentity(gdb)}
 }
 
 func (r *momentDeliveryRepo) Upsert(ctx context.Context, deliveries []domain.MomentDelivery) error {
@@ -23,13 +24,17 @@ func (r *momentDeliveryRepo) Upsert(ctx context.Context, deliveries []domain.Mom
 	}
 	rows := make([]db.SocialMomentDelivery, 0, len(deliveries))
 	for _, d := range deliveries {
-		if d.ViewerID == 0 || d.PostID == 0 {
+		if d.ViewerPTID == "" || d.PostID == 0 {
 			continue
 		}
+		ids, err := r.identity.RequireIDs(ctx, []string{d.ViewerPTID, d.AuthorPTID})
+		if err != nil {
+			return err
+		}
 		rows = append(rows, db.SocialMomentDelivery{
-			ViewerID:     d.ViewerID,
+			ViewerID:     ids[0],
 			PostID:       d.PostID,
-			AuthorID:     d.AuthorID,
+			AuthorID:     ids[1],
 			AudienceKind: d.AudienceKind,
 			DeliveredAt:  d.DeliveredAt,
 			RevokedAt:    d.RevokedAt,
@@ -46,9 +51,13 @@ func (r *momentDeliveryRepo) Upsert(ctx context.Context, deliveries []domain.Mom
 		Create(&rows).Error
 }
 
-func (r *momentDeliveryRepo) ListInbox(ctx context.Context, viewerID uint64, c domain.Cursor, limit int) ([]domain.MomentDelivery, error) {
-	if viewerID == 0 {
+func (r *momentDeliveryRepo) ListInbox(ctx context.Context, viewerPTID string, c domain.Cursor, limit int) ([]domain.MomentDelivery, error) {
+	if viewerPTID == "" {
 		return nil, nil
+	}
+	viewerID, err := r.identity.RequireID(ctx, viewerPTID)
+	if err != nil {
+		return nil, err
 	}
 	q := r.db.WithContext(ctx).
 		Where("viewer_id = ? AND revoked_at IS NULL", viewerID)
@@ -61,11 +70,15 @@ func (r *momentDeliveryRepo) ListInbox(ctx context.Context, viewerID uint64, c d
 	}
 	out := make([]domain.MomentDelivery, 0, len(rows))
 	for _, row := range rows {
+		authorPTID, err := r.identity.ResolveID(ctx, row.AuthorID)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, domain.MomentDelivery{
 			ID:           row.ID,
-			ViewerID:     row.ViewerID,
+			ViewerPTID:   viewerPTID,
 			PostID:       row.PostID,
-			AuthorID:     row.AuthorID,
+			AuthorPTID:   authorPTID,
 			AudienceKind: row.AudienceKind,
 			DeliveredAt:  row.DeliveredAt,
 			RevokedAt:    row.RevokedAt,

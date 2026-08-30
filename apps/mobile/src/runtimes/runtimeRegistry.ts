@@ -10,6 +10,13 @@ export interface RuntimeDescriptor {
 
 export const mobileRuntimeDescriptors: RuntimeDescriptor[] = [
   {
+    id: 'auth',
+    title: 'Auth Runtime',
+    status: 'ready',
+    owner: 'mobile-web pre-session runtime',
+    responsibility: 'Owns Station-scoped credential attempts, OAuth callbacks, candidate isolation, cancellation, and typed recovery.',
+  },
+  {
     id: 'session',
     title: 'Session Runtime',
     status: 'planned',

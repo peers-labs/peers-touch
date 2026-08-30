@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/federation/federation_ledger.proto.
  */
 export const file_domain_federation_federation_ledger: GenFile = /*@__PURE__*/
-  fileDesc("Cilkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX2xlZGdlci5wcm90bxIfcGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MSKyAwoLTGVkZ2VyRXZlbnQSEAoIZXZlbnRfaWQYASABKAkSFQoNZmVkZXJhdGlvbl9pZBgCIAEoCRILCgNzZXEYAyABKAQSEQoJcHJldl9oYXNoGAQgASgMEhIKCmV2ZW50X2hhc2gYBSABKAwSPgoKZXZlbnRfdHlwZRgGIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEuRXZlbnRUeXBlEhUKDXBheWxvYWRfYnl0ZXMYByABKAwSFAoMcGF5bG9hZF9oYXNoGAggASgMEhAKCGFjdG9yX2lkGAkgASgJEh4KFmFjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYCiABKAkSFwoPc3RhdGlvbl9wZWVyX2lkGAsgASgJEiEKGXNlcXVlbmNlcl9zdGF0aW9uX3BlZXJfaWQYDCABKAkSFwoPYWN0b3Jfc2lnbmF0dXJlGA0gASgMEhkKEXN0YXRpb25fc2lnbmF0dXJlGA4gASgMEhsKE3NlcXVlbmNlcl9zaWduYXR1cmUYDyABKAwSGgoSY3JlYXRlZF9hdF91bml4X21zGBAgASgDInYKDkV2ZW50SGFzaElucHV0EhUKDWZlZGVyYXRpb25faWQYASABKAkSCwoDc2VxGAIgASgEEhEKCXByZXZfaGFzaBgDIAEoDBIXCg9ldmVudF90eXBlX25hbWUYBCABKAkSFAoMcGF5bG9hZF9oYXNoGAUgASgMIqgBChNBY3RvclNpZ25hdHVyZUlucHV0EhUKDWZlZGVyYXRpb25faWQYASABKAkSEAoIYWN0b3JfaWQYAiABKAkSHgoWYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgDIAEoCRIXCg9ldmVudF90eXBlX25hbWUYBCABKAkSFAoMcGF5bG9hZF9oYXNoGAUgASgMEhkKEXRpbWVzdGFtcF91bml4X21zGAYgASgDIqoBChVTdGF0aW9uU2lnbmF0dXJlSW5wdXQSFQoNZmVkZXJhdGlvbl9pZBgBIAEoCRIXCg9zdGF0aW9uX3BlZXJfaWQYAiABKAkSFwoPZXZlbnRfdHlwZV9uYW1lGAMgASgJEhQKDHBheWxvYWRfaGFzaBgEIAEoDBILCgNzZXEYBSABKAQSEQoJcHJldl9oYXNoGAYgASgMEhIKCmV2ZW50X2hhc2gYByABKAwiUQoXU2VxdWVuY2VyU2lnbmF0dXJlSW5wdXQSFQoNZmVkZXJhdGlvbl9pZBgBIAEoCRILCgNzZXEYAiABKAQSEgoKZXZlbnRfaGFzaBgDIAEoDCL4AgoYRmVkZXJhdGlvbkNyZWF0ZWRQYXlsb2FkEhUKDWZlZGVyYXRpb25faWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRITCgtwb2xpY3lfdHlwZRgEIAEoCRIhChlzZXF1ZW5jZXJfc3RhdGlvbl9wZWVyX2lkGAUgASgJEhgKEGNyZWF0b3JfYWN0b3JfaWQYBiABKAkSJgoeY3JlYXRvcl9hY3Rvcl9mZWRlcmF0ZWRfaGFuZGxlGAcgASgJEh8KF2NyZWF0b3Jfc3RhdGlvbl9wZWVyX2lkGAggASgJEiIKGmNyZWF0b3Jfc3RhdGlvbl9wdWJsaWNfa2V5GAkgASgMEhwKFGNyZWF0b3Jfc3RhdGlvbl9uYW1lGAogASgJEhsKE2NyZWF0b3Jfc3RhdGlvbl91cmwYCyABKAkSKAogY3JlYXRvcl9hY3Rvcl9zaWduaW5nX3B1YmxpY19rZXkYDCABKAwi5QEKFVN0YXRpb25JbnZpdGVkUGF5bG9hZBIeChZ0YXJnZXRfc3RhdGlvbl9wZWVyX2lkGAEgASgJEhsKE3RhcmdldF9zdGF0aW9uX25hbWUYAiABKAkSGgoSdGFyZ2V0X3N0YXRpb25fdXJsGAMgASgJEhsKE2ludml0ZWRfYnlfYWN0b3JfaWQYBCABKAkSKQohaW52aXRlZF9ieV9hY3Rvcl9mZWRlcmF0ZWRfaGFuZGxlGAUgASgJEg8KB21lc3NhZ2UYBiABKAkSGgoSZXhwaXJlc19hdF91bml4X21zGAcgASgDIoICChtTdGF0aW9uSm9pblJlcXVlc3RlZFBheWxvYWQSIgoacmVxdWVzdGluZ19zdGF0aW9uX3BlZXJfaWQYASABKAkSHwoXcmVxdWVzdGluZ19zdGF0aW9uX25hbWUYAiABKAkSHgoWcmVxdWVzdGluZ19zdGF0aW9uX3VybBgDIAEoCRIlCh1yZXF1ZXN0aW5nX3N0YXRpb25fcHVibGljX2tleRgEIAEoDBIbChNyZXF1ZXN0aW5nX2FjdG9yX2lkGAUgASgJEikKIXJlcXVlc3RpbmdfYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgGIAEoCRIPCgdtZXNzYWdlGAcgASgJItMBChpTdGF0aW9uSm9pbkFwcHJvdmVkUGF5bG9hZBIgChhhcHByb3ZlZF9zdGF0aW9uX3BlZXJfaWQYASABKAkSHAoUYXBwcm92ZWRfYnlfYWN0b3JfaWQYAiABKAkSKgoiYXBwcm92ZWRfYnlfYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgDIAEoCRIMCgRyb2xlGAQgASgJEhwKFGFwcHJvdmVkX3N0YXRpb25fdXJsGAUgASgJEh0KFWFwcHJvdmVkX3N0YXRpb25fbmFtZRgGIAEoCSKHAQoSU3RhdGlvbkxlZnRQYXlsb2FkEh8KF2xlYXZpbmdfc3RhdGlvbl9wZWVyX2lkGAEgASgJEhgKEGxlYXZpbmdfYWN0b3JfaWQYAiABKAkSJgoebGVhdmluZ19hY3Rvcl9mZWRlcmF0ZWRfaGFuZGxlGAMgASgJEg4KBnJlYXNvbhgEIAEoCSKVAQoXU3RhdGlvblN1c3BlbmRlZFBheWxvYWQSHgoWdGFyZ2V0X3N0YXRpb25fcGVlcl9pZBgBIAEoCRIdChVzdXNwZW5kZWRfYnlfYWN0b3JfaWQYAiABKAkSKwojc3VzcGVuZGVkX2J5X2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYAyABKAkSDgoGcmVhc29uGAQgASgJIo8BChVTdGF0aW9uUmVtb3ZlZFBheWxvYWQSHgoWdGFyZ2V0X3N0YXRpb25fcGVlcl9pZBgBIAEoCRIbChNyZW1vdmVkX2J5X2FjdG9yX2lkGAIgASgJEikKIXJlbW92ZWRfYnlfYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgDIAEoCRIOCgZyZWFzb24YBCABKAkiywEKE0FkbWluR3JhbnRlZFBheWxvYWQSFwoPdGFyZ2V0X2FjdG9yX2lkGAEgASgJEiUKHXRhcmdldF9hY3Rvcl9mZWRlcmF0ZWRfaGFuZGxlGAIgASgJEh4KFnRhcmdldF9zdGF0aW9uX3BlZXJfaWQYAyABKAkSDAoEcm9sZRgEIAEoCRIbChNncmFudGVkX2J5X2FjdG9yX2lkGAUgASgJEikKIWdyYW50ZWRfYnlfYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgGIAEoCSLjAQoTQWRtaW5SZXZva2VkUGF5bG9hZBIXCg90YXJnZXRfYWN0b3JfaWQYASABKAkSJQoddGFyZ2V0X2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYAiABKAkSHgoWdGFyZ2V0X3N0YXRpb25fcGVlcl9pZBgDIAEoCRIUCgxyZXZva2VkX3JvbGUYBCABKAkSGwoTcmV2b2tlZF9ieV9hY3Rvcl9pZBgFIAEoCRIpCiFyZXZva2VkX2J5X2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYBiABKAkSDgoGcmVhc29uGAcgASgJIq0BChRQb2xpY3lVcGRhdGVkUGF5bG9hZBIXCg9vbGRfcG9saWN5X3R5cGUYASABKAkSFwoPbmV3X3BvbGljeV90eXBlGAIgASgJEhsKE3BvbGljeV9wYXJhbXNfYnl0ZXMYAyABKAwSGwoTdXBkYXRlZF9ieV9hY3Rvcl9pZBgEIAEoCRIpCiF1cGRhdGVkX2J5X2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYBSABKAkiwwEKF1NlcXVlbmNlckNoYW5nZWRQYXlsb2FkEiUKHW9sZF9zZXF1ZW5jZXJfc3RhdGlvbl9wZWVyX2lkGAEgASgJEiUKHW5ld19zZXF1ZW5jZXJfc3RhdGlvbl9wZWVyX2lkGAIgASgJEg4KBnJlYXNvbhgDIAEoCRIdChVpbml0aWF0ZWRfYnlfYWN0b3JfaWQYBCABKAkSKwojaW5pdGlhdGVkX2J5X2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYBSABKAkigwEKGFN0YXRpb25LZXlSb3RhdGVkUGF5bG9hZBIXCg9zdGF0aW9uX3BlZXJfaWQYASABKAkSFgoOb2xkX3B1YmxpY19rZXkYAiABKAwSFgoObmV3X3B1YmxpY19rZXkYAyABKAwSHgoWbmV3X2tleV92YWxpZF9mcm9tX3NlcRgEIAEoBCJ1ChlGZWRlcmF0aW9uQXJjaGl2ZWRQYXlsb2FkEhwKFGFyY2hpdmVkX2J5X2FjdG9yX2lkGAEgASgJEioKImFyY2hpdmVkX2J5X2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYAiABKAkSDgoGcmVhc29uGAMgASgJIuADCg5MZWRnZXJQcm9wb3NhbBITCgtwcm9wb3NhbF9pZBgBIAEoCRIVCg1mZWRlcmF0aW9uX2lkGAIgASgJEkcKE3Byb3Bvc2VkX2V2ZW50X3R5cGUYAyABKA4yKi5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkV2ZW50VHlwZRIVCg1wYXlsb2FkX2J5dGVzGAQgASgMEhQKDHBheWxvYWRfaGFzaBgFIAEoDBIQCghhY3Rvcl9pZBgGIAEoCRIeChZhY3Rvcl9mZWRlcmF0ZWRfaGFuZGxlGAcgASgJEhcKD3N0YXRpb25fcGVlcl9pZBgIIAEoCRIXCg9hY3Rvcl9zaWduYXR1cmUYCSABKAwSGQoRc3RhdGlvbl9zaWduYXR1cmUYCiABKAwSPwoGc3RhdHVzGAsgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MS5Qcm9wb3NhbFN0YXR1cxIYChByZWplY3Rpb25fcmVhc29uGAwgASgJEhkKEWFjY2VwdGVkX2V2ZW50X2lkGA0gASgJEhsKE3Byb3Bvc2VkX2F0X3VuaXhfbXMYDiABKAMSGgoSZGVjaWRlZF9hdF91bml4X21zGA8gASgDKswCCglFdmVudFR5cGUSGgoWRVZFTlRfVFlQRV9VTlNQRUNJRklFRBAAEhYKEkZFREVSQVRJT05fQ1JFQVRFRBABEhMKD1NUQVRJT05fSU5WSVRFRBACEhoKFlNUQVRJT05fSk9JTl9SRVFVRVNURUQQAxIZChVTVEFUSU9OX0pPSU5fQVBQUk9WRUQQBBIQCgxTVEFUSU9OX0xFRlQQBRIVChFTVEFUSU9OX1NVU1BFTkRFRBAGEhMKD1NUQVRJT05fUkVNT1ZFRBAHEhEKDUFETUlOX0dSQU5URUQQCBIRCg1BRE1JTl9SRVZPS0VEEAkSEgoOUE9MSUNZX1VQREFURUQQChIVChFTRVFVRU5DRVJfQ0hBTkdFRBALEhcKE1NUQVRJT05fS0VZX1JPVEFURUQQDBIXChNGRURFUkFUSU9OX0FSQ0hJVkVEEA0qiwEKDlByb3Bvc2FsU3RhdHVzEh8KG1BST1BPU0FMX1NUQVRVU19VTlNQRUNJRklFRBAAEhQKEFBST1BPU0FMX1BFTkRJTkcQARIVChFQUk9QT1NBTF9BQ0NFUFRFRBACEhUKEVBST1BPU0FMX1JFSkVDVEVEEAMSFAoQUFJPUE9TQUxfRVhQSVJFRBAEQlRaUmdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2FwcC9zdWJzZXJ2ZXIvZmVkZXJhdGlvbi9wYjtmZWRlcmF0aW9ucGJiBnByb3RvMw");
+  fileDesc("Cilkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX2xlZGdlci5wcm90bxIfcGVlcnNfdG91Y2gubW9kZWwuZmVkZXJhdGlvbi52MSK0AwoLTGVkZ2VyRXZlbnQSEAoIZXZlbnRfaWQYASABKAkSFQoNZmVkZXJhdGlvbl9pZBgCIAEoCRILCgNzZXEYAyABKAQSEQoJcHJldl9oYXNoGAQgASgMEhIKCmV2ZW50X2hhc2gYBSABKAwSPgoKZXZlbnRfdHlwZRgGIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEuRXZlbnRUeXBlEhUKDXBheWxvYWRfYnl0ZXMYByABKAwSFAoMcGF5bG9hZF9oYXNoGAggASgMEhIKCmFjdG9yX3B0aWQYCSABKAkSHgoWYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgKIAEoCRIXCg9zdGF0aW9uX3BlZXJfaWQYCyABKAkSIQoZc2VxdWVuY2VyX3N0YXRpb25fcGVlcl9pZBgMIAEoCRIXCg9hY3Rvcl9zaWduYXR1cmUYDSABKAwSGQoRc3RhdGlvbl9zaWduYXR1cmUYDiABKAwSGwoTc2VxdWVuY2VyX3NpZ25hdHVyZRgPIAEoDBIaChJjcmVhdGVkX2F0X3VuaXhfbXMYECABKAMidgoORXZlbnRIYXNoSW5wdXQSFQoNZmVkZXJhdGlvbl9pZBgBIAEoCRILCgNzZXEYAiABKAQSEQoJcHJldl9oYXNoGAMgASgMEhcKD2V2ZW50X3R5cGVfbmFtZRgEIAEoCRIUCgxwYXlsb2FkX2hhc2gYBSABKAwiqgEKE0FjdG9yU2lnbmF0dXJlSW5wdXQSFQoNZmVkZXJhdGlvbl9pZBgBIAEoCRISCgphY3Rvcl9wdGlkGAIgASgJEh4KFmFjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYAyABKAkSFwoPZXZlbnRfdHlwZV9uYW1lGAQgASgJEhQKDHBheWxvYWRfaGFzaBgFIAEoDBIZChF0aW1lc3RhbXBfdW5peF9tcxgGIAEoAyKqAQoVU3RhdGlvblNpZ25hdHVyZUlucHV0EhUKDWZlZGVyYXRpb25faWQYASABKAkSFwoPc3RhdGlvbl9wZWVyX2lkGAIgASgJEhcKD2V2ZW50X3R5cGVfbmFtZRgDIAEoCRIUCgxwYXlsb2FkX2hhc2gYBCABKAwSCwoDc2VxGAUgASgEEhEKCXByZXZfaGFzaBgGIAEoDBISCgpldmVudF9oYXNoGAcgASgMIlEKF1NlcXVlbmNlclNpZ25hdHVyZUlucHV0EhUKDWZlZGVyYXRpb25faWQYASABKAkSCwoDc2VxGAIgASgEEhIKCmV2ZW50X2hhc2gYAyABKAwi+gIKGEZlZGVyYXRpb25DcmVhdGVkUGF5bG9hZBIVCg1mZWRlcmF0aW9uX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEwoLcG9saWN5X3R5cGUYBCABKAkSIQoZc2VxdWVuY2VyX3N0YXRpb25fcGVlcl9pZBgFIAEoCRIaChJjcmVhdG9yX2FjdG9yX3B0aWQYBiABKAkSJgoeY3JlYXRvcl9hY3Rvcl9mZWRlcmF0ZWRfaGFuZGxlGAcgASgJEh8KF2NyZWF0b3Jfc3RhdGlvbl9wZWVyX2lkGAggASgJEiIKGmNyZWF0b3Jfc3RhdGlvbl9wdWJsaWNfa2V5GAkgASgMEhwKFGNyZWF0b3Jfc3RhdGlvbl9uYW1lGAogASgJEhsKE2NyZWF0b3Jfc3RhdGlvbl91cmwYCyABKAkSKAogY3JlYXRvcl9hY3Rvcl9zaWduaW5nX3B1YmxpY19rZXkYDCABKAwi5wEKFVN0YXRpb25JbnZpdGVkUGF5bG9hZBIeChZ0YXJnZXRfc3RhdGlvbl9wZWVyX2lkGAEgASgJEhsKE3RhcmdldF9zdGF0aW9uX25hbWUYAiABKAkSGgoSdGFyZ2V0X3N0YXRpb25fdXJsGAMgASgJEh0KFWludml0ZWRfYnlfYWN0b3JfcHRpZBgEIAEoCRIpCiFpbnZpdGVkX2J5X2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYBSABKAkSDwoHbWVzc2FnZRgGIAEoCRIaChJleHBpcmVzX2F0X3VuaXhfbXMYByABKAMihAIKG1N0YXRpb25Kb2luUmVxdWVzdGVkUGF5bG9hZBIiChpyZXF1ZXN0aW5nX3N0YXRpb25fcGVlcl9pZBgBIAEoCRIfChdyZXF1ZXN0aW5nX3N0YXRpb25fbmFtZRgCIAEoCRIeChZyZXF1ZXN0aW5nX3N0YXRpb25fdXJsGAMgASgJEiUKHXJlcXVlc3Rpbmdfc3RhdGlvbl9wdWJsaWNfa2V5GAQgASgMEh0KFXJlcXVlc3RpbmdfYWN0b3JfcHRpZBgFIAEoCRIpCiFyZXF1ZXN0aW5nX2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYBiABKAkSDwoHbWVzc2FnZRgHIAEoCSLVAQoaU3RhdGlvbkpvaW5BcHByb3ZlZFBheWxvYWQSIAoYYXBwcm92ZWRfc3RhdGlvbl9wZWVyX2lkGAEgASgJEh4KFmFwcHJvdmVkX2J5X2FjdG9yX3B0aWQYAiABKAkSKgoiYXBwcm92ZWRfYnlfYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgDIAEoCRIMCgRyb2xlGAQgASgJEhwKFGFwcHJvdmVkX3N0YXRpb25fdXJsGAUgASgJEh0KFWFwcHJvdmVkX3N0YXRpb25fbmFtZRgGIAEoCSKJAQoSU3RhdGlvbkxlZnRQYXlsb2FkEh8KF2xlYXZpbmdfc3RhdGlvbl9wZWVyX2lkGAEgASgJEhoKEmxlYXZpbmdfYWN0b3JfcHRpZBgCIAEoCRImCh5sZWF2aW5nX2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYAyABKAkSDgoGcmVhc29uGAQgASgJIpcBChdTdGF0aW9uU3VzcGVuZGVkUGF5bG9hZBIeChZ0YXJnZXRfc3RhdGlvbl9wZWVyX2lkGAEgASgJEh8KF3N1c3BlbmRlZF9ieV9hY3Rvcl9wdGlkGAIgASgJEisKI3N1c3BlbmRlZF9ieV9hY3Rvcl9mZWRlcmF0ZWRfaGFuZGxlGAMgASgJEg4KBnJlYXNvbhgEIAEoCSKRAQoVU3RhdGlvblJlbW92ZWRQYXlsb2FkEh4KFnRhcmdldF9zdGF0aW9uX3BlZXJfaWQYASABKAkSHQoVcmVtb3ZlZF9ieV9hY3Rvcl9wdGlkGAIgASgJEikKIXJlbW92ZWRfYnlfYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgDIAEoCRIOCgZyZWFzb24YBCABKAkizwEKE0FkbWluR3JhbnRlZFBheWxvYWQSGQoRdGFyZ2V0X2FjdG9yX3B0aWQYASABKAkSJQoddGFyZ2V0X2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYAiABKAkSHgoWdGFyZ2V0X3N0YXRpb25fcGVlcl9pZBgDIAEoCRIMCgRyb2xlGAQgASgJEh0KFWdyYW50ZWRfYnlfYWN0b3JfcHRpZBgFIAEoCRIpCiFncmFudGVkX2J5X2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYBiABKAki5wEKE0FkbWluUmV2b2tlZFBheWxvYWQSGQoRdGFyZ2V0X2FjdG9yX3B0aWQYASABKAkSJQoddGFyZ2V0X2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYAiABKAkSHgoWdGFyZ2V0X3N0YXRpb25fcGVlcl9pZBgDIAEoCRIUCgxyZXZva2VkX3JvbGUYBCABKAkSHQoVcmV2b2tlZF9ieV9hY3Rvcl9wdGlkGAUgASgJEikKIXJldm9rZWRfYnlfYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgGIAEoCRIOCgZyZWFzb24YByABKAkirwEKFFBvbGljeVVwZGF0ZWRQYXlsb2FkEhcKD29sZF9wb2xpY3lfdHlwZRgBIAEoCRIXCg9uZXdfcG9saWN5X3R5cGUYAiABKAkSGwoTcG9saWN5X3BhcmFtc19ieXRlcxgDIAEoDBIdChV1cGRhdGVkX2J5X2FjdG9yX3B0aWQYBCABKAkSKQohdXBkYXRlZF9ieV9hY3Rvcl9mZWRlcmF0ZWRfaGFuZGxlGAUgASgJIsUBChdTZXF1ZW5jZXJDaGFuZ2VkUGF5bG9hZBIlCh1vbGRfc2VxdWVuY2VyX3N0YXRpb25fcGVlcl9pZBgBIAEoCRIlCh1uZXdfc2VxdWVuY2VyX3N0YXRpb25fcGVlcl9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkSHwoXaW5pdGlhdGVkX2J5X2FjdG9yX3B0aWQYBCABKAkSKwojaW5pdGlhdGVkX2J5X2FjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYBSABKAkigwEKGFN0YXRpb25LZXlSb3RhdGVkUGF5bG9hZBIXCg9zdGF0aW9uX3BlZXJfaWQYASABKAkSFgoOb2xkX3B1YmxpY19rZXkYAiABKAwSFgoObmV3X3B1YmxpY19rZXkYAyABKAwSHgoWbmV3X2tleV92YWxpZF9mcm9tX3NlcRgEIAEoBCJ3ChlGZWRlcmF0aW9uQXJjaGl2ZWRQYXlsb2FkEh4KFmFyY2hpdmVkX2J5X2FjdG9yX3B0aWQYASABKAkSKgoiYXJjaGl2ZWRfYnlfYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgCIAEoCRIOCgZyZWFzb24YAyABKAki4gMKDkxlZGdlclByb3Bvc2FsEhMKC3Byb3Bvc2FsX2lkGAEgASgJEhUKDWZlZGVyYXRpb25faWQYAiABKAkSRwoTcHJvcG9zZWRfZXZlbnRfdHlwZRgDIAEoDjIqLnBlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEuRXZlbnRUeXBlEhUKDXBheWxvYWRfYnl0ZXMYBCABKAwSFAoMcGF5bG9hZF9oYXNoGAUgASgMEhIKCmFjdG9yX3B0aWQYBiABKAkSHgoWYWN0b3JfZmVkZXJhdGVkX2hhbmRsZRgHIAEoCRIXCg9zdGF0aW9uX3BlZXJfaWQYCCABKAkSFwoPYWN0b3Jfc2lnbmF0dXJlGAkgASgMEhkKEXN0YXRpb25fc2lnbmF0dXJlGAogASgMEj8KBnN0YXR1cxgLIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEuUHJvcG9zYWxTdGF0dXMSGAoQcmVqZWN0aW9uX3JlYXNvbhgMIAEoCRIZChFhY2NlcHRlZF9ldmVudF9pZBgNIAEoCRIbChNwcm9wb3NlZF9hdF91bml4X21zGA4gASgDEhoKEmRlY2lkZWRfYXRfdW5peF9tcxgPIAEoAyrMAgoJRXZlbnRUeXBlEhoKFkVWRU5UX1RZUEVfVU5TUEVDSUZJRUQQABIWChJGRURFUkFUSU9OX0NSRUFURUQQARITCg9TVEFUSU9OX0lOVklURUQQAhIaChZTVEFUSU9OX0pPSU5fUkVRVUVTVEVEEAMSGQoVU1RBVElPTl9KT0lOX0FQUFJPVkVEEAQSEAoMU1RBVElPTl9MRUZUEAUSFQoRU1RBVElPTl9TVVNQRU5ERUQQBhITCg9TVEFUSU9OX1JFTU9WRUQQBxIRCg1BRE1JTl9HUkFOVEVEEAgSEQoNQURNSU5fUkVWT0tFRBAJEhIKDlBPTElDWV9VUERBVEVEEAoSFQoRU0VRVUVOQ0VSX0NIQU5HRUQQCxIXChNTVEFUSU9OX0tFWV9ST1RBVEVEEAwSFwoTRkVERVJBVElPTl9BUkNISVZFRBANKosBCg5Qcm9wb3NhbFN0YXR1cxIfChtQUk9QT1NBTF9TVEFUVVNfVU5TUEVDSUZJRUQQABIUChBQUk9QT1NBTF9QRU5ESU5HEAESFQoRUFJPUE9TQUxfQUNDRVBURUQQAhIVChFQUk9QT1NBTF9SRUpFQ1RFRBADEhQKEFBST1BPU0FMX0VYUElSRUQQBEJUWlJnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2ZlZGVyYXRpb24vcGI7ZmVkZXJhdGlvbnBiYgZwcm90bzM");
 
 /**
  * LedgerEvent is one immutable entry in the Federation governance ledger.
@@ -59,9 +59,9 @@ export type LedgerEvent = Message<"peers_touch.model.federation.v1.LedgerEvent">
   payloadHash: Uint8Array;
 
   /**
-   * @generated from field: string actor_id = 9;
+   * @generated from field: string actor_ptid = 9;
    */
-  actorId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string actor_federated_handle = 10;
@@ -158,9 +158,9 @@ export type ActorSignatureInput = Message<"peers_touch.model.federation.v1.Actor
   federationId: string;
 
   /**
-   * @generated from field: string actor_id = 2;
+   * @generated from field: string actor_ptid = 2;
    */
-  actorId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string actor_federated_handle = 3;
@@ -298,9 +298,9 @@ export type FederationCreatedPayload = Message<"peers_touch.model.federation.v1.
   sequencerStationPeerId: string;
 
   /**
-   * @generated from field: string creator_actor_id = 6;
+   * @generated from field: string creator_actor_ptid = 6;
    */
-  creatorActorId: string;
+  creatorActorPtid: string;
 
   /**
    * @generated from field: string creator_actor_federated_handle = 7;
@@ -360,9 +360,9 @@ export type StationInvitedPayload = Message<"peers_touch.model.federation.v1.Sta
   targetStationUrl: string;
 
   /**
-   * @generated from field: string invited_by_actor_id = 4;
+   * @generated from field: string invited_by_actor_ptid = 4;
    */
-  invitedByActorId: string;
+  invitedByActorPtid: string;
 
   /**
    * @generated from field: string invited_by_actor_federated_handle = 5;
@@ -412,9 +412,9 @@ export type StationJoinRequestedPayload = Message<"peers_touch.model.federation.
   requestingStationPublicKey: Uint8Array;
 
   /**
-   * @generated from field: string requesting_actor_id = 5;
+   * @generated from field: string requesting_actor_ptid = 5;
    */
-  requestingActorId: string;
+  requestingActorPtid: string;
 
   /**
    * @generated from field: string requesting_actor_federated_handle = 6;
@@ -444,9 +444,9 @@ export type StationJoinApprovedPayload = Message<"peers_touch.model.federation.v
   approvedStationPeerId: string;
 
   /**
-   * @generated from field: string approved_by_actor_id = 2;
+   * @generated from field: string approved_by_actor_ptid = 2;
    */
-  approvedByActorId: string;
+  approvedByActorPtid: string;
 
   /**
    * @generated from field: string approved_by_actor_federated_handle = 3;
@@ -486,9 +486,9 @@ export type StationLeftPayload = Message<"peers_touch.model.federation.v1.Statio
   leavingStationPeerId: string;
 
   /**
-   * @generated from field: string leaving_actor_id = 2;
+   * @generated from field: string leaving_actor_ptid = 2;
    */
-  leavingActorId: string;
+  leavingActorPtid: string;
 
   /**
    * @generated from field: string leaving_actor_federated_handle = 3;
@@ -518,9 +518,9 @@ export type StationSuspendedPayload = Message<"peers_touch.model.federation.v1.S
   targetStationPeerId: string;
 
   /**
-   * @generated from field: string suspended_by_actor_id = 2;
+   * @generated from field: string suspended_by_actor_ptid = 2;
    */
-  suspendedByActorId: string;
+  suspendedByActorPtid: string;
 
   /**
    * @generated from field: string suspended_by_actor_federated_handle = 3;
@@ -550,9 +550,9 @@ export type StationRemovedPayload = Message<"peers_touch.model.federation.v1.Sta
   targetStationPeerId: string;
 
   /**
-   * @generated from field: string removed_by_actor_id = 2;
+   * @generated from field: string removed_by_actor_ptid = 2;
    */
-  removedByActorId: string;
+  removedByActorPtid: string;
 
   /**
    * @generated from field: string removed_by_actor_federated_handle = 3;
@@ -577,9 +577,9 @@ export const StationRemovedPayloadSchema: GenMessage<StationRemovedPayload> = /*
  */
 export type AdminGrantedPayload = Message<"peers_touch.model.federation.v1.AdminGrantedPayload"> & {
   /**
-   * @generated from field: string target_actor_id = 1;
+   * @generated from field: string target_actor_ptid = 1;
    */
-  targetActorId: string;
+  targetActorPtid: string;
 
   /**
    * @generated from field: string target_actor_federated_handle = 2;
@@ -597,9 +597,9 @@ export type AdminGrantedPayload = Message<"peers_touch.model.federation.v1.Admin
   role: string;
 
   /**
-   * @generated from field: string granted_by_actor_id = 5;
+   * @generated from field: string granted_by_actor_ptid = 5;
    */
-  grantedByActorId: string;
+  grantedByActorPtid: string;
 
   /**
    * @generated from field: string granted_by_actor_federated_handle = 6;
@@ -619,9 +619,9 @@ export const AdminGrantedPayloadSchema: GenMessage<AdminGrantedPayload> = /*@__P
  */
 export type AdminRevokedPayload = Message<"peers_touch.model.federation.v1.AdminRevokedPayload"> & {
   /**
-   * @generated from field: string target_actor_id = 1;
+   * @generated from field: string target_actor_ptid = 1;
    */
-  targetActorId: string;
+  targetActorPtid: string;
 
   /**
    * @generated from field: string target_actor_federated_handle = 2;
@@ -639,9 +639,9 @@ export type AdminRevokedPayload = Message<"peers_touch.model.federation.v1.Admin
   revokedRole: string;
 
   /**
-   * @generated from field: string revoked_by_actor_id = 5;
+   * @generated from field: string revoked_by_actor_ptid = 5;
    */
-  revokedByActorId: string;
+  revokedByActorPtid: string;
 
   /**
    * @generated from field: string revoked_by_actor_federated_handle = 6;
@@ -681,9 +681,9 @@ export type PolicyUpdatedPayload = Message<"peers_touch.model.federation.v1.Poli
   policyParamsBytes: Uint8Array;
 
   /**
-   * @generated from field: string updated_by_actor_id = 4;
+   * @generated from field: string updated_by_actor_ptid = 4;
    */
-  updatedByActorId: string;
+  updatedByActorPtid: string;
 
   /**
    * @generated from field: string updated_by_actor_federated_handle = 5;
@@ -718,9 +718,9 @@ export type SequencerChangedPayload = Message<"peers_touch.model.federation.v1.S
   reason: string;
 
   /**
-   * @generated from field: string initiated_by_actor_id = 4;
+   * @generated from field: string initiated_by_actor_ptid = 4;
    */
-  initiatedByActorId: string;
+  initiatedByActorPtid: string;
 
   /**
    * @generated from field: string initiated_by_actor_federated_handle = 5;
@@ -772,9 +772,9 @@ export const StationKeyRotatedPayloadSchema: GenMessage<StationKeyRotatedPayload
  */
 export type FederationArchivedPayload = Message<"peers_touch.model.federation.v1.FederationArchivedPayload"> & {
   /**
-   * @generated from field: string archived_by_actor_id = 1;
+   * @generated from field: string archived_by_actor_ptid = 1;
    */
-  archivedByActorId: string;
+  archivedByActorPtid: string;
 
   /**
    * @generated from field: string archived_by_actor_federated_handle = 2;
@@ -824,9 +824,9 @@ export type LedgerProposal = Message<"peers_touch.model.federation.v1.LedgerProp
   payloadHash: Uint8Array;
 
   /**
-   * @generated from field: string actor_id = 6;
+   * @generated from field: string actor_ptid = 6;
    */
-  actorId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string actor_federated_handle = 7;

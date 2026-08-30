@@ -256,10 +256,10 @@ pub fn model_fetch_remote(scope: &str, token: &str, provider_id: &str) -> AppRes
     )
 }
 
-fn execute_cli_models_command(command: &str, actor_id: &str, provider_id: &str) -> Vec<String> {
+fn execute_cli_models_command(command: &str, actor_ptid: &str, provider_id: &str) -> Vec<String> {
     let cred_key = credential_env_key_for_provider(provider_id);
-    let env = build_cli_env(actor_id, provider_id, "", cred_key);
-    let workspace = ensure_actor_workspace(actor_id, provider_id);
+    let env = build_cli_env(actor_ptid, provider_id, "", cred_key);
+    let workspace = ensure_actor_workspace(actor_ptid, provider_id);
     let output = run_cli_subprocess(command, &env, &workspace, None);
     match output {
         Some(stdout) => parse_cli_model_list(&stdout),
@@ -277,11 +277,11 @@ fn credential_env_key_for_provider(provider_id: &str) -> Option<&'static str> {
 
 // --- WS-2: Actor Workspace ---
 
-fn ensure_actor_workspace(actor_id: &str, provider_id: &str) -> PathBuf {
+fn ensure_actor_workspace(actor_ptid: &str, provider_id: &str) -> PathBuf {
     let base = app_data_dir();
     let workspace = base
         .join("actors")
-        .join(actor_id)
+        .join(actor_ptid)
         .join("cli")
         .join(provider_id)
         .join("workspace");
@@ -299,17 +299,17 @@ fn app_data_dir() -> PathBuf {
 // --- WS-3: CLI Env Injection ---
 
 fn build_cli_env(
-    actor_id: &str,
+    actor_ptid: &str,
     provider_id: &str,
     token: &str,
     credential_env_key: Option<&str>,
 ) -> HashMap<String, String> {
-    let workspace = ensure_actor_workspace(actor_id, provider_id);
+    let workspace = ensure_actor_workspace(actor_ptid, provider_id);
     let station_url = std::env::var("PEERS_STATION_URL").unwrap_or_default();
 
     let mut env = HashMap::new();
     env.insert("PATH".to_string(), enriched_path());
-    env.insert("PEERS_ACTOR_ID".to_string(), actor_id.to_string());
+    env.insert("PEERS_ACTOR_PTID".to_string(), actor_ptid.to_string());
     env.insert("PEERS_PROVIDER_ID".to_string(), provider_id.to_string());
     env.insert(
         "PEERS_WORKSPACE".to_string(),

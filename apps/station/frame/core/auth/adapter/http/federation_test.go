@@ -2,6 +2,7 @@ package httpadapter
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/scope"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
 const (
@@ -176,4 +178,46 @@ func TestRequireFederationToken_PanicsOnUnregisteredScope(t *testing.T) {
 	}()
 	peers := federation.NewInMemoryPeerKeyStore()
 	_ = RequireFederationToken("missing", peers, StaticAudience(thisStation), false)
+}
+
+func TestRequireFederationTokenLogsOutcomeWithoutAuthorizationValue(t *testing.T) {
+	const bearerToken = "federation-secret-bearer"
+
+	setupScope(t)
+	capture := &authLogCapture{}
+	originalLogger := logger.DefaultLogger
+	logger.DefaultLogger = capture
+	t.Cleanup(func() {
+		logger.DefaultLogger = originalLogger
+	})
+
+	peers := federation.NewInMemoryPeerKeyStore()
+	resolver := func(request *http.Request) (string, error) {
+		return "", errors.New("resolver rejected " + request.Header.Get("Authorization"))
+	}
+	handler := RequireFederationToken(scopeName, peers, resolver, false)(
+		logger.WithTraceID(context.Background(), "trace-safe-correlation"),
+		http.NotFoundHandler(),
+	)
+	request := httptest.NewRequest(http.MethodGet, "/federation", nil)
+	request.Header.Set("Authorization", "Bearer "+bearerToken)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+
+	output := capture.StringOutput()
+	for _, secret := range []string{"Authorization", bearerToken} {
+		if strings.Contains(output, secret) {
+			t.Fatalf("captured logs contain sensitive value %q: %s", secret, output)
+		}
+	}
+	for _, expected := range []string{"trace-safe-correlation", "audience resolution failed"} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("captured logs missing %q: %s", expected, output)
+		}
+	}
 }

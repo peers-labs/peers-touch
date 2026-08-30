@@ -10,20 +10,21 @@ import (
 )
 
 func TestCanonicalConversationSubjectWrapsJWTBeforeHandler(t *testing.T) {
+	const ptid = "ptid:v1:actor:peers:p:alice:fingerprint"
 	jwt := func(next server.EndpointHandler) server.EndpointHandler {
 		return func(ctx context.Context, req server.Request, resp server.Response) error {
 			return next(coreauth.WithSubject(ctx, &coreauth.Subject{
-				ID:         "42",
+				ID:         ptid,
 				SessionID:  "session-1",
 				Attributes: map[string]string{"device": "desktop"},
 			}), req, resp)
 		}
 	}
 	resolver := func(_ context.Context, subjectID string) (string, error) {
-		if subjectID != "42" {
-			t.Fatalf("resolver received %q, want numeric JWT subject", subjectID)
+		if subjectID != ptid {
+			t.Fatalf("resolver received %q, want PTID JWT subject", subjectID)
 		}
-		return "ptid:v1:actor:peers:p:alice", nil
+		return ptid, nil
 	}
 
 	var got *coreauth.Subject
@@ -38,7 +39,7 @@ func TestCanonicalConversationSubjectWrapsJWTBeforeHandler(t *testing.T) {
 	); err != nil {
 		t.Fatalf("wrapped handler failed: %v", err)
 	}
-	if got == nil || got.ID != "ptid:v1:actor:peers:p:alice" {
+	if got == nil || got.ID != ptid {
 		t.Fatalf("handler subject = %#v, want canonical PTID", got)
 	}
 	if got.SessionID != "session-1" || got.Attributes["device"] != "desktop" {
@@ -74,7 +75,7 @@ func TestCanonicalConversationSubjectFailsClosed(t *testing.T) {
 }
 
 func TestResolveConversationSubjectPTIDAcceptsCanonicalValue(t *testing.T) {
-	const ptid = "ptid:v1:actor:peers:p:alice"
+	const ptid = "ptid:v1:actor:peers:p:alice:fingerprint"
 	got, err := resolveConversationSubjectPTID(context.Background(), ptid)
 	if err != nil || got != ptid {
 		t.Fatalf("resolve canonical PTID = %q, %v", got, err)

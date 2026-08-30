@@ -91,11 +91,11 @@ export function getBootTrace(): ReadonlyArray<PhaseEntry> {
 
 const BOOTSTRAP_TIMEOUT_MS = 5000;
 
-async function bootstrapWithTimeout(runtimeId: string, actorId: string | null): Promise<void> {
+async function bootstrapWithTimeout(runtimeId: string, actorPtid: string | null): Promise<void> {
   const timeout = new Promise<'timeout'>((resolve) =>
     setTimeout(() => resolve('timeout'), BOOTSTRAP_TIMEOUT_MS),
   );
-  const bootstrap = bootstrapRuntime(runtimeId, actorId).then(() => 'done' as const);
+  const bootstrap = bootstrapRuntime(runtimeId, actorPtid).then(() => 'done' as const);
 
   const result = await Promise.race([bootstrap, timeout]);
   if (result === 'timeout') {
@@ -113,7 +113,7 @@ async function bootstrapWithTimeout(runtimeId: string, actorId: string | null): 
  * the global notification surface needs) so first paint stays cheap.
  */
 export async function installCriticalRuntimes(
-  actorId: string | null,
+  actorPtid: string | null,
   criticalSessionRuntimes: ReadonlyArray<string>,
 ): Promise<void> {
   markPhaseStart('runtime:critical');
@@ -121,13 +121,13 @@ export async function installCriticalRuntimes(
     installRuntime(desc.id);
     await bootstrapWithTimeout(desc.id, null);
   }
-  if (actorId) {
+  if (actorPtid) {
     for (const id of criticalSessionRuntimes) {
       installRuntime(id);
-      await bootstrapWithTimeout(id, actorId);
+      await bootstrapWithTimeout(id, actorPtid);
     }
   }
-  markPhaseEnd('runtime:critical', { actorId, critical: criticalSessionRuntimes });
+  markPhaseEnd('runtime:critical', { actorPtid, critical: criticalSessionRuntimes });
 }
 
 /**
@@ -136,16 +136,16 @@ export async function installCriticalRuntimes(
  * is unaffected.
  */
 export async function installIdleRuntimes(
-  actorId: string | null,
+  actorPtid: string | null,
   criticalSessionRuntimes: ReadonlyArray<string>,
 ): Promise<void> {
-  if (!actorId) return;
+  if (!actorPtid) return;
   markPhaseStart('runtime:idle');
   const installed: string[] = [];
   for (const desc of listRuntimes('session')) {
     if (criticalSessionRuntimes.includes(desc.id)) continue;
     installRuntime(desc.id);
-    await bootstrapWithTimeout(desc.id, actorId);
+    await bootstrapWithTimeout(desc.id, actorPtid);
     installed.push(desc.id);
   }
   markPhaseEnd('runtime:idle', { installed });

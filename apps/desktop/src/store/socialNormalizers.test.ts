@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { friendRequestProfileDids, type FriendRequestData } from './socialNormalizers';
 
-function request(senderId: string, receiverId: string): FriendRequestData {
+function request(senderPtid: string, receiverPtid: string): FriendRequestData {
   return {
-    id: `${senderId}-${receiverId}`,
-    senderId,
-    receiverId,
+    id: `${senderPtid}-${receiverPtid}`,
+    senderPtid,
+    receiverPtid,
     status: 1,
     message: '',
     createdAt: '',

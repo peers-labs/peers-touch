@@ -3,11 +3,11 @@ package db
 import "time"
 
 type AccessPolicy struct {
-	ID               uint64 `gorm:"primaryKey;autoIncrement"`
-	Mode             string `gorm:"size:32;not null;default:'open';uniqueIndex:idx_access_policy_singleton"`
-	AllowedEmails    string `gorm:"type:text"`
-	AllowedUsernames string `gorm:"type:text"`
-	AllowedActorIDs  string `gorm:"type:text"`
+	ID                uint64 `gorm:"primaryKey;autoIncrement"`
+	Mode              string `gorm:"size:32;not null;default:'open';uniqueIndex:idx_access_policy_singleton"`
+	AllowedEmails     string `gorm:"type:text"`
+	AllowedUsernames  string `gorm:"type:text"`
+	AllowedActorPTIDs string `gorm:"column:allowed_actor_ptids;type:text"`
 	// EnabledGates is a comma-separated list of AccessGateType enum values that
 	// pins the evaluation order. Empty means the Station applies its built-in
 	// default chain.
@@ -28,17 +28,20 @@ func (*AccessPolicy) TableName() string { return "access_gate_policies" }
 // chain state machine: pending -> action_required -> granted | blocked | failed,
 // with cancelled and expired as terminal client/timeout outcomes.
 type AccessAttempt struct {
-	ID            string `gorm:"primaryKey;size:64"`
-	Status        string `gorm:"size:32;not null;default:'pending';index"`
-	SessionID     string `gorm:"size:128;index"`
-	ActorID       int64  `gorm:"index"`
-	ActorUsername string `gorm:"size:128"`
-	ActorEmail    string `gorm:"size:256"`
-	StationURL    string `gorm:"size:256"`
-	Platform      string `gorm:"size:32"`
-	AppVersion    string `gorm:"size:32"`
-	DeviceID      string `gorm:"size:128"`
-	CurrentGateID string `gorm:"size:64"`
+	ID               string `gorm:"primaryKey;size:64"`
+	Status           string `gorm:"size:32;not null;default:'pending';index"`
+	SessionID        string `gorm:"size:128;index"`
+	StationPeerID    string `gorm:"column:station_peer_id;size:255;not null;index"`
+	ActorPTID        string `gorm:"column:actor_ptid;size:255;index"`
+	ActorKind        int32  `gorm:"column:actor_kind"`
+	ActorUsername    string `gorm:"size:128"`
+	ActorEmail       string `gorm:"size:256"`
+	StationURL       string `gorm:"size:256"`
+	Platform         string `gorm:"size:32"`
+	AppVersion       string `gorm:"size:32"`
+	DeviceID         string `gorm:"size:128"`
+	CurrentGateID    string `gorm:"size:64"`
+	DecisionRevision uint64 `gorm:"column:decision_revision;not null;default:1"`
 	// InvitePassed records that this attempt redeemed a valid invite code, so the
 	// invite.code gate stays satisfied across later decision passes.
 	InvitePassed bool      `gorm:"not null;default:false"`
@@ -48,6 +51,82 @@ type AccessAttempt struct {
 }
 
 func (*AccessAttempt) TableName() string { return "access_gate_attempts" }
+
+// OAuthAttempt is the durable, Station-owned binding for one native OAuth
+// authorization. Provider credentials, callback codes, PKCE verifiers, nonces,
+// and raw state values are deliberately never persisted.
+type OAuthAttempt struct {
+	ID                          string     `gorm:"primaryKey;size:64"`
+	Provider                    string     `gorm:"size:32;not null;index"`
+	StationPeerID               string     `gorm:"size:255;not null;index"`
+	AccessAttemptID             string     `gorm:"size:64;not null;index"`
+	GateID                      string     `gorm:"size:64;not null"`
+	RedirectURI                 string     `gorm:"size:512;not null"`
+	PKCEChallenge               string     `gorm:"size:128;not null"`
+	NonceHash                   string     `gorm:"size:128;not null"`
+	StateHash                   string     `gorm:"size:128;not null;uniqueIndex"`
+	DeviceID                    string     `gorm:"size:128;not null"`
+	LifecycleGeneration         uint64     `gorm:"not null"`
+	AttemptSecretHash           []byte     `gorm:"type:bytea;not null"`
+	CredentialDeliveryPublicKey []byte     `gorm:"type:bytea;not null"`
+	LiveBindingKey              *string    `gorm:"size:512;uniqueIndex"`
+	State                       int32      `gorm:"not null;index"`
+	Result                      int32      `gorm:"not null"`
+	CandidateID                 string     `gorm:"size:64;index"`
+	ErrorCode                   string     `gorm:"size:64"`
+	ClaimedAt                   *time.Time `gorm:""`
+	ConsumedAt                  *time.Time `gorm:""`
+	CreatedAt                   time.Time  `gorm:"autoCreateTime"`
+	UpdatedAt                   time.Time  `gorm:"autoUpdateTime"`
+	ExpiresAt                   time.Time  `gorm:"not null;index"`
+}
+
+func (*OAuthAttempt) TableName() string { return "oauth_attempts" }
+
+// OAuthSessionCandidate is an inactive authentication result. It intentionally
+// contains no bearer or refresh token and cannot authorize business APIs.
+type OAuthSessionCandidate struct {
+	ID                  string     `gorm:"primaryKey;size:64"`
+	OAuthAttemptID      string     `gorm:"size:64;not null;uniqueIndex"`
+	AccessAttemptID     string     `gorm:"size:64;not null;index"`
+	StationPeerID       string     `gorm:"size:255;not null;index"`
+	DeviceID            string     `gorm:"size:128;not null"`
+	LifecycleGeneration uint64     `gorm:"not null"`
+	LiveBindingKey      *string    `gorm:"size:512;uniqueIndex"`
+	ActorID             uint64     `gorm:"not null"`
+	ActorPTID           string     `gorm:"size:255;not null;index"`
+	ActorKind           int32      `gorm:"not null"`
+	ActorUsername       string     `gorm:"size:128"`
+	ActorEmail          string     `gorm:"size:256"`
+	State               string     `gorm:"size:32;not null;index"`
+	SessionID           string     `gorm:"size:128;index"`
+	DecisionRevision    uint64     `gorm:"not null;default:0"`
+	CreatedAt           time.Time  `gorm:"autoCreateTime"`
+	UpdatedAt           time.Time  `gorm:"autoUpdateTime"`
+	ExpiresAt           time.Time  `gorm:"not null;index"`
+	ActivatedAt         *time.Time `gorm:""`
+}
+
+func (*OAuthSessionCandidate) TableName() string { return "oauth_session_candidates" }
+
+// OAuthCredentialEnvelope persists one recoverable encrypted credential
+// delivery. Ciphertext is deleted only after the device acknowledges durable
+// secure-store persistence.
+type OAuthCredentialEnvelope struct {
+	ID                       uint64    `gorm:"primaryKey;autoIncrement"`
+	CandidateID              string    `gorm:"size:64;not null;uniqueIndex"`
+	SessionID                string    `gorm:"size:128;not null;uniqueIndex"`
+	StationPeerID            string    `gorm:"size:255;not null"`
+	DeviceID                 string    `gorm:"size:128;not null"`
+	LifecycleGeneration      uint64    `gorm:"not null"`
+	ServerEphemeralPublicKey []byte    `gorm:"type:bytea;not null"`
+	Nonce                    []byte    `gorm:"type:bytea;not null"`
+	Ciphertext               []byte    `gorm:"type:bytea;not null"`
+	CreatedAt                time.Time `gorm:"autoCreateTime"`
+	ExpiresAt                time.Time `gorm:"not null;index"`
+}
+
+func (*OAuthCredentialEnvelope) TableName() string { return "oauth_credential_envelopes" }
 
 // AccessInviteCode is a Station-issued, Dashboard-managed credential that lets a
 // holder pass the invite.code gate. Codes are never created or listed by

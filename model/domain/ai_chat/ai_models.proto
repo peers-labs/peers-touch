@@ -19,7 +19,7 @@ message AiModel {
   string provider_id = 6;             // 所属提供商ID
   string type = 7;                    // 模型类型 (e.g., 'chat', 'text-embedding')
   int32 sort = 8;                     // 排序
-  string user_id = 9;                 // 关联的用户ID (如果是自定义模型)
+  string actor_ptid = 9;                 // 关联的用户ID (如果是自定义模型)
   string pricing_json = 10;           // 定价信息 (JSON 字符串)
   string parameters_json = 11;        // 模型默认参数 (JSON 字符串)
   string config_json = 12;            // 【敏感】模型的特定配置 (JSON 字符串)

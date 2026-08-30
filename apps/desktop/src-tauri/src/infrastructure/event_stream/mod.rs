@@ -56,7 +56,7 @@ pub const EVENT_CONNECTION_STATE: &str = "realtime:connection-state";
 //
 // A logout / actor switch can shut down exactly the supervisor that
 // belongs to the departing actor without touching anyone else's stream.
-// Keyed by `actor_id`.
+// Keyed by `actor_ptid`.
 // ---------------------------------------------------------------------
 
 fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
@@ -66,7 +66,7 @@ fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
 
 /// Start (or restart) the event-stream supervisor for an actor.
 ///
-/// If a supervisor already exists for `actor_id`, it is cancelled
+/// If a supervisor already exists for `actor_ptid`, it is cancelled
 /// before a new one starts. This keeps the invariant "at most one
 /// stream per actor" — every supervisor holds a long-lived TCP
 /// connection on the station, and duplicates would double-deliver
@@ -76,24 +76,24 @@ fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
 /// running two windows of the same actor on the same machine gets
 /// independent cursor tracking on the server side. Empty string is
 /// tolerated; the server falls back to an anonymous suffix.
-pub fn start(app: AppHandle, actor_id: String, token: String, device_id: String) {
+pub fn start(app: AppHandle, actor_ptid: String, token: String, device_id: String) {
     if token.trim().is_empty() {
-        tracing::warn!(actor = %actor_id, "event_stream: refusing to start with empty token");
+        tracing::warn!(actor = %actor_ptid, "event_stream: refusing to start with empty token");
         return;
     }
     let cancel = Arc::new(AtomicBool::new(false));
     {
         let mut map = registry().lock().expect("event_stream registry poisoned");
-        if let Some(prev) = map.insert(actor_id.clone(), cancel.clone()) {
+        if let Some(prev) = map.insert(actor_ptid.clone(), cancel.clone()) {
             prev.store(true, Ordering::Relaxed);
         }
     }
-    let actor_for_thread = actor_id.clone();
+    let actor_for_thread = actor_ptid.clone();
     let cancel_for_thread = cancel.clone();
     std::thread::Builder::new()
         .name(format!(
             "event-stream-{}",
-            &actor_id[..actor_id.len().min(8)]
+            &actor_ptid[..actor_ptid.len().min(8)]
         ))
         .spawn(move || {
             run_supervisor(
@@ -116,9 +116,9 @@ pub fn start(app: AppHandle, actor_id: String, token: String, device_id: String)
 
 /// Stop the event-stream supervisor for an actor (idempotent). Used
 /// on logout, account switch, and app shutdown.
-pub fn stop(actor_id: &str) {
+pub fn stop(actor_ptid: &str) {
     let mut map = registry().lock().expect("event_stream registry poisoned");
-    if let Some(flag) = map.remove(actor_id) {
+    if let Some(flag) = map.remove(actor_ptid) {
         flag.store(true, Ordering::Relaxed);
     }
 }
@@ -133,10 +133,10 @@ pub fn stop_all() {
 
 /// True if a supervisor is registered for the actor (it may not be
 /// connected yet — registration happens before the first connect).
-pub fn is_running(actor_id: &str) -> bool {
+pub fn is_running(actor_ptid: &str) -> bool {
     registry()
         .lock()
-        .map(|m| m.contains_key(actor_id))
+        .map(|m| m.contains_key(actor_ptid))
         .unwrap_or(false)
 }
 
@@ -144,8 +144,8 @@ pub fn is_running(actor_id: &str) -> bool {
 // Cursor persistence
 // ---------------------------------------------------------------------
 
-fn cursor_path(actor_id: &str) -> Option<PathBuf> {
-    let scope = crate::infrastructure::local_scope::user_scope_for_actor(Some(actor_id));
+fn cursor_path(actor_ptid: &str) -> Option<PathBuf> {
+    let scope = crate::infrastructure::local_scope::user_scope_for_actor_ptid(actor_ptid);
     let name = format!("{scope}.txt");
     storage::app_file_path(
         "desktop",
@@ -155,8 +155,8 @@ fn cursor_path(actor_id: &str) -> Option<PathBuf> {
     .ok()
 }
 
-fn load_cursor(actor_id: &str) -> String {
-    let Some(path) = cursor_path(actor_id) else {
+fn load_cursor(actor_ptid: &str) -> String {
+    let Some(path) = cursor_path(actor_ptid) else {
         return String::new();
     };
     match fs::read_to_string(&path) {
@@ -169,11 +169,11 @@ fn load_cursor(actor_id: &str) -> String {
     }
 }
 
-fn save_cursor(actor_id: &str, event_id: &str) {
+fn save_cursor(actor_ptid: &str, event_id: &str) {
     if event_id.is_empty() {
         return;
     }
-    let Some(path) = cursor_path(actor_id) else {
+    let Some(path) = cursor_path(actor_ptid) else {
         return;
     };
     if let Some(parent) = path.parent() {
@@ -193,7 +193,7 @@ fn save_cursor(actor_id: &str, event_id: &str) {
 
 fn run_supervisor(
     app: AppHandle,
-    actor_id: String,
+    actor_ptid: String,
     token: String,
     device_id: String,
     cancel: Arc<AtomicBool>,
@@ -209,13 +209,13 @@ fn run_supervisor(
             return;
         }
 
-        let cursor = load_cursor(&actor_id);
+        let cursor = load_cursor(&actor_ptid);
         emit_state(&app, &mut last_state_connected, false, "connecting");
 
-        match run_once(&app, &actor_id, &token, &device_id, &cursor, &cancel) {
+        match run_once(&app, &actor_ptid, &token, &device_id, &cursor, &cancel) {
             Ok(()) => return, // Cancelled.
             Err(err) => {
-                tracing::warn!(actor = %actor_id, error = %err, "event_stream: connection ended, will retry");
+                tracing::warn!(actor = %actor_ptid, error = %err, "event_stream: connection ended, will retry");
                 emit_state(&app, &mut last_state_connected, false, "disconnected");
             }
         }
@@ -236,14 +236,14 @@ fn run_supervisor(
 
 fn run_once(
     app: &AppHandle,
-    actor_id: &str,
+    actor_ptid: &str,
     token: &str,
     device_id: &str,
     cursor: &str,
     cancel: &Arc<AtomicBool>,
 ) -> Result<(), String> {
     let url = format!("{}/events/stream", station_base_url());
-    tracing::info!(url = %url, actor = %actor_id, cursor_len = cursor.len(), "event_stream: connecting");
+    tracing::info!(url = %url, actor = %actor_ptid, cursor_len = cursor.len(), "event_stream: connecting");
 
     // Contract §2.4 wants a 30s no-frame deadline; reqwest 0.12.28
     // blocking ClientBuilder does not expose per-read timeout (that's
@@ -313,7 +313,7 @@ fn run_once(
             if !data_buf.is_empty() {
                 dispatch(
                     app,
-                    actor_id,
+                    actor_ptid,
                     current_event.as_deref(),
                     current_id.as_deref(),
                     &data_buf,
@@ -349,7 +349,7 @@ fn run_once(
 
 fn dispatch(
     app: &AppHandle,
-    actor_id: &str,
+    actor_ptid: &str,
     event_name: Option<&str>,
     event_id: Option<&str>,
     data_b64: &str,
@@ -401,7 +401,7 @@ fn dispatch(
     // strand us in a state where we've shown a message but won't
     // resume past it on reconnect. Empty event_id (heartbeats early
     // in a session before any business event) is a no-op.
-    save_cursor(actor_id, &resolved_event_id);
+    save_cursor(actor_ptid, &resolved_event_id);
 
     let payload = json!({
         "event_id": resolved_event_id,

@@ -44,7 +44,7 @@ pub struct EncryptedSession {
     pub account_id: String,
     /// Canonical Station actor from the encrypted JWT subject.
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub actor_id: String,
+    pub actor_ptid: String,
 }
 
 /// Derive a 32-byte key from PIN + salt using Argon2id, for encrypting session data.
@@ -121,7 +121,7 @@ pub fn encrypt_session(
     pin: &str,
     enc_salt: &str,
     account_id: &str,
-    actor_id: &str,
+    actor_ptid: &str,
     plaintext_token: &str,
 ) -> Result<EncryptedSession, String> {
     let mut key = derive_encryption_key(pin, enc_salt)?;
@@ -148,7 +148,7 @@ pub fn encrypt_session(
         ciphertext: hex::encode(&ciphertext),
         nonce: hex::encode(nonce_bytes),
         account_id: account_id.to_string(),
-        actor_id: actor_id.to_string(),
+        actor_ptid: actor_ptid.to_string(),
     })
 }
 

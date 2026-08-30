@@ -43,6 +43,7 @@ from tooling.acceptance.core import (
     ProvisioningError,
     REPO_ROOT,
     load_runtime_manifest,
+    require_runtime_service,
 )
 from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
@@ -93,10 +94,15 @@ def actor_manifest() -> dict[str, Any]:
 
 
 def station_url() -> str:
-    station = runtime_manifest().get("station")
-    if not isinstance(station, dict) or not station.get("url"):
-        raise GateError("runtime manifest Station URL is required")
-    return str(station["url"]).rstrip("/")
+    try:
+        station = require_runtime_service(
+            runtime_manifest(),
+            "station",
+            "station",
+        )
+    except ProvisioningError as error:
+        raise GateError(str(error)) from error
+    return str(station["endpoint"]).rstrip("/")
 
 
 def gateway_url() -> str:
@@ -107,8 +113,6 @@ def gateway_url() -> str:
     if not isinstance(port, int) or port <= 0:
         raise GateError("runtime manifest Desktop gateway port is invalid")
     return f"http://127.0.0.1:{port}"
-
-
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise GateError(message)

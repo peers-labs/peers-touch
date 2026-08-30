@@ -21,7 +21,7 @@ import { callP2p } from '../modules/p2p/callP2p';
 type ChatSubPage = 'chats' | 'contacts';
 
 interface OwnedContactSelection {
-  actorId: string;
+  actorPtid: string;
   contact: ContactSelection;
 }
 
@@ -48,7 +48,7 @@ export function SocialChatPage() {
     conversationMembers,
     activeSessionUlid,
     activeTab,
-    currentUserDid,
+    currentUserPtid,
   } = useActiveSocialChatSlice((state) => ({
     showDetail: state.showDetail,
     openThreadRootUlid: state.openThreadRootUlid,
@@ -56,7 +56,7 @@ export function SocialChatPage() {
     conversationMembers: state.conversationMembers,
     activeSessionUlid: state.activeSessionUlid,
     activeTab: state.activeTab,
-    currentUserDid: state.currentUserDid,
+    currentUserPtid: state.currentUserPtid,
   }));
 
   // --- Refs for values used inside effects without re-triggering subscriptions ---
@@ -70,10 +70,10 @@ export function SocialChatPage() {
 
   // --- Stabilize activePeerDid: only propagate when the actual string value changes ---
   const activePeerDid = useMemo(() => {
-    if (activeTab !== 'friend' || !activeSessionUlid || !currentUserDid) return null;
+    if (activeTab !== 'friend' || !activeSessionUlid || !currentUserPtid) return null;
     const members = conversationMembers[activeSessionUlid] ?? [];
-    return members.find((member) => member.ptid && member.ptid !== currentUserDid)?.ptid ?? null;
-  }, [activeTab, activeSessionUlid, conversationMembers, currentUserDid]);
+    return members.find((member) => member.ptid && member.ptid !== currentUserPtid)?.ptid ?? null;
+  }, [activeTab, activeSessionUlid, conversationMembers, currentUserPtid]);
 
   const activePeerDidRef = useRef(activePeerDid);
   useEffect(() => {
@@ -82,7 +82,7 @@ export function SocialChatPage() {
 
   const [subPage, setSubPage] = useState<ChatSubPage>('chats');
   const [ownedContactSelection, setOwnedContactSelection] = useState<OwnedContactSelection | null>(null);
-  const selectedContact = ownedContactSelection?.actorId === currentUserDid
+  const selectedContact = ownedContactSelection?.actorPtid === currentUserPtid
     ? ownedContactSelection.contact
     : null;
 
@@ -109,32 +109,32 @@ export function SocialChatPage() {
     return () => { cancelled = true; window.clearInterval(h); };
   }, []);
 
-  // --- P2P event registration: only re-subscribe when currentUserDid changes ---
+  // --- P2P event registration: only re-subscribe when currentUserPtid changes ---
   useEffect(() => {
-    if (!currentUserDid) return;
+    if (!currentUserPtid) return;
 
     // P2P here only carries transport status (so the UI can show
     // "P2P direct / via relay / SSE-only"). The text data plane is
     // consumed by the app-level social realtime bridge.
-    callP2p.setOnStatus((_myDid, peerDid, status) => {
+    callP2p.setOnStatus((_myDid, peerPtid, status) => {
       const sid = activeSessionRef.current;
       if (!sid || activeTabRef.current !== 'friend') return;
-      if (activePeerDidRef.current !== peerDid) return;
+      if (activePeerDidRef.current !== peerPtid) return;
       setFriendP2pStatus(sid, status.state, status.detail, status.transport);
     });
 
-    callP2p.ensurePeerRegistered(currentUserDid).catch(() => {});
+    callP2p.ensurePeerRegistered(currentUserPtid).catch(() => {});
     return () => {
       callP2p.setOnStatus(null);
     };
-  }, [currentUserDid, setFriendP2pStatus]);
+  }, [currentUserPtid, setFriendP2pStatus]);
 
   // --- P2P connection: stabilized deps prevent close/reconnect cycles ---
   useEffect(() => {
     const sid = activeSessionRef.current;
-    if (!currentUserDid || !activePeerDid || !sid) return;
+    if (!currentUserPtid || !activePeerDid || !sid) return;
     setFriendP2pStatus(sid, 'connecting');
-    callP2p.ensureConnected(currentUserDid, activePeerDid).catch((error) => {
+    callP2p.ensureConnected(currentUserPtid, activePeerDid).catch((error) => {
       const currentSid = activeSessionRef.current;
       if (currentSid) {
         setFriendP2pStatus(currentSid, 'failed', error instanceof Error ? error.message : String(error));
@@ -149,7 +149,7 @@ export function SocialChatPage() {
       // teardown belongs to the dedicated page-unmount effect below.
       callP2p.closeIdleConnections();
     };
-  }, [currentUserDid, activePeerDid, setFriendP2pStatus]);
+  }, [currentUserPtid, activePeerDid, setFriendP2pStatus]);
 
   // --- Page unmount: full teardown of every connection and any live call ---
   useEffect(() => {
@@ -241,10 +241,10 @@ export function SocialChatPage() {
           <ChatContactsPanel
             selectedContact={selectedContact}
             onSelectContact={(contact) => {
-              setOwnedContactSelection({ actorId: currentUserDid || '', contact });
+              setOwnedContactSelection({ actorPtid: currentUserPtid || '', contact });
             }}
             onStartChat={(contact) => {
-              setOwnedContactSelection({ actorId: currentUserDid || '', contact });
+              setOwnedContactSelection({ actorPtid: currentUserPtid || '', contact });
               if (contact.conversationId) {
                 setSubPage('chats');
               }

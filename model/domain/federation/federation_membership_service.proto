@@ -31,7 +31,7 @@ message AcceptInviteRequest {
   bytes  station_public_key = 2;
   string station_name = 3;
   string station_url = 4;
-  string accepting_actor_id = 5;
+  string accepting_actor_ptid = 5;
   string accepting_actor_federated_handle = 6;
 }
 

@@ -289,7 +289,7 @@ func (x *AgentProviderInfo) GetModelsCommand() string {
 type AgentModelInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ActorId       string                 `protobuf:"bytes,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,2,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	ProviderId    string                 `protobuf:"bytes,3,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
 	ModelId       string                 `protobuf:"bytes,4,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
 	DisplayName   string                 `protobuf:"bytes,5,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
@@ -338,9 +338,9 @@ func (x *AgentModelInfo) GetId() string {
 	return ""
 }
 
-func (x *AgentModelInfo) GetActorId() string {
+func (x *AgentModelInfo) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -2164,10 +2164,11 @@ const file_domain_agent_provider_proto_rawDesc = "" +
 	"\vcli_command\x18\x11 \x01(\tR\n" +
 	"cliCommand\x12E\n" +
 	"\x06models\x18\x12 \x03(\v2-.peers_touch.model.agent.v1.ProviderModelInfoR\x06models\x12%\n" +
-	"\x0emodels_command\x18\x13 \x01(\tR\rmodelsCommand\"\xc4\x02\n" +
+	"\x0emodels_command\x18\x13 \x01(\tR\rmodelsCommand\"\xc8\x02\n" +
 	"\x0eAgentModelInfo\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
-	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1f\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x02 \x01(\tR\tactorPtid\x12\x1f\n" +
 	"\vprovider_id\x18\x03 \x01(\tR\n" +
 	"providerId\x12\x19\n" +
 	"\bmodel_id\x18\x04 \x01(\tR\amodelId\x12!\n" +

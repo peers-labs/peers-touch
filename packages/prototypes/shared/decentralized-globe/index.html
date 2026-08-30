@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Peers-Touch · Decentralized Globe</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #ffffff; }
+    #globe-container { width: 100%; height: 100%; }
+    .info {
+      position: fixed; bottom: 24px; left: 24px; z-index: 10;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    }
+    .info .brand {
+      display: block; font-size: 13px; font-weight: 600;
+      color: #4a6fa5; letter-spacing: 0.02em;
+    }
+    .info .tagline {
+      display: block; font-size: 11px; color: #8899aa; margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="globe-container"></div>
+  <div class="info">
+    <span class="brand">Peers-Touch Network</span>
+    <span class="tagline">Decentralized · Privacy-First · Global</span>
+  </div>
+
+  <script src="//unpkg.com/globe.gl@2.44.0/dist/globe.gl.min.js"></script>
+  <script src="//unpkg.com/topojson-client@3"></script>
+  <script>
+    // ── Station nodes (cities with Peers-Touch stations) ──
+    const STATIONS = [
+      { lat: 37.7749, lng: -122.4194, city: 'San Francisco', type: 'station' },
+      { lat: 40.7128, lng: -74.006, city: 'New York', type: 'station' },
+      { lat: 51.5074, lng: -0.1278, city: 'London', type: 'station' },
+      { lat: 48.8566, lng: 2.3522, city: 'Paris', type: 'station' },
+      { lat: 52.52, lng: 13.405, city: 'Berlin', type: 'station' },
+      { lat: 35.6762, lng: 139.6503, city: 'Tokyo', type: 'station' },
+      { lat: 31.2304, lng: 121.4737, city: 'Shanghai', type: 'station' },
+      { lat: 1.3521, lng: 103.8198, city: 'Singapore', type: 'station' },
+      { lat: -33.8688, lng: 151.2093, city: 'Sydney', type: 'station' },
+      { lat: 55.7558, lng: 37.6173, city: 'Moscow', type: 'station' },
+      { lat: 25.2048, lng: 55.2708, city: 'Dubai', type: 'station' },
+      { lat: -23.5505, lng: -46.6333, city: 'São Paulo', type: 'station' },
+      { lat: 19.4326, lng: -99.1332, city: 'Mexico City', type: 'station' },
+      { lat: 28.6139, lng: 77.209, city: 'New Delhi', type: 'station' },
+      { lat: 37.5665, lng: 126.978, city: 'Seoul', type: 'station' },
+      { lat: -1.2921, lng: 36.8219, city: 'Nairobi', type: 'station' },
+      { lat: 49.2827, lng: -123.1207, city: 'Vancouver', type: 'station' },
+      { lat: 59.3293, lng: 18.0686, city: 'Stockholm', type: 'station' },
+    ];
+
+    // ── Actor nodes (individual users) ──
+    const ACTORS = [
+      { lat: 34.0522, lng: -118.2437, city: 'Los Angeles', type: 'actor' },
+      { lat: 41.8781, lng: -87.6298, city: 'Chicago', type: 'actor' },
+      { lat: 43.6532, lng: -79.3832, city: 'Toronto', type: 'actor' },
+      { lat: 47.6062, lng: -122.3321, city: 'Seattle', type: 'actor' },
+      { lat: 50.1109, lng: 8.6821, city: 'Frankfurt', type: 'actor' },
+      { lat: 45.4642, lng: 9.19, city: 'Milan', type: 'actor' },
+      { lat: 41.0082, lng: 28.9784, city: 'Istanbul', type: 'actor' },
+      { lat: 22.3193, lng: 114.1694, city: 'Hong Kong', type: 'actor' },
+      { lat: 13.7563, lng: 100.5018, city: 'Bangkok', type: 'actor' },
+      { lat: 39.9042, lng: 116.4074, city: 'Beijing', type: 'actor' },
+      { lat: -34.6037, lng: -58.3816, city: 'Buenos Aires', type: 'actor' },
+      { lat: 33.8688, lng: -6.9215, city: 'Rabat', type: 'actor' },
+      { lat: -26.2041, lng: 28.0473, city: 'Johannesburg', type: 'actor' },
+      { lat: 60.1699, lng: 24.9384, city: 'Helsinki', type: 'actor' },
+      { lat: 35.6892, lng: 51.389, city: 'Tehran', type: 'actor' },
+      { lat: 14.5995, lng: 120.9842, city: 'Manila', type: 'actor' },
+    ];
+
+    const ALL_POINTS = [...STATIONS, ...ACTORS];
+
+    // ── Connection arcs ──
+    function makeArc(fromIdx, toIdx, type) {
+      const from = ALL_POINTS[fromIdx];
+      const to = ALL_POINTS[toIdx];
+      return {
+        startLat: from.lat, startLng: from.lng,
+        endLat: to.lat, endLng: to.lng,
+        type,
+      };
+    }
+
+    const ARCS = [
+      // Relay connections (station-to-station)
+      makeArc(0, 1, 'relay'), makeArc(1, 2, 'relay'), makeArc(2, 3, 'relay'),
+      makeArc(3, 4, 'relay'), makeArc(5, 6, 'relay'), makeArc(6, 7, 'relay'),
+      makeArc(7, 8, 'relay'), makeArc(0, 5, 'relay'), makeArc(2, 9, 'relay'),
+      makeArc(9, 10, 'relay'), makeArc(10, 13, 'relay'), makeArc(13, 7, 'relay'),
+      makeArc(1, 11, 'relay'), makeArc(11, 12, 'relay'), makeArc(0, 16, 'relay'),
+      makeArc(4, 17, 'relay'), makeArc(15, 10, 'relay'), makeArc(14, 5, 'relay'),
+      // Direct connections (actor-to-station or actor-to-actor)
+      makeArc(18, 0, 'direct'), makeArc(19, 1, 'direct'), makeArc(20, 1, 'direct'),
+      makeArc(21, 0, 'direct'), makeArc(22, 4, 'direct'), makeArc(23, 3, 'direct'),
+      makeArc(24, 9, 'direct'), makeArc(25, 7, 'direct'), makeArc(26, 7, 'direct'),
+      makeArc(27, 6, 'direct'), makeArc(28, 11, 'direct'), makeArc(29, 15, 'direct'),
+      makeArc(30, 15, 'direct'), makeArc(31, 17, 'direct'), makeArc(32, 10, 'direct'),
+      makeArc(33, 7, 'direct'),
+    ];
+
+    // ── Colors ──
+    const COLORS = {
+      globeFill: '#f0f5fc',
+      atmosphere: '#a8c8e8',
+      hexFill: 'rgba(120, 170, 220, 0.6)',
+      station: '#2a5f9e',
+      actor: '#5090c8',
+      arcRelay: '#3878b0',
+      arcDirect: '#70b0d8',
+    };
+
+    // ── Init globe ──
+    const container = document.getElementById('globe-container');
+
+    const world = Globe()
+      .backgroundColor('rgba(255,255,255,0)')
+      .showAtmosphere(true)
+      .atmosphereColor(COLORS.atmosphere)
+      .atmosphereAltitude(0.12)
+      .showGraticules(false)
+      // Points (stations + actors)
+      .pointsData(ALL_POINTS)
+      .pointLat('lat')
+      .pointLng('lng')
+      .pointAltitude(d => d.type === 'station' ? 0.03 : 0.015)
+      .pointRadius(d => d.type === 'station' ? 0.4 : 0.22)
+      .pointColor(d => d.type === 'station' ? COLORS.station : COLORS.actor)
+      .pointResolution(12)
+      // Arcs
+      .arcsData(ARCS)
+      .arcStartLat('startLat')
+      .arcStartLng('startLng')
+      .arcEndLat('endLat')
+      .arcEndLng('endLng')
+      .arcColor(d => d.type === 'relay' ? COLORS.arcRelay : COLORS.arcDirect)
+      .arcAltitudeAutoScale(0.35)
+      .arcStroke(d => d.type === 'relay' ? 0.5 : 0.25)
+      .arcDashLength(0.5)
+      .arcDashGap(0.25)
+      .arcDashAnimateTime(() => Math.random() * 4000 + 2000)
+      (container);
+
+    // ── Custom globe material ──
+    const globeMaterial = world.globeMaterial();
+    globeMaterial.color.set(COLORS.globeFill);
+    globeMaterial.emissive.set('#e0eaf8');
+    globeMaterial.emissiveIntensity = 0.15;
+    globeMaterial.shininess = 8;
+
+    // ── Load countries using official topojson-client ──
+    fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
+      .then(res => res.json())
+      .then(worldData => {
+        const countries = topojson.feature(worldData, worldData.objects.countries);
+        world
+          .hexPolygonsData(countries.features)
+          .hexPolygonResolution(3)
+          .hexPolygonMargin(0.3)
+          .hexPolygonAltitude(0.004)
+          .hexPolygonColor(() => COLORS.hexFill);
+      });
+
+    // ── Auto-rotate ──
+    const controls = world.controls();
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.5;
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.1;
+
+    // ── Responsive ──
+    function handleResize() {
+      world.width(container.clientWidth);
+      world.height(container.clientHeight);
+    }
+    window.addEventListener('resize', handleResize);
+
+    // ── Initial camera ──
+    world.pointOfView({ lat: 25, lng: 10, altitude: 2.0 });
+  </script>
+</body>
+</html>

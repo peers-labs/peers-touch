@@ -31,7 +31,7 @@ func (r *audienceGrantRepo) AddGrants(ctx context.Context, postID uint64, grants
 	for _, g := range grants {
 		rows = append(rows, db.SocialPrivateAudienceGrant{
 			PostID:    postID,
-			ActorDID:  g.ActorDID,
+			ActorPtid: g.ActorPTID,
 			Role:      string(g.Role),
 			CreatedAt: now,
 		})
@@ -50,9 +50,9 @@ func (r *audienceGrantRepo) ListGrants(ctx context.Context, postID uint64) ([]do
 	out := make([]domain.AudienceGrant, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, domain.AudienceGrant{
-			PostID:   r.PostID,
-			ActorDID: r.ActorDID,
-			Role:     domain.GrantRole(r.Role),
+			PostID:    r.PostID,
+			ActorPTID: r.ActorPtid,
+			Role:      domain.GrantRole(r.Role),
 		})
 	}
 	return out, nil
@@ -67,12 +67,12 @@ func (r *audienceGrantRepo) DeleteGrants(ctx context.Context, postID uint64) err
 // HasDenyGrant is the SQL-fast-path used by `PrivatePostRepository.GetByID`
 // to short-circuit "viewer is on a CUSTOM_DENY list" before returning a
 // row. Single-row composite-PK lookup, fully indexed.
-func (r *audienceGrantRepo) HasDenyGrant(ctx context.Context, postID uint64, actorDID string) (bool, error) {
+func (r *audienceGrantRepo) HasDenyGrant(ctx context.Context, postID uint64, actorPTID string) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).
 		Model(&db.SocialPrivateAudienceGrant{}).
-		Where("post_id = ? AND actor_did = ? AND role = ?",
-			postID, actorDID, db.AudienceGrantRoleDeny).
+		Where("post_id = ? AND actor_ptid = ? AND role = ?",
+			postID, actorPTID, db.AudienceGrantRoleDeny).
 		Count(&count).Error
 	return count > 0, err
 }

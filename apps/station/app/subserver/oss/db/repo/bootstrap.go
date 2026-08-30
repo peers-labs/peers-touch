@@ -62,6 +62,9 @@ func Bootstrap(ctx context.Context, deps BootstrapDeps) (*BootstrapResult, error
 	if err != nil {
 		return nil, err
 	}
+	if err := MigratePTIDColumns(db); err != nil {
+		return nil, err
+	}
 
 	// AutoMigrate is idempotent. We invoke it defensively so callers
 	// reaching Bootstrap directly (e.g. unit tests) do not need a
@@ -128,6 +131,32 @@ func Bootstrap(ctx context.Context, deps BootstrapDeps) (*BootstrapResult, error
 		return nil, err
 	}
 	return &BootstrapResult{ElapsedMs: time.Since(start).Milliseconds()}, nil
+}
+
+// MigratePTIDColumns performs the one-way W1 identity schema cut before
+// AutoMigrate sees the canonical models. It is safe to call repeatedly.
+func MigratePTIDColumns(db *gorm.DB) error {
+	renames := []struct {
+		table     string
+		legacy    string
+		canonical string
+	}{
+		{table: "oss_files", legacy: "owner_actor_id", canonical: "owner_ptid"},
+		{table: "oss_buckets", legacy: "owner_actor_id", canonical: "owner_ptid"},
+		{table: "oss_audit", legacy: "actor_id", canonical: "actor_ptid"},
+	}
+	for _, rename := range renames {
+		if !db.Migrator().HasTable(rename.table) || !db.Migrator().HasColumn(rename.table, rename.legacy) {
+			continue
+		}
+		if db.Migrator().HasColumn(rename.table, rename.canonical) {
+			return errors.New("oss: table '" + rename.table + "' contains both '" + rename.legacy + "' and '" + rename.canonical + "'")
+		}
+		if err := db.Migrator().RenameColumn(rename.table, rename.legacy, rename.canonical); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // readSchemaVersion returns the schema_version stored in oss_meta,

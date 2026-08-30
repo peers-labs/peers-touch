@@ -184,25 +184,25 @@ type OSSRepository interface {
 
 // OSSObjectQuery is the filter envelope for ListObjects.
 type OSSObjectQuery struct {
-	BucketID     string
-	OwnerActorID string
-	Visibility   string
-	Mime         string
-	Page         int
-	PageSize     int
+	BucketID   string
+	OwnerPTID  string
+	Visibility string
+	Mime       string
+	Page       int
+	PageSize   int
 }
 
 // OSSAuditQuery is the filter envelope for ListAudit.
 type OSSAuditQuery struct {
-	Action   string
-	ActorID  string
-	BucketID string
-	FileKey  string
-	Outcome  string
-	Since    time.Time
-	Until    time.Time
-	Page     int
-	PageSize int
+	Action    string
+	ActorPTID string
+	BucketID  string
+	FileKey   string
+	Outcome   string
+	Since     time.Time
+	Until     time.Time
+	Page      int
+	PageSize  int
 }
 
 // ErrPeerNotFound is returned by SetPeerPin when the requested
@@ -233,7 +233,7 @@ var (
 // service layer is responsible for filling sensible defaults; the
 // repo only writes what it is given.
 type BucketCreateInput struct {
-	OwnerActorID      string
+	OwnerPTID         string
 	Name              string
 	DefaultVisibility string
 	QuotaBytes        int64
@@ -278,7 +278,7 @@ type OSSAuditAppend struct {
 	BucketID         string
 	FileKey          string
 	FileID           string
-	ActorID          string // file owner
+	ActorPTID        string // file owner
 	DashboardActorID string // operator who triggered the change
 	SizeBytes        int64
 	Outcome          string // "ok", "denied", "not_found", "error"
@@ -324,7 +324,7 @@ func (r *ossRepository) ListBuckets(ctx context.Context) ([]domain.OSSBucketSumm
 	}
 	var rows []domain.OSSBucketSummary
 	err := r.db.WithContext(ctx).Table(tblOSSBuckets).
-		Select("id, name, owner_actor_id, kind, system_key, default_visibility, quota_bytes, used_bytes, ttl_days, description, created_at, updated_at").
+		Select("id, name, owner_ptid, kind, system_key, default_visibility, quota_bytes, used_bytes, ttl_days, description, created_at, updated_at").
 		Where("deleted_at IS NULL").
 		Order("created_at ASC").
 		Find(&rows).Error
@@ -355,7 +355,7 @@ func (r *ossRepository) GetBucket(ctx context.Context, bucketID string) (*domain
 	}
 	var row domain.OSSBucketSummary
 	err := r.db.WithContext(ctx).Table(tblOSSBuckets).
-		Select("id, name, owner_actor_id, kind, system_key, default_visibility, quota_bytes, used_bytes, ttl_days, description, created_at, updated_at").
+		Select("id, name, owner_ptid, kind, system_key, default_visibility, quota_bytes, used_bytes, ttl_days, description, created_at, updated_at").
 		Where("id = ? AND deleted_at IS NULL", bucketID).
 		First(&row).Error
 	if err != nil {
@@ -408,8 +408,8 @@ func (r *ossRepository) ListObjects(ctx context.Context, q OSSObjectQuery) ([]do
 	if q.BucketID != "" {
 		tx = tx.Where("bucket_id = ?", q.BucketID)
 	}
-	if q.OwnerActorID != "" {
-		tx = tx.Where("owner_actor_id = ?", q.OwnerActorID)
+	if q.OwnerPTID != "" {
+		tx = tx.Where("owner_ptid = ?", q.OwnerPTID)
 	}
 	if q.Visibility != "" {
 		tx = tx.Where("visibility = ?", q.Visibility)
@@ -433,7 +433,7 @@ func (r *ossRepository) ListObjects(ctx context.Context, q OSSObjectQuery) ([]do
 
 	var rows []domain.OSSObjectSummary
 	err := tx.
-		Select("id, key, name, size, mime, backend, bucket_id, owner_actor_id, visibility, chat_session_id, created_at").
+		Select("id, key, name, size, mime, backend, bucket_id, owner_ptid, visibility, chat_session_id, created_at").
 		Order("created_at DESC").
 		Find(&rows).Error
 	if err != nil {
@@ -454,8 +454,8 @@ func (r *ossRepository) ListAudit(ctx context.Context, q OSSAuditQuery) ([]domai
 	if q.Action != "" {
 		tx = tx.Where("action = ?", q.Action)
 	}
-	if q.ActorID != "" {
-		tx = tx.Where("actor_id = ?", q.ActorID)
+	if q.ActorPTID != "" {
+		tx = tx.Where("actor_ptid = ?", q.ActorPTID)
 	}
 	if q.BucketID != "" {
 		tx = tx.Where("bucket_id = ?", q.BucketID)
@@ -531,14 +531,14 @@ func (r *ossRepository) Usage(ctx context.Context) (*domain.OSSUsageSummary, err
 		// specific LIMIT semantics inside Group) so the behaviour
 		// is identical across sqlite/postgres.
 		type ownerRow struct {
-			OwnerActorID string
-			Bytes        int64
-			Files        int64
+			OwnerPTID string `gorm:"column:owner_ptid"`
+			Bytes     int64
+			Files     int64
 		}
 		var rows []ownerRow
 		if err := r.db.WithContext(ctx).Table(tblOSSFiles).
-			Select("owner_actor_id, coalesce(sum(size),0) as bytes, count(*) as files").
-			Group("owner_actor_id").
+			Select("owner_ptid, coalesce(sum(size),0) as bytes, count(*) as files").
+			Group("owner_ptid").
 			Find(&rows).Error; err != nil {
 			return nil, err
 		}
@@ -549,7 +549,7 @@ func (r *ossRepository) Usage(ctx context.Context) (*domain.OSSUsageSummary, err
 				break
 			}
 			out.TopOwners = append(out.TopOwners, domain.OSSOwnerUsage{
-				OwnerActorID: r.OwnerActorID, Bytes: r.Bytes, Files: r.Files,
+				OwnerPTID: r.OwnerPTID, Bytes: r.Bytes, Files: r.Files,
 			})
 		}
 
@@ -805,7 +805,7 @@ const (
 type bucketRow struct {
 	ID                string         `gorm:"primaryKey;column:id"`
 	Name              string         `gorm:"column:name"`
-	OwnerActorID      string         `gorm:"column:owner_actor_id"`
+	OwnerPTID         string         `gorm:"column:owner_ptid"`
 	Kind              string         `gorm:"column:kind"`
 	SystemKey         string         `gorm:"column:system_key"`
 	DefaultVisibility string         `gorm:"column:default_visibility"`
@@ -825,7 +825,7 @@ func (r *ossRepository) CreateBucket(ctx context.Context, in BucketCreateInput) 
 	if r.db == nil {
 		return nil, ErrBucketBadInput
 	}
-	owner := strings.TrimSpace(in.OwnerActorID)
+	owner := strings.TrimSpace(in.OwnerPTID)
 	name := strings.TrimSpace(in.Name)
 	if owner == "" || name == "" {
 		return nil, ErrBucketBadInput
@@ -840,7 +840,7 @@ func (r *ossRepository) CreateBucket(ctx context.Context, in BucketCreateInput) 
 	row := bucketRow{
 		ID:                newDashboardULID(now),
 		Name:              name,
-		OwnerActorID:      owner,
+		OwnerPTID:         owner,
 		Kind:              bucketKindUser,
 		DefaultVisibility: in.DefaultVisibility,
 		QuotaBytes:        in.QuotaBytes,
@@ -942,7 +942,7 @@ type fileRow struct {
 	Mime          string     `gorm:"column:mime"`
 	Backend       string     `gorm:"column:backend"`
 	BucketID      string     `gorm:"column:bucket_id"`
-	OwnerActorID  string     `gorm:"column:owner_actor_id"`
+	OwnerPTID     string     `gorm:"column:owner_ptid"`
 	Visibility    string     `gorm:"column:visibility"`
 	ChatSessionID string     `gorm:"column:chat_session_id"`
 	Sha256        string     `gorm:"column:sha256"`
@@ -966,7 +966,7 @@ func toAdminDetail(r *fileRow) *domain.OSSObjectAdminDetail {
 		Mime:          r.Mime,
 		Backend:       r.Backend,
 		BucketID:      r.BucketID,
-		OwnerActorID:  r.OwnerActorID,
+		OwnerPTID:     r.OwnerPTID,
 		Visibility:    r.Visibility,
 		ChatSessionID: r.ChatSessionID,
 		Sha256:        r.Sha256,
@@ -1298,7 +1298,7 @@ type auditRow struct {
 	Action           string    `gorm:"column:action"`
 	FileKey          string    `gorm:"column:file_key"`
 	BucketID         string    `gorm:"column:bucket_id"`
-	ActorID          string    `gorm:"column:actor_id"`
+	ActorPTID        string    `gorm:"column:actor_ptid"`
 	PeerStationID    string    `gorm:"column:peer_station_id"`
 	SizeBytes        int64     `gorm:"column:size_bytes"`
 	Outcome          string    `gorm:"column:outcome"`
@@ -1322,7 +1322,7 @@ func (r *ossRepository) RecordOSSAudit(ctx context.Context, evt OSSAuditAppend) 
 		Action:           evt.Action,
 		FileKey:          evt.FileKey,
 		BucketID:         evt.BucketID,
-		ActorID:          evt.ActorID,
+		ActorPTID:        evt.ActorPTID,
 		FileID:           evt.FileID,
 		DashboardActorID: evt.DashboardActorID,
 		SizeBytes:        evt.SizeBytes,

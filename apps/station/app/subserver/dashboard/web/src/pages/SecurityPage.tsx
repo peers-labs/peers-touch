@@ -372,8 +372,8 @@ export default function SecurityPage() {
             <Input />
           </Form.Item>
 
-          <Form.Item name="did" label="DID (optional)">
-            <Input placeholder="Optional: Decentralized Identifier" />
+          <Form.Item name="ptid" label="PTID (optional)">
+            <Input placeholder="Optional: Peers-Touch identifier" />
           </Form.Item>
         </Form>
       </Modal>

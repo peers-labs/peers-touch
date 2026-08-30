@@ -16,7 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const OwnerHeader = "X-Peers-Actor-Id"
+const OwnerPTIDHeader = "X-Peers-Actor-Ptid"
 
 type Handler struct {
 	service *application.Service
@@ -34,7 +34,7 @@ func NewHandler(service *application.Service) *Handler {
 
 func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	ctx := request.Context()
-	ownerID := strings.TrimSpace(request.Header.Get(OwnerHeader))
+	ownerPtid := strings.TrimSpace(request.Header.Get(OwnerPTIDHeader))
 
 	if request.URL.Path == "/healthz" && request.Method == http.MethodGet {
 		writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
@@ -42,16 +42,16 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	if request.URL.Path == "/v1/notes:search" && request.Method == http.MethodGet {
-		h.handleSearch(ctx, writer, request, ownerID)
+		h.handleSearch(ctx, writer, request, ownerPtid)
 		return
 	}
 
 	if request.URL.Path == "/v1/notes" {
 		switch request.Method {
 		case http.MethodGet:
-			h.handleList(ctx, writer, request, ownerID)
+			h.handleList(ctx, writer, request, ownerPtid)
 		case http.MethodPost:
-			h.handleCreate(ctx, writer, request, ownerID)
+			h.handleCreate(ctx, writer, request, ownerPtid)
 		default:
 			writeError(writer, http.StatusMethodNotAllowed, "ERROR_CODE_METHOD_NOT_ALLOWED", "method not allowed")
 		}
@@ -66,37 +66,37 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 
 	switch {
 	case action == "" && request.Method == http.MethodGet:
-		h.handleGet(ctx, writer, request, ownerID, noteID)
+		h.handleGet(ctx, writer, request, ownerPtid, noteID)
 	case action == "" && request.Method == http.MethodPatch:
-		h.handleUpdate(ctx, writer, request, ownerID, noteID)
+		h.handleUpdate(ctx, writer, request, ownerPtid, noteID)
 	case action == "" && request.Method == http.MethodDelete:
-		h.handleDelete(ctx, writer, ownerID, noteID)
+		h.handleDelete(ctx, writer, ownerPtid, noteID)
 	case action == "restore" && request.Method == http.MethodPost:
-		h.handleRestore(ctx, writer, ownerID, noteID)
+		h.handleRestore(ctx, writer, ownerPtid, noteID)
 	default:
 		writeError(writer, http.StatusMethodNotAllowed, "ERROR_CODE_METHOD_NOT_ALLOWED", "method not allowed")
 	}
 }
 
-func (h *Handler) handleCreate(ctx context.Context, writer http.ResponseWriter, request *http.Request, ownerID string) {
+func (h *Handler) handleCreate(ctx context.Context, writer http.ResponseWriter, request *http.Request, ownerPtid string) {
 	var req model.CreateNoteRequest
 	if !bindProto(writer, request, &req) {
 		return
 	}
-	resp, err := h.service.Create(ctx, ownerID, &req)
+	resp, err := h.service.Create(ctx, ownerPtid, &req)
 	writeProtoOrError(writer, http.StatusCreated, resp, err)
 }
 
-func (h *Handler) handleGet(ctx context.Context, writer http.ResponseWriter, request *http.Request, ownerID string, noteID string) {
+func (h *Handler) handleGet(ctx context.Context, writer http.ResponseWriter, request *http.Request, ownerPtid string, noteID string) {
 	req := &model.GetNoteRequest{
 		NoteId:         noteID,
 		IncludeDeleted: parseBool(request.URL.Query().Get("include_deleted")),
 	}
-	resp, err := h.service.Get(ctx, ownerID, req)
+	resp, err := h.service.Get(ctx, ownerPtid, req)
 	writeProtoOrError(writer, http.StatusOK, resp, err)
 }
 
-func (h *Handler) handleList(ctx context.Context, writer http.ResponseWriter, request *http.Request, ownerID string) {
+func (h *Handler) handleList(ctx context.Context, writer http.ResponseWriter, request *http.Request, ownerPtid string) {
 	query := request.URL.Query()
 	req := &model.ListNotesRequest{
 		PageSize:       parseInt32(query.Get("page_size")),
@@ -104,31 +104,31 @@ func (h *Handler) handleList(ctx context.Context, writer http.ResponseWriter, re
 		OrderBy:        query.Get("order_by"),
 		IncludeDeleted: parseBool(query.Get("include_deleted")),
 	}
-	resp, err := h.service.List(ctx, ownerID, req)
+	resp, err := h.service.List(ctx, ownerPtid, req)
 	writeProtoOrError(writer, http.StatusOK, resp, err)
 }
 
-func (h *Handler) handleUpdate(ctx context.Context, writer http.ResponseWriter, request *http.Request, ownerID string, noteID string) {
+func (h *Handler) handleUpdate(ctx context.Context, writer http.ResponseWriter, request *http.Request, ownerPtid string, noteID string) {
 	var req model.UpdateNoteRequest
 	if !bindProto(writer, request, &req) {
 		return
 	}
 	req.NoteId = noteID
-	resp, err := h.service.Update(ctx, ownerID, &req)
+	resp, err := h.service.Update(ctx, ownerPtid, &req)
 	writeProtoOrError(writer, http.StatusOK, resp, err)
 }
 
-func (h *Handler) handleDelete(ctx context.Context, writer http.ResponseWriter, ownerID string, noteID string) {
-	resp, err := h.service.Delete(ctx, ownerID, &model.DeleteNoteRequest{NoteId: noteID})
+func (h *Handler) handleDelete(ctx context.Context, writer http.ResponseWriter, ownerPtid string, noteID string) {
+	resp, err := h.service.Delete(ctx, ownerPtid, &model.DeleteNoteRequest{NoteId: noteID})
 	writeProtoOrError(writer, http.StatusOK, resp, err)
 }
 
-func (h *Handler) handleRestore(ctx context.Context, writer http.ResponseWriter, ownerID string, noteID string) {
-	resp, err := h.service.Restore(ctx, ownerID, &model.RestoreNoteRequest{NoteId: noteID})
+func (h *Handler) handleRestore(ctx context.Context, writer http.ResponseWriter, ownerPtid string, noteID string) {
+	resp, err := h.service.Restore(ctx, ownerPtid, &model.RestoreNoteRequest{NoteId: noteID})
 	writeProtoOrError(writer, http.StatusOK, resp, err)
 }
 
-func (h *Handler) handleSearch(ctx context.Context, writer http.ResponseWriter, request *http.Request, ownerID string) {
+func (h *Handler) handleSearch(ctx context.Context, writer http.ResponseWriter, request *http.Request, ownerPtid string) {
 	query := request.URL.Query()
 	req := &model.SearchNotesRequest{
 		Query:     query.Get("q"),
@@ -136,7 +136,7 @@ func (h *Handler) handleSearch(ctx context.Context, writer http.ResponseWriter, 
 		PageToken: query.Get("page_token"),
 		OrderBy:   query.Get("order_by"),
 	}
-	resp, err := h.service.Search(ctx, ownerID, req)
+	resp, err := h.service.Search(ctx, ownerPtid, req)
 	writeProtoOrError(writer, http.StatusOK, resp, err)
 }
 

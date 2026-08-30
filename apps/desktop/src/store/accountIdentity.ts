@@ -18,7 +18,7 @@ interface AccountIdentityStore {
   switchAccount: (id: string) => Promise<void>;
   unlockWithPin: (accountId: string, pin: string) => Promise<void>;
   reset: () => void;
-  hydrate: (actorId: string) => Promise<void>;
+  hydrate: (actorPtid: string) => Promise<void>;
 }
 
 let loadPromise: Promise<void> | null = null;
@@ -52,7 +52,7 @@ export const useAccountIdentityStore = createDesktopStore<AccountIdentityStore>(
     set({ ...initialState });
   },
 
-  hydrate: async (_actorId: string) => {
+  hydrate: async (_actorPtid: string) => {
     await get().load();
   },
 

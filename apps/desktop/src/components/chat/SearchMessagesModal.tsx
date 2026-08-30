@@ -199,7 +199,7 @@ export function SearchMessagesModal({
   const [localQuery, setLocalQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<SearchFilter>('all');
   const {
-    currentUserDid,
+    currentUserPtid,
     groupMembers,
     searchQuery,
     searchResults,
@@ -212,7 +212,7 @@ export function SearchMessagesModal({
     setScrollToMessageUlid,
     openThread,
   } = useActiveSocialChatSlice((state) => ({
-    currentUserDid: state.currentUserDid,
+    currentUserPtid: state.currentUserPtid,
     groupMembers: state.groupMembers,
     searchQuery: state.searchQuery,
     searchResults: state.searchResults,
@@ -272,13 +272,13 @@ export function SearchMessagesModal({
   const decoratedResults = useMemo<DecoratedSearchResult[]>(
     () => searchResults.map((result) => {
       const member = result.scope === 'group'
-        ? groupMembers[result.conversationId]?.find((item) => item.ptid === result.senderDid)
+        ? groupMembers[result.conversationId]?.find((item) => item.ptid === result.senderPtid)
         : undefined;
-      const senderLabel = result.senderDid === currentUserDid
+      const senderLabel = result.senderPtid === currentUserPtid
         ? t('chat.social.thread.you')
         : result.scope === 'friend'
           ? result.conversationName
-          : member?.nickname || shortDid(result.senderDid) || t('chat.social.search.senderUnknown');
+          : member?.nickname || shortDid(result.senderPtid) || t('chat.social.search.senderUnknown');
       return {
         fileKind: fileKindForResult(result),
         isThread: isThreadResult(result),
@@ -286,7 +286,7 @@ export function SearchMessagesModal({
         senderLabel,
       };
     }),
-    [currentUserDid, groupMembers, searchResults, t],
+    [currentUserPtid, groupMembers, searchResults, t],
   );
 
   const filterCounts = useMemo(

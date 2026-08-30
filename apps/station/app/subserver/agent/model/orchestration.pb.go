@@ -1321,7 +1321,7 @@ type CollaborationTask struct {
 	Description   string                  `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	EngineType    CollaborationEngineType `protobuf:"varint,4,opt,name=engine_type,json=engineType,proto3,enum=peers_touch.model.agent.v1.CollaborationEngineType" json:"engine_type,omitempty"`
 	Status        CollaborationTaskStatus `protobuf:"varint,5,opt,name=status,proto3,enum=peers_touch.model.agent.v1.CollaborationTaskStatus" json:"status,omitempty"`
-	GoalOwnerId   string                  `protobuf:"bytes,6,opt,name=goal_owner_id,json=goalOwnerId,proto3" json:"goal_owner_id,omitempty"`
+	GoalOwnerPtid string                  `protobuf:"bytes,6,opt,name=goal_owner_ptid,json=goalOwnerPtid,proto3" json:"goal_owner_ptid,omitempty"`
 	WorkspaceId   string                  `protobuf:"bytes,7,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
 	BudgetTokens  float64                 `protobuf:"fixed64,8,opt,name=budget_tokens,json=budgetTokens,proto3" json:"budget_tokens,omitempty"`
 	BudgetMoney   float64                 `protobuf:"fixed64,9,opt,name=budget_money,json=budgetMoney,proto3" json:"budget_money,omitempty"`
@@ -1399,9 +1399,9 @@ func (x *CollaborationTask) GetStatus() CollaborationTaskStatus {
 	return CollaborationTaskStatus_COLLABORATION_TASK_STATUS_UNSPECIFIED
 }
 
-func (x *CollaborationTask) GetGoalOwnerId() string {
+func (x *CollaborationTask) GetGoalOwnerPtid() string {
 	if x != nil {
-		return x.GoalOwnerId
+		return x.GoalOwnerPtid
 	}
 	return ""
 }
@@ -1593,7 +1593,7 @@ type TaskRun struct {
 	Description         string                  `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	Surface             TaskSurface             `protobuf:"varint,4,opt,name=surface,proto3,enum=peers_touch.model.agent.v1.TaskSurface" json:"surface,omitempty"`
 	Status              CollaborationTaskStatus `protobuf:"varint,5,opt,name=status,proto3,enum=peers_touch.model.agent.v1.CollaborationTaskStatus" json:"status,omitempty"`
-	OwnerActorId        string                  `protobuf:"bytes,6,opt,name=owner_actor_id,json=ownerActorId,proto3" json:"owner_actor_id,omitempty"`
+	OwnerActorPtid      string                  `protobuf:"bytes,6,opt,name=owner_actor_ptid,json=ownerActorPtid,proto3" json:"owner_actor_ptid,omitempty"`
 	WorkspaceId         string                  `protobuf:"bytes,7,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
 	RootTurnId          string                  `protobuf:"bytes,8,opt,name=root_turn_id,json=rootTurnId,proto3" json:"root_turn_id,omitempty"`
 	CurrentCheckpointId string                  `protobuf:"bytes,9,opt,name=current_checkpoint_id,json=currentCheckpointId,proto3" json:"current_checkpoint_id,omitempty"`
@@ -1671,9 +1671,9 @@ func (x *TaskRun) GetStatus() CollaborationTaskStatus {
 	return CollaborationTaskStatus_COLLABORATION_TASK_STATUS_UNSPECIFIED
 }
 
-func (x *TaskRun) GetOwnerActorId() string {
+func (x *TaskRun) GetOwnerActorPtid() string {
 	if x != nil {
-		return x.OwnerActorId
+		return x.OwnerActorPtid
 	}
 	return ""
 }
@@ -4227,7 +4227,7 @@ type CreateCollaborationTaskRequest struct {
 	Title         string                  `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
 	Description   string                  `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	EngineType    CollaborationEngineType `protobuf:"varint,3,opt,name=engine_type,json=engineType,proto3,enum=peers_touch.model.agent.v1.CollaborationEngineType" json:"engine_type,omitempty"`
-	GoalOwnerId   string                  `protobuf:"bytes,4,opt,name=goal_owner_id,json=goalOwnerId,proto3" json:"goal_owner_id,omitempty"`
+	GoalOwnerPtid string                  `protobuf:"bytes,4,opt,name=goal_owner_ptid,json=goalOwnerPtid,proto3" json:"goal_owner_ptid,omitempty"`
 	WorkspaceId   *string                 `protobuf:"bytes,5,opt,name=workspace_id,json=workspaceId,proto3,oneof" json:"workspace_id,omitempty"`
 	BudgetTokens  float64                 `protobuf:"fixed64,6,opt,name=budget_tokens,json=budgetTokens,proto3" json:"budget_tokens,omitempty"`
 	BudgetMoney   float64                 `protobuf:"fixed64,7,opt,name=budget_money,json=budgetMoney,proto3" json:"budget_money,omitempty"`
@@ -4289,9 +4289,9 @@ func (x *CreateCollaborationTaskRequest) GetEngineType() CollaborationEngineType
 	return CollaborationEngineType_COLLABORATION_ENGINE_TYPE_UNSPECIFIED
 }
 
-func (x *CreateCollaborationTaskRequest) GetGoalOwnerId() string {
+func (x *CreateCollaborationTaskRequest) GetGoalOwnerPtid() string {
 	if x != nil {
-		return x.GoalOwnerId
+		return x.GoalOwnerPtid
 	}
 	return ""
 }
@@ -4480,7 +4480,7 @@ func (x *GetCollaborationTaskResponse) GetNodes() []*TaskNode {
 
 type ListCollaborationTasksRequest struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
-	OwnerId       string                  `protobuf:"bytes,1,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	OwnerPtid     string                  `protobuf:"bytes,1,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
 	Status        CollaborationTaskStatus `protobuf:"varint,2,opt,name=status,proto3,enum=peers_touch.model.agent.v1.CollaborationTaskStatus" json:"status,omitempty"`
 	Page          int32                   `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
 	PageSize      int32                   `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
@@ -4518,9 +4518,9 @@ func (*ListCollaborationTasksRequest) Descriptor() ([]byte, []int) {
 	return file_domain_agent_orchestration_proto_rawDescGZIP(), []int{33}
 }
 
-func (x *ListCollaborationTasksRequest) GetOwnerId() string {
+func (x *ListCollaborationTasksRequest) GetOwnerPtid() string {
 	if x != nil {
-		return x.OwnerId
+		return x.OwnerPtid
 	}
 	return ""
 }
@@ -5930,15 +5930,15 @@ var File_domain_agent_orchestration_proto protoreflect.FileDescriptor
 
 const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\n" +
-	" domain/agent/orchestration.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xef\x05\n" +
+	" domain/agent/orchestration.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x82\x06\n" +
 	"\x11CollaborationTask\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12T\n" +
 	"\vengine_type\x18\x04 \x01(\x0e23.peers_touch.model.agent.v1.CollaborationEngineTypeR\n" +
 	"engineType\x12K\n" +
-	"\x06status\x18\x05 \x01(\x0e23.peers_touch.model.agent.v1.CollaborationTaskStatusR\x06status\x12\"\n" +
-	"\rgoal_owner_id\x18\x06 \x01(\tR\vgoalOwnerId\x12!\n" +
+	"\x06status\x18\x05 \x01(\x0e23.peers_touch.model.agent.v1.CollaborationTaskStatusR\x06status\x12&\n" +
+	"\x0fgoal_owner_ptid\x18\x06 \x01(\tR\rgoalOwnerPtid\x12!\n" +
 	"\fworkspace_id\x18\a \x01(\tR\vworkspaceId\x12#\n" +
 	"\rbudget_tokens\x18\b \x01(\x01R\fbudgetTokens\x12!\n" +
 	"\fbudget_money\x18\t \x01(\x01R\vbudgetMoney\x12$\n" +
@@ -5952,7 +5952,7 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\x04meta\x18\x0e \x03(\v27.peers_touch.model.agent.v1.CollaborationTask.MetaEntryR\x04meta\x1a7\n" +
 	"\tMetaEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc4\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01R\rgoal_owner_id\"\xc4\x03\n" +
 	"\bTaskNode\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12$\n" +
@@ -5966,14 +5966,14 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\n" +
 	"started_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
-	"\bended_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xed\x05\n" +
+	"\bended_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xf1\x05\n" +
 	"\aTaskRun\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12A\n" +
 	"\asurface\x18\x04 \x01(\x0e2'.peers_touch.model.agent.v1.TaskSurfaceR\asurface\x12K\n" +
-	"\x06status\x18\x05 \x01(\x0e23.peers_touch.model.agent.v1.CollaborationTaskStatusR\x06status\x12$\n" +
-	"\x0eowner_actor_id\x18\x06 \x01(\tR\fownerActorId\x12!\n" +
+	"\x06status\x18\x05 \x01(\x0e23.peers_touch.model.agent.v1.CollaborationTaskStatusR\x06status\x12(\n" +
+	"\x10owner_actor_ptid\x18\x06 \x01(\tR\x0eownerActorPtid\x12!\n" +
 	"\fworkspace_id\x18\a \x01(\tR\vworkspaceId\x12 \n" +
 	"\froot_turn_id\x18\b \x01(\tR\n" +
 	"rootTurnId\x122\n" +
@@ -6252,13 +6252,13 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\rfailure_count\x18\x03 \x01(\x05R\ffailureCount\x121\n" +
 	"\x14consecutive_failures\x18\x04 \x01(\x05R\x13consecutiveFailures\x12B\n" +
 	"\x0flast_failure_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\rlastFailureAt\x12>\n" +
-	"\rlast_reset_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vlastResetAt\"\xdf\x04\n" +
+	"\rlast_reset_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vlastResetAt\"\xf2\x04\n" +
 	"\x1eCreateCollaborationTaskRequest\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12T\n" +
 	"\vengine_type\x18\x03 \x01(\x0e23.peers_touch.model.agent.v1.CollaborationEngineTypeR\n" +
-	"engineType\x12\"\n" +
-	"\rgoal_owner_id\x18\x04 \x01(\tR\vgoalOwnerId\x12&\n" +
+	"engineType\x12&\n" +
+	"\x0fgoal_owner_ptid\x18\x04 \x01(\tR\rgoalOwnerPtid\x12&\n" +
 	"\fworkspace_id\x18\x05 \x01(\tH\x00R\vworkspaceId\x88\x01\x01\x12#\n" +
 	"\rbudget_tokens\x18\x06 \x01(\x01R\fbudgetTokens\x12!\n" +
 	"\fbudget_money\x18\a \x01(\x01R\vbudgetMoney\x12$\n" +
@@ -6269,19 +6269,20 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\tMetaEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0f\n" +
-	"\r_workspace_id\"d\n" +
+	"\r_workspace_idR\rgoal_owner_id\"d\n" +
 	"\x1fCreateCollaborationTaskResponse\x12A\n" +
 	"\x04task\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.CollaborationTaskR\x04task\"6\n" +
 	"\x1bGetCollaborationTaskRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\"\x9d\x01\n" +
 	"\x1cGetCollaborationTaskResponse\x12A\n" +
 	"\x04task\x18\x01 \x01(\v2-.peers_touch.model.agent.v1.CollaborationTaskR\x04task\x12:\n" +
-	"\x05nodes\x18\x02 \x03(\v2$.peers_touch.model.agent.v1.TaskNodeR\x05nodes\"\xb8\x01\n" +
-	"\x1dListCollaborationTasksRequest\x12\x19\n" +
-	"\bowner_id\x18\x01 \x01(\tR\aownerId\x12K\n" +
+	"\x05nodes\x18\x02 \x03(\v2$.peers_touch.model.agent.v1.TaskNodeR\x05nodes\"\xc6\x01\n" +
+	"\x1dListCollaborationTasksRequest\x12\x1d\n" +
+	"\n" +
+	"owner_ptid\x18\x01 \x01(\tR\townerPtid\x12K\n" +
 	"\x06status\x18\x02 \x01(\x0e23.peers_touch.model.agent.v1.CollaborationTaskStatusR\x06status\x12\x12\n" +
 	"\x04page\x18\x03 \x01(\x05R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\"{\n" +
+	"\tpage_size\x18\x04 \x01(\x05R\bpageSizeR\bowner_id\"{\n" +
 	"\x1eListCollaborationTasksResponse\x12C\n" +
 	"\x05tasks\x18\x01 \x03(\v2-.peers_touch.model.agent.v1.CollaborationTaskR\x05tasks\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x05R\x05total\"\x85\x03\n" +

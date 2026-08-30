@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/core/core.proto.
  */
 export const file_domain_core_core: GenFile = /*@__PURE__*/
-  fileDesc("ChZkb21haW4vY29yZS9jb3JlLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jb3JlLnYxIisKBFBlZXISDwoHcGVlcl9pZBgBIAEoCRISCgptdWx0aWFkZHJzGAIgAygJIpcBCgdQcm9maWxlEhAKCGFjdG9yX2lkGAEgASgJEgsKA2JpbxgCIAEoCRI+CgZmaWVsZHMYAyADKAsyLi5wZWVyc190b3VjaC5tb2RlbC5jb3JlLnYxLlByb2ZpbGUuRmllbGRzRW50cnkaLQoLRmllbGRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4AUJDWkFnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbDttb2RlbGIGcHJvdG8z");
+  fileDesc("ChZkb21haW4vY29yZS9jb3JlLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jb3JlLnYxIisKBFBlZXISDwoHcGVlcl9pZBgBIAEoCRISCgptdWx0aWFkZHJzGAIgAygJIpkBCgdQcm9maWxlEhIKCmFjdG9yX3B0aWQYASABKAkSCwoDYmlvGAIgASgJEj4KBmZpZWxkcxgDIAMoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLmNvcmUudjEuUHJvZmlsZS5GaWVsZHNFbnRyeRotCgtGaWVsZHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM");
 
 /**
  * Peer: 对等节点
@@ -43,9 +43,9 @@ export const PeerSchema: GenMessage<Peer> = /*@__PURE__*/
  */
 export type Profile = Message<"peers_touch.model.core.v1.Profile"> & {
   /**
-   * @generated from field: string actor_id = 1;
+   * @generated from field: string actor_ptid = 1;
    */
-  actorId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string bio = 2;

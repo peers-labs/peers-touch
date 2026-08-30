@@ -2,19 +2,19 @@ package domain
 
 import "context"
 
-// ActorResolver bridges the gap between the DID-based identity surface
-// used in `Audience` (where actors are `string` DIDs to keep the proto
+// ActorResolver bridges the gap between the PTID-based identity surface
+// used in `Audience` (where actors are string PTIDs to keep the proto
 // federation-ready) and the internal numeric `actor_id` used by all
 // repositories.
 //
-// A typical resolution call looks up `[]actor_did → []actor_id` so the
+// A typical resolution call looks up `[]actor_ptid → []actor_id` so the
 // server can persist CUSTOM_* allow/deny lists efficiently keyed by
-// `actor_did` (the same DID can survive an actor's local numeric id
-// rotation, and may originate from a future federated peer). DIDs that
+// `actor_ptid` (the same PTID can survive an actor's local numeric id
+// rotation, and may originate from a future federated peer). PTIDs that
 // don't resolve to a known local actor are returned as a zero ID — the
 // application layer decides whether that's a soft warning ("invitee not
 // yet on this Station, will become visible when they join") or a hard
-// 400 ("typo in the DID list").
+// 400 ("typo in the PTID list").
 //
 // This is a CONTRACT interface — implementations live elsewhere
 // (typically `frame/touch/actor`); the social subserver wires a default
@@ -22,16 +22,16 @@ import "context"
 // chat / actor subservers ratify their lookup APIs. See the P3 entry in
 // `.dev-workflow/20260427-193038/plan.md §6`.
 type ActorResolver interface {
-	// ResolveDIDs maps each input DID to the corresponding local actor
+	// ResolvePTIDs maps each input PTID to the corresponding local actor
 	// id. The output slice has the same length and order as the input;
-	// unknown DIDs map to 0. Implementations MUST NOT return an error
-	// for "unknown DID" — they only return errors for transport / DB
+	// unknown PTIDs map to 0. Implementations MUST NOT return an error
+	// for "unknown PTID" — they only return errors for transport / DB
 	// failures.
-	ResolveDIDs(ctx context.Context, actorDIDs []string) ([]uint64, error)
+	ResolvePTIDs(ctx context.Context, actorPTIDs []string) ([]uint64, error)
 
-	// ResolveID is the inverse of `ResolveDIDs` for a single id. Used
+	// ResolveID is the inverse of `ResolvePTIDs` for a single id. Used
 	// when constructing a `Viewer` from the JWT subject (which carries
-	// the local numeric id but not the DID).
+	// the local numeric id but not the PTID).
 	ResolveID(ctx context.Context, actorID uint64) (string, error)
 }
 
@@ -53,8 +53,8 @@ type ActorResolver interface {
 // a real implementation in P3; until then GROUP-audience posts will
 // effectively bypass membership checks (logged as a WARN at startup).
 type GroupMembershipChecker interface {
-	IsMember(ctx context.Context, groupID, actorID uint64) (bool, error)
-	MembershipsForViewer(ctx context.Context, viewerID uint64) ([]uint64, error)
+	IsMember(ctx context.Context, groupID uint64, actorPTID string) (bool, error)
+	MembershipsForViewer(ctx context.Context, viewerPTID string) ([]uint64, error)
 }
 
 // MediaResolver bridges to the OSS subserver. Moments image / video
@@ -80,7 +80,7 @@ type GroupMembershipChecker interface {
 // The resolver is intentionally side-effect-free: it does NOT bind the
 // CID to the author or perform OSS-side bookkeeping. That's a P3.5
 // hardening once peers-oss exposes per-actor uploader records (current
-// in-tree OSS subserver does not record `UploaderDid` on upload).
+// in-tree OSS subserver does not record `UploaderPtid` on upload).
 type MediaResolver interface {
 	// ValidateCIDs returns nil iff every CID in the slice is well-
 	// formed and references an object known to the local OSS
