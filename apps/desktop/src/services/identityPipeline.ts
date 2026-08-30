@@ -5,7 +5,7 @@ export type IdentityChangeReason = 'login' | 'logout' | 'switch' | 'unlock' | 'o
 export interface IdentityChangePayload {
   reason: IdentityChangeReason;
   /** `null` only for logout. */
-  actorId: string | null;
+  actorPtid: string | null;
   loginMethod: string | null;
 }
 
@@ -43,6 +43,13 @@ export function registerIdentityHandler(
 }
 
 export async function runIdentityPipeline(payload: IdentityChangePayload): Promise<IdentityPipelineResult> {
+  if (payload.reason !== 'logout' && !payload.actorPtid?.startsWith('ptid:')) {
+    throw new IdentityPipelineError([{
+      handlerName: 'validate-actor-ptid',
+      error: new Error('identity change requires canonical actor PTID'),
+      durationMs: 0,
+    }]);
+  }
   const failures: IdentityHandlerFailure[] = [];
   for (const { name, fn } of orderedHandlers) {
     const t0 = performance.now();

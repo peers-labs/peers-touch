@@ -403,7 +403,7 @@ type Group struct {
 	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                                                                    // 群组名称
 	Description     string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`                                                                      // 群组描述
 	AvatarCid       string                 `protobuf:"bytes,4,opt,name=avatar_cid,json=avatarCid,proto3" json:"avatar_cid,omitempty"`                                                         // 群组头像（IPFS CID）
-	OwnerDid        string                 `protobuf:"bytes,5,opt,name=owner_did,json=ownerDid,proto3" json:"owner_did,omitempty"`                                                            // 群主 DID
+	OwnerPtid       string                 `protobuf:"bytes,5,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`                                                         // 群主 PTID
 	Type            GroupType              `protobuf:"varint,6,opt,name=type,proto3,enum=peers_touch.model.chat.v1.GroupType" json:"type,omitempty"`                                          // 群组类型
 	Visibility      GroupVisibility        `protobuf:"varint,7,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibility" json:"visibility,omitempty"`                        // 可见性
 	MemberCount     int32                  `protobuf:"varint,8,opt,name=member_count,json=memberCount,proto3" json:"member_count,omitempty"`                                                  // 成员数量
@@ -477,9 +477,9 @@ func (x *Group) GetAvatarCid() string {
 	return ""
 }
 
-func (x *Group) GetOwnerDid() string {
+func (x *Group) GetOwnerPtid() string {
 	if x != nil {
-		return x.OwnerDid
+		return x.OwnerPtid
 	}
 	return ""
 }
@@ -571,7 +571,7 @@ type GroupMember struct {
 	Muted                  bool                   `protobuf:"varint,5,opt,name=muted,proto3" json:"muted,omitempty"`                                        // 是否被禁言
 	MutedUntil             *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=muted_until,json=mutedUntil,proto3" json:"muted_until,omitempty"`             // 禁言截止时间
 	JoinedAt               *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
-	InvitedBy              string                 `protobuf:"bytes,8,opt,name=invited_by,json=invitedBy,proto3" json:"invited_by,omitempty"`                                              // 邀请人 DID
+	InvitedBy              string                 `protobuf:"bytes,8,opt,name=invited_by,json=invitedBy,proto3" json:"invited_by,omitempty"`                                              // 邀请人 PTID
 	ActorHomeStationPeerId string                 `protobuf:"bytes,9,opt,name=actor_home_station_peer_id,json=actorHomeStationPeerId,proto3" json:"actor_home_station_peer_id,omitempty"` // Actor Home Station peer id for federation routing
 	ActorHomeStationDomain string                 `protobuf:"bytes,10,opt,name=actor_home_station_domain,json=actorHomeStationDomain,proto3" json:"actor_home_station_domain,omitempty"`  // Actor Home Station display/domain hint
 	unknownFields          protoimpl.UnknownFields
@@ -693,11 +693,11 @@ func (x *GroupMember) GetActorHomeStationDomain() string {
 // produced by a Sender-Keys-capable client. Station rejects send
 // requests that populate it (see `SendGroupMessageRequest`).
 type GroupMessage struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Ulid      string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
-	GroupUlid string                 `protobuf:"bytes,2,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	SenderDid string                 `protobuf:"bytes,3,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
-	Type      GroupMessageType       `protobuf:"varint,4,opt,name=type,proto3,enum=peers_touch.model.chat.v1.GroupMessageType" json:"type,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Ulid       string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
+	GroupUlid  string                 `protobuf:"bytes,2,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
+	SenderPtid string                 `protobuf:"bytes,3,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
+	Type       GroupMessageType       `protobuf:"varint,4,opt,name=type,proto3,enum=peers_touch.model.chat.v1.GroupMessageType" json:"type,omitempty"`
 	// DEPRECATED: always empty for new messages. Plaintext bodies were
 	// dropped when group chat moved to Sender Keys. Kept around so old
 	// rows in already-shipped local SQLCipher caches still parse; new
@@ -714,8 +714,8 @@ type GroupMessage struct {
 	// reply_to_ulid so clients can reply to a reply while preserving
 	// the thread root.
 	ThreadRootUlid string                 `protobuf:"bytes,16,opt,name=thread_root_ulid,json=threadRootUlid,proto3" json:"thread_root_ulid,omitempty"`
-	MentionedDids  []string               `protobuf:"bytes,8,rep,name=mentioned_dids,json=mentionedDids,proto3" json:"mentioned_dids,omitempty"` // @的成员
-	MentionAll     bool                   `protobuf:"varint,9,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`         // @全体成员
+	MentionedPtids []string               `protobuf:"bytes,8,rep,name=mentioned_ptids,json=mentionedPtids,proto3" json:"mentioned_ptids,omitempty"` // @的成员
+	MentionAll     bool                   `protobuf:"varint,9,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`            // @全体成员
 	SentAt         *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
 	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
@@ -784,9 +784,9 @@ func (x *GroupMessage) GetGroupUlid() string {
 	return ""
 }
 
-func (x *GroupMessage) GetSenderDid() string {
+func (x *GroupMessage) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderDid
+		return x.SenderPtid
 	}
 	return ""
 }
@@ -827,9 +827,9 @@ func (x *GroupMessage) GetThreadRootUlid() string {
 	return ""
 }
 
-func (x *GroupMessage) GetMentionedDids() []string {
+func (x *GroupMessage) GetMentionedPtids() []string {
 	if x != nil {
-		return x.MentionedDids
+		return x.MentionedPtids
 	}
 	return nil
 }
@@ -892,14 +892,14 @@ func (x *GroupMessage) GetEditedAt() *timestamppb.Timestamp {
 //
 // AAD layout (bound via AES-GCM associated data):
 //
-//	group_ulid || 0x1F || sender_did || 0x1F
+//	group_ulid || 0x1F || sender_ptid || 0x1F
 //	  || sender_key_id (4B big-endian) || 0x1F
 //	  || counter      (4B big-endian)
 //
 // `signature` covers the SHA-256 of the same bytes that go into
 // AAD, concatenated with the ciphertext, and is verified against
 // `sender_sig_pub` carried in the SenderKeyDistributionMessage that
-// originally introduced this `(sender_did, sender_key_id)` to the
+// originally introduced this `(sender_ptid, sender_key_id)` to the
 // receiver. Verification failure MUST surface a "possibly forged"
 // warning and MUST NOT silently fall back to plaintext.
 type GroupCiphertext struct {
@@ -910,15 +910,15 @@ type GroupCiphertext struct {
 	// KDF labels, or the signature cover-bytes ever change.
 	Version uint32 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
 	// Owner of the sender chain that produced this message. Always
-	// equal to `GroupMessage.sender_did`; stored here too because
+	// equal to `GroupMessage.sender_ptid`; stored here too because
 	// `GroupCiphertext` decodes in isolation inside crypto code paths
 	// that do not have the surrounding GroupMessage on hand.
-	SenderDid string `protobuf:"bytes,2,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
+	SenderPtid string `protobuf:"bytes,2,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
 	// Sender-key id. Bumps on every forced rotation (member add /
 	// remove / user-triggered "Reset group encryption"). Pair
-	// (sender_did, sender_key_id) uniquely identifies a chain.
+	// (sender_ptid, sender_key_id) uniquely identifies a chain.
 	SenderKeyId uint32 `protobuf:"varint,3,opt,name=sender_key_id,json=senderKeyId,proto3" json:"sender_key_id,omitempty"`
-	// Strictly increasing within (sender_did, sender_key_id). Used
+	// Strictly increasing within (sender_ptid, sender_key_id). Used
 	// by receivers to fast-forward the chain and by the AAD bind to
 	// prevent replay across counters.
 	Counter    uint32 `protobuf:"varint,4,opt,name=counter,proto3" json:"counter,omitempty"`
@@ -966,9 +966,9 @@ func (x *GroupCiphertext) GetVersion() uint32 {
 	return 0
 }
 
-func (x *GroupCiphertext) GetSenderDid() string {
+func (x *GroupCiphertext) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderDid
+		return x.SenderPtid
 	}
 	return ""
 }
@@ -1010,7 +1010,7 @@ func (x *GroupCiphertext) GetSignature() []byte {
 type SenderKeyDistributionMessage struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	GroupUlid   string                 `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	SenderDid   string                 `protobuf:"bytes,2,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
+	SenderPtid  string                 `protobuf:"bytes,2,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
 	SenderKeyId uint32                 `protobuf:"varint,3,opt,name=sender_key_id,json=senderKeyId,proto3" json:"sender_key_id,omitempty"`
 	// 32-byte chain key, the seed of the receiving hash chain.
 	ChainKey []byte `protobuf:"bytes,4,opt,name=chain_key,json=chainKey,proto3" json:"chain_key,omitempty"`
@@ -1020,7 +1020,7 @@ type SenderKeyDistributionMessage struct {
 	// semantics).
 	Counter uint32 `protobuf:"varint,5,opt,name=counter,proto3" json:"counter,omitempty"`
 	// Ed25519 public key (32 B). Recipients use this to verify every
-	// GroupCiphertext.signature attributed to this (sender_did,
+	// GroupCiphertext.signature attributed to this (sender_ptid,
 	// sender_key_id) pair. The matching private key never leaves the
 	// sender's device.
 	SenderSigPub  []byte `protobuf:"bytes,6,opt,name=sender_sig_pub,json=senderSigPub,proto3" json:"sender_sig_pub,omitempty"`
@@ -1065,9 +1065,9 @@ func (x *SenderKeyDistributionMessage) GetGroupUlid() string {
 	return ""
 }
 
-func (x *SenderKeyDistributionMessage) GetSenderDid() string {
+func (x *SenderKeyDistributionMessage) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderDid
+		return x.SenderPtid
 	}
 	return ""
 }
@@ -1108,9 +1108,9 @@ type GroupSkdmEnvelope struct {
 	state                      protoimpl.MessageState `protogen:"open.v1"`
 	GroupUlid                  string                 `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
 	MembershipEpoch            int64                  `protobuf:"varint,2,opt,name=membership_epoch,json=membershipEpoch,proto3" json:"membership_epoch,omitempty"`
-	SenderDid                  string                 `protobuf:"bytes,3,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
+	SenderPtid                 string                 `protobuf:"bytes,3,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
 	SenderKeyId                uint32                 `protobuf:"varint,4,opt,name=sender_key_id,json=senderKeyId,proto3" json:"sender_key_id,omitempty"`
-	RecipientDid               string                 `protobuf:"bytes,5,opt,name=recipient_did,json=recipientDid,proto3" json:"recipient_did,omitempty"`
+	RecipientPtid              string                 `protobuf:"bytes,5,opt,name=recipient_ptid,json=recipientPtid,proto3" json:"recipient_ptid,omitempty"`
 	RecipientDeviceId          string                 `protobuf:"bytes,6,opt,name=recipient_device_id,json=recipientDeviceId,proto3" json:"recipient_device_id,omitempty"`
 	RecipientHomeStationPeerId string                 `protobuf:"bytes,7,opt,name=recipient_home_station_peer_id,json=recipientHomeStationPeerId,proto3" json:"recipient_home_station_peer_id,omitempty"`
 	EncryptedPayload           []byte                 `protobuf:"bytes,8,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
@@ -1165,9 +1165,9 @@ func (x *GroupSkdmEnvelope) GetMembershipEpoch() int64 {
 	return 0
 }
 
-func (x *GroupSkdmEnvelope) GetSenderDid() string {
+func (x *GroupSkdmEnvelope) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderDid
+		return x.SenderPtid
 	}
 	return ""
 }
@@ -1179,9 +1179,9 @@ func (x *GroupSkdmEnvelope) GetSenderKeyId() uint32 {
 	return 0
 }
 
-func (x *GroupSkdmEnvelope) GetRecipientDid() string {
+func (x *GroupSkdmEnvelope) GetRecipientPtid() string {
 	if x != nil {
-		return x.RecipientDid
+		return x.RecipientPtid
 	}
 	return ""
 }
@@ -1569,8 +1569,8 @@ type GroupInvitation struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ulid          string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
 	GroupUlid     string                 `protobuf:"bytes,2,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	InviterDid    string                 `protobuf:"bytes,3,opt,name=inviter_did,json=inviterDid,proto3" json:"inviter_did,omitempty"`
-	InviteeDid    string                 `protobuf:"bytes,4,opt,name=invitee_did,json=inviteeDid,proto3" json:"invitee_did,omitempty"`
+	InviterPtid   string                 `protobuf:"bytes,3,opt,name=inviter_ptid,json=inviterPtid,proto3" json:"inviter_ptid,omitempty"`
+	InviteePtid   string                 `protobuf:"bytes,4,opt,name=invitee_ptid,json=inviteePtid,proto3" json:"invitee_ptid,omitempty"`
 	Status        GroupInvitationStatus  `protobuf:"varint,5,opt,name=status,proto3,enum=peers_touch.model.chat.v1.GroupInvitationStatus" json:"status,omitempty"`
 	ExpireAt      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expire_at,json=expireAt,proto3" json:"expire_at,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -1622,16 +1622,16 @@ func (x *GroupInvitation) GetGroupUlid() string {
 	return ""
 }
 
-func (x *GroupInvitation) GetInviterDid() string {
+func (x *GroupInvitation) GetInviterPtid() string {
 	if x != nil {
-		return x.InviterDid
+		return x.InviterPtid
 	}
 	return ""
 }
 
-func (x *GroupInvitation) GetInviteeDid() string {
+func (x *GroupInvitation) GetInviteePtid() string {
 	if x != nil {
-		return x.InviteeDid
+		return x.InviteePtid
 	}
 	return ""
 }
@@ -2068,7 +2068,7 @@ type CreateGroupRequest struct {
 	Description             string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	Type                    GroupType              `protobuf:"varint,3,opt,name=type,proto3,enum=peers_touch.model.chat.v1.GroupType" json:"type,omitempty"`
 	Visibility              GroupVisibility        `protobuf:"varint,4,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibility" json:"visibility,omitempty"`
-	InitialMemberDids       []string               `protobuf:"bytes,5,rep,name=initial_member_dids,json=initialMemberDids,proto3" json:"initial_member_dids,omitempty"`                   // 初始成员
+	InitialMemberPtids      []string               `protobuf:"bytes,5,rep,name=initial_member_ptids,json=initialMemberPtids,proto3" json:"initial_member_ptids,omitempty"`                // 初始成员
 	InitialFederatedMembers []*FederatedActorRef   `protobuf:"bytes,6,rep,name=initial_federated_members,json=initialFederatedMembers,proto3" json:"initial_federated_members,omitempty"` // Initial cross-Station members with routing metadata.
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
@@ -2132,9 +2132,9 @@ func (x *CreateGroupRequest) GetVisibility() GroupVisibility {
 	return GroupVisibility_GROUP_VISIBILITY_UNSPECIFIED
 }
 
-func (x *CreateGroupRequest) GetInitialMemberDids() []string {
+func (x *CreateGroupRequest) GetInitialMemberPtids() []string {
 	if x != nil {
-		return x.InitialMemberDids
+		return x.InitialMemberPtids
 	}
 	return nil
 }
@@ -2533,7 +2533,7 @@ func (x *UpdateGroupResponse) GetGroup() *Group {
 type InviteToGroupRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GroupUlid     string                 `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	InviteeDids   []string               `protobuf:"bytes,2,rep,name=invitee_dids,json=inviteeDids,proto3" json:"invitee_dids,omitempty"`
+	InviteePtids  []string               `protobuf:"bytes,2,rep,name=invitee_ptids,json=inviteePtids,proto3" json:"invitee_ptids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2575,9 +2575,9 @@ func (x *InviteToGroupRequest) GetGroupUlid() string {
 	return ""
 }
 
-func (x *InviteToGroupRequest) GetInviteeDids() []string {
+func (x *InviteToGroupRequest) GetInviteePtids() []string {
 	if x != nil {
-		return x.InviteeDids
+		return x.InviteePtids
 	}
 	return nil
 }
@@ -2816,7 +2816,7 @@ func (x *LeaveGroupResponse) GetSuccess() bool {
 type TransferGroupOwnershipRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	GroupUlid     string                 `protobuf:"bytes,1,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	NextOwnerDid  string                 `protobuf:"bytes,2,opt,name=next_owner_did,json=nextOwnerDid,proto3" json:"next_owner_did,omitempty"`
+	NextOwnerPtid string                 `protobuf:"bytes,2,opt,name=next_owner_ptid,json=nextOwnerPtid,proto3" json:"next_owner_ptid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2858,9 +2858,9 @@ func (x *TransferGroupOwnershipRequest) GetGroupUlid() string {
 	return ""
 }
 
-func (x *TransferGroupOwnershipRequest) GetNextOwnerDid() string {
+func (x *TransferGroupOwnershipRequest) GetNextOwnerPtid() string {
 	if x != nil {
-		return x.NextOwnerDid
+		return x.NextOwnerPtid
 	}
 	return ""
 }
@@ -3348,7 +3348,7 @@ type SendGroupMessageRequest struct {
 	Content          string                    `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
 	Attachments      []*GroupMessageAttachment `protobuf:"bytes,4,rep,name=attachments,proto3" json:"attachments,omitempty"`
 	ReplyToUlid      string                    `protobuf:"bytes,5,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`
-	MentionedDids    []string                  `protobuf:"bytes,6,rep,name=mentioned_dids,json=mentionedDids,proto3" json:"mentioned_dids,omitempty"`
+	MentionedPtids   []string                  `protobuf:"bytes,6,rep,name=mentioned_ptids,json=mentionedPtids,proto3" json:"mentioned_ptids,omitempty"`
 	MentionAll       bool                      `protobuf:"varint,7,opt,name=mention_all,json=mentionAll,proto3" json:"mention_all,omitempty"`
 	EncryptedPayload []byte                    `protobuf:"bytes,8,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
 	// Optional explicit thread root. If omitted and reply_to_ulid is
@@ -3427,9 +3427,9 @@ func (x *SendGroupMessageRequest) GetReplyToUlid() string {
 	return ""
 }
 
-func (x *SendGroupMessageRequest) GetMentionedDids() []string {
+func (x *SendGroupMessageRequest) GetMentionedPtids() []string {
 	if x != nil {
-		return x.MentionedDids
+		return x.MentionedPtids
 	}
 	return nil
 }
@@ -4168,7 +4168,7 @@ type GroupOfflineMessage struct {
 	state         protoimpl.MessageState    `protogen:"open.v1"`
 	Ulid          string                    `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
 	GroupUlid     string                    `protobuf:"bytes,2,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`
-	ReceiverDid   string                    `protobuf:"bytes,3,opt,name=receiver_did,json=receiverDid,proto3" json:"receiver_did,omitempty"`
+	ReceiverPtid  string                    `protobuf:"bytes,3,opt,name=receiver_ptid,json=receiverPtid,proto3" json:"receiver_ptid,omitempty"`
 	MessageUlid   string                    `protobuf:"bytes,4,opt,name=message_ulid,json=messageUlid,proto3" json:"message_ulid,omitempty"`
 	Status        GroupOfflineMessageStatus `protobuf:"varint,5,opt,name=status,proto3,enum=peers_touch.model.chat.v1.GroupOfflineMessageStatus" json:"status,omitempty"`
 	ExpireAt      *timestamppb.Timestamp    `protobuf:"bytes,6,opt,name=expire_at,json=expireAt,proto3" json:"expire_at,omitempty"`
@@ -4222,9 +4222,9 @@ func (x *GroupOfflineMessage) GetGroupUlid() string {
 	return ""
 }
 
-func (x *GroupOfflineMessage) GetReceiverDid() string {
+func (x *GroupOfflineMessage) GetReceiverPtid() string {
 	if x != nil {
-		return x.ReceiverDid
+		return x.ReceiverPtid
 	}
 	return ""
 }
@@ -5441,14 +5441,15 @@ var File_domain_chat_group_chat_proto protoreflect.FileDescriptor
 
 const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x1cdomain/chat/group_chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1adomain/common/common.proto\"\x96\x06\n" +
+	"\x1cdomain/chat/group_chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1adomain/common/common.proto\"\x98\x06\n" +
 	"\x05Group\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1d\n" +
 	"\n" +
-	"avatar_cid\x18\x04 \x01(\tR\tavatarCid\x12\x1b\n" +
-	"\towner_did\x18\x05 \x01(\tR\bownerDid\x128\n" +
+	"avatar_cid\x18\x04 \x01(\tR\tavatarCid\x12\x1d\n" +
+	"\n" +
+	"owner_ptid\x18\x05 \x01(\tR\townerPtid\x128\n" +
 	"\x04type\x18\x06 \x01(\x0e2$.peers_touch.model.chat.v1.GroupTypeR\x04type\x12J\n" +
 	"\n" +
 	"visibility\x18\a \x01(\x0e2*.peers_touch.model.chat.v1.GroupVisibilityR\n" +
@@ -5483,19 +5484,19 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"invited_by\x18\b \x01(\tR\tinvitedBy\x12:\n" +
 	"\x1aactor_home_station_peer_id\x18\t \x01(\tR\x16actorHomeStationPeerId\x129\n" +
 	"\x19actor_home_station_domain\x18\n" +
-	" \x01(\tR\x16actorHomeStationDomain\"\xd7\x05\n" +
+	" \x01(\tR\x16actorHomeStationDomain\"\xdb\x05\n" +
 	"\fGroupMessage\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12\x1d\n" +
 	"\n" +
-	"group_ulid\x18\x02 \x01(\tR\tgroupUlid\x12\x1d\n" +
-	"\n" +
-	"sender_did\x18\x03 \x01(\tR\tsenderDid\x12?\n" +
+	"group_ulid\x18\x02 \x01(\tR\tgroupUlid\x12\x1f\n" +
+	"\vsender_ptid\x18\x03 \x01(\tR\n" +
+	"senderPtid\x12?\n" +
 	"\x04type\x18\x04 \x01(\x0e2+.peers_touch.model.chat.v1.GroupMessageTypeR\x04type\x12\x1c\n" +
 	"\acontent\x18\x05 \x01(\tB\x02\x18\x01R\acontent\x12S\n" +
 	"\vattachments\x18\x06 \x03(\v21.peers_touch.model.chat.v1.GroupMessageAttachmentR\vattachments\x12\"\n" +
 	"\rreply_to_ulid\x18\a \x01(\tR\vreplyToUlid\x12(\n" +
-	"\x10thread_root_ulid\x18\x10 \x01(\tR\x0ethreadRootUlid\x12%\n" +
-	"\x0ementioned_dids\x18\b \x03(\tR\rmentionedDids\x12\x1f\n" +
+	"\x10thread_root_ulid\x18\x10 \x01(\tR\x0ethreadRootUlid\x12'\n" +
+	"\x0fmentioned_ptids\x18\b \x03(\tR\x0ementionedPtids\x12\x1f\n" +
 	"\vmention_all\x18\t \x01(\bR\n" +
 	"mentionAll\x123\n" +
 	"\asent_at\x18\n" +
@@ -5506,34 +5507,34 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1a\n" +
 	"\brecalled\x18\r \x01(\bR\brecalled\x12+\n" +
 	"\x11encrypted_payload\x18\x0e \x01(\fR\x10encryptedPayload\x127\n" +
-	"\tedited_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\beditedAt\"\xc6\x01\n" +
+	"\tedited_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\beditedAt\"\xc8\x01\n" +
 	"\x0fGroupCiphertext\x12\x18\n" +
-	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
-	"\n" +
-	"sender_did\x18\x02 \x01(\tR\tsenderDid\x12\"\n" +
+	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1f\n" +
+	"\vsender_ptid\x18\x02 \x01(\tR\n" +
+	"senderPtid\x12\"\n" +
 	"\rsender_key_id\x18\x03 \x01(\rR\vsenderKeyId\x12\x18\n" +
 	"\acounter\x18\x04 \x01(\rR\acounter\x12\x1e\n" +
 	"\n" +
 	"ciphertext\x18\x05 \x01(\fR\n" +
 	"ciphertext\x12\x1c\n" +
-	"\tsignature\x18\x06 \x01(\fR\tsignature\"\xdd\x01\n" +
+	"\tsignature\x18\x06 \x01(\fR\tsignature\"\xdf\x01\n" +
 	"\x1cSenderKeyDistributionMessage\x12\x1d\n" +
 	"\n" +
-	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x1d\n" +
-	"\n" +
-	"sender_did\x18\x02 \x01(\tR\tsenderDid\x12\"\n" +
+	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x1f\n" +
+	"\vsender_ptid\x18\x02 \x01(\tR\n" +
+	"senderPtid\x12\"\n" +
 	"\rsender_key_id\x18\x03 \x01(\rR\vsenderKeyId\x12\x1b\n" +
 	"\tchain_key\x18\x04 \x01(\fR\bchainKey\x12\x18\n" +
 	"\acounter\x18\x05 \x01(\rR\acounter\x12$\n" +
-	"\x0esender_sig_pub\x18\x06 \x01(\fR\fsenderSigPub\"\x88\x04\n" +
+	"\x0esender_sig_pub\x18\x06 \x01(\fR\fsenderSigPub\"\x8c\x04\n" +
 	"\x11GroupSkdmEnvelope\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12)\n" +
-	"\x10membership_epoch\x18\x02 \x01(\x03R\x0fmembershipEpoch\x12\x1d\n" +
-	"\n" +
-	"sender_did\x18\x03 \x01(\tR\tsenderDid\x12\"\n" +
-	"\rsender_key_id\x18\x04 \x01(\rR\vsenderKeyId\x12#\n" +
-	"\rrecipient_did\x18\x05 \x01(\tR\frecipientDid\x12.\n" +
+	"\x10membership_epoch\x18\x02 \x01(\x03R\x0fmembershipEpoch\x12\x1f\n" +
+	"\vsender_ptid\x18\x03 \x01(\tR\n" +
+	"senderPtid\x12\"\n" +
+	"\rsender_key_id\x18\x04 \x01(\rR\vsenderKeyId\x12%\n" +
+	"\x0erecipient_ptid\x18\x05 \x01(\tR\rrecipientPtid\x12.\n" +
 	"\x13recipient_device_id\x18\x06 \x01(\tR\x11recipientDeviceId\x12B\n" +
 	"\x1erecipient_home_station_peer_id\x18\a \x01(\tR\x1arecipientHomeStationPeerId\x12+\n" +
 	"\x11encrypted_payload\x18\b \x01(\fR\x10encryptedPayload\x12'\n" +
@@ -5571,15 +5572,13 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	" \x01(\tR\x12plaintextSha256B64\x122\n" +
 	"\x15ciphertext_sha256_b64\x18\v \x01(\tR\x13ciphertextSha256B64\x12%\n" +
 	"\x0eplaintext_size\x18\f \x01(\x03R\rplaintextSize\x12'\n" +
-	"\x0fciphertext_size\x18\r \x01(\x03R\x0eciphertextSize\"\xc4\x02\n" +
+	"\x0fciphertext_size\x18\r \x01(\x03R\x0eciphertextSize\"\xc8\x02\n" +
 	"\x0fGroupInvitation\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12\x1d\n" +
 	"\n" +
-	"group_ulid\x18\x02 \x01(\tR\tgroupUlid\x12\x1f\n" +
-	"\vinviter_did\x18\x03 \x01(\tR\n" +
-	"inviterDid\x12\x1f\n" +
-	"\vinvitee_did\x18\x04 \x01(\tR\n" +
-	"inviteeDid\x12H\n" +
+	"group_ulid\x18\x02 \x01(\tR\tgroupUlid\x12!\n" +
+	"\finviter_ptid\x18\x03 \x01(\tR\vinviterPtid\x12!\n" +
+	"\finvitee_ptid\x18\x04 \x01(\tR\vinviteePtid\x12H\n" +
 	"\x06status\x18\x05 \x01(\x0e20.peers_touch.model.chat.v1.GroupInvitationStatusR\x06status\x127\n" +
 	"\texpire_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bexpireAt\x129\n" +
 	"\n" +
@@ -5624,15 +5623,15 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\r \x01(\tR\x0eidempotencyKey\x12#\n" +
 	"\revent_payload\x18\x0e \x01(\fR\feventPayload\x129\n" +
 	"\n" +
-	"created_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xea\x02\n" +
+	"created_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xec\x02\n" +
 	"\x12CreateGroupRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x128\n" +
 	"\x04type\x18\x03 \x01(\x0e2$.peers_touch.model.chat.v1.GroupTypeR\x04type\x12J\n" +
 	"\n" +
 	"visibility\x18\x04 \x01(\x0e2*.peers_touch.model.chat.v1.GroupVisibilityR\n" +
-	"visibility\x12.\n" +
-	"\x13initial_member_dids\x18\x05 \x03(\tR\x11initialMemberDids\x12h\n" +
+	"visibility\x120\n" +
+	"\x14initial_member_ptids\x18\x05 \x03(\tR\x12initialMemberPtids\x12h\n" +
 	"\x19initial_federated_members\x18\x06 \x03(\v2,.peers_touch.model.chat.v1.FederatedActorRefR\x17initialFederatedMembers\"M\n" +
 	"\x13CreateGroupResponse\x126\n" +
 	"\x05group\x18\x01 \x01(\v2 .peers_touch.model.chat.v1.GroupR\x05group\"A\n" +
@@ -5667,11 +5666,11 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\v_visibilityB\b\n" +
 	"\x06_muted\"M\n" +
 	"\x13UpdateGroupResponse\x126\n" +
-	"\x05group\x18\x01 \x01(\v2 .peers_touch.model.chat.v1.GroupR\x05group\"X\n" +
+	"\x05group\x18\x01 \x01(\v2 .peers_touch.model.chat.v1.GroupR\x05group\"Z\n" +
 	"\x14InviteToGroupRequest\x12\x1d\n" +
 	"\n" +
-	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12!\n" +
-	"\finvitee_dids\x18\x02 \x03(\tR\vinviteeDids\"e\n" +
+	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12#\n" +
+	"\rinvitee_ptids\x18\x02 \x03(\tR\finviteePtids\"e\n" +
 	"\x15InviteToGroupResponse\x12L\n" +
 	"\vinvitations\x18\x01 \x03(\v2*.peers_touch.model.chat.v1.GroupInvitationR\vinvitations\"Z\n" +
 	"\x10JoinGroupRequest\x12\x1d\n" +
@@ -5686,11 +5685,11 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"\n" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\".\n" +
 	"\x12LeaveGroupResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"d\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"f\n" +
 	"\x1dTransferGroupOwnershipRequest\x12\x1d\n" +
 	"\n" +
-	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12$\n" +
-	"\x0enext_owner_did\x18\x02 \x01(\tR\fnextOwnerDid\"X\n" +
+	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12&\n" +
+	"\x0fnext_owner_ptid\x18\x02 \x01(\tR\rnextOwnerPtid\"X\n" +
 	"\x1eTransferGroupOwnershipResponse\x126\n" +
 	"\x05group\x18\x01 \x01(\v2 .peers_touch.model.chat.v1.GroupR\x05group\"5\n" +
 	"\x14DissolveGroupRequest\x12\x1d\n" +
@@ -5724,15 +5723,15 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\"0\n" +
 	"\x14RemoveMemberResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xeb\x03\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xed\x03\n" +
 	"\x17SendGroupMessageRequest\x12\x1d\n" +
 	"\n" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12?\n" +
 	"\x04type\x18\x02 \x01(\x0e2+.peers_touch.model.chat.v1.GroupMessageTypeR\x04type\x12\x1c\n" +
 	"\acontent\x18\x03 \x01(\tB\x02\x18\x01R\acontent\x12S\n" +
 	"\vattachments\x18\x04 \x03(\v21.peers_touch.model.chat.v1.GroupMessageAttachmentR\vattachments\x12\"\n" +
-	"\rreply_to_ulid\x18\x05 \x01(\tR\vreplyToUlid\x12%\n" +
-	"\x0ementioned_dids\x18\x06 \x03(\tR\rmentionedDids\x12\x1f\n" +
+	"\rreply_to_ulid\x18\x05 \x01(\tR\vreplyToUlid\x12'\n" +
+	"\x0fmentioned_ptids\x18\x06 \x03(\tR\x0ementionedPtids\x12\x1f\n" +
 	"\vmention_all\x18\a \x01(\bR\n" +
 	"mentionAll\x12+\n" +
 	"\x11encrypted_payload\x18\b \x01(\fR\x10encryptedPayload\x12(\n" +
@@ -5793,12 +5792,12 @@ const file_domain_chat_group_chat_proto_rawDesc = "" +
 	"group_ulid\x18\x01 \x01(\tR\tgroupUlid\x12!\n" +
 	"\fmessage_ulid\x18\x02 \x01(\tR\vmessageUlid\"6\n" +
 	"\x1aRecallGroupMessageResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x8f\x03\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x91\x03\n" +
 	"\x13GroupOfflineMessage\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12\x1d\n" +
 	"\n" +
-	"group_ulid\x18\x02 \x01(\tR\tgroupUlid\x12!\n" +
-	"\freceiver_did\x18\x03 \x01(\tR\vreceiverDid\x12!\n" +
+	"group_ulid\x18\x02 \x01(\tR\tgroupUlid\x12#\n" +
+	"\rreceiver_ptid\x18\x03 \x01(\tR\freceiverPtid\x12!\n" +
 	"\fmessage_ulid\x18\x04 \x01(\tR\vmessageUlid\x12L\n" +
 	"\x06status\x18\x05 \x01(\x0e24.peers_touch.model.chat.v1.GroupOfflineMessageStatusR\x06status\x127\n" +
 	"\texpire_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bexpireAt\x12=\n" +

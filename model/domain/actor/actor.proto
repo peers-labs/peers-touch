@@ -47,14 +47,16 @@ enum ActorVisibility {
 }
 
 message ActorRef {
-  uint64 actor_id = 1 [json_name = "actor_id"];
+  reserved 1;
+  reserved "actor_id";
   string ptid = 2;
   string acct = 3;
   ActorKind kind = 4;
 }
 
 message Actor {
-  string id = 1;
+  reserved 1;
+  reserved "id";
   string username = 2;
   string display_name = 3;
   string email = 4;
@@ -62,7 +64,8 @@ message Actor {
   string outbox = 6;
   map<string, string> endpoints = 7;
   bool is_following = 8 [json_name = "is_following"];
-  uint64 actor_id = 9 [json_name = "actor_id"];
+  reserved 9;
+  reserved "actor_id";
   string avatar = 10;
   ActorKind kind = 11;
 
@@ -79,6 +82,7 @@ message Actor {
   // Ed25519 public key for actor-initiated governance signing.
   // Generated at account creation; used to verify actor_signature on ledger events.
   bytes signing_public_key = 17 [json_name = "signing_public_key"];
+  ActorRef ref = 18;
 }
 
 // Identity-owned device signing-key projection used to verify actor-signed

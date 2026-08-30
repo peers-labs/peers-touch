@@ -1,5 +1,5 @@
 export interface MessageReaction {
-  actorId: string;
+  actorPtid: string;
   emoji: string;
 }
 
@@ -21,18 +21,18 @@ export function blocksMessageActionOverlay(
 
 export function beginMessageReactionMutation(
   reactions: readonly MessageReaction[],
-  actorId: string,
+  actorPtid: string,
   emoji: string,
   requestId: number,
 ): MessageReactionMutation {
   const remove = reactions.some(
-    reaction => reaction.actorId === actorId && reaction.emoji === emoji,
+    reaction => reaction.actorPtid === actorPtid && reaction.emoji === emoji,
   );
   const optimisticReactions = remove
     ? reactions.filter(reaction => (
-      reaction.actorId !== actorId || reaction.emoji !== emoji
+      reaction.actorPtid !== actorPtid || reaction.emoji !== emoji
     ))
-    : [...reactions, { actorId, emoji }];
+    : [...reactions, { actorPtid, emoji }];
 
   return {
     emoji,
@@ -45,11 +45,11 @@ export function beginMessageReactionMutation(
 
 export function messageReactionProjectionMatches(
   reactions: readonly MessageReaction[],
-  actorId: string,
+  actorPtid: string,
   mutation: MessageReactionMutation,
 ): boolean {
   const projectionContainsReaction = reactions.some(
-    reaction => reaction.actorId === actorId && reaction.emoji === mutation.emoji,
+    reaction => reaction.actorPtid === actorPtid && reaction.emoji === mutation.emoji,
   );
 
   return mutation.remove ? !projectionContainsReaction : projectionContainsReaction;
@@ -65,14 +65,14 @@ export function visibleMessageReactions(
 
 export function reactionMutationForProjection(
   reactions: readonly MessageReaction[],
-  actorId: string | null,
+  actorPtid: string | null,
   mutation: MessageReactionMutation | undefined,
 ): MessageReactionMutation | undefined {
   if (
-    actorId
+    actorPtid
     && mutation
     && mutation.phase !== 'pending'
-    && messageReactionProjectionMatches(reactions, actorId, mutation)
+    && messageReactionProjectionMatches(reactions, actorPtid, mutation)
   ) {
     return undefined;
   }

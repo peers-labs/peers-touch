@@ -203,16 +203,16 @@ func (OfflineMessageStatus) EnumDescriptor() ([]byte, []int) {
 }
 
 type FriendChatSession struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Ulid            string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
-	ParticipantADid string                 `protobuf:"bytes,2,opt,name=participant_a_did,json=participantADid,proto3" json:"participant_a_did,omitempty"`
-	ParticipantBDid string                 `protobuf:"bytes,3,opt,name=participant_b_did,json=participantBDid,proto3" json:"participant_b_did,omitempty"`
-	LastMessageUlid string                 `protobuf:"bytes,4,opt,name=last_message_ulid,json=lastMessageUlid,proto3" json:"last_message_ulid,omitempty"`
-	LastMessageAt   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_message_at,json=lastMessageAt,proto3" json:"last_message_at,omitempty"`
-	UnreadCountA    int32                  `protobuf:"varint,6,opt,name=unread_count_a,json=unreadCountA,proto3" json:"unread_count_a,omitempty"`
-	UnreadCountB    int32                  `protobuf:"varint,7,opt,name=unread_count_b,json=unreadCountB,proto3" json:"unread_count_b,omitempty"`
-	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Ulid             string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
+	ParticipantAPtid string                 `protobuf:"bytes,2,opt,name=participant_a_ptid,json=participantAPtid,proto3" json:"participant_a_ptid,omitempty"`
+	ParticipantBPtid string                 `protobuf:"bytes,3,opt,name=participant_b_ptid,json=participantBPtid,proto3" json:"participant_b_ptid,omitempty"`
+	LastMessageUlid  string                 `protobuf:"bytes,4,opt,name=last_message_ulid,json=lastMessageUlid,proto3" json:"last_message_ulid,omitempty"`
+	LastMessageAt    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_message_at,json=lastMessageAt,proto3" json:"last_message_at,omitempty"`
+	UnreadCountA     int32                  `protobuf:"varint,6,opt,name=unread_count_a,json=unreadCountA,proto3" json:"unread_count_a,omitempty"`
+	UnreadCountB     int32                  `protobuf:"varint,7,opt,name=unread_count_b,json=unreadCountB,proto3" json:"unread_count_b,omitempty"`
+	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// Enriched participant profiles (populated at query time)
 	ParticipantADisplayName string `protobuf:"bytes,10,opt,name=participant_a_display_name,json=participantADisplayName,proto3" json:"participant_a_display_name,omitempty"`
 	ParticipantAAvatar      string `protobuf:"bytes,11,opt,name=participant_a_avatar,json=participantAAvatar,proto3" json:"participant_a_avatar,omitempty"`
@@ -259,16 +259,16 @@ func (x *FriendChatSession) GetUlid() string {
 	return ""
 }
 
-func (x *FriendChatSession) GetParticipantADid() string {
+func (x *FriendChatSession) GetParticipantAPtid() string {
 	if x != nil {
-		return x.ParticipantADid
+		return x.ParticipantAPtid
 	}
 	return ""
 }
 
-func (x *FriendChatSession) GetParticipantBDid() string {
+func (x *FriendChatSession) GetParticipantBPtid() string {
 	if x != nil {
-		return x.ParticipantBDid
+		return x.ParticipantBPtid
 	}
 	return ""
 }
@@ -344,15 +344,15 @@ func (x *FriendChatSession) GetParticipantBAvatar() string {
 }
 
 type FriendChatMessage struct {
-	state       protoimpl.MessageState     `protogen:"open.v1"`
-	Ulid        string                     `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
-	SessionUlid string                     `protobuf:"bytes,2,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
-	SenderDid   string                     `protobuf:"bytes,3,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
-	ReceiverDid string                     `protobuf:"bytes,4,opt,name=receiver_did,json=receiverDid,proto3" json:"receiver_did,omitempty"`
-	Type        FriendMessageType          `protobuf:"varint,5,opt,name=type,proto3,enum=peers_touch.model.chat.v1.FriendMessageType" json:"type,omitempty"`
-	Content     string                     `protobuf:"bytes,6,opt,name=content,proto3" json:"content,omitempty"`
-	Attachments []*FriendMessageAttachment `protobuf:"bytes,7,rep,name=attachments,proto3" json:"attachments,omitempty"`
-	ReplyToUlid string                     `protobuf:"bytes,8,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`
+	state        protoimpl.MessageState     `protogen:"open.v1"`
+	Ulid         string                     `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
+	SessionUlid  string                     `protobuf:"bytes,2,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
+	SenderPtid   string                     `protobuf:"bytes,3,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
+	ReceiverPtid string                     `protobuf:"bytes,4,opt,name=receiver_ptid,json=receiverPtid,proto3" json:"receiver_ptid,omitempty"`
+	Type         FriendMessageType          `protobuf:"varint,5,opt,name=type,proto3,enum=peers_touch.model.chat.v1.FriendMessageType" json:"type,omitempty"`
+	Content      string                     `protobuf:"bytes,6,opt,name=content,proto3" json:"content,omitempty"`
+	Attachments  []*FriendMessageAttachment `protobuf:"bytes,7,rep,name=attachments,proto3" json:"attachments,omitempty"`
+	ReplyToUlid  string                     `protobuf:"bytes,8,opt,name=reply_to_ulid,json=replyToUlid,proto3" json:"reply_to_ulid,omitempty"`
 	// Root message of the thread this message belongs to. Empty means
 	// the message is not part of a thread. Unlike reply_to_ulid, this
 	// remains stable when replying to a reply inside the same thread.
@@ -422,16 +422,16 @@ func (x *FriendChatMessage) GetSessionUlid() string {
 	return ""
 }
 
-func (x *FriendChatMessage) GetSenderDid() string {
+func (x *FriendChatMessage) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderDid
+		return x.SenderPtid
 	}
 	return ""
 }
 
-func (x *FriendChatMessage) GetReceiverDid() string {
+func (x *FriendChatMessage) GetReceiverPtid() string {
 	if x != nil {
-		return x.ReceiverDid
+		return x.ReceiverPtid
 	}
 	return ""
 }
@@ -637,8 +637,8 @@ func (x *FriendMessageAttachment) GetMediaEncryption() *types.EncryptedMediaDesc
 type MessageEnvelope struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	MessageUlid      string                 `protobuf:"bytes,1,opt,name=message_ulid,json=messageUlid,proto3" json:"message_ulid,omitempty"`
-	SenderDid        string                 `protobuf:"bytes,2,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
-	ReceiverDid      string                 `protobuf:"bytes,3,opt,name=receiver_did,json=receiverDid,proto3" json:"receiver_did,omitempty"`
+	SenderPtid       string                 `protobuf:"bytes,2,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
+	ReceiverPtid     string                 `protobuf:"bytes,3,opt,name=receiver_ptid,json=receiverPtid,proto3" json:"receiver_ptid,omitempty"`
 	SessionUlid      string                 `protobuf:"bytes,4,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
 	EncryptedPayload []byte                 `protobuf:"bytes,5,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
 	Timestamp        int64                  `protobuf:"varint,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
@@ -684,16 +684,16 @@ func (x *MessageEnvelope) GetMessageUlid() string {
 	return ""
 }
 
-func (x *MessageEnvelope) GetSenderDid() string {
+func (x *MessageEnvelope) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderDid
+		return x.SenderPtid
 	}
 	return ""
 }
 
-func (x *MessageEnvelope) GetReceiverDid() string {
+func (x *MessageEnvelope) GetReceiverPtid() string {
 	if x != nil {
-		return x.ReceiverDid
+		return x.ReceiverPtid
 	}
 	return ""
 }
@@ -729,8 +729,8 @@ func (x *MessageEnvelope) GetSignature() string {
 type OfflineMessage struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Ulid             string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
-	ReceiverDid      string                 `protobuf:"bytes,2,opt,name=receiver_did,json=receiverDid,proto3" json:"receiver_did,omitempty"`
-	SenderDid        string                 `protobuf:"bytes,3,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
+	ReceiverPtid     string                 `protobuf:"bytes,2,opt,name=receiver_ptid,json=receiverPtid,proto3" json:"receiver_ptid,omitempty"`
+	SenderPtid       string                 `protobuf:"bytes,3,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
 	SessionUlid      string                 `protobuf:"bytes,4,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
 	EncryptedPayload []byte                 `protobuf:"bytes,5,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
 	Status           OfflineMessageStatus   `protobuf:"varint,6,opt,name=status,proto3,enum=peers_touch.model.chat.v1.OfflineMessageStatus" json:"status,omitempty"`
@@ -779,16 +779,16 @@ func (x *OfflineMessage) GetUlid() string {
 	return ""
 }
 
-func (x *OfflineMessage) GetReceiverDid() string {
+func (x *OfflineMessage) GetReceiverPtid() string {
 	if x != nil {
-		return x.ReceiverDid
+		return x.ReceiverPtid
 	}
 	return ""
 }
 
-func (x *OfflineMessage) GetSenderDid() string {
+func (x *OfflineMessage) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderDid
+		return x.SenderPtid
 	}
 	return ""
 }
@@ -845,7 +845,7 @@ func (x *OfflineMessage) GetUpdatedAt() *timestamppb.Timestamp {
 type SendMessageRequest struct {
 	state            protoimpl.MessageState     `protogen:"open.v1"`
 	SessionUlid      string                     `protobuf:"bytes,1,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
-	ReceiverDid      string                     `protobuf:"bytes,2,opt,name=receiver_did,json=receiverDid,proto3" json:"receiver_did,omitempty"`
+	ReceiverPtid     string                     `protobuf:"bytes,2,opt,name=receiver_ptid,json=receiverPtid,proto3" json:"receiver_ptid,omitempty"`
 	Type             FriendMessageType          `protobuf:"varint,3,opt,name=type,proto3,enum=peers_touch.model.chat.v1.FriendMessageType" json:"type,omitempty"`
 	Content          string                     `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
 	Attachments      []*FriendMessageAttachment `protobuf:"bytes,5,rep,name=attachments,proto3" json:"attachments,omitempty"`
@@ -898,9 +898,9 @@ func (x *SendMessageRequest) GetSessionUlid() string {
 	return ""
 }
 
-func (x *SendMessageRequest) GetReceiverDid() string {
+func (x *SendMessageRequest) GetReceiverPtid() string {
 	if x != nil {
-		return x.ReceiverDid
+		return x.ReceiverPtid
 	}
 	return ""
 }
@@ -1247,10 +1247,10 @@ func (x *SearchFriendMessagesResponse) GetTotal() int32 {
 }
 
 type CreateSessionRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ParticipantDid string                 `protobuf:"bytes,1,opt,name=participant_did,json=participantDid,proto3" json:"participant_did,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ParticipantPtid string                 `protobuf:"bytes,1,opt,name=participant_ptid,json=participantPtid,proto3" json:"participant_ptid,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CreateSessionRequest) Reset() {
@@ -1283,9 +1283,9 @@ func (*CreateSessionRequest) Descriptor() ([]byte, []int) {
 	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *CreateSessionRequest) GetParticipantDid() string {
+func (x *CreateSessionRequest) GetParticipantPtid() string {
 	if x != nil {
-		return x.ParticipantDid
+		return x.ParticipantPtid
 	}
 	return ""
 }
@@ -1948,13 +1948,13 @@ func (x *RelayMessageResponse) GetForwardedTo() string {
 
 // SyncMessages: batch sync pending messages to server (POST /friend-chat/message/sync).
 type SyncMessageItem struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	Ulid        string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
-	SessionUlid string                 `protobuf:"bytes,2,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
-	ReceiverDid string                 `protobuf:"bytes,3,opt,name=receiver_did,json=receiverDid,proto3" json:"receiver_did,omitempty"`
-	Type        FriendMessageType      `protobuf:"varint,4,opt,name=type,proto3,enum=peers_touch.model.chat.v1.FriendMessageType" json:"type,omitempty"`
-	Content     string                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
-	SentAt      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Ulid         string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
+	SessionUlid  string                 `protobuf:"bytes,2,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
+	ReceiverPtid string                 `protobuf:"bytes,3,opt,name=receiver_ptid,json=receiverPtid,proto3" json:"receiver_ptid,omitempty"`
+	Type         FriendMessageType      `protobuf:"varint,4,opt,name=type,proto3,enum=peers_touch.model.chat.v1.FriendMessageType" json:"type,omitempty"`
+	Content      string                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
+	SentAt       *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=sent_at,json=sentAt,proto3" json:"sent_at,omitempty"`
 	// Optional E2E ciphertext. When set, content may be a non-secret placeholder.
 	EncryptedPayload []byte                     `protobuf:"bytes,7,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
 	Attachments      []*FriendMessageAttachment `protobuf:"bytes,8,rep,name=attachments,proto3" json:"attachments,omitempty"`
@@ -2008,9 +2008,9 @@ func (x *SyncMessageItem) GetSessionUlid() string {
 	return ""
 }
 
-func (x *SyncMessageItem) GetReceiverDid() string {
+func (x *SyncMessageItem) GetReceiverPtid() string {
 	if x != nil {
-		return x.ReceiverDid
+		return x.ReceiverPtid
 	}
 	return ""
 }
@@ -2297,7 +2297,7 @@ func (x *GetPendingRequest) GetLimit() int32 {
 type PendingMessageInfo struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Ulid             string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`
-	SenderDid        string                 `protobuf:"bytes,2,opt,name=sender_did,json=senderDid,proto3" json:"sender_did,omitempty"`
+	SenderPtid       string                 `protobuf:"bytes,2,opt,name=sender_ptid,json=senderPtid,proto3" json:"sender_ptid,omitempty"`
 	SessionUlid      string                 `protobuf:"bytes,3,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
 	EncryptedPayload []byte                 `protobuf:"bytes,4,opt,name=encrypted_payload,json=encryptedPayload,proto3" json:"encrypted_payload,omitempty"`
 	CreatedAt        int64                  `protobuf:"varint,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -2342,9 +2342,9 @@ func (x *PendingMessageInfo) GetUlid() string {
 	return ""
 }
 
-func (x *PendingMessageInfo) GetSenderDid() string {
+func (x *PendingMessageInfo) GetSenderPtid() string {
 	if x != nil {
-		return x.SenderDid
+		return x.SenderPtid
 	}
 	return ""
 }
@@ -2505,7 +2505,7 @@ func (x *GetStatsResponse) GetStatus() string {
 
 type SendFriendRequestRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ReceiverDid   string                 `protobuf:"bytes,1,opt,name=receiver_did,json=receiverDid,proto3" json:"receiver_did,omitempty"`
+	ReceiverPtid  string                 `protobuf:"bytes,1,opt,name=receiver_ptid,json=receiverPtid,proto3" json:"receiver_ptid,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2541,9 +2541,9 @@ func (*SendFriendRequestRequest) Descriptor() ([]byte, []int) {
 	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{34}
 }
 
-func (x *SendFriendRequestRequest) GetReceiverDid() string {
+func (x *SendFriendRequestRequest) GetReceiverPtid() string {
 	if x != nil {
-		return x.ReceiverDid
+		return x.ReceiverPtid
 	}
 	return ""
 }
@@ -2897,7 +2897,7 @@ func (x *ListFriendRequestsResponse) GetTotal() int32 {
 
 type BlockUserRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TargetDid     string                 `protobuf:"bytes,1,opt,name=target_did,json=targetDid,proto3" json:"target_did,omitempty"`
+	TargetPtid    string                 `protobuf:"bytes,1,opt,name=target_ptid,json=targetPtid,proto3" json:"target_ptid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2932,9 +2932,9 @@ func (*BlockUserRequest) Descriptor() ([]byte, []int) {
 	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{42}
 }
 
-func (x *BlockUserRequest) GetTargetDid() string {
+func (x *BlockUserRequest) GetTargetPtid() string {
 	if x != nil {
-		return x.TargetDid
+		return x.TargetPtid
 	}
 	return ""
 }
@@ -2985,7 +2985,7 @@ func (x *BlockUserResponse) GetFriend() *Friend {
 
 type UnblockUserRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TargetDid     string                 `protobuf:"bytes,1,opt,name=target_did,json=targetDid,proto3" json:"target_did,omitempty"`
+	TargetPtid    string                 `protobuf:"bytes,1,opt,name=target_ptid,json=targetPtid,proto3" json:"target_ptid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3020,9 +3020,9 @@ func (*UnblockUserRequest) Descriptor() ([]byte, []int) {
 	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{44}
 }
 
-func (x *UnblockUserRequest) GetTargetDid() string {
+func (x *UnblockUserRequest) GetTargetPtid() string {
 	if x != nil {
-		return x.TargetDid
+		return x.TargetPtid
 	}
 	return ""
 }
@@ -3177,7 +3177,7 @@ func (x *ListBlockedUsersResponse) GetTotal() int32 {
 
 type GetFriendshipStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TargetDid     string                 `protobuf:"bytes,1,opt,name=target_did,json=targetDid,proto3" json:"target_did,omitempty"`
+	TargetPtid    string                 `protobuf:"bytes,1,opt,name=target_ptid,json=targetPtid,proto3" json:"target_ptid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3212,9 +3212,9 @@ func (*GetFriendshipStatusRequest) Descriptor() ([]byte, []int) {
 	return file_domain_chat_friend_chat_proto_rawDescGZIP(), []int{48}
 }
 
-func (x *GetFriendshipStatusRequest) GetTargetDid() string {
+func (x *GetFriendshipStatusRequest) GetTargetPtid() string {
 	if x != nil {
-		return x.TargetDid
+		return x.TargetPtid
 	}
 	return ""
 }
@@ -3650,11 +3650,11 @@ var File_domain_chat_friend_chat_proto protoreflect.FileDescriptor
 
 const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddomain/chat/friend_chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16domain/chat/chat.proto\x1a\x1adomain/common/common.proto\"\x8f\x05\n" +
+	"\x1ddomain/chat/friend_chat.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16domain/chat/chat.proto\x1a\x1adomain/common/common.proto\"\x93\x05\n" +
 	"\x11FriendChatSession\x12\x12\n" +
-	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12*\n" +
-	"\x11participant_a_did\x18\x02 \x01(\tR\x0fparticipantADid\x12*\n" +
-	"\x11participant_b_did\x18\x03 \x01(\tR\x0fparticipantBDid\x12*\n" +
+	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12,\n" +
+	"\x12participant_a_ptid\x18\x02 \x01(\tR\x10participantAPtid\x12,\n" +
+	"\x12participant_b_ptid\x18\x03 \x01(\tR\x10participantBPtid\x12*\n" +
 	"\x11last_message_ulid\x18\x04 \x01(\tR\x0flastMessageUlid\x12B\n" +
 	"\x0flast_message_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\rlastMessageAt\x12$\n" +
 	"\x0eunread_count_a\x18\x06 \x01(\x05R\funreadCountA\x12$\n" +
@@ -3667,13 +3667,13 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	" \x01(\tR\x17participantADisplayName\x120\n" +
 	"\x14participant_a_avatar\x18\v \x01(\tR\x12participantAAvatar\x12;\n" +
 	"\x1aparticipant_b_display_name\x18\f \x01(\tR\x17participantBDisplayName\x120\n" +
-	"\x14participant_b_avatar\x18\r \x01(\tR\x12participantBAvatar\"\xf5\x06\n" +
+	"\x14participant_b_avatar\x18\r \x01(\tR\x12participantBAvatar\"\xf9\x06\n" +
 	"\x11FriendChatMessage\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12!\n" +
-	"\fsession_ulid\x18\x02 \x01(\tR\vsessionUlid\x12\x1d\n" +
-	"\n" +
-	"sender_did\x18\x03 \x01(\tR\tsenderDid\x12!\n" +
-	"\freceiver_did\x18\x04 \x01(\tR\vreceiverDid\x12@\n" +
+	"\fsession_ulid\x18\x02 \x01(\tR\vsessionUlid\x12\x1f\n" +
+	"\vsender_ptid\x18\x03 \x01(\tR\n" +
+	"senderPtid\x12#\n" +
+	"\rreceiver_ptid\x18\x04 \x01(\tR\freceiverPtid\x12@\n" +
 	"\x04type\x18\x05 \x01(\x0e2,.peers_touch.model.chat.v1.FriendMessageTypeR\x04type\x12\x18\n" +
 	"\acontent\x18\x06 \x01(\tR\acontent\x12T\n" +
 	"\vattachments\x18\a \x03(\v22.peers_touch.model.chat.v1.FriendMessageAttachmentR\vattachments\x12\"\n" +
@@ -3700,21 +3700,21 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\n" +
 	"visibility\x18\x06 \x01(\tR\n" +
 	"visibility\x12`\n" +
-	"\x10media_encryption\x18\a \x01(\v25.peers_touch.model.common.v1.EncryptedMediaDescriptorR\x0fmediaEncryption\"\x82\x02\n" +
+	"\x10media_encryption\x18\a \x01(\v25.peers_touch.model.common.v1.EncryptedMediaDescriptorR\x0fmediaEncryption\"\x86\x02\n" +
 	"\x0fMessageEnvelope\x12!\n" +
-	"\fmessage_ulid\x18\x01 \x01(\tR\vmessageUlid\x12\x1d\n" +
-	"\n" +
-	"sender_did\x18\x02 \x01(\tR\tsenderDid\x12!\n" +
-	"\freceiver_did\x18\x03 \x01(\tR\vreceiverDid\x12!\n" +
+	"\fmessage_ulid\x18\x01 \x01(\tR\vmessageUlid\x12\x1f\n" +
+	"\vsender_ptid\x18\x02 \x01(\tR\n" +
+	"senderPtid\x12#\n" +
+	"\rreceiver_ptid\x18\x03 \x01(\tR\freceiverPtid\x12!\n" +
 	"\fsession_ulid\x18\x04 \x01(\tR\vsessionUlid\x12+\n" +
 	"\x11encrypted_payload\x18\x05 \x01(\fR\x10encryptedPayload\x12\x1c\n" +
 	"\ttimestamp\x18\x06 \x01(\x03R\ttimestamp\x12\x1c\n" +
-	"\tsignature\x18\a \x01(\tR\tsignature\"\xed\x03\n" +
+	"\tsignature\x18\a \x01(\tR\tsignature\"\xf1\x03\n" +
 	"\x0eOfflineMessage\x12\x12\n" +
-	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12!\n" +
-	"\freceiver_did\x18\x02 \x01(\tR\vreceiverDid\x12\x1d\n" +
-	"\n" +
-	"sender_did\x18\x03 \x01(\tR\tsenderDid\x12!\n" +
+	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12#\n" +
+	"\rreceiver_ptid\x18\x02 \x01(\tR\freceiverPtid\x12\x1f\n" +
+	"\vsender_ptid\x18\x03 \x01(\tR\n" +
+	"senderPtid\x12!\n" +
 	"\fsession_ulid\x18\x04 \x01(\tR\vsessionUlid\x12+\n" +
 	"\x11encrypted_payload\x18\x05 \x01(\fR\x10encryptedPayload\x12G\n" +
 	"\x06status\x18\x06 \x01(\x0e2/.peers_touch.model.chat.v1.OfflineMessageStatusR\x06status\x127\n" +
@@ -3724,10 +3724,10 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xa8\x03\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xaa\x03\n" +
 	"\x12SendMessageRequest\x12!\n" +
-	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12!\n" +
-	"\freceiver_did\x18\x02 \x01(\tR\vreceiverDid\x12@\n" +
+	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12#\n" +
+	"\rreceiver_ptid\x18\x02 \x01(\tR\freceiverPtid\x12@\n" +
 	"\x04type\x18\x03 \x01(\x0e2,.peers_touch.model.chat.v1.FriendMessageTypeR\x04type\x12\x18\n" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x12T\n" +
 	"\vattachments\x18\x05 \x03(\v22.peers_touch.model.chat.v1.FriendMessageAttachmentR\vattachments\x12\"\n" +
@@ -3756,9 +3756,9 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x06offset\x18\x04 \x01(\x05R\x06offset\"~\n" +
 	"\x1cSearchFriendMessagesResponse\x12H\n" +
 	"\bmessages\x18\x01 \x03(\v2,.peers_touch.model.chat.v1.FriendChatMessageR\bmessages\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\x05R\x05total\"?\n" +
-	"\x14CreateSessionRequest\x12'\n" +
-	"\x0fparticipant_did\x18\x01 \x01(\tR\x0eparticipantDid\"y\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"A\n" +
+	"\x14CreateSessionRequest\x12)\n" +
+	"\x10participant_ptid\x18\x01 \x01(\tR\x0fparticipantPtid\"y\n" +
 	"\x15CreateSessionResponse\x12F\n" +
 	"\asession\x18\x01 \x01(\v2,.peers_touch.model.chat.v1.FriendChatSessionR\asession\x12\x18\n" +
 	"\acreated\x18\x02 \x01(\bR\acreated\"B\n" +
@@ -3808,11 +3808,11 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x14RelayMessageResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12=\n" +
 	"\fdelivered_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\vdeliveredAt\x12!\n" +
-	"\fforwarded_to\x18\x03 \x01(\tR\vforwardedTo\"\xcd\x03\n" +
+	"\fforwarded_to\x18\x03 \x01(\tR\vforwardedTo\"\xcf\x03\n" +
 	"\x0fSyncMessageItem\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12!\n" +
-	"\fsession_ulid\x18\x02 \x01(\tR\vsessionUlid\x12!\n" +
-	"\freceiver_did\x18\x03 \x01(\tR\vreceiverDid\x12@\n" +
+	"\fsession_ulid\x18\x02 \x01(\tR\vsessionUlid\x12#\n" +
+	"\rreceiver_ptid\x18\x03 \x01(\tR\freceiverPtid\x12@\n" +
 	"\x04type\x18\x04 \x01(\x0e2,.peers_touch.model.chat.v1.FriendMessageTypeR\x04type\x12\x18\n" +
 	"\acontent\x18\x05 \x01(\tR\acontent\x123\n" +
 	"\asent_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x06sentAt\x12+\n" +
@@ -3831,11 +3831,11 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x06status\x18\x02 \x01(\x05R\x06status\"\x14\n" +
 	"\x12MessageAckResponse\")\n" +
 	"\x11GetPendingRequest\x12\x14\n" +
-	"\x05limit\x18\x01 \x01(\x05R\x05limit\"\xb6\x01\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\"\xb8\x01\n" +
 	"\x12PendingMessageInfo\x12\x12\n" +
-	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12\x1d\n" +
-	"\n" +
-	"sender_did\x18\x02 \x01(\tR\tsenderDid\x12!\n" +
+	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12\x1f\n" +
+	"\vsender_ptid\x18\x02 \x01(\tR\n" +
+	"senderPtid\x12!\n" +
 	"\fsession_ulid\x18\x03 \x01(\tR\vsessionUlid\x12+\n" +
 	"\x11encrypted_payload\x18\x04 \x01(\fR\x10encryptedPayload\x12\x1d\n" +
 	"\n" +
@@ -3845,9 +3845,9 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x0fGetStatsRequest\"U\n" +
 	"\x10GetStatsResponse\x12)\n" +
 	"\x10pending_messages\x18\x01 \x01(\x03R\x0fpendingMessages\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\"W\n" +
-	"\x18SendFriendRequestRequest\x12!\n" +
-	"\freceiver_did\x18\x01 \x01(\tR\vreceiverDid\x12\x18\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\"Y\n" +
+	"\x18SendFriendRequestRequest\x12#\n" +
+	"\rreceiver_ptid\x18\x01 \x01(\tR\freceiverPtid\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"_\n" +
 	"\x19SendFriendRequestResponse\x12B\n" +
 	"\arequest\x18\x01 \x01(\v2(.peers_touch.model.chat.v1.FriendRequestR\arequest\";\n" +
@@ -3868,15 +3868,15 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x06offset\x18\x03 \x01(\x05R\x06offset\"x\n" +
 	"\x1aListFriendRequestsResponse\x12D\n" +
 	"\brequests\x18\x01 \x03(\v2(.peers_touch.model.chat.v1.FriendRequestR\brequests\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\x05R\x05total\"1\n" +
-	"\x10BlockUserRequest\x12\x1d\n" +
-	"\n" +
-	"target_did\x18\x01 \x01(\tR\ttargetDid\"N\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"3\n" +
+	"\x10BlockUserRequest\x12\x1f\n" +
+	"\vtarget_ptid\x18\x01 \x01(\tR\n" +
+	"targetPtid\"N\n" +
 	"\x11BlockUserResponse\x129\n" +
-	"\x06friend\x18\x01 \x01(\v2!.peers_touch.model.chat.v1.FriendR\x06friend\"3\n" +
-	"\x12UnblockUserRequest\x12\x1d\n" +
-	"\n" +
-	"target_did\x18\x01 \x01(\tR\ttargetDid\"/\n" +
+	"\x06friend\x18\x01 \x01(\v2!.peers_touch.model.chat.v1.FriendR\x06friend\"5\n" +
+	"\x12UnblockUserRequest\x12\x1f\n" +
+	"\vtarget_ptid\x18\x01 \x01(\tR\n" +
+	"targetPtid\"/\n" +
 	"\x13UnblockUserResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\"G\n" +
 	"\x17ListBlockedUsersRequest\x12\x14\n" +
@@ -3884,10 +3884,10 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x06offset\x18\x02 \x01(\x05R\x06offset\"x\n" +
 	"\x18ListBlockedUsersResponse\x12F\n" +
 	"\rblocked_users\x18\x01 \x03(\v2!.peers_touch.model.chat.v1.FriendR\fblockedUsers\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\x05R\x05total\";\n" +
-	"\x1aGetFriendshipStatusRequest\x12\x1d\n" +
-	"\n" +
-	"target_did\x18\x01 \x01(\tR\ttargetDid\"X\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"=\n" +
+	"\x1aGetFriendshipStatusRequest\x12\x1f\n" +
+	"\vtarget_ptid\x18\x01 \x01(\tR\n" +
+	"targetPtid\"X\n" +
 	"\x1bGetFriendshipStatusResponse\x129\n" +
 	"\x06friend\x18\x01 \x01(\v2!.peers_touch.model.chat.v1.FriendR\x06friend\"b\n" +
 	"\x1aRecallFriendMessageRequest\x12!\n" +

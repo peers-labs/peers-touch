@@ -159,7 +159,7 @@ export function NotificationBell() {
   const notifications = useNotificationStore((s) => s.notifications);
   const unreadTotal = useNotificationStore((s) => s.unreadTotal);
   const loading = useNotificationStore((s) => s.loading);
-  const authenticatedActorId = useSessionStore((s) => (s.authenticated ? s.currentUser?.actorId ?? null : null));
+  const authenticatedActorPtid = useSessionStore((s) => (s.authenticated ? s.currentUser?.actorPtid ?? null : null));
   const startPolling = useNotificationStore((s) => s.startPolling);
   const stopPolling = useNotificationStore((s) => s.stopPolling);
   const markRead = useNotificationStore((s) => s.markRead);
@@ -168,13 +168,13 @@ export function NotificationBell() {
   const loadNotifications = useNotificationStore((s) => s.loadNotifications);
 
   useEffect(() => {
-    if (!authenticatedActorId) {
+    if (!authenticatedActorPtid) {
       stopPolling();
       return;
     }
     startPolling();
     return () => stopPolling();
-  }, [authenticatedActorId, startPolling, stopPolling]);
+  }, [authenticatedActorPtid, startPolling, stopPolling]);
 
   const handleMarkRead = useCallback((id: string) => {
     markRead([id]);

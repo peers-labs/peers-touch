@@ -122,7 +122,7 @@ export function ChatSessionList() {
     groupMembers,
     groupUnreadCounts,
     lastPreviews,
-    currentUserDid,
+    currentUserPtid,
     currentUserProfile,
     messages,
     activeTab,
@@ -146,7 +146,7 @@ export function ChatSessionList() {
     groupMembers: state.groupMembers,
     groupUnreadCounts: state.groupUnreadCounts,
     lastPreviews: state.lastPreviews,
-    currentUserDid: state.currentUserDid,
+    currentUserPtid: state.currentUserPtid,
     currentUserProfile: state.currentUserProfile,
     messages: state.messages,
     activeTab: state.activeTab,
@@ -184,7 +184,7 @@ export function ChatSessionList() {
       groups,
       groupUnreadCounts,
       lastPreviews,
-      currentUserDid,
+      currentUserPtid,
       conversationLocalState,
       messages,
       peerProfiles,
@@ -194,7 +194,7 @@ export function ChatSessionList() {
 
   const handleSearchSelect = async (c: DesktopIMConversationProjection) => {
     const existingConv = getIMConversations().find(
-      (conv) => conv.id === c.id || (c.peerDid && conv.peerDid === c.peerDid),
+      (conv) => conv.id === c.id || (c.peerPtid && conv.peerPtid === c.peerPtid),
     );
 
     if (existingConv) {
@@ -206,11 +206,11 @@ export function ChatSessionList() {
       return;
     }
 
-    if (c.kind === 'friend' && c.peerDid) {
+    if (c.kind === 'friend' && c.peerPtid) {
       try {
-        await imServiceV1.messaging.createDirect(c.peerDid);
+        await imServiceV1.messaging.createDirect(c.peerPtid);
         await loadSessions();
-        const created = getIMConversations().find((conv) => conv.peerDid === c.peerDid);
+        const created = getIMConversations().find((conv) => conv.peerPtid === c.peerPtid);
         if (created) {
           setSearchText('');
           handleSelect(created);
@@ -230,13 +230,13 @@ export function ChatSessionList() {
 
     const fromConversations = getIMConversations().filter((c) => c.title.toLowerCase().includes(q));
 
-    const existingPeerIds = new Set(fromConversations.map((c) => c.peerDid).filter(Boolean));
-    const myId = currentUserDid || '';
+    const existingPeerIds = new Set(fromConversations.map((c) => c.peerPtid).filter(Boolean));
+    const myId = currentUserPtid || '';
     const fromContacts: DesktopIMConversationProjection[] = friendRequests
       .filter((r) => r.status === 2)
       .map((r) => {
-        const isSender = r.senderId === myId;
-        const peerId = isSender ? r.receiverId : r.senderId;
+        const isSender = r.senderPtid === myId;
+        const peerId = isSender ? r.receiverPtid : r.senderPtid;
         const peerName = isSender ? r.receiverDisplayName : r.senderDisplayName;
         const peerAvatar = isSender ? r.receiverAvatar : r.senderAvatar;
         return { peerId, peerName, peerAvatar };
@@ -249,7 +249,7 @@ export function ChatSessionList() {
         kind: 'friend' as const,
         title: peerName,
         avatar: peerAvatar || '',
-        peerDid: peerId,
+        peerPtid: peerId,
         lastActivityMs: 0,
         unread: 0,
         visibleUnread: 0,
@@ -262,7 +262,7 @@ export function ChatSessionList() {
       }));
 
     return [...fromConversations, ...fromContacts];
-  }, [searchText, getIMConversations, conversations, peerProfiles, friendRequests, currentUserDid]);
+  }, [searchText, getIMConversations, conversations, peerProfiles, friendRequests, currentUserPtid]);
 
   const plusMenuItems = [
     {
@@ -452,11 +452,11 @@ export function ChatSessionList() {
                 } else {
                   text = p.content;
                 }
-                if (c.kind === 'group' && p.senderId) {
-                  const profile = peerProfiles[p.senderId];
-                  const senderShort = p.senderId === currentUserDid
+                if (c.kind === 'group' && p.senderPtid) {
+                  const profile = peerProfiles[p.senderPtid];
+                  const senderShort = p.senderPtid === currentUserPtid
                     ? t('chat.social.preview.you')
-                    : profile?.display_name?.trim() || profile?.username?.trim() || p.senderId.slice(0, 8) + '…';
+                    : profile?.display_name?.trim() || profile?.username?.trim() || p.senderPtid.slice(0, 8) + '…';
                   subtitle = `${senderShort}: ${text}`;
                 } else {
                   subtitle = text;
@@ -515,7 +515,7 @@ export function ChatSessionList() {
                                 groupMembers[c.id] || [],
                                 (ptid, nickname) => resolveActorIdentity({
                                   ptid,
-                                  currentUserDid,
+                                  currentUserPtid,
                                   currentUserProfile,
                                   peerProfiles,
                                   sessions,
@@ -527,7 +527,7 @@ export function ChatSessionList() {
                             />
                           ) : (
                             <span
-                              data-chat-avatar-ptid={c.peerDid || ''}
+                              data-chat-avatar-ptid={c.peerPtid || ''}
                               data-chat-avatar-src={c.avatar || ''}
                               style={{ display: 'inline-flex', flexShrink: 0 }}
                             >

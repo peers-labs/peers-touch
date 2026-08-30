@@ -19,9 +19,9 @@ func TestPost_IsPublic(t *testing.T) {
 		{"SELF not public", &Post{Audience: &model.Audience{Kind: model.Audience_SELF}}, false},
 		{"CUSTOM_DENY base PUBLIC NOT public", &Post{
 			Audience: &model.Audience{
-				Kind:      model.Audience_CUSTOM_DENY,
-				BaseKind:  model.Audience_PUBLIC,
-				ActorDids: []string{"x"},
+				Kind:       model.Audience_CUSTOM_DENY,
+				BaseKind:   model.Audience_PUBLIC,
+				ActorPtids: []string{"x"},
 			},
 		}, false},
 	}

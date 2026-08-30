@@ -25,12 +25,12 @@ const (
 type Circle struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	OwnerId       uint64                 `protobuf:"varint,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	MemberCount   int64                  `protobuf:"varint,7,opt,name=member_count,json=memberCount,proto3" json:"member_count,omitempty"`
+	OwnerPtid     string                 `protobuf:"bytes,8,opt,name=owner_ptid,json=ownerPtid,proto3" json:"owner_ptid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -72,13 +72,6 @@ func (x *Circle) GetId() uint64 {
 	return 0
 }
 
-func (x *Circle) GetOwnerId() uint64 {
-	if x != nil {
-		return x.OwnerId
-	}
-	return 0
-}
-
 func (x *Circle) GetName() string {
 	if x != nil {
 		return x.Name
@@ -114,13 +107,20 @@ func (x *Circle) GetMemberCount() int64 {
 	return 0
 }
 
+func (x *Circle) GetOwnerPtid() string {
+	if x != nil {
+		return x.OwnerPtid
+	}
+	return ""
+}
+
 type CircleMember struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	CircleId uint64                 `protobuf:"varint,1,opt,name=circle_id,json=circleId,proto3" json:"circle_id,omitempty"`
-	// Actor identity. Stored as DID (string) rather than internal uint64
+	// Actor identity. Stored as PTID (string) rather than internal uint64
 	// so cross-Station members can be added in future (still local-only
 	// for v1).
-	ActorDid      string                 `protobuf:"bytes,2,opt,name=actor_did,json=actorDid,proto3" json:"actor_did,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,2,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	AddedAt       *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=added_at,json=addedAt,proto3" json:"added_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -163,9 +163,9 @@ func (x *CircleMember) GetCircleId() uint64 {
 	return 0
 }
 
-func (x *CircleMember) GetActorDid() string {
+func (x *CircleMember) GetActorPtid() string {
 	if x != nil {
-		return x.ActorDid
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -181,8 +181,8 @@ type CreateCircleRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Name        string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Description string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	// Optional initial members (DIDs). Empty allowed.
-	MemberDids    []string `protobuf:"bytes,3,rep,name=member_dids,json=memberDids,proto3" json:"member_dids,omitempty"`
+	// Optional initial members (PTIDs). Empty allowed.
+	MemberPtids   []string `protobuf:"bytes,3,rep,name=member_ptids,json=memberPtids,proto3" json:"member_ptids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -231,9 +231,9 @@ func (x *CreateCircleRequest) GetDescription() string {
 	return ""
 }
 
-func (x *CreateCircleRequest) GetMemberDids() []string {
+func (x *CreateCircleRequest) GetMemberPtids() []string {
 	if x != nil {
-		return x.MemberDids
+		return x.MemberPtids
 	}
 	return nil
 }
@@ -478,7 +478,7 @@ type AddCircleMemberRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	CircleId uint64                 `protobuf:"varint,1,opt,name=circle_id,json=circleId,proto3" json:"circle_id,omitempty"`
 	// Bulk add allowed; deduplicated server-side.
-	MemberDids    []string `protobuf:"bytes,2,rep,name=member_dids,json=memberDids,proto3" json:"member_dids,omitempty"`
+	MemberPtids   []string `protobuf:"bytes,2,rep,name=member_ptids,json=memberPtids,proto3" json:"member_ptids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -520,9 +520,9 @@ func (x *AddCircleMemberRequest) GetCircleId() uint64 {
 	return 0
 }
 
-func (x *AddCircleMemberRequest) GetMemberDids() []string {
+func (x *AddCircleMemberRequest) GetMemberPtids() []string {
 	if x != nil {
-		return x.MemberDids
+		return x.MemberPtids
 	}
 	return nil
 }
@@ -583,7 +583,7 @@ func (x *AddCircleMemberResponse) GetMemberCount() int64 {
 type RemoveCircleMemberRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CircleId      uint64                 `protobuf:"varint,1,opt,name=circle_id,json=circleId,proto3" json:"circle_id,omitempty"`
-	MemberDids    []string               `protobuf:"bytes,2,rep,name=member_dids,json=memberDids,proto3" json:"member_dids,omitempty"`
+	MemberPtids   []string               `protobuf:"bytes,2,rep,name=member_ptids,json=memberPtids,proto3" json:"member_ptids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -625,9 +625,9 @@ func (x *RemoveCircleMemberRequest) GetCircleId() uint64 {
 	return 0
 }
 
-func (x *RemoveCircleMemberRequest) GetMemberDids() []string {
+func (x *RemoveCircleMemberRequest) GetMemberPtids() []string {
 	if x != nil {
-		return x.MemberDids
+		return x.MemberPtids
 	}
 	return nil
 }
@@ -920,26 +920,27 @@ var File_domain_social_circle_proto protoreflect.FileDescriptor
 
 const file_domain_social_circle_proto_rawDesc = "" +
 	"\n" +
-	"\x1adomain/social/circle.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x82\x02\n" +
+	"\x1adomain/social/circle.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x96\x02\n" +
 	"\x06Circle\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x19\n" +
-	"\bowner_id\x18\x02 \x01(\x04R\aownerId\x12\x12\n" +
+	"\x02id\x18\x01 \x01(\x04R\x02id\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x129\n" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12!\n" +
-	"\fmember_count\x18\a \x01(\x03R\vmemberCount\"\x7f\n" +
+	"\fmember_count\x18\a \x01(\x03R\vmemberCount\x12\x1d\n" +
+	"\n" +
+	"owner_ptid\x18\b \x01(\tR\townerPtidJ\x04\b\x02\x10\x03R\bowner_id\"\x81\x01\n" +
 	"\fCircleMember\x12\x1b\n" +
-	"\tcircle_id\x18\x01 \x01(\x04R\bcircleId\x12\x1b\n" +
-	"\tactor_did\x18\x02 \x01(\tR\bactorDid\x125\n" +
-	"\badded_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\aaddedAt\"l\n" +
+	"\tcircle_id\x18\x01 \x01(\x04R\bcircleId\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x02 \x01(\tR\tactorPtid\x125\n" +
+	"\badded_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\aaddedAt\"n\n" +
 	"\x13CreateCircleRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1f\n" +
-	"\vmember_dids\x18\x03 \x03(\tR\n" +
-	"memberDids\"S\n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12!\n" +
+	"\fmember_ptids\x18\x03 \x03(\tR\vmemberPtids\"S\n" +
 	"\x14CreateCircleResponse\x12;\n" +
 	"\x06circle\x18\x01 \x01(\v2#.peers_touch.model.social.v1.CircleR\x06circle\"}\n" +
 	"\x13RenameCircleRequest\x12\x1b\n" +
@@ -952,19 +953,17 @@ const file_domain_social_circle_proto_rawDesc = "" +
 	"\x13DeleteCircleRequest\x12\x1b\n" +
 	"\tcircle_id\x18\x01 \x01(\x04R\bcircleId\"0\n" +
 	"\x14DeleteCircleResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"V\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"X\n" +
 	"\x16AddCircleMemberRequest\x12\x1b\n" +
-	"\tcircle_id\x18\x01 \x01(\x04R\bcircleId\x12\x1f\n" +
-	"\vmember_dids\x18\x02 \x03(\tR\n" +
-	"memberDids\"]\n" +
+	"\tcircle_id\x18\x01 \x01(\x04R\bcircleId\x12!\n" +
+	"\fmember_ptids\x18\x02 \x03(\tR\vmemberPtids\"]\n" +
 	"\x17AddCircleMemberResponse\x12\x1f\n" +
 	"\vadded_count\x18\x01 \x01(\x05R\n" +
 	"addedCount\x12!\n" +
-	"\fmember_count\x18\x02 \x01(\x03R\vmemberCount\"Y\n" +
+	"\fmember_count\x18\x02 \x01(\x03R\vmemberCount\"[\n" +
 	"\x19RemoveCircleMemberRequest\x12\x1b\n" +
-	"\tcircle_id\x18\x01 \x01(\x04R\bcircleId\x12\x1f\n" +
-	"\vmember_dids\x18\x02 \x03(\tR\n" +
-	"memberDids\"d\n" +
+	"\tcircle_id\x18\x01 \x01(\x04R\bcircleId\x12!\n" +
+	"\fmember_ptids\x18\x02 \x03(\tR\vmemberPtids\"d\n" +
 	"\x1aRemoveCircleMemberResponse\x12#\n" +
 	"\rremoved_count\x18\x01 \x01(\x05R\fremovedCount\x12!\n" +
 	"\fmember_count\x18\x02 \x01(\x03R\vmemberCount\"D\n" +

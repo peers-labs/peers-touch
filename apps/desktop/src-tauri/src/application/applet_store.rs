@@ -43,9 +43,9 @@ fn channel(value: Option<String>) -> String {
         .unwrap_or_else(|| "stable".to_string())
 }
 
-fn actor_id(context: &AccessContext) -> String {
+fn actor_ptid(context: &AccessContext) -> String {
     context
-        .actor_id
+        .actor_ptid
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -224,11 +224,11 @@ pub fn list_catalog(
     input: AppletStoreListCatalogInput,
     data_dir: &Path,
 ) -> AppResult<StubPayload> {
-    let actor = actor_id(&context);
+    let actor = actor_ptid(&context);
     let device = device_id(input.device_id);
     let cache_file = cache_path(data_dir, &actor, &device, "catalog");
     let query = vec![
-        ("actor_id", actor.clone()),
+        ("actor_ptid", actor.clone()),
         ("device_id", device.clone()),
         (
             "target_platform",
@@ -266,11 +266,11 @@ pub fn list_installed(
     input: AppletStoreListInstalledInput,
     data_dir: &Path,
 ) -> AppResult<StubPayload> {
-    let actor = actor_id(&context);
+    let actor = actor_ptid(&context);
     let device = device_id(input.device_id);
     let cache_file = cache_path(data_dir, &actor, &device, "installed");
     let query = vec![
-        ("actor_id", actor.clone()),
+        ("actor_ptid", actor.clone()),
         ("device_id", device.clone()),
         (
             "include_disabled",
@@ -308,7 +308,7 @@ pub fn install(context: AccessContext, input: AppletStoreInstallInput) -> AppRes
     }
 
     let body = json!({
-        "actor_id": actor_id(&context),
+        "actor_ptid": actor_ptid(&context),
         "device_id": device_id(input.device_id),
         "applet_id": applet_id,
         "version": input.version.unwrap_or_default(),
@@ -340,7 +340,7 @@ pub fn uninstall(
     }
 
     let body = json!({
-        "actor_id": actor_id(&context),
+        "actor_ptid": actor_ptid(&context),
         "device_id": device_id(input.device_id),
         "applet_id": applet_id,
     });
@@ -370,7 +370,7 @@ pub fn get_version(
     }
 
     let device = "version";
-    let cache_file = cache_path(data_dir, &actor_id(&context), device, applet_id);
+    let cache_file = cache_path(data_dir, &actor_ptid(&context), device, applet_id);
     let query = vec![
         ("applet_id", applet_id.to_string()),
         ("version", input.version.unwrap_or_default()),
@@ -524,14 +524,14 @@ pub fn upload_audit(context: AccessContext, device: Option<String>) -> AppResult
         );
     }
 
-    let actor = actor_id(&context);
+    let actor = actor_ptid(&context);
     let device_id = device_id(device);
     let body_records = records
         .iter()
         .map(|record| {
             json!({
                 "audit_id": record.request_id,
-                "actor_id": if record.actor_id == "anonymous" { actor.clone() } else { record.actor_id.clone() },
+                "actor_ptid": if record.actor_ptid == "anonymous" { actor.clone() } else { record.actor_ptid.clone() },
                 "device_id": device_id.clone(),
                 "applet_id": record.applet_id.clone(),
                 "version": "",

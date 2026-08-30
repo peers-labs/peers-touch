@@ -7,14 +7,14 @@ import (
 
 type Repository interface {
 	Create(n domain.Notification) (domain.Notification, error)
-	List(recipientID string, category, status int32, cursor string, limit int) ([]domain.Notification, error)
-	CountByRecipient(recipientID string, category, status int32) (int, error)
-	MarkRead(recipientID string, notifIDs []string) (int, error)
-	MarkAllRead(recipientID string, category int32) (int, error)
-	Delete(recipientID string, notifIDs []string) (int, error)
-	GetUnreadCounts(recipientID string) (domain.UnreadCounts, error)
-	GetPreferences(actorID string) ([]domain.NotificationPreference, error)
-	GetPreference(actorID string, category int32) (*domain.NotificationPreference, error)
+	List(recipientPTID string, category, status int32, cursor string, limit int) ([]domain.Notification, error)
+	CountByRecipient(recipientPTID string, category, status int32) (int, error)
+	MarkRead(recipientPTID string, notifIDs []string) (int, error)
+	MarkAllRead(recipientPTID string, category int32) (int, error)
+	Delete(recipientPTID string, notifIDs []string) (int, error)
+	GetUnreadCounts(recipientPTID string) (domain.UnreadCounts, error)
+	GetPreferences(actorPTID string) ([]domain.NotificationPreference, error)
+	GetPreference(actorPTID string, category int32) (*domain.NotificationPreference, error)
 	UpsertPreference(pref domain.NotificationPreference) (domain.NotificationPreference, error)
 }
 
@@ -29,31 +29,31 @@ func NewService(repo Repository) *Service {
 // Produce creates a notification from a domain event.
 // Self-notification guard: actor cannot notify themselves.
 // Preference check: skip if the recipient has disabled notifications for this category.
-func (s *Service) Produce(recipientID, actorID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) (*domain.Notification, error) {
-	if recipientID == actorID {
+func (s *Service) Produce(recipientPTID, actorPTID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) (*domain.Notification, error) {
+	if recipientPTID == actorPTID {
 		return nil, nil
 	}
 
-	pref, err := s.repo.GetPreference(recipientID, category)
+	pref, err := s.repo.GetPreference(recipientPTID, category)
 	if err != nil {
-		logger.Error(nil, "notification: failed to check preference", "recipientID", recipientID, "error", err)
+		logger.Error(nil, "notification: failed to check preference", "recipient_ptid", recipientPTID, "error", err)
 	}
 	if pref != nil && !pref.Enabled {
 		return nil, nil
 	}
 
 	n := domain.Notification{
-		RecipientID: recipientID,
-		ActorID:     actorID,
-		Type:        notifType,
-		Category:    category,
-		Status:      domain.StatusUnread,
-		TargetType:  targetType,
-		TargetID:    targetID,
-		Title:       title,
-		Body:        body,
-		GroupKey:    groupKey,
-		Metadata:    metadata,
+		RecipientPTID: recipientPTID,
+		ActorPTID:     actorPTID,
+		Type:          notifType,
+		Category:      category,
+		Status:        domain.StatusUnread,
+		TargetType:    targetType,
+		TargetID:      targetID,
+		Title:         title,
+		Body:          body,
+		GroupKey:      groupKey,
+		Metadata:      metadata,
 	}
 
 	created, err := s.repo.Create(n)
@@ -63,7 +63,7 @@ func (s *Service) Produce(recipientID, actorID string, notifType, category int32
 
 	logger.Info(nil, "notification: produced",
 		"id", created.ID,
-		"recipient", recipientID,
+		"recipient_ptid", recipientPTID,
 		"type", notifType,
 		"category", category,
 	)
@@ -71,40 +71,40 @@ func (s *Service) Produce(recipientID, actorID string, notifType, category int32
 	return &created, nil
 }
 
-func (s *Service) List(recipientID string, category, status int32, cursor string, limit int) ([]domain.Notification, int, int, error) {
-	items, err := s.repo.List(recipientID, category, status, cursor, limit)
+func (s *Service) List(recipientPTID string, category, status int32, cursor string, limit int) ([]domain.Notification, int, int, error) {
+	items, err := s.repo.List(recipientPTID, category, status, cursor, limit)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	totalCount, err := s.repo.CountByRecipient(recipientID, category, 0)
+	totalCount, err := s.repo.CountByRecipient(recipientPTID, category, 0)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	unreadCount, err := s.repo.CountByRecipient(recipientID, category, domain.StatusUnread)
+	unreadCount, err := s.repo.CountByRecipient(recipientPTID, category, domain.StatusUnread)
 	if err != nil {
 		return nil, 0, 0, err
 	}
 	return items, totalCount, unreadCount, nil
 }
 
-func (s *Service) MarkRead(recipientID string, notifIDs []string) (int, error) {
-	return s.repo.MarkRead(recipientID, notifIDs)
+func (s *Service) MarkRead(recipientPTID string, notifIDs []string) (int, error) {
+	return s.repo.MarkRead(recipientPTID, notifIDs)
 }
 
-func (s *Service) MarkAllRead(recipientID string, category int32) (int, error) {
-	return s.repo.MarkAllRead(recipientID, category)
+func (s *Service) MarkAllRead(recipientPTID string, category int32) (int, error) {
+	return s.repo.MarkAllRead(recipientPTID, category)
 }
 
-func (s *Service) Delete(recipientID string, notifIDs []string) (int, error) {
-	return s.repo.Delete(recipientID, notifIDs)
+func (s *Service) Delete(recipientPTID string, notifIDs []string) (int, error) {
+	return s.repo.Delete(recipientPTID, notifIDs)
 }
 
-func (s *Service) GetUnreadCounts(recipientID string) (domain.UnreadCounts, error) {
-	return s.repo.GetUnreadCounts(recipientID)
+func (s *Service) GetUnreadCounts(recipientPTID string) (domain.UnreadCounts, error) {
+	return s.repo.GetUnreadCounts(recipientPTID)
 }
 
-func (s *Service) GetPreferences(actorID string) ([]domain.NotificationPreference, error) {
-	return s.repo.GetPreferences(actorID)
+func (s *Service) GetPreferences(actorPTID string) ([]domain.NotificationPreference, error) {
+	return s.repo.GetPreferences(actorPTID)
 }
 
 func (s *Service) UpsertPreference(pref domain.NotificationPreference) (domain.NotificationPreference, error) {

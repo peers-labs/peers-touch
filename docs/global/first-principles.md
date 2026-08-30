@@ -12,7 +12,8 @@
 
 ### 2) Respect current repo boundaries
 - Desktop: `apps/desktop` (Tauri + React/TS + Rust)
-- Mobile: `apps/mobile/android` and `apps/mobile/ios`
+- Mobile: `apps/mobile/src` + `apps/mobile/src-tauri`; Android/iOS code is native
+  plugin/generated platform integration, not the primary UI mainline
 - Station: `apps/station/app` and `apps/station/frame`
 - Shared client libraries: `client/common/*`
 

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-07-02 | **Updated**: 2026-07-11
+> **Created**: 2026-07-02 | **Updated**: 2026-08-27
 > **Owner**: Client Platform Team
 > **Module**: `apps/desktop/src/kernel/`, `apps/desktop/src/runtimes/`
 
@@ -28,6 +28,7 @@
 | D-14 | InvokeThrottler 安全关键路径 bypass 必须静态 allowlist 化 | accepted |
 | D-15 | Native transport topology 必须通过同条件 runtime evidence gate 后决策 | accepted |
 | D-16 | Native responsiveness 由有界工作准入和完整失败语义定义，而非由某种 transport 定义 | accepted |
+| D-17 | Mobile runtime graph and command runtime refine existing cross-client contracts | accepted |
 
 ---
 
@@ -453,7 +454,7 @@ Phase 0 构建了 acceptance/dev telemetry pipeline：客户端采集 → Statio
 
 ### Rationale
 
-- 符合 [architecture.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch/docs/global/architecture.md) 的所有权规则：跨端共享证据由 Station 侧统一收敛；device-local runtime 仍只负责采集和本地调试缓冲。
+- 符合 [architecture.md](../../global/architecture.md) 的所有权规则：跨端共享证据由 Station 侧统一收敛；device-local runtime 仍只负责采集和本地调试缓冲。
 - 原始事件保留使得跨 runtime（browser-gateway vs tauri-webview-dev vs tauri-webview-packaged）、跨版本、跨设备的对比成为可能。
 - 本地聚合无法支持多 runtime / 多版本场景下的一致 gate 判定。
 - D-06 要求"归因到 page/section/runtime/store subscription"，只有原始事件才能做到细粒度归因。
@@ -650,3 +651,52 @@ P0c-3 证据表明当前实现已满足 D-16 contract 的核心条件：
 
 Remaining D-16 items (狂点、断线、幂等、stream) 留作 stress-test acceptance gate，
 不阻塞架构 accepted 状态。
+
+---
+
+## D-17: Mobile Runtime Graph Refines Existing Contracts
+
+**Status**: accepted
+**Date**: 2026-08-27
+
+### Context
+
+Mobile Shell requires dependency-aware bootstrap/teardown, optional degraded
+capabilities, native suspend/resume, and restart-safe write convergence. These
+needs extend `RuntimeProjection` and `InteractionAdmission`, but must not create
+a second cross-client scheduler or retry model.
+
+### Decision
+
+- Mobile `dependsOn` and `uses` refine RuntimeProjection readiness:
+  `dependsOn` is hard ordered dependency; `uses` is a degradable capability.
+- `commandRuntime` is the Mobile adapter for `InteractionAdmission`.
+- Mobile Rust encrypted persistence is infrastructure behind that adapter.
+- Shared work class, idempotency, cancellation, overload, fairness, payload
+  class, and evidence semantics remain owned by Frontend Runtime.
+
+### Rationale
+
+One semantic contract preserves Desktop/Mobile comparability while allowing
+Mobile-specific secure storage, background suspension, and native wakeups.
+
+### Alternatives Considered
+
+- Define an independent Mobile scheduler. Rejected because admission semantics
+  and evidence would drift across clients.
+- Put retry policy in each feature runtime. Rejected because queue bounds,
+  fairness, and unknown-outcome behavior would have multiple owners.
+
+### Consequences
+
+- Mobile runtime descriptors may add platform lifecycle fields without
+  redefining shared work semantics.
+- Social outbox state becomes a projection of platform command admission rather
+  than a second persistence implementation.
+- Changes to shared admission semantics require an upstream Frontend Runtime
+  decision and coordinated client migration.
+
+### Reversal Trigger
+
+Review if Mobile can directly reuse a shared runtime implementation without
+losing native lifecycle, secure-storage, or evidence requirements.

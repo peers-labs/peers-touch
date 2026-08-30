@@ -179,7 +179,7 @@ func (w *TTLSweeper) processOne(ctx context.Context, row *ossmodel.FileMeta, now
 		FileID:    row.ID,
 		FileKey:   row.Key,
 		BucketID:  row.BucketID,
-		ActorID:   row.OwnerActorID,
+		ActorPTID: row.OwnerPTID,
 		SizeBytes: row.Size,
 	}); err != nil {
 		log.Warnf(ctx, "[oss-worker] ttl audit append failed (id=%s): %v",

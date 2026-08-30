@@ -65,7 +65,7 @@ func run(ctx context.Context) error {
 			http.Error(response, "authenticated subject is missing", http.StatusUnauthorized)
 			return
 		}
-		request.Header.Set(notetransport.OwnerHeader, subject.ID)
+		request.Header.Set(notetransport.OwnerPTIDHeader, subject.ID)
 		noteHandler.ServeHTTP(response, request)
 	}))
 

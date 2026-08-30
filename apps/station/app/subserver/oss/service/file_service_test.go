@@ -31,7 +31,7 @@ const (
 // case readable.
 func defaultAttr(actor string) UploadAttribution {
 	return UploadAttribution{
-		ActorID:       actor,
+		ActorPTID:     actor,
 		BucketName:    ossmodel.SystemBucketChat,
 		Visibility:    ossmodel.VisibilityChat,
 		ChatSessionID: "session-test",
@@ -61,9 +61,9 @@ func ownerKeyPK(owner, key string) string { return owner + "|" + key }
 func (r *fakeFileRepo) Create(ctx context.Context, meta *ossmodel.FileMeta) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	pk := ownerKeyPK(meta.OwnerActorID, meta.Key)
+	pk := ownerKeyPK(meta.OwnerPTID, meta.Key)
 	if _, ok := r.byPK[pk]; ok {
-		return errors.New("UNIQUE constraint failed: oss_files(owner_actor_id, key)")
+		return errors.New("UNIQUE constraint failed: oss_files(owner_ptid, key)")
 	}
 	cp := *meta
 	r.byPK[pk] = &cp
@@ -229,7 +229,7 @@ func (r *fakeFileRepo) ListByOwner(ctx context.Context, owner string, filter oss
 
 	matched := make([]*ossmodel.FileMeta, 0, len(r.byPK))
 	for _, m := range r.byPK {
-		if m.OwnerActorID != owner {
+		if m.OwnerPTID != owner {
 			continue
 		}
 		if !filter.IncludeDeleted && m.DeletedAt != nil {
@@ -401,10 +401,10 @@ func (r *fakeBucketRepo) ListAll(_ context.Context) ([]ossmodel.Bucket, error) {
 func (r *fakeBucketRepo) Create(_ context.Context, b *ossmodel.Bucket) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.byOwner[b.OwnerActorID] == nil {
-		r.byOwner[b.OwnerActorID] = map[string]*ossmodel.Bucket{}
+	if r.byOwner[b.OwnerPTID] == nil {
+		r.byOwner[b.OwnerPTID] = map[string]*ossmodel.Bucket{}
 	}
-	if _, ok := r.byOwner[b.OwnerActorID][b.Name]; ok {
+	if _, ok := r.byOwner[b.OwnerPTID][b.Name]; ok {
 		return ossrepo.ErrBucketExists
 	}
 	if b.ID == "" {
@@ -413,19 +413,19 @@ func (r *fakeBucketRepo) Create(_ context.Context, b *ossmodel.Bucket) error {
 	}
 	cp := *b
 	r.byID[b.ID] = &cp
-	r.byOwner[b.OwnerActorID][b.Name] = &cp
+	r.byOwner[b.OwnerPTID][b.Name] = &cp
 	return nil
 }
 
-func (r *fakeBucketRepo) EnsureSystem(ctx context.Context, actorID string, spec ossmodel.SystemBucketSpec) (*ossmodel.Bucket, error) {
-	if existing, err := r.FindByOwnerName(ctx, actorID, spec.Name); err == nil {
+func (r *fakeBucketRepo) EnsureSystem(ctx context.Context, actorPTID string, spec ossmodel.SystemBucketSpec) (*ossmodel.Bucket, error) {
+	if existing, err := r.FindByOwnerName(ctx, actorPTID, spec.Name); err == nil {
 		return existing, nil
 	} else if !errors.Is(err, ossrepo.ErrBucketNotFound) {
 		return nil, err
 	}
 	b := &ossmodel.Bucket{
 		Name:              spec.Name,
-		OwnerActorID:      actorID,
+		OwnerPTID:         actorPTID,
 		Kind:              spec.Kind,
 		SystemKey:         spec.SystemKey,
 		DefaultVisibility: spec.DefaultVisibility,
@@ -436,7 +436,7 @@ func (r *fakeBucketRepo) EnsureSystem(ctx context.Context, actorID string, spec 
 	if err := r.Create(ctx, b); err != nil {
 		return nil, err
 	}
-	return r.FindByOwnerName(ctx, actorID, spec.Name)
+	return r.FindByOwnerName(ctx, actorPTID, spec.Name)
 }
 
 func (r *fakeBucketRepo) AddUsage(_ context.Context, bucketID string, deltaBytes int64) error {
@@ -913,7 +913,7 @@ func TestPrepareUpload_CASShortCircuit(t *testing.T) {
 		Size:          int64(len(body)),
 		Backend:       "s3",
 		Sha256:        digest,
-		OwnerActorID:  testActorA,
+		OwnerPTID:     testActorA,
 		BucketID:      "blk_seed",
 		Visibility:    ossmodel.VisibilityChat,
 		ChatSessionID: "session-seed",
@@ -1068,7 +1068,7 @@ func TestCompleteUpload_IdempotentOnExistingKey(t *testing.T) {
 	preExisting := &ossmodel.FileMeta{
 		ID: digest, Key: casKey(digest, ".bin"), Name: "winner.bin",
 		Backend: "s3", Sha256: digest, Size: 5,
-		OwnerActorID: testActorA, BucketID: "blk_seed",
+		OwnerPTID: testActorA, BucketID: "blk_seed",
 		Visibility: ossmodel.VisibilityChat, ChatSessionID: "session-seed",
 	}
 	if err := repo.Create(context.Background(), preExisting); err != nil {
@@ -1112,7 +1112,7 @@ func TestSaveFile_EnsuresMomentsSystemBucket(t *testing.T) {
 	body := []byte("moment image bytes")
 	f, h := makePart(t, "moment.png", body)
 	m, err := svc.SaveFile(context.Background(), UploadAttribution{
-		ActorID:    testActorA,
+		ActorPTID:  testActorA,
 		BucketName: ossmodel.SystemBucketMoments,
 		Visibility: ossmodel.VisibilityPublic,
 	}, f, h)
@@ -1160,8 +1160,8 @@ func TestSaveCAS_DifferentActorsClaimSeparateRows(t *testing.T) {
 	if mA.Key != mB.Key {
 		t.Fatalf("CAS bytes must converge on same key, got %q vs %q", mA.Key, mB.Key)
 	}
-	if mA.OwnerActorID == mB.OwnerActorID {
-		t.Fatalf("two actors must produce two rows, both owned by %q", mA.OwnerActorID)
+	if mA.OwnerPTID == mB.OwnerPTID {
+		t.Fatalf("two actors must produce two rows, both owned by %q", mA.OwnerPTID)
 	}
 	if backend.saveCount() < 1 {
 		t.Fatal("backend must have stored the bytes at least once")
@@ -1213,7 +1213,7 @@ func TestSaveFile_RejectsChatVisibilityWithoutSession(t *testing.T) {
 	_, _, _, svc := newSvc(t, KeyStrategyRandom, "local")
 	f, h := makePart(t, "x.txt", []byte("nope"))
 	attr := UploadAttribution{
-		ActorID:    testActorA,
+		ActorPTID:  testActorA,
 		BucketName: ossmodel.SystemBucketChat,
 		Visibility: ossmodel.VisibilityChat,
 	}
@@ -1413,7 +1413,7 @@ func TestSaveFile_CompensatesUsageOnCreateFailure(t *testing.T) {
 	winner := &ossmodel.FileMeta{
 		ID: digest, Key: winnerKey, Name: "winner.txt", Size: int64(len(body)),
 		Backend: "local", Sha256: digest,
-		OwnerActorID: testActorA, BucketID: "blk_winner",
+		OwnerPTID: testActorA, BucketID: "blk_winner",
 		Visibility: ossmodel.VisibilityChat, ChatSessionID: "session-winner",
 	}
 	if err := deps.files.Create(context.Background(), winner); err != nil {
@@ -1657,7 +1657,7 @@ func TestRestoreFile_OutsideGraceWindow(t *testing.T) {
 	row := &ossmodel.FileMeta{
 		ID: "id-old", Key: key, Name: "old.txt", Size: int64(len(body)),
 		Backend: "local", Sha256: digest,
-		OwnerActorID: testActorA, BucketID: bucket.ID,
+		OwnerPTID: testActorA, BucketID: bucket.ID,
 		Visibility: ossmodel.VisibilityChat, ChatSessionID: "session-old",
 	}
 	if err := deps.files.Create(context.Background(), row); err != nil {
@@ -2008,7 +2008,7 @@ func TestPatchFile_BucketMove_QuotaFailureRollsBack(t *testing.T) {
 	// fails the AddUsage quota check.
 	dst := &ossmodel.Bucket{
 		ID:                "bk-tight",
-		OwnerActorID:      testActorA,
+		OwnerPTID:         testActorA,
 		Name:              "tight-archive",
 		Kind:              ossmodel.BucketKindUser,
 		DefaultVisibility: ossmodel.VisibilityPrivate,
@@ -2083,18 +2083,18 @@ func seedListRow(t *testing.T, deps svcDeps, owner, key, bucketName, vis, mime s
 		bucket = b
 	}
 	row := &ossmodel.FileMeta{
-		ID:           "id-" + key,
-		Key:          key,
-		Name:         "name-" + key,
-		Size:         size,
-		Mime:         mime,
-		Backend:      "local",
-		Path:         "/tmp/" + key,
-		BucketID:     bucket.ID,
-		OwnerActorID: owner,
-		Visibility:   vis,
-		CreatedAt:    created,
-		UpdatedAt:    created,
+		ID:         "id-" + key,
+		Key:        key,
+		Name:       "name-" + key,
+		Size:       size,
+		Mime:       mime,
+		Backend:    "local",
+		Path:       "/tmp/" + key,
+		BucketID:   bucket.ID,
+		OwnerPTID:  owner,
+		Visibility: vis,
+		CreatedAt:  created,
+		UpdatedAt:  created,
 	}
 	if err := deps.files.Create(context.Background(), row); err != nil {
 		t.Fatalf("seedListRow Create %q: %v", key, err)

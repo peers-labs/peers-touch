@@ -25,21 +25,20 @@ func RequireJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(conte
 			sessValidator = coreauth.GetGlobalSessionValidator()
 		}
 		h := string(ctx.GetHeader("Authorization"))
-		logger.Debugf(c, "[RequireJWT] Authorization header: %s", h)
 
 		if len(h) < 7 || h[:7] != "Bearer " {
-			logger.Warnf(c, "[RequireJWT] Missing or invalid Bearer token format")
+			logger.Warn(c, "[RequireJWT] credentials rejected: missing or invalid bearer format")
 			ctx.SetStatusCode(401)
 			ctx.JSON(401, map[string]interface{}{"error": "Valid JWT token required", "code": "auth_required"})
 			ctx.Abort()
 			return
 		}
 		token := h[7:]
-		logger.Debugf(c, "[RequireJWT] Token extracted, validating...")
+		logger.Debug(c, "[RequireJWT] credential validation started")
 
 		subject, err := p.Validate(c, token)
 		if err != nil {
-			logger.Warnf(c, "[RequireJWT] Token validation failed: %v", err)
+			logger.Warn(c, "[RequireJWT] credentials rejected: validation failed")
 			ctx.SetStatusCode(401)
 			ctx.JSON(401, map[string]interface{}{"error": "Invalid or expired token", "code": "token_invalid"})
 			ctx.Abort()
@@ -49,21 +48,21 @@ func RequireJWT(p coreauth.Provider, sv ...coreauth.SessionValidator) func(conte
 		if sessValidator != nil && subject.SessionID != "" {
 			valid, reason := sessValidator.CheckSessionValid(c, subject.SessionID)
 			if !valid {
-				writeSessionRevoked(c, ctx, subject, reason)
+				writeSessionRevoked(c, ctx, reason)
 				return
 			}
 		} else if valid, reason := coreauth.CheckSubjectSessionValid(c, subject); !valid {
-			writeSessionRevoked(c, ctx, subject, reason)
+			writeSessionRevoked(c, ctx, reason)
 			return
 		}
 
-		logger.Infof(c, "[RequireJWT] Token valid, subject: %s, session: %s", subject.ID, subject.SessionID)
+		logger.Info(c, "[RequireJWT] authentication succeeded")
 		ctx.Set(string(SubjectContextKey), subject)
 	}
 }
 
-func writeSessionRevoked(c context.Context, ctx *app.RequestContext, subject *coreauth.Subject, reason string) {
-	logger.Warnf(c, "[RequireJWT] Session %s rejected: %s (user=%s)", subject.SessionID, reason, subject.ID)
+func writeSessionRevoked(c context.Context, ctx *app.RequestContext, reason string) {
+	logger.Warn(c, "[RequireJWT] credentials rejected: session invalid")
 	ctx.SetStatusCode(401)
 	ctx.JSON(401, map[string]interface{}{
 		"error":  "Session has been revoked",
