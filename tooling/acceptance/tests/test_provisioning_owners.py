@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -16,18 +17,155 @@ from unittest.mock import patch
 
 from tooling.acceptance.core.attestation import (
     produce_station_attestation,
+    source_proto_digest,
     source_workspace_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore
 from tooling.acceptance.fixtures.chat_native_actors import (
+    ACTOR_ACCOUNTS,
     _login_session,
     produce_actor_manifest,
+    reset_fixture,
 )
 
 
 class StationAttestationOwnerTests(unittest.TestCase):
+    def test_proto_digest_uses_only_git_tracked_contract_artifacts(self) -> None:
+        native_git_environment = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
+        }
+        native_git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        root = Path(tempfile.mkdtemp())
+        try:
+            with patch.dict(
+                os.environ,
+                native_git_environment,
+                clear=True,
+            ):
+                subprocess.run(
+                    ["git", "init"],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.email", "acceptance@test.invalid"],
+                    cwd=root,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.name", "Acceptance Test"],
+                    cwd=root,
+                    check=True,
+                )
+                proto = root / "model/domain/test.proto"
+                generated = (
+                    root
+                    / "apps/desktop/src/gen/proto/domain/test_pb.ts"
+                )
+                proto.parent.mkdir(parents=True)
+                generated.parent.mkdir(parents=True)
+                proto.write_text("syntax = \"proto3\";\n", encoding="utf-8")
+                generated.write_text("// generated\n", encoding="utf-8")
+                subprocess.run(
+                    ["git", "add", "model", "apps"],
+                    cwd=root,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", "base"],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
+                baseline = source_proto_digest(root)
+
+                untracked = (
+                    root
+                    / "apps/station/app/subserver/test/model/test.pb.go"
+                )
+                untracked.parent.mkdir(parents=True)
+                untracked.write_text("// generated\n", encoding="utf-8")
+                self.assertEqual(source_proto_digest(root), baseline)
+
+                generated.write_text("// generated changed\n", encoding="utf-8")
+                self.assertNotEqual(source_proto_digest(root), baseline)
+        finally:
+            for attempt in range(20):
+                try:
+                    shutil.rmtree(root)
+                    break
+                except OSError as error:
+                    if error.errno != errno.ENOTEMPTY or attempt == 19:
+                        raise
+                    time.sleep(0.05)
+
     def test_remote_attestation_excludes_only_deployment_bare_repo(self) -> None:
+        from tooling.acceptance.core.attestation import _remote_source_identity
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            known_hosts = root / "known_hosts"
+            known_hosts.write_text(
+                "station.example ssh-ed25519 test-key\n",
+                encoding="utf-8",
+            )
+            environment = (
+                root
+                / ".local"
+                / "deploy"
+                / "envs"
+                / "station-three.env"
+            )
+            environment.parent.mkdir(parents=True)
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=station.example",
+                        "PT_DEPLOY_USER=acceptance",
+                        "PT_DEPLOY_PATH=station-three",
+                        "PT_DEPLOY_SSH_PORT=2222",
+                        f"PT_DEPLOY_KNOWN_HOSTS_FILE={known_hosts}",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="abcdef123456\nclean\nproto-digest\n",
+                stderr="",
+            )
+            with patch(
+                "tooling.acceptance.core.attestation.REPO_ROOT",
+                root,
+            ), patch(
+                "tooling.acceptance.transports.ssh.subprocess.run",
+                return_value=completed,
+            ) as run:
+                identity = _remote_source_identity("station-three")
+
+        self.assertEqual(
+            identity,
+            ("abcdef123456", "clean", "proto-digest"),
+        )
+        command = run.call_args.args[0]
+        remote_command = command[-1]
+        self.assertIn("git status --porcelain | sed", remote_command)
+        self.assertIn("\\.bare\\.git\\/", remote_command)
+        self.assertNotIn("apps/mobile/ios", remote_command)
+        self.assertIn("StrictHostKeyChecking=yes", command)
+        self.assertNotIn("StrictHostKeyChecking=no", command)
+        self.assertIn(f"UserKnownHostsFile={known_hosts}", command)
+        self.assertIn("2222", command)
+        self.assertEqual(run.call_args.kwargs["timeout"], 30)
+        self.assertFalse(run.call_args.kwargs["check"])
+
+    def test_remote_attestation_rejects_invalid_known_hosts_contract(self) -> None:
         from tooling.acceptance.core.attestation import _remote_source_identity
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -46,34 +184,21 @@ class StationAttestationOwnerTests(unittest.TestCase):
                         "PT_DEPLOY_HOST=station.example",
                         "PT_DEPLOY_USER=acceptance",
                         "PT_DEPLOY_PATH=station-three",
+                        f"PT_DEPLOY_KNOWN_HOSTS_FILE={root / 'missing-known-hosts'}",
                     )
                 )
                 + "\n",
                 encoding="utf-8",
             )
-            completed = subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout="abcdef123456\nclean\nproto-digest\n",
-                stderr="",
-            )
+
             with patch(
                 "tooling.acceptance.core.attestation.REPO_ROOT",
                 root,
-            ), patch(
-                "tooling.acceptance.core.attestation.subprocess.run",
-                return_value=completed,
-            ) as run:
-                identity = _remote_source_identity("station-three")
-
-        self.assertEqual(
-            identity,
-            ("abcdef123456", "clean", "proto-digest"),
-        )
-        remote_command = run.call_args.args[0][-1]
-        self.assertIn("git status --porcelain | sed", remote_command)
-        self.assertIn("\\.bare\\.git\\/", remote_command)
-        self.assertNotIn("apps/mobile/ios", remote_command)
+            ), self.assertRaisesRegex(
+                BlockedError,
+                "SSH contract is invalid",
+            ):
+                _remote_source_identity("station-three")
 
     def test_workspace_digest_binds_file_content(self) -> None:
         # The IDE git wrapper writes .git/ai asynchronously; use native Git so
@@ -139,6 +264,76 @@ class StationAttestationOwnerTests(unittest.TestCase):
         self.assertTrue(second.startswith("sha256:"))
         self.assertNotEqual(first, second)
 
+    def test_workspace_digest_ignores_generated_coverage_report(self) -> None:
+        native_git_environment = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("GIT_AI_", "GIT_TRACE2_"))
+        }
+        native_git_environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        root = Path(tempfile.mkdtemp())
+        try:
+            with patch.dict(
+                os.environ,
+                native_git_environment,
+                clear=True,
+            ):
+                subprocess.run(
+                    ["git", "init"],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.email", "acceptance@test.invalid"],
+                    cwd=root,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.name", "Acceptance Test"],
+                    cwd=root,
+                    check=True,
+                )
+                report = (
+                    root
+                    / "docs"
+                    / "architecture"
+                    / "acceptance-framework"
+                    / "coverage-report.md"
+                )
+                report.parent.mkdir(parents=True)
+                report.write_text("old\n", encoding="utf-8")
+                source = root / "source.txt"
+                source.write_text("base\n", encoding="utf-8")
+                subprocess.run(
+                    ["git", "add", "docs", "source.txt"],
+                    cwd=root,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", "base"],
+                    cwd=root,
+                    check=True,
+                    capture_output=True,
+                )
+
+                report.write_text("new\n", encoding="utf-8")
+                self.assertEqual(source_workspace_digest(root), "clean")
+
+                source.write_text("changed\n", encoding="utf-8")
+                self.assertTrue(
+                    source_workspace_digest(root).startswith("sha256:")
+                )
+        finally:
+            for attempt in range(20):
+                try:
+                    shutil.rmtree(root)
+                    break
+                except OSError as error:
+                    if error.errno != errno.ENOTEMPTY or attempt == 19:
+                        raise
+                    time.sleep(0.05)
+
     def test_producer_writes_source_bound_attestation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -198,6 +393,48 @@ class StationAttestationOwnerTests(unittest.TestCase):
 
 
 class ActorFixtureOwnerTests(unittest.TestCase):
+    @patch("tooling.acceptance.fixtures.chat_native_actors.subprocess.run")
+    def test_reset_fixture_uses_package_module(self, run) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+        reset_fixture("chat-native-acceptance", ("alice", "bob"))
+
+        arguments, options = run.call_args
+        self.assertEqual(
+            arguments[0],
+            [
+                sys.executable,
+                "-m",
+                "tooling.acceptance.fixtures.chat_native_reset",
+                "--environment",
+                "chat-native-acceptance",
+                "--accounts",
+                "alice",
+                "bob",
+            ],
+        )
+        self.assertEqual(
+            options["cwd"],
+            Path(__file__).resolve().parents[3],
+        )
+        self.assertEqual(options["timeout"], 120)
+        self.assertFalse(options["check"])
+
+    def test_actor_roles_resolve_to_canonical_preset_accounts(self) -> None:
+        self.assertEqual(
+            ACTOR_ACCOUNTS,
+            {
+                "alice": "alice@p.t",
+                "bob": "bob@p.t",
+                "charlie": "carol@p.t",
+            },
+        )
+
     def test_login_session_requires_ptid_token_and_session(self) -> None:
         session = _login_session(
             {

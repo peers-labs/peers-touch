@@ -6,10 +6,10 @@ use crate::contracts::{
     GroupChatEditInput, GroupChatFederatedActorInput, GroupChatLeaveGroupInput, GroupChatListInput,
     GroupChatListMessagesInput, GroupChatMarkReadInput, GroupChatSyncInput,
     GroupChatThreadCountsInput, GroupChatThreadInput, GroupChatUnreadInput, GroupInviteInput,
-    GroupJoinInput, GroupMembersInput,
-    GroupMessageActionInput, GroupOfflineMessagesInput, GroupRemoveMemberInput,
-    GroupSearchMessagesInput, GroupTransferOwnershipInput, GroupUlidInput, GroupUpdateInput,
-    GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput, StubPayload,
+    GroupJoinInput, GroupMembersInput, GroupMessageActionInput, GroupOfflineMessagesInput,
+    GroupRemoveMemberInput, GroupSearchMessagesInput, GroupTransferOwnershipInput, GroupUlidInput,
+    GroupUpdateInput, GroupUpdateMemberInput, GroupUpdateMySettingsInput, GroupUpdateNicknameInput,
+    StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;

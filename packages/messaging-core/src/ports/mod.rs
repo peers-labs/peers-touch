@@ -14,6 +14,6 @@ pub use clock::Clock;
 pub use direct_crypto::{DirectCrypto, DrCiphertextWire, DrDecryptOutcome, X3dhReceiverParams};
 pub use encrypted_store::EncryptedStore;
 pub use key_material::KeyMaterial;
-pub use mls_crypto::{MlsCrypto, MlsCommitOutcome, MlsDecryptOutcome};
+pub use mls_crypto::{MlsCommitOutcome, MlsCrypto, MlsDecryptOutcome};
 pub use projection_sink::ProjectionSink;
 pub use queue_transport::QueueTransport;

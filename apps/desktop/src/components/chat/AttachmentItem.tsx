@@ -44,6 +44,7 @@ import { log } from '../../utils/logger';
 const { Text } = Typography;
 
 type Attachment = ChatAttachmentLike;
+export type MessagingAttachmentOpenState = 'idle' | 'pending' | 'ready' | 'error';
 
 function messagingAttachmentId(attachment: Attachment): string {
   const explicit = (attachment as Attachment & { attachmentId?: string }).attachmentId?.trim();
@@ -63,17 +64,25 @@ function messagingAttachmentState(
 export function useMessagingAttachmentUrl(
   attachment: Attachment,
   eager: boolean,
-): { src: string | null; resolve: () => Promise<string | null> } {
+): {
+  src: string | null;
+  openState: MessagingAttachmentOpenState;
+  resolve: () => Promise<string | null>;
+} {
   const attachmentId = messagingAttachmentId(attachment);
   const [src, setSrc] = useState<string | null>(null);
+  const [openState, setOpenState] = useState<MessagingAttachmentOpenState>('idle');
   const resolve = useCallback(async () => {
     if (!attachmentId) return null;
+    setOpenState('pending');
     try {
       const localPath = await imServiceV1.messaging.openAttachment(attachmentId);
       const next = convertFileSrc(localPath);
       setSrc(next);
+      setOpenState('ready');
       return next;
     } catch (error) {
+      setOpenState('error');
       log.warn('chat', 'open Engine attachment failed', { attachmentId, error });
       return null;
     }
@@ -81,10 +90,11 @@ export function useMessagingAttachmentUrl(
 
   useEffect(() => {
     setSrc(null);
+    setOpenState('idle');
     if (eager) void resolve();
   }, [eager, resolve]);
 
-  return { src, resolve };
+  return { src, openState, resolve };
 }
 
 export type ChatAttachmentVisibilityHint = 'public' | 'chat' | 'private';
@@ -317,14 +327,14 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const attachmentKind = chatMediaKindForAttachment(attachment);
   const attachmentId = messagingAttachmentId(attachment);
   const availabilityState = messagingAttachmentState(attachment);
-  const canOpen = Boolean(attachmentId);
   const isImage = attachmentKind === 'image';
   const isVideo = attachmentKind === 'video';
   const isAudio = attachmentKind === 'audio';
-  const { src, resolve } = useMessagingAttachmentUrl(
+  const { src, openState, resolve } = useMessagingAttachmentUrl(
     attachment,
     isImage || isVideo || isAudio,
   );
+  const canOpen = Boolean(attachmentId) && openState !== 'pending';
   const chip = visibilityChip(visibilityHint, t, isOwn, token);
   const showHint = chip !== null;
   const filename = attachment.filename?.trim() || t('chat.social.messageArea.attachmentUnnamed');
@@ -335,11 +345,15 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   ));
   const actionLabel = t('chat.social.messageArea.attachmentOpen');
   const openTitle = t('chat.social.messageArea.attachmentOpenOrDownload');
-  const transferStateLabel = availabilityState === 'uploading'
-    ? t('chat.social.messageArea.attachmentStateUploading')
-    : availabilityState === 'failed'
-      ? t('chat.social.messageArea.attachmentStateFailed')
-      : '';
+  const transferStateLabel = openState === 'pending'
+    ? t('chat.social.messageArea.attachmentStateDownloading')
+    : openState === 'error'
+      ? t('chat.social.messageArea.attachmentDownloadFailed')
+      : availabilityState === 'uploading'
+        ? t('chat.social.messageArea.attachmentStateUploading')
+        : availabilityState === 'failed'
+          ? t('chat.social.messageArea.attachmentStateFailed')
+          : '';
   const canPreviewImage = Boolean(isImage && src && !previewFailed);
   const cardBackground = isOwn
     ? hovered
@@ -360,6 +374,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   }, [attachment.cid, src]);
 
   const openAttachment = async () => {
+    if (openState === 'pending') return;
     const resolved = src ?? await resolve();
     if (resolved) window.open(resolved, '_blank');
   };
@@ -378,6 +393,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
         gap={3}
         data-messaging-attachment-id={attachmentId || undefined}
         data-messaging-attachment-kind={attachmentKind}
+        data-messaging-attachment-open-state={openState}
         data-messaging-attachment-state={availabilityState}
         style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}
       >
@@ -447,6 +463,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
         gap={3}
         data-messaging-attachment-id={attachmentId || undefined}
         data-messaging-attachment-kind={attachmentKind}
+        data-messaging-attachment-open-state={openState}
         data-messaging-attachment-state={availabilityState}
         style={{ maxWidth: '100%' }}
       >
@@ -525,6 +542,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
         gap={3}
         data-messaging-attachment-id={attachmentId || undefined}
         data-messaging-attachment-kind={attachmentKind}
+        data-messaging-attachment-open-state={openState}
         data-messaging-attachment-state={availabilityState}
         style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}
       >
@@ -589,6 +607,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
       gap={3}
       data-messaging-attachment-id={attachmentId || undefined}
       data-messaging-attachment-kind={attachmentKind}
+      data-messaging-attachment-open-state={openState}
       data-messaging-attachment-state={availabilityState}
       style={{ maxWidth: '100%' }}
     >

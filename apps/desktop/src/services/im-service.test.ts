@@ -835,6 +835,149 @@ describe('recipient MLS runtime boundary', () => {
   })
 })
 
+describe('Messaging conversation projection', () => {
+  it('retains the authority Station identity from the Rust projection', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        conversations: [{
+          conversation_id: 'conversation-1',
+          authority_station_id: 'station-authority',
+          kind: 2,
+          name: 'Group',
+          owner_ptid: 'ptid:test:alice',
+          members: [
+            {
+              conversation_id: 'conversation-1',
+              ptid: 'ptid:test:alice',
+              role: 3,
+              member_status: 1,
+            },
+            {
+              conversation_id: 'conversation-1',
+              ptid: 'ptid:test:bob',
+              role: 1,
+              member_status: 1,
+            },
+          ],
+          membership_epoch: 3,
+          mls_epoch: 4,
+          mls_status: 'active',
+          active: true,
+          updated_at_unix_ms: 1_800_000_000_000,
+        }],
+      },
+    })
+
+    await expect(imServiceV1.messaging.listConversations()).resolves.toEqual([{
+      conversationId: 'conversation-1',
+      authorityStationId: 'station-authority',
+      kind: 2,
+      name: 'Group',
+      ownerPtid: 'ptid:test:alice',
+      members: [
+        expect.objectContaining({
+          conversationId: 'conversation-1',
+          ptid: 'ptid:test:alice',
+          role: 3,
+          memberStatus: 1,
+        }),
+        expect.objectContaining({
+          conversationId: 'conversation-1',
+          ptid: 'ptid:test:bob',
+          role: 1,
+          memberStatus: 1,
+        }),
+      ],
+      membershipEpoch: 3,
+      mlsEpoch: 4,
+      mlsStatus: 'active',
+      active: true,
+      updatedAtUnixMs: 1_800_000_000_000,
+    }])
+  })
+})
+
+describe('Conversation member settings projection', () => {
+  it('round-trips typed Station-backed conversation actions', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        nickname: '',
+        muted: true,
+        alertEnabled: false,
+        pinned: true,
+        background: 'mint',
+        backgroundImage: 'oss://station/background',
+        clearedAtUnixMs: 1_800_000_000_000,
+      },
+    })
+
+    await expect(imServiceV1.conversation.updateMemberSettings('conversation-1', {
+      muted: true,
+      pinned: true,
+      background: 'mint',
+      backgroundImage: 'oss://station/background',
+      clearedAtUnixMs: 1_800_000_000_000,
+    })).resolves.toEqual({
+      nickname: '',
+      muted: true,
+      alertEnabled: false,
+      pinned: true,
+      background: 'mint',
+      backgroundImage: 'oss://station/background',
+      clearedAtUnixMs: 1_800_000_000_000,
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith('conversation_update_member_settings', {
+      input: {
+        conversation_id: 'conversation-1',
+        nickname: undefined,
+        muted: true,
+        alert_enabled: undefined,
+        pinned: true,
+        background: 'mint',
+        background_image: 'oss://station/background',
+        cleared_at_unix_ms: 1_800_000_000_000,
+      },
+    })
+  })
+})
+
+describe('Messaging send outcome', () => {
+  it.each([
+    ['pending', 'command-1'],
+    ['draft', ''],
+    ['attachment_failed', ''],
+  ] as const)('preserves the %s result and attachment conservation fields', async (state, commandId) => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        command_id: commandId,
+        message_id: 'message-1',
+        attachment_ids: ['attachment-1', 'attachment-2'],
+        state,
+      },
+    })
+
+    await expect(imServiceV1.messaging.sendMessage(
+      'conversation-1',
+      'direct',
+      '',
+      [
+        { filePath: '/tmp/image.png', filename: 'image.png', mimeType: 'image/png' },
+        { filePath: '/tmp/file.pdf', filename: 'file.pdf', mimeType: 'application/pdf' },
+      ],
+    )).resolves.toEqual({
+      commandId: commandId || undefined,
+      messageId: 'message-1',
+      attachmentIds: ['attachment-1', 'attachment-2'],
+      attachmentCount: 2,
+      state,
+    })
+  })
+})
+
 describe('Messaging membership intent boundary', () => {
   it.each([
     ['add_actor', 'ptid:test:carol'],
@@ -866,5 +1009,60 @@ describe('Messaging membership intent boundary', () => {
     expect(input).not.toHaveProperty('observed_membership_epoch')
     expect(input).not.toHaveProperty('key_package')
     expect(input).not.toHaveProperty('mls_commit')
+  })
+})
+
+describe('Messaging group creation boundary', () => {
+  it.each(['pending', 'projected', 'failed'] as const)(
+    'preserves the exact command identity for %s state',
+    async (state) => {
+      invokeMock.mockResolvedValueOnce({
+        ok: true,
+        data: {
+          conversation_id: 'group-1',
+          command_id: 'group-command-1',
+          state,
+        },
+      })
+
+      await expect(imServiceV1.messaging.createGroup(
+        'group-1',
+        'Project group',
+        ['ptid:bob'],
+      )).resolves.toEqual({
+        conversationId: 'group-1',
+        commandId: 'group-command-1',
+        state,
+      })
+
+      expect(invokeMock).toHaveBeenCalledWith('messaging_create_group', {
+        input: {
+          conversation_id: 'group-1',
+          name: 'Project group',
+          member_ptids: ['ptid:bob'],
+        },
+      })
+    },
+  )
+
+  it('projects terminal status for the exact pending group command', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        command_id: 'group-command-1',
+        conversation_id: 'group-1',
+        state: 'failed',
+        last_error_code: 'authority_rejected',
+      },
+    })
+
+    await expect(
+      imServiceV1.messaging.getCommandStatus('group-command-1'),
+    ).resolves.toEqual({
+      commandId: 'group-command-1',
+      conversationId: 'group-1',
+      state: 'failed',
+      lastErrorCode: 'authority_rejected',
+    })
   })
 })
