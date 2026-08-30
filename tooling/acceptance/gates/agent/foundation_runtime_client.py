@@ -257,13 +257,18 @@ class FoundationRuntimeClient:
             raise FoundationClientError(
                 f"{self.spec.runtime} client is not connected"
             )
-        return call_async_harness(
-            self.driver,
-            method,
-            payload,
-            namespace="agent",
-            script_timeout=timeout,
-        )
+        try:
+            return call_async_harness(
+                self.driver,
+                method,
+                payload,
+                namespace="agent",
+                script_timeout=timeout,
+            )
+        except Exception as error:
+            raise FoundationClientError(
+                f"{self.spec.runtime} harness {method} failed: {error}"
+            ) from error
 
     def restart(self) -> None:
         result = self._stop_runtime(logout=False, remove_storage=False)

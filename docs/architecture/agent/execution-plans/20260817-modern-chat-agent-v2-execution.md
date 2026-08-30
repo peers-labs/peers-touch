@@ -3622,6 +3622,21 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   unchanged. Desktop typecheck, 13 focused coordinator tests, 48 native static
   tests, and `git diff --check` pass. AS-F06 and G-F remain
   `PARTIAL / UNPROVEN` pending exact-source runtime verification.
+- Diagnostic checkpoint `aceea9129e4d13f6cf6bf7fe009170ac18093799`
+  was deployed exact-source to profile `two`. Run
+  `20260830T025500829201Z-59341666bc040c9da3cdcdc80f2abf14`
+  crossed the stale durable-reload evidence failure and completed both Browser
+  AS-F06 session rotations without creating any `desktop-native` session.
+  Execution then reached the Native AS-F06 portion and failed with a 120-second
+  WebDriver read timeout on port `4445`. The current runtime client does not
+  attach the Harness method name to WebDriver failures, so the source-backed
+  operation boundary remains unknown. Candidate cleanup
+  `20260830T025505673039Z-64181f24056806d22d02e79df2aa5992`
+  again records `FAILED` because the same Native WebDriver timed out during
+  logout, while all six runtime ports, storage roots, and actor identity were
+  released. The next diagnostic adds only runtime/method context to Harness
+  transport errors; no assertion, timeout, retry, or product behavior changes.
+  AS-F06 and G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

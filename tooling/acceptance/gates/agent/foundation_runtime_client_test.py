@@ -153,6 +153,29 @@ class FoundationClientSpecTest(unittest.TestCase):
         )
         start.assert_called_once_with()
 
+    def test_harness_error_identifies_runtime_and_method(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="https://station.example",
+                profile_env={},
+            )
+            client.driver = object()
+            with patch(
+                "tooling.acceptance.gates.agent.foundation_runtime_client."
+                "call_async_harness",
+                side_effect=TimeoutError("read timed out"),
+            ):
+                with self.assertRaisesRegex(
+                    FoundationClientError,
+                    "native-tauri harness foundationF06DurableReload failed: "
+                    "read timed out",
+                ):
+                    client.harness(
+                        "foundationF06DurableReload",
+                        {"scenarioKey": "browser|en|AS-F06|sample-001"},
+                    )
+
     def test_runtime_pair_releases_shared_actor_identity_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
