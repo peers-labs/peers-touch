@@ -2934,15 +2934,16 @@ func (x *GetUnreadResponse) GetUnreadCount() int64 {
 }
 
 type MemberSettings struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Nickname      string                 `protobuf:"bytes,1,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	Muted         bool                   `protobuf:"varint,2,opt,name=muted,proto3" json:"muted,omitempty"`
-	AlertEnabled  bool                   `protobuf:"varint,3,opt,name=alert_enabled,json=alertEnabled,proto3" json:"alert_enabled,omitempty"`
-	Pinned        bool                   `protobuf:"varint,4,opt,name=pinned,proto3" json:"pinned,omitempty"`
-	Background    string                 `protobuf:"bytes,5,opt,name=background,proto3" json:"background,omitempty"`
-	ClearedAtMs   int64                  `protobuf:"varint,6,opt,name=cleared_at_ms,json=clearedAtMs,proto3" json:"cleared_at_ms,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Nickname        string                 `protobuf:"bytes,1,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	Muted           bool                   `protobuf:"varint,2,opt,name=muted,proto3" json:"muted,omitempty"`
+	AlertEnabled    bool                   `protobuf:"varint,3,opt,name=alert_enabled,json=alertEnabled,proto3" json:"alert_enabled,omitempty"`
+	Pinned          bool                   `protobuf:"varint,4,opt,name=pinned,proto3" json:"pinned,omitempty"`
+	Background      string                 `protobuf:"bytes,5,opt,name=background,proto3" json:"background,omitempty"`
+	ClearedAtMs     int64                  `protobuf:"varint,6,opt,name=cleared_at_ms,json=clearedAtMs,proto3" json:"cleared_at_ms,omitempty"`
+	BackgroundImage string                 `protobuf:"bytes,7,opt,name=background_image,json=backgroundImage,proto3" json:"background_image,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *MemberSettings) Reset() {
@@ -3015,6 +3016,13 @@ func (x *MemberSettings) GetClearedAtMs() int64 {
 		return x.ClearedAtMs
 	}
 	return 0
+}
+
+func (x *MemberSettings) GetBackgroundImage() string {
+	if x != nil {
+		return x.BackgroundImage
+	}
+	return ""
 }
 
 type GetMemberSettingsRequest struct {
@@ -3599,7 +3607,7 @@ const file_domain_chat_conversation_api_proto_rawDesc = "" +
 	"\x10GetUnreadRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"6\n" +
 	"\x11GetUnreadResponse\x12!\n" +
-	"\funread_count\x18\x01 \x01(\x03R\vunreadCount\"\xc3\x01\n" +
+	"\funread_count\x18\x01 \x01(\x03R\vunreadCount\"\xee\x01\n" +
 	"\x0eMemberSettings\x12\x1a\n" +
 	"\bnickname\x18\x01 \x01(\tR\bnickname\x12\x14\n" +
 	"\x05muted\x18\x02 \x01(\bR\x05muted\x12#\n" +
@@ -3608,7 +3616,8 @@ const file_domain_chat_conversation_api_proto_rawDesc = "" +
 	"\n" +
 	"background\x18\x05 \x01(\tR\n" +
 	"background\x12\"\n" +
-	"\rcleared_at_ms\x18\x06 \x01(\x03R\vclearedAtMs\"C\n" +
+	"\rcleared_at_ms\x18\x06 \x01(\x03R\vclearedAtMs\x12)\n" +
+	"\x10background_image\x18\a \x01(\tR\x0fbackgroundImage\"C\n" +
 	"\x18GetMemberSettingsRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"b\n" +
 	"\x19GetMemberSettingsResponse\x12E\n" +

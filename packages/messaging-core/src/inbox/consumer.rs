@@ -11,10 +11,20 @@ use prost::Message;
 use std::sync::Arc;
 
 pub trait MlsItemConsumer: Send + Sync {
-    fn consume_application(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String>;
-    fn consume_transition(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String>;
-    fn consume_retirement(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String>;
-    fn consume_sender_transition(&self, item: &DeviceQueueItem, consumer_epoch: u64) -> Result<(), String>;
+    fn consume_application(
+        &self,
+        item: &DeviceQueueItem,
+        consumer_epoch: u64,
+    ) -> Result<(), String>;
+    fn consume_transition(&self, item: &DeviceQueueItem, consumer_epoch: u64)
+        -> Result<(), String>;
+    fn consume_retirement(&self, item: &DeviceQueueItem, consumer_epoch: u64)
+        -> Result<(), String>;
+    fn consume_sender_transition(
+        &self,
+        item: &DeviceQueueItem,
+        consumer_epoch: u64,
+    ) -> Result<(), String>;
 }
 
 pub struct MessagingItemConsumer<R: MessagingRepository, M: MlsItemConsumer> {

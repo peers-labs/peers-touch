@@ -1,5 +1,5 @@
 import { identityRuntime } from '../../kernel/identityRuntime';
-import { installDeferredAppRuntimeProjections } from '../../services/appRuntime';
+import { refreshSocialProjection } from '../../services/socialRealtime';
 import { api } from '../../services/desktop_api';
 import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
@@ -235,9 +235,7 @@ function orderedPressureMessages(state: PressureWindowState): GroupMessage[] {
 async function hydrateSocialForActiveActor(): Promise<void> {
   const actorId = activeActorId();
   if (actorId) {
-    const social = useSocialChatStore.getState();
-    await social.hydrate(actorId);
-    await useSocialChatStore.getState().initEncryption();
+    await refreshSocialProjection('acceptance hydration', true);
   }
 }
 
@@ -255,12 +253,16 @@ export function installAcceptanceHarness(): void {
         ({ lifecycle }) => lifecycle.state === 'ready' && lifecycle.authenticated,
         'authenticated identity lifecycle',
       );
-      await installDeferredAppRuntimeProjections();
-      await hydrateSocialForActiveActor();
-      const actorPtid = activeActorPtid();
       return {
         authenticated: true,
-        actorId: actorPtid,
+        actorId: activeActorId(),
+      };
+    },
+
+    async hydrateActiveActor() {
+      await hydrateSocialForActiveActor();
+      return {
+        actorId: activeActorPtid(),
       };
     },
 
@@ -271,11 +273,7 @@ export function installAcceptanceHarness(): void {
     },
 
     async syncFriendSession({ sessionUlid, limit: _limit = 50, maxPages: _maxPages = 1 }: SyncFriendInput) {
-      const social = useSocialChatStore.getState();
-      await imServiceV1.conversation.syncFromStation(sessionUlid, _limit);
-      await social.loadMessages(sessionUlid, 'friend');
-      social.selectSession(sessionUlid);
-      social.setActiveTab('friend');
+      await refreshConversation('friend', sessionUlid);
       const messages = useSocialChatStore.getState().getIMMessages('friend', sessionUlid);
       return {
         sessionUlid,
@@ -291,7 +289,6 @@ export function installAcceptanceHarness(): void {
       const groupUlid = result.conversationId || conversationId;
       const social = useSocialChatStore.getState();
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid).catch(() => {});
       social.selectGroup(groupUlid);
       social.setActiveTab('group');
       return {
@@ -304,7 +301,6 @@ export function installAcceptanceHarness(): void {
       const social = useSocialChatStore.getState();
       await imServiceV1.conversation.syncFromStation(groupUlid, _limit).catch(() => {});
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid).catch(() => {});
       await social.loadMessages(groupUlid, 'group');
       social.selectGroup(groupUlid);
       social.setActiveTab('group');
@@ -471,7 +467,7 @@ export function installAcceptanceHarness(): void {
 
     async sendGroupMessage({ groupUlid, content, type = 1 }: SendGroupMessageInput) {
       const social = useSocialChatStore.getState();
-      await social.loadGroupMembers(groupUlid);
+      await social.loadGroups();
       await social.sendGroupMessage(groupUlid, content, type);
       await social.loadMessages(groupUlid, 'group');
       social.selectGroup(groupUlid);
@@ -497,7 +493,6 @@ export function installAcceptanceHarness(): void {
       }
       const social = useSocialChatStore.getState();
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid);
 
       const startedAt = Date.now();
       const lastIndex = startIndex + count - 1;
@@ -532,8 +527,6 @@ export function installAcceptanceHarness(): void {
         const social = useSocialChatStore.getState();
         stage = 'loadGroups';
         await social.loadGroups();
-        stage = 'loadGroupMembers';
-        await social.loadGroupMembers(groupUlid);
         stage = 'loadMessages';
         await social.loadMessages(groupUlid, 'group');
         const messages = useSocialChatStore.getState().getIMMessages('group', groupUlid);
@@ -579,7 +572,6 @@ export function installAcceptanceHarness(): void {
       });
       const social = useSocialChatStore.getState();
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid);
       await social.loadMessages(groupUlid, 'group');
       const messages = useSocialChatStore.getState().getIMMessages('group', groupUlid);
       return {
@@ -661,7 +653,6 @@ export function installAcceptanceHarness(): void {
       const response = await api.groupChatAddFederatedMember(groupUlid, member);
       const social = useSocialChatStore.getState();
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid);
       social.selectGroup(groupUlid);
       social.setActiveTab('group');
       return {
@@ -681,7 +672,6 @@ export function installAcceptanceHarness(): void {
         });
       }
       await social.loadGroups();
-      await social.loadGroupMembers(groupUlid);
       social.selectGroup(groupUlid);
       social.setActiveTab('group');
       return {

@@ -42,6 +42,9 @@ pub struct EncryptedSession {
     pub nonce: String,
     /// Account ID used as AAD.
     pub account_id: String,
+    /// Canonical Station actor from the encrypted JWT subject.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub actor_id: String,
 }
 
 /// Derive a 32-byte key from PIN + salt using Argon2id, for encrypting session data.
@@ -118,6 +121,7 @@ pub fn encrypt_session(
     pin: &str,
     enc_salt: &str,
     account_id: &str,
+    actor_id: &str,
     plaintext_token: &str,
 ) -> Result<EncryptedSession, String> {
     let mut key = derive_encryption_key(pin, enc_salt)?;
@@ -144,6 +148,7 @@ pub fn encrypt_session(
         ciphertext: hex::encode(&ciphertext),
         nonce: hex::encode(nonce_bytes),
         account_id: account_id.to_string(),
+        actor_id: actor_id.to_string(),
     })
 }
 
@@ -191,6 +196,7 @@ pub fn account_fingerprint(account_id: &str) -> String {
 pub enum PinVerifyError {
     WrongPin { attempts_remaining: u32 },
     LockedOut { remaining_secs: u64 },
+    ActorBindingMissing,
     Internal(String),
 }
 
@@ -202,6 +208,9 @@ impl std::fmt::Display for PinVerifyError {
             }
             PinVerifyError::LockedOut { remaining_secs } => {
                 write!(f, "account locked, retry in {remaining_secs}s")
+            }
+            PinVerifyError::ActorBindingMissing => {
+                write!(f, "encrypted session has no persisted actor binding")
             }
             PinVerifyError::Internal(msg) => write!(f, "internal error: {msg}"),
         }
@@ -230,7 +239,8 @@ mod tests {
     fn session_encrypt_decrypt_roundtrip() {
         let prot = create_pin_protection("1234").unwrap();
         let token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.sig";
-        let enc = encrypt_session("1234", &prot.enc_salt, "password:test", token).unwrap();
+        let enc =
+            encrypt_session("1234", &prot.enc_salt, "password:test", "actor-test", token).unwrap();
         let dec = decrypt_session("1234", &prot.enc_salt, &enc).unwrap();
         assert_eq!(dec, token);
     }
@@ -238,7 +248,14 @@ mod tests {
     #[test]
     fn session_decrypt_wrong_pin_fails() {
         let prot = create_pin_protection("1234").unwrap();
-        let enc = encrypt_session("1234", &prot.enc_salt, "password:test", "secret").unwrap();
+        let enc = encrypt_session(
+            "1234",
+            &prot.enc_salt,
+            "password:test",
+            "actor-test",
+            "secret",
+        )
+        .unwrap();
         assert!(decrypt_session("9999", &prot.enc_salt, &enc).is_err());
     }
 

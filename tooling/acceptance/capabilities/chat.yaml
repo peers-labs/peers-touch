@@ -34,8 +34,7 @@
           "Static contract checks preserve one messaging owner and one client crypto lifecycle"
         ],
         "unproven_scope": [
-          "PostgreSQL-backed multi-node chat persistence recovery",
-          "End-to-end user message send and receive through Desktop UI"
+          "PostgreSQL-backed multi-node chat persistence recovery"
         ]
       }
     },
@@ -43,13 +42,22 @@
       "id": "chat-realtime-contract",
       "domain": "chat",
       "direction": "acceptance_validates_product",
-      "features": ["chat-realtime-delivery"],
-      "required_gates": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"],
+      "features": [
+        "chat-realtime-delivery",
+        "chat-desktop-gateway-message-flow"
+      ],
+      "required_gates": [
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-desktop-gateway-e2e"
+      ],
       "synthetic_paths": [
         "apps/station/app/subserver/messaging/**",
         "apps/station/app/subserver/envelope/**",
+        "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
         "apps/desktop/src-tauri/src/messaging/**",
-        "apps/desktop/src/runtimes/imRuntime.ts"
+        "apps/desktop/src/services/socialRealtime.ts"
       ],
       "evidence": {
         "truth_sources": [
@@ -62,14 +70,19 @@
           "/messaging/queue/claim",
           "/messaging/queue/ack"
         ],
-        "proven_by": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"],
+        "proven_by": [
+          "station-messaging-unit",
+          "messaging-platform-contract",
+          "desktop-check",
+          "chat-desktop-gateway-e2e"
+        ],
         "proven_scope": [
           "Station messaging queue and envelope packages compile and pass tests",
-          "Desktop messaging lifecycle and chat projection compile together"
+          "Desktop messaging lifecycle and chat projection compile together",
+          "The Desktop HTTP gateway keeps account selection, JWT actor, and Messaging Engine activation in one fail-closed identity transition"
         ],
         "unproven_scope": [
-          "Live delivery across two running Desktop clients",
-          "Reconnect, backoff and missed-event replay under network failure"
+          "Transport backoff and missed-event replay under injected network failure remain unproven; Linux offline, duplicate-replay and restart convergence are proven by G15 and MP-W13"
         ]
       }
     },
@@ -100,10 +113,7 @@
           "Desktop chat pages, components, store and service APIs type-check together",
           "Chat visible surface keeps compile-time contract with the Desktop messaging bridge"
         ],
-        "unproven_scope": [
-          "DOM-level Desktop chat page assertions",
-          "Human-visible message send/read/recall/edit workflow"
-        ]
+        "unproven_scope": []
       }
     },
     {
@@ -187,10 +197,11 @@
           "chat-native-group-mls-e2e"
         ],
         "proven_scope": [
-          "Only successful live runs with complete current source-bound reports prove W8 journeys"
+          "Only successful live runs with complete current source-bound reports prove W8 journeys",
+          "W8 two-client, multi-device, recovery and Group MLS journeys are proven on desktop-linux-native"
         ],
         "unproven_scope": [
-          "W8 remains unproven until all four environment-evidence gates pass"
+          "W8 remains unproven on desktop-macos-native and desktop-windows-native until all four environment-evidence gates pass in each cell"
         ]
       }
     },
@@ -228,12 +239,63 @@
         "proven_by": ["chat-native-interactions-e2e"],
         "proven_scope": [
           "Proto, Station, Engine and Desktop interaction contracts compile and pass their declared structural gates",
-          "Registry changes select the dedicated interaction Native Gate"
+          "Registry changes select the dedicated interaction Native Gate",
+          "Direct and Group reply, thread, edit, retract, reaction, pin and read are proven on desktop-linux-native",
+          "Pending edit/reply timeout and exact retry convergence are proven on desktop-linux-native"
         ],
         "unproven_scope": [
-          "Direct and Group reply, thread, edit, retract, reaction, pin and read remain unproven until the dedicated source-bound Native Gate passes",
-          "Pending edit/reply timeout and exact retry convergence remains unproven until the dedicated G15 assertion passes",
+          "Direct and Group interaction parity remains unproven on desktop-macos-native and desktop-windows-native",
           "Mobile interaction parity remains unproven until MP-W09 Native cells pass"
+        ]
+      }
+    },
+    {
+      "id": "chat-product-closure",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-product-closure"],
+      "required_gates": [
+        "desktop-check",
+        "station-messaging-unit",
+        "chat-native-visible-static",
+        "chat-native-product-closure-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/chat/conversation_api.proto",
+        "apps/station/app/subserver/conversation/**",
+        "apps/desktop/src-tauri/src/messaging/**",
+        "apps/desktop/src/services/im-service*",
+        "apps/desktop/src/store/socialChat.ts",
+        "apps/desktop/src/components/chat/**",
+        "tooling/acceptance/gates/chat/native_product_closure_runner.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station conversation authority and per-actor settings",
+          "Device Messaging Engine projections",
+          "Desktop socialChat runtime projection",
+          "visible native Tauri DOM"
+        ],
+        "surfaces": [
+          "Alice and Bob complete transcript",
+          "thread summary and panel",
+          "reaction picker and toolbar overlay",
+          "conversation-list contact search and Direct reuse",
+          "identity and Station attribution",
+          "conversation settings and background",
+          "attachment Composer, message rows and Details"
+        ],
+        "proven_by": ["chat-native-product-closure-e2e"],
+        "proven_scope": [
+          "Only the source-bound Native Gate with real DOM actions, restart and cleanup proves MP-W13",
+          "The Native Gate rejects raw auth, chat or common i18n keys in visible Alice and Bob UI",
+          "The Native Gate creates and reopens one Direct through the visible conversation-list search result and proves stable conversation identity",
+          "Destructive Chat Fixture reset is bound to an isolated disposable Station, Compose project and PostgreSQL volume",
+          "MP-W13 product closure is proven on desktop-linux-native"
+        ],
+        "unproven_scope": [
+          "MP-W13 product closure remains unproven on desktop-macos-native and desktop-windows-native",
+          "Mobile product parity remains outside this Desktop Gate"
         ]
       }
     },
@@ -267,11 +329,11 @@
         "proven_by": ["chat-native-typing-e2e"],
         "proven_scope": [
           "Station and Desktop typing contracts compile and pass their declared structural gates",
-          "Registry changes select the dedicated typing Native Gate"
+          "Registry changes select the dedicated typing Native Gate",
+          "Direct and Group typing start, stop, send, blur, session-switch, disconnect, TTL, removed-member and revoked-device behavior is proven on desktop-linux-native"
         ],
         "unproven_scope": [
-          "Direct start, stop, session-switch, disconnect and TTL behavior remains unproven",
-          "Group start, stop, send, blur, session-switch, disconnect, TTL, removed-member and revoked-device behavior remains unproven until G16 passes",
+          "Direct and Group typing parity remains unproven on desktop-macos-native and desktop-windows-native",
           "Mobile typing parity remains unproven until MP-W09 Native cells pass"
         ]
       }

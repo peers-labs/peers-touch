@@ -55,7 +55,7 @@ pub(crate) use engine::now_unix_ms;
 pub use engine::{
     EngineEndpoint, EngineRegistry, LocalAttachmentIntent, MessagingEngine,
     MessagingProjectionChange, MessagingProjectionNotifier, MetadataInteraction,
-    SubmitMessageOutcome,
+    PreparedGroupConversation, SubmitMessageOutcome,
 };
 pub use group_genesis::{GroupGenesisPreparer, StationGroupGenesisTransport};
 pub use identity::{FreshDeviceEnrollment, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION};
@@ -65,6 +65,11 @@ pub use membership_transition::{
     MembershipTransitionIntentInput, MembershipTransitionPreparer,
     StationMembershipTransitionTransport,
 };
+pub use messaging_core::codec::private_content::{
+    decode_message_private_content, encode_message_private_content,
+    validate_attachment_plaintext_metadata, validate_message_private_content,
+    MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
+};
 pub use mls::{MlsApplicationProcessor, MlsTransitionProcessor};
 pub use mls_key_packages::{
     MlsKeyPackagePublisher, MlsKeyPackageTransport, StationMlsKeyPackageTransport,
@@ -72,11 +77,6 @@ pub use mls_key_packages::{
 pub use mls_retirement::MlsRetirementProcessor;
 pub use mls_sender::MlsSenderTransitionProcessor;
 pub use prekeys::{PreKeyPublisher, PreKeyTransport, StationPreKeyTransport};
-pub use messaging_core::codec::private_content::{
-    decode_message_private_content, encode_message_private_content,
-    validate_attachment_plaintext_metadata, validate_message_private_content,
-    MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
-};
 pub use public_event::PublicEventProcessor;
 pub use receipt::DeliveryReceiptProcessor;
 pub use recovery::{
@@ -87,10 +87,11 @@ pub use recovery::{
 pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextIntent};
 pub use store::{
     ActorReadReceiveCommit, AttachmentDownloadProjection, AttachmentTransferRecord,
-    CommandOutboxEntry, ConversationMessageProjection, ConversationProjection,
-    ConversationStateReceiveCommit, DeliveryReceiptOutboxEntry, DeliveryReceiptReceiveCommit,
-    DirectEditCommit, DirectReceiveCommit, DirectSendCommit, InteractionCommandCommit,
-    MessageProjection, MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
+    CommandOutboxEntry, CommandStatusProjection, ConversationMemberProjection,
+    ConversationMessageProjection, ConversationProjection, ConversationStateReceiveCommit,
+    DeliveryReceiptOutboxEntry, DeliveryReceiptReceiveCommit, DirectEditCommit,
+    DirectReceiveCommit, DirectSendCommit, InteractionCommandCommit, MessageProjection,
+    MessagingStore, MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit,
     MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, MlsTransitionSendCommit,
     PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft, PendingMlsKeyPackage,
     PendingMlsTransitionState, PendingPreKeyBundle, PendingSenderProjection,

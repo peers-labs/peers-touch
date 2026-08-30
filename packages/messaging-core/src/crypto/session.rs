@@ -71,7 +71,8 @@ pub fn establish_receiver_session(
 ) -> Result<DirectSession, String> {
     key.validate()?;
     let shared_secret = x3dh::x3dh_receiver(our_identity, our_spk, our_opk, input)?;
-    let ratchet = double_ratchet::init_responder(&session_id, &shared_secret, our_spk.private_bytes());
+    let ratchet =
+        double_ratchet::init_responder(&session_id, &shared_secret, our_spk.private_bytes());
     Ok(DirectSession {
         session_id,
         key,

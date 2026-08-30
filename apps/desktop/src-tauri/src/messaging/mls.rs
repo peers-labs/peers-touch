@@ -1,8 +1,8 @@
 use super::store::{InteractionMutation, InteractionReceiveCommit};
 use super::{
     decode_message_private_content, verify_device_event_delivery, ClaimedItemConsumer,
-    ConversationProjection, EngineEndpoint, MessageProjection, MessagingStore, MlsReceiveCommit,
-    MlsTransitionReceiveCommit, ReceiveCommitResult,
+    ConversationMemberProjection, ConversationProjection, EngineEndpoint, MessageProjection,
+    MessagingStore, MlsReceiveCommit, MlsTransitionReceiveCommit, ReceiveCommitResult,
 };
 use crate::domain::mls_group::{MlsGroupManager, MlsPreparedReceive};
 use crate::model::chat::{
@@ -457,9 +457,10 @@ pub(super) fn validate_authority_snapshot(
     let mut previous_member = None;
     let mut owner_present = false;
     for member in &snapshot.active_members {
+        let role = authority_member_role(&member.role)?;
         if member.ptid.trim().is_empty()
-            || member.role.trim().is_empty()
             || previous_member.is_some_and(|value: &str| value >= member.ptid.as_str())
+            || (member.ptid == snapshot.owner_ptid) != (role == MemberRole::Owner)
         {
             return Err("messaging MLS authority members are not canonical".to_string());
         }
@@ -488,6 +489,15 @@ pub(super) fn validate_authority_snapshot(
         return Err("messaging MLS authority owner is not active".to_string());
     }
     Ok(())
+}
+
+fn authority_member_role(role: &str) -> Result<MemberRole, String> {
+    match role {
+        "member" | "MEMBER_ROLE_MEMBER" => Ok(MemberRole::Member),
+        "admin" | "MEMBER_ROLE_ADMIN" => Ok(MemberRole::Admin),
+        "owner" | "MEMBER_ROLE_OWNER" => Ok(MemberRole::Owner),
+        _ => Err("messaging MLS authority member role is invalid".to_string()),
+    }
 }
 
 fn join_checkpoint_projection(
@@ -532,11 +542,16 @@ pub(super) fn authority_snapshot_projection(
         kind: snapshot.kind,
         name: snapshot.name.clone(),
         owner_ptid: snapshot.owner_ptid.clone(),
-        member_ptids: snapshot
+        members: snapshot
             .active_members
             .iter()
-            .map(|member| member.ptid.clone())
-            .collect(),
+            .map(|member| {
+                Ok(ConversationMemberProjection {
+                    ptid: member.ptid.clone(),
+                    role: authority_member_role(&member.role)? as i32,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?,
         membership_epoch: snapshot.membership_epoch,
         mls_epoch: snapshot.mls_epoch,
         active: true,
@@ -612,6 +627,33 @@ mod tests {
             membership_epoch,
             mls_epoch,
         }
+    }
+
+    #[test]
+    fn authority_snapshot_projection_preserves_member_roles() {
+        let mut snapshot = authority_snapshot(3, 4);
+        snapshot.active_members[1].role = "admin".to_string();
+        let event = ConversationEvent {
+            conversation_id: "group-role-projection".to_string(),
+            authority_station_id: "station-local".to_string(),
+            membership_epoch: 3,
+            mls_epoch: 4,
+            ..Default::default()
+        };
+
+        let projection = authority_snapshot_projection(&event, &snapshot, 100).unwrap();
+
+        assert_eq!(
+            projection
+                .members
+                .iter()
+                .map(|member| (member.ptid.as_str(), member.role))
+                .collect::<Vec<_>>(),
+            vec![
+                ("ptid:alice", MemberRole::Owner as i32),
+                ("ptid:bob", MemberRole::Admin as i32),
+            ]
+        );
     }
 
     fn queue_item(ciphertext: Vec<u8>) -> DeviceQueueItem {

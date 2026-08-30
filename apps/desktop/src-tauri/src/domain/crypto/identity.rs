@@ -1,5 +1,5 @@
 pub use messaging_core::crypto::identity::{
-    DeviceSigningKey, IdentityKeyPair, X25519KeyPair, fingerprint_hex, fingerprint_numeric,
+    fingerprint_hex, fingerprint_numeric, DeviceSigningKey, IdentityKeyPair, X25519KeyPair,
 };
 
 use std::collections::HashMap;

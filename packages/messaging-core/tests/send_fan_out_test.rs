@@ -1,8 +1,8 @@
 use messaging_core::codec::private_content::decode_message_private_content;
+use messaging_core::contracts::CryptoEndpoint;
 use messaging_core::crypto::double_ratchet::{decrypt, init_initiator, init_responder};
 use messaging_core::crypto::identity::X25519KeyPair;
 use messaging_core::crypto::session::{DirectSession, DirectSessionKey};
-use messaging_core::contracts::CryptoEndpoint;
 use messaging_core::inbox::direct::encode_direct_ciphertext_aad;
 use messaging_core::outbox::{encrypt_direct_fan_out, DirectSendIntent, DirectSessionWithInit};
 use messaging_core::proto::chat::{CryptoEndpoint as ProtoCryptoEndpoint, DirectDeviceCiphertext};
@@ -38,7 +38,13 @@ fn direct_fan_out_encrypts_for_multiple_peers() {
         DirectSessionWithInit {
             session: DirectSession {
                 session_id: "sess-bob".to_string(),
-                key: DirectSessionKey::new("conv-1", alice_endpoint.clone(), bob_endpoint.clone(), 1).unwrap(),
+                key: DirectSessionKey::new(
+                    "conv-1",
+                    alice_endpoint.clone(),
+                    bob_endpoint.clone(),
+                    1,
+                )
+                .unwrap(),
                 protocol_version: 1,
                 established: true,
                 peer_identity_key: [0; 32],
@@ -50,7 +56,13 @@ fn direct_fan_out_encrypts_for_multiple_peers() {
         DirectSessionWithInit {
             session: DirectSession {
                 session_id: "sess-carol".to_string(),
-                key: DirectSessionKey::new("conv-1", alice_endpoint.clone(), carol_endpoint.clone(), 1).unwrap(),
+                key: DirectSessionKey::new(
+                    "conv-1",
+                    alice_endpoint.clone(),
+                    carol_endpoint.clone(),
+                    1,
+                )
+                .unwrap(),
                 protocol_version: 1,
                 established: true,
                 peer_identity_key: [0; 32],
@@ -86,7 +98,11 @@ fn direct_fan_out_encrypts_for_multiple_peers() {
     let bob_wire_proto = bob_direct.ratchet_ciphertext.unwrap();
     let bob_wire = messaging_core::crypto::double_ratchet::DrCiphertextWire {
         version: bob_wire_proto.wire_version,
-        sender_dh: bob_wire_proto.sender_ratchet_public_key.as_slice().try_into().unwrap(),
+        sender_dh: bob_wire_proto
+            .sender_ratchet_public_key
+            .as_slice()
+            .try_into()
+            .unwrap(),
         n_send: bob_wire_proto.message_counter,
         n_prev: bob_wire_proto.previous_chain_length,
         nonce: bob_wire_proto.nonce.as_slice().try_into().unwrap(),
@@ -98,12 +114,17 @@ fn direct_fan_out_encrypts_for_multiple_peers() {
 
     // Verify Carol can decrypt
     let carol_payload = &result.payloads[1];
-    let carol_direct = DirectDeviceCiphertext::decode(carol_payload.opaque_payload.as_slice()).unwrap();
+    let carol_direct =
+        DirectDeviceCiphertext::decode(carol_payload.opaque_payload.as_slice()).unwrap();
     let carol_aad = encode_direct_ciphertext_aad("conv-1", &carol_direct);
     let carol_wire_proto = carol_direct.ratchet_ciphertext.unwrap();
     let carol_wire = messaging_core::crypto::double_ratchet::DrCiphertextWire {
         version: carol_wire_proto.wire_version,
-        sender_dh: carol_wire_proto.sender_ratchet_public_key.as_slice().try_into().unwrap(),
+        sender_dh: carol_wire_proto
+            .sender_ratchet_public_key
+            .as_slice()
+            .try_into()
+            .unwrap(),
         n_send: carol_wire_proto.message_counter,
         n_prev: carol_wire_proto.previous_chain_length,
         nonce: carol_wire_proto.nonce.as_slice().try_into().unwrap(),

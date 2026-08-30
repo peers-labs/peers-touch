@@ -20,6 +20,30 @@
       "require": ["station-messaging-unit", "messaging-platform-contract", "desktop-check"]
     },
     {
+      "id": "chat-product-closure",
+      "features": ["chat-product-closure"],
+      "when": {
+        "paths": [
+          "model/domain/chat/conversation_api.proto",
+          "apps/station/app/subserver/conversation/**",
+          "apps/desktop/src-tauri/src/main.rs",
+          "apps/desktop/src-tauri/tauri.conf.json",
+          "apps/desktop/src-tauri/src/messaging/**",
+          "apps/desktop/src/services/im-service*",
+          "apps/desktop/src/store/socialChat.ts",
+          "apps/desktop/src/components/chat/**",
+          "tooling/acceptance/gates/chat/native_product_closure_runner.py",
+          "tooling/acceptance/gates/chat/native_product_closure_static_test.py"
+        ]
+      },
+      "require": [
+        "desktop-check",
+        "station-messaging-unit",
+        "chat-native-visible-static",
+        "chat-native-product-closure-e2e"
+      ]
+    },
+    {
       "id": "chat-direct-delivered-receipt",
       "features": ["chat-direct-delivered-receipt"],
       "when": {
@@ -38,8 +62,10 @@
           "apps/station/app/subserver/messaging/subserver.go",
           "tooling/acceptance/fixtures/chat_native_reset.py",
           "tooling/acceptance/gates/chat/chat_native_reset_test.py",
+          "tooling/acceptance/gates/chat/native_two_client_entry.py",
           "tooling/acceptance/gates/chat/native_two_client_runner.py",
-          "tooling/acceptance/gates/chat/native_two_client_e2e.py"
+          "tooling/acceptance/gates/chat/native_two_client_e2e.py",
+          "tooling/acceptance/gates/chat/native_two_client_e2e_test.py"
         ]
       },
       "require": [
@@ -164,7 +190,12 @@
       "when": {
         "paths": [
           "apps/desktop/src-tauri/src/interface/http_gateway/**",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/account.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
+          "apps/desktop/src-tauri/src/application/account/**",
           "apps/desktop/src-tauri/src/application/auth/service.rs",
+          "apps/desktop/src-tauri/src/domain/pin_lock/**",
+          "apps/desktop/src-tauri/src/infrastructure/auth_identity/**",
           "apps/desktop/src-tauri/src/messaging/**",
           "apps/desktop/src/services/desktop_api.ts",
           "apps/desktop/src/services/im-service.ts"
@@ -266,7 +297,11 @@
           "Makefile"
         ]
       },
-      "require": ["acceptance-plan-self"]
+      "require": [
+        "acceptance-plan-self",
+        "acceptance-infra-validation",
+        "acceptance-runtime-provisioning-self"
+      ]
     },
     {
       "id": "desktop-dev-runtime-isolation",

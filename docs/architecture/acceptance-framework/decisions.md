@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-18
+> **Created**: 2026-06-03 | **Updated**: 2026-08-24
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -24,6 +24,10 @@
 | D-10 | Gap Detector 作为跨阶段只读守卫 | proposed |
 | D-11 | Runtime Evidence Store 位于 source tree 之外 | accepted |
 | D-12 | Acceptance Infra 与业务注入使用独立责任平面 | accepted |
+| D-13 | Native Desktop proof 使用 Gate × Runtime Cell 矩阵 | accepted |
+| D-14 | 远端 Native Cell 使用 SSH 控制面与 loopback WebDriver | accepted |
+| D-15 | Linux Native Cell 使用持久 Xorg 桌面而非 Xvfb | accepted |
+| D-16 | 远端 Cell 通过增量 Git object sync 获取 clean source | accepted |
 
 ---
 
@@ -561,3 +565,200 @@ Infra readiness 只消费 `acceptance_core_self_validation`。方向为
 
 若某项能力无法明确归入 Infra contract 或业务注入，必须先形成 ownership decision；
 不得以“代码位于 `tooling/acceptance/`”为由默认归属 Infra。
+
+---
+
+## D-13: Native Desktop proof 使用 Gate × Runtime Cell 矩阵
+
+**Status**: accepted
+**Date**: 2026-08-24 | **Accepted**: 2026-08-24
+
+### Context
+
+当前 `native-tauri-embedded-webdriver` 实际只证明本机 macOS WKWebView。产品 Gate、
+environment 和平台实现被压缩成一个维度，导致 Linux/Windows 支持只能复制 Gate，
+或错误地让单平台 evidence 代表全部 Desktop 平台。
+
+### Decision
+
+产品 Gate identity 保持稳定，新增显式 `requiredRuntimeCells` 维度。一次产品能力声明
+可要求 `desktop-macos-native`、`desktop-linux-native` 和
+`desktop-windows-native`；每个 `(gateId, cellId, sourceCommit)` 独立执行、持久化和
+判定。Capability 只有在其 required cells 全部满足时才能声明跨平台 `PROVEN`。
+
+### Rationale
+
+业务旅程与平台执行机制是两个正交维度。同一 Chat journey 应复用一套断言，而窗口、
+输入、WebView 和 host lifecycle 由 cell adapter 提供。
+
+### Alternatives Considered
+
+- 每个平台复制一个产品 Gate：拒绝，断言和修复会漂移。
+- 一个 Gate 运行任意可用平台即算通过：拒绝，允许平台证据互相冒充。
+- 将平台判断留给 Agent：拒绝，不可发现、不可重复。
+
+### Consequences
+
+- Planner、Runner、manifest、report 和 validator 需要理解 cell 维度。
+- 现有 macOS evidence 只能证明 macOS cell，不再隐式代表 Desktop 全平台。
+- 平台暂不可用时只阻塞对应 cell；报告必须保持跨平台能力为 `PARTIAL/UNPROVEN`。
+
+### Review / Reversal Trigger
+
+若 Gate × cell 展开造成无法控制的执行成本，应由 Capability 明确区分 required 与
+scheduled cells；不得恢复为“任意一台通过即可”。
+
+---
+
+## D-14: 远端 Native Cell 使用 SSH 控制面与 Loopback WebDriver
+
+**Status**: accepted
+**Date**: 2026-08-24 | **Accepted**: 2026-08-24
+
+### Context
+
+当前 `TauriDriver` 同时负责本机 app launch 和 `127.0.0.1` WebDriver 连接。远端
+Desktop 若直接开放 embedded WebDriver 端口，会扩大安全面；若把完整业务 Gate 搬到
+远端，又会分裂 evidence owner 和业务 runner。
+
+### Decision
+
+保留本地 Acceptance Orchestrator 和 Evidence Store。远端 cell 通过严格 host-key
+校验的 SSH 控制面完成 source staging、build、GUI process lifecycle 与 native
+adapter 调用；embedded WebDriver 继续只绑定远端 loopback，通过 run-scoped SSH
+local forward 暴露给本地 `TauriDriver`。SSH target 只能由 Profile/secret reference
+解析，禁止写入 Gate、contract 或 evidence。
+
+### Rationale
+
+该模型保持业务 Gate 与 evidence owner 单一，同时不把高权限自动化端口暴露到网络。
+平台动作发生在目标桌面，开发者本机只承担控制和证据持久化，不争抢本机 GUI。
+
+### Alternatives Considered
+
+- WebDriver 监听 `0.0.0.0`：拒绝，automation capability 暴露到网络。
+- 全部 Gate 在远端执行：拒绝，会引入第二套 planner/evidence lifecycle。
+- 共享长期 SSH tunnel：拒绝，无法绑定单次 run 和可靠 cleanup。
+
+### Consequences
+
+- 需要 remote source/binary attestation、SSH tunnel lease 和断线 reaper。
+- 网络中断必须区分 environment failure 与产品失败。
+- Host IP、用户名、密钥和远端物理路径不得进入仓库 contract。
+
+### Review / Reversal Trigger
+
+若 SSH tunnel 无法提供稳定延迟或 teardown，应替换 transport implementation，但
+仍保持 loopback WebDriver、run-scoped lease 和单一 Evidence Store。
+
+---
+
+## D-15: Linux Native Cell 使用持久 Xorg 桌面而非 Xvfb
+
+**Status**: accepted
+**Date**: 2026-08-24 | **Accepted**: 2026-08-24
+
+### Context
+
+Linux 最终 Native proof 需要同时证明 WebKitGTK 渲染、真实窗口焦点、系统级键鼠输入、
+窗口归属和截图。Xvfb 可以执行 DOM 自动化，但其显示、合成与输入语义不足以代表完整
+Desktop session。候选主机已有 QXL connected virtual output、GDM 和 GNOME，因此不
+需要物理显示器。
+
+### Decision
+
+Linux cell 使用受支持 userland 上的持久 Xorg Desktop session、connected virtual
+output、Window Manager 与 X11 XTest/EWMH native adapter。该 userland 可以是
+digest-pinned container，因此不要求宿主发行版升级。Xvfb 只允许用于明确标注的
+非 Native 诊断，不得产生最终 Linux Native proof。Tauri/WebKitGTK 系统依赖必须来自
+同一受支持 userland 的软件源；禁止跨发行版混装。
+
+### Rationale
+
+Xorg 提供可审计的 active window、window stack、geometry 和 XTest input，适合当前
+Gate 的真实输入合同；QXL 虚拟输出消除了物理显示器依赖。固定 session 还能把 VNC/
+SPICE 观察面与自动化运行面绑定到同一 display。容器化 userland 将 WebKitGTK 和
+toolchain compatibility 与 Ubuntu 20.04 宿主解耦，同时仍在真实 Linux kernel、
+Xorg、Window Manager 和 WebKitGTK process 上执行。
+
+### Alternatives Considered
+
+- Xvfb：拒绝作为最终 proof，窗口合成和用户可见性语义不足。
+- 宿主原地升级：不要求；对共享机器破坏性过大，且不是满足 WebKitGTK userland
+  contract 的必要条件。
+- 在 Ubuntu 20.04 宿主混装新发行版 WebKitGTK：拒绝，ABI 与安全更新不可控。
+- 继续使用 Wayland 并依赖通用注入工具：暂不采用，权限和 compositor-specific
+  automation 不稳定；可在具备正式协议后重新评审。
+- 要求物理显示器：拒绝，QXL/VKMS 等 connected virtual output 已能提供真实 display
+  server 和 compositor 语义。
+
+### Consequences
+
+- Linux host 必须维持专用登录 session、固定分辨率和 GUI lease。
+- 候选 Ubuntu 20.04 主机可保持不变；Linux cell 使用包含 WebKitGTK 4.1、
+  build toolchain、Xorg dummy、Window Manager、DBus/keyring 和 observer 的
+  digest-pinned image。
+- Host kernel、container image digest、cell userland、display 和 binary identity
+  必须同时进入 Runtime Cell Manifest。
+- Linux cell 证明 WebKitGTK/X11，不证明 macOS AppKit/Spaces 或 Windows WebView2。
+
+### Review / Reversal Trigger
+
+当 Wayland 提供可稳定自动化、可审计窗口归属和 unattended session lifecycle 时，
+可新增 Wayland cell；不得原地改变 Xorg cell 的证据语义。
+
+---
+
+## D-16: 远端 Cell 通过增量 Git Object Sync 获取 Clean Source
+
+**Status**: accepted
+**Date**: 2026-08-24 | **Accepted**: 2026-08-24
+
+### Context
+
+每次把完整 worktree 复制到远端会浪费网络和磁盘，并难以证明哪些 untracked、ignored
+或 dirty 文件进入了构建。现有 remote `make station` 已采用 source lease、bare Git
+repository、增量 push/fetch、exact checkout 和远端 build 的模型。
+
+### Decision
+
+Native remote cell 复用该部署语义，但将 source acquisition 抽成与 Station/Desktop
+role 无关的组件：
+
+```text
+Profile target
+  -> source lease
+  -> push/fetch missing Git objects
+  -> checkout exact clean commit
+  -> build in digest-pinned cell image
+  -> attest commit + image digest + binary SHA-256
+```
+
+首次运行传输完整可达 Git objects；后续只传缺失 objects。`node_modules`、Cargo target
+和 package caches 保留在受 cell lease 管理的 cache volumes，不进入 source identity。
+最终 proof 拒绝 dirty worktree；诊断 run 可另行声明 dirty digest，但不得发布为
+`PROVEN`。
+
+### Rationale
+
+Git object transfer 比 rsync 全量目录更高效，并天然绑定 commit identity。远端构建
+保证 Linux ABI/WebKitGTK 匹配；持久 cache 避免每次全量安装和编译。
+
+### Alternatives Considered
+
+- 每次 rsync 全量 worktree：拒绝，传输冗余且 source boundary 不清晰。
+- 从 macOS 交叉编译并传 Linux binary：拒绝，Linux native dependencies 与 ABI
+  证据不足。
+- 直接复用 Station `deploy.sh` 全流程：拒绝，其 role、restart 和 health semantics
+  属于 Station/Relay；只复用 source-sync contract。
+
+### Consequences
+
+- 需要把现有 deploy source-sync 逻辑提取为共享、无 role 语义的入口。
+- Remote cell 必须有 persistent bare repository、checkout root 和 bounded cache。
+- Commit 不可达、checkout dirty 或 remote digest 不一致时在 build 前 fail closed。
+
+### Review / Reversal Trigger
+
+若 Git object transport 无法覆盖必要 repository dependencies，应扩展受控 source
+manifest；不得退回无 attestation 的全目录复制。

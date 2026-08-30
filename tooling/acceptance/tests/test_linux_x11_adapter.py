@@ -1,0 +1,628 @@
+from __future__ import annotations
+
+import subprocess
+import sys
+import tempfile
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, call, patch
+
+from tooling.acceptance.core.errors import DriverError
+from tooling.acceptance.drivers.native import create_native_desktop_adapter
+from tooling.acceptance.drivers.native.base import (
+    MouseAction,
+    NativeKey,
+    NativeModifier,
+)
+from tooling.acceptance.drivers.native.linux_x11 import (
+    LinuxX11NativeDesktopAdapter,
+    _KEY_SYMBOLS,
+    _MODIFIER_SYMBOLS,
+)
+
+
+class LinuxX11NativeDesktopAdapterTests(unittest.TestCase):
+    def test_factory_returns_linux_adapter_for_linux_platform(self) -> None:
+        with patch.dict("os.environ", {"DISPLAY": ":99"}):
+            adapter = create_native_desktop_adapter("linux")
+
+        self.assertIsInstance(adapter, LinuxX11NativeDesktopAdapter)
+        self.assertEqual(adapter.platform, "linux")
+        self.assertEqual(adapter.display_name, ":99")
+
+    def test_display_is_required(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaisesRegex(DriverError, "requires DISPLAY"):
+                LinuxX11NativeDesktopAdapter()
+
+    def test_process_operations_reject_invalid_pid(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        for process_id in (0, -1, "not-a-pid"):
+            with self.subTest(process_id=process_id):
+                with self.assertRaisesRegex(DriverError, "process ID"):
+                    adapter.activate_process(process_id)  # type: ignore[arg-type]
+
+    def test_key_mapping_uses_x11_control_as_primary_modifier(self) -> None:
+        self.assertEqual(_KEY_SYMBOLS[NativeKey.DELETE], "Delete")
+        self.assertEqual(_KEY_SYMBOLS[NativeKey.ENTER], "Return")
+        self.assertEqual(_KEY_SYMBOLS[NativeKey.L], "l")
+        self.assertEqual(_KEY_SYMBOLS[NativeKey.SLASH], "slash")
+        self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.PRIMARY], "Control_L")
+        self.assertEqual(_MODIFIER_SYMBOLS[NativeModifier.SHIFT], "Shift_L")
+
+    def test_file_chooser_location_uses_gtk_location_shortcut(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        active_window = Mock()
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_active_window", return_value=active_window),
+            patch.object(adapter, "_window_pid", return_value=84),
+            patch.object(
+                adapter,
+                "_focused_accessible",
+                return_value={"kind": "list", "role": "list"},
+            ) as focused_accessible,
+            patch.object(adapter, "post_key") as post_key,
+        ):
+            adapter.reveal_file_chooser_location()
+
+        post_key.assert_called_once_with(NativeKey.SLASH)
+        focused_accessible.assert_called_once_with(84)
+        display.close.assert_called_once_with()
+
+    def test_file_chooser_location_moves_focus_from_action_to_list(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        active_window = Mock()
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_active_window", return_value=active_window),
+            patch.object(adapter, "_window_pid", return_value=84),
+            patch.object(
+                adapter,
+                "_focused_accessible",
+                side_effect=(
+                    {
+                        "kind": "unknown",
+                        "role": "push button",
+                        "title": "Cancel",
+                    },
+                    {
+                        "kind": "unknown",
+                        "role": "push button",
+                        "title": "OK",
+                    },
+                    {
+                        "kind": "unknown",
+                        "role": "list item",
+                        "title": "Recent files",
+                    },
+                ),
+            ) as focused_accessible,
+            patch.object(adapter, "post_key") as post_key,
+        ):
+            adapter.reveal_file_chooser_location()
+
+        self.assertEqual(
+            post_key.call_args_list,
+            [
+                call(NativeKey.TAB),
+                call(NativeKey.TAB),
+                call(NativeKey.SLASH),
+            ],
+        )
+        self.assertEqual(
+            focused_accessible.call_args_list,
+            [call(84), call(84), call(84)],
+        )
+        display.close.assert_called_once_with()
+
+    def test_focused_accessible_is_scoped_to_active_process(self) -> None:
+        class State:
+            def __init__(self, focused: bool) -> None:
+                self.focused = focused
+
+            def contains(self, _state: object) -> bool:
+                return self.focused
+
+        class Node:
+            def __init__(
+                self,
+                *,
+                process_id: int,
+                role: str,
+                name: str = "",
+                focused: bool = False,
+                text_value: str | None = None,
+                children: tuple["Node", ...] = (),
+            ) -> None:
+                self.process_id = process_id
+                self.role = role
+                self.name = name
+                self.focused = focused
+                self.text_value = text_value
+                self.children = children
+
+            @property
+            def childCount(self) -> int:
+                return len(self.children)
+
+            def __getitem__(self, index: int) -> "Node":
+                return self.children[index]
+
+            def get_process_id(self) -> int:
+                return self.process_id
+
+            def getRoleName(self) -> str:
+                return self.role
+
+            def getState(self) -> State:
+                return State(self.focused)
+
+            def queryText(self) -> object:
+                if self.text_value is None:
+                    raise RuntimeError("not text")
+                return types.SimpleNamespace(
+                    characterCount=len(self.text_value),
+                    getText=lambda start, end: (
+                        self.text_value
+                        if (start, end) == (0, len(self.text_value))
+                        else ""
+                    ),
+                )
+
+        desktop_button = Node(
+            process_id=42,
+            role="push button",
+            name="Upload background from local file",
+            focused=True,
+        )
+        chooser_list = Node(
+            process_id=84,
+            role="text",
+            focused=True,
+            text_value="/tmp/chooser.png",
+        )
+        desktop = Node(
+            process_id=0,
+            role="desktop",
+            children=(
+                Node(
+                    process_id=42,
+                    role="application",
+                    children=(desktop_button,),
+                ),
+                Node(
+                    process_id=84,
+                    role="application",
+                    children=(chooser_list,),
+                ),
+            ),
+        )
+        pyatspi = types.ModuleType("pyatspi")
+        pyatspi.STATE_FOCUSED = object()  # type: ignore[attr-defined]
+        pyatspi.Registry = types.SimpleNamespace(  # type: ignore[attr-defined]
+            getDesktop=lambda _index: desktop
+        )
+
+        with patch.dict(sys.modules, {"pyatspi": pyatspi}):
+            focused = LinuxX11NativeDesktopAdapter._focused_accessible(84)
+
+        self.assertEqual(
+            focused,
+            {
+                "kind": "text-field",
+                "title": "",
+                "value": "/tmp/chooser.png",
+                "role": "text",
+                "subrole": "",
+            },
+        )
+
+    def test_key_chord_preserves_native_event_order(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        xtest = types.ModuleType("Xlib.ext.xtest")
+        xtest.fake_input = Mock()  # type: ignore[attr-defined]
+        xlib = types.ModuleType("Xlib")
+        xlib.X = types.SimpleNamespace(KeyPress=2, KeyRelease=3)
+        xlib.XK = types.SimpleNamespace(string_to_keysym=lambda value: value)
+        extension = types.ModuleType("Xlib.ext")
+        extension.xtest = xtest
+
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_keycode", side_effect=(37, 38)),
+            patch.dict(
+                sys.modules,
+                {
+                    "Xlib": xlib,
+                    "Xlib.ext": extension,
+                    "Xlib.ext.xtest": xtest,
+                },
+            ),
+        ):
+            adapter.post_key(
+                NativeKey.L,
+                modifiers=(NativeModifier.PRIMARY,),
+            )
+
+        self.assertEqual(
+            xtest.fake_input.call_args_list,  # type: ignore[attr-defined]
+            [
+                call(display, 2, 37),
+                call(display, 2, 38),
+                call(display, 3, 38),
+                call(display, 3, 37),
+            ],
+        )
+        display.sync.assert_called_once_with()
+        display.close.assert_called_once_with()
+
+    def test_mouse_buttons_move_pointer_to_the_contract_point_first(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        xtest = types.ModuleType("Xlib.ext.xtest")
+        xtest.fake_input = Mock()  # type: ignore[attr-defined]
+        xlib = types.ModuleType("Xlib")
+        xlib.X = types.SimpleNamespace(
+            MotionNotify=6,
+            ButtonPress=4,
+            ButtonRelease=5,
+        )
+        extension = types.ModuleType("Xlib.ext")
+        extension.xtest = xtest
+
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.dict(
+                sys.modules,
+                {
+                    "Xlib": xlib,
+                    "Xlib.ext": extension,
+                    "Xlib.ext.xtest": xtest,
+                },
+            ),
+        ):
+            adapter.post_mouse(
+                (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
+                (29.4, 190.6),
+            )
+
+        self.assertEqual(
+            xtest.fake_input.call_args_list,  # type: ignore[attr-defined]
+            [
+                call(display, 6, x=29, y=191),
+                call(display, 4, 1, x=29, y=191),
+                call(display, 5, 1, x=29, y=191),
+            ],
+        )
+        display.sync.assert_called_once_with()
+        display.close.assert_called_once_with()
+
+    def test_window_bounds_translate_client_origin_into_root_coordinates(
+        self,
+    ) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        root = Mock()
+        window = Mock()
+        display.screen.return_value.root = root
+        window.get_geometry.return_value = types.SimpleNamespace(
+            width=860,
+            height=800,
+        )
+        root.translate_coords.return_value = types.SimpleNamespace(x=641, y=52)
+        frame = types.SimpleNamespace(value=(1, 1, 20, 5))
+
+        with patch.object(adapter, "_property", return_value=frame) as get_property:
+            bounds = adapter._window_bounds(display, window)
+
+        root.translate_coords.assert_called_once_with(window, 0, 0)
+        window.translate_coords.assert_not_called()
+        get_property.assert_called_once_with(
+            display,
+            window,
+            "_NET_FRAME_EXTENTS",
+            "CARDINAL",
+        )
+        self.assertEqual(bounds.left, 640)
+        self.assertEqual(bounds.top, 32)
+        self.assertEqual(bounds.width, 862)
+        self.assertEqual(bounds.height, 825)
+
+    def test_window_bounds_fall_back_when_frame_extents_are_absent(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        root = Mock()
+        window = Mock()
+        display.screen.return_value.root = root
+        window.get_geometry.return_value = types.SimpleNamespace(
+            width=860,
+            height=800,
+        )
+        root.translate_coords.return_value = types.SimpleNamespace(x=1, y=52)
+
+        with patch.object(adapter, "_property", return_value=None):
+            bounds = adapter._window_bounds(display, window)
+
+        self.assertEqual(bounds.left, 1)
+        self.assertEqual(bounds.top, 52)
+        self.assertEqual(bounds.width, 860)
+        self.assertEqual(bounds.height, 800)
+
+    def test_content_origin_uses_client_origin_without_frame_extents(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        root = Mock()
+        window = Mock()
+        display.screen.return_value.root = root
+        root.translate_coords.return_value = types.SimpleNamespace(x=641, y=52)
+
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_client_windows", return_value=(window,)),
+            patch.object(adapter, "_window_pid", return_value=42),
+        ):
+            origin = adapter.content_origin(42)
+
+        root.translate_coords.assert_called_once_with(window, 0, 0)
+        self.assertEqual(origin, (641.0, 52.0))
+        display.close.assert_called_once_with()
+
+    def test_focused_control_owns_active_descendant_dialog(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        application_window = Mock()
+        dialog_window = Mock()
+        display.get_input_focus.return_value.focus = dialog_window
+
+        def window_pid(_display: object, window: object) -> int:
+            return 42 if window is application_window else 84
+
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(
+                adapter,
+                "_client_windows",
+                return_value=(application_window,),
+            ),
+            patch.object(adapter, "_active_window", return_value=dialog_window),
+            patch.object(adapter, "_window_pid", side_effect=window_pid),
+            patch.object(adapter, "_is_dialog", return_value=False),
+            patch.object(
+                adapter,
+                "_is_native_dialog",
+                side_effect=lambda _display, window: window is dialog_window,
+            ),
+            patch.object(
+                adapter,
+                "_is_descendant_process",
+                side_effect=lambda process_id, ancestor_id: (
+                    process_id == 84 and ancestor_id == 42
+                ),
+            ),
+            patch.object(
+                adapter,
+                "_focused_accessible",
+                return_value={
+                    "kind": "unknown",
+                    "title": "Upload background from local file",
+                    "role": "push button",
+                },
+            ),
+        ):
+            control = adapter.focused_control(42)
+
+        self.assertEqual(control.kind, "application-dialog")
+        self.assertEqual(control.window_count, 2)
+        self.assertEqual(control.dialog_count, 1)
+        self.assertTrue(control.frontmost)
+        self.assertTrue(control.focused_window)
+        self.assertFalse(control.main_window)
+        self.assertEqual(control.actual_frontmost_pid, 84)
+        display.close.assert_called_once_with()
+
+    def test_focused_control_preserves_descendant_dialog_text_field(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        application_window = Mock()
+        dialog_window = Mock()
+        display.get_input_focus.return_value.focus = dialog_window
+
+        def window_pid(_display: object, window: object) -> int:
+            return 42 if window is application_window else 84
+
+        with (
+            patch.object(
+                adapter,
+                "_client_windows",
+                return_value=(application_window,),
+            ),
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(adapter, "_active_window", return_value=dialog_window),
+            patch.object(adapter, "_window_pid", side_effect=window_pid),
+            patch.object(adapter, "_is_dialog", return_value=False),
+            patch.object(adapter, "_is_native_dialog", return_value=True),
+            patch.object(adapter, "_is_descendant_process", return_value=True),
+            patch.object(
+                adapter,
+                "_focused_accessible",
+                return_value={
+                    "kind": "text-field",
+                    "title": "Location",
+                    "value": "",
+                    "role": "text",
+                },
+            ),
+        ):
+            control = adapter.focused_control(42)
+
+        self.assertEqual(control.kind, "text-field")
+        self.assertEqual(control.title, "Location")
+        self.assertEqual(control.dialog_count, 1)
+        self.assertTrue(control.frontmost)
+        self.assertTrue(control.focused_window)
+        display.close.assert_called_once_with()
+
+    def test_focused_control_rejects_unrelated_active_dialog(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        application_window = Mock()
+        unrelated_dialog = Mock()
+        display.get_input_focus.return_value.focus = unrelated_dialog
+
+        def window_pid(_display: object, window: object) -> int:
+            return 42 if window is application_window else 84
+
+        with (
+            patch.object(adapter, "_open_display", return_value=display),
+            patch.object(
+                adapter,
+                "_client_windows",
+                return_value=(application_window,),
+            ),
+            patch.object(adapter, "_active_window", return_value=unrelated_dialog),
+            patch.object(adapter, "_window_pid", side_effect=window_pid),
+            patch.object(adapter, "_is_dialog", return_value=False),
+            patch.object(adapter, "_is_native_dialog", return_value=True),
+            patch.object(adapter, "_is_descendant_process", return_value=False),
+            patch.object(adapter, "_focused_accessible", return_value={}),
+        ):
+            control = adapter.focused_control(42)
+
+        self.assertEqual(control.kind, "application")
+        self.assertEqual(control.window_count, 1)
+        self.assertEqual(control.dialog_count, 0)
+        self.assertFalse(control.frontmost)
+        self.assertFalse(control.focused_window)
+        self.assertFalse(control.main_window)
+        self.assertEqual(control.actual_frontmost_pid, 84)
+        display.close.assert_called_once_with()
+
+    def test_zenity_normal_window_is_a_native_dialog(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        display = Mock()
+        window = Mock()
+
+        with (
+            patch.object(adapter, "_is_dialog", return_value=False),
+            patch.object(
+                adapter,
+                "_window_class",
+                return_value="zenity.zenity",
+            ),
+        ):
+            self.assertTrue(adapter._is_native_dialog(display, window))
+
+    def test_clipboard_read_is_bound_to_the_declared_display(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        read = subprocess.CompletedProcess(
+            args=(),
+            returncode=0,
+            stdout=b"clipboard",
+            stderr=b"",
+        )
+        with (
+            patch.object(adapter, "_clipboard_selection_owner", return_value=84),
+            patch(
+                "tooling.acceptance.drivers.native.linux_x11.subprocess.run",
+                return_value=read,
+            ) as run,
+        ):
+            self.assertEqual(adapter.read_clipboard(), b"clipboard")
+
+        self.assertEqual(run.call_args.args[0], (
+            "xclip",
+            "-selection",
+            "clipboard",
+            "-out",
+        ))
+        self.assertEqual(run.call_args.kwargs["env"]["DISPLAY"], ":99")
+
+    def test_empty_clipboard_without_selection_owner_is_valid(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+
+        with (
+            patch.object(adapter, "_clipboard_selection_owner", return_value=0),
+            patch.object(adapter, "_run") as run,
+        ):
+            self.assertEqual(adapter.read_clipboard(), b"")
+
+        run.assert_not_called()
+
+    def test_clipboard_write_starts_single_request_owner(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        process = Mock(pid=84)
+        process.poll.return_value = None
+        process.stdin = Mock()
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.dict("os.environ", {"PT_CELL_RUN_ROOT": tmp}),
+            patch.object(
+                adapter,
+                "_clipboard_selection_owner",
+                return_value=1024,
+            ),
+            patch(
+                "tooling.acceptance.drivers.native.linux_x11.subprocess.Popen",
+                return_value=process,
+            ) as popen,
+        ):
+            adapter.write_clipboard(b"next")
+            owner_path = Path(tmp) / "native-clipboard-owner.pid"
+            self.assertEqual(owner_path.read_text(encoding="utf-8"), "84\n")
+
+        self.assertEqual(
+            popen.call_args.args[0],
+            (
+                "xclip",
+                "-quiet",
+                "-selection",
+                "clipboard",
+                "-in",
+                "-loops",
+                "1",
+            ),
+        )
+        self.assertEqual(popen.call_args.kwargs["env"]["DISPLAY"], ":99")
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        process.stdin.write.assert_called_once_with(b"next")
+        process.stdin.close.assert_called_once_with()
+
+    def test_empty_clipboard_stops_managed_owner(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        owner_path = Path("/runtime/native-clipboard-owner.pid")
+
+        with (
+            patch.object(adapter, "_clipboard_owner_path", return_value=owner_path),
+            patch.object(adapter, "_stop_managed_clipboard_owner") as stop,
+            patch(
+                "tooling.acceptance.drivers.native.linux_x11.subprocess.Popen"
+            ) as popen,
+        ):
+            adapter.write_clipboard(b"")
+
+        stop.assert_called_once_with(owner_path)
+        popen.assert_not_called()
+
+    def test_screenshot_must_create_a_nonempty_file(self) -> None:
+        adapter = LinuxX11NativeDesktopAdapter(":99")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "desktop.png"
+
+            def create_screenshot(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                path.write_bytes(b"png")
+                return subprocess.CompletedProcess(args=(), returncode=0, stdout="", stderr="")
+
+            with patch.object(adapter, "_run", side_effect=create_screenshot):
+                adapter.capture_screenshot(path)
+
+            self.assertEqual(path.read_bytes(), b"png")
+
+
+if __name__ == "__main__":
+    unittest.main()

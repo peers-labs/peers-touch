@@ -93,8 +93,10 @@ pub fn agent_quick_completion(
         Some(&body),
     ) {
         Ok(resp) => AppResult::success(resp),
-        Err(e) => {
-            AppResult::fail(ErrorCode::InternalError, "quick completion failed", Some(json!({"error": e.to_string()})))
-        }
+        Err(e) => AppResult::fail(
+            ErrorCode::InternalError,
+            "quick completion failed",
+            Some(json!({"error": e.to_string()})),
+        ),
     }
 }

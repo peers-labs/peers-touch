@@ -1,5 +1,7 @@
 use crate::contracts::{ActorReadReceiveCommit, CryptoEndpoint, DeliveryReceiptReceiveCommit};
-use crate::proto::chat::{ActorReadCursor, DeviceQueueItem, DeviceQueuePayloadType, MessageReceipt, ReceiptType};
+use crate::proto::chat::{
+    ActorReadCursor, DeviceQueueItem, DeviceQueuePayloadType, MessageReceipt, ReceiptType,
+};
 use crate::store::MessagingRepository;
 
 use super::ClaimedItemConsumer;

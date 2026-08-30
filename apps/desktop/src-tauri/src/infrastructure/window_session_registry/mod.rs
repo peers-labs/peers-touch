@@ -20,6 +20,18 @@ pub struct WindowSessionRegistry {
     inner: RwLock<HashMap<String, ActiveSession>>,
 }
 
+pub struct ExclusiveBindingCommit {
+    window_label: String,
+    previous_window_session: Option<ActiveSession>,
+    kicked: Vec<ActiveSession>,
+}
+
+impl ExclusiveBindingCommit {
+    pub fn into_kicked(self) -> Vec<ActiveSession> {
+        self.kicked
+    }
+}
+
 impl WindowSessionRegistry {
     pub fn new() -> Self {
         Self {
@@ -42,10 +54,21 @@ impl WindowSessionRegistry {
     /// Station actor. Returns the removed sessions so callers can notify those
     /// windows that a newer local login won.
     pub fn bind_exclusive(&self, session: ActiveSession) -> Vec<ActiveSession> {
+        self.try_bind_exclusive(session)
+            .expect("WindowSessionRegistry write lock poisoned")
+            .kicked
+    }
+
+    /// Fallible variant used by identity transactions. Authentication must
+    /// fail closed when the authoritative window binding cannot be committed.
+    pub fn try_bind_exclusive(
+        &self,
+        session: ActiveSession,
+    ) -> Result<ExclusiveBindingCommit, String> {
         let mut map = self
             .inner
             .write()
-            .expect("WindowSessionRegistry write lock poisoned");
+            .map_err(|_| "window session registry write lock poisoned".to_string())?;
         let label = session.window_label.clone();
         let actor_id = session.actor.actor_id.clone();
         let kicked_labels: Vec<String> = map
@@ -64,8 +87,27 @@ impl WindowSessionRegistry {
                 kicked.push(prev);
             }
         }
-        map.insert(label, session);
-        kicked
+        let previous_window_session = map.insert(label.clone(), session);
+        Ok(ExclusiveBindingCommit {
+            window_label: label,
+            previous_window_session,
+            kicked,
+        })
+    }
+
+    pub fn rollback_exclusive(&self, commit: ExclusiveBindingCommit) -> Result<(), String> {
+        let mut map = self
+            .inner
+            .write()
+            .map_err(|_| "window session registry write lock poisoned".to_string())?;
+        map.remove(&commit.window_label);
+        if let Some(previous) = commit.previous_window_session {
+            map.insert(previous.window_label.clone(), previous);
+        }
+        for kicked in commit.kicked {
+            map.insert(kicked.window_label.clone(), kicked);
+        }
+        Ok(())
     }
 
     /// Remove the session bound to `window_label`. Returns the removed
@@ -76,6 +118,23 @@ impl WindowSessionRegistry {
             .write()
             .expect("WindowSessionRegistry write lock poisoned");
         map.remove(window_label)
+    }
+
+    pub fn try_unbind_actor(&self, actor_id: &str) -> Result<Vec<ActiveSession>, String> {
+        let mut map = self
+            .inner
+            .write()
+            .map_err(|_| "window session registry write lock poisoned".to_string())?;
+        let labels = map
+            .iter()
+            .filter_map(|(label, session)| {
+                (session.actor.actor_id == actor_id).then(|| label.clone())
+            })
+            .collect::<Vec<_>>();
+        Ok(labels
+            .into_iter()
+            .filter_map(|label| map.remove(&label))
+            .collect())
     }
 
     /// Remove every window session during a process-wide Station cutover.

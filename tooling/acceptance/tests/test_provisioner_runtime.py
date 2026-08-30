@@ -7,10 +7,11 @@ import socket
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     BlockedError,
+    CredentialRef,
     EnvironmentContract,
     EnvironmentProvisioner,
     ProvisioningError,
@@ -21,6 +22,14 @@ from tooling.acceptance.core._paths import ENVIRONMENTS_DIR
 from tooling.acceptance.provisioners import (
     HomeStationProvisioner,
     get_provisioner,
+    get_runtime_cell_lifecycle,
+)
+from tooling.acceptance.provisioners.local_desktop_gateway import (
+    LocalDesktopGatewayProvisioner,
+    PROVISION_DESKTOP_LOG,
+)
+from tooling.acceptance.provisioners.native_tauri_embedded_webdriver import (
+    NativeTauriEmbeddedWebDriverProvisioner,
 )
 
 
@@ -41,6 +50,13 @@ class ProvisionerBaseClassTests(unittest.TestCase):
         with self.assertRaisesRegex(ProvisioningError, "no provisioner registered"):
             get_provisioner(EnvironmentContract(id="nonexistent-env"))
 
+    def test_runtime_cell_registry_fails_closed_for_unknown_cell(self):
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "runtime-cell lifecycle is not implemented",
+        ):
+            get_runtime_cell_lifecycle("desktop-unknown-native")
+
     def test_cleanup_runs_in_reverse_order(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
@@ -51,6 +67,142 @@ class ProvisionerBaseClassTests(unittest.TestCase):
         completed = provisioner.cleanup()
         self.assertEqual(order, ["second", "first"])
         self.assertEqual(completed, ("second", "first"))
+
+    def test_auto_credential_value_is_retained_by_provisioner_instance(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(
+                id="home-station",
+                credentials=(
+                    CredentialRef(
+                        id="canary",
+                        source_ref="auto:canary",
+                    ),
+                ),
+            )
+        )
+
+        refs, values = provisioner._resolve_credentials()
+
+        self.assertEqual(refs, ("auto:canary",))
+        self.assertEqual(
+            provisioner.resolved_credential_values,
+            (values["canary"],),
+        )
+
+    def test_prepare_credentials_resolves_once_and_reuses_cached_values(self):
+        credential = CredentialRef(id="canary", source_ref="env:CANARY")
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(
+                id="home-station",
+                credentials=(credential,),
+            )
+        )
+
+        with patch.object(
+            CredentialRef,
+            "resolve",
+            return_value="resolved-secret",
+        ) as resolve:
+            first_refs, first_values = provisioner.prepare_credentials()
+            second_refs, second_values = provisioner.prepare_credentials()
+
+        self.assertEqual(resolve.call_count, 1)
+        self.assertEqual(first_refs, second_refs)
+        self.assertEqual(first_values, second_values)
+        self.assertIsNot(first_values, second_values)
+        self.assertEqual(
+            provisioner.resolved_credential_values,
+            ("resolved-secret",),
+        )
+
+    def test_prepare_credentials_replays_failure_without_reresolving(self):
+        credential = CredentialRef(id="canary", source_ref="env:CANARY")
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(
+                id="home-station",
+                credentials=(credential,),
+            )
+        )
+
+        with patch.object(
+            CredentialRef,
+            "resolve",
+            side_effect=RuntimeError("missing credential"),
+        ) as resolve:
+            with self.assertRaises(BlockedError):
+                provisioner.prepare_credentials()
+            with self.assertRaises(BlockedError):
+                provisioner.prepare_credentials()
+
+        self.assertEqual(resolve.call_count, 1)
+
+    def test_resolved_credentials_survive_later_resolution_failure(self):
+        first = CredentialRef(id="first", source_ref="env:FIRST")
+        second = CredentialRef(id="second", source_ref="env:SECOND")
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(
+                id="home-station",
+                credentials=(first, second),
+            )
+        )
+
+        with patch.object(
+            CredentialRef,
+            "resolve",
+            side_effect=("resolved-secret", RuntimeError("second failed")),
+        ), self.assertRaises(BlockedError):
+            provisioner._resolve_credentials()
+
+        self.assertEqual(
+            provisioner.resolved_credential_values,
+            ("resolved-secret",),
+        )
+
+    def test_short_credential_is_rejected_before_runtime_use(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(
+                id="home-station",
+                credentials=(
+                    CredentialRef(id="short", source_ref="env:SHORT"),
+                ),
+            )
+        )
+
+        with patch.object(
+            CredentialRef,
+            "resolve",
+            return_value="abc",
+        ), self.assertRaisesRegex(
+            BlockedError,
+            "too short for safe evidence redaction",
+        ):
+            provisioner._resolve_credentials()
+
+        self.assertEqual(provisioner.resolved_credential_values, ())
+        with self.assertRaisesRegex(
+            BlockedError,
+            "too short for safe evidence redaction",
+        ):
+            provisioner._remember_resolved_credentials(
+                ("fixture:short",),
+                {"short": "abc"},
+            )
+
+    def test_committed_fixture_password_is_not_treated_as_secret(self):
+        provisioner = NativeTauriEmbeddedWebDriverProvisioner(
+            EnvironmentContract(
+                id="native-tauri-embedded-webdriver",
+            )
+        )
+
+        refs, values = provisioner._resolve_credentials()
+
+        self.assertEqual(
+            refs,
+            ("fixture:apps/station/app/conf/actor.yml#preset_users",),
+        )
+        self.assertEqual(values, {"chat-password": "1"})
+        self.assertEqual(provisioner.resolved_credential_values, ())
 
 
 class ProfileResolutionTests(unittest.TestCase):
@@ -97,6 +249,193 @@ class ProfileResolutionTests(unittest.TestCase):
 
 
 class ProvisionerBlockingTests(unittest.TestCase):
+    def test_desktop_gateway_uses_committed_actor_fixture_reference(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+
+        refs, values = provisioner.prepare_credentials()
+
+        self.assertEqual(
+            refs,
+            ("fixture:apps/station/app/conf/actor.yml#preset_users",),
+        )
+        self.assertEqual(values, {})
+        self.assertEqual(provisioner.resolved_credential_values, ())
+
+    def test_desktop_gateway_profile_ports_fail_closed(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+
+        for field in (
+            "PT_DESKTOP_APP_GATEWAY_PORT",
+            "PT_DESKTOP_APP_WEB_PORT",
+        ):
+            with self.subTest(field=field), self.assertRaisesRegex(
+                BlockedError,
+                "invalid port",
+            ) as raised:
+                provisioner._profile_ports({field: "not-a-port"}, 0)
+
+            self.assertEqual(
+                raised.exception.resource,
+                "profile:desktop-port",
+            )
+
+    def test_desktop_gateway_profile_ports_include_worktree_offset(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+
+        gateway_port, renderer_port = provisioner._profile_ports(
+            {
+                "PT_DESKTOP_APP_GATEWAY_PORT": "3230",
+                "PT_DESKTOP_APP_WEB_PORT": "3410",
+            },
+            slot=2,
+            worktree_id="peers-group-chat",
+        )
+
+        self.assertEqual(gateway_port, 3300)
+        self.assertEqual(renderer_port, 3480)
+
+    def test_desktop_gateway_refuses_existing_profile_process(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pid_path = (
+                Path(tmpdir)
+                / "peers-touch-desktop-rust-three-app-peers-group-chat.pid"
+            )
+            pid_path.write_text("1234\n", encoding="utf-8")
+            with patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "tempfile.gettempdir",
+                return_value=tmpdir,
+            ), patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "REPO_ROOT",
+                Path("/workspace/peers-group-chat"),
+            ), patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway.os.kill",
+            ):
+                with self.assertRaises(BlockedError) as raised:
+                    provisioner._ensure_desktop_runtime_is_unowned(
+                        {"PT_DEV_PROFILE": "three"}
+                    )
+
+        self.assertEqual(
+            raised.exception.resource,
+            "desktop-process:1234",
+        )
+
+    def test_desktop_gateway_timeout_names_external_artifact_logically(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+        process = Mock(pid=1234)
+        process.poll.return_value = None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            external_log = Path(tmpdir) / "run" / PROVISION_DESKTOP_LOG
+            temporary_log = Path(tmpdir) / "desktop-process.log"
+            log_handle = temporary_log.open("w+", encoding="utf-8")
+            storage_root = Path(tmpdir) / "desktop-storage"
+            with patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "tempfile.NamedTemporaryFile",
+                return_value=log_handle,
+            ), patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "write_current_artifact",
+                return_value=external_log,
+            ) as write_artifact, patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "subprocess.Popen",
+                return_value=process,
+            ) as popen, patch.object(
+                provisioner,
+                "_gateway_ready",
+                return_value=False,
+            ), patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "time.monotonic",
+                side_effect=(0, 901),
+            ), patch(
+                "tooling.acceptance.provisioners.local_desktop_gateway."
+                "os.killpg",
+            ):
+                with self.assertRaises(BlockedError) as raised:
+                    provisioner._start_gateway(
+                        "http://127.0.0.1:3030",
+                        storage_root,
+                    )
+                provisioner.cleanup()
+            self.assertFalse(storage_root.exists())
+            self.assertFalse(temporary_log.exists())
+            write_artifact.assert_called_once()
+            self.assertEqual(
+                write_artifact.call_args.args[:2],
+                (PROVISION_DESKTOP_LOG, b""),
+            )
+            self.assertEqual(
+                popen.call_args.kwargs["env"]["PT_DESKTOP_E2E"],
+                "true",
+            )
+            self.assertEqual(
+                popen.call_args.kwargs["env"]["TAURI_WEBDRIVER_PORT"],
+                "0",
+            )
+
+        self.assertEqual(
+            raised.exception.resource,
+            "desktop-gateway:http://127.0.0.1:3030",
+        )
+        self.assertIn(PROVISION_DESKTOP_LOG, raised.exception.reason)
+        self.assertNotIn(str(external_log), raised.exception.reason)
+
+    def test_desktop_gateway_does_not_misclassify_unexpected_value_error(self):
+        provisioner = LocalDesktopGatewayProvisioner(
+            EnvironmentContract(id="local-desktop-gateway")
+        )
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            side_effect=ValueError("unexpected provisioning defect"),
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                "unexpected provisioning defect",
+            ):
+                provisioner.provision("chat-desktop-gateway-e2e")
+
+    def test_remote_runtime_cell_skips_local_binary_preflight(self):
+        provisioner = NativeTauriEmbeddedWebDriverProvisioner(
+            EnvironmentContract(id="native-tauri-embedded-webdriver")
+        )
+        manifest = Mock()
+        manifest.is_ready.return_value = True
+        with patch.object(
+            HomeStationProvisioner,
+            "provision",
+            return_value=manifest,
+        ), patch.object(
+            provisioner,
+            "_run_preflight_command",
+        ) as preflight, patch.dict(
+            "os.environ",
+            {"PT_ACCEPTANCE_RUNTIME_CELL": "desktop-linux-native"},
+            clear=True,
+        ):
+            result = provisioner.provision(
+                "chat-native-product-closure-e2e"
+            )
+
+        self.assertIs(result, manifest)
+        preflight.assert_not_called()
+
     def test_native_clients_receive_distinct_webdriver_ports(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
@@ -105,7 +444,11 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {"PT_DEV_SLOT": "2"},
             clear=True,
-        ):
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.socket.socket",
+        ) as socket_factory:
+            probe = socket_factory.return_value.__enter__.return_value
+            probe.connect_ex.return_value = 1
             clients = provisioner._clients(
                 "chat-native-two-client-e2e",
                 "run-webdriver-ports",
@@ -116,22 +459,65 @@ class ProvisionerBlockingTests(unittest.TestCase):
             [4465, 4466],
         )
 
+    def test_resolved_profile_slot_overrides_process_environment(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        with patch.dict(
+            "os.environ",
+            {"PT_DEV_SLOT": "0"},
+            clear=True,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.socket.socket",
+        ) as socket_factory:
+            probe = socket_factory.return_value.__enter__.return_value
+            probe.connect_ex.return_value = 1
+            clients = provisioner._clients(
+                "chat-native-product-closure-e2e",
+                "run-resolved-profile-slot",
+                slot=4,
+            )
+
+        self.assertEqual(
+            [client.webdriver_port for client in clients],
+            [4485, 4486, 4487],
+        )
+        self.assertEqual(
+            [client.gateway_port for client in clients],
+            [3730, 3731, 3732],
+        )
+
     def test_native_webdriver_port_conflict_blocks(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
         )
-        with socket.socket() as listener:
-            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            listener.bind(("127.0.0.1", 4445))
+        listener = None
+        selected_slot = None
+        for slot in range(100, 1000):
+            candidate = socket.socket()
+            candidate.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                candidate.bind(("127.0.0.1", 4445 + slot * 10))
+            except OSError:
+                candidate.close()
+                continue
+            listener = candidate
+            selected_slot = slot
+            break
+        self.assertIsNotNone(listener)
+        self.assertIsNotNone(selected_slot)
+        assert listener is not None
+        assert selected_slot is not None
+        with listener:
             listener.listen()
             with patch.dict(
                 "os.environ",
-                {"PT_DEV_SLOT": "0"},
+                {"PT_DEV_SLOT": str(selected_slot)},
                 clear=True,
             ):
                 with self.assertRaisesRegex(
                     BlockedError,
-                    "webdriver port 4445 is already in use",
+                    "webdriver port .* is already in use",
                 ):
                     provisioner._clients(
                         "chat-native-two-client-e2e",

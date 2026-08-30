@@ -31,7 +31,6 @@ import {
   LeaveGroupResponseSchema,
   TransferGroupOwnershipResponseSchema,
   DissolveGroupResponseSchema,
-  GetGroupMembersResponseSchema,
   RemoveMemberResponseSchema,
   UpdateMemberResponseSchema,
   RecallGroupMessageResponseSchema,
@@ -606,7 +605,7 @@ export interface OssUploadLocalFileInput {
   chat_session_id?: string | null;
 }
 
-export interface AgentUploadAttachmentBytesInput {
+export interface OssUploadAttachmentBytesInput {
   filename: string;
   mime_type: string;
   bytes: number[];
@@ -615,6 +614,8 @@ export interface AgentUploadAttachmentBytesInput {
   /** Required when `visibility` is `chat`. */
   chat_session_id?: string | null;
 }
+
+export type AgentUploadAttachmentBytesInput = OssUploadAttachmentBytesInput;
 
 /**
  * Payload returned by `oss_upload_local_file` /
@@ -3129,8 +3130,8 @@ export const api = {
   authValidateToken: (input: AuthValidateTokenInput) =>
     invokeAuthCommand<AuthValidateTokenInput>('auth_validate_token', input),
 
-  ensureStationSession: () =>
-    invokeAuthCommand<void>('ensure_station_session'),
+  ensureStationSession: (sessionId: string) =>
+    invokeAuthCommand<OAuthLoopbackPollInput>('ensure_station_session', { session_id: sessionId }),
 
   settingsGet: (input: SettingsGetInput) =>
     invokeRustCommand<SettingsGetInput, SettingsGetPayload>('settings_get', input),
@@ -3237,6 +3238,12 @@ export const api = {
   ossUploadLocalFile: (input: OssUploadLocalFileInput) =>
     invokeRustDataFromStatus<OssUploadLocalFileInput, OssAttachmentUploaded>(
       'oss_upload_local_file',
+      input,
+    ),
+
+  ossUploadAttachmentBytes: (input: OssUploadAttachmentBytesInput) =>
+    invokeRustDataFromStatus<OssUploadAttachmentBytesInput, OssAttachmentUploaded>(
+      'oss_upload_attachment_bytes',
       input,
     ),
 
@@ -3845,7 +3852,7 @@ export const api = {
     invokeRustDataFromStatus<void, { account: AccountIdentity | null }>('account_get_active').then((r) => r.account),
 
   accountSwitch: (id: string) =>
-    invokeRustDataFromStatus<AccountIdInput, { ok: boolean }>('account_switch', { id }),
+    invokeAuthCommand<AccountIdInput>('account_switch', { id }),
 
   accountUpsertOAuth: (input: AccountUpsertOAuthInput) =>
     invokeRustDataFromStatus<AccountUpsertOAuthInput, { ok: boolean; active_account_id: string }>('account_upsert_oauth', input),
@@ -4432,6 +4439,8 @@ export const api = {
       status: 'pending' | 'completed' | 'failed' | 'expired';
       callback_url?: string;
       error?: string;
+      account_id?: string;
+      actor_id?: string;
     }>(
       'oauth2_poll_loopback',
       { session_id: sessionId },
@@ -4905,9 +4914,6 @@ export const api = {
 
   groupChatDissolveGroup: (groupUlid: string) =>
     invokeRustProto('group_chat_dissolve_group', DissolveGroupResponseSchema, { group_ulid: groupUlid }),
-
-  groupChatGetMembers: (groupUlid: string, limit?: number, offset?: number) =>
-    invokeRustProto('group_chat_get_members', GetGroupMembersResponseSchema, { group_ulid: groupUlid, limit, offset }),
 
   groupChatRemoveMember: (groupUlid: string, memberDid: string) =>
     invokeRustProto('group_chat_remove_member', RemoveMemberResponseSchema, { group_ulid: groupUlid, member_did: memberDid }),

@@ -152,7 +152,11 @@ pub fn conversation_create_direct(
         Some(&body),
     ) {
         Ok(resp) => {
-            let conv_id = resp.get("conversation").and_then(|c| c.get("conversation_id")).and_then(|v| v.as_str()).unwrap_or("?");
+            let conv_id = resp
+                .get("conversation")
+                .and_then(|c| c.get("conversation_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             tracing::info!(conversation_id = %conv_id, "conversation_create_direct: success");
             AppResult::success(resp)
         }
@@ -535,7 +539,8 @@ pub fn conversation_list(state: State<'_, Arc<AppState>>, window: Window) -> App
     };
     match station_client::request_json_auth(Method::GET, "/conversation/list", &token, None, None) {
         Ok(resp) => {
-            let count = resp.get("conversations")
+            let count = resp
+                .get("conversations")
                 .and_then(|v| v.as_array())
                 .map(|a| a.len())
                 .unwrap_or(0);
@@ -1035,6 +1040,11 @@ pub struct ConversationUpdateMemberSettingsInput {
     pub conversation_id: String,
     pub nickname: Option<String>,
     pub muted: Option<bool>,
+    pub alert_enabled: Option<bool>,
+    pub pinned: Option<bool>,
+    pub background: Option<String>,
+    pub background_image: Option<String>,
+    pub cleared_at_unix_ms: Option<i64>,
 }
 
 #[tauri::command]
@@ -1051,6 +1061,11 @@ pub fn conversation_update_member_settings(
         "conversation_id": input.conversation_id,
         "nickname": input.nickname,
         "muted": input.muted,
+        "alertEnabled": input.alert_enabled,
+        "pinned": input.pinned,
+        "background": input.background,
+        "backgroundImage": input.background_image,
+        "clearedAtUnixMs": input.cleared_at_unix_ms,
     });
     match station_client::request_json_auth(
         Method::PUT,

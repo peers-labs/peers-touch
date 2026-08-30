@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: 1.0.0
-> **Created**: 2026-08-08 | **Updated**: 2026-08-17
+> **Created**: 2026-08-08 | **Updated**: 2026-08-27
 > **Owner**: Acceptance Framework
 
 ## Purpose
@@ -22,6 +22,9 @@ evidence.
 6. Native windows are visible and attached to responsive observers.
 7. Fresh-storage and recovery-storage journeys are separate.
 8. Runtime Manifest, Station Attestation, and Actor Manifest share one run ID.
+9. Destructive Fixture reset targets a dedicated disposable Station, Compose
+   project, PostgreSQL container, and PostgreSQL volume. A Station serving a
+   persistent Desktop is forbidden.
 
 ## Launch
 
@@ -32,7 +35,6 @@ make profile PROFILE=<approved-disposable-profile>
 make station-check
 
 CHAT_ACCEPTANCE_RESET=1 \
-CHAT_NATIVE_DEMO_PASSWORD="$CHAT_NATIVE_DEMO_PASSWORD" \
 make acceptance-chat-native-two-client
 ```
 
@@ -48,6 +50,10 @@ Provisioning must stop before Fixture reset or client launch when:
 - live/deployed/client commit or proto digest differs;
 - deployment workspace is dirty;
 - reset authorization is absent;
+- the deployment environment does not declare
+  `PT_ACCEPTANCE_DISPOSABLE=1`;
+- Station URL, Compose project, Station/PostgreSQL containers, or PostgreSQL
+  volume do not exactly match the disposable deployment declaration;
 - the credential reference is unresolved;
 - canonical actor PTIDs cannot be produced.
 
@@ -93,6 +99,10 @@ On the first failed boundary, capture:
 
 - both DOM snapshots;
 - both Desktop logs from the last successful step;
+- Native activation predicate snapshots when focus acquisition fails, including
+  expected process ID, actual frontmost process ID, `document.hasFocus()`,
+  Accessibility main/focused-window state, sampled point, point ownership, and
+  the ordered window stack at that point;
 - Station logs correlated by conversation, command, envelope, and device IDs;
 - current device registry and bundle publication timestamps;
 - session state keyed by both endpoint tuples;
@@ -100,6 +110,8 @@ On the first failed boundary, capture:
 - composer value and visible error.
 
 Do not continue through later assertions after a prerequisite fails.
+Native activation failures must emit these fields into immutable Gate evidence;
+an unstructured `TimeoutException` is insufficient for diagnosis or review.
 
 Cleanup evidence is mandatory on both success and failure. Every client process
 must stop, gateway/renderer/WebDriver ports must have no listener, and run

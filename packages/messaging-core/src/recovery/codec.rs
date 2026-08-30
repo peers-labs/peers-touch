@@ -63,7 +63,13 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
     created_at_unix_ms: i64,
     archive: &MessagingRecoveryArchive,
 ) -> Result<EncodedRecoveryRevision, String> {
-    validate_archive_identity(kdf_provider, recovery_phrase, revision_id, created_by_device_id, archive)?;
+    validate_archive_identity(
+        kdf_provider,
+        recovery_phrase,
+        revision_id,
+        created_by_device_id,
+        archive,
+    )?;
     let params = kdf_provider.default_params();
     let mut key = kdf_provider.derive_key(recovery_phrase.as_bytes(), &params)?;
 
@@ -358,7 +364,11 @@ mod tests {
             TestKdfParams { salt }
         }
 
-        fn derive_key(&self, passphrase: &[u8], params: &TestKdfParams) -> Result<[u8; 32], String> {
+        fn derive_key(
+            &self,
+            passphrase: &[u8],
+            params: &TestKdfParams,
+        ) -> Result<[u8; 32], String> {
             let mut key = [0u8; 32];
             let mut h = Sha256::new();
             h.update(passphrase);
@@ -421,9 +431,15 @@ mod tests {
     #[test]
     fn recovery_revision_round_trips_all_sections() {
         let expected = archive();
-        let encoded =
-            encode_recovery_revision(&TestKdf, PHRASE, "revision-1", "alice-device", 10, &expected)
-                .unwrap();
+        let encoded = encode_recovery_revision(
+            &TestKdf,
+            PHRASE,
+            "revision-1",
+            "alice-device",
+            10,
+            &expected,
+        )
+        .unwrap();
         let actual = decode_recovery_revision(
             &TestKdf,
             PHRASE,
@@ -438,9 +454,15 @@ mod tests {
 
     #[test]
     fn wrong_phrase_fails_closed() {
-        let encoded =
-            encode_recovery_revision(&TestKdf, PHRASE, "revision-1", "alice-device", 10, &archive())
-                .unwrap();
+        let encoded = encode_recovery_revision(
+            &TestKdf,
+            PHRASE,
+            "revision-1",
+            "alice-device",
+            10,
+            &archive(),
+        )
+        .unwrap();
         let wrong = "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful";
         assert!(decode_recovery_revision(
             &TestKdf,
@@ -455,9 +477,15 @@ mod tests {
 
     #[test]
     fn corruption_fails_closed() {
-        let encoded =
-            encode_recovery_revision(&TestKdf, PHRASE, "revision-1", "alice-device", 10, &archive())
-                .unwrap();
+        let encoded = encode_recovery_revision(
+            &TestKdf,
+            PHRASE,
+            "revision-1",
+            "alice-device",
+            10,
+            &archive(),
+        )
+        .unwrap();
         let mut corrupted = encoded.bytes.clone();
         let last = corrupted.len() - 1;
         corrupted[last] ^= 1;

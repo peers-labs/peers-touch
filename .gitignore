@@ -43,6 +43,10 @@ dist/
 *.so
 *.dylib
 
+# Protobuf outputs are generated locally from model/domain.
+apps/desktop/src/gen/proto/**/*_pb.ts
+apps/station/**/model/*.pb.go
+
 # Station dashboard SPA is embedded via go:embed; keep dist tracked.
 !apps/station/app/subserver/dashboard/web/dist/
 !apps/station/app/subserver/dashboard/web/dist/**

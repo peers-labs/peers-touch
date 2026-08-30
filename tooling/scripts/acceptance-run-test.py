@@ -16,7 +16,15 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from tooling.acceptance.core import EvidenceStore
+from tooling.acceptance.core import (
+    ArtifactRef,
+    CredentialRef,
+    EnvironmentContract,
+    EvidenceConflict,
+    EvidenceStore,
+    new_report,
+)
+from tooling.acceptance.provisioners import HomeStationProvisioner
 
 
 def load_module() -> Any:
@@ -30,6 +38,919 @@ def load_module() -> Any:
 
 
 class AcceptanceRunTest(unittest.TestCase):
+    def test_run_environment_projects_and_restores_runtime_cell(self) -> None:
+        module = load_module()
+        keys = {
+            "PT_ACCEPTANCE_ARTIFACT_ROOT": "/tmp/artifacts",
+            "PT_ACCEPTANCE_WORKSPACE_ID": "workspace",
+            "PT_ACCEPTANCE_GATE_ID": "synthetic-gate",
+            "PT_ACCEPTANCE_RUN_ID": "synthetic-run",
+            "PT_ACCEPTANCE_RUNTIME_CELL": "desktop-linux-native",
+        }
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with module.run_environment(keys):
+                self.assertEqual(
+                    os.environ["PT_ACCEPTANCE_RUNTIME_CELL"],
+                    "desktop-linux-native",
+                )
+            self.assertNotIn("PT_ACCEPTANCE_RUNTIME_CELL", os.environ)
+
+    def test_provision_runtime_cell_persists_current_run_manifest(
+        self,
+    ) -> None:
+        module = load_module()
+        lifecycle = mock.Mock()
+        manifest = mock.Mock()
+        manifest.to_dict.return_value = {
+            "artifactKind": "acceptance-runtime-cell-manifest",
+            "cellId": "desktop-linux-native",
+            "gateId": "synthetic-gate",
+            "state": "LEASED",
+        }
+        lifecycle.ready.return_value = manifest
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("synthetic-gate", source={})
+            with mock.patch(
+                "tooling.acceptance.provisioners."
+                "get_runtime_cell_lifecycle",
+                return_value=lifecycle,
+            ):
+                resolved, payload, path = module.provision_runtime_cell(
+                    cell_id="desktop-linux-native",
+                    gate_id="synthetic-gate",
+                    gate_run=run,
+                )
+            stored_manifest = json.loads(path.read_text(encoding="utf-8"))
+            run.close()
+
+        self.assertIs(resolved, lifecycle)
+        lifecycle.ready.assert_called_once_with("synthetic-gate")
+        lifecycle.stop.assert_not_called()
+        self.assertEqual(payload["cellId"], "desktop-linux-native")
+        self.assertEqual(
+            payload["_manifest_ref"]["path"],
+            "runtime/runtime-cell-manifest.json",
+        )
+        self.assertEqual(
+            stored_manifest["state"],
+            "LEASED",
+        )
+
+    def test_provision_runtime_cell_cleans_up_after_manifest_write_failure(
+        self,
+    ) -> None:
+        module = load_module()
+        lifecycle = mock.Mock()
+        manifest = mock.Mock()
+        manifest.to_dict.return_value = {"state": "LEASED"}
+        lifecycle.ready.return_value = manifest
+        gate_run = mock.Mock()
+        gate_run.write_json.side_effect = RuntimeError("artifact write failed")
+        with mock.patch(
+            "tooling.acceptance.provisioners.get_runtime_cell_lifecycle",
+            return_value=lifecycle,
+        ), self.assertRaisesRegex(RuntimeError, "artifact write failed"):
+            module.provision_runtime_cell(
+                cell_id="desktop-linux-native",
+                gate_id="synthetic-gate",
+                gate_run=gate_run,
+            )
+
+        lifecycle.stop.assert_called_once_with()
+
+    def test_main_orders_environment_cell_gate_and_reverse_cleanup(
+        self,
+    ) -> None:
+        module = load_module()
+        events: list[str] = []
+
+        class EnvironmentProvisioner:
+            resolved_credential_values = ("resolved-secret",)
+
+            def prepare_credentials(
+                self,
+            ) -> tuple[tuple[str, ...], dict[str, str]]:
+                events.append("credentials-ready")
+                return (
+                    ("env:SYNTHETIC_SECRET",),
+                    {"synthetic": "resolved-secret"},
+                )
+
+            def cleanup(self) -> tuple[str, ...]:
+                events.append("environment-cleanup")
+                return ("environment",)
+
+        class CellLifecycle:
+            def stop(self) -> dict[str, str]:
+                events.append("cell-stop")
+                return {"state": "CLEANED"}
+
+        environment_provisioner = EnvironmentProvisioner()
+        cell_lifecycle = CellLifecycle()
+
+        def provision_environment(*_args, **_kwargs):
+            redaction_values = json.loads(
+                os.environ["PT_ACCEPTANCE_REDACTION_VALUES"]
+            )
+            self.assertEqual(redaction_values, ["resolved-secret"])
+            events.append("environment-ready")
+            return (
+                environment_provisioner,
+                {"state": "FIXTURE_READY", "runId": "environment-run"},
+                None,
+            )
+
+        def provision_runtime_cell(**_kwargs):
+            events.append("cell-ready")
+            return (
+                cell_lifecycle,
+                {
+                    "artifactKind": "acceptance-runtime-cell-manifest",
+                    "cellId": "desktop-linux-native",
+                    "gateId": "synthetic-native-gate",
+                    "state": "LEASED",
+                },
+                None,
+            )
+
+        def run_gate(*_args, **_kwargs):
+            events.append("gate")
+            return mock.Mock(stdout="", stderr="", returncode=1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gates_path = root / "gates.json"
+            gates_path.write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "synthetic-native-gate": {
+                                "command": "synthetic-command",
+                                "environment": "synthetic-environment",
+                                "provisioner": "synthetic-environment",
+                                "requiredRuntimeCells": [
+                                    "desktop-linux-native"
+                                ],
+                                "tier": "env-evidence",
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            plan_path = root / "plan.json"
+            plan_path.write_text(
+                json.dumps({"selected_gates": []}),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(
+                os.environ,
+                {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "artifacts")},
+                clear=False,
+            ), mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "acceptance-run.py",
+                    "--plan",
+                    str(plan_path),
+                    "--gates",
+                    str(gates_path),
+                    "--gate",
+                    "synthetic-native-gate",
+                    "--runtime-cell",
+                    "desktop-linux-native",
+                ],
+            ), mock.patch(
+                "tooling.acceptance.core.source_identity",
+                return_value={"commit": "abc123", "workspaceDigest": "clean"},
+            ), mock.patch.object(
+                module,
+                "environment_provisioner",
+                return_value=environment_provisioner,
+            ), mock.patch.object(
+                module,
+                "provision_environment",
+                side_effect=provision_environment,
+            ), mock.patch.object(
+                module,
+                "provision_runtime_cell",
+                side_effect=provision_runtime_cell,
+            ), mock.patch.object(
+                module.subprocess,
+                "run",
+                side_effect=run_gate,
+            ):
+                exit_code = module.main()
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(
+            events,
+            [
+                "credentials-ready",
+                "environment-ready",
+                "cell-ready",
+                "gate",
+                "cell-stop",
+                "environment-cleanup",
+            ],
+        )
+
+    def test_runtime_secret_scan_uses_provisioner_resolved_instance(self) -> None:
+        module = load_module()
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(
+                id="home-station",
+                credentials=(
+                    CredentialRef(
+                        id="canary",
+                        source_ref="auto:canary",
+                    ),
+                ),
+            )
+        )
+        _, resolved = provisioner._resolve_credentials()
+
+        with mock.patch.object(
+            CredentialRef,
+            "resolve",
+            side_effect=AssertionError("runner must not resolve credentials again"),
+        ):
+            values = module.credential_values(provisioner)
+
+        self.assertIs(values[0], resolved["canary"])
+
+    def test_finalize_gate_result_publishes_standardized_proof_status(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("synthetic-gate", source={"commit": "abc123"})
+            log = run.write_bytes(
+                "logs/synthetic-gate.log",
+                b"passed\n",
+                media_type="text/plain",
+                role="log",
+            )
+
+            result = module.finalize_gate_result(
+                {
+                    "id": "synthetic-gate",
+                    "status": "passed",
+                    "log": log.to_dict(),
+                },
+                run,
+                "/tmp/acceptance-plan.json",
+            )
+            latest = store.latest("synthetic-gate")
+            run.close()
+
+        self.assertEqual(result["completionStatus"], "DONE")
+        self.assertEqual(result["proofStatus"], "PROVEN")
+        self.assertEqual(latest["result"]["completionStatus"], "DONE")
+        self.assertEqual(latest["result"]["proofStatus"], "PROVEN")
+
+    def test_finalize_gate_result_publishes_blocked_runtime_cell_result(
+        self,
+    ) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("synthetic-gate", source={"commit": "abc123"})
+
+            result = module.finalize_gate_result(
+                {
+                    "id": "synthetic-gate",
+                    "status": "blocked",
+                    "completionStatus": "BLOCKED",
+                    "proofStatus": "UNPROVEN",
+                    "blockedReason": "runtime unavailable",
+                },
+                run,
+                "/tmp/acceptance-plan.json",
+                runtime_cell="desktop-linux-native",
+            )
+            latest = store.latest(
+                "synthetic-gate",
+                runtime_cell="desktop-linux-native",
+            )
+            run.close()
+
+        self.assertEqual(result["runtimeCell"], "desktop-linux-native")
+        self.assertEqual(latest["result"]["completionStatus"], "BLOCKED")
+        self.assertEqual(latest["result"]["proofStatus"], "UNPROVEN")
+        self.assertEqual(
+            latest["result"]["runtimeCell"],
+            "desktop-linux-native",
+        )
+
+    def test_provisioner_cleanup_is_immutable_and_traceable(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("synthetic-gate", source={})
+
+            cleanup_ref = module.persist_provisioner_cleanup_result(
+                gate_run=run,
+                gate_id="synthetic-gate",
+                environment="synthetic-environment",
+                provisioner_id="synthetic-environment",
+                cleanup_status="passed",
+                completed_resources=("runtime", "source-lease"),
+                cleanup_error="",
+                secret_values=(),
+            )
+            result = module.standardize_result(
+                {
+                    "id": "synthetic-gate",
+                    "status": "passed",
+                    "cleanupStatus": "passed",
+                    "cleanupArtifact": cleanup_ref,
+                    "sourceArtifact": {"path": "reports/gate.json"},
+                    "sourceArtifactKind": "acceptance-gate-evidence-report",
+                    "sourcePhase": "Runtime Provisioning",
+                    "sourceBom": ["WS2"],
+                    "sourceSpec": ["D-07"],
+                    "sourceGate": "cleanup must be durable",
+                },
+                "/tmp/acceptance-plan.json",
+            )
+            cleanup = store.read_json(ArtifactRef.from_dict(cleanup_ref))
+            with self.assertRaises(EvidenceConflict):
+                module.persist_provisioner_cleanup_result(
+                    gate_run=run,
+                    gate_id="synthetic-gate",
+                    environment="synthetic-environment",
+                    provisioner_id="synthetic-environment",
+                    cleanup_status="failed",
+                    completed_resources=(),
+                    cleanup_error="runtime remained allocated",
+                    secret_values=(),
+                )
+            run.close()
+
+        self.assertEqual(
+            cleanup["artifactKind"],
+            "acceptance-provisioner-cleanup-result",
+        )
+        self.assertEqual(cleanup["status"], "passed")
+        self.assertEqual(
+            cleanup["completedResources"],
+            ["runtime", "source-lease"],
+        )
+        self.assertEqual(result["traceability"]["status"], "complete")
+        self.assertEqual(
+            result["traceability"]["cleanupArtifact"],
+            cleanup_ref,
+        )
+
+    def test_cleanup_failure_requires_cleanup_artifact_traceability(
+        self,
+    ) -> None:
+        module = load_module()
+        result = module.standardize_result(
+            {
+                "id": "synthetic-gate",
+                "status": "failed",
+                "cleanupStatus": "failed",
+                "cleanupError": "runtime remained allocated",
+                "sourceArtifact": {"path": "reports/gate.json"},
+                "sourceArtifactKind": "acceptance-gate-evidence-report",
+                "sourcePhase": "Runtime Provisioning",
+                "sourceBom": ["WS2"],
+                "sourceSpec": ["D-07"],
+                "sourceGate": "cleanup must be durable",
+            },
+            "/tmp/acceptance-plan.json",
+        )
+
+        self.assertEqual(result["completionStatus"], "PARTIAL")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["traceability"]["status"], "missing")
+        self.assertIn(
+            "cleanupArtifact",
+            result["traceability"]["missingFields"],
+        )
+
+    def test_failed_cleanup_artifact_does_not_weaken_failure_semantics(
+        self,
+    ) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("synthetic-gate", source={})
+            cleanup_ref = module.persist_provisioner_cleanup_result(
+                gate_run=run,
+                gate_id="synthetic-gate",
+                environment="synthetic-environment",
+                provisioner_id="synthetic-environment",
+                cleanup_status="failed",
+                completed_resources=("runtime",),
+                cleanup_error="source lease remained allocated",
+                secret_values=(),
+            )
+            cleanup = store.read_json(ArtifactRef.from_dict(cleanup_ref))
+            run.close()
+
+        result = module.standardize_result(
+            {
+                "id": "synthetic-gate",
+                "status": "failed",
+                "cleanupStatus": "failed",
+                "cleanupError": cleanup["error"],
+                "cleanupArtifact": cleanup_ref,
+                "sourceArtifact": {"path": "reports/gate.json"},
+                "sourceArtifactKind": "acceptance-gate-evidence-report",
+                "sourcePhase": "Runtime Provisioning",
+                "sourceBom": ["WS2"],
+                "sourceSpec": ["D-07"],
+                "sourceGate": "cleanup must be durable",
+            },
+            "/tmp/acceptance-plan.json",
+        )
+
+        self.assertEqual(cleanup["status"], "failed")
+        self.assertEqual(cleanup["completionStatus"], "PARTIAL")
+        self.assertEqual(cleanup["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["completionStatus"], "PARTIAL")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["traceability"]["status"], "complete")
+        self.assertEqual(
+            result["traceability"]["cleanupArtifact"],
+            cleanup_ref,
+        )
+
+    def test_finalize_gate_result_redacts_and_rejects_secret_metadata(
+        self,
+    ) -> None:
+        module = load_module()
+        secret = "resolved-secret-value"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("synthetic-gate", source={"commit": "abc123"})
+            run.write_bytes(
+                "logs/synthetic-gate.log",
+                b"passed\n",
+                media_type="text/plain",
+                role="log",
+            )
+
+            result = module.finalize_gate_result(
+                {
+                    "id": "synthetic-gate",
+                    "status": "passed",
+                    "reason": f"cleanup failed for {secret}",
+                },
+                run,
+                "/tmp/acceptance-plan.json",
+                runtime={"detail": f"provisioned with {secret}"},
+                secret_values=(secret,),
+            )
+            latest = store.latest("synthetic-gate")
+            manifest_text = store.resolve(run.manifest_ref).read_text(
+                encoding="utf-8"
+            )
+            run.close()
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["completionStatus"], "PARTIAL")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["secretScan"]["status"], "failed")
+        self.assertNotIn(secret, manifest_text)
+        self.assertNotIn(secret, json.dumps(latest))
+
+    def test_finalize_gate_result_preserves_failed_secret_scan(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("synthetic-gate", source={})
+            result = module.finalize_gate_result(
+                {
+                    "id": "synthetic-gate",
+                    "status": "passed",
+                    "secretScan": {
+                        "status": "failed",
+                        "scannedHighEntropyValues": 2,
+                        "scannedCredentialValues": 3,
+                        "redactedArtifacts": ["evidence/leaked.bin"],
+                    },
+                },
+                run,
+                "/tmp/acceptance-plan.json",
+            )
+            run.close()
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["secretScan"]["status"], "failed")
+        self.assertEqual(result["secretScan"]["scannedHighEntropyValues"], 2)
+        self.assertEqual(result["secretScan"]["scannedCredentialValues"], 3)
+        self.assertEqual(
+            result["secretScan"]["redactedArtifacts"],
+            ["evidence/leaked.bin"],
+        )
+
+    def test_runtime_artifact_audit_rejects_binary_secret_without_rewrite(self) -> None:
+        module = load_module()
+        secret = "resolved-binary-secret"
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            artifact = run_dir / "evidence.bin"
+            artifact.write_bytes(b"\x00prefix-" + secret.encode() + b"-suffix")
+
+            leaked = module.audit_runtime_artifacts(
+                run_dir,
+                (secret,),
+            )
+            preserved_bytes = artifact.read_bytes()
+
+        self.assertEqual(leaked, ["evidence.bin"])
+        self.assertEqual(
+            preserved_bytes,
+            b"\x00prefix-" + secret.encode() + b"-suffix",
+        )
+
+    def test_runtime_artifact_audit_rejects_secret_path_without_removal(self) -> None:
+        module = load_module()
+        secret = "resolved-path-secret"
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            secret_parent = run_dir / f"evidence-{secret}"
+            secret_parent.mkdir()
+            artifact = secret_parent / "result.txt"
+            artifact.write_text("safe content", encoding="utf-8")
+
+            leaked = module.audit_runtime_artifacts(
+                run_dir,
+                (secret,),
+            )
+
+            self.assertTrue(artifact.exists())
+            self.assertTrue(secret_parent.exists())
+
+        expected_path = f"evidence-{secret}/result.txt"
+        self.assertEqual(leaked, [expected_path])
+
+    def test_runtime_artifact_audit_checks_hidden_artifacts_without_rewrite(self) -> None:
+        module = load_module()
+        secret = "resolved-hidden-secret"
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            artifact = run_dir / ".env"
+            artifact.write_text(
+                f"ACCEPTANCE_TOKEN={secret}\n",
+                encoding="utf-8",
+            )
+
+            leaked = module.audit_runtime_artifacts(
+                run_dir,
+                (secret,),
+            )
+
+            content = artifact.read_text(encoding="utf-8")
+
+        self.assertEqual(leaked, [".env"])
+        self.assertIn(secret, content)
+
+    def test_runtime_artifact_audit_checks_role_metadata(self) -> None:
+        module = load_module()
+        secret = "resolved-role-secret"
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            role_dir = run_dir / ".artifact-roles"
+            role_dir.mkdir()
+            artifact = role_dir / "report.json"
+            artifact.write_text(
+                json.dumps({"extra": secret}),
+                encoding="utf-8",
+            )
+
+            leaked = module.audit_runtime_artifacts(
+                run_dir,
+                (secret,),
+            )
+
+        self.assertEqual(leaked, [".artifact-roles/report.json"])
+
+    def test_runtime_artifact_audit_uses_canonical_json_redaction(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            artifact = run_dir / "report.json"
+            artifact.write_text(
+                '{"outer":{"password":"1"}}',
+                encoding="utf-8",
+            )
+
+            leaked = module.audit_runtime_artifacts(run_dir, ())
+
+        self.assertEqual(leaked, ["report.json"])
+
+    def test_runtime_artifact_scan_rejects_symlink_without_following_it(
+        self,
+    ) -> None:
+        module = load_module()
+        secret = "resolved-symlink-secret"
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            run_dir = base / "run"
+            run_dir.mkdir()
+            external = base / "external.bin"
+            original = b"\x00" + secret.encode()
+            external.write_bytes(original)
+            link = run_dir / "linked.bin"
+            link.symlink_to(external)
+
+            leaked = module.audit_runtime_artifacts(
+                run_dir,
+                (secret,),
+            )
+
+            self.assertEqual(external.read_bytes(), original)
+
+        self.assertEqual(leaked, ["linked.bin"])
+
+    def test_environment_gate_without_typed_runtime_evidence_is_unproven(
+        self,
+    ) -> None:
+        module = load_module()
+
+        result = module.standardize_result(
+            {
+                "id": "environment-gate",
+                "status": "passed",
+                "tier": "env-evidence",
+                "completionStatus": "DONE",
+                "proofStatus": "PROVEN",
+            },
+            "/tmp/acceptance-plan.json",
+        )
+
+        self.assertEqual(result["completionStatus"], "PARTIAL")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+
+    def test_environment_gate_with_typed_runtime_evidence_is_proven(
+        self,
+    ) -> None:
+        module = load_module()
+
+        result = module.standardize_result(
+            {
+                "id": "environment-gate",
+                "status": "passed",
+                "tier": "env-evidence",
+                "evidenceStatus": "PASS",
+                "sourceArtifact": {"path": "reports/environment-gate.json"},
+                "sourceArtifactKind": "acceptance-gate-evidence-report",
+                "evidenceGateId": "environment-gate",
+                "sourcePhase": "environment-proof",
+                "sourceBom": ["ENV-01"],
+                "sourceSpec": ["environment-runtime"],
+                "sourceGate": "environment-gate",
+                "manifest": {
+                    "state": "FIXTURE_READY",
+                    "runId": "runtime-run",
+                },
+            },
+            "/tmp/acceptance-plan.json",
+        )
+
+        self.assertEqual(result["completionStatus"], "DONE")
+        self.assertEqual(result["proofStatus"], "PROVEN")
+
+    def test_environment_gate_rejects_noncanonical_evidence_kind(self) -> None:
+        module = load_module()
+
+        result = module.standardize_result(
+            {
+                "id": "environment-gate",
+                "status": "passed",
+                "tier": "env-evidence",
+                "evidenceStatus": "PASS",
+                "sourceArtifact": {"path": "reports/environment-gate.json"},
+                "sourceArtifactKind": "forged-kind",
+                "evidenceGateId": "environment-gate",
+                "manifest": {
+                    "state": "FIXTURE_READY",
+                    "runId": "runtime-run",
+                },
+            },
+            "/tmp/acceptance-plan.json",
+        )
+
+        self.assertEqual(result["completionStatus"], "PARTIAL")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+
+    def test_environment_report_without_phase_bom_spec_is_unproven(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("environment-gate", source={})
+            report = new_report("environment-gate")
+            report.status = "PASS"
+            report.write(run.run_dir / "reports" / "environment-gate.json")
+
+            result = module.enrich_result_with_run_artifacts(
+                {
+                    "id": "environment-gate",
+                    "status": "passed",
+                    "tier": "env-evidence",
+                    "manifest": {
+                        "state": "FIXTURE_READY",
+                        "runId": "runtime-run",
+                    },
+                },
+                run,
+            )
+            result = module.standardize_result(
+                result,
+                "/tmp/acceptance-plan.json",
+            )
+            run.close()
+
+        self.assertEqual(
+            result["sourceArtifactKind"],
+            "acceptance-gate-evidence-report",
+        )
+        self.assertEqual(result["evidenceStatus"], "PASS")
+        self.assertEqual(result["evidenceGateId"], "environment-gate")
+        self.assertEqual(result["completionStatus"], "PARTIAL")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertEqual(result["traceability"]["status"], "missing")
+        self.assertEqual(
+            result["traceability"]["missingFields"],
+            ["sourcePhase", "sourceBom", "sourceSpec"],
+        )
+
+    def test_validation_artifact_does_not_replace_environment_report(
+        self,
+    ) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("environment-gate", source={})
+            run.write_json(
+                "reports/environment-validation.json",
+                {
+                    "artifactKind": "environment-validation",
+                    "status": "pass",
+                    "completionStatus": "DONE",
+                    "proofStatus": "PROVEN",
+                    "sampleEmissionAllowed": False,
+                    "phase": "environment-proof",
+                    "bom": ["ENV-01"],
+                    "spec": ["environment-runtime"],
+                    "gate": "environment-gate",
+                },
+                role="validation",
+            )
+            report = new_report("environment-gate")
+            report.status = "PASS"
+            report.write(run.run_dir / "reports" / "environment-gate.json")
+
+            result = module.enrich_result_with_run_artifacts(
+                {
+                    "id": "environment-gate",
+                    "status": "passed",
+                    "tier": "env-evidence",
+                    "manifest": {
+                        "state": "FIXTURE_READY",
+                        "runId": "runtime-run",
+                    },
+                },
+                run,
+            )
+            result = module.standardize_result(
+                result,
+                "/tmp/acceptance-plan.json",
+            )
+            run.close()
+
+        self.assertEqual(
+            result["sourceArtifactKind"],
+            "acceptance-gate-evidence-report",
+        )
+        self.assertEqual(
+            result["sourceArtifact"]["path"],
+            "reports/environment-gate.json",
+        )
+        self.assertEqual(result["sourcePhase"], "environment-proof")
+        self.assertEqual(result["sourceBom"], ["ENV-01"])
+        self.assertEqual(result["sourceSpec"], ["environment-runtime"])
+        self.assertEqual(result["sourceGate"], "environment-gate")
+        self.assertEqual(result["completionStatus"], "DONE")
+        self.assertEqual(result["proofStatus"], "PROVEN")
+        self.assertTrue(result["sampleEmissionAllowed"])
+
+    def test_environment_cleanup_report_is_not_primary_gate_evidence(
+        self,
+    ) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("environment-gate", source={})
+            run.write_json(
+                "reports/provisioner-cleanup.json",
+                {
+                    "artifactKind": "acceptance-provisioner-cleanup-result",
+                    "gateId": "environment-gate",
+                    "status": "passed",
+                    "completionStatus": "DONE",
+                    "proofStatus": "PROVEN",
+                },
+                role="provisioner-cleanup",
+            )
+            result = module.enrich_result_with_run_artifacts(
+                {
+                    "id": "environment-gate",
+                    "status": "failed",
+                    "tier": "env-evidence",
+                },
+                run,
+            )
+            run.close()
+
+        self.assertNotIn("sourceArtifact", result)
+        self.assertNotIn("evidenceStatus", result)
+        self.assertNotIn("evidenceGateId", result)
+        self.assertEqual(
+            result["reason"],
+            "Gate exited without a canonical acceptance evidence report",
+        )
+        self.assertEqual(
+            result["evidenceArtifacts"][0]["artifactKind"],
+            "acceptance-provisioner-cleanup-result",
+        )
+
+    def test_failed_gate_cannot_retain_proven_status(self) -> None:
+        module = load_module()
+
+        result = module.standardize_result(
+            {
+                "id": "failed-gate",
+                "status": "failed",
+                "completionStatus": "DONE",
+                "proofStatus": "PROVEN",
+            },
+            "/tmp/acceptance-plan.json",
+        )
+
+        self.assertEqual(result["completionStatus"], "PARTIAL")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+
+    def test_provisioning_failure_retains_resolved_secret_context(self) -> None:
+        module = load_module()
+
+        class FailingProvisioner:
+            resolved_credential_values = ("resolved-secret",)
+
+            def provision(self, _gate_id: str) -> None:
+                raise RuntimeError("provisioning failed after credential resolution")
+
+        provisioner = FailingProvisioner()
+        with self.assertRaisesRegex(RuntimeError, "after credential resolution"):
+            module.provision_environment(
+                "home-station",
+                "environment-gate",
+                provisioner,
+            )
+
+        self.assertEqual(
+            module.credential_values(provisioner),
+            ("resolved-secret",),
+        )
+
     def test_selected_gates_from_plan_expands_gate_ids_from_definitions(self) -> None:
         module = load_module()
 
@@ -62,6 +983,88 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(gates[1]["command"], "python3 tooling/scripts/desktop-performance-report.py")
         self.assertEqual(gates[1]["timeout_seconds"], 42)
 
+    def test_explicit_gate_uses_current_catalog_not_stale_plan_entry(self) -> None:
+        module = load_module()
+
+        gates = module.resolve_requested_gates(
+            {
+                "selected_gates": [
+                    {
+                        "id": "chat-native-visible-static",
+                        "command": "python3 -m unittest stale_suite",
+                    }
+                ]
+            },
+            {
+                "chat-native-visible-static": {
+                    "command": (
+                        "python3 -m unittest "
+                        "tooling.acceptance.gates.chat."
+                        "native_runtime_cell_runner_test"
+                    ),
+                    "tier": "ci-cheap",
+                }
+            },
+            ["chat-native-visible-static"],
+        )
+
+        self.assertEqual(
+            gates[0]["command"],
+            "python3 -m unittest "
+            "tooling.acceptance.gates.chat.native_runtime_cell_runner_test",
+        )
+
+    def test_plan_gate_preserves_required_runtime_cells_from_catalog(self) -> None:
+        module = load_module()
+
+        gate = module.plan_gate_from_entry(
+            {
+                "id": "native-gate",
+                "command": "python3 run.py",
+            },
+            {
+                "native-gate": {
+                    "command": "python3 default.py",
+                    "requiredRuntimeCells": [
+                        "desktop-macos-native",
+                        "desktop-linux-native",
+                    ],
+                },
+            },
+        )
+
+        self.assertEqual(gate["command"], "python3 run.py")
+        self.assertEqual(
+            gate["requiredRuntimeCells"],
+            ["desktop-macos-native", "desktop-linux-native"],
+        )
+
+    def test_runtime_cell_selection_is_explicit_and_declared(self) -> None:
+        module = load_module()
+        gate = {
+            "id": "native-gate",
+            "requiredRuntimeCells": [
+                "desktop-macos-native",
+                "desktop-linux-native",
+            ],
+        }
+
+        self.assertEqual(
+            module.select_runtime_cell(gate, "desktop-linux-native"),
+            "desktop-linux-native",
+        )
+        with self.assertRaisesRegex(SystemExit, "requires explicit"):
+            module.select_runtime_cell(gate, "")
+        with self.assertRaisesRegex(SystemExit, "does not declare"):
+            module.select_runtime_cell(gate, "desktop-windows-native")
+        self.assertEqual(
+            module.select_runtime_cell(
+                {"id": "local-gate"},
+                "desktop-macos-native",
+            ),
+            "",
+        )
+
     def test_enrich_result_with_evidence_from_log_artifact(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,6 +1073,12 @@ class AcceptanceRunTest(unittest.TestCase):
             worktree.mkdir()
             store = EvidenceStore(root / "artifacts", worktree=worktree)
             run = store.begin_run("desktop-performance-report-gate", source={})
+            list_artifact_path = run.run_dir / "evidence/restart-snapshots.json"
+            list_artifact_path.parent.mkdir(parents=True)
+            list_artifact_path.write_text(
+                json.dumps([{"phase": "after-restart"}]),
+                encoding="utf-8",
+            )
             artifact_path = run.run_dir / "reports/desktop-performance-report-latest.json"
             artifact_path.parent.mkdir(parents=True)
             artifact_path.write_text(
@@ -136,7 +1145,9 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(result["sourceGate"], "Final report must fail closed until runtime evidence is proven")
         self.assertEqual(result["details"][0]["step"], "desktop-gateway")
         self.assertEqual(result["evidenceDetails"][0]["reason"], "connection refused")
-        self.assertEqual(result["evidenceArtifacts"][0]["details"][0]["url"], "http://127.0.0.1:3030")
+        self.assertEqual(result["evidenceArtifacts"][0]["jsonValueType"], "array")
+        self.assertEqual(result["evidenceArtifacts"][0]["itemCount"], 1)
+        self.assertEqual(result["evidenceArtifacts"][1]["details"][0]["url"], "http://127.0.0.1:3030")
         self.assertEqual(result["issue_breakdown"][0]["category"], "matrix")
         self.assertEqual(
             result["recommended_review_commands"][0]["command"],
@@ -242,6 +1253,27 @@ class AcceptanceRunTest(unittest.TestCase):
             report["recommended_review_commands"][0]["command"],
             "python3 tooling/scripts/desktop-performance-report.py",
         )
+
+    def test_build_run_report_keeps_empty_and_dry_run_unproven(self) -> None:
+        module = load_module()
+        empty = module.build_run_report(
+            "tooling/acceptance/reports/latest-plan.json",
+            [],
+        )
+        dry_run = module.build_run_report(
+            "tooling/acceptance/reports/latest-plan.json",
+            [
+                {
+                    "id": "synthetic-gate",
+                    "status": "dry-run",
+                }
+            ],
+        )
+
+        for report in (empty, dry_run):
+            self.assertEqual(report["completionStatus"], "PARTIAL")
+            self.assertEqual(report["proofStatus"], "UNPROVEN")
+            self.assertFalse(report["sampleEmissionAllowed"])
 
     def test_enrich_result_derives_reason_from_source_issue_when_artifact_reason_missing(self) -> None:
         module = load_module()
@@ -585,7 +1617,7 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertIn("count=1", redacted)
         self.assertIn("password=[REDACTED]", redacted)
 
-    def test_runtime_artifact_redaction_removes_resolved_secret_values(self) -> None:
+    def test_runtime_artifact_audit_detects_resolved_secret_values(self) -> None:
         module = load_module()
         secret = "artifact-secret-value"
         with tempfile.TemporaryDirectory() as tmp:
@@ -602,21 +1634,16 @@ class AcceptanceRunTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            redacted_paths, leaked_paths = module.redact_runtime_artifacts(
+            leaked_paths = module.audit_runtime_artifacts(
                 root,
                 (secret,),
             )
             serialized = artifact.read_text(encoding="utf-8")
 
-        self.assertEqual(
-            redacted_paths,
-            ["reports/gate.json"],
-        )
         self.assertEqual(leaked_paths, ["reports/gate.json"])
-        self.assertNotIn(secret, serialized)
-        self.assertIn("[REDACTED]", serialized)
+        self.assertIn(secret, serialized)
         self.assertIn('"count": 1', serialized)
-        self.assertNotIn('"password": "1"', serialized)
+        self.assertIn('"password": "1"', serialized)
 
     def test_runtime_secret_scan_redacts_high_entropy_canary_only(self) -> None:
         module = load_module()
@@ -634,7 +1661,7 @@ class AcceptanceRunTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            _, leaked_paths = module.redact_runtime_artifacts(
+            leaked_paths = module.audit_runtime_artifacts(
                 root,
                 (canary, "1"),
             )
@@ -644,8 +1671,7 @@ class AcceptanceRunTest(unittest.TestCase):
             leaked_paths,
             ["reports/gate.json"],
         )
-        self.assertNotIn(canary, serialized)
-        self.assertIn("[REDACTED]", serialized)
+        self.assertIn(canary, serialized)
         self.assertIn('"count": 1', serialized)
 
     def test_build_run_report_deduplicates_review_commands_by_command_text(self) -> None:

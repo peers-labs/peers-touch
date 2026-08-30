@@ -1,5 +1,6 @@
 version: 1
 workstream: MP-W11
+claimed_runtime_cell: desktop-linux-native
 plan_source: docs/architecture/messaging-platform/execution-plans/20260808-messaging-platform.md
 description: >
   Machine-readable closure contract for MP-W11 Atomic Cutover And Completion Audit.
@@ -148,6 +149,7 @@ deliverables:
     verify:
       type: gates-passed
       gates:
+        - chat-native-product-closure-e2e
         - chat-native-two-client-e2e
         - chat-native-interactions-e2e
         - chat-native-typing-e2e
@@ -170,6 +172,7 @@ gate_order:
   - chat-w11-forbidden-scan
   - chat-w11-duplicate-scan
   - chat-native-visible-static
+  - chat-native-product-closure-e2e
   - chat-native-two-client-e2e
   - chat-native-interactions-e2e
   - chat-native-typing-e2e
