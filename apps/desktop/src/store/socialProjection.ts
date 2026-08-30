@@ -24,7 +24,7 @@ import type { MlsRecipientStatusResult } from '../services/im-service-contract';
 export interface MessagePreview {
   content: string;
   type: number;
-	senderId: string;
+  senderPtid: string;
 }
 
 export interface DesktopUnifiedConversationLike {
@@ -35,7 +35,7 @@ export interface DesktopUnifiedConversationLike {
   avatar?: string;
   lastActivity: Date;
   unread: number;
-  peerDid?: string;
+  peerPtid?: string;
   memberCount?: number;
   muted?: boolean;
   alertEnabled?: boolean;
@@ -100,7 +100,7 @@ export function projectConversationMessageEvents(
         const payload = event.payload.value;
         const common = {
           ulid: payload.messageId,
-          senderDid: payload.senderPtid,
+          senderPtid: payload.senderPtid,
           type: payload.contentType as number,
           content: '',
           attachments: [],
@@ -121,7 +121,7 @@ export function projectConversationMessageEvents(
               ...common,
               $typeName: 'peers_touch.model.chat.v1.FriendChatMessage' as const,
               sessionUlid: event.conversationId,
-              receiverDid: '',
+              receiverPtid: '',
               status: FriendMessageStatus.SENT,
               deliveredAt: undefined,
               readAt: undefined,
@@ -130,7 +130,7 @@ export function projectConversationMessageEvents(
               ...common,
               $typeName: 'peers_touch.model.chat.v1.GroupMessage' as const,
               groupUlid: event.conversationId,
-              mentionedDids: [],
+              mentionedPtids: [],
               mentionAll: false,
             };
         messages.set(payload.messageId, message as unknown as SequencedSocialMessage);
@@ -183,7 +183,7 @@ export function messageGroupSeq(message: SocialMessage): number {
 
 export type DesktopIMConversationProjection = IMConversationProjection & {
   authorityStationId: string;
-  peerDid?: string;
+  peerPtid?: string;
   memberCount?: number;
 };
 
@@ -191,7 +191,7 @@ export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike>
   // Compatibility aliases for shared chat helpers that still use the legacy
   // `ulid` naming while Desktop renderers consume the IM projection contract.
   ulid: string;
-  senderDid: string;
+  senderPtid: string;
   replyToUlid?: string;
   threadRootUlid?: string;
   readByPtids: string[];
@@ -277,7 +277,7 @@ export function previewFromMessage(message: SocialMessage): MessagePreview {
   return {
     content: message.content || attachmentName,
     type: Number(message.type ?? 1),
-		senderId: message.senderDid ?? '',
+    senderPtid: message.senderPtid ?? '',
   };
 }
 
@@ -296,14 +296,14 @@ export function projectDesktopIMConversation(conversation: DesktopUnifiedConvers
       ? {
         content: conversation.preview.content,
         type: conversation.preview.type,
-			senderId: conversation.preview.senderId,
+        senderPtid: conversation.preview.senderPtid,
       }
       : undefined,
   });
   return {
     ...projection,
     authorityStationId: conversation.authorityStationId ?? '',
-    peerDid: conversation.peerDid,
+    peerPtid: conversation.peerPtid,
     memberCount: conversation.memberCount,
   };
 }
@@ -319,7 +319,7 @@ export function projectDesktopIMMessage(
     id: message.ulid ?? '',
     conversationKind: kind,
     conversationId,
-    senderId: message.senderDid ?? '',
+    senderPtid: message.senderPtid ?? '',
     type: Number(message.type ?? 1),
     content: message.content,
     attachments: message.attachments ?? [],
@@ -334,7 +334,7 @@ export function projectDesktopIMMessage(
   return {
     ...projection,
     ulid: projection.id,
-    senderDid: projection.senderId,
+    senderPtid: projection.senderPtid,
     replyToUlid: projection.replyToId,
     threadRootUlid: projection.threadRootId,
     readByPtids: (message as { readByPtids?: string[] }).readByPtids ?? [],
@@ -364,10 +364,10 @@ export function projectDesktopIMMessages(
 
 export function applyPresenceToMap(
   presence: Record<string, boolean>,
-  actorId: string,
+  actorPtid: string,
   online: boolean,
 ): Record<string, boolean> | null {
-  return applyChatPresenceToMap(presence, actorId, online);
+  return applyChatPresenceToMap(presence, actorPtid, online);
 }
 
 export function receiptStatus(kind: 'DELIVERED' | 'READ'): FriendMessageStatus | null {
@@ -400,10 +400,10 @@ export function applyMessageMutationToList(
 export function applyTypingStateToMap(
   typingPeers: TypingPeers,
   sessionUlid: string,
-  fromActorId: string,
+  fromActorPtid: string,
   typing: boolean,
 ): TypingPeers | null {
-  return applyChatTypingStateToMap(typingPeers, sessionUlid, fromActorId, typing);
+  return applyChatTypingStateToMap(typingPeers, sessionUlid, fromActorPtid, typing);
 }
 
 export function pruneTypingPeers(typingPeers: TypingPeers, staleBefore: number): TypingPeers | null {

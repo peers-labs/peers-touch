@@ -40,7 +40,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		genesis_hash BLOB NOT NULL,
 		head_hash BLOB NOT NULL,
 		head_seq INTEGER NOT NULL DEFAULT 0,
-		created_by_actor_id VARCHAR(64) NOT NULL,
+		created_by_actor_ptid VARCHAR(255) NOT NULL,
 		created_by_station_peer_id VARCHAR(128) NOT NULL,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -56,7 +56,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		event_type INTEGER NOT NULL,
 		payload_bytes BLOB NOT NULL,
 		payload_hash BLOB NOT NULL,
-		actor_id VARCHAR(64) NOT NULL,
+		actor_ptid VARCHAR(255) NOT NULL,
 		actor_federated_handle VARCHAR(255) NOT NULL DEFAULT '',
 		station_peer_id VARCHAR(128) NOT NULL,
 		sequencer_station_peer_id VARCHAR(128) NOT NULL,
@@ -83,19 +83,19 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	db.Exec(`CREATE TABLE IF NOT EXISTS federation_actor_role (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		federation_id VARCHAR(30) NOT NULL,
-		actor_id VARCHAR(64) NOT NULL,
+		actor_ptid VARCHAR(255) NOT NULL,
 		actor_federated_handle VARCHAR(255) NOT NULL DEFAULT '',
 		station_peer_id VARCHAR(128) NOT NULL,
 		role VARCHAR(30) NOT NULL,
 		granted_by_event_id VARCHAR(30) NOT NULL DEFAULT '',
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		revoked_at DATETIME,
-		UNIQUE(federation_id, actor_id)
+		UNIQUE(federation_id, actor_ptid)
 	)`)
 
 	db.Exec(`CREATE TABLE IF NOT EXISTS actor_signing_key (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		actor_id VARCHAR(64) NOT NULL UNIQUE,
+		actor_ptid VARCHAR(255) NOT NULL UNIQUE,
 		public_key BLOB NOT NULL,
 		encrypted_private_key BLOB NOT NULL,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -219,12 +219,12 @@ func TestNonSequencerAppendRejected(t *testing.T) {
 	fed := feds[0]
 
 	_, err = ledgerSvc.AppendEvent(ctx, &application.AppendEventInput{
-		FederationID:  fed.FederationID,
-		EventType:     4,
-		PayloadBytes:  []byte("test"),
-		ActorID:       "actor-b",
-		ActorHandle:   "@b@two.peers.touch",
-		StationPeerID: "node-b",
+		FederationID:         fed.FederationID,
+		EventType:            4,
+		PayloadBytes:         []byte("test"),
+		ActorPTID:            "ptid:v1:actor:peers:p:b",
+		ActorFederatedHandle: "@b@two.peers.touch",
+		StationPeerID:        "node-b",
 	})
 
 	if err == nil {
@@ -256,7 +256,7 @@ func TestBootstrapReplicaMaterializesCanonicalLedgerAndStationURLs(t *testing.T)
 		ctx,
 		&application.BootstrapFederationReplicaInput{
 			FederationID:       federationID,
-			LocalActorID:       "actor-b",
+			LocalActorPTID:     "ptid:v1:actor:peers:p:b",
 			LocalStationPeerID: "node-b",
 			Events:             events,
 		},
@@ -315,7 +315,7 @@ func TestBootstrapReplicaRejectsForgedLedgerBeforeMembershipWrites(t *testing.T)
 		ctx,
 		&application.BootstrapFederationReplicaInput{
 			FederationID:       federations[0].FederationID,
-			LocalActorID:       "actor-b",
+			LocalActorPTID:     "ptid:v1:actor:peers:p:b",
 			LocalStationPeerID: "node-b",
 			Events:             forged,
 		},
@@ -363,7 +363,7 @@ func TestRemoteEventAdvancesHeadAndMembershipProjectionTogether(t *testing.T) {
 		ctx,
 		&application.BootstrapFederationReplicaInput{
 			FederationID:       federationID,
-			LocalActorID:       "actor-b",
+			LocalActorPTID:     "ptid:v1:actor:peers:p:b",
 			LocalStationPeerID: "node-b",
 			Events:             events[:2],
 		},

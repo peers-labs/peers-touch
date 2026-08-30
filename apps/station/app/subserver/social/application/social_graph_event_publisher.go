@@ -18,48 +18,48 @@ func NewSocialGraphEventPublisher() *SocialGraphEventPublisher {
 	}
 }
 
-func (p *SocialGraphEventPublisher) PublishFriendRequestReceived(ctx context.Context, senderDID, receiverDID, requestID string) {
-	p.publish(ctx, receiverDID, &realtime.SocialGraphEvent{
-		Kind:      realtime.SocialGraphEvent_FRIEND_REQUEST_RECEIVED,
-		ActorDid:  senderDID,
-		TargetDid: receiverDID,
-		RequestId: requestID,
+func (p *SocialGraphEventPublisher) PublishFriendRequestReceived(ctx context.Context, senderPTID, receiverPTID, requestID string) {
+	p.publish(ctx, receiverPTID, &realtime.SocialGraphEvent{
+		Kind:       realtime.SocialGraphEvent_FRIEND_REQUEST_RECEIVED,
+		ActorPtid:  senderPTID,
+		TargetPtid: receiverPTID,
+		RequestId:  requestID,
 	})
 }
 
-func (p *SocialGraphEventPublisher) PublishFriendRequestAccepted(ctx context.Context, accepterDID, senderDID, requestID, conversationID string) {
+func (p *SocialGraphEventPublisher) PublishFriendRequestAccepted(ctx context.Context, accepterPTID, senderPTID, requestID, conversationID string) {
 	ev := &realtime.SocialGraphEvent{
 		Kind:           realtime.SocialGraphEvent_FRIEND_REQUEST_ACCEPTED,
-		ActorDid:       accepterDID,
-		TargetDid:      senderDID,
+		ActorPtid:      accepterPTID,
+		TargetPtid:     senderPTID,
 		RequestId:      requestID,
 		ConversationId: conversationID,
 	}
-	p.publish(ctx, senderDID, ev)
+	p.publish(ctx, senderPTID, ev)
 
 	if conversationID != "" {
 		convEv := &realtime.SocialGraphEvent{
 			Kind:           realtime.SocialGraphEvent_CONVERSATION_CREATED,
-			ActorDid:       accepterDID,
-			TargetDid:      senderDID,
+			ActorPtid:      accepterPTID,
+			TargetPtid:     senderPTID,
 			ConversationId: conversationID,
 		}
-		p.publish(ctx, accepterDID, convEv)
-		p.publish(ctx, senderDID, convEv)
+		p.publish(ctx, accepterPTID, convEv)
+		p.publish(ctx, senderPTID, convEv)
 	}
 }
 
-func (p *SocialGraphEventPublisher) publish(ctx context.Context, targetDID string, ev *realtime.SocialGraphEvent) {
+func (p *SocialGraphEventPublisher) publish(ctx context.Context, targetPTID string, ev *realtime.SocialGraphEvent) {
 	liveBus := p.bus()
 	if liveBus == nil {
 		return
 	}
-	if targetDID == "" {
+	if targetPTID == "" {
 		return
 	}
-	if _, err := liveBus.Publish(targetDID, &realtime.StreamEvent{
+	if _, err := liveBus.Publish(targetPTID, &realtime.StreamEvent{
 		Kind: &realtime.StreamEvent_SocialGraphEvent{SocialGraphEvent: ev},
 	}); err != nil {
-		logger.Warn(ctx, "social.realtime: publish failed", "target_did", targetDID, "kind", ev.Kind.String(), "error", err)
+		logger.Warn(ctx, "social.realtime: publish failed", "target_ptid", targetPTID, "kind", ev.Kind.String(), "error", err)
 	}
 }

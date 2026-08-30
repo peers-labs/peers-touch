@@ -30,9 +30,9 @@ func (eventBusTypingPublisher) PublishTyping(
 	_, err = bus.PublishEphemeral(actorID, &realtime.StreamEvent{
 		Kind: &realtime.StreamEvent_Typing{
 			Typing: &realtime.TypingState{
-				SessionUlid: conversationID,
-				FromActorId: senderPTID,
-				Typing:      isTyping,
+				SessionUlid:   conversationID,
+				FromActorPtid: senderPTID,
+				Typing:        isTyping,
 			},
 		},
 	})

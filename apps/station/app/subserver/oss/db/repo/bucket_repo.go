@@ -26,14 +26,14 @@ type BucketRepository interface {
 	ListAll(ctx context.Context) ([]ossmodel.Bucket, error)
 
 	// Create inserts a bucket. Returns ErrBucketExists if the
-	// (OwnerActorID, Name) pair already exists.
+	// (OwnerPTID, Name) pair already exists.
 	Create(ctx context.Context, b *ossmodel.Bucket) error
 
 	// EnsureSystem creates one of the canonical system buckets if
 	// it does not already exist for the actor; otherwise it
 	// returns the existing row. Idempotent — safe to call from
 	// repeated boots.
-	EnsureSystem(ctx context.Context, actorID string, spec ossmodel.SystemBucketSpec) (*ossmodel.Bucket, error)
+	EnsureSystem(ctx context.Context, actorPTID string, spec ossmodel.SystemBucketSpec) (*ossmodel.Bucket, error)
 
 	// AddUsage atomically adds delta bytes (and 1 to ObjectCount)
 	// to the bucket. If quota is non-zero and the new total would
@@ -129,7 +129,7 @@ func (r *bucketRepo) FindByOwnerName(ctx context.Context, owner, name string) (*
 		return nil, err
 	}
 	var b ossmodel.Bucket
-	if err := db.Where("owner_actor_id = ? AND name = ?", owner, name).First(&b).Error; err != nil {
+	if err := db.Where("owner_ptid = ? AND name = ?", owner, name).First(&b).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrBucketNotFound
 		}
@@ -144,7 +144,7 @@ func (r *bucketRepo) ListByOwner(ctx context.Context, owner string) ([]ossmodel.
 		return nil, err
 	}
 	var rows []ossmodel.Bucket
-	if err := db.Where("owner_actor_id = ?", owner).Order("kind ASC, name ASC").Find(&rows).Error; err != nil {
+	if err := db.Where("owner_ptid = ?", owner).Order("kind ASC, name ASC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -156,7 +156,7 @@ func (r *bucketRepo) ListAll(ctx context.Context) ([]ossmodel.Bucket, error) {
 		return nil, err
 	}
 	var rows []ossmodel.Bucket
-	if err := db.Order("owner_actor_id ASC, kind ASC, name ASC").Find(&rows).Error; err != nil {
+	if err := db.Order("owner_ptid ASC, kind ASC, name ASC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -183,8 +183,8 @@ func (r *bucketRepo) Create(ctx context.Context, b *ossmodel.Bucket) error {
 // operator changes to QuotaBytes / Description). If it does not
 // exist, we INSERT — and treat a unique-index collision as a benign
 // "another worker raced ahead", not an error.
-func (r *bucketRepo) EnsureSystem(ctx context.Context, actorID string, spec ossmodel.SystemBucketSpec) (*ossmodel.Bucket, error) {
-	if existing, err := r.FindByOwnerName(ctx, actorID, spec.Name); err == nil {
+func (r *bucketRepo) EnsureSystem(ctx context.Context, actorPTID string, spec ossmodel.SystemBucketSpec) (*ossmodel.Bucket, error) {
+	if existing, err := r.FindByOwnerName(ctx, actorPTID, spec.Name); err == nil {
 		return existing, nil
 	} else if !errors.Is(err, ErrBucketNotFound) {
 		return nil, err
@@ -193,7 +193,7 @@ func (r *bucketRepo) EnsureSystem(ctx context.Context, actorID string, spec ossm
 	b := &ossmodel.Bucket{
 		ID:                newULID(now),
 		Name:              spec.Name,
-		OwnerActorID:      actorID,
+		OwnerPTID:         actorPTID,
 		Kind:              spec.Kind,
 		SystemKey:         spec.SystemKey,
 		DefaultVisibility: spec.DefaultVisibility,
@@ -205,7 +205,7 @@ func (r *bucketRepo) EnsureSystem(ctx context.Context, actorID string, spec ossm
 	}
 	if err := r.Create(ctx, b); err != nil {
 		if errors.Is(err, ErrBucketExists) {
-			return r.FindByOwnerName(ctx, actorID, spec.Name)
+			return r.FindByOwnerName(ctx, actorPTID, spec.Name)
 		}
 		return nil, err
 	}
@@ -351,7 +351,7 @@ func (r *bucketRepo) SetUsage(ctx context.Context, bucketID string, usedBytes in
 // the codebase.
 func upsertOnConflict() clause.OnConflict { //nolint:unused
 	return clause.OnConflict{
-		Columns:   []clause.Column{{Name: "owner_actor_id"}, {Name: "name"}},
+		Columns:   []clause.Column{{Name: "owner_ptid"}, {Name: "name"}},
 		DoUpdates: clause.AssignmentColumns([]string{"updated_at"}),
 	}
 }

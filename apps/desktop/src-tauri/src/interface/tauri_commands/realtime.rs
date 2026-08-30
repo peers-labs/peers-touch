@@ -63,14 +63,14 @@ pub fn realtime_stream_start(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let Some(actor_id) = session_resolver::actor_id_for_window(state.inner(), &window) else {
+    let Some(actor_ptid) = session_resolver::ptid_for_window(state.inner(), &window) else {
         return AppResult::fail(ErrorCode::Unauthorized, "no active actor", None);
     };
     let device_id = device_id_from(&window);
-    event_stream::start(app, actor_id.clone(), token, device_id.clone());
+    event_stream::start(app, actor_ptid.clone(), token, device_id.clone());
     to_stub(
         "realtime_stream_start",
-        json!({ "actor_id": actor_id, "device_id": device_id }),
+        json!({ "actor_ptid": actor_ptid, "device_id": device_id }),
     )
 }
 
@@ -79,11 +79,11 @@ pub fn realtime_stream_stop(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    if let Some(actor_id) = session_resolver::actor_id_for_window(state.inner(), &window) {
-        event_stream::stop(&actor_id);
-        return to_stub("realtime_stream_stop", json!({ "actor_id": actor_id }));
+    if let Some(actor_ptid) = session_resolver::ptid_for_window(state.inner(), &window) {
+        event_stream::stop(&actor_ptid);
+        return to_stub("realtime_stream_stop", json!({ "actor_ptid": actor_ptid }));
     }
-    to_stub("realtime_stream_stop", json!({ "actor_id": null }))
+    to_stub("realtime_stream_stop", json!({ "actor_ptid": null }))
 }
 
 /// Input for `realtime_signal_send`. The frontend has already
@@ -93,7 +93,7 @@ pub fn realtime_stream_stop(
 /// through — it does not touch crypto state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RealtimeSignalInput {
-    pub recipient_actor_id: String,
+    pub recipient_actor_ptid: String,
     pub session_ulid: String,
     /// One of the realtime CallSignal kinds — the WebRTC primitives
     /// "OFFER" / "ANSWER" / "CANDIDATE" / "HANGUP", or the
@@ -128,19 +128,19 @@ pub fn realtime_signal_send(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    if input.recipient_actor_id.trim().is_empty()
+    if input.recipient_actor_ptid.trim().is_empty()
         || input.session_ulid.trim().is_empty()
         || input.kind.trim().is_empty()
         || input.payload_b64.is_empty()
     {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
-            "recipient_actor_id, session_ulid, kind, payload_b64 are required",
+            "recipient_actor_ptid, session_ulid, kind, payload_b64 are required",
             None,
         );
     }
     let body = json!({
-        "recipient_actor_id": input.recipient_actor_id,
+        "recipient_actor_ptid": input.recipient_actor_ptid,
         "session_ulid":       input.session_ulid,
         "kind":               input.kind,
         "payload_b64":        input.payload_b64,

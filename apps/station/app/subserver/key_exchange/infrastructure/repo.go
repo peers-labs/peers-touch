@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
+	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 type IdentityKeyModel struct {
-	ActorDID          string    `gorm:"column:actor_did;size:255;primaryKey"`
+	ActorPtid         string    `gorm:"column:actor_ptid;size:255;primaryKey"`
 	DeviceID          string    `gorm:"column:device_id;size:128;primaryKey"`
 	IdentityKeyPub    []byte    `gorm:"column:identity_key_pub;type:bytea"`
 	KeyFingerprint    string    `gorm:"column:key_fingerprint;size:128"`
@@ -27,7 +28,7 @@ func (IdentityKeyModel) TableName() string { return "key_exchange_identity_keys"
 
 type SignedPreKeyModel struct {
 	ID        uint      `gorm:"column:id;primaryKey"`
-	ActorDID  string    `gorm:"column:actor_did;size:255;index:idx_ke_spk_actor_device,priority:1"`
+	ActorPtid string    `gorm:"column:actor_ptid;size:255;index:idx_ke_spk_actor_device,priority:1"`
 	DeviceID  string    `gorm:"column:device_id;size:128;index:idx_ke_spk_actor_device,priority:2"`
 	SPKID     int32     `gorm:"column:spk_id"`
 	PublicKey []byte    `gorm:"column:public_key;type:bytea"`
@@ -39,7 +40,7 @@ func (SignedPreKeyModel) TableName() string { return "key_exchange_signed_pre_ke
 
 type OneTimePreKeyModel struct {
 	ID        uint      `gorm:"column:id;primaryKey"`
-	ActorDID  string    `gorm:"column:actor_did;size:255;uniqueIndex:idx_ke_opk_actor_dev_opkid,priority:1"`
+	ActorPtid string    `gorm:"column:actor_ptid;size:255;uniqueIndex:idx_ke_opk_actor_dev_opkid,priority:1"`
 	DeviceID  string    `gorm:"column:device_id;size:128;uniqueIndex:idx_ke_opk_actor_dev_opkid,priority:2"`
 	OPKID     int32     `gorm:"column:opk_id;uniqueIndex:idx_ke_opk_actor_dev_opkid,priority:3"`
 	PublicKey []byte    `gorm:"column:public_key;type:bytea"`
@@ -58,27 +59,30 @@ func NewGormRepo(db *gorm.DB) *GormRepo {
 }
 
 func (r *GormRepo) AutoMigrate() error {
-	// One-time migration from pre-multi-device schema (identity row keyed only by
-	// actor_did). If the table exists but is missing the device_id column, drop all
-	// key_exchange_* tables once and recreate with composite PK (actor_did, device_id).
-	//
-	// Important: do NOT drop on every boot — only when legacy layout is detected —
-	// otherwise a running Station would wipe published bundles every restart.
-	if r.db.Migrator().HasTable(&IdentityKeyModel{}) {
-		if !r.db.Migrator().HasColumn(&IdentityKeyModel{}, "device_id") {
-			if err := r.db.Migrator().DropTable(&OneTimePreKeyModel{}, &SignedPreKeyModel{}, &IdentityKeyModel{}); err != nil {
+	if err := migrateKeyExchangeIdentityColumns(r.db); err != nil {
+		return err
+	}
+
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// One-time migration from pre-multi-device schema (identity row keyed only by
+		// actor_ptid). If the table exists but is missing the device_id column, drop all
+		// key_exchange_* tables once and recreate with composite PK (actor_ptid, device_id).
+		//
+		// Important: do NOT drop on every boot — only when legacy layout is detected —
+		// otherwise a running Station would wipe published bundles every restart.
+		if tx.Migrator().HasTable(&IdentityKeyModel{}) &&
+			!tx.Migrator().HasColumn(&IdentityKeyModel{}, "device_id") {
+			if err := tx.Migrator().DropTable(&OneTimePreKeyModel{}, &SignedPreKeyModel{}, &IdentityKeyModel{}); err != nil {
 				return fmt.Errorf("key_exchange: failed dropping legacy tables: %w", err)
 			}
 		}
-	}
-	if err := r.db.AutoMigrate(
-		&IdentityKeyModel{},
-		&SignedPreKeyModel{},
-		&OneTimePreKeyModel{},
-	); err != nil {
-		return err
-	}
-	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(
+			&IdentityKeyModel{},
+			&SignedPreKeyModel{},
+			&OneTimePreKeyModel{},
+		); err != nil {
+			return fmt.Errorf("key_exchange: migrate schema: %w", err)
+		}
 		for _, model := range []any{
 			&OneTimePreKeyModel{},
 			&SignedPreKeyModel{},
@@ -93,14 +97,39 @@ func (r *GormRepo) AutoMigrate() error {
 	})
 }
 
-func (r *GormRepo) UpsertIdentityKey(actorDID, deviceID string, ikPub []byte, fingerprint string, publishedAtUnixMs int64, supportedVersions []uint32) error {
+func migrateKeyExchangeIdentityColumns(rds *gorm.DB) error {
+	return rds.Transaction(func(tx *gorm.DB) error {
+		for _, rename := range []struct {
+			table string
+			from  string
+			to    string
+		}{
+			{table: "key_exchange_identity_keys", from: "actor_did", to: "actor_ptid"},
+			{table: "key_exchange_signed_pre_keys", from: "actor_did", to: "actor_ptid"},
+			{table: "key_exchange_one_time_pre_keys", from: "actor_did", to: "actor_ptid"},
+		} {
+			if err := modeldb.MigrateStringIdentityColumn(tx, rename.table, rename.from, rename.to); err != nil {
+				return fmt.Errorf(
+					"key_exchange: rename legacy identity column %s.%s to %s: %w",
+					rename.table,
+					rename.from,
+					rename.to,
+					err,
+				)
+			}
+		}
+		return nil
+	})
+}
+
+func (r *GormRepo) UpsertIdentityKey(actorPTID, deviceID string, ikPub []byte, fingerprint string, publishedAtUnixMs int64, supportedVersions []uint32) error {
 	now := time.Now()
 	encodedVersions := encodeSupportedVersions(supportedVersions)
 	var existing IdentityKeyModel
-	err := r.db.Where("actor_did = ? AND device_id = ?", actorDID, deviceID).Take(&existing).Error
+	err := r.db.Where("actor_ptid = ? AND device_id = ?", actorPTID, deviceID).Take(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return r.db.Create(&IdentityKeyModel{
-			ActorDID:          actorDID,
+			ActorPtid:         actorPTID,
 			DeviceID:          deviceID,
 			IdentityKeyPub:    ikPub,
 			KeyFingerprint:    fingerprint,
@@ -121,13 +150,13 @@ func (r *GormRepo) UpsertIdentityKey(actorDID, deviceID string, ikPub []byte, fi
 	return r.db.Save(&existing).Error
 }
 
-func (r *GormRepo) UpsertSignedPreKey(actorDID, deviceID string, spk domain.SignedPreKey) error {
+func (r *GormRepo) UpsertSignedPreKey(actorPTID, deviceID string, spk domain.SignedPreKey) error {
 	now := time.Now()
 	var existing SignedPreKeyModel
-	err := r.db.Where("actor_did = ? AND device_id = ?", actorDID, deviceID).Take(&existing).Error
+	err := r.db.Where("actor_ptid = ? AND device_id = ?", actorPTID, deviceID).Take(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return r.db.Create(&SignedPreKeyModel{
-			ActorDID:  actorDID,
+			ActorPtid: actorPTID,
 			DeviceID:  deviceID,
 			SPKID:     spk.ID,
 			PublicKey: spk.PublicKey,
@@ -145,7 +174,7 @@ func (r *GormRepo) UpsertSignedPreKey(actorDID, deviceID string, spk domain.Sign
 	return r.db.Save(&existing).Error
 }
 
-func (r *GormRepo) UploadOneTimePreKeys(actorDID, deviceID string, keys []domain.OneTimePreKey) error {
+func (r *GormRepo) UploadOneTimePreKeys(actorPTID, deviceID string, keys []domain.OneTimePreKey) error {
 	if len(keys) == 0 {
 		return nil
 	}
@@ -153,7 +182,7 @@ func (r *GormRepo) UploadOneTimePreKeys(actorDID, deviceID string, keys []domain
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		for _, k := range keys {
 			row := OneTimePreKeyModel{
-				ActorDID:  actorDID,
+				ActorPtid: actorPTID,
 				DeviceID:  deviceID,
 				OPKID:     k.ID,
 				PublicKey: k.PublicKey,
@@ -170,9 +199,9 @@ func (r *GormRepo) UploadOneTimePreKeys(actorDID, deviceID string, keys []domain
 
 // FetchKeyBundles returns device-scoped bundles. For each device, consumes at most one OPK
 // when available (same semantics as the pre-multi-device server).
-func (r *GormRepo) FetchKeyBundles(actorDID, filterDeviceID string) ([]domain.KeyBundle, error) {
+func (r *GormRepo) FetchKeyBundles(actorPTID, filterDeviceID string) ([]domain.KeyBundle, error) {
 	var iks []IdentityKeyModel
-	q := r.db.Where("actor_did = ?", actorDID).Order("published_at_unix_ms DESC")
+	q := r.db.Where("actor_ptid = ?", actorPTID).Order("published_at_unix_ms DESC")
 	if filterDeviceID != "" {
 		q = q.Where("device_id = ?", filterDeviceID)
 	}
@@ -187,13 +216,13 @@ func (r *GormRepo) FetchKeyBundles(actorDID, filterDeviceID string) ([]domain.Ke
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		for _, ik := range iks {
 			var spk SignedPreKeyModel
-			if err := tx.Where("actor_did = ? AND device_id = ?", ik.ActorDID, ik.DeviceID).
+			if err := tx.Where("actor_ptid = ? AND device_id = ?", ik.ActorPtid, ik.DeviceID).
 				Order("created_at DESC").First(&spk).Error; err != nil {
 				return err
 			}
 			var opks []domain.OneTimePreKey
 			var opk OneTimePreKeyModel
-			err := tx.Where("actor_did = ? AND device_id = ? AND consumed = ?", ik.ActorDID, ik.DeviceID, false).
+			err := tx.Where("actor_ptid = ? AND device_id = ? AND consumed = ?", ik.ActorPtid, ik.DeviceID, false).
 				Order("id ASC").
 				First(&opk).Error
 			if err == nil {
@@ -211,7 +240,7 @@ func (r *GormRepo) FetchKeyBundles(actorDID, filterDeviceID string) ([]domain.Ke
 				return err
 			}
 			out = append(out, domain.KeyBundle{
-				ActorDID:          ik.ActorDID,
+				ActorPtid:         ik.ActorPtid,
 				DeviceID:          ik.DeviceID,
 				IdentityKeyPub:    ik.IdentityKeyPub,
 				KeyFingerprint:    ik.KeyFingerprint,
@@ -266,10 +295,10 @@ func decodeSupportedVersions(value string) []uint32 {
 	return out
 }
 
-func (r *GormRepo) CountAvailableOPKs(actorDID, deviceID string) (int64, error) {
+func (r *GormRepo) CountAvailableOPKs(actorPTID, deviceID string) (int64, error) {
 	var n int64
 	err := r.db.Model(&OneTimePreKeyModel{}).
-		Where("actor_did = ? AND device_id = ? AND consumed = ?", actorDID, deviceID, false).
+		Where("actor_ptid = ? AND device_id = ? AND consumed = ?", actorPTID, deviceID, false).
 		Count(&n).Error
 	return n, err
 }

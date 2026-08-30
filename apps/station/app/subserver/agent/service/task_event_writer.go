@@ -1068,7 +1068,7 @@ func (w *TaskEventWriter) Publish(ctx context.Context, agentID, eventType string
 	_ = w.eventBus.Publish(ctx, domain.DomainEvent{
 		EventID:   eventID,
 		EventType: eventType,
-		ActorID:   agentID,
+		AgentID:   agentID,
 		Payload:   payload,
 		Metadata:  metadata,
 	})

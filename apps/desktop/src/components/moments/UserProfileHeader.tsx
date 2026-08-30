@@ -15,7 +15,7 @@ const { Title, Text } = Typography;
 // Sources two viewer signals:
 //   - `actor` — the public-shape author info from a Post or
 //     dedicated profile fetch.
-//   - `viewerActorId` — passed down from the page so the
+//   - `viewerActorPtid` — passed down from the page so the
 //     embedded FollowButton can hide itself for "this is me".
 //
 // Stats (followers / following / post count) come from the parent
@@ -24,7 +24,7 @@ const { Title, Text } = Typography;
 
 interface UserProfileHeaderProps {
   actor: PostAuthor | Follower | Following | null;
-  viewerActorId?: string;
+  viewerActorPtid?: string;
   followerCount?: number;
   followingCount?: number;
   postCount?: number;
@@ -33,8 +33,8 @@ interface UserProfileHeaderProps {
   inline?: boolean;
 }
 
-function actorIdOf(a: any): string {
-  return String(a?.id ?? a?.actorId ?? '');
+function actorPtidOf(a: any): string {
+  return String(a?.id ?? a?.actorPtid ?? '');
 }
 function actorDisplayOf(a: any): string {
   return String(a?.displayName ?? a?.username ?? '');
@@ -72,7 +72,7 @@ function actorSourceLabel({
 
 export function UserProfileHeader({
   actor,
-  viewerActorId,
+  viewerActorPtid,
   followerCount,
   followingCount,
   postCount,
@@ -100,7 +100,7 @@ export function UserProfileHeader({
     );
   }
 
-  const id = actorIdOf(actor);
+  const id = actorPtidOf(actor);
   const display = actorDisplayOf(actor) || t('moments.author.unknown');
   const username = actorUsernameOf(actor);
   const avatar = actorAvatarOf(actor);
@@ -114,7 +114,7 @@ export function UserProfileHeader({
   //      is the viewer's own profile, fall back to the federation
   //      runtime self-view. Drops to undefined for everyone else,
   //      which renders just "@username".
-  const isSelf = Boolean(viewerActorId && id && viewerActorId === id);
+  const isSelf = Boolean(viewerActorPtid && id && viewerActorPtid === id);
   const home = actorHomeOf(actor) ?? (isSelf ? federationSelf?.homeStationDomain : undefined);
   const source = actorSourceLabel({
     id,
@@ -204,8 +204,8 @@ export function UserProfileHeader({
       </div>
       {id && (
         <FollowButton
-          targetActorId={id}
-          viewerActorId={viewerActorId}
+          targetActorPtid={id}
+          viewerActorPtid={viewerActorPtid}
           compact={inline}
         />
       )}

@@ -58,12 +58,12 @@ func TestProtoSerializer(t *testing.T) {
 
 	t.Run("Marshal and Unmarshal", func(t *testing.T) {
 		original := &chat.FriendChatMessage{
-			Ulid:        "01TEST000000000000TEST",
-			SessionUlid: "01SESSION00000000000",
-			SenderDid:   "did:sender:123",
-			ReceiverDid: "did:receiver:456",
-			Content:     "Hello World",
-			Type:        chat.FriendMessageType_FRIEND_MESSAGE_TYPE_TEXT,
+			Ulid:         "01TEST000000000000TEST",
+			SessionUlid:  "01SESSION00000000000",
+			SenderPtid:   "did:sender:123",
+			ReceiverPtid: "did:receiver:456",
+			Content:      "Hello World",
+			Type:         chat.FriendMessageType_FRIEND_MESSAGE_TYPE_TEXT,
 		}
 
 		// Marshal

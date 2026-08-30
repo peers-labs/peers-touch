@@ -20,7 +20,7 @@ const RUNTIME = 'browser-gateway' as const;
 
 interface CohortManifest {
   cohortId: string;
-  expectedActorId: string;
+  expectedActorPtid: string;
   warmupRuns: number;
   postWarmupSamplesPerScenario: number;
   scenarios: string[];
@@ -84,15 +84,15 @@ test.describe('P0c3 browser-gateway evidence', () => {
 
     const observed = await page.evaluate(() => ({
       runtime: (window as any).__PT_FRONTEND_TELEMETRY__?.snapshot?.().runtime ?? 'unknown',
-      actorId: '',
+      actorPtid: '',
     }));
     expect(observed.runtime).toBe('browser-gateway');
 
     const identity = await page.evaluate(async () => {
       const device = await (window as any).__PT_ACCEPTANCE__.getRealtimeDevice();
-      return { actorId: device.actorId ?? '' };
+      return { actorPtid: device.actorPtid ?? '' };
     });
-    expect(identity.actorId).toBe(cohort.expectedActorId);
+    expect(identity.actorPtid).toBe(cohort.expectedActorPtid);
 
     async function baselineIds(): Promise<string[]> {
       return page.evaluate(() =>
@@ -263,7 +263,7 @@ test.describe('P0c3 browser-gateway evidence', () => {
       collectedAt: new Date().toISOString(),
       runtime: RUNTIME,
       profile: cohort.profile,
-      actualActorId: identity.actorId,
+      actualActorPtid: identity.actorPtid,
       station: cohort.station,
       buildRevision: cohort.buildRevision,
       warmupRuns: warmup,

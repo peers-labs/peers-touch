@@ -17,6 +17,6 @@ func withCanonicalConversationSubject(
 	return serverwrapper.CanonicalSubject(jwtWrapper, serverwrapper.SubjectResolver(resolve))
 }
 
-func resolveConversationSubjectPTID(ctx context.Context, subjectID string) (string, error) {
-	return touchactor.ResolveSubjectPTID(ctx, subjectID)
+func resolveConversationSubjectPTID(ctx context.Context, subjectPTID string) (string, error) {
+	return touchactor.ResolveSubjectPTID(ctx, subjectPTID)
 }

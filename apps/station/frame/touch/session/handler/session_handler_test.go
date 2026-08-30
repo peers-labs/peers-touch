@@ -13,33 +13,14 @@ func TestHandleVerifySession(t *testing.T) {
 		name          string
 		setupContext  func() context.Context
 		expectedValid bool
-		expectedID    string
 		expectNilSubj bool
 	}{
-		{
-			name: "valid session with subject",
-			setupContext: func() context.Context {
-				ctx := context.Background()
-				subject := &coreauth.Subject{
-					ID: "user123",
-					Attributes: map[string]string{
-						"role":  "admin",
-						"email": "test@example.com",
-					},
-				}
-				return coreauth.WithSubject(ctx, subject)
-			},
-			expectedValid: true,
-			expectedID:    "user123",
-			expectNilSubj: false,
-		},
 		{
 			name: "no subject in context",
 			setupContext: func() context.Context {
 				return context.Background()
 			},
 			expectedValid: false,
-			expectedID:    "",
 			expectNilSubj: true,
 		},
 		{
@@ -54,25 +35,19 @@ func TestHandleVerifySession(t *testing.T) {
 				}
 				return coreauth.WithSubject(ctx, subject)
 			},
-			expectedValid: true,
-			expectedID:    "",
+			expectedValid: false,
 			expectNilSubj: false,
 		},
 		{
-			name: "subject with attributes",
+			name: "numeric subject fails closed",
 			setupContext: func() context.Context {
 				ctx := context.Background()
 				subject := &coreauth.Subject{
-					ID: "user456",
-					Attributes: map[string]string{
-						"role":        "moderator",
-						"permissions": "read,write",
-					},
+					ID: "12345",
 				}
 				return coreauth.WithSubject(ctx, subject)
 			},
-			expectedValid: true,
-			expectedID:    "user456",
+			expectedValid: false,
 			expectNilSubj: false,
 		},
 	}
@@ -94,10 +69,6 @@ func TestHandleVerifySession(t *testing.T) {
 
 			if resp.Valid != tt.expectedValid {
 				t.Errorf("Valid = %v, want %v", resp.Valid, tt.expectedValid)
-			}
-
-			if resp.SubjectId != tt.expectedID {
-				t.Errorf("SubjectId = %v, want %v", resp.SubjectId, tt.expectedID)
 			}
 
 			if !tt.expectNilSubj {

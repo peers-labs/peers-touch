@@ -40,7 +40,7 @@ message AgentProviderInfo {
 
 message AgentModelInfo {
   string id = 1;
-  string actor_id = 2;
+  string actor_ptid = 2;
   string provider_id = 3;
   string model_id = 4;
   string display_name = 5;

@@ -48,11 +48,12 @@ fn profile_stores() -> &'static Mutex<ProfileStores> {
     })
 }
 
-fn with_profile_store_mut<T, F>(actor_id: &str, f: F) -> Result<T, ProfileError>
+fn with_profile_store_mut<T, F>(actor_ptid: &str, f: F) -> Result<T, ProfileError>
 where
     F: FnOnce(&mut ProfileStore) -> Result<T, ProfileError>,
 {
-    let key = actor_bucket_id(actor_id);
+    let key = actor_bucket_id(actor_ptid)
+        .map_err(|error| ProfileError::InvalidArgument(error.to_string()))?;
     let mut stores = profile_stores()
         .lock()
         .map_err(|_| ProfileError::Internal("failed to lock profile store".to_string()))?;
@@ -60,17 +61,17 @@ where
     f(store)
 }
 
-pub fn get(actor_id: &str) -> Result<ProfileSnapshot, ProfileError> {
-    with_profile_store_mut(actor_id, |store| Ok(snapshot_from(store)))
+pub fn get(actor_ptid: &str) -> Result<ProfileSnapshot, ProfileError> {
+    with_profile_store_mut(actor_ptid, |store| Ok(snapshot_from(store)))
 }
 
 pub fn update(
-    actor_id: &str,
+    actor_ptid: &str,
     display_name: Option<String>,
     bio: Option<String>,
     location: Option<String>,
 ) -> Result<ProfileSnapshot, ProfileError> {
-    with_profile_store_mut(actor_id, |store| {
+    with_profile_store_mut(actor_ptid, |store| {
         if let Some(value) = display_name {
             store.display_name = validate_display_name(&value)?;
         }
@@ -87,12 +88,12 @@ pub fn update(
 }
 
 pub fn update_privacy(
-    actor_id: &str,
+    actor_ptid: &str,
     visibility: String,
     allow_direct_message: bool,
 ) -> Result<ProfileSnapshot, ProfileError> {
     let normalized = validate_visibility(&visibility)?;
-    with_profile_store_mut(actor_id, |store| {
+    with_profile_store_mut(actor_ptid, |store| {
         store.visibility = normalized;
         store.allow_direct_message = allow_direct_message;
         Ok(snapshot_from(store))
@@ -100,12 +101,12 @@ pub fn update_privacy(
 }
 
 pub fn upload(
-    actor_id: &str,
+    actor_ptid: &str,
     kind: UploadKind,
     file_path: &str,
 ) -> Result<UploadOutcome, ProfileError> {
     let path = validate_file_path(file_path)?;
-    with_profile_store_mut(actor_id, |store| {
+    with_profile_store_mut(actor_ptid, |store| {
         let (field, old_value) = match kind {
             UploadKind::Avatar => ("avatar", store.avatar_url.clone()),
             UploadKind::Header => ("header", store.header_url.clone()),

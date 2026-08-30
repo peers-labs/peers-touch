@@ -23,7 +23,7 @@ const (
 
 type GetFeedRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -59,9 +59,9 @@ func (*GetFeedRequest) Descriptor() ([]byte, []int) {
 	return file_domain_launcher_launcher_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *GetFeedRequest) GetUserId() string {
+func (x *GetFeedRequest) GetActorPtid() string {
 	if x != nil {
-		return x.UserId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -417,9 +417,10 @@ var File_domain_launcher_launcher_proto protoreflect.FileDescriptor
 
 const file_domain_launcher_launcher_proto_rawDesc = "" +
 	"\n" +
-	"\x1edomain/launcher/launcher.proto\x12\x1bpeers_touch.domain.launcher\"?\n" +
-	"\x0eGetFeedRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x14\n" +
+	"\x1edomain/launcher/launcher.proto\x12\x1bpeers_touch.domain.launcher\"E\n" +
+	"\x0eGetFeedRequest\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"\xc1\x02\n" +
 	"\bFeedItem\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +

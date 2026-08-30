@@ -6,6 +6,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import type { MobileAuthSession } from '../auth/authSession';
+import { mobileAuthScopeKey } from '../auth/mobileAuthIdentity';
 import { SocialApiError, readableErrorMessage } from '../social/socialTypes';
 import type { ChatEncryptedMessagePayload, Group, GroupMember, GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import type { ChatAttachmentInput } from '../social/socialApi';
@@ -51,11 +52,11 @@ export interface GroupState {
   loadSettings: (groupUlid: string) => Promise<void>;
   updateMySettings: (groupUlid: string, input: UpdateGroupSettingsInput) => Promise<void>;
   updateMyNickname: (groupUlid: string, nickname: string) => Promise<void>;
-  inviteMembers: (groupUlid: string, inviteeDids: string[]) => Promise<void>;
+  inviteMembers: (groupUlid: string, inviteePtids: string[]) => Promise<void>;
   leaveGroup: (groupUlid: string) => Promise<void>;
-  removeMember: (groupUlid: string, actorDid: string) => Promise<void>;
-  updateMember: (groupUlid: string, actorDid: string, input: UpdateGroupMemberInput) => Promise<void>;
-  transferOwnership: (groupUlid: string, nextOwnerDid: string) => Promise<void>;
+  removeMember: (groupUlid: string, actorPtid: string) => Promise<void>;
+  updateMember: (groupUlid: string, actorPtid: string, input: UpdateGroupMemberInput) => Promise<void>;
+  transferOwnership: (groupUlid: string, nextOwnerPtid: string) => Promise<void>;
   dissolveGroup: (groupUlid: string) => Promise<void>;
   ingestRealtimeMessage: (groupUlid: string, message: GroupMessage) => Promise<void>;
   applyMessageMutation: (
@@ -104,7 +105,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       set(emptyGroupState());
       return;
     }
-    const sessionKey = `${session.stationUrl}|${session.sessionId}`;
+    const sessionKey = mobileAuthScopeKey(session);
     if (get().sessionKey === sessionKey) return;
     set({
       ...emptyGroupState(),
@@ -278,11 +279,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  inviteMembers: async (groupUlid, inviteeDids) => {
-    if (!inviteeDids.length) return;
+  inviteMembers: async (groupUlid, inviteePtids) => {
+    if (!inviteePtids.length) return;
     const api = requireApi(get());
     try {
-      await api.inviteMembers(groupUlid, inviteeDids);
+      await api.inviteMembers(groupUlid, inviteePtids);
       await get().loadMembers(groupUlid);
       await get().refreshGroups();
     } catch (error) {
@@ -302,10 +303,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  removeMember: async (groupUlid, actorDid) => {
+  removeMember: async (groupUlid, actorPtid) => {
     const api = requireApi(get());
     try {
-      await api.removeMember(groupUlid, actorDid);
+      await api.removeMember(groupUlid, actorPtid);
       await get().loadMembers(groupUlid);
       await get().refreshGroups();
     } catch (error) {
@@ -314,10 +315,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  updateMember: async (groupUlid, actorDid, input) => {
+  updateMember: async (groupUlid, actorPtid, input) => {
     const api = requireApi(get());
     try {
-      const payload = await api.updateMember(groupUlid, actorDid, input);
+      const payload = await api.updateMember(groupUlid, actorPtid, input);
       if (payload.member) {
         const member = normalizeGroupMember(payload.member);
         set((state) => ({
@@ -335,10 +336,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  transferOwnership: async (groupUlid, nextOwnerDid) => {
+  transferOwnership: async (groupUlid, nextOwnerPtid) => {
     const api = requireApi(get());
     try {
-      const payload = await api.transferOwnership(groupUlid, nextOwnerDid);
+      const payload = await api.transferOwnership(groupUlid, nextOwnerPtid);
       if (payload.group) {
         const group = normalizeGroup(payload.group);
         set((state) => ({ groups: mergeGroups(state.groups, group) }));

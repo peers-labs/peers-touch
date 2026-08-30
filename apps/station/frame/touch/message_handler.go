@@ -136,7 +136,7 @@ func HandleGetMembers(ctx context.Context, req *pb.GetMembersRequest) (*pb.GetMe
 	pbMembers := make([]*pb.ConvMember, len(members))
 	for i, m := range members {
 		pbMembers[i] = &pb.ConvMember{
-			Did:      m.DID,
+			Ptid:     m.PTID,
 			Role:     string(m.Role),
 			JoinedAt: timestamppb.New(m.CreatedAt),
 		}

@@ -89,11 +89,7 @@ export function ChatMessageArea() {
     getIMSenderProfile,
     messageHasMore,
     messageLoadingMore,
-    currentUserDid,
-    currentUserProfile,
-    peerProfiles,
-    sessions,
-    groupMembers,
+    currentUserPtid,
     scrollToMessageUlid,
     setScrollToMessageUlid,
     encryptionEnabled,
@@ -128,11 +124,7 @@ export function ChatMessageArea() {
     getIMSenderProfile: s.getIMSenderProfile,
     messageHasMore: s.messageHasMore,
     messageLoadingMore: s.messageLoadingMore,
-    currentUserDid: s.currentUserDid,
-    currentUserProfile: s.currentUserProfile,
-    peerProfiles: s.peerProfiles,
-    sessions: s.sessions,
-    groupMembers: s.groupMembers,
+    currentUserPtid: s.currentUserPtid,
     scrollToMessageUlid: s.scrollToMessageUlid,
     setScrollToMessageUlid: s.setScrollToMessageUlid,
     encryptionEnabled: s.encryptionEnabled,
@@ -147,10 +139,6 @@ export function ChatMessageArea() {
     pinMessage: s.pinMessage,
   }));
   const [inputValue, setInputValue] = useState('');
-  void currentUserProfile;
-  void peerProfiles;
-  void sessions;
-  void groupMembers;
   const draftsRef = useRef<Record<string, string>>({});
   const prevActiveRef = useRef<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -200,7 +188,7 @@ export function ChatMessageArea() {
   // Resolve the active peer DID for friend conversations. Used by the
   // header presence dot to decide whether the friend is reachable on
   // station, separate from whether our P2P channel happens to be up.
-  const activePeerDid = activeTab === 'friend' ? activeConversation?.peerDid || null : null;
+  const activePeerDid = activeTab === 'friend' ? activeConversation?.peerPtid || null : null;
 
   // Peer-presence indicator. Truth source: Station's PresenceFlip
   // events carried by the unified `/events/stream` runtime.
@@ -379,7 +367,7 @@ export function ChatMessageArea() {
   // Receiver-side: derive whether the peer is composing in the
   // currently-active conversation. We also expose a list of typing
   // names for group chats once the group fan-out lands; for friend
-  // chats the entry is keyed on the peer's actor_id.
+  // chats the entry is keyed on the peer's actor_ptid.
   const peerIsTyping = (() => {
     if (!activeUlid) return false;
     const map = typingPeers[activeUlid];
@@ -465,10 +453,10 @@ export function ChatMessageArea() {
         return;
       }
       if (activeTab === 'friend') {
-        const receiverDid = activeConversation?.peerDid || '';
+        const receiverPtid = activeConversation?.peerPtid || '';
         await sendFriendMessage(
           activeUlid,
-          receiverDid,
+          receiverPtid,
           content,
           draft.messageType,
           replyRef,
@@ -502,17 +490,17 @@ export function ChatMessageArea() {
    *  an active RTCPeerConnection. Text chat uses the realtime SSE
    *  stream; WebRTC readiness gates calls only. */
   const callsAvailable = (() => {
-    if (activeTab !== 'friend' || !activeUlid || !currentUserDid) return false;
+    if (activeTab !== 'friend' || !activeUlid || !currentUserPtid) return false;
     const s = friendP2pStatus[activeUlid];
     return !!s && s.state === 'connected';
   })();
 
   const handleStartCall = async (kind: 'audio' | 'video') => {
-    if (!callsAvailable || !currentUserDid) return;
-    const peerDid = activePeerDid;
-    if (!peerDid) return;
+    if (!callsAvailable || !currentUserPtid) return;
+    const peerPtid = activePeerDid;
+    if (!peerPtid) return;
     try {
-      await callP2p.startCall(currentUserDid, peerDid, kind);
+      await callP2p.startCall(currentUserPtid, peerPtid, kind);
     } catch (err) {
       log.error('chat', 'startCall failed', err);
       toast.error(t('chat.social.call.mediaDenied'));
@@ -534,14 +522,14 @@ export function ChatMessageArea() {
   };
 
   const handleReaction = async (message: ChatMessage, emoji: string) => {
-    if (!activeUlid || !currentUserDid) return;
+    if (!activeUlid || !currentUserPtid) return;
     const currentMutation = reactionMutations[message.ulid];
     const currentMutationConverged = Boolean(
       currentMutation
       && currentMutation.phase !== 'pending'
       && messageReactionProjectionMatches(
         reactions[message.ulid] ?? [],
-        currentUserDid,
+        currentUserPtid,
         currentMutation,
       ),
     );
@@ -550,7 +538,7 @@ export function ChatMessageArea() {
     const requestId = ++reactionRequestIdRef.current;
     const mutation = beginMessageReactionMutation(
       reactions[message.ulid] ?? [],
-      currentUserDid,
+      currentUserPtid,
       emoji,
       requestId,
     );
@@ -584,7 +572,7 @@ export function ChatMessageArea() {
           }
           if (messageReactionProjectionMatches(
             reactionsRef.current[message.ulid] ?? [],
-            currentUserDid,
+            currentUserPtid,
             activeMutation,
           )) {
             const next = { ...current };
@@ -909,7 +897,7 @@ export function ChatMessageArea() {
             actionOverlayHostRef={actionOverlayHostRef}
             activeConversationId={activeUlid}
             activeKind={activeKind}
-            currentUserDid={currentUserDid}
+            currentUserPtid={currentUserPtid}
             scrollContainerRef={scrollContainerRef}
             getSenderProfile={getIMSenderProfile}
             highlightedMessageUlid={highlightedMessageUlid}
@@ -935,7 +923,7 @@ export function ChatMessageArea() {
             reactionMutationFor={(message) => {
               const mutation = reactionMutationForProjection(
                 reactions[message.ulid] ?? [],
-                currentUserDid,
+                currentUserPtid,
                 reactionMutations[message.ulid],
               );
               return mutation
@@ -947,7 +935,7 @@ export function ChatMessageArea() {
                 reactions[message.ulid] ?? [],
                 reactionMutationForProjection(
                   reactions[message.ulid] ?? [],
-                  currentUserDid,
+                  currentUserPtid,
                   reactionMutations[message.ulid],
                 ),
               ),

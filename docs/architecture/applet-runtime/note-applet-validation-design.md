@@ -86,7 +86,7 @@ Minimum Note aggregate:
 ```text
 Note
   note_id
-  owner_id
+  owner_ptid
   title
   content
   created_at

@@ -680,7 +680,7 @@ func run(ctx context.Context) error {
 		description text,
 		engine_type integer NOT NULL DEFAULT 0,
 		status integer NOT NULL,
-		goal_owner_id text NOT NULL,
+		goal_owner_ptid text NOT NULL,
 		workspace_id text,
 		budget_tokens real NOT NULL DEFAULT 0,
 		budget_money real NOT NULL DEFAULT 0,
@@ -817,7 +817,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 	if err := db.Exec(`INSERT INTO agent_collaboration_tasks (
-                id, title, description, engine_type, status, goal_owner_id, workspace_id,
+                id, title, description, engine_type, status, goal_owner_ptid, workspace_id,
                 budget_tokens, budget_money, budget_time_ms, meta_json, created_at, started_at, ended_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		gateTaskID,

@@ -18,7 +18,7 @@ export interface ActorIdentityProjection {
 
 export interface ResolveActorIdentityInput {
   ptid: string;
-  currentUserDid: string | null;
+  currentUserPtid: string | null;
   currentUserProfile: CurrentActorProfileProjection | null;
   peerProfiles: Readonly<Record<string, AccountProfile | null>>;
   sessions: readonly FriendChatSession[];
@@ -38,13 +38,13 @@ function exactSessionProfile(
   ptid: string,
 ): { name: string; avatar: string } | null {
   for (const session of sessions) {
-    if (session.participantADid === ptid) {
+    if (session.participantAPtid === ptid) {
       return {
         name: session.participantADisplayName || ptid,
         avatar: session.participantAAvatar || '',
       };
     }
-    if (session.participantBDid === ptid) {
+    if (session.participantBPtid === ptid) {
       return {
         name: session.participantBDisplayName || ptid,
         avatar: session.participantBAvatar || '',
@@ -56,7 +56,7 @@ function exactSessionProfile(
 
 export function resolveActorIdentity({
   ptid,
-  currentUserDid,
+  currentUserPtid,
   currentUserProfile,
   peerProfiles,
   sessions,
@@ -66,7 +66,7 @@ export function resolveActorIdentity({
 }: ResolveActorIdentityInput): ActorIdentityProjection {
   const canonicalPtid = ptid.trim();
   const groupNickname = nickname?.trim() || '';
-  const isSelf = Boolean(currentUserDid && canonicalPtid === currentUserDid);
+  const isSelf = Boolean(currentUserPtid && canonicalPtid === currentUserPtid);
 
   if (isSelf) {
     const displayName = groupNickname

@@ -28,7 +28,7 @@ class TestWindow extends EventTarget {
 }
 
 const mocks = vi.hoisted(() => ({
-  authenticatedActorId: null as string | null,
+  authenticatedActorPtid: null as string | null,
   sessionSubscriber: null as (() => void) | null,
   selectGroup: vi.fn(),
   loadCurrentUserProfile: vi.fn(),
@@ -51,7 +51,7 @@ const originalWindow = globalThis.window;
 const originalCustomEvent = globalThis.CustomEvent;
 
 vi.mock('../store/session', () => ({
-  currentAuthenticatedActorId: () => mocks.authenticatedActorId,
+  currentAuthenticatedActorPtid: () => mocks.authenticatedActorPtid,
   useSessionStore: {
     subscribe: vi.fn((subscriber: () => void) => {
       mocks.sessionSubscriber = subscriber;
@@ -65,7 +65,7 @@ vi.mock('../store/session', () => ({
 vi.mock('../store/socialChat', () => ({
   useSocialChatStore: {
     getState: () => ({
-      currentUserDid: 'did:peer:self',
+      currentUserPtid: 'did:peer:self',
       activeTab: 'group',
       sessions: [],
       groups: [],
@@ -149,7 +149,7 @@ describe('social realtime group membership side effects', () => {
       };
     }
     vi.clearAllMocks();
-    mocks.authenticatedActorId = null;
+    mocks.authenticatedActorPtid = null;
     mocks.sessionSubscriber = null;
     mocks.ingestRealtimeMessage.mockResolvedValue(undefined);
     mocks.loadCurrentUserProfile.mockResolvedValue(undefined);
@@ -200,7 +200,7 @@ describe('social realtime group membership side effects', () => {
       messageUlid: 'message-1',
       membershipEpoch: 1,
       committedTsUnixMs: 123,
-      actorDid: 'did:peer:bob',
+      actorPtid: 'did:peer:bob',
     });
 
     await vi.waitFor(() => {
@@ -247,7 +247,7 @@ describe('social realtime group membership side effects', () => {
 
   it('hydrates the actor profile before reconciling Station conversation settings', async () => {
     const calls: string[] = [];
-    mocks.authenticatedActorId = 'ptid:peer:self';
+    mocks.authenticatedActorPtid = 'ptid:peer:self';
     mocks.loadCurrentUserProfile.mockImplementation(async () => {
       calls.push('profile');
     });
@@ -262,7 +262,7 @@ describe('social realtime group membership side effects', () => {
 
   it('coalesces authenticated bootstrap with an explicit projection refresh', async () => {
     const profileLoad = deferred<void>();
-    mocks.authenticatedActorId = 'ptid:peer:self';
+    mocks.authenticatedActorPtid = 'ptid:peer:self';
     mocks.loadCurrentUserProfile.mockImplementationOnce(() => profileLoad.promise);
 
     mocks.sessionSubscriber?.();
@@ -280,7 +280,7 @@ describe('social realtime group membership side effects', () => {
 
   it('runs a fresh projection refresh after the authenticated actor changes', async () => {
     const firstProfileLoad = deferred<void>();
-    mocks.authenticatedActorId = 'ptid:peer:alice';
+    mocks.authenticatedActorPtid = 'ptid:peer:alice';
     mocks.loadCurrentUserProfile.mockImplementationOnce(() => firstProfileLoad.promise);
 
     const aliceRefresh = refreshSocialProjection('alice bootstrap', true);
@@ -288,7 +288,7 @@ describe('social realtime group membership side effects', () => {
       expect(mocks.loadCurrentUserProfile).toHaveBeenCalledTimes(1);
     });
 
-    mocks.authenticatedActorId = 'ptid:peer:bob';
+    mocks.authenticatedActorPtid = 'ptid:peer:bob';
     const bobRefresh = refreshSocialProjection('bob bootstrap', true);
     expect(mocks.loadCurrentUserProfile).toHaveBeenCalledTimes(1);
     expect(mocks.loadSessions).not.toHaveBeenCalled();
@@ -302,7 +302,7 @@ describe('social realtime group membership side effects', () => {
 
   it('does not publish a stale badge after the actor changes during final hydration', async () => {
     const aliceFinalHydration = deferred<void>();
-    mocks.authenticatedActorId = 'ptid:peer:alice';
+    mocks.authenticatedActorPtid = 'ptid:peer:alice';
     mocks.loadGroupUnreadCounts.mockImplementationOnce(
       () => aliceFinalHydration.promise,
     );
@@ -312,7 +312,7 @@ describe('social realtime group membership side effects', () => {
       expect(mocks.loadGroupUnreadCounts).toHaveBeenCalledTimes(1);
     });
 
-    mocks.authenticatedActorId = 'ptid:peer:bob';
+    mocks.authenticatedActorPtid = 'ptid:peer:bob';
     const bobRefresh = refreshSocialProjection('bob bootstrap', true);
     aliceFinalHydration.resolve();
     await Promise.all([aliceRefresh, bobRefresh]);
@@ -321,7 +321,7 @@ describe('social realtime group membership side effects', () => {
   });
 
   it('continues Station reconciliation when profile hydration fails', async () => {
-    mocks.authenticatedActorId = 'ptid:peer:self';
+    mocks.authenticatedActorPtid = 'ptid:peer:self';
     mocks.loadCurrentUserProfile.mockRejectedValue(new Error('profile unavailable'));
 
     await refreshSocialProjection('test');
@@ -330,12 +330,12 @@ describe('social realtime group membership side effects', () => {
   });
 });
 
-function publishGroupMembership(kind: RealtimeGroupMembershipChangeKind, actorDid: string): void {
+function publishGroupMembership(kind: RealtimeGroupMembershipChangeKind, actorPtid: string): void {
   eventBus.publish(EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE, {
     eventId: 'stream-event-1',
     changeEventId: 'membership-change-1',
     groupUlid: 'group-1',
-    actorDid,
+    actorPtid,
     kind,
     changedTsUnixMs: 123,
   });

@@ -46,13 +46,13 @@ interface MomentCardProps {
   post: Post;
   reactions?: import('../../gen/proto/domain/social/post_pb').ReactionSummary[];
   explanation?: FeedObjectExplanation;
-  viewerActorId?: string;
+  viewerActorPtid?: string;
   surface?: 'home' | 'federated' | 'profile' | 'circle';
   onOpen?: (postId: string) => void;
   onOpenComments?: (postId: string) => void;
   onReact?: (postId: string, kind: ReactionKind) => Promise<void>;
   onUnreact?: (postId: string, kind?: ReactionKind) => Promise<void>;
-  onAuthorClick?: (actorId: string) => void;
+  onAuthorClick?: (actorPtid: string) => void;
   commentPreview?: Comment[];
   embedded?: boolean;
 }
@@ -193,7 +193,7 @@ export function MomentCard({
   post,
   reactions,
   explanation,
-  viewerActorId,
+  viewerActorPtid,
   surface = 'home',
   onOpen,
   onOpenComments,
@@ -222,7 +222,7 @@ export function MomentCard({
   const visibleComments = (commentPreview ?? []).slice(0, 2);
   const displayName = author?.displayName || author?.username || t('moments.author.unknown');
   const stationDomain = explanation?.source?.stationDomain || author?.homeStationDomain || '';
-  const isSelf = Boolean(viewerActorId && author?.id === viewerActorId);
+  const isSelf = Boolean(viewerActorPtid && author?.id === viewerActorPtid);
   const fallbackReason = reasonLabel({
     audienceKind,
     isSelf,
@@ -389,7 +389,7 @@ export function MomentCard({
                 images={images.slice(0, 9)}
                 cids={images.slice(0, 9).map((im) => im.url || im.id)}
                 audience={audience}
-                authorDid={post.authorId || author?.id || null}
+                authorPtid={post.authorPtid || author?.id || null}
               />
             </div>
           )}

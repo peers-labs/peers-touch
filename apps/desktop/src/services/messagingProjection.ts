@@ -60,7 +60,7 @@ async function refreshProjection(payload: MessagingProjectionChangedPayload): Pr
   const newIncomingMessages = (refreshed.messages[conversationId] ?? []).filter(
     (message) => (
       !previousMessageIds.has(message.ulid)
-      && message.senderDid !== refreshed.currentUserDid
+      && message.senderPtid !== refreshed.currentUserPtid
     ),
   );
   for (const _message of newIncomingMessages) {

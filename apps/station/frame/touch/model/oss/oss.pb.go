@@ -29,7 +29,7 @@ type FileMeta struct {
 	Filename      string                 `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
 	MimeType      string                 `protobuf:"bytes,3,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
 	Size          int64                  `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
-	UploaderDid   string                 `protobuf:"bytes,5,opt,name=uploader_did,json=uploaderDid,proto3" json:"uploader_did,omitempty"`
+	UploaderPtid  string                 `protobuf:"bytes,5,opt,name=uploader_ptid,json=uploaderPtid,proto3" json:"uploader_ptid,omitempty"`
 	UploadedAt    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=uploaded_at,json=uploadedAt,proto3" json:"uploaded_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -93,9 +93,9 @@ func (x *FileMeta) GetSize() int64 {
 	return 0
 }
 
-func (x *FileMeta) GetUploaderDid() string {
+func (x *FileMeta) GetUploaderPtid() string {
 	if x != nil {
-		return x.UploaderDid
+		return x.UploaderPtid
 	}
 	return ""
 }
@@ -261,13 +261,13 @@ var File_domain_oss_oss_proto protoreflect.FileDescriptor
 
 const file_domain_oss_oss_proto_rawDesc = "" +
 	"\n" +
-	"\x14domain/oss/oss.proto\x12\x18peers_touch.model.oss.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc9\x01\n" +
+	"\x14domain/oss/oss.proto\x12\x18peers_touch.model.oss.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcb\x01\n" +
 	"\bFileMeta\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x1a\n" +
 	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x1b\n" +
 	"\tmime_type\x18\x03 \x01(\tR\bmimeType\x12\x12\n" +
-	"\x04size\x18\x04 \x01(\x03R\x04size\x12!\n" +
-	"\fuploader_did\x18\x05 \x01(\tR\vuploaderDid\x12;\n" +
+	"\x04size\x18\x04 \x01(\x03R\x04size\x12#\n" +
+	"\ruploader_ptid\x18\x05 \x01(\tR\fuploaderPtid\x12;\n" +
 	"\vuploaded_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"uploadedAt\"&\n" +
 	"\x12GetFileMetaRequest\x12\x10\n" +

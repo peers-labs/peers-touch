@@ -909,10 +909,10 @@ export function recordBootPhase(phase: string, state: 'start' | 'end', durationM
   });
 }
 
-export function recordRuntimeBootstrap(runtimeId: string, durationMs: number, actorId: string | null): void {
+export function recordRuntimeBootstrap(runtimeId: string, durationMs: number, actorPtid: string | null): void {
   if (!isEnabled()) return;
   pushEvent({
-    data: { actorId, runtimeId },
+    data: { actorPtid, runtimeId },
     durationMs,
     kind: 'runtime.bootstrap',
     module: runtimeId,

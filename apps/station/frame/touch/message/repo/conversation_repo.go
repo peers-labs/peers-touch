@@ -56,19 +56,19 @@ func (r *MemberRepo) List(ctx context.Context, convID uint64) ([]*m.ConvMember, 
 	return list, nil
 }
 
-func (r *MemberRepo) Add(ctx context.Context, convID uint64, did string, role m.Role) error {
+func (r *MemberRepo) Add(ctx context.Context, convID uint64, ptid string, role m.Role) error {
 	db, err := store.GetRDS(ctx)
 	if err != nil {
 		return err
 	}
-	mbr := &m.ConvMember{ConvID: convID, DID: did, Role: role}
+	mbr := &m.ConvMember{ConvID: convID, PTID: ptid, Role: role}
 	return db.Create(mbr).Error
 }
 
-func (r *MemberRepo) Remove(ctx context.Context, convID uint64, did string) error {
+func (r *MemberRepo) Remove(ctx context.Context, convID uint64, ptid string) error {
 	db, err := store.GetRDS(ctx)
 	if err != nil {
 		return err
 	}
-	return db.Where("conv_id = ? AND did = ?", convID, did).Delete(&m.ConvMember{}).Error
+	return db.Where("conv_id = ? AND ptid = ?", convID, ptid).Delete(&m.ConvMember{}).Error
 }

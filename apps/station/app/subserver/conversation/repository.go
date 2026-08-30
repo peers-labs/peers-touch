@@ -70,13 +70,9 @@ func repairMemberIndex(db *gorm.DB) {
 	if len(columns) == 0 {
 		return
 	}
-	needsRepair := false
-	for _, col := range columns {
-		if col.ColumnName == "actor_did" {
-			needsRepair = true
-			break
-		}
-	}
+	needsRepair := len(columns) != 2 ||
+		columns[0].ColumnName != "conversation_id" ||
+		columns[1].ColumnName != "ptid"
 	if !needsRepair {
 		return
 	}

@@ -12,7 +12,7 @@ type TaskRun struct {
 	Description         string     `gorm:"type:text"`
 	Surface             int32      `gorm:"not null;type:integer;index:idx_agent_task_runs_surface"`
 	Status              int32      `gorm:"not null;type:integer;index:idx_agent_task_runs_status"`
-	OwnerActorID        string     `gorm:"not null;type:varchar(64);index:idx_agent_task_runs_owner"`
+	OwnerActorPTID      string     `gorm:"column:owner_actor_ptid;not null;type:varchar(64);index:idx_agent_task_runs_owner"`
 	WorkspaceID         string     `gorm:"type:varchar(64)"`
 	ConversationID      string     `gorm:"type:varchar(36);uniqueIndex:idx_agent_task_runs_conversation"`
 	RootTurnID          string     `gorm:"type:varchar(36)"`

@@ -19,7 +19,7 @@ describe('message reaction state', () => {
 
   it('optimistically adds the selected emoji for the current actor', () => {
     const mutation = beginMessageReactionMutation(
-      [{ actorId: 'peer', emoji: '👍' }],
+      [{ actorPtid: 'peer', emoji: '👍' }],
       'self',
       '🎉',
       1,
@@ -27,17 +27,17 @@ describe('message reaction state', () => {
 
     expect(mutation.remove).toBe(false);
     expect(mutation.optimisticReactions).toEqual([
-      { actorId: 'peer', emoji: '👍' },
-      { actorId: 'self', emoji: '🎉' },
+      { actorPtid: 'peer', emoji: '👍' },
+      { actorPtid: 'self', emoji: '🎉' },
     ]);
   });
 
   it('optimistically removes only the selected actor and emoji tuple', () => {
     const mutation = beginMessageReactionMutation(
       [
-        { actorId: 'self', emoji: '👍' },
-        { actorId: 'peer', emoji: '👍' },
-        { actorId: 'self', emoji: '🎉' },
+        { actorPtid: 'self', emoji: '👍' },
+        { actorPtid: 'peer', emoji: '👍' },
+        { actorPtid: 'self', emoji: '🎉' },
       ],
       'self',
       '👍',
@@ -46,8 +46,8 @@ describe('message reaction state', () => {
 
     expect(mutation.remove).toBe(true);
     expect(mutation.optimisticReactions).toEqual([
-      { actorId: 'peer', emoji: '👍' },
-      { actorId: 'self', emoji: '🎉' },
+      { actorPtid: 'peer', emoji: '👍' },
+      { actorPtid: 'self', emoji: '🎉' },
     ]);
   });
 
@@ -56,14 +56,14 @@ describe('message reaction state', () => {
 
     expect(messageReactionProjectionMatches([], 'self', mutation)).toBe(false);
     expect(messageReactionProjectionMatches(
-      [{ actorId: 'self', emoji: '❤️' }],
+      [{ actorPtid: 'self', emoji: '❤️' }],
       'self',
       mutation,
     )).toBe(true);
   });
 
   it('rolls visible state back to the projection after failure', () => {
-    const projection = [{ actorId: 'peer', emoji: '😂' }];
+    const projection = [{ actorPtid: 'peer', emoji: '😂' }];
     const failedMutation: MessageReactionMutation = {
       ...beginMessageReactionMutation(projection, 'self', '🔥', 4),
       phase: 'error',
@@ -79,7 +79,7 @@ describe('message reaction state', () => {
     };
 
     expect(reactionMutationForProjection(
-      [{ actorId: 'self', emoji: '👏' }],
+      [{ actorPtid: 'self', emoji: '👏' }],
       'self',
       mutation,
     )).toBeUndefined();

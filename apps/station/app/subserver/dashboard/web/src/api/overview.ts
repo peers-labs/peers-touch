@@ -21,13 +21,23 @@ export interface SubServerInfo {
   status: string;
 }
 
+export interface ActorSummary {
+  ptid: string;
+  preferred_username: string;
+  name: string;
+  email: string;
+  summary: string;
+  avatar_url: string;
+  created_at: string;
+}
+
 export async function getOverviewStats(): Promise<OverviewStats> {
   const { data } = await client.get<OverviewStats>('/overview/stats');
   return data;
 }
 
-export async function getRecentActors(limit = 10) {
-  const { data } = await client.get('/overview/recent-actors', { params: { limit } });
+export async function getRecentActors(limit = 10): Promise<ActorSummary[]> {
+  const { data } = await client.get<{ items: ActorSummary[] }>('/overview/recent-actors', { params: { limit } });
   return data.items;
 }
 

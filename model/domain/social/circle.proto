@@ -9,7 +9,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 // ============================================================================
 // Circle (publisher-private audience label, P0)
 // ============================================================================
-// A `Circle` is a NAMED LIST OF DIDs owned by exactly one actor, used to
+// A `Circle` is a NAMED LIST OF PTIDs owned by exactly one actor, used to
 // narrow `Audience.kind = CIRCLE` posts. Members do NOT know they are in a
 // circle and circles are NOT bidirectional — they are publisher-side metadata
 // only. Compare with `chat.Group` which is a shared, bidirectional chat space.
@@ -21,20 +21,22 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 
 message Circle {
   uint64 id = 1;
-  uint64 owner_id = 2;
+  reserved 2;
+  reserved "owner_id";
   string name = 3;
   string description = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
   int64 member_count = 7;
+  string owner_ptid = 8;
 }
 
 message CircleMember {
   uint64 circle_id = 1;
-  // Actor identity. Stored as DID (string) rather than internal uint64
+  // Actor identity. Stored as PTID (string) rather than internal uint64
   // so cross-Station members can be added in future (still local-only
   // for v1).
-  string actor_did = 2;
+  string actor_ptid = 2;
   google.protobuf.Timestamp added_at = 3;
 }
 
@@ -45,8 +47,8 @@ message CircleMember {
 message CreateCircleRequest {
   string name = 1;
   string description = 2;
-  // Optional initial members (DIDs). Empty allowed.
-  repeated string member_dids = 3;
+  // Optional initial members (PTIDs). Empty allowed.
+  repeated string member_ptids = 3;
 }
 
 message CreateCircleResponse {
@@ -74,7 +76,7 @@ message DeleteCircleResponse {
 message AddCircleMemberRequest {
   uint64 circle_id = 1;
   // Bulk add allowed; deduplicated server-side.
-  repeated string member_dids = 2;
+  repeated string member_ptids = 2;
 }
 
 message AddCircleMemberResponse {
@@ -85,7 +87,7 @@ message AddCircleMemberResponse {
 
 message RemoveCircleMemberRequest {
   uint64 circle_id = 1;
-  repeated string member_dids = 2;
+  repeated string member_ptids = 2;
 }
 
 message RemoveCircleMemberResponse {

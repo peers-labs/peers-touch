@@ -1,6 +1,7 @@
 import { safeStorageKey } from '@peers-touch/client-storage';
 
 import type { MobileAuthSession } from '../auth/authSession';
+import { mobileAuthScope } from '../auth/mobileAuthIdentity';
 import { getSecureStorageValue, setSecureStorageValue } from '../../services/mobileCommands';
 
 type SkdmLedgerState = 'pending' | 'sent';
@@ -8,7 +9,7 @@ type SkdmLedgerState = 'pending' | 'sent';
 export interface SkdmLedgerEntry {
   key: string;
   groupUlid: string;
-  peerDid: string;
+  peerPtid: string;
   deviceKey: string;
   state: SkdmLedgerState;
   attempts: number;
@@ -31,7 +32,7 @@ export interface GroupSkdmLedger {
 
 export interface SkdmLedgerTarget {
   groupUlid: string;
-  peerDid: string;
+  peerPtid: string;
   deviceKey: string;
 }
 
@@ -65,7 +66,7 @@ export function createGroupSkdmLedger(session: MobileAuthSession): GroupSkdmLedg
     const next: SkdmLedgerEntry = {
       key,
       groupUlid: target.groupUlid,
-      peerDid: target.peerDid,
+      peerPtid: target.peerPtid,
       deviceKey: target.deviceKey,
       state,
       attempts: state === 'pending' ? (previous?.attempts ?? 0) + 1 : previous?.attempts ?? 1,
@@ -97,7 +98,7 @@ export function createGroupSkdmLedger(session: MobileAuthSession): GroupSkdmLedg
 }
 
 export function skdmLedgerKey(target: SkdmLedgerTarget): string {
-  return `${target.groupUlid}:${target.peerDid}:${target.deviceKey}`;
+  return `${target.groupUlid}:${target.peerPtid}:${target.deviceKey}`;
 }
 
 function parseSnapshot(raw: string | null): SkdmLedgerSnapshot {
@@ -118,8 +119,12 @@ function emptySnapshot(): SkdmLedgerSnapshot {
 }
 
 function ledgerStorageKey(session: MobileAuthSession): string {
-  const actorDid = String(session.actor?.id || session.actor?.actorId || session.actor?.actor_id || '').trim();
-  return safeStorageKey([LEDGER_KEY_PREFIX, stableKeyPart(session.stationUrl), stableKeyPart(actorDid || session.sessionId)]);
+  const scope = mobileAuthScope(session);
+  return safeStorageKey([
+    LEDGER_KEY_PREFIX,
+    stableKeyPart(scope.stationPeerId),
+    stableKeyPart(scope.ptid),
+  ]);
 }
 
 function stableKeyPart(value: string): string {

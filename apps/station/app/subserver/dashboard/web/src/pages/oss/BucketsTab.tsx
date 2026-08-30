@@ -40,7 +40,7 @@ type Visibility = 'public' | 'chat' | 'private';
 
 interface BucketFormState {
   name: string;
-  owner_actor_id: string;
+  owner_ptid: string;
   default_visibility: Visibility;
   quota_bytes: number;
   ttl_days: number;
@@ -49,7 +49,7 @@ interface BucketFormState {
 
 const EMPTY_FORM: BucketFormState = {
   name: '',
-  owner_actor_id: '',
+  owner_ptid: '',
   default_visibility: 'private',
   quota_bytes: 0,
   ttl_days: 0,
@@ -109,7 +109,7 @@ export function BucketsTab() {
 
   const onCreate = useCallback(async () => {
     const name = createForm.name.trim();
-    const owner = createForm.owner_actor_id.trim();
+    const owner = createForm.owner_ptid.trim();
     if (!name) {
       message.warning('Name is required');
       return;
@@ -121,7 +121,7 @@ export function BucketsTab() {
     setCreating(true);
     try {
       await ossApi.createBucket({
-        owner_actor_id: owner,
+        owner_ptid: owner,
         name,
         default_visibility: createForm.default_visibility,
         quota_bytes: createForm.quota_bytes,
@@ -144,7 +144,7 @@ export function BucketsTab() {
     setEditing(b);
     setEditForm({
       name: b.name,
-      owner_actor_id: b.owner_actor_id,
+      owner_ptid: b.owner_ptid,
       default_visibility: (b.default_visibility as Visibility) ?? 'private',
       quota_bytes: b.quota_bytes ?? 0,
       ttl_days: b.ttl_days ?? 0,
@@ -225,8 +225,8 @@ export function BucketsTab() {
     },
     {
       title: 'Owner',
-      dataIndex: 'owner_actor_id',
-      key: 'owner_actor_id',
+      dataIndex: 'owner_ptid',
+      key: 'owner_ptid',
       width: 180,
       render: (v: string) => v ? <Text code>{v}</Text> : <Text type="secondary">—</Text>,
     },
@@ -281,7 +281,7 @@ export function BucketsTab() {
         const busy = busyID === b.id;
         return (
           <Space size={4}>
-            <Tooltip title={isSystem ? 'system buckets have no owner_actor_id; admin upload is rejected server-side' : 'Upload a file on behalf of the bucket owner'}>
+            <Tooltip title={isSystem ? 'system buckets have no owner_ptid; admin upload is rejected server-side' : 'Upload a file on behalf of the bucket owner'}>
               <Button
                 size="small"
                 icon={<UploadIcon size={14} />}
@@ -414,8 +414,8 @@ export function BucketsTab() {
         <Form layout="vertical" disabled={creating}>
           <Form.Item label="Owner actor id" required>
             <AntdInput
-              value={createForm.owner_actor_id}
-              onChange={(e) => setCreateForm({ ...createForm, owner_actor_id: e.target.value })}
+              value={createForm.owner_ptid}
+              onChange={(e) => setCreateForm({ ...createForm, owner_ptid: e.target.value })}
               placeholder="actor ULID — the bucket's per-actor scope"
             />
           </Form.Item>
@@ -554,7 +554,7 @@ export function BucketsTab() {
 
 // ---------------------------------------------------------------------------
 // AdminUploadModal — operator uploads on behalf of the bucket's
-// owner. The server stamps `owner_actor_id = bucket.owner_actor_id`
+// owner. The server stamps `owner_ptid = bucket.owner_ptid`
 // regardless of what the operator picks; we surface that in the
 // modal's helper text so the operator is not surprised when the
 // resulting `oss_files` row does not show their admin id.
@@ -634,7 +634,7 @@ function AdminUploadModal({ bucket, onClose }: AdminUploadModalProps) {
           message={
             <Text>
               The file is stored under{' '}
-              <Text code>owner_actor_id={bucket.owner_actor_id}</Text> — the
+              <Text code>owner_ptid={bucket.owner_ptid}</Text> — the
               bucket owner — and audited as <Text code>admin_upload</Text> with
               your dashboard identity.
             </Text>

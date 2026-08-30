@@ -14,6 +14,9 @@ run for a changed path, and which artifacts should be produced for human review.
 - `gates.yaml` defines gate commands, timeouts, environments, tiers, and artifact expectations.
 - `features/` contains product feature contracts.
 - `gates/` contains stable cross-system acceptance implementations.
+- [`gates/mobile/README.md`](./gates/mobile/README.md) records the Mobile
+  native E2E driver selection, Desktop comparison, hybrid context model, and
+  simulator-versus-physical proof boundary.
 - `drivers/native/` defines the platform-neutral Native Desktop interaction
   contract and OS-specific adapters; business Gates inject this boundary and
   contain no AppKit, Quartz, CoreGraphics, X11, or Win32 implementation.
@@ -27,6 +30,9 @@ run for a changed path, and which artifacts should be produced for human review.
   applies the cell TTL independently of the lifecycle command, and verifies
   reverse-order tunnel teardown.
 - `playbooks/` explains how agents should run, diagnose, and preserve acceptance flows.
+- Runtime manifests use typed `services[service-id]` as the only service
+  topology. Every required service must carry an ID/kind-matched source-bound
+  attestation; the removed top-level `station` field is invalid.
 - `desktop-performance-cohort.json` is the canonical P0c-3 profile, account,
   dataset, window, warmup, build, runtime, and scenario manifest.
 - `reports/` stores local or CI acceptance artifacts and is ignored by git.

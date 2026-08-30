@@ -1,6 +1,10 @@
 # Mobile Client Lifecycle
 
 > Mobile platform lifecycle source. This document defines the Mobile lifecycle that must stay top-level symmetric with Desktop while respecting mobile-specific Station selection, foreground/background behavior, and native capability boundaries.
+>
+> Signed Station identity, pre-session auth runtime, executable dependency
+> graph, and generation-fenced teardown were accepted with the Mobile
+> PRODUCT/DESIGN package on 2026-08-27.
 
 ---
 
@@ -29,9 +33,9 @@ This document defines the lifecycle across those units. It does not redefine:
 | --- | --- | --- | --- |
 | `app-boot` | Native app starts | `mobile-app` + `mobile-rust` | WebView, storage, language, and capability guards are ready |
 | `station-selection` | No active Station or user changes Station | Station onboarding feature | A reachable Station is selected |
-| `station-handshake` | Active Station selected | Station runtime | Station reachability and capability baseline are checked |
-| `access-gate-chain` | Station handshake passes | Station access gate runtime | Station returns `access_granted` |
-| `runtime-critical` | Access is granted | Runtime registry | Critical session projections bootstrap |
+| `station-handshake` | Active Station selected | Station runtime | Signed `station_peer_id` and compatible capabilities are verified |
+| `access-gate-chain` | Station handshake passes | Access runtime + pre-session auth runtime | Station returns `access_granted`; any session candidate remains inactive before grant |
+| `runtime-critical` | Access is granted | Runtime registry | PTID session binds and critical projections bootstrap |
 | `shell` | Critical runtime bootstrap completes | Mobile shell | Chat/contacts/mine shell becomes visible |
 | `steady-foreground` | App is foregrounded | Owning runtimes | Event stream and reconciliation keep projections fresh |
 | `background` | App enters background | Native lifecycle + runtimes | Streams pause or downgrade; push/background tasks take over |
@@ -48,7 +52,7 @@ mobile app boot
   -> load language + WebView guards + native capability ports
   -> load Station registry
   -> station-selection if no active Station
-  -> station-handshake
+  -> signed station-handshake and peer-ID pin check
   -> access-gate-chain
      -> session restore / login gate
      -> invite / allowlist gate
@@ -73,13 +77,21 @@ The user must not enter the Station shell without passing the Station-driven acc
 
 ### 4.2 Station Handshake
 
-- The minimum gate verifies `host:port` reachability through `mobile-rust`, not WebView `fetch`.
-- A stronger gate should verify Station identity, protocol version, auth endpoint availability, and compatible capabilities.
-- HTTP may be allowed for local development or local network use, but must remain visually marked as not recommended.
+- Reachability is diagnostic only. The entry gate verifies a fresh
+  challenge-signed `station_peer_id`, canonical origin, protocol compatibility,
+  auth endpoint availability, and required capabilities through `mobile-rust`.
+- The explicit first-add action pins the peer ID. A known URL returning another
+  identity is blocking and requires explicit Station replacement.
+- Production credentials and OAuth require TLS. HTTP is limited to an explicit
+  development profile, is visibly marked, and cannot establish production trust.
 
 ### 4.3 Access Gate Chain
 
 - Login is one gate in the chain, not the whole gate model.
+- Email/OAuth credential acquisition belongs to station-scoped `authRuntime`;
+  active session ownership begins only after final access grant.
+- A login/OAuth response produced before a later invite/device/policy gate
+  completes remains an attempt-scoped candidate and cannot call business APIs.
 - Station owns gate order, pass/fail semantics, and final access decision.
 - Invite-only and fixed-user gates are managed in Station Dashboard, not Mobile.
 - Auth session secrets must be stored through native secure storage, not plain `localStorage`.
@@ -94,6 +106,8 @@ The user must not enter the Station shell without passing the Station-driven acc
 - `mobile-rust` owns native-safe capability calls, secure storage ports, network reachability checks, and plugin bridges.
 - `mobile-web` owns rendering and local projections.
 - Pages render projections and user actions; long-lived freshness belongs to runtimes.
+- Runtime dependencies use hard `dependsOn` and degradable `uses`; bootstrap is
+  topological and teardown/suspend use reverse order.
 - Foreground uses event streams when available.
 - Background uses push, background tasks, or deferred sync according to platform constraints.
 - Resume must treat projections as stale until delta sync or reconciliation has completed.
@@ -108,10 +122,11 @@ The user must not enter the Station shell without passing the Station-driven acc
 | Cold start with Station but no session | Validate Station, then render the current access gate |
 | Cold start with Station and session | Restore session, run the remaining gate chain, then enter shell only when access is granted |
 | Station unreachable | Stay before auth/shell; show retry and change Station actions |
+| Station identity mismatch | Block before credentials; preserve old scope; offer back or explicit replacement |
 | Login failure | Stay in the login gate; keep Station selected |
 | Invite/allowlist blocked | Stay in access gate chain; show Station-provided denial/retry actions |
-| Station change | Clear active access attempt, session, and session projections; return to Station selection |
-| Logout | Clear secure session; keep Station registry; restart access gate chain |
+| Station change | Fence old generation, hide projections, clear local credentials/caches, quarantine unresolved commands, return to selection |
+| Logout | Fence old generation and delete local credentials; remote revoke is bounded best-effort; restart access gate chain |
 | App background | Pause expensive streams; keep minimal native hooks |
 | App resume | Revalidate Station/session and run delta sync |
 | Push received | Store or route event through native plugin into runtime; do not mutate UI directly from plugin code |
@@ -146,9 +161,13 @@ Current Mobile code is still transitioning toward this lifecycle:
 - `App.tsx` must model at least `station-selection -> station-handshake -> access-gate-chain -> shell`.
 - Login must be promoted from Settings into an access gate renderer.
 - Invite-only and fixed-user gates must use the shared Station gate protocol, not Mobile-local checks.
-- Station probe currently verifies reachability; Station identity/capability handshake still needs a stronger protocol.
-- Session, sync, and device runtimes are planned but not fully implemented.
-- Secure storage command exists as a port; native Keychain/Keystore closure must be verified before production token storage.
+- Signed peer identity/capability handshake is implemented; physical
+  mismatch/replacement evidence remains pending.
+- Pre-session auth/OAuth runtime is implemented. Active session, command
+  admission, sync, and device runtimes are not yet all registered through the
+  target executable graph.
+- Keychain/Keystore and Rust OAuth secure storage pass simulator evidence;
+  physical-device cleanup and absence proof remain pending.
 
 ---
 
@@ -164,6 +183,7 @@ Functional verification must cover:
 
 - first launch with no Station;
 - existing Station automatic validation;
+- pinned Station peer mismatch and explicit replacement;
 - Station add and cancel;
 - Station switch clears current auth state;
 - access gate chain appears before shell;
@@ -171,3 +191,5 @@ Functional verification must cover:
 - invite/allowlist denial blocks shell consistently;
 - logout restarts access gate chain;
 - app resume revalidates Station/session.
+- OAuth callback followed by another gate does not activate business runtimes;
+- secure credential deletion failure blocks the next Shell generation.

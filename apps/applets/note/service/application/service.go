@@ -32,8 +32,8 @@ func NewServiceWithClock(repo domain.Repository, clock Clock) *Service {
 	return &Service{repo: repo, clock: clock}
 }
 
-func (s *Service) Create(ctx context.Context, ownerID string, req *model.CreateNoteRequest) (*model.CreateNoteResponse, error) {
-	if err := requireOwner(ownerID); err != nil {
+func (s *Service) Create(ctx context.Context, ownerPtid string, req *model.CreateNoteRequest) (*model.CreateNoteResponse, error) {
+	if err := requireOwner(ownerPtid); err != nil {
 		return nil, err
 	}
 	title := strings.TrimSpace(req.GetTitle())
@@ -44,7 +44,7 @@ func (s *Service) Create(ctx context.Context, ownerID string, req *model.CreateN
 	now := timestamppb.New(s.clock().UTC())
 	note := &model.Note{
 		NoteId:    ulid.Make().String(),
-		OwnerId:   ownerID,
+		OwnerPtid: ownerPtid,
 		Title:     title,
 		Content:   content,
 		CreatedAt: now,
@@ -57,26 +57,26 @@ func (s *Service) Create(ctx context.Context, ownerID string, req *model.CreateN
 	return &model.CreateNoteResponse{Item: created}, nil
 }
 
-func (s *Service) Get(ctx context.Context, ownerID string, req *model.GetNoteRequest) (*model.GetNoteResponse, error) {
-	if err := requireOwner(ownerID); err != nil {
+func (s *Service) Get(ctx context.Context, ownerPtid string, req *model.GetNoteRequest) (*model.GetNoteResponse, error) {
+	if err := requireOwner(ownerPtid); err != nil {
 		return nil, err
 	}
 	if err := requireNoteID(req.GetNoteId()); err != nil {
 		return nil, err
 	}
-	note, err := s.repo.Get(ctx, ownerID, req.GetNoteId(), req.GetIncludeDeleted())
+	note, err := s.repo.Get(ctx, ownerPtid, req.GetNoteId(), req.GetIncludeDeleted())
 	if err != nil {
 		return nil, err
 	}
 	return &model.GetNoteResponse{Item: note}, nil
 }
 
-func (s *Service) List(ctx context.Context, ownerID string, req *model.ListNotesRequest) (*model.ListNotesResponse, error) {
-	if err := requireOwner(ownerID); err != nil {
+func (s *Service) List(ctx context.Context, ownerPtid string, req *model.ListNotesRequest) (*model.ListNotesResponse, error) {
+	if err := requireOwner(ownerPtid); err != nil {
 		return nil, err
 	}
 	page, err := s.repo.List(ctx, domain.ListQuery{
-		OwnerID:        ownerID,
+		OwnerPTID:      ownerPtid,
 		PageSize:       req.GetPageSize(),
 		PageToken:      req.GetPageToken(),
 		OrderBy:        req.GetOrderBy(),
@@ -88,8 +88,8 @@ func (s *Service) List(ctx context.Context, ownerID string, req *model.ListNotes
 	return &model.ListNotesResponse{Items: page.Items, NextPageToken: page.NextPageToken}, nil
 }
 
-func (s *Service) Update(ctx context.Context, ownerID string, req *model.UpdateNoteRequest) (*model.UpdateNoteResponse, error) {
-	if err := requireOwner(ownerID); err != nil {
+func (s *Service) Update(ctx context.Context, ownerPtid string, req *model.UpdateNoteRequest) (*model.UpdateNoteResponse, error) {
+	if err := requireOwner(ownerPtid); err != nil {
 		return nil, err
 	}
 	if err := requireNoteID(req.GetNoteId()); err != nil {
@@ -110,50 +110,50 @@ func (s *Service) Update(ctx context.Context, ownerID string, req *model.UpdateN
 	if patch.Title != nil && patch.Content != nil && *patch.Title == "" && *patch.Content == "" {
 		return nil, domain.ErrEmptyContent
 	}
-	updated, err := s.repo.Update(ctx, ownerID, req.GetNoteId(), patch)
+	updated, err := s.repo.Update(ctx, ownerPtid, req.GetNoteId(), patch)
 	if err != nil {
 		return nil, err
 	}
 	return &model.UpdateNoteResponse{Item: updated}, nil
 }
 
-func (s *Service) Delete(ctx context.Context, ownerID string, req *model.DeleteNoteRequest) (*model.DeleteNoteResponse, error) {
-	if err := requireOwner(ownerID); err != nil {
+func (s *Service) Delete(ctx context.Context, ownerPtid string, req *model.DeleteNoteRequest) (*model.DeleteNoteResponse, error) {
+	if err := requireOwner(ownerPtid); err != nil {
 		return nil, err
 	}
 	if err := requireNoteID(req.GetNoteId()); err != nil {
 		return nil, err
 	}
-	deleted, err := s.repo.Delete(ctx, ownerID, req.GetNoteId())
+	deleted, err := s.repo.Delete(ctx, ownerPtid, req.GetNoteId())
 	if err != nil {
 		return nil, err
 	}
 	return &model.DeleteNoteResponse{Deleted: deleted}, nil
 }
 
-func (s *Service) Restore(ctx context.Context, ownerID string, req *model.RestoreNoteRequest) (*model.RestoreNoteResponse, error) {
-	if err := requireOwner(ownerID); err != nil {
+func (s *Service) Restore(ctx context.Context, ownerPtid string, req *model.RestoreNoteRequest) (*model.RestoreNoteResponse, error) {
+	if err := requireOwner(ownerPtid); err != nil {
 		return nil, err
 	}
 	if err := requireNoteID(req.GetNoteId()); err != nil {
 		return nil, err
 	}
-	restored, err := s.repo.Restore(ctx, ownerID, req.GetNoteId())
+	restored, err := s.repo.Restore(ctx, ownerPtid, req.GetNoteId())
 	if err != nil {
 		return nil, err
 	}
 	return &model.RestoreNoteResponse{Item: restored}, nil
 }
 
-func (s *Service) Search(ctx context.Context, ownerID string, req *model.SearchNotesRequest) (*model.SearchNotesResponse, error) {
-	if err := requireOwner(ownerID); err != nil {
+func (s *Service) Search(ctx context.Context, ownerPtid string, req *model.SearchNotesRequest) (*model.SearchNotesResponse, error) {
+	if err := requireOwner(ownerPtid); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(req.GetQuery()) == "" {
 		return nil, domain.ErrSearchQueryEmpty
 	}
 	page, err := s.repo.Search(ctx, domain.SearchQuery{
-		OwnerID:   ownerID,
+		OwnerPTID: ownerPtid,
 		Query:     req.GetQuery(),
 		PageSize:  req.GetPageSize(),
 		PageToken: req.GetPageToken(),
@@ -165,8 +165,8 @@ func (s *Service) Search(ctx context.Context, ownerID string, req *model.SearchN
 	return &model.SearchNotesResponse{Items: page.Items, NextPageToken: page.NextPageToken}, nil
 }
 
-func requireOwner(ownerID string) error {
-	if strings.TrimSpace(ownerID) == "" {
+func requireOwner(ownerPtid string) error {
+	if strings.TrimSpace(ownerPtid) == "" {
 		return domain.ErrOwnerRequired
 	}
 	return nil

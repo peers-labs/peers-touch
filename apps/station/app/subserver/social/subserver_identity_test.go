@@ -7,24 +7,29 @@ import (
 )
 
 func TestCanonicalDirectParticipantsUsePTIDBoundary(t *testing.T) {
-	actors := map[uint64]*db.Actor{
-		101: {
+	actors := map[string]*db.Actor{
+		"ptid:v1:actor:peers:p:alice": {
 			ID:                101,
 			PTID:              "ptid:v1:actor:peers:p:alice",
 			HomeStationPeerID: "station-a",
 		},
-		202: {
+		"ptid:v1:actor:peers:p:bob": {
 			ID:                202,
 			PTID:              "ptid:v1:actor:peers:p:bob",
 			HomeStationPeerID: "station-b",
 		},
 	}
 
-	aPtid, aStation, bPtid, bStation, err := canonicalDirectParticipants(actors, 101, 202)
+	aPtid, aStation, bPtid, bStation, err := canonicalDirectParticipants(
+		actors,
+		"ptid:v1:actor:peers:p:alice",
+		"ptid:v1:actor:peers:p:bob",
+	)
 	if err != nil {
 		t.Fatalf("canonicalDirectParticipants failed: %v", err)
 	}
-	if aPtid != actors[101].PTID || bPtid != actors[202].PTID {
+	if aPtid != actors["ptid:v1:actor:peers:p:alice"].PTID ||
+		bPtid != actors["ptid:v1:actor:peers:p:bob"].PTID {
 		t.Fatalf("numeric actor ID crossed the PTID boundary: got %q and %q", aPtid, bPtid)
 	}
 	if aStation != "station-a" || bStation != "station-b" {
@@ -33,12 +38,16 @@ func TestCanonicalDirectParticipantsUsePTIDBoundary(t *testing.T) {
 }
 
 func TestCanonicalDirectParticipantsRejectMissingPTID(t *testing.T) {
-	actors := map[uint64]*db.Actor{
-		101: {ID: 101},
-		202: {ID: 202, PTID: "ptid:v1:actor:peers:p:bob"},
+	actors := map[string]*db.Actor{
+		"ptid:v1:actor:peers:p:alice": {ID: 101},
+		"ptid:v1:actor:peers:p:bob":   {ID: 202, PTID: "ptid:v1:actor:peers:p:bob"},
 	}
 
-	if _, _, _, _, err := canonicalDirectParticipants(actors, 101, 202); err == nil {
+	if _, _, _, _, err := canonicalDirectParticipants(
+		actors,
+		"ptid:v1:actor:peers:p:alice",
+		"ptid:v1:actor:peers:p:bob",
+	); err == nil {
 		t.Fatal("expected missing canonical PTID to fail closed")
 	}
 }

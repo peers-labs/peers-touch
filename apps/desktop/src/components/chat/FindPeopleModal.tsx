@@ -113,7 +113,7 @@ function catalogEntryToResult(entry: FederationCatalogEntry): ActorSearchResult 
   const host = parts[1] || '';
 
   return {
-    id: entry.actorId,
+    id: entry.actorPtid,
     username: localPart,
     displayName: entry.displayName || localPart,
     avatar: entry.avatarUrl || '',
@@ -135,7 +135,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
     sendFriendRequest: s.sendFriendRequest,
     friendRequests: s.friendRequests,
   }));
-  const currentUserDid = useActiveSocialChatStore((s) => s.currentUserDid);
+  const currentUserPtid = useActiveSocialChatStore((s) => s.currentUserPtid);
   const federationReady = useActiveChatFederationSlice(selectFederationReady);
   const federations = useActiveChatFederationSlice((s) => s.federations);
   const joinedFederations = useMemo(
@@ -157,12 +157,12 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const pendingReceiverIds = useMemo(() => {
     const ids = new Set<string>();
     for (const req of friendRequests) {
-      if ((req.status === 0 || req.status === 1) && req.senderId === currentUserDid) {
-        ids.add(req.receiverId);
+      if ((req.status === 0 || req.status === 1) && req.senderPtid === currentUserPtid) {
+        ids.add(req.receiverPtid);
       }
     }
     return ids;
-  }, [friendRequests, currentUserDid]);
+  }, [friendRequests, currentUserPtid]);
 
   const parsed = useMemo(() => parseHandleInput(searchText), [searchText]);
   const blockedByGate = parsed.isFederated && parsed.hasHost && !federationReady;
@@ -205,7 +205,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
       const resp = await api.actorSearchActors(query);
       setResults(
         resp.items.map((a) => ({
-          id: String(a.id ?? ''),
+          id: String(a.actorPtid ?? ''),
           username: String(a.username ?? ''),
           displayName: String(a.displayName ?? ''),
           avatar: String(a.avatar ?? ''),
@@ -224,13 +224,13 @@ export function FindPeopleModal({ open, onClose }: Props) {
 
   const handleSendRequest = async (target: ActorSearchResult) => {
     if (addingId) return;
-    const receiverDid = target.id;
-    if (!receiverDid || receiverDid === currentUserDid) return;
-    setAddingId(receiverDid);
+    const receiverPtid = target.id;
+    if (!receiverPtid || receiverPtid === currentUserPtid) return;
+    setAddingId(receiverPtid);
     try {
-      await sendFriendRequest(receiverDid, '');
-      setSentIds((prev) => new Set(prev).add(receiverDid));
-      sentTimestamps.current.set(receiverDid, Date.now());
+      await sendFriendRequest(receiverPtid, '');
+      setSentIds((prev) => new Set(prev).add(receiverPtid));
+      sentTimestamps.current.set(receiverPtid, Date.now());
       message.success(t('chat.social.findPeople.requestSent'));
     } catch (e: unknown) {
       message.error(
@@ -385,14 +385,14 @@ export function FindPeopleModal({ open, onClose }: Props) {
             </Text>
           ) : (
             results.map((r) => {
-              const receiverDid = r.id;
-              const isPending = pendingReceiverIds.has(receiverDid) || sentIds.has(receiverDid);
-              const sentAt = sentTimestamps.current.get(receiverDid);
+              const receiverPtid = r.id;
+              const isPending = pendingReceiverIds.has(receiverPtid) || sentIds.has(receiverPtid);
+              const sentAt = sentTimestamps.current.get(receiverPtid);
               const cooldownActive = isPending && (!sentAt || Date.now() - sentAt < RESEND_COOLDOWN_MS);
-              const isSelf = !!currentUserDid && receiverDid === currentUserDid;
+              const isSelf = !!currentUserPtid && receiverPtid === currentUserPtid;
               return (
                 <Flexbox
-                  key={receiverDid || r.id}
+                  key={receiverPtid || r.id}
                   horizontal
                   align="center"
                   gap={10}
@@ -453,7 +453,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
                   <Button
                     type={cooldownActive ? 'default' : 'primary'}
                     size="small"
-                    loading={addingId === receiverDid}
+                    loading={addingId === receiverPtid}
                     disabled={cooldownActive || isSelf}
                     onClick={(event) => {
                       event.stopPropagation();

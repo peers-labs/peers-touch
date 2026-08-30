@@ -480,13 +480,13 @@ func TestAtelierProviderCapabilitiesWritesFullE2EProviderRuntimeEvidenceFromStat
 	directRunID := "direct-run-provider-runtime"
 	artifactID := "artifact-provider-runtime"
 	if err := db.Create(&persistence.CollaborationTask{
-		ID:          taskID,
-		Title:       "Provider runtime evidence",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            taskID,
+		Title:         "Provider runtime evidence",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}).Error; err != nil {
 		t.Fatalf("seed task: %v", err)
 	}
@@ -819,14 +819,14 @@ func TestLoadAtelierWorkspacePrefersPersistedProjectAcceptanceIndexes(t *testing
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-persisted-acceptance",
-		Title:       "Persisted acceptance indexes",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
-		MetaJSON:    `{"project":"peers-touch","goal_owner_signoff":"true","project_state":"blocked","milestone_state":"blocked"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-persisted-acceptance",
+		Title:         "Persisted acceptance indexes",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
+		MetaJSON:      `{"project":"peers-touch","goal_owner_signoff":"true","project_state":"blocked","milestone_state":"blocked"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	if err := db.Create(&persistence.ProjectBlocker{
@@ -947,14 +947,14 @@ func TestAcceptancePredicateEvaluatorEvaluatesDeterministicPredicates(t *testing
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-predicate-eval",
-		Title:       "Predicate eval",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
-		MetaJSON:    `{"goal_owner_signoff":"true"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-predicate-eval",
+		Title:         "Predicate eval",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
+		MetaJSON:      `{"goal_owner_signoff":"true"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	if err := db.Create(&persistence.ProjectState{
@@ -1074,14 +1074,14 @@ func TestTaskEventWriterAdvancesProjectStateMachineFromDurableEvidence(t *testin
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-state-machine",
-		Title:       "State machine",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
-		MetaJSON:    `{"goal_owner_signoff":"true","memory_candidates_generated":"true"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-state-machine",
+		Title:         "State machine",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
+		MetaJSON:      `{"goal_owner_signoff":"true","memory_candidates_generated":"true"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-state-machine",
@@ -1197,14 +1197,14 @@ func TestTaskEventWriterMaterializesPolicyDefectIndexes(t *testing.T) {
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-policy-defect",
-		Title:       "Policy defect",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{"policy_id":"policy-station","policy_hard_deny":"true","policy_rule_expr":"no_unresolved_blocking_gate","policy_rule_scope":"project","policy_rule_severity":"block"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-policy-defect",
+		Title:         "Policy defect",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{"policy_id":"policy-station","policy_hard_deny":"true","policy_rule_expr":"no_unresolved_blocking_gate","policy_rule_scope":"project","policy_rule_severity":"block"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-policy-defect",
@@ -1274,13 +1274,13 @@ func TestFetchAtelierArtifactBodyReturnsOwnedSafeTextBody(t *testing.T) {
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-body-fetch",
-		Title:       "Fetch artifact body",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-body-fetch",
+		Title:         "Fetch artifact body",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	if err := db.Create(&persistence.TaskArtifact{
@@ -1338,22 +1338,22 @@ func TestFetchAtelierArtifactBodyRejectsUnsafeOrUnownedBlob(t *testing.T) {
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-body-owned",
-		Title:       "Owned task",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-body-owned",
+		Title:         "Owned task",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	otherTask := persistence.CollaborationTask{
-		ID:          "task-body-other",
-		Title:       "Other task",
-		GoalOwnerID: "actor-2",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-body-other",
+		Title:         "Other task",
+		GoalOwnerPTID: "actor-2",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	seedResumeCollaborationTask(t, db, otherTask, nil)
@@ -1383,19 +1383,19 @@ func TestFetchAtelierArtifactBodyRejectsUnsafeOrUnownedBlob(t *testing.T) {
 	service := NewAtelierProjectionService(nil)
 	for _, tc := range []struct {
 		name       string
-		actorID    string
+		actorPTID  string
 		taskID     string
 		artifactID string
 		bodyRef    string
 	}{
-		{name: "unowned task", actorID: "actor-1", taskID: otherTask.ID, artifactID: "artifact-other", bodyRef: "artifact://task-body-other/artifact-other/body"},
-		{name: "body ref mismatch", actorID: "actor-1", taskID: task.ID, artifactID: "artifact-report", bodyRef: "artifact://task-body-other/artifact-report/body"},
-		{name: "unsafe html kind", actorID: "actor-1", taskID: task.ID, artifactID: "artifact-html", bodyRef: "artifact://task-body-owned/artifact-html/body"},
-		{name: "expired body", actorID: "actor-1", taskID: task.ID, artifactID: "artifact-expired", bodyRef: "artifact://task-body-owned/artifact-expired/body"},
-		{name: "hash mismatch", actorID: "actor-1", taskID: task.ID, artifactID: "artifact-mismatch", bodyRef: "artifact://task-body-owned/artifact-mismatch/body"},
+		{name: "unowned task", actorPTID: "actor-1", taskID: otherTask.ID, artifactID: "artifact-other", bodyRef: "artifact://task-body-other/artifact-other/body"},
+		{name: "body ref mismatch", actorPTID: "actor-1", taskID: task.ID, artifactID: "artifact-report", bodyRef: "artifact://task-body-other/artifact-report/body"},
+		{name: "unsafe html kind", actorPTID: "actor-1", taskID: task.ID, artifactID: "artifact-html", bodyRef: "artifact://task-body-owned/artifact-html/body"},
+		{name: "expired body", actorPTID: "actor-1", taskID: task.ID, artifactID: "artifact-expired", bodyRef: "artifact://task-body-owned/artifact-expired/body"},
+		{name: "hash mismatch", actorPTID: "actor-1", taskID: task.ID, artifactID: "artifact-mismatch", bodyRef: "artifact://task-body-owned/artifact-mismatch/body"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := service.FetchArtifactBody(context.Background(), tc.actorID, &FetchAtelierArtifactBodyRequest{
+			_, err := service.FetchArtifactBody(context.Background(), tc.actorPTID, &FetchAtelierArtifactBodyRequest{
 				TaskID:     tc.taskID,
 				ArtifactID: tc.artifactID,
 				BodyRef:    tc.bodyRef,
@@ -1552,14 +1552,14 @@ func TestAtelierTaskLifecycleSetStatusPersistsWorkbenchStateWithoutExecutionTran
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-lifecycle-status",
-		Title:       "Lifecycle status",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{"atelier_status":"active","project":"atelier"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-lifecycle-status",
+		Title:         "Lifecycle status",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{"atelier_status":"active","project":"atelier"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{{
 		ID:        "node-lifecycle-status",
@@ -1612,24 +1612,24 @@ func TestAtelierTaskLifecyclePurgeRequiresDeletedAndUsesPublicService(t *testing
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-lifecycle-purge",
-		Title:       "Lifecycle purge",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_CANCELLED),
-		MetaJSON:    `{"atelier_status":"archived"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-lifecycle-purge",
+		Title:         "Lifecycle purge",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_CANCELLED),
+		MetaJSON:      `{"atelier_status":"archived"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	otherTask := persistence.CollaborationTask{
-		ID:          "task-lifecycle-keep",
-		Title:       "Keep lifecycle",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{"atelier_status":"active"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-lifecycle-keep",
+		Title:         "Keep lifecycle",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{"atelier_status":"active"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{{
 		ID:        "node-lifecycle-purge",
@@ -1724,14 +1724,14 @@ func TestAtelierSendMessagePersistsTextOnlyUserEvent(t *testing.T) {
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-message-text-only",
-		Title:       "Message text only",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{"agent_ids":"agent-message"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-message-text-only",
+		Title:         "Message text only",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{"agent_ids":"agent-message"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{{
 		ID:        "node-message-text-only",
@@ -2001,14 +2001,14 @@ func TestAtelierSubmitFeedbackPersistsStationOwnedPolicyEvent(t *testing.T) {
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-feedback-policy-event",
-		Title:       "Feedback policy event",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{"agent_ids":["agent-feedback"]}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-feedback-policy-event",
+		Title:         "Feedback policy event",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{"agent_ids":["agent-feedback"]}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 
@@ -2069,14 +2069,14 @@ func TestConfirmAtelierMemoryCandidateWritesStationOwnedMemory(t *testing.T) {
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-memory-candidate",
-		Title:       "Memory candidate task",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{"agent_ids":["agent-1"]}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-memory-candidate",
+		Title:         "Memory candidate task",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{"agent_ids":["agent-1"]}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	orchestration := NewOrchestrationService(nil, nil, nil)
@@ -2157,14 +2157,14 @@ func TestConfirmAtelierMemoryCandidateRejectsNonCandidateFeedback(t *testing.T) 
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-memory-copy",
-		Title:       "Copy feedback task",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{"agent_ids":["agent-1"]}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-memory-copy",
+		Title:         "Copy feedback task",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{"agent_ids":["agent-1"]}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	orchestration := NewOrchestrationService(nil, nil, nil)
@@ -2198,14 +2198,14 @@ func TestAtelierConfirmedMemoryFeedsPlannerRiskVerifierRetrieval(t *testing.T) {
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-confirmed-memory-consumption",
-		Title:       "Memory consumption task",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{"agent_ids":["agent-1"]}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-confirmed-memory-consumption",
+		Title:         "Memory consumption task",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{"agent_ids":["agent-1"]}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	orchestration := NewOrchestrationService(nil, nil, nil)
@@ -2270,13 +2270,13 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:           "task-rerun-source",
-		Title:        "Rerun source task",
-		Description:  "Original task description",
-		GoalOwnerID:  "actor-1",
-		Status:       int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
-		WorkspaceID:  "workspace-1",
-		BudgetTokens: 100,
+		ID:            "task-rerun-source",
+		Title:         "Rerun source task",
+		Description:   "Original task description",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
+		WorkspaceID:   "workspace-1",
+		BudgetTokens:  100,
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"agent_ids": mustJSONString([]string{"agent-1", "agent-2"}),
 			"project":   "atelier",
@@ -2332,7 +2332,7 @@ func TestConfirmAtelierRerunCreatesStationOwnedNewRun(t *testing.T) {
 	if err := db.First(&rerunTask, "id = ?", confirmed.RerunTaskID).Error; err != nil {
 		t.Fatalf("load rerun task: %v", err)
 	}
-	if rerunTask.GoalOwnerID != "actor-1" ||
+	if rerunTask.GoalOwnerPTID != "actor-1" ||
 		rerunTask.Title != task.Title ||
 		rerunTask.Description != task.Description ||
 		rerunTask.WorkspaceID != task.WorkspaceID ||
@@ -2389,14 +2389,14 @@ func TestConfirmAtelierRerunRejectsNonRerunFeedback(t *testing.T) {
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-rerun-copy",
-		Title:       "Copy feedback task",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{"agent_ids":["agent-1"]}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-rerun-copy",
+		Title:         "Copy feedback task",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{"agent_ids":["agent-1"]}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 	orchestration := NewOrchestrationService(nil, nil, nil)
@@ -2714,12 +2714,18 @@ func TestTaskEventRecordToDomainEventIncludesDurableEventEnvelopeMetadata(t *tes
 		CreatedAt: createdAt,
 	}
 
-	event, ok := taskEventRecordToDomainEvent(record, "agent_replay_envelope")
+	event, ok := taskEventRecordToDomainEvent(record, "ptid:actor-replay", "agent_replay_envelope")
 	if !ok {
 		t.Fatal("expected replay record to map to domain event")
 	}
 	if event.EventID != record.ID {
 		t.Fatalf("expected domain event id %q, got %q", record.ID, event.EventID)
+	}
+	if event.ActorPTID != "ptid:actor-replay" {
+		t.Fatalf("expected actor PTID %q, got %q", "ptid:actor-replay", event.ActorPTID)
+	}
+	if event.AgentID != "agent_replay_envelope" {
+		t.Fatalf("expected agent id %q, got %q", "agent_replay_envelope", event.AgentID)
 	}
 	if event.Metadata["event_id"] != record.ID {
 		t.Fatalf("expected metadata event_id %q, got %q", record.ID, event.Metadata["event_id"])

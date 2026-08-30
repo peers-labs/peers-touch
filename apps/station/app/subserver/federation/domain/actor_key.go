@@ -9,13 +9,13 @@ import (
 var ErrActorKeyNotFound = errors.New("actor signing key not found")
 
 type ActorSigningKeyRecord struct {
-	ActorID             string
+	ActorPTID           string
 	PublicKey           ed25519.PublicKey
 	EncryptedPrivateKey []byte
 }
 
 type ActorSigningKeyRepository interface {
-	Get(ctx context.Context, actorID string) (*ActorSigningKeyRecord, error)
+	Get(ctx context.Context, actorPTID string) (*ActorSigningKeyRecord, error)
 	Store(ctx context.Context, record *ActorSigningKeyRecord) error
 }
 
@@ -27,14 +27,14 @@ func NewActorKeyService(repo ActorSigningKeyRepository) *ActorKeyService {
 	return &ActorKeyService{repo: repo}
 }
 
-func (s *ActorKeyService) GenerateKeyPair(ctx context.Context, actorID string) (ed25519.PublicKey, ed25519.PrivateKey, error) {
+func (s *ActorKeyService) GenerateKeyPair(ctx context.Context, actorPTID string) (ed25519.PublicKey, ed25519.PrivateKey, error) {
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	record := &ActorSigningKeyRecord{
-		ActorID:             actorID,
+		ActorPTID:           actorPTID,
 		PublicKey:           pub,
 		EncryptedPrivateKey: priv.Seed(),
 	}
@@ -44,8 +44,8 @@ func (s *ActorKeyService) GenerateKeyPair(ctx context.Context, actorID string) (
 	return pub, priv, nil
 }
 
-func (s *ActorKeyService) GetPublicKey(ctx context.Context, actorID string) (ed25519.PublicKey, error) {
-	record, err := s.repo.Get(ctx, actorID)
+func (s *ActorKeyService) GetPublicKey(ctx context.Context, actorPTID string) (ed25519.PublicKey, error) {
+	record, err := s.repo.Get(ctx, actorPTID)
 	if err != nil {
 		return nil, err
 	}
@@ -55,8 +55,8 @@ func (s *ActorKeyService) GetPublicKey(ctx context.Context, actorID string) (ed2
 	return record.PublicKey, nil
 }
 
-func (s *ActorKeyService) GetPrivateKey(ctx context.Context, actorID string) (ed25519.PrivateKey, error) {
-	record, err := s.repo.Get(ctx, actorID)
+func (s *ActorKeyService) GetPrivateKey(ctx context.Context, actorPTID string) (ed25519.PrivateKey, error) {
+	record, err := s.repo.Get(ctx, actorPTID)
 	if err != nil {
 		return nil, err
 	}

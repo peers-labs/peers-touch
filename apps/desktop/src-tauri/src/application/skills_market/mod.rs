@@ -885,7 +885,7 @@ pub fn skills_market_detail(input: SkillMarketDetailInput) -> AppResult<StubPayl
 }
 
 pub fn skills_market_install(
-    actor_id: &str,
+    actor_ptid: &str,
     input: SkillMarketDetailInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -931,7 +931,7 @@ pub fn skills_market_install(
     match skill.package_type.as_deref().unwrap_or("skill") {
         "agent" => {
             return install_agent_market_package(
-                actor_id,
+                actor_ptid,
                 target_agent_id,
                 market_id,
                 skill,
@@ -1084,7 +1084,7 @@ fn install_plugin_market_package(
 }
 
 fn install_agent_market_package(
-    actor_id: &str,
+    actor_ptid: &str,
     target_agent_id: String,
     market_id: String,
     skill: MarketSkill,
@@ -1102,7 +1102,7 @@ fn install_agent_market_package(
         }
     };
     let result = agents::agents_import_package(
-        actor_id,
+        actor_ptid,
         AgentPackageImportInput {
             package,
             name: Some(skill.name.clone()),
@@ -1245,7 +1245,7 @@ fn install_mcp_market_package(
 }
 
 pub fn skills_market_uninstall(
-    actor_id: &str,
+    actor_ptid: &str,
     input: SkillMarketDetailInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -1284,7 +1284,7 @@ pub fn skills_market_uninstall(
 
     if package_type == "agent" {
         let result = agents::agents_delete(
-            actor_id,
+            actor_ptid,
             AgentIdInput {
                 id: record.skill_id.clone(),
             },

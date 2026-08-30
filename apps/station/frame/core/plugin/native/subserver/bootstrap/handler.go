@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -256,30 +256,34 @@ func (s *SubServer) locatorLookup(c context.Context, ctx *app.RequestContext) {
 // verification and for backfilling rows whose initial publish failed (e.g.
 // SignUp ran before bootstrap.Init completed identity registration).
 //
-// Form / Query: actor_id=<numeric>
+// Form / Query: actor_ptid=<ptid>
 func (s *SubServer) locatorPublish(c context.Context, ctx *app.RequestContext) {
-	idStr := ctx.Query("actor_id")
-	if idStr == "" {
-		idStr = string(ctx.FormValue("actor_id"))
+	ptid := strings.TrimSpace(ctx.Query("actor_ptid"))
+	if ptid == "" {
+		ptid = strings.TrimSpace(string(ctx.FormValue("actor_ptid")))
 	}
-	if idStr == "" {
-		touch.FailedResponse(c, ctx, fmt.Errorf("actor_id parameter is required"))
+	if ptid == "" {
+		touch.FailedResponse(c, ctx, fmt.Errorf("actor_ptid parameter is required"))
 		return
 	}
-	actorID, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil || actorID == 0 {
-		touch.FailedResponse(c, ctx, fmt.Errorf("invalid actor_id: %s", idStr))
+	actorRecord, err := actor.GetActorByPTID(c, ptid)
+	if err != nil {
+		touch.FailedResponse(c, ctx, fmt.Errorf("resolve actor_ptid: %w", err))
+		return
+	}
+	if actorRecord == nil {
+		touch.FailedResponse(c, ctx, fmt.Errorf("actor_ptid not found: %s", ptid))
 		return
 	}
 
 	pubCtx, cancel := context.WithTimeout(c, 30*time.Second)
 	defer cancel()
-	if err := actor.PublishVisibility(pubCtx, actorID); err != nil {
+	if err := actor.PublishVisibility(pubCtx, actorRecord.ID); err != nil {
 		touch.FailedResponse(c, ctx, fmt.Errorf("publish: %s", err))
 		return
 	}
 	touch.SuccessResponse(c, ctx, "locator publish triggered", map[string]interface{}{
-		"actor_id": actorID,
+		"actor_ptid": ptid,
 	})
 }
 

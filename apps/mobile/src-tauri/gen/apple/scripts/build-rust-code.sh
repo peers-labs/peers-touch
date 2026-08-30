@@ -9,15 +9,17 @@ if [ -n "${MOBILE_TAURI_DEV_CONFIG:-}" ] && [ -f "${MOBILE_TAURI_DEV_CONFIG}" ];
   export TAURI_CONFIG="$(cat "${MOBILE_TAURI_DEV_CONFIG}")"
 fi
 
-pnpm tauri ios xcode-script -v \
-  --platform "${PLATFORM_DISPLAY_NAME:?}" \
-  --sdk-root "${SDKROOT:?}" \
-  --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" \
-  --header-search-paths "${HEADER_SEARCH_PATHS:?}" \
-  --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" \
-  --configuration "${CONFIGURATION:?}" \
-  ${FORCE_COLOR:-} \
-  ${ARCHS:?}
+if [ "${MOBILE_TAURI_STATIC_BUNDLE_BUILD:-0}" != "1" ]; then
+  pnpm tauri ios xcode-script -v \
+    --platform "${PLATFORM_DISPLAY_NAME:?}" \
+    --sdk-root "${SDKROOT:?}" \
+    --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" \
+    --header-search-paths "${HEADER_SEARCH_PATHS:?}" \
+    --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" \
+    --configuration "${CONFIGURATION:?}" \
+    ${FORCE_COLOR:-} \
+    ${ARCHS:?}
+fi
 
 profile_dir="$CONFIGURATION"
 if [ "$CONFIGURATION" = "debug" ]; then
@@ -47,14 +49,27 @@ for arch in ${ARCHS:?}; do
 
   cargo_target_dir="${CARGO_TARGET_DIR:-$SRC_TAURI_DIR/target}"
   rust_lib="$cargo_target_dir/$rust_target/$profile_dir/libpeers_touch_mobile_lib.a"
-  if [ ! -f "$rust_lib" ] && [[ "$rust_target" == *-sim ]]; then
-    cargo build \
-      --package peers-touch-mobile \
-      --manifest-path "$SRC_TAURI_DIR/Cargo.toml" \
-      --target "$rust_target" \
-      --features tauri/rustls-tls \
-      --lib \
+  if [[ "$rust_target" == *-sim ]] && {
+    [ ! -f "$rust_lib" ] \
+      || [ "${MOBILE_TAURI_STATIC_BUNDLE_BUILD:-0}" = "1" ]
+  }; then
+    cargo_features="tauri/rustls-tls"
+    if [ "${MOBILE_TAURI_STATIC_BUNDLE_BUILD:-0}" = "1" ]; then
+      cargo_features="custom-protocol,tauri/rustls-tls"
+    fi
+    cargo_args=(
+      build
+      --package peers-touch-mobile
+      --manifest-path "$SRC_TAURI_DIR/Cargo.toml"
+      --target "$rust_target"
+      --features "$cargo_features"
+      --lib
       --no-default-features
+    )
+    if [ "$CONFIGURATION" = "release" ]; then
+      cargo_args+=(--release)
+    fi
+    cargo "${cargo_args[@]}"
   fi
   external_dir="$SRCROOT/Externals/$external_arch/$CONFIGURATION"
   external_lib="$external_dir/libapp.a"

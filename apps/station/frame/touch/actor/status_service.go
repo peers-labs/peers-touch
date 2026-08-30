@@ -33,6 +33,8 @@ func GetOnlineActors(ctx context.Context, currentActorID uint64) ([]*model.Onlin
 
 	var results []struct {
 		ActorID           uint64    `json:"id"`
+		ActorPTID         string    `json:"ptid"`
+		ActorKind         string    `json:"kind"`
 		Name              string    `json:"name"`
 		PreferredUsername string    `json:"preferred_username"`
 		AvatarUrl         string    `json:"avatar_url"`
@@ -44,7 +46,7 @@ func GetOnlineActors(ctx context.Context, currentActorID uint64) ([]*model.Onlin
 
 	err = rds.WithContext(ctx).
 		Table("touch_actor_status").
-		Select("touch_actor_status.actor_id, touch_actor.name, touch_actor.preferred_username, touch_actor.icon as avatar_url, touch_actor_status.status, touch_actor_status.last_heartbeat").
+		Select("touch_actor_status.actor_id, touch_actor.ptid, touch_actor.kind, touch_actor.name, touch_actor.preferred_username, touch_actor.icon as avatar_url, touch_actor_status.status, touch_actor_status.last_heartbeat").
 		Joins("JOIN touch_actor ON touch_actor.id = touch_actor_status.actor_id").
 		Where("touch_actor_status.actor_id != ?", currentActorID).
 		Where("touch_actor_status.status = ?", db.ActorStatusOnline).
@@ -59,12 +61,17 @@ func GetOnlineActors(ctx context.Context, currentActorID uint64) ([]*model.Onlin
 	onlineActors := make([]*model.OnlineActor, 0, len(results))
 	for _, r := range results {
 		onlineActors = append(onlineActors, &model.OnlineActor{
-			Id:                r.ActorID,
 			Name:              r.Name,
 			PreferredUsername: r.PreferredUsername,
 			AvatarUrl:         r.AvatarUrl,
 			Status:            int32(r.Status),
 			LastHeartbeat:     r.LastHeartbeat.Format(time.RFC3339),
+			Ref: ProtoActorRef(&db.Actor{
+				ID:                r.ActorID,
+				PTID:              r.ActorPTID,
+				Kind:              r.ActorKind,
+				PreferredUsername: r.PreferredUsername,
+			}, ""),
 		})
 	}
 

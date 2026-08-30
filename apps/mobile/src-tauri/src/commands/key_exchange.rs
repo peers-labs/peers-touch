@@ -11,14 +11,14 @@ use crate::platform::secure_storage::SecureStorage;
 #[serde(rename_all = "camelCase")]
 pub struct IdentityScopeInput {
     user_scope: String,
-    actor_did: String,
+    actor_ptid: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignalingSealInput {
     user_scope: String,
-    actor_did: String,
+    actor_ptid: String,
     peer_ik_pub: String,
     session_ulid: String,
     kind: String,
@@ -29,7 +29,7 @@ pub struct SignalingSealInput {
 #[serde(rename_all = "camelCase")]
 pub struct SignalingOpenInput {
     user_scope: String,
-    actor_did: String,
+    actor_ptid: String,
     sender_ik_pub: String,
     session_ulid: String,
     kind: String,
@@ -63,8 +63,8 @@ pub fn crypto_identity_key_bundle(
     storage: State<'_, SecureStorage>,
     input: IdentityScopeInput,
 ) -> MobileResult<IdentityBundleOutput> {
-    let scope = validate_identity_scope(input.user_scope, input.actor_did)?;
-    let bundle = identity_keys::ensure_key_bundle(&storage, &scope.user_scope, &scope.actor_did)?;
+    let scope = validate_identity_scope(input.user_scope, input.actor_ptid)?;
+    let bundle = identity_keys::ensure_key_bundle(&storage, &scope.user_scope, &scope.actor_ptid)?;
     Ok(IdentityBundleOutput {
         device_id: bundle.device_id,
         ik_pub: bundle.ik_pub,
@@ -79,12 +79,12 @@ pub fn signaling_envelope_seal(
     storage: State<'_, SecureStorage>,
     input: SignalingSealInput,
 ) -> MobileResult<SignalingSealOutput> {
-    let scope = validate_identity_scope(input.user_scope, input.actor_did)?;
+    let scope = validate_identity_scope(input.user_scope, input.actor_ptid)?;
     let kind = clean_required(input.kind, "kind is required")?;
     let session_ulid = clean_required(input.session_ulid, "sessionUlid is required")?;
     let peer_pub = identity_keys::peer_x25519_pub_from_ed25519("peerIkPub", &input.peer_ik_pub)?;
     let local =
-        identity_keys::local_identity_x25519(&storage, &scope.user_scope, &scope.actor_did)?;
+        identity_keys::local_identity_x25519(&storage, &scope.user_scope, &scope.actor_ptid)?;
     let sealed = signaling_envelope::seal(
         &local.private,
         &local.public,
@@ -104,7 +104,7 @@ pub fn signaling_envelope_open(
     storage: State<'_, SecureStorage>,
     input: SignalingOpenInput,
 ) -> MobileResult<SignalingOpenOutput> {
-    let scope = validate_identity_scope(input.user_scope, input.actor_did)?;
+    let scope = validate_identity_scope(input.user_scope, input.actor_ptid)?;
     let kind = clean_required(input.kind, "kind is required")?;
     let session_ulid = clean_required(input.session_ulid, "sessionUlid is required")?;
     let sender_pub =
@@ -113,7 +113,7 @@ pub fn signaling_envelope_open(
         MobileError::invalid_input(format!("payloadB64 is not base64: {error}"))
     })?;
     let local =
-        identity_keys::local_identity_x25519(&storage, &scope.user_scope, &scope.actor_did)?;
+        identity_keys::local_identity_x25519(&storage, &scope.user_scope, &scope.actor_ptid)?;
     let plaintext =
         signaling_envelope::open(&local.private, &sender_pub, &session_ulid, &kind, &sealed)
             .map_err(|_| MobileError::crypto("signaling envelope failed to authenticate"))?;
@@ -125,13 +125,13 @@ pub fn signaling_envelope_open(
 
 struct IdentityScope {
     user_scope: String,
-    actor_did: String,
+    actor_ptid: String,
 }
 
-fn validate_identity_scope(user_scope: String, actor_did: String) -> MobileResult<IdentityScope> {
+fn validate_identity_scope(user_scope: String, actor_ptid: String) -> MobileResult<IdentityScope> {
     Ok(IdentityScope {
         user_scope: clean_required(user_scope, "userScope is required")?,
-        actor_did: clean_required(actor_did, "actorDid is required")?,
+        actor_ptid: clean_required(actor_ptid, "actorPtid is required")?,
     })
 }
 

@@ -48,14 +48,14 @@ func (s *LedgerService) SetOnAppended(hook EventAppendedHook) {
 }
 
 type AppendEventInput struct {
-	FederationID      string
-	EventType         pb.EventType
-	PayloadBytes      []byte
-	ActorID           string
-	ActorHandle       string
-	StationPeerID     string
-	ActorPrivateKey   ed25519.PrivateKey
-	StationPrivateKey ed25519.PrivateKey
+	FederationID         string
+	EventType            pb.EventType
+	PayloadBytes         []byte
+	ActorPTID            string
+	ActorFederatedHandle string
+	StationPeerID        string
+	ActorPrivateKey      ed25519.PrivateKey
+	StationPrivateKey    ed25519.PrivateKey
 }
 
 func (s *LedgerService) AppendEvent(ctx context.Context, input *AppendEventInput) (*pb.LedgerEvent, error) {
@@ -118,8 +118,8 @@ func (s *LedgerService) AppendEvent(ctx context.Context, input *AppendEventInput
 
 	actorSigInput := &pb.ActorSignatureInput{
 		FederationId:         input.FederationID,
-		ActorId:              input.ActorID,
-		ActorFederatedHandle: input.ActorHandle,
+		ActorPtid:            input.ActorPTID,
+		ActorFederatedHandle: input.ActorFederatedHandle,
 		EventTypeName:        input.EventType.String(),
 		PayloadHash:          payloadHash,
 		TimestampUnixMs:      now,
@@ -162,8 +162,8 @@ func (s *LedgerService) AppendEvent(ctx context.Context, input *AppendEventInput
 		EventType:              input.EventType,
 		PayloadBytes:           input.PayloadBytes,
 		PayloadHash:            payloadHash,
-		ActorId:                input.ActorID,
-		ActorFederatedHandle:   input.ActorHandle,
+		ActorPtid:              input.ActorPTID,
+		ActorFederatedHandle:   input.ActorFederatedHandle,
 		StationPeerId:          input.StationPeerID,
 		SequencerStationPeerId: fed.SequencerStationPeerID,
 		ActorSignature:         actorSig,

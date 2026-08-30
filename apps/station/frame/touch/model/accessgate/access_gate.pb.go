@@ -35,6 +35,7 @@ const (
 	AccessGateType_ACCESS_GATE_TYPE_DEVICE_TRUST         AccessGateType = 6
 	AccessGateType_ACCESS_GATE_TYPE_MAINTENANCE          AccessGateType = 7
 	AccessGateType_ACCESS_GATE_TYPE_TERMS_ACCEPTANCE     AccessGateType = 8
+	AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH           AccessGateType = 9
 	AccessGateType_ACCESS_GATE_TYPE_CUSTOM               AccessGateType = 100
 )
 
@@ -50,6 +51,7 @@ var (
 		6:   "ACCESS_GATE_TYPE_DEVICE_TRUST",
 		7:   "ACCESS_GATE_TYPE_MAINTENANCE",
 		8:   "ACCESS_GATE_TYPE_TERMS_ACCEPTANCE",
+		9:   "ACCESS_GATE_TYPE_AUTH_OAUTH",
 		100: "ACCESS_GATE_TYPE_CUSTOM",
 	}
 	AccessGateType_value = map[string]int32{
@@ -62,6 +64,7 @@ var (
 		"ACCESS_GATE_TYPE_DEVICE_TRUST":         6,
 		"ACCESS_GATE_TYPE_MAINTENANCE":          7,
 		"ACCESS_GATE_TYPE_TERMS_ACCEPTANCE":     8,
+		"ACCESS_GATE_TYPE_AUTH_OAUTH":           9,
 		"ACCESS_GATE_TYPE_CUSTOM":               100,
 	}
 )
@@ -335,30 +338,32 @@ func (x *AccessGateClientInfo) GetLocale() string {
 	return ""
 }
 
-type AccessGateActorRef struct {
+// AccessGateAction is one credential action accepted by its parent gate.
+// AUTH_LOGIN remains the ordered credential-stage gate; OAuth is advertised as
+// an alternative action rather than inserted as another mandatory gate.
+type AccessGateAction struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ActorId       int64                  `protobuf:"varint,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	Username      string                 `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"`
-	Email         string                 `protobuf:"bytes,4,opt,name=email,proto3" json:"email,omitempty"`
+	ActionId      string                 `protobuf:"bytes,1,opt,name=action_id,json=actionId,proto3" json:"action_id,omitempty"`
+	Type          AccessGateType         `protobuf:"varint,2,opt,name=type,proto3,enum=peers_touch.model.access_gate.v1.AccessGateType" json:"type,omitempty"`
+	SubmitAction  string                 `protobuf:"bytes,3,opt,name=submit_action,json=submitAction,proto3" json:"submit_action,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AccessGateActorRef) Reset() {
-	*x = AccessGateActorRef{}
+func (x *AccessGateAction) Reset() {
+	*x = AccessGateAction{}
 	mi := &file_domain_access_gate_access_gate_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AccessGateActorRef) String() string {
+func (x *AccessGateAction) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AccessGateActorRef) ProtoMessage() {}
+func (*AccessGateAction) ProtoMessage() {}
 
-func (x *AccessGateActorRef) ProtoReflect() protoreflect.Message {
+func (x *AccessGateAction) ProtoReflect() protoreflect.Message {
 	mi := &file_domain_access_gate_access_gate_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -370,35 +375,28 @@ func (x *AccessGateActorRef) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AccessGateActorRef.ProtoReflect.Descriptor instead.
-func (*AccessGateActorRef) Descriptor() ([]byte, []int) {
+// Deprecated: Use AccessGateAction.ProtoReflect.Descriptor instead.
+func (*AccessGateAction) Descriptor() ([]byte, []int) {
 	return file_domain_access_gate_access_gate_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *AccessGateActorRef) GetId() string {
+func (x *AccessGateAction) GetActionId() string {
 	if x != nil {
-		return x.Id
+		return x.ActionId
 	}
 	return ""
 }
 
-func (x *AccessGateActorRef) GetActorId() int64 {
+func (x *AccessGateAction) GetType() AccessGateType {
 	if x != nil {
-		return x.ActorId
+		return x.Type
 	}
-	return 0
+	return AccessGateType_ACCESS_GATE_TYPE_UNSPECIFIED
 }
 
-func (x *AccessGateActorRef) GetUsername() string {
+func (x *AccessGateAction) GetSubmitAction() string {
 	if x != nil {
-		return x.Username
-	}
-	return ""
-}
-
-func (x *AccessGateActorRef) GetEmail() string {
-	if x != nil {
-		return x.Email
+		return x.SubmitAction
 	}
 	return ""
 }
@@ -413,8 +411,12 @@ type AccessGate struct {
 	BlockingReason  string                 `protobuf:"bytes,6,opt,name=blocking_reason,json=blockingReason,proto3" json:"blocking_reason,omitempty"`
 	SubmitAction    string                 `protobuf:"bytes,7,opt,name=submit_action,json=submitAction,proto3" json:"submit_action,omitempty"`
 	InputSchemaJson string                 `protobuf:"bytes,8,opt,name=input_schema_json,json=inputSchemaJson,proto3" json:"input_schema_json,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// AUTH_LOGIN gates list both the login and AUTH_OAUTH credential actions
+	// here. These actions are choices within one gate, not additional gate-chain
+	// stages.
+	AlternativeActions []*AccessGateAction `protobuf:"bytes,9,rep,name=alternative_actions,json=alternativeActions,proto3" json:"alternative_actions,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *AccessGate) Reset() {
@@ -503,13 +505,20 @@ func (x *AccessGate) GetInputSchemaJson() string {
 	return ""
 }
 
+func (x *AccessGate) GetAlternativeActions() []*AccessGateAction {
+	if x != nil {
+		return x.AlternativeActions
+	}
+	return nil
+}
+
 type AccessDecision struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	State         AccessDecisionState    `protobuf:"varint,1,opt,name=state,proto3,enum=peers_touch.model.access_gate.v1.AccessDecisionState" json:"state,omitempty"`
 	AttemptId     string                 `protobuf:"bytes,2,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
 	CurrentGateId string                 `protobuf:"bytes,3,opt,name=current_gate_id,json=currentGateId,proto3" json:"current_gate_id,omitempty"`
 	Gates         []*AccessGate          `protobuf:"bytes,4,rep,name=gates,proto3" json:"gates,omitempty"`
-	Actor         *AccessGateActorRef    `protobuf:"bytes,5,opt,name=actor,proto3" json:"actor,omitempty"`
+	Actor         *model.ActorRef        `protobuf:"bytes,5,opt,name=actor,proto3" json:"actor,omitempty"`
 	AccessGrantId string                 `protobuf:"bytes,6,opt,name=access_grant_id,json=accessGrantId,proto3" json:"access_grant_id,omitempty"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	Message       string                 `protobuf:"bytes,8,opt,name=message,proto3" json:"message,omitempty"`
@@ -575,7 +584,7 @@ func (x *AccessDecision) GetGates() []*AccessGate {
 	return nil
 }
 
-func (x *AccessDecision) GetActor() *AccessGateActorRef {
+func (x *AccessDecision) GetActor() *model.ActorRef {
 	if x != nil {
 		return x.Actor
 	}
@@ -608,6 +617,7 @@ type StartAccessAttemptRequest struct {
 	StationUrl    string                 `protobuf:"bytes,1,opt,name=station_url,json=stationUrl,proto3" json:"station_url,omitempty"`
 	Client        *AccessGateClientInfo  `protobuf:"bytes,2,opt,name=client,proto3" json:"client,omitempty"`
 	SessionId     string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	StationPeerId string                 `protobuf:"bytes,4,opt,name=station_peer_id,json=stationPeerId,proto3" json:"station_peer_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -659,6 +669,13 @@ func (x *StartAccessAttemptRequest) GetClient() *AccessGateClientInfo {
 func (x *StartAccessAttemptRequest) GetSessionId() string {
 	if x != nil {
 		return x.SessionId
+	}
+	return ""
+}
+
+func (x *StartAccessAttemptRequest) GetStationPeerId() string {
+	if x != nil {
+		return x.StationPeerId
 	}
 	return ""
 }
@@ -1020,13 +1037,13 @@ func (x *CancelAccessAttemptResponse) GetCancelled() bool {
 }
 
 type AccessPolicy struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Mode             AccessPolicyMode       `protobuf:"varint,1,opt,name=mode,proto3,enum=peers_touch.model.access_gate.v1.AccessPolicyMode" json:"mode,omitempty"`
-	AllowedEmails    []string               `protobuf:"bytes,2,rep,name=allowed_emails,json=allowedEmails,proto3" json:"allowed_emails,omitempty"`
-	AllowedUsernames []string               `protobuf:"bytes,3,rep,name=allowed_usernames,json=allowedUsernames,proto3" json:"allowed_usernames,omitempty"`
-	AllowedActorIds  []int64                `protobuf:"varint,4,rep,packed,name=allowed_actor_ids,json=allowedActorIds,proto3" json:"allowed_actor_ids,omitempty"`
-	UpdatedAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	UpdatedBy        string                 `protobuf:"bytes,6,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Mode              AccessPolicyMode       `protobuf:"varint,1,opt,name=mode,proto3,enum=peers_touch.model.access_gate.v1.AccessPolicyMode" json:"mode,omitempty"`
+	AllowedEmails     []string               `protobuf:"bytes,2,rep,name=allowed_emails,json=allowedEmails,proto3" json:"allowed_emails,omitempty"`
+	AllowedUsernames  []string               `protobuf:"bytes,3,rep,name=allowed_usernames,json=allowedUsernames,proto3" json:"allowed_usernames,omitempty"`
+	AllowedActorPtids []string               `protobuf:"bytes,4,rep,name=allowed_actor_ptids,json=allowedActorPtids,proto3" json:"allowed_actor_ptids,omitempty"`
+	UpdatedAt         *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	UpdatedBy         string                 `protobuf:"bytes,6,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
 	// Ordered set of gate types the Station evaluates for an attempt. Empty means
 	// the Station applies its built-in default chain. Removing a gate type here
 	// disables that gate flow on every client without a client release.
@@ -1089,9 +1106,9 @@ func (x *AccessPolicy) GetAllowedUsernames() []string {
 	return nil
 }
 
-func (x *AccessPolicy) GetAllowedActorIds() []int64 {
+func (x *AccessPolicy) GetAllowedActorPtids() []string {
 	if x != nil {
-		return x.AllowedActorIds
+		return x.AllowedActorPtids
 	}
 	return nil
 }
@@ -1626,18 +1643,17 @@ var File_domain_access_gate_access_gate_proto protoreflect.FileDescriptor
 
 const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\n" +
-	"$domain/access_gate/access_gate.proto\x12 peers_touch.model.access_gate.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16domain/auth/auth.proto\"\x88\x01\n" +
+	"$domain/access_gate/access_gate.proto\x12 peers_touch.model.access_gate.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/actor/actor.proto\x1a\x16domain/auth/auth.proto\"\x88\x01\n" +
 	"\x14AccessGateClientInfo\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12\x1f\n" +
 	"\vapp_version\x18\x02 \x01(\tR\n" +
 	"appVersion\x12\x1b\n" +
 	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12\x16\n" +
-	"\x06locale\x18\x04 \x01(\tR\x06locale\"q\n" +
-	"\x12AccessGateActorRef\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
-	"\bactor_id\x18\x02 \x01(\x03R\aactorId\x12\x1a\n" +
-	"\busername\x18\x03 \x01(\tR\busername\x12\x14\n" +
-	"\x05email\x18\x04 \x01(\tR\x05email\"\xe6\x02\n" +
+	"\x06locale\x18\x04 \x01(\tR\x06locale\"\x9a\x01\n" +
+	"\x10AccessGateAction\x12\x1b\n" +
+	"\taction_id\x18\x01 \x01(\tR\bactionId\x12D\n" +
+	"\x04type\x18\x02 \x01(\x0e20.peers_touch.model.access_gate.v1.AccessGateTypeR\x04type\x12#\n" +
+	"\rsubmit_action\x18\x03 \x01(\tR\fsubmitAction\"\xcb\x03\n" +
 	"\n" +
 	"AccessGate\x12\x17\n" +
 	"\agate_id\x18\x01 \x01(\tR\x06gateId\x12D\n" +
@@ -1647,24 +1663,26 @@ const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x12'\n" +
 	"\x0fblocking_reason\x18\x06 \x01(\tR\x0eblockingReason\x12#\n" +
 	"\rsubmit_action\x18\a \x01(\tR\fsubmitAction\x12*\n" +
-	"\x11input_schema_json\x18\b \x01(\tR\x0finputSchemaJson\"\xb1\x03\n" +
+	"\x11input_schema_json\x18\b \x01(\tR\x0finputSchemaJson\x12c\n" +
+	"\x13alternative_actions\x18\t \x03(\v22.peers_touch.model.access_gate.v1.AccessGateActionR\x12alternativeActions\"\xa1\x03\n" +
 	"\x0eAccessDecision\x12K\n" +
 	"\x05state\x18\x01 \x01(\x0e25.peers_touch.model.access_gate.v1.AccessDecisionStateR\x05state\x12\x1d\n" +
 	"\n" +
 	"attempt_id\x18\x02 \x01(\tR\tattemptId\x12&\n" +
 	"\x0fcurrent_gate_id\x18\x03 \x01(\tR\rcurrentGateId\x12B\n" +
-	"\x05gates\x18\x04 \x03(\v2,.peers_touch.model.access_gate.v1.AccessGateR\x05gates\x12J\n" +
-	"\x05actor\x18\x05 \x01(\v24.peers_touch.model.access_gate.v1.AccessGateActorRefR\x05actor\x12&\n" +
+	"\x05gates\x18\x04 \x03(\v2,.peers_touch.model.access_gate.v1.AccessGateR\x05gates\x12:\n" +
+	"\x05actor\x18\x05 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\x12&\n" +
 	"\x0faccess_grant_id\x18\x06 \x01(\tR\raccessGrantId\x129\n" +
 	"\n" +
 	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x18\n" +
-	"\amessage\x18\b \x01(\tR\amessage\"\xab\x01\n" +
+	"\amessage\x18\b \x01(\tR\amessage\"\xd3\x01\n" +
 	"\x19StartAccessAttemptRequest\x12\x1f\n" +
 	"\vstation_url\x18\x01 \x01(\tR\n" +
 	"stationUrl\x12N\n" +
 	"\x06client\x18\x02 \x01(\v26.peers_touch.model.access_gate.v1.AccessGateClientInfoR\x06client\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId\"j\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\x12&\n" +
+	"\x0fstation_peer_id\x18\x04 \x01(\tR\rstationPeerId\"j\n" +
 	"\x1aStartAccessAttemptResponse\x12L\n" +
 	"\bdecision\x18\x01 \x01(\v20.peers_touch.model.access_gate.v1.AccessDecisionR\bdecision\"\x96\x02\n" +
 	"\x17SubmitAccessGateRequest\x12\x1d\n" +
@@ -1689,12 +1707,12 @@ const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\";\n" +
 	"\x1bCancelAccessAttemptResponse\x12\x1c\n" +
-	"\tcancelled\x18\x01 \x01(\bR\tcancelled\"\xb7\x03\n" +
+	"\tcancelled\x18\x01 \x01(\bR\tcancelled\"\xbb\x03\n" +
 	"\fAccessPolicy\x12F\n" +
 	"\x04mode\x18\x01 \x01(\x0e22.peers_touch.model.access_gate.v1.AccessPolicyModeR\x04mode\x12%\n" +
 	"\x0eallowed_emails\x18\x02 \x03(\tR\rallowedEmails\x12+\n" +
-	"\x11allowed_usernames\x18\x03 \x03(\tR\x10allowedUsernames\x12*\n" +
-	"\x11allowed_actor_ids\x18\x04 \x03(\x03R\x0fallowedActorIds\x129\n" +
+	"\x11allowed_usernames\x18\x03 \x03(\tR\x10allowedUsernames\x12.\n" +
+	"\x13allowed_actor_ptids\x18\x04 \x03(\tR\x11allowedActorPtids\x129\n" +
 	"\n" +
 	"updated_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1d\n" +
 	"\n" +
@@ -1740,7 +1758,7 @@ const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"i\n" +
 	"\x18RevokeInviteCodeResponse\x12M\n" +
 	"\vinvite_code\x18\x01 \x01(\v2,.peers_touch.model.access_gate.v1.InviteCodeR\n" +
-	"inviteCode*\xf9\x02\n" +
+	"inviteCode*\x9a\x03\n" +
 	"\x0eAccessGateType\x12 \n" +
 	"\x1cACCESS_GATE_TYPE_UNSPECIFIED\x10\x00\x12'\n" +
 	"#ACCESS_GATE_TYPE_STATION_CAPABILITY\x10\x01\x12\x1f\n" +
@@ -1750,7 +1768,8 @@ const file_domain_access_gate_access_gate_proto_rawDesc = "" +
 	"\x1cACCESS_GATE_TYPE_INVITE_CODE\x10\x05\x12!\n" +
 	"\x1dACCESS_GATE_TYPE_DEVICE_TRUST\x10\x06\x12 \n" +
 	"\x1cACCESS_GATE_TYPE_MAINTENANCE\x10\a\x12%\n" +
-	"!ACCESS_GATE_TYPE_TERMS_ACCEPTANCE\x10\b\x12\x1b\n" +
+	"!ACCESS_GATE_TYPE_TERMS_ACCEPTANCE\x10\b\x12\x1f\n" +
+	"\x1bACCESS_GATE_TYPE_AUTH_OAUTH\x10\t\x12\x1b\n" +
 	"\x17ACCESS_GATE_TYPE_CUSTOM\x10d*\xf4\x01\n" +
 	"\x0fAccessGateState\x12!\n" +
 	"\x1dACCESS_GATE_STATE_UNSPECIFIED\x10\x00\x12\x1d\n" +
@@ -1794,7 +1813,7 @@ var file_domain_access_gate_access_gate_proto_goTypes = []any{
 	(AccessDecisionState)(0),            // 2: peers_touch.model.access_gate.v1.AccessDecisionState
 	(AccessPolicyMode)(0),               // 3: peers_touch.model.access_gate.v1.AccessPolicyMode
 	(*AccessGateClientInfo)(nil),        // 4: peers_touch.model.access_gate.v1.AccessGateClientInfo
-	(*AccessGateActorRef)(nil),          // 5: peers_touch.model.access_gate.v1.AccessGateActorRef
+	(*AccessGateAction)(nil),            // 5: peers_touch.model.access_gate.v1.AccessGateAction
 	(*AccessGate)(nil),                  // 6: peers_touch.model.access_gate.v1.AccessGate
 	(*AccessDecision)(nil),              // 7: peers_touch.model.access_gate.v1.AccessDecision
 	(*StartAccessAttemptRequest)(nil),   // 8: peers_touch.model.access_gate.v1.StartAccessAttemptRequest
@@ -1815,41 +1834,44 @@ var file_domain_access_gate_access_gate_proto_goTypes = []any{
 	(*ListInviteCodesResponse)(nil),     // 23: peers_touch.model.access_gate.v1.ListInviteCodesResponse
 	(*RevokeInviteCodeRequest)(nil),     // 24: peers_touch.model.access_gate.v1.RevokeInviteCodeRequest
 	(*RevokeInviteCodeResponse)(nil),    // 25: peers_touch.model.access_gate.v1.RevokeInviteCodeResponse
-	(*timestamppb.Timestamp)(nil),       // 26: google.protobuf.Timestamp
-	(*model.LoginRequest)(nil),          // 27: peers_touch.model.auth.v1.LoginRequest
-	(*model.LoginResponse)(nil),         // 28: peers_touch.model.auth.v1.LoginResponse
+	(*model.ActorRef)(nil),              // 26: peers_touch.model.actor.v1.ActorRef
+	(*timestamppb.Timestamp)(nil),       // 27: google.protobuf.Timestamp
+	(*model.LoginRequest)(nil),          // 28: peers_touch.model.auth.v1.LoginRequest
+	(*model.LoginResponse)(nil),         // 29: peers_touch.model.auth.v1.LoginResponse
 }
 var file_domain_access_gate_access_gate_proto_depIdxs = []int32{
-	0,  // 0: peers_touch.model.access_gate.v1.AccessGate.type:type_name -> peers_touch.model.access_gate.v1.AccessGateType
-	1,  // 1: peers_touch.model.access_gate.v1.AccessGate.state:type_name -> peers_touch.model.access_gate.v1.AccessGateState
-	2,  // 2: peers_touch.model.access_gate.v1.AccessDecision.state:type_name -> peers_touch.model.access_gate.v1.AccessDecisionState
-	6,  // 3: peers_touch.model.access_gate.v1.AccessDecision.gates:type_name -> peers_touch.model.access_gate.v1.AccessGate
-	5,  // 4: peers_touch.model.access_gate.v1.AccessDecision.actor:type_name -> peers_touch.model.access_gate.v1.AccessGateActorRef
-	26, // 5: peers_touch.model.access_gate.v1.AccessDecision.expires_at:type_name -> google.protobuf.Timestamp
-	4,  // 6: peers_touch.model.access_gate.v1.StartAccessAttemptRequest.client:type_name -> peers_touch.model.access_gate.v1.AccessGateClientInfo
-	7,  // 7: peers_touch.model.access_gate.v1.StartAccessAttemptResponse.decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
-	0,  // 8: peers_touch.model.access_gate.v1.SubmitAccessGateRequest.type:type_name -> peers_touch.model.access_gate.v1.AccessGateType
-	27, // 9: peers_touch.model.access_gate.v1.SubmitAccessGateRequest.login:type_name -> peers_touch.model.auth.v1.LoginRequest
-	7,  // 10: peers_touch.model.access_gate.v1.SubmitAccessGateResponse.decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
-	28, // 11: peers_touch.model.access_gate.v1.SubmitAccessGateResponse.login_response:type_name -> peers_touch.model.auth.v1.LoginResponse
-	7,  // 12: peers_touch.model.access_gate.v1.GetAccessDecisionResponse.decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
-	3,  // 13: peers_touch.model.access_gate.v1.AccessPolicy.mode:type_name -> peers_touch.model.access_gate.v1.AccessPolicyMode
-	26, // 14: peers_touch.model.access_gate.v1.AccessPolicy.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 15: peers_touch.model.access_gate.v1.AccessPolicy.enabled_gates:type_name -> peers_touch.model.access_gate.v1.AccessGateType
-	16, // 16: peers_touch.model.access_gate.v1.UpdateAccessPolicyRequest.policy:type_name -> peers_touch.model.access_gate.v1.AccessPolicy
-	16, // 17: peers_touch.model.access_gate.v1.UpdateAccessPolicyResponse.policy:type_name -> peers_touch.model.access_gate.v1.AccessPolicy
-	26, // 18: peers_touch.model.access_gate.v1.InviteCode.created_at:type_name -> google.protobuf.Timestamp
-	26, // 19: peers_touch.model.access_gate.v1.InviteCode.expires_at:type_name -> google.protobuf.Timestamp
-	26, // 20: peers_touch.model.access_gate.v1.InviteCode.last_used_at:type_name -> google.protobuf.Timestamp
-	26, // 21: peers_touch.model.access_gate.v1.CreateInviteCodeRequest.expires_at:type_name -> google.protobuf.Timestamp
-	19, // 22: peers_touch.model.access_gate.v1.CreateInviteCodeResponse.invite_code:type_name -> peers_touch.model.access_gate.v1.InviteCode
-	19, // 23: peers_touch.model.access_gate.v1.ListInviteCodesResponse.invite_codes:type_name -> peers_touch.model.access_gate.v1.InviteCode
-	19, // 24: peers_touch.model.access_gate.v1.RevokeInviteCodeResponse.invite_code:type_name -> peers_touch.model.access_gate.v1.InviteCode
-	25, // [25:25] is the sub-list for method output_type
-	25, // [25:25] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	0,  // 0: peers_touch.model.access_gate.v1.AccessGateAction.type:type_name -> peers_touch.model.access_gate.v1.AccessGateType
+	0,  // 1: peers_touch.model.access_gate.v1.AccessGate.type:type_name -> peers_touch.model.access_gate.v1.AccessGateType
+	1,  // 2: peers_touch.model.access_gate.v1.AccessGate.state:type_name -> peers_touch.model.access_gate.v1.AccessGateState
+	5,  // 3: peers_touch.model.access_gate.v1.AccessGate.alternative_actions:type_name -> peers_touch.model.access_gate.v1.AccessGateAction
+	2,  // 4: peers_touch.model.access_gate.v1.AccessDecision.state:type_name -> peers_touch.model.access_gate.v1.AccessDecisionState
+	6,  // 5: peers_touch.model.access_gate.v1.AccessDecision.gates:type_name -> peers_touch.model.access_gate.v1.AccessGate
+	26, // 6: peers_touch.model.access_gate.v1.AccessDecision.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	27, // 7: peers_touch.model.access_gate.v1.AccessDecision.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 8: peers_touch.model.access_gate.v1.StartAccessAttemptRequest.client:type_name -> peers_touch.model.access_gate.v1.AccessGateClientInfo
+	7,  // 9: peers_touch.model.access_gate.v1.StartAccessAttemptResponse.decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
+	0,  // 10: peers_touch.model.access_gate.v1.SubmitAccessGateRequest.type:type_name -> peers_touch.model.access_gate.v1.AccessGateType
+	28, // 11: peers_touch.model.access_gate.v1.SubmitAccessGateRequest.login:type_name -> peers_touch.model.auth.v1.LoginRequest
+	7,  // 12: peers_touch.model.access_gate.v1.SubmitAccessGateResponse.decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
+	29, // 13: peers_touch.model.access_gate.v1.SubmitAccessGateResponse.login_response:type_name -> peers_touch.model.auth.v1.LoginResponse
+	7,  // 14: peers_touch.model.access_gate.v1.GetAccessDecisionResponse.decision:type_name -> peers_touch.model.access_gate.v1.AccessDecision
+	3,  // 15: peers_touch.model.access_gate.v1.AccessPolicy.mode:type_name -> peers_touch.model.access_gate.v1.AccessPolicyMode
+	27, // 16: peers_touch.model.access_gate.v1.AccessPolicy.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 17: peers_touch.model.access_gate.v1.AccessPolicy.enabled_gates:type_name -> peers_touch.model.access_gate.v1.AccessGateType
+	16, // 18: peers_touch.model.access_gate.v1.UpdateAccessPolicyRequest.policy:type_name -> peers_touch.model.access_gate.v1.AccessPolicy
+	16, // 19: peers_touch.model.access_gate.v1.UpdateAccessPolicyResponse.policy:type_name -> peers_touch.model.access_gate.v1.AccessPolicy
+	27, // 20: peers_touch.model.access_gate.v1.InviteCode.created_at:type_name -> google.protobuf.Timestamp
+	27, // 21: peers_touch.model.access_gate.v1.InviteCode.expires_at:type_name -> google.protobuf.Timestamp
+	27, // 22: peers_touch.model.access_gate.v1.InviteCode.last_used_at:type_name -> google.protobuf.Timestamp
+	27, // 23: peers_touch.model.access_gate.v1.CreateInviteCodeRequest.expires_at:type_name -> google.protobuf.Timestamp
+	19, // 24: peers_touch.model.access_gate.v1.CreateInviteCodeResponse.invite_code:type_name -> peers_touch.model.access_gate.v1.InviteCode
+	19, // 25: peers_touch.model.access_gate.v1.ListInviteCodesResponse.invite_codes:type_name -> peers_touch.model.access_gate.v1.InviteCode
+	19, // 26: peers_touch.model.access_gate.v1.RevokeInviteCodeResponse.invite_code:type_name -> peers_touch.model.access_gate.v1.InviteCode
+	27, // [27:27] is the sub-list for method output_type
+	27, // [27:27] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_domain_access_gate_access_gate_proto_init() }

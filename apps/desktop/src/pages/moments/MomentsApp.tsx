@@ -39,7 +39,7 @@ type MainTab = 'feed' | 'explore' | 'search' | 'circles';
 type MomentsView =
   | { kind: 'tab'; tab: MainTab }
   | { kind: 'detail'; postId: string; from: MainTab }
-  | { kind: 'user'; actorId: string; from: MainTab };
+  | { kind: 'user'; actorPtid: string; from: MainTab };
 
 export function MomentsApp() {
   const { t } = useTranslation('moments');
@@ -89,11 +89,11 @@ export function MomentsApp() {
   );
 
   const goUser = useCallback(
-    (actorId: string) => {
-      void ensureUserMomentsProjection(actorId);
+    (actorPtid: string) => {
+      void ensureUserMomentsProjection(actorPtid);
       setView((prev) => ({
         kind: 'user',
-        actorId,
+        actorPtid,
         from: prev.kind === 'tab' ? prev.tab : prev.from,
       }));
     },
@@ -165,7 +165,7 @@ export function MomentsApp() {
       return (
         <MomentDetailView
           postId={view.postId}
-          viewerActorId={me?.id}
+          viewerActorPtid={me?.id}
           onBack={goBack}
           onAuthorClick={goUser}
         />
@@ -174,8 +174,8 @@ export function MomentsApp() {
     if (view.kind === 'user') {
       return (
         <MomentsUserView
-          actorId={view.actorId}
-          viewerActorId={me?.id}
+          actorPtid={view.actorPtid}
+          viewerActorPtid={me?.id}
           onBack={goBack}
           onOpenPost={goDetail}
         />
@@ -185,7 +185,7 @@ export function MomentsApp() {
       case 'feed':
         return (
           <MomentsFeedView
-            viewerActorId={me?.id}
+            viewerActorPtid={me?.id}
             onOpenPost={goDetail}
             onAuthorClick={goUser}
             composerOpen={composerOpen}
@@ -200,7 +200,7 @@ export function MomentsApp() {
       case 'explore':
         return (
           <MomentsExploreView
-            viewerActorId={me?.id}
+            viewerActorPtid={me?.id}
             onOpenPost={goDetail}
             onAuthorClick={goUser}
           />
@@ -208,7 +208,7 @@ export function MomentsApp() {
       case 'search':
         return (
           <UserSearchView
-            viewerActorId={me?.id}
+            viewerActorPtid={me?.id}
             onOpenUser={goUser}
           />
         );

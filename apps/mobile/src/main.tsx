@@ -109,6 +109,12 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, RootErrorStat
 
 installMobileWebGuards();
 
+if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
+  void import('./acceptance/registry').then(({ installMobileAcceptanceHarness }) => {
+    installMobileAcceptanceHarness();
+  });
+}
+
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
     <ThemeProvider>

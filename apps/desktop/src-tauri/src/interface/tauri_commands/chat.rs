@@ -17,9 +17,8 @@ pub fn chat_list_conversations(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_list_conversations(&actor_id)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_list_conversations(&actor_ptid)
 }
 
 #[tauri::command]
@@ -28,9 +27,8 @@ pub fn chat_list_messages(
     window: Window,
     _input: ChatListMessagesInput,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_list_messages(&actor_id, _input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_list_messages(&actor_ptid, _input)
 }
 
 #[tauri::command]
@@ -39,9 +37,8 @@ pub fn chat_send_message(
     window: Window,
     _input: ChatSendMessageInput,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_send_message(&actor_id, _input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_send_message(&actor_ptid, _input)
 }
 
 #[tauri::command]
@@ -50,9 +47,8 @@ pub fn chat_mark_read(
     window: Window,
     _input: ChatMarkReadInput,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_mark_read(&actor_id, _input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_mark_read(&actor_ptid, _input)
 }
 
 #[tauri::command]
@@ -61,9 +57,8 @@ pub fn chat_delete_conversation(
     window: Window,
     input: ChatConversationInput,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_delete_conversation(&actor_id, input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_delete_conversation(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -72,9 +67,8 @@ pub fn chat_rename_conversation(
     window: Window,
     input: ChatRenameConversationInput,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_rename_conversation(&actor_id, input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_rename_conversation(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -83,9 +77,8 @@ pub fn chat_duplicate_conversation(
     window: Window,
     input: ChatConversationInput,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_duplicate_conversation(&actor_id, input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_duplicate_conversation(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -94,9 +87,8 @@ pub fn chat_smart_rename_conversation(
     window: Window,
     input: ChatConversationInput,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_smart_rename_conversation(&actor_id, input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_smart_rename_conversation(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -105,9 +97,8 @@ pub fn chat_set_conversation_model(
     window: Window,
     input: ChatSetConversationModelInput,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_set_conversation_model(&actor_id, input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_set_conversation_model(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -116,9 +107,8 @@ pub fn chat_delete_message(
     window: Window,
     input: ChatMessageInput,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_delete_message(&actor_id, input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_delete_message(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -127,9 +117,8 @@ pub fn chat_update_message(
     window: Window,
     input: ChatUpdateMessageInput,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_update_message(&actor_id, input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_update_message(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -138,9 +127,8 @@ pub fn chat_stop(
     window: Window,
     input: ChatConversationInput,
 ) -> AppResult<StubPayload> {
-    let actor_id =
-        session_resolver::actor_id_for_window(state.inner(), &window).unwrap_or_default();
-    application_chat::chat_stop(&actor_id, input)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
+    application_chat::chat_stop(&actor_ptid, input)
 }
 
 #[tauri::command]
@@ -150,10 +138,10 @@ pub async fn chat_completion_once(
     window: Window,
 ) -> AppResult<StubPayload> {
     let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
-    let actor_id = session_resolver::actor_id_for_window(&state, &window).unwrap_or_default();
+    let actor_ptid = session_resolver::ptid_for_window(&state, &window).unwrap_or_default();
     let token = session_resolver::token_for_window(&state, &window).unwrap_or_default();
     match tauri::async_runtime::spawn_blocking(move || {
-        application_chat::chat_completion_once(&actor_id, &token, input)
+        application_chat::chat_completion_once(&actor_ptid, &token, input)
     })
     .await
     {

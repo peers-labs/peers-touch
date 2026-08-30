@@ -25,7 +25,7 @@ const (
 type AccessControl struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,2,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	ProviderId    string                 `protobuf:"bytes,3,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
 	ModelName     string                 `protobuf:"bytes,4,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
 	Allowed       bool                   `protobuf:"varint,5,opt,name=allowed,proto3" json:"allowed,omitempty"`
@@ -72,9 +72,9 @@ func (x *AccessControl) GetId() string {
 	return ""
 }
 
-func (x *AccessControl) GetUserId() string {
+func (x *AccessControl) GetActorPtid() string {
 	if x != nil {
-		return x.UserId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -118,10 +118,11 @@ var File_domain_ai_chat_access_control_proto protoreflect.FileDescriptor
 
 const file_domain_ai_chat_access_control_proto_rawDesc = "" +
 	"\n" +
-	"#domain/ai_chat/access_control.proto\x12\x1cpeers_touch.model.ai_chat.v1\"\xd0\x01\n" +
+	"#domain/ai_chat/access_control.proto\x12\x1cpeers_touch.model.ai_chat.v1\"\xd6\x01\n" +
 	"\rAccessControl\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x1f\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x02 \x01(\tR\tactorPtid\x12\x1f\n" +
 	"\vprovider_id\x18\x03 \x01(\tR\n" +
 	"providerId\x12\x1d\n" +
 	"\n" +

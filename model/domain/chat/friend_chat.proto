@@ -10,8 +10,8 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 
 message FriendChatSession {
   string ulid = 1;
-  string participant_a_did = 2;
-  string participant_b_did = 3;
+  string participant_a_ptid = 2;
+  string participant_b_ptid = 3;
   string last_message_ulid = 4;
   google.protobuf.Timestamp last_message_at = 5;
   int32 unread_count_a = 6;
@@ -28,8 +28,8 @@ message FriendChatSession {
 message FriendChatMessage {
   string ulid = 1;
   string session_ulid = 2;
-  string sender_did = 3;
-  string receiver_did = 4;
+  string sender_ptid = 3;
+  string receiver_ptid = 4;
   
   FriendMessageType type = 5;
   string content = 6;
@@ -111,8 +111,8 @@ message FriendMessageAttachment {
 
 message MessageEnvelope {
   string message_ulid = 1;
-  string sender_did = 2;
-  string receiver_did = 3;
+  string sender_ptid = 2;
+  string receiver_ptid = 3;
   string session_ulid = 4;
   bytes encrypted_payload = 5;
   int64 timestamp = 6;
@@ -121,8 +121,8 @@ message MessageEnvelope {
 
 message OfflineMessage {
   string ulid = 1;
-  string receiver_did = 2;
-  string sender_did = 3;
+  string receiver_ptid = 2;
+  string sender_ptid = 3;
   string session_ulid = 4;
   bytes encrypted_payload = 5;
   OfflineMessageStatus status = 6;
@@ -141,7 +141,7 @@ enum OfflineMessageStatus {
 
 message SendMessageRequest {
   string session_ulid = 1;
-  string receiver_did = 2;
+  string receiver_ptid = 2;
   FriendMessageType type = 3;
   string content = 4;
   repeated FriendMessageAttachment attachments = 5;
@@ -185,7 +185,7 @@ message SearchFriendMessagesResponse {
 }
 
 message CreateSessionRequest {
-  string participant_did = 1;
+  string participant_ptid = 1;
 }
 
 message CreateSessionResponse {
@@ -256,7 +256,7 @@ message RelayMessageResponse {
 message SyncMessageItem {
   string ulid = 1;
   string session_ulid = 2;
-  string receiver_did = 3;
+  string receiver_ptid = 3;
   FriendMessageType type = 4;
   string content = 5;
   google.protobuf.Timestamp sent_at = 6;
@@ -293,7 +293,7 @@ message GetPendingRequest {
 
 message PendingMessageInfo {
   string ulid = 1;
-  string sender_did = 2;
+  string sender_ptid = 2;
   string session_ulid = 3;
   bytes encrypted_payload = 4;
   int64 created_at = 5;
@@ -318,7 +318,7 @@ message GetStatsResponse {
 // ============================================================================
 
 message SendFriendRequestRequest {
-  string receiver_did = 1;
+  string receiver_ptid = 1;
   string message = 2;
 }
 
@@ -359,7 +359,7 @@ message ListFriendRequestsResponse {
 // ============================================================================
 
 message BlockUserRequest {
-  string target_did = 1;
+  string target_ptid = 1;
 }
 
 message BlockUserResponse {
@@ -367,7 +367,7 @@ message BlockUserResponse {
 }
 
 message UnblockUserRequest {
-  string target_did = 1;
+  string target_ptid = 1;
 }
 
 message UnblockUserResponse {
@@ -385,7 +385,7 @@ message ListBlockedUsersResponse {
 }
 
 message GetFriendshipStatusRequest {
-  string target_did = 1;
+  string target_ptid = 1;
 }
 
 message GetFriendshipStatusResponse {

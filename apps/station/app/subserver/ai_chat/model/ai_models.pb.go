@@ -36,7 +36,7 @@ type AiModel struct {
 	ProviderId          string                 `protobuf:"bytes,6,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`                                // 所属提供商ID
 	Type                string                 `protobuf:"bytes,7,opt,name=type,proto3" json:"type,omitempty"`                                                              // 模型类型 (e.g., 'chat', 'text-embedding')
 	Sort                int32                  `protobuf:"varint,8,opt,name=sort,proto3" json:"sort,omitempty"`                                                             // 排序
-	UserId              string                 `protobuf:"bytes,9,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                                            // 关联的用户ID (如果是自定义模型)
+	ActorPtid           string                 `protobuf:"bytes,9,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`                                   // 关联的用户ID (如果是自定义模型)
 	PricingJson         string                 `protobuf:"bytes,10,opt,name=pricing_json,json=pricingJson,proto3" json:"pricing_json,omitempty"`                            // 定价信息 (JSON 字符串)
 	ParametersJson      string                 `protobuf:"bytes,11,opt,name=parameters_json,json=parametersJson,proto3" json:"parameters_json,omitempty"`                   // 模型默认参数 (JSON 字符串)
 	ConfigJson          string                 `protobuf:"bytes,12,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`                               // 【敏感】模型的特定配置 (JSON 字符串)
@@ -138,9 +138,9 @@ func (x *AiModel) GetSort() int32 {
 	return 0
 }
 
-func (x *AiModel) GetUserId() string {
+func (x *AiModel) GetActorPtid() string {
 	if x != nil {
-		return x.UserId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -467,7 +467,7 @@ var File_domain_ai_chat_ai_models_proto protoreflect.FileDescriptor
 
 const file_domain_ai_chat_ai_models_proto_rawDesc = "" +
 	"\n" +
-	"\x1edomain/ai_chat/ai_models.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcc\x05\n" +
+	"\x1edomain/ai_chat/ai_models.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd2\x05\n" +
 	"\aAiModel\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12 \n" +
@@ -477,8 +477,9 @@ const file_domain_ai_chat_ai_models_proto_rawDesc = "" +
 	"\vprovider_id\x18\x06 \x01(\tR\n" +
 	"providerId\x12\x12\n" +
 	"\x04type\x18\a \x01(\tR\x04type\x12\x12\n" +
-	"\x04sort\x18\b \x01(\x05R\x04sort\x12\x17\n" +
-	"\auser_id\x18\t \x01(\tR\x06userId\x12!\n" +
+	"\x04sort\x18\b \x01(\x05R\x04sort\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\t \x01(\tR\tactorPtid\x12!\n" +
 	"\fpricing_json\x18\n" +
 	" \x01(\tR\vpricingJson\x12'\n" +
 	"\x0fparameters_json\x18\v \x01(\tR\x0eparametersJson\x12\x1f\n" +

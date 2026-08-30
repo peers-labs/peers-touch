@@ -11,9 +11,12 @@ import (
 	"sync"
 	"time"
 
+	stationidentity "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/accessgate/gatekeeper"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/auth"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	pb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -43,71 +46,196 @@ var defaultGateOrder = []pb.AccessGateType{
 }
 
 type Attempt struct {
-	ID           string
-	SessionID    string
-	Actor        *pb.AccessGateActorRef
-	InvitePassed bool
-	CreatedAt    time.Time
-	ExpiresAt    time.Time
+	ID               string
+	SessionID        string
+	StationPeerID    string
+	Actor            *actormodel.ActorRef
+	ActorUsername    string
+	ActorEmail       string
+	InvitePassed     bool
+	CurrentGateID    string
+	DecisionRevision uint64
+	Status           string
+	CreatedAt        time.Time
+	ExpiresAt        time.Time
 }
 
 type PolicyInput struct {
 	Mode              string
 	AllowedEmails     []string
 	AllowedUsernames  []string
-	AllowedActorIDs   []int64
+	AllowedActorPTIDs []string
 	EnabledGates      []pb.AccessGateType
 	SelfServiceInvite bool
 	UpdatedBy         string
 }
 
 func StartAttempt(ctx context.Context, req *pb.StartAccessAttemptRequest) (*pb.AccessDecision, error) {
-	actorRef, err := actorRefFromSession(ctx, strings.TrimSpace(req.GetSessionId()))
+	if req == nil {
+		return nil, fmt.Errorf("access attempt request is required")
+	}
+	stationPeerID := strings.TrimSpace(req.GetStationPeerId())
+	if err := ValidateStationPeerID(stationPeerID); err != nil {
+		return nil, err
+	}
+
+	actorRef, username, email, err := actorRefFromSession(ctx, strings.TrimSpace(req.GetSessionId()))
 	if err != nil {
 		return nil, err
 	}
 
 	attempt := &Attempt{
-		ID:        newAttemptID(),
-		SessionID: strings.TrimSpace(req.GetSessionId()),
-		Actor:     actorRef,
-		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(15 * time.Minute),
+		ID:            newAttemptID(),
+		SessionID:     strings.TrimSpace(req.GetSessionId()),
+		StationPeerID: stationPeerID,
+		Actor:         actorRef,
+		ActorUsername: username,
+		ActorEmail:    email,
+		CreatedAt:     time.Now(),
+		ExpiresAt:     time.Now().Add(15 * time.Minute),
 	}
 
-	if err := createAttempt(ctx, attempt, req); err != nil {
+	decision := DecisionForAttempt(ctx, attempt)
+	attempt.Status = attemptStatusForDecision(decision.GetState())
+	attempt.CurrentGateID = decision.GetCurrentGateId()
+	if err := createAttempt(ctx, attempt, req, decision); err != nil {
 		return nil, err
 	}
 
-	return decisionAndPersist(ctx, attempt), nil
+	return decision, nil
 }
 
-func actorRefFromSession(ctx context.Context, sessionID string) (*pb.AccessGateActorRef, error) {
+// ValidateStationPeerID prevents URL-scoped credentials and gate state from
+// crossing to another Station identity.
+func ValidateStationPeerID(stationPeerID string) error {
+	expected := stationidentity.LocalIdentitySnapshot().StationPeerID.String()
+	if expected == "" {
+		return fmt.Errorf("local Station peer identity is unavailable")
+	}
+	if strings.TrimSpace(stationPeerID) != expected {
+		return fmt.Errorf("Station peer identity mismatch")
+	}
+	return nil
+}
+
+// ValidateOAuthBinding verifies that an OAuth attempt is attached to the
+// current actionable gate of the same Station access attempt.
+func ValidateOAuthBinding(
+	ctx context.Context,
+	accessAttemptID, stationPeerID, gateID string,
+	actionType pb.AccessGateType,
+) error {
+	if actionType != pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH {
+		return fmt.Errorf("OAuth action type must be AUTH_OAUTH")
+	}
+	if err := ValidateStationPeerID(stationPeerID); err != nil {
+		return err
+	}
+	attempt, ok := findAttempt(ctx, strings.TrimSpace(accessAttemptID))
+	if !ok {
+		return errAttemptNotFound
+	}
+	if attempt.StationPeerID != stationPeerID {
+		return fmt.Errorf("OAuth access attempt Station mismatch")
+	}
+	decision, err := decisionAndPersist(ctx, attempt)
+	if err != nil {
+		return err
+	}
+	if decision.GetState() != pb.AccessDecisionState_ACCESS_DECISION_STATE_ACTION_REQUIRED ||
+		decision.GetCurrentGateId() != strings.TrimSpace(gateID) {
+		return fmt.Errorf("OAuth gate is not the current access gate")
+	}
+	for _, gate := range decision.GetGates() {
+		if gate.GetGateId() != strings.TrimSpace(gateID) ||
+			gate.GetType() != pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN {
+			continue
+		}
+		for _, action := range gate.GetAlternativeActions() {
+			if action.GetType() == actionType &&
+				action.GetActionId() == "auth.oauth" &&
+				action.GetSubmitAction() == "start_oauth" {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("AUTH_OAUTH is not an advertised alternative action")
+}
+
+// BindOAuthCandidate attaches a resolved actor without issuing a session, then
+// re-evaluates all later Station-owned gates.
+func BindOAuthCandidate(
+	ctx context.Context,
+	accessAttemptID, stationPeerID, gateID string,
+	actorRef *actormodel.ActorRef,
+	username, email string,
+) (*pb.AccessDecision, error) {
+	if actorRef == nil || strings.TrimSpace(actorRef.GetPtid()) == "" {
+		return nil, fmt.Errorf("OAuth candidate requires an actor PTID")
+	}
+	if err := ValidateOAuthBinding(
+		ctx,
+		accessAttemptID,
+		stationPeerID,
+		gateID,
+		pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH,
+	); err != nil {
+		return nil, err
+	}
+	attempt, ok := findAttempt(ctx, accessAttemptID)
+	if !ok {
+		return nil, errAttemptNotFound
+	}
+	attempt.Actor = actorRef
+	attempt.ActorUsername = username
+	attempt.ActorEmail = email
+	attempt.SessionID = ""
+	return decisionAndPersist(ctx, attempt)
+}
+
+// ReevaluateOAuthCandidate reads the current gate state after another gate
+// action has completed. It never creates or activates a session.
+func ReevaluateOAuthCandidate(
+	ctx context.Context,
+	accessAttemptID, stationPeerID string,
+) (*pb.AccessDecision, error) {
+	if err := ValidateStationPeerID(stationPeerID); err != nil {
+		return nil, err
+	}
+	attempt, ok := findAttempt(ctx, strings.TrimSpace(accessAttemptID))
+	if !ok {
+		return nil, errAttemptNotFound
+	}
+	if attempt.StationPeerID != stationPeerID {
+		return nil, fmt.Errorf("OAuth access attempt Station mismatch")
+	}
+	if attempt.Actor == nil || strings.TrimSpace(attempt.Actor.GetPtid()) == "" {
+		return nil, fmt.Errorf("OAuth access attempt has no actor candidate")
+	}
+	return decisionAndPersist(ctx, attempt)
+}
+
+func actorRefFromSession(ctx context.Context, sessionID string) (*actormodel.ActorRef, string, string, error) {
 	if sessionID == "" {
-		return nil, nil
+		return nil, "", "", nil
 	}
 
 	session, err := auth.SessionManager().Validate(ctx, sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("access session invalid: %w", err)
+		return nil, "", "", fmt.Errorf("access session invalid: %w", err)
 	}
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", "", err
 	}
 
 	var actor dbmodel.Actor
 	if err := rds.WithContext(ctx).Where("id = ?", session.UserID).First(&actor).Error; err != nil {
-		return nil, err
+		return nil, "", "", err
 	}
 
-	return &pb.AccessGateActorRef{
-		Id:       strconv.FormatUint(uint64(actor.ID), 10),
-		ActorId:  int64(actor.ID),
-		Username: actor.PreferredUsername,
-		Email:    actor.Email,
-	}, nil
+	return touchactor.ProtoActorRef(&actor, ""), actor.PreferredUsername, actor.Email, nil
 }
 
 // GetAttempt loads a live attempt from the persistent store. Expired, cancelled,
@@ -116,16 +244,23 @@ func GetAttempt(ctx context.Context, id string) (*Attempt, bool) {
 	return findAttempt(ctx, id)
 }
 
-func CompleteLogin(ctx context.Context, attemptID string, actor *pb.AccessGateActorRef, sessionID string) (*pb.AccessDecision, error) {
+func CompleteLogin(
+	ctx context.Context,
+	attemptID string,
+	actor *actormodel.ActorRef,
+	username, email, sessionID string,
+) (*pb.AccessDecision, error) {
 	attempt, ok := findAttempt(ctx, attemptID)
 	if !ok {
 		return nil, errAttemptNotFound
 	}
 
 	attempt.Actor = actor
+	attempt.ActorUsername = username
+	attempt.ActorEmail = email
 	attempt.SessionID = sessionID
 
-	return decisionAndPersist(ctx, attempt), nil
+	return decisionAndPersist(ctx, attempt)
 }
 
 // CancelAttempt closes a live attempt. It is idempotent: cancelling an attempt
@@ -156,7 +291,7 @@ func CompleteInviteCode(ctx context.Context, attemptID, code string) (*pb.Access
 		return nil, err
 	}
 
-	return decisionAndPersist(ctx, attempt), nil
+	return decisionAndPersist(ctx, attempt)
 }
 
 // DecisionForAttempt evaluates the gate chain without persisting the outcome.
@@ -164,19 +299,25 @@ func CompleteInviteCode(ctx context.Context, attemptID, code string) (*pb.Access
 // the decision the client receives.
 func DecisionForAttempt(ctx context.Context, attempt *Attempt) *pb.AccessDecision {
 	return registry().Decide(ctx, &gatekeeper.EvalContext{
-		AttemptID:    attempt.ID,
-		Actor:        attempt.Actor,
-		ExpiresAt:    attempt.ExpiresAt,
-		InvitePassed: attempt.InvitePassed,
+		AttemptID:     attempt.ID,
+		Actor:         attempt.Actor,
+		ActorUsername: attempt.ActorUsername,
+		ActorEmail:    attempt.ActorEmail,
+		ExpiresAt:     attempt.ExpiresAt,
+		InvitePassed:  attempt.InvitePassed,
 	}, gateOrder(ctx))
 }
 
 // decisionAndPersist evaluates the gate chain and writes the resulting status
 // and current gate back onto the attempt row before returning the decision.
-func decisionAndPersist(ctx context.Context, attempt *Attempt) *pb.AccessDecision {
+func decisionAndPersist(ctx context.Context, attempt *Attempt) (*pb.AccessDecision, error) {
 	decision := DecisionForAttempt(ctx, attempt)
-	_ = saveAttemptDecision(ctx, attempt, decision)
-	return decision
+	if err := saveAttemptDecision(ctx, attempt, decision); err != nil {
+		return nil, fmt.Errorf("persist access decision: %w", err)
+	}
+	attempt.Status = attemptStatusForDecision(decision.GetState())
+	attempt.CurrentGateID = decision.GetCurrentGateId()
+	return decision, nil
 }
 
 var (
@@ -215,7 +356,7 @@ func gateOrder(ctx context.Context) []pb.AccessGateType {
 	return enabled
 }
 
-func CheckActorAllowed(ctx context.Context, actor *pb.AccessGateActorRef) (bool, string) {
+func CheckActorAllowed(ctx context.Context, actor *actormodel.ActorRef, username, email string) (bool, string) {
 	policy, err := GetPolicy(ctx)
 	if err != nil {
 		return false, "access policy unavailable"
@@ -229,9 +370,9 @@ func CheckActorAllowed(ctx context.Context, actor *pb.AccessGateActorRef) (bool,
 		return false, "Station is currently closed"
 	}
 
-	if containsString(splitList(policy.AllowedEmails), actor.GetEmail()) ||
-		containsString(splitList(policy.AllowedUsernames), actor.GetUsername()) ||
-		containsInt64(splitList(policy.AllowedActorIDs), actor.GetActorId()) {
+	if containsString(splitList(policy.AllowedEmails), email) ||
+		containsString(splitList(policy.AllowedUsernames), username) ||
+		containsString(splitList(policy.AllowedActorPTIDs), actor.GetPtid()) {
 		return true, ""
 	}
 
@@ -282,7 +423,7 @@ func UpdatePolicy(ctx context.Context, input PolicyInput) (*dbmodel.AccessPolicy
 	policy.Mode = mode
 	policy.AllowedEmails = joinStrings(input.AllowedEmails)
 	policy.AllowedUsernames = joinStrings(input.AllowedUsernames)
-	policy.AllowedActorIDs = joinInt64(input.AllowedActorIDs)
+	policy.AllowedActorPTIDs = joinStrings(input.AllowedActorPTIDs)
 	policy.EnabledGates = encodeEnabledGates(input.EnabledGates)
 	policy.SelfServiceInvite = input.SelfServiceInvite
 	policy.UpdatedBy = input.UpdatedBy
@@ -326,18 +467,11 @@ func decodeEnabledGates(raw string) []pb.AccessGateType {
 }
 
 func ToProtoPolicy(policy *dbmodel.AccessPolicy) *pb.AccessPolicy {
-	actorIDs := make([]int64, 0)
-	for _, raw := range splitList(policy.AllowedActorIDs) {
-		if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
-			actorIDs = append(actorIDs, id)
-		}
-	}
-
 	return &pb.AccessPolicy{
 		Mode:              toProtoPolicyMode(policy.Mode),
 		AllowedEmails:     splitList(policy.AllowedEmails),
 		AllowedUsernames:  splitList(policy.AllowedUsernames),
-		AllowedActorIds:   actorIDs,
+		AllowedActorPtids: splitList(policy.AllowedActorPTIDs),
 		EnabledGates:      decodeEnabledGates(policy.EnabledGates),
 		SelfServiceInvite: policy.SelfServiceInvite,
 		UpdatedAt:         timestamppb.New(policy.UpdatedAt),
@@ -353,8 +487,8 @@ func newAttemptID() string {
 	return "attempt-" + hex.EncodeToString(b[:])
 }
 
-func grantID(attemptID string, actor *pb.AccessGateActorRef) string {
-	return fmt.Sprintf("grant-%s-%d", strings.TrimPrefix(attemptID, "attempt-"), actor.GetActorId())
+func grantID(attemptID string, actor *actormodel.ActorRef) string {
+	return fmt.Sprintf("grant-%s-%s", strings.TrimPrefix(attemptID, "attempt-"), actor.GetPtid())
 }
 
 func normalizeMode(mode string) string {
@@ -409,16 +543,6 @@ func joinStrings(values []string) string {
 	return strings.Join(clean, ",")
 }
 
-func joinInt64(values []int64) string {
-	parts := make([]string, 0, len(values))
-	for _, value := range values {
-		if value > 0 {
-			parts = append(parts, strconv.FormatInt(value, 10))
-		}
-	}
-	return strings.Join(parts, ",")
-}
-
 func containsString(values []string, target string) bool {
 	target = strings.TrimSpace(strings.ToLower(target))
 	if target == "" {
@@ -426,19 +550,6 @@ func containsString(values []string, target string) bool {
 	}
 	for _, value := range values {
 		if strings.ToLower(strings.TrimSpace(value)) == target {
-			return true
-		}
-	}
-	return false
-}
-
-func containsInt64(values []string, target int64) bool {
-	if target <= 0 {
-		return false
-	}
-	targetStr := strconv.FormatInt(target, 10)
-	for _, value := range values {
-		if strings.TrimSpace(value) == targetStr {
 			return true
 		}
 	}

@@ -16,9 +16,9 @@ export interface RealtimeMessageReceivedPayload {
   /** Business message ULID; idempotency key for upsert into local store. */
   messageUlid: string;
   /** Sender DID. May equal the local actor for multi-device sender echo. */
-  senderActorId: string;
+  senderActorPtid: string;
   /** Recipient DID (always the local actor's stream target). */
-  recipientActorId: string;
+  recipientActorPtid: string;
   /** Raw envelope ciphertext bytes; today this is the marshaled
    *  FriendChatMessage protobuf, tomorrow the sealed-sender ciphertext. */
   ciphertext: Uint8Array;
@@ -27,7 +27,7 @@ export interface RealtimeMessageReceivedPayload {
 }
 
 export interface RealtimePresenceFlipPayload {
-  actorId: string;
+  actorPtid: string;
   online: boolean;
 }
 
@@ -67,7 +67,7 @@ export interface RealtimeCallSignalPayload {
   sessionUlid: string;
   /** Originating actor DID (the caller). For multi-device sender
    *  echo this can equal the local actor. */
-  fromActorId: string;
+  fromActorPtid: string;
   /** Which signaling phase this frame represents. */
   kind: RealtimeCallSignalKind;
   /** Opaque ciphertext envelope produced by the standalone signaling
@@ -98,7 +98,7 @@ export interface RealtimeMessageReceiptPayload {
   /** Originating actor DID — the *receiver* of the original message,
    *  i.e. whoever is now reporting they got / read it. May equal the
    *  local actor for multi-device echo. */
-  fromActorId: string;
+  fromActorPtid: string;
   /** Whether this is a delivery receipt or a read receipt. */
   kind: RealtimeMessageReceiptKind;
 }
@@ -110,7 +110,7 @@ export interface RealtimeTypingStatePayload {
   sessionUlid: string;
   /** Originating actor DID — whoever is (not) typing. May equal the
    *  local actor for multi-device echo; consumers should ignore self. */
-  fromActorId: string;
+  fromActorPtid: string;
   /** True when the actor *started* typing, false when they stopped. */
   typing: boolean;
 }
@@ -140,7 +140,7 @@ export interface RealtimeGroupMembershipChangePayload {
   /** Shared logical id for one roster change across recipients. */
   changeEventId: string;
   groupUlid: string;
-  actorDid: string;
+  actorPtid: string;
   kind: RealtimeGroupMembershipChangeKind;
   changedTsUnixMs: number;
 }
@@ -157,7 +157,7 @@ export interface RealtimeGroupFederationEventPayload {
   messageUlid: string;
   membershipEpoch: number;
   committedTsUnixMs: number;
-  actorDid: string;
+  actorPtid: string;
 }
 
 export interface RealtimeEnvelopeDeliveredPayload {
@@ -178,15 +178,15 @@ export interface RealtimeConversationSettingsChangedPayload {
   eventId: string;
   conversationKind: 'friend' | 'group';
   containerUlid: string;
-  actorId: string;
+  actorPtid: string;
   changedTsUnixMs: number;
 }
 
 export interface RealtimeSocialGraphEventPayload {
   eventId: string;
   kind: 'friend_request_received' | 'friend_request_accepted' | 'friend_request_rejected' | 'conversation_created' | 'unfriended';
-  actorDid: string;
-  targetDid: string;
+  actorPtid: string;
+  targetPtid: string;
   requestId: string;
   conversationId: string;
   actorDisplayName: string;
@@ -203,7 +203,7 @@ export interface RealtimeMessageMutationPayload {
   /** DID of whoever performed the mutation. Today this must equal
    *  the original sender (server-enforced); a future moderator path
    *  could surface a different actor here. */
-  fromActorId: string;
+  fromActorPtid: string;
   /** Which mutation arm this frame represents. */
   kind: RealtimeMessageMutationKind;
   /** For EDIT only: the new plaintext body, or empty when the chat
@@ -220,7 +220,7 @@ export interface MomentRealtimeBasePayload {
   /** Monotonic realtime cursor when the event comes from Station SSE. */
   eventId: string;
   postId: string;
-  authorActorId?: string;
+  authorActorPtid?: string;
   occurredAtUnixMs: number;
 }
 
@@ -229,16 +229,16 @@ export interface MomentCreatedPayload extends MomentRealtimeBasePayload {
 }
 
 export interface MomentDeletedPayload extends MomentRealtimeBasePayload {
-  deletedByActorId?: string;
+  deletedByActorPtid?: string;
 }
 
 export interface MomentCommentedPayload extends MomentRealtimeBasePayload {
   commentId: string;
-  commentAuthorActorId?: string;
+  commentAuthorActorPtid?: string;
 }
 
 export interface MomentReactedPayload extends MomentRealtimeBasePayload {
-  reactionActorId?: string;
+  reactionActorPtid?: string;
   kind?: string;
   removed: boolean;
 }
@@ -249,7 +249,7 @@ export interface MomentResyncRequestedPayload {
 }
 
 export interface RelationshipChangedPayload {
-  targetActorId: string;
+  targetActorPtid: string;
   action: 'follow' | 'unfollow' | 'block' | 'unblock';
 }
 

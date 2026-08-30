@@ -7,7 +7,7 @@
  *
  *   - action     (e.g. `upload`, `read`, `admin_delete`, `worker_run`,
  *                 `peer_get`, `key_rotate`, `bucket_create`, …)
- *   - actor_id   (owner / dashboard / peer station — the audit row's
+ *   - actor_ptid (owner / dashboard / peer station — the audit row's
  *                 stamped attribution)
  *   - bucket_id
  *   - file_key
@@ -96,7 +96,7 @@ export function AuditTab() {
 
   const buildQuery = useCallback((): ossApi.OSSAuditListQuery => ({
     action: actionFilter || undefined,
-    actor_id: actorFilter.trim() || undefined,
+    actor_ptid: actorFilter.trim() || undefined,
     bucket_id: bucketFilter.trim() || undefined,
     file_key: fileKeyFilter.trim() || undefined,
     outcome: outcomeFilter || undefined,
@@ -166,8 +166,8 @@ export function AuditTab() {
     },
     {
       title: 'Actor',
-      dataIndex: 'actor_id',
-      key: 'actor_id',
+      dataIndex: 'actor_ptid',
+      key: 'actor_ptid',
       width: 160,
       render: (v: string) => v ? <Tooltip title={v}><Text code>{shortHash(v, 12, 4)}</Text></Tooltip> : <Text type="secondary">—</Text>,
     },

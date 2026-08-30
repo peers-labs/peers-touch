@@ -75,7 +75,7 @@ type Comment struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	PostId           string                 `protobuf:"bytes,2,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
-	AuthorId         string                 `protobuf:"bytes,3,opt,name=author_id,json=authorId,proto3" json:"author_id,omitempty"`
+	AuthorPtid       string                 `protobuf:"bytes,3,opt,name=author_ptid,json=authorPtid,proto3" json:"author_ptid,omitempty"`
 	Content          string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
 	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt        *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
@@ -133,9 +133,9 @@ func (x *Comment) GetPostId() string {
 	return ""
 }
 
-func (x *Comment) GetAuthorId() string {
+func (x *Comment) GetAuthorPtid() string {
 	if x != nil {
-		return x.AuthorId
+		return x.AuthorPtid
 	}
 	return ""
 }
@@ -623,11 +623,12 @@ var File_domain_social_comment_proto protoreflect.FileDescriptor
 
 const file_domain_social_comment_proto_rawDesc = "" +
 	"\n" +
-	"\x1bdomain/social/comment.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/social/post.proto\"\xcf\x03\n" +
+	"\x1bdomain/social/comment.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/social/post.proto\"\xde\x03\n" +
 	"\aComment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
-	"\apost_id\x18\x02 \x01(\tR\x06postId\x12\x1b\n" +
-	"\tauthor_id\x18\x03 \x01(\tR\bauthorId\x12\x18\n" +
+	"\apost_id\x18\x02 \x01(\tR\x06postId\x12\x1f\n" +
+	"\vauthor_ptid\x18\x03 \x01(\tR\n" +
+	"authorPtid\x12\x18\n" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x129\n" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
@@ -641,7 +642,7 @@ const file_domain_social_comment_proto_rawDesc = "" +
 	"likesCount\x12\x19\n" +
 	"\bis_liked\x18\f \x01(\bR\aisLiked\x12-\n" +
 	"\x13reply_to_comment_id\x18\x14 \x01(\tR\x10replyToCommentId\x12#\n" +
-	"\rreplies_count\x18\x15 \x01(\x03R\frepliesCount\"x\n" +
+	"\rreplies_count\x18\x15 \x01(\x03R\frepliesCountR\tauthor_id\"x\n" +
 	"\x14CreateCommentRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\tR\acontent\x12-\n" +

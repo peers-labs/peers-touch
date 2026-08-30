@@ -4,13 +4,15 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { ActorRef } from "../actor/actor_pb";
+import { file_domain_actor_actor } from "../actor/actor_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/federation/federation_self.proto.
  */
 export const file_domain_federation_federation_self: GenFile = /*@__PURE__*/
-  fileDesc("Cidkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX3NlbGYucHJvdG8SH3BlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEi1wQKEkZlZGVyYXRpb25TZWxmVmlldxIaCghhY3Rvcl9pZBgBIAEoCVIIYWN0b3JfaWQSJAoNYWN0b3JfaWRfdWludBgCIAEoBFINYWN0b3JfaWRfdWludBIuChJwcmVmZXJyZWRfdXNlcm5hbWUYAyABKAlSEnByZWZlcnJlZF91c2VybmFtZRIqChBmZWRlcmF0ZWRfaGFuZGxlGAQgASgJUhBmZWRlcmF0ZWRfaGFuZGxlEjIKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAUgASgJUhRob21lX3N0YXRpb25fcGVlcl9pZBIwChNob21lX3N0YXRpb25fZG9tYWluGAYgASgJUhNob21lX3N0YXRpb25fZG9tYWluEkkKCnZpc2liaWxpdHkYByABKA4yNS5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkZlZGVyYXRpb25WaXNpYmlsaXR5EioKEHZpc2liaWxpdHlfbGFiZWwYCCABKAlSEHZpc2liaWxpdHlfbGFiZWwSIAoLbG9jYXRvcl9zZXEYCSABKARSC2xvY2F0b3Jfc2VxEg4KBm9yaWdpbhgKIAEoCRIuChJpbmJveF9yZWxheV9tb3VudHMYCyADKAlSEmluYm94X3JlbGF5X21vdW50cxJkChJqb2luZWRfZmVkZXJhdGlvbnMYDCADKAsyNC5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkpvaW5lZEZlZGVyYXRpb25SZWZSEmpvaW5lZF9mZWRlcmF0aW9ucyKPAQoTSm9pbmVkRmVkZXJhdGlvblJlZhIkCg1mZWRlcmF0aW9uX2lkGAEgASgJUg1mZWRlcmF0aW9uX2lkEigKD2ZlZGVyYXRpb25fbmFtZRgCIAEoCVIPZmVkZXJhdGlvbl9uYW1lEhgKB215X3JvbGUYAyABKAlSB215X3JvbGUSDgoGc3RhdHVzGAQgASgJIjEKG0ZlZGVyYXRpb25WaXNpYmlsaXR5UmVxdWVzdBISCgp2aXNpYmlsaXR5GAEgASgJKqcBChRGZWRlcmF0aW9uVmlzaWJpbGl0eRIlCiFGRURFUkFUSU9OX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIgChxGRURFUkFUSU9OX1ZJU0lCSUxJVFlfSElEREVOEAESIwofRkVERVJBVElPTl9WSVNJQklMSVRZX0JZX0hBTkRMRRACEiEKHUZFREVSQVRJT05fVklTSUJJTElUWV9JTkRFWEVEEANCTFpKZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvZmVkZXJhdGlvbi9hcGkvcGI7cGJiBnByb3RvMw");
+  fileDesc("Cidkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX3NlbGYucHJvdG8SH3BlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEi/gQKEkZlZGVyYXRpb25TZWxmVmlldxIuChJwcmVmZXJyZWRfdXNlcm5hbWUYAyABKAlSEnByZWZlcnJlZF91c2VybmFtZRIqChBmZWRlcmF0ZWRfaGFuZGxlGAQgASgJUhBmZWRlcmF0ZWRfaGFuZGxlEjIKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAUgASgJUhRob21lX3N0YXRpb25fcGVlcl9pZBIwChNob21lX3N0YXRpb25fZG9tYWluGAYgASgJUhNob21lX3N0YXRpb25fZG9tYWluEkkKCnZpc2liaWxpdHkYByABKA4yNS5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkZlZGVyYXRpb25WaXNpYmlsaXR5EioKEHZpc2liaWxpdHlfbGFiZWwYCCABKAlSEHZpc2liaWxpdHlfbGFiZWwSIAoLbG9jYXRvcl9zZXEYCSABKARSC2xvY2F0b3Jfc2VxEg4KBm9yaWdpbhgKIAEoCRIuChJpbmJveF9yZWxheV9tb3VudHMYCyADKAlSEmluYm94X3JlbGF5X21vdW50cxJkChJqb2luZWRfZmVkZXJhdGlvbnMYDCADKAsyNC5wZWVyc190b3VjaC5tb2RlbC5mZWRlcmF0aW9uLnYxLkpvaW5lZEZlZGVyYXRpb25SZWZSEmpvaW5lZF9mZWRlcmF0aW9ucxJCCglhY3Rvcl9yZWYYDSABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZlIJYWN0b3JfcmVmSgQIARACSgQIAhADUghhY3Rvcl9pZFINYWN0b3JfaWRfdWludCKPAQoTSm9pbmVkRmVkZXJhdGlvblJlZhIkCg1mZWRlcmF0aW9uX2lkGAEgASgJUg1mZWRlcmF0aW9uX2lkEigKD2ZlZGVyYXRpb25fbmFtZRgCIAEoCVIPZmVkZXJhdGlvbl9uYW1lEhgKB215X3JvbGUYAyABKAlSB215X3JvbGUSDgoGc3RhdHVzGAQgASgJIjEKG0ZlZGVyYXRpb25WaXNpYmlsaXR5UmVxdWVzdBISCgp2aXNpYmlsaXR5GAEgASgJKqcBChRGZWRlcmF0aW9uVmlzaWJpbGl0eRIlCiFGRURFUkFUSU9OX1ZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIgChxGRURFUkFUSU9OX1ZJU0lCSUxJVFlfSElEREVOEAESIwofRkVERVJBVElPTl9WSVNJQklMSVRZX0JZX0hBTkRMRRACEiEKHUZFREVSQVRJT05fVklTSUJJTElUWV9JTkRFWEVEEANCTFpKZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvZmVkZXJhdGlvbi9hcGkvcGI7cGJiBnByb3RvMw", [file_domain_actor_actor]);
 
 /**
  * FederationSelfView is the Desktop-facing snapshot of an actor's
@@ -18,25 +20,10 @@ export const file_domain_federation_federation_self: GenFile = /*@__PURE__*/
  * post-mutation reply of PUT /actor/federation/visibility, so a UI
  * can render the new state without a follow-up GET.
  *
- * `actor_id` is a string (decimal) because uint64 is not safely
- * representable in JavaScript number. The companion `actor_id_uint`
- * field carries the raw uint64 for proto consumers (Rust station
- * gateway, future mobile clients) that prefer not to re-parse the
- * decimal — both are populated identically and never disagree.
  *
  * @generated from message peers_touch.model.federation.v1.FederationSelfView
  */
 export type FederationSelfView = Message<"peers_touch.model.federation.v1.FederationSelfView"> & {
-  /**
-   * @generated from field: string actor_id = 1 [json_name = "actor_id"];
-   */
-  actorId: string;
-
-  /**
-   * @generated from field: uint64 actor_id_uint = 2 [json_name = "actor_id_uint"];
-   */
-  actorIdUint: bigint;
-
   /**
    * Local handle without the "@user@host" suffix.
    *
@@ -116,6 +103,11 @@ export type FederationSelfView = Message<"peers_touch.model.federation.v1.Federa
    * @generated from field: repeated peers_touch.model.federation.v1.JoinedFederationRef joined_federations = 12 [json_name = "joined_federations"];
    */
   joinedFederations: JoinedFederationRef[];
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef actor_ref = 13 [json_name = "actor_ref"];
+   */
+  actorRef?: ActorRef | undefined;
 };
 
 /**

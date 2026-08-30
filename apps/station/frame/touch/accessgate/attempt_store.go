@@ -3,12 +3,13 @@ package accessgate
 import (
 	"context"
 	"errors"
-	"strconv"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	pb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"gorm.io/gorm"
 )
 
 // Attempt status values. The lifecycle is pending -> action_required ->
@@ -30,23 +31,32 @@ var errAttemptNotFound = errors.New("access attempt expired or not found")
 
 // createAttempt persists a fresh attempt row. The caller has already minted the
 // attempt ID and resolved any session-bound actor.
-func createAttempt(ctx context.Context, attempt *Attempt, req *pb.StartAccessAttemptRequest) error {
+func createAttempt(
+	ctx context.Context,
+	attempt *Attempt,
+	req *pb.StartAccessAttemptRequest,
+	decision *pb.AccessDecision,
+) error {
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
 		return err
 	}
 
 	row := &dbmodel.AccessAttempt{
-		ID:         attempt.ID,
-		Status:     attemptStatusPending,
-		SessionID:  attempt.SessionID,
-		StationURL: req.GetStationUrl(),
-		ExpiresAt:  attempt.ExpiresAt,
+		ID:               attempt.ID,
+		Status:           attemptStatusForDecision(decision.GetState()),
+		SessionID:        attempt.SessionID,
+		StationPeerID:    attempt.StationPeerID,
+		StationURL:       req.GetStationUrl(),
+		CurrentGateID:    decision.GetCurrentGateId(),
+		DecisionRevision: 1,
+		ExpiresAt:        attempt.ExpiresAt,
 	}
 	if attempt.Actor != nil {
-		row.ActorID = attempt.Actor.GetActorId()
-		row.ActorUsername = attempt.Actor.GetUsername()
-		row.ActorEmail = attempt.Actor.GetEmail()
+		row.ActorPTID = attempt.Actor.GetPtid()
+		row.ActorKind = int32(attempt.Actor.GetKind())
+		row.ActorUsername = attempt.ActorUsername
+		row.ActorEmail = attempt.ActorEmail
 	}
 	if client := req.GetClient(); client != nil {
 		row.Platform = client.GetPlatform()
@@ -96,18 +106,32 @@ func saveAttemptDecision(ctx context.Context, attempt *Attempt, decision *pb.Acc
 	}
 
 	updates := map[string]any{
-		"status":          attemptStatusForDecision(decision.GetState()),
-		"current_gate_id": decision.GetCurrentGateId(),
-		"session_id":      attempt.SessionID,
+		"status":            attemptStatusForDecision(decision.GetState()),
+		"current_gate_id":   decision.GetCurrentGateId(),
+		"session_id":        attempt.SessionID,
+		"decision_revision": gorm.Expr("decision_revision + 1"),
 	}
 	if attempt.Actor != nil {
-		updates["actor_id"] = attempt.Actor.GetActorId()
-		updates["actor_username"] = attempt.Actor.GetUsername()
-		updates["actor_email"] = attempt.Actor.GetEmail()
+		updates["actor_ptid"] = attempt.Actor.GetPtid()
+		updates["actor_kind"] = int32(attempt.Actor.GetKind())
+		updates["actor_username"] = attempt.ActorUsername
+		updates["actor_email"] = attempt.ActorEmail
 	}
 
-	return rds.WithContext(ctx).Model(&dbmodel.AccessAttempt{}).
-		Where("id = ?", attempt.ID).Updates(updates).Error
+	result := rds.WithContext(ctx).Model(&dbmodel.AccessAttempt{}).
+		Where(
+			"id = ? AND status NOT IN ?",
+			attempt.ID,
+			[]string{attemptStatusCancelled, attemptStatusExpired},
+		).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errAttemptNotFound
+	}
+	return nil
 }
 
 // cancelAttempt moves a live attempt to the cancelled terminal state. It returns
@@ -145,18 +169,22 @@ func markAttemptInvitePassed(ctx context.Context, id string) error {
 
 func attemptFromRow(row *dbmodel.AccessAttempt) *Attempt {
 	attempt := &Attempt{
-		ID:           row.ID,
-		SessionID:    row.SessionID,
-		InvitePassed: row.InvitePassed,
-		CreatedAt:    row.CreatedAt,
-		ExpiresAt:    row.ExpiresAt,
+		ID:               row.ID,
+		SessionID:        row.SessionID,
+		StationPeerID:    row.StationPeerID,
+		ActorUsername:    row.ActorUsername,
+		ActorEmail:       row.ActorEmail,
+		InvitePassed:     row.InvitePassed,
+		CurrentGateID:    row.CurrentGateID,
+		DecisionRevision: row.DecisionRevision,
+		Status:           row.Status,
+		CreatedAt:        row.CreatedAt,
+		ExpiresAt:        row.ExpiresAt,
 	}
-	if row.ActorID > 0 {
-		attempt.Actor = &pb.AccessGateActorRef{
-			Id:       strconv.FormatInt(row.ActorID, 10),
-			ActorId:  row.ActorID,
-			Username: row.ActorUsername,
-			Email:    row.ActorEmail,
+	if row.ActorPTID != "" {
+		attempt.Actor = &actormodel.ActorRef{
+			Ptid: row.ActorPTID,
+			Kind: actormodel.ActorKind(row.ActorKind),
 		}
 	}
 	return attempt

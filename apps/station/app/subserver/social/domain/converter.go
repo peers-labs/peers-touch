@@ -43,7 +43,7 @@ func NewPostConverter() *PostConverter {
 // over, so the column survives a future fill-in without a schema change.
 func (c *PostConverter) CreateRequestToDomain(
 	req *model.CreatePostRequest,
-	authorID uint64,
+	authorPTID string,
 	mentions []*model.Mention,
 ) (*Post, error) {
 	if req == nil {
@@ -71,7 +71,7 @@ func (c *PostConverter) CreateRequestToDomain(
 	}
 
 	return &Post{
-		AuthorID:        authorID,
+		AuthorPTID:      authorPTID,
 		Type:            req.Type,
 		Audience:        req.Audience,
 		TextBody:        textBody,
@@ -211,7 +211,6 @@ func (c *PostConverter) DomainToPublicDB(p *Post) (*db.SocialPublicPost, error) 
 	}
 	return &db.SocialPublicPost{
 		ID:                 p.ID,
-		AuthorID:           p.AuthorID,
 		Type:               p.Type.String(),
 		AudienceKind:       model.Audience_PUBLIC.String(),
 		TextBody:           p.TextBody,
@@ -239,7 +238,6 @@ func (c *PostConverter) DomainToPrivateDB(p *Post) (*db.SocialPrivatePost, []db.
 	a := p.Audience
 	row := &db.SocialPrivatePost{
 		ID:                       p.ID,
-		AuthorID:                 p.AuthorID,
 		Type:                     p.Type.String(),
 		AudienceKind:             a.Kind.String(),
 		AudienceTargetID:         a.TargetId,
@@ -267,11 +265,11 @@ func (c *PostConverter) DomainToPrivateDB(p *Post) (*db.SocialPrivatePost, []db.
 		// PostID is filled in by the repo after BeforeCreate sets it on
 		// the parent row (the application layer wraps the two writes in
 		// a single transaction so PostID is known before grants insert).
-		grants = make([]db.SocialPrivateAudienceGrant, 0, len(a.ActorDids))
-		for _, did := range a.ActorDids {
+		grants = make([]db.SocialPrivateAudienceGrant, 0, len(a.ActorPtids))
+		for _, did := range a.ActorPtids {
 			grants = append(grants, db.SocialPrivateAudienceGrant{
-				ActorDID: did,
-				Role:     role,
+				ActorPtid: did,
+				Role:      role,
 			})
 		}
 	}
@@ -287,7 +285,6 @@ func (c *PostConverter) PublicDBToDomain(row *db.SocialPublicPost) *Post {
 	}
 	return &Post{
 		ID:                 row.ID,
-		AuthorID:           row.AuthorID,
 		Type:               parsePostType(row.Type),
 		Audience:           &model.Audience{Kind: model.Audience_PUBLIC},
 		TextBody:           row.TextBody,
@@ -321,14 +318,13 @@ func (c *PostConverter) PrivateDBToDomain(row *db.SocialPrivatePost, grants []db
 	}
 	a.KeyEnvelopes = decodeAudienceKeyEnvelopes(row.AudienceKeyEnvelopesJSON)
 	if len(grants) > 0 {
-		a.ActorDids = make([]string, 0, len(grants))
+		a.ActorPtids = make([]string, 0, len(grants))
 		for _, g := range grants {
-			a.ActorDids = append(a.ActorDids, g.ActorDID)
+			a.ActorPtids = append(a.ActorPtids, g.ActorPtid)
 		}
 	}
 	return &Post{
 		ID:                 row.ID,
-		AuthorID:           row.AuthorID,
 		Type:               parsePostType(row.Type),
 		Audience:           a,
 		TextBody:           row.TextBody,
@@ -392,13 +388,13 @@ func (c *PostConverter) DomainToProto(p *Post) (*model.Post, error) {
 		return nil, nil
 	}
 	out := &model.Post{
-		Id:        formatID(p.ID),
-		AuthorId:  formatID(p.AuthorID),
-		Type:      p.Type,
-		Audience:  p.Audience,
-		IsDeleted: p.IsDeleted(),
-		CreatedAt: timestamppb.New(p.CreatedAt),
-		UpdatedAt: timestamppb.New(p.UpdatedAt),
+		Id:         formatID(p.ID),
+		AuthorPtid: p.AuthorPTID,
+		Type:       p.Type,
+		Audience:   p.Audience,
+		IsDeleted:  p.IsDeleted(),
+		CreatedAt:  timestamppb.New(p.CreatedAt),
+		UpdatedAt:  timestamppb.New(p.UpdatedAt),
 		Stats: &model.PostStats{
 			CommentsCount: p.CommentsCount,
 			ViewsCount:    p.ViewsCount,
@@ -548,7 +544,8 @@ func newVideoAttachment(cid string) *model.VideoAttachment {
 // post id the caller already validated existed and was readable.
 func (c *PostConverter) CreateCommentRequestToDomain(
 	req *model.CreateCommentRequest,
-	authorID, parentPostID uint64,
+	authorPTID string,
+	parentPostID uint64,
 	postClass PostClass,
 ) (*Comment, error) {
 	if req == nil {
@@ -564,7 +561,7 @@ func (c *PostConverter) CreateCommentRequestToDomain(
 	return &Comment{
 		PostID:          parentPostID,
 		PostClass:       postClass,
-		AuthorID:        authorID,
+		AuthorPTID:      authorPTID,
 		ParentCommentID: parentCommentID,
 		TextBody:        req.Content,
 	}, nil
@@ -579,7 +576,6 @@ func (c *PostConverter) CommentToDB(d *Comment) *db.SocialComment {
 		ID:        d.ID,
 		PostID:    d.PostID,
 		PostClass: string(d.PostClass),
-		AuthorID:  d.AuthorID,
 		TextBody:  d.TextBody,
 	}
 	if d.ParentCommentID != 0 {
@@ -602,7 +598,6 @@ func (c *PostConverter) CommentDBToDomain(row *db.SocialComment) *Comment {
 		ID:           row.ID,
 		PostID:       row.PostID,
 		PostClass:    PostClass(row.PostClass),
-		AuthorID:     row.AuthorID,
 		TextBody:     row.TextBody,
 		MentionsJSON: row.MentionsJSON,
 		EditedAt:     row.EditedAt,
@@ -624,13 +619,13 @@ func (c *PostConverter) CommentToProto(d *Comment) *model.Comment {
 		return nil
 	}
 	out := &model.Comment{
-		Id:        formatID(d.ID),
-		PostId:    formatID(d.PostID),
-		AuthorId:  formatID(d.AuthorID),
-		Content:   d.TextBody,
-		IsDeleted: d.DeletedAt != nil,
-		CreatedAt: timestamppb.New(d.CreatedAt),
-		UpdatedAt: timestamppb.New(d.UpdatedAt),
+		Id:         formatID(d.ID),
+		PostId:     formatID(d.PostID),
+		AuthorPtid: d.AuthorPTID,
+		Content:    d.TextBody,
+		IsDeleted:  d.DeletedAt != nil,
+		CreatedAt:  timestamppb.New(d.CreatedAt),
+		UpdatedAt:  timestamppb.New(d.UpdatedAt),
 	}
 	if d.ParentCommentID != 0 {
 		out.ReplyToCommentId = formatID(d.ParentCommentID)
@@ -666,7 +661,7 @@ func (c *PostConverter) CircleToProto(d *Circle) *model.Circle {
 	}
 	return &model.Circle{
 		Id:          d.ID,
-		OwnerId:     d.OwnerID,
+		OwnerPtid:   d.OwnerPTID,
 		Name:        d.Name,
 		Description: d.Description,
 		MemberCount: d.MemberCount,
@@ -681,7 +676,6 @@ func (c *PostConverter) CircleFromDB(row *db.SocialCircle) *Circle {
 	}
 	return &Circle{
 		ID:          row.ID,
-		OwnerID:     row.OwnerID,
 		Name:        row.Name,
 		Description: row.Description,
 		MemberCount: row.MemberCount,
@@ -696,7 +690,6 @@ func (c *PostConverter) CircleToDB(d *Circle) *db.SocialCircle {
 	}
 	return &db.SocialCircle{
 		ID:          d.ID,
-		OwnerID:     d.OwnerID,
 		Name:        d.Name,
 		Description: d.Description,
 		MemberCount: d.MemberCount,
@@ -708,9 +701,9 @@ func (c *PostConverter) CircleMemberToProto(d *CircleMember) *model.CircleMember
 		return nil
 	}
 	return &model.CircleMember{
-		CircleId: d.CircleID,
-		ActorDid: d.ActorDID,
-		AddedAt:  timestamppb.New(d.AddedAt),
+		CircleId:  d.CircleID,
+		ActorPtid: d.ActorPTID,
+		AddedAt:   timestamppb.New(d.AddedAt),
 	}
 }
 

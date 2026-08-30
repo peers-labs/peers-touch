@@ -183,24 +183,21 @@ pub fn app_file_path(
     Ok(path)
 }
 
-pub fn resolve_user_scope(actor_id: Option<&str>) -> String {
-    match actor_id {
-        Some(id) if !id.trim().is_empty() => sanitize_segment(id),
-        _ => "__default__".to_string(),
-    }
+pub fn resolve_user_scope(actor_ptid: &str) -> String {
+    sanitize_storage_segment(actor_ptid.trim())
 }
 
 pub fn resolve_database_path(
     app_name: &str,
     domain: &str,
     profile: &str,
-    actor_id: Option<&str>,
+    actor_ptid: &str,
 ) -> Result<PathBuf, StorageError> {
-    let user_scope = resolve_user_scope(actor_id);
+    let user_scope = resolve_user_scope(actor_ptid);
     let file_name = format!(
         "{}.{}.db",
-        sanitize_segment(domain),
-        sanitize_segment(profile)
+        sanitize_storage_segment(domain),
+        sanitize_storage_segment(profile)
     );
     app_file_path(
         app_name,
@@ -217,7 +214,7 @@ pub fn open_database(
         &spec.app_name,
         &spec.domain,
         &spec.profile,
-        Some(spec.user_scope.as_str()),
+        spec.user_scope.as_str(),
     )?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| StorageError::WriteFailed(error.to_string()))?;
@@ -318,7 +315,7 @@ pub fn rotate_database_key(
     Ok(rotated.key_version)
 }
 
-fn sanitize_segment(input: &str) -> String {
+pub fn sanitize_storage_segment(input: &str) -> String {
     let trimmed = input.trim();
     let mut out = String::with_capacity(trimmed.len());
     for ch in trimmed.chars() {

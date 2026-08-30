@@ -302,15 +302,15 @@ export async function socialSyncMomentsProjection(options?: {
 }
 
 export async function socialListByAuthor(
-  userId: string,
+  authorPtid: string,
   cursor?: string,
   limit?: number,
 ): Promise<ListPostsResponse> {
   return invokeRustProto<
-    { user_id: string; cursor?: string; limit?: number },
+    { author_ptid: string; cursor?: string; limit?: number },
     ListPostsResponse
   >('social_list_by_author', ListPostsResponseSchema, {
-    user_id: userId,
+    author_ptid: authorPtid,
     cursor,
     limit,
   });
@@ -394,59 +394,59 @@ export async function socialDeleteComment(commentId: string): Promise<boolean> {
 // Relationships
 // ---------------------------------------------------------------------------
 
-export async function socialFollow(targetUserId: string): Promise<FollowResponse> {
-  return invokeRustProto<{ target_user_id: string }, FollowResponse>(
+export async function socialFollow(targetActorPtid: string): Promise<FollowResponse> {
+  return invokeRustProto<{ target_actor_ptid: string }, FollowResponse>(
     'social_follow',
     FollowResponseSchema,
-    { target_user_id: targetUserId },
+    { target_actor_ptid: targetActorPtid },
   );
 }
 
-export async function socialUnfollow(targetUserId: string): Promise<UnfollowResponse> {
-  return invokeRustProto<{ target_user_id: string }, UnfollowResponse>(
+export async function socialUnfollow(targetActorPtid: string): Promise<UnfollowResponse> {
+  return invokeRustProto<{ target_actor_ptid: string }, UnfollowResponse>(
     'social_unfollow',
     UnfollowResponseSchema,
-    { target_user_id: targetUserId },
+    { target_actor_ptid: targetActorPtid },
   );
 }
 
 export async function socialGetFollowers(
-  userId?: string,
+  actorPtid?: string,
   cursor?: string,
   limit?: number,
 ): Promise<GetFollowersResponse> {
   return invokeRustProto<
-    { user_id?: string; cursor?: string; limit?: number },
+    { actor_ptid?: string; cursor?: string; limit?: number },
     GetFollowersResponse
   >('social_get_followers', GetFollowersResponseSchema, {
-    user_id: userId,
+    actor_ptid: actorPtid,
     cursor,
     limit,
   });
 }
 
 export async function socialGetFollowing(
-  userId?: string,
+  actorPtid?: string,
   cursor?: string,
   limit?: number,
 ): Promise<GetFollowingResponse> {
   return invokeRustProto<
-    { user_id?: string; cursor?: string; limit?: number },
+    { actor_ptid?: string; cursor?: string; limit?: number },
     GetFollowingResponse
   >('social_get_following', GetFollowingResponseSchema, {
-    user_id: userId,
+    actor_ptid: actorPtid,
     cursor,
     limit,
   });
 }
 
 export async function socialGetRelationship(
-  targetUserId: string,
+  targetActorPtid: string,
 ): Promise<GetRelationshipResponse> {
-  return invokeRustProto<{ target_user_id: string }, GetRelationshipResponse>(
+  return invokeRustProto<{ target_actor_ptid: string }, GetRelationshipResponse>(
     'social_get_relationship',
     GetRelationshipResponseSchema,
-    { target_user_id: targetUserId },
+    { target_actor_ptid: targetActorPtid },
   );
 }
 
@@ -541,15 +541,15 @@ export async function socialStationModerationList(
 export async function socialCircleCreate(
   name: string,
   description?: string,
-  memberDids?: string[],
+  memberPtids?: string[],
 ): Promise<CreateCircleResponse> {
   return invokeRustProto<
-    { name: string; description?: string; member_dids?: string[] },
+    { name: string; description?: string; member_ptids?: string[] },
     CreateCircleResponse
   >('social_circle_create', CreateCircleResponseSchema, {
     name,
     description,
-    member_dids: memberDids,
+    member_ptids: memberPtids,
   });
 }
 
@@ -586,27 +586,27 @@ export async function socialCircleListMine(): Promise<ListMyCirclesResponse> {
 
 export async function socialCircleAddMembers(
   circleId: string,
-  memberDids: string[],
+  memberPtids: string[],
 ): Promise<AddCircleMemberResponse> {
   return invokeRustProto<
-    { circle_id: string; member_dids: string[] },
+    { circle_id: string; member_ptids: string[] },
     AddCircleMemberResponse
   >('social_circle_add_members', AddCircleMemberResponseSchema, {
     circle_id: circleId,
-    member_dids: memberDids,
+    member_ptids: memberPtids,
   });
 }
 
 export async function socialCircleRemoveMembers(
   circleId: string,
-  memberDids: string[],
+  memberPtids: string[],
 ): Promise<RemoveCircleMemberResponse> {
   return invokeRustProto<
-    { circle_id: string; member_dids: string[] },
+    { circle_id: string; member_ptids: string[] },
     RemoveCircleMemberResponse
   >('social_circle_remove_members', RemoveCircleMemberResponseSchema, {
     circle_id: circleId,
-    member_dids: memberDids,
+    member_ptids: memberPtids,
   });
 }
 

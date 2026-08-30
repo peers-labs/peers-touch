@@ -152,7 +152,7 @@ func (f *fakeOSSRepo) CreateBucket(_ context.Context, in infrastructure.BucketCr
 		return f.createReturn, nil
 	}
 	return &domain.OSSBucketSummary{
-		ID: "bucket-new", Name: in.Name, OwnerActorID: in.OwnerActorID,
+		ID: "bucket-new", Name: in.Name, OwnerPTID: in.OwnerPTID,
 		Kind: "user", DefaultVisibility: in.DefaultVisibility,
 		QuotaBytes: in.QuotaBytes, TTLDays: 0,
 	}, nil
@@ -169,7 +169,7 @@ func (f *fakeOSSRepo) UpdateBucket(_ context.Context, id string, in infrastructu
 	if f.updateReturn != nil {
 		return f.updateReturn, nil
 	}
-	return &domain.OSSBucketSummary{ID: id, Name: "x", OwnerActorID: "owner"}, nil
+	return &domain.OSSBucketSummary{ID: id, Name: "x", OwnerPTID: "owner"}, nil
 }
 
 func (f *fakeOSSRepo) DeleteBucket(_ context.Context, id string, force bool) error {
@@ -381,10 +381,10 @@ func TestOSSService_CreateBucket_ValidationErrors(t *testing.T) {
 		req  domain.OSSBucketCreateRequest
 	}{
 		{"missing owner", domain.OSSBucketCreateRequest{Name: "x"}},
-		{"missing name", domain.OSSBucketCreateRequest{OwnerActorID: "actor"}},
-		{"unknown visibility", domain.OSSBucketCreateRequest{OwnerActorID: "a", Name: "x", DefaultVisibility: "world"}},
-		{"negative quota", domain.OSSBucketCreateRequest{OwnerActorID: "a", Name: "x", QuotaBytes: -1}},
-		{"negative ttl", domain.OSSBucketCreateRequest{OwnerActorID: "a", Name: "x", TTLDays: -7}},
+		{"missing name", domain.OSSBucketCreateRequest{OwnerPTID: "actor"}},
+		{"unknown visibility", domain.OSSBucketCreateRequest{OwnerPTID: "a", Name: "x", DefaultVisibility: "world"}},
+		{"negative quota", domain.OSSBucketCreateRequest{OwnerPTID: "a", Name: "x", QuotaBytes: -1}},
+		{"negative ttl", domain.OSSBucketCreateRequest{OwnerPTID: "a", Name: "x", TTLDays: -7}},
 	}
 	for _, c := range cases {
 		if _, err := svc.CreateBucket(ctx, c.req); err == nil {
@@ -398,8 +398,8 @@ func TestOSSService_CreateBucket_DefaultsToPrivateVisibility(t *testing.T) {
 	svc := NewOSSService(repo)
 
 	if _, err := svc.CreateBucket(context.Background(), domain.OSSBucketCreateRequest{
-		OwnerActorID: "actor-a",
-		Name:         "photos",
+		OwnerPTID: "actor-a",
+		Name:      "photos",
 	}); err != nil {
 		t.Fatalf("CreateBucket: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestOSSService_CreateBucket_PropagatesRepoConflict(t *testing.T) {
 	svc := NewOSSService(repo)
 
 	_, err := svc.CreateBucket(context.Background(), domain.OSSBucketCreateRequest{
-		OwnerActorID: "actor-a", Name: "photos",
+		OwnerPTID: "actor-a", Name: "photos",
 	})
 	if !errors.Is(err, infrastructure.ErrBucketExists) {
 		t.Fatalf("want ErrBucketExists, got %v", err)
@@ -812,11 +812,11 @@ func newAdminUploadFixture(t *testing.T, bucket domain.OSSBucketSummary, fileMet
 	repo := &fakeOSSRepo{
 		buckets: []domain.OSSBucketSummary{bucket},
 		adminObjects: []domain.OSSObjectAdminDetail{{
-			ID:           fileMeta.ID,
-			Key:          fileMeta.Key,
-			BucketID:     bucket.ID,
-			OwnerActorID: bucket.OwnerActorID,
-			Visibility:   bucket.DefaultVisibility,
+			ID:         fileMeta.ID,
+			Key:        fileMeta.Key,
+			BucketID:   bucket.ID,
+			OwnerPTID:  bucket.OwnerPTID,
+			Visibility: bucket.DefaultVisibility,
 		}},
 	}
 	svc := NewOSSService(repo)
@@ -859,16 +859,16 @@ func TestOSSService_AdminUpload_RejectsMissingBucket(t *testing.T) {
 }
 
 func TestOSSService_AdminUpload_RejectsBucketWithoutOwner(t *testing.T) {
-	bucket := domain.OSSBucketSummary{ID: "sys", Name: "chat", OwnerActorID: "", DefaultVisibility: "chat"}
+	bucket := domain.OSSBucketSummary{ID: "sys", Name: "chat", OwnerPTID: "", DefaultVisibility: "chat"}
 	svc, _, _ := newAdminUploadFixture(t, bucket, &ossmodel.FileMeta{ID: "f1"})
 	_, err := svc.AdminUploadObject(context.Background(), adminUploadInput("sys"))
-	if err == nil || !contains(err.Error(), "owner_actor_id") {
-		t.Fatalf("expected owner_actor_id rejection, got %v", err)
+	if err == nil || !contains(err.Error(), "owner_ptid") {
+		t.Fatalf("expected owner_ptid rejection, got %v", err)
 	}
 }
 
 func TestOSSService_AdminUpload_RejectsUnknownVisibility(t *testing.T) {
-	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerActorID: "actor-A", DefaultVisibility: "private"}
+	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerPTID: "actor-A", DefaultVisibility: "private"}
 	svc, fs, _ := newAdminUploadFixture(t, bucket, &ossmodel.FileMeta{ID: "f1"})
 
 	in := adminUploadInput("u1")
@@ -877,13 +877,13 @@ func TestOSSService_AdminUpload_RejectsUnknownVisibility(t *testing.T) {
 	if err == nil || !contains(err.Error(), "visibility") {
 		t.Fatalf("expected visibility rejection, got %v", err)
 	}
-	if fs.lastAttr.ActorID != "" {
+	if fs.lastAttr.ActorPTID != "" {
 		t.Errorf("file service should NOT be called when validation fails")
 	}
 }
 
 func TestOSSService_AdminUpload_DefaultsVisibilityFromBucket(t *testing.T) {
-	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerActorID: "actor-A", DefaultVisibility: "public"}
+	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerPTID: "actor-A", DefaultVisibility: "public"}
 	meta := &ossmodel.FileMeta{ID: "f1", Key: "cas/aa/bb"}
 	svc, fs, _ := newAdminUploadFixture(t, bucket, meta)
 
@@ -894,8 +894,8 @@ func TestOSSService_AdminUpload_DefaultsVisibilityFromBucket(t *testing.T) {
 	if row.ID != "f1" {
 		t.Errorf("ID: got %q want %q", row.ID, "f1")
 	}
-	if fs.lastAttr.ActorID != "actor-A" {
-		t.Errorf("ActorID: got %q want %q", fs.lastAttr.ActorID, "actor-A")
+	if fs.lastAttr.ActorPTID != "actor-A" {
+		t.Errorf("ActorPTID: got %q want %q", fs.lastAttr.ActorPTID, "actor-A")
 	}
 	if fs.lastAttr.BucketName != "attachments" {
 		t.Errorf("BucketName: got %q want %q", fs.lastAttr.BucketName, "attachments")
@@ -906,7 +906,7 @@ func TestOSSService_AdminUpload_DefaultsVisibilityFromBucket(t *testing.T) {
 }
 
 func TestOSSService_AdminUpload_HonorsExplicitVisibilityAndChatSession(t *testing.T) {
-	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerActorID: "actor-A", DefaultVisibility: "private"}
+	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerPTID: "actor-A", DefaultVisibility: "private"}
 	meta := &ossmodel.FileMeta{ID: "f1", Key: "cas/aa/bb"}
 	svc, fs, _ := newAdminUploadFixture(t, bucket, meta)
 
@@ -925,7 +925,7 @@ func TestOSSService_AdminUpload_HonorsExplicitVisibilityAndChatSession(t *testin
 }
 
 func TestOSSService_AdminUpload_HonorsFilenameOverride(t *testing.T) {
-	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerActorID: "actor-A", DefaultVisibility: "private"}
+	bucket := domain.OSSBucketSummary{ID: "u1", Name: "attachments", OwnerPTID: "actor-A", DefaultVisibility: "private"}
 	meta := &ossmodel.FileMeta{ID: "f1", Key: "cas/aa/bb"}
 	svc, fs, _ := newAdminUploadFixture(t, bucket, meta)
 
@@ -934,8 +934,8 @@ func TestOSSService_AdminUpload_HonorsFilenameOverride(t *testing.T) {
 	if _, err := svc.AdminUploadObject(context.Background(), in); err != nil {
 		t.Fatalf("AdminUploadObject: %v", err)
 	}
-	if fs.lastAttr.ActorID != "actor-A" {
-		t.Errorf("ActorID: got %q want %q", fs.lastAttr.ActorID, "actor-A")
+	if fs.lastAttr.ActorPTID != "actor-A" {
+		t.Errorf("ActorPTID: got %q want %q", fs.lastAttr.ActorPTID, "actor-A")
 	}
 	// Header rewrite happens inside the service; we cannot inspect
 	// it here without exporting the call, but we can verify that

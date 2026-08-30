@@ -10,13 +10,13 @@ import "sync"
 // cycle). The dependency direction therefore stays one-way:
 // friend_chat → events.
 type SignalAuthorizer interface {
-	// CanSignal reports whether senderActorID is permitted to route a
-	// call signal to recipientActorID — i.e. the two actors share a
+	// CanSignal reports whether senderPTID is permitted to route a
+	// call signal to recipientPTID — i.e. the two actors share a
 	// friend chat session and neither has blocked the other. This
 	// mirrors the messaging authorization gate (see friend_chat
 	// SendMessageByActor) so signaling cannot be used to probe or
 	// spam non-friends.
-	CanSignal(senderActorID, recipientActorID string) (bool, error)
+	CanSignal(senderPTID, recipientPTID string) (bool, error)
 }
 
 var (

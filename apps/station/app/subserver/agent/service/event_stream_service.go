@@ -85,7 +85,7 @@ func (s *EventStreamService) Subscribe(ctx context.Context, agentID string) *Eve
 	return stream
 }
 
-func (s *EventStreamService) ReplayTaskEvents(ctx context.Context, actorID, agentID, taskID string, afterEventSeq int64) ([]domain.DomainEvent, error) {
+func (s *EventStreamService) ReplayTaskEvents(ctx context.Context, actorPTID, agentID, taskID string, afterEventSeq int64) ([]domain.DomainEvent, error) {
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
 		return nil, nil
@@ -94,17 +94,17 @@ func (s *EventStreamService) ReplayTaskEvents(ctx context.Context, actorID, agen
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to open agent db", err)
 	}
-	if strings.TrimSpace(actorID) != "" {
-		// A task id may belong to a Canvas collaboration task (goal_owner_id) or
-		// a Chat root task (owner_actor_id). Accept ownership from either source.
+	if strings.TrimSpace(actorPTID) != "" {
+		// A task id may belong to a Canvas collaboration task (goal_owner_ptid) or
+		// a Chat root task (owner_actor_ptid). Accept ownership from either source.
 		var collab persistence.CollaborationTask
-		collabErr := db.WithContext(ctx).Where("id = ? AND goal_owner_id = ?", taskID, actorID).First(&collab).Error
+		collabErr := db.WithContext(ctx).Where("id = ? AND goal_owner_ptid = ?", taskID, actorPTID).First(&collab).Error
 		if collabErr != nil && collabErr != gorm.ErrRecordNotFound {
 			return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to get collaboration task", collabErr)
 		}
 		if collabErr == gorm.ErrRecordNotFound {
 			var chatTask persistence.TaskRun
-			chatErr := db.WithContext(ctx).Where("task_id = ? AND owner_actor_id = ?", taskID, actorID).First(&chatTask).Error
+			chatErr := db.WithContext(ctx).Where("task_id = ? AND owner_actor_ptid = ?", taskID, actorPTID).First(&chatTask).Error
 			if chatErr == gorm.ErrRecordNotFound {
 				return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "task not found", chatErr)
 			}
@@ -125,7 +125,7 @@ func (s *EventStreamService) ReplayTaskEvents(ctx context.Context, actorID, agen
 
 	events := make([]domain.DomainEvent, 0, len(records))
 	for i := range records {
-		event, ok := taskEventRecordToDomainEvent(&records[i], agentID)
+		event, ok := taskEventRecordToDomainEvent(&records[i], actorPTID, agentID)
 		if ok {
 			events = append(events, event)
 		}
@@ -187,7 +187,8 @@ func SerializeEvent(event domain.DomainEvent) []byte {
 		EventID    string            `json:"event_id"`
 		EventType  string            `json:"event_type"`
 		OccurredAt int64             `json:"occurred_at"`
-		ActorID    string            `json:"actor_id,omitempty"`
+		ActorPTID  string            `json:"actor_ptid,omitempty"`
+		AgentID    string            `json:"agent_id,omitempty"`
 		Payload    interface{}       `json:"payload"`
 		Metadata   map[string]string `json:"metadata,omitempty"`
 	}
@@ -196,7 +197,8 @@ func SerializeEvent(event domain.DomainEvent) []byte {
 		EventID:    event.EventID,
 		EventType:  event.EventType,
 		OccurredAt: event.OccurredAt.UnixMilli(),
-		ActorID:    event.ActorID,
+		ActorPTID:  event.ActorPTID,
+		AgentID:    event.AgentID,
 		Payload:    event.Payload,
 		Metadata:   event.Metadata,
 	}
@@ -205,7 +207,7 @@ func SerializeEvent(event domain.DomainEvent) []byte {
 	return data
 }
 
-func taskEventRecordToDomainEvent(record *persistence.TaskEvent, subscribedAgentID string) (domain.DomainEvent, bool) {
+func taskEventRecordToDomainEvent(record *persistence.TaskEvent, actorPTID, subscribedAgentID string) (domain.DomainEvent, bool) {
 	payload := map[string]interface{}{}
 	if strings.TrimSpace(record.Payload) != "" {
 		if err := json.Unmarshal([]byte(record.Payload), &payload); err != nil {
@@ -216,17 +218,17 @@ func taskEventRecordToDomainEvent(record *persistence.TaskEvent, subscribedAgent
 	if payloadAgentID != "" && subscribedAgentID != "" && payloadAgentID != subscribedAgentID {
 		return domain.DomainEvent{}, false
 	}
-	actorID := payloadAgentID
-	if actorID == "" {
-		actorID = subscribedAgentID
+	agentID := payloadAgentID
+	if agentID == "" {
+		agentID = subscribedAgentID
 	}
 	metadata := map[string]string{
 		"task_id":   record.TaskID,
 		"event_id":  record.ID,
 		"event_seq": fmt.Sprintf("%d", record.EventSeq),
 	}
-	if actorID != "" {
-		metadata["agent_id"] = actorID
+	if agentID != "" {
+		metadata["agent_id"] = agentID
 	}
 	if strings.TrimSpace(record.StepID) != "" {
 		metadata["node_id"] = record.StepID
@@ -235,7 +237,8 @@ func taskEventRecordToDomainEvent(record *persistence.TaskEvent, subscribedAgent
 		EventID:    record.ID,
 		EventType:  taskEventDomainType(record.EventType, payload),
 		OccurredAt: record.CreatedAt,
-		ActorID:    actorID,
+		ActorPTID:  strings.TrimSpace(actorPTID),
+		AgentID:    agentID,
 		Payload:    payload,
 		Metadata:   metadata,
 	}, true

@@ -16,7 +16,7 @@ fn ensure_admin(
     emit_audit(
         request_id,
         capability,
-        context.actor_id.as_deref(),
+        context.actor_ptid.as_deref(),
         "forbidden",
     );
     Err(AppResult::fail(
@@ -34,7 +34,7 @@ pub fn admin_health(context: AccessContext) -> AppResult<StubPayload> {
     emit_audit(
         &request_id,
         AdminCapability::Health,
-        context.actor_id.as_deref(),
+        context.actor_ptid.as_deref(),
         "ok",
     );
     AppResult::success(StubPayload {
@@ -55,7 +55,7 @@ pub fn admin_network_probe(
         emit_audit(
             &request_id,
             AdminCapability::NetworkProbe,
-            context.actor_id.as_deref(),
+            context.actor_ptid.as_deref(),
             "invalid_argument",
         );
         return AppResult::fail(
@@ -67,7 +67,7 @@ pub fn admin_network_probe(
     emit_audit(
         &request_id,
         AdminCapability::NetworkProbe,
-        context.actor_id.as_deref(),
+        context.actor_ptid.as_deref(),
         "ok",
     );
     AppResult::success(StubPayload {
@@ -88,7 +88,7 @@ pub fn admin_execute_action(
         emit_audit(
             &request_id,
             AdminCapability::ExecuteAction,
-            context.actor_id.as_deref(),
+            context.actor_ptid.as_deref(),
             "invalid_argument",
         );
         return AppResult::fail(
@@ -100,7 +100,7 @@ pub fn admin_execute_action(
     emit_audit(
         &request_id,
         AdminCapability::ExecuteAction,
-        context.actor_id.as_deref(),
+        context.actor_ptid.as_deref(),
         "ok",
     );
     AppResult::success(StubPayload {

@@ -14,8 +14,10 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 // ============================================================================
 
 message Post {
+  reserved "author_id";
+
   string id = 1;
-  string author_id = 2;
+  string author_ptid = 2;
   PostType type = 3;
   // Deprecated: kept for backward compatibility with existing service /
   // DB code. New publishing flow should populate `audience` (field 50)
@@ -342,7 +344,9 @@ message ListPostsResponse {
 }
 
 message PostFilter {
-  string author_id = 1;
+  reserved "author_id";
+
+  string author_ptid = 1;
   repeated PostVisibility visibility = 2;
   bool exclude_replies = 3;
   bool exclude_reposts = 4;
@@ -356,7 +360,7 @@ message GetTimelineRequest {
   TimelineType type = 1;
   string cursor = 2;
   int32 limit = 3;
-  string user_id = 4;
+  string actor_ptid = 4;
   // Optional sort strategy. Currently only meaningful for
   // TIMELINE_PUBLIC; all other timelines fix RECENT order.
   TimelineSort sort = 5;
@@ -410,7 +414,7 @@ message RelationshipReason {
   }
 
   Kind kind = 1;
-  string actor_id = 2;
+  string actor_ptid = 2;
   string circle_id = 3;
   string station_domain = 4;
 }
@@ -433,7 +437,7 @@ message BlockExplanation {
   }
 
   Kind kind = 1;
-  string actor_id = 2;
+  string actor_ptid = 2;
   string station_domain = 3;
 }
 
@@ -447,7 +451,7 @@ message StationModerationPolicy {
   string station_peer_id = 2;
   Kind kind = 3;
   string reason = 4;
-  string created_by_actor_id = 5;
+  string created_by_actor_ptid = 5;
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp updated_at = 7;
 }
@@ -486,10 +490,12 @@ message ListStationModerationPoliciesResponse {
 // timeline projection. PUBLIC Moments are intentionally excluded from
 // delivery rows and remain served by the public feed path.
 message MomentDelivery {
+  reserved "author_id";
+
   string id = 1;
   string viewer_id = 2;
   string post_id = 3;
-  string author_id = 4;
+  string author_ptid = 4;
   Audience.Kind audience_kind = 5;
   google.protobuf.Timestamp delivered_at = 6;
   google.protobuf.Timestamp revoked_at = 7;
@@ -586,17 +592,17 @@ message RepostResponse {
 //
 // Field semantics by Kind:
 //   PUBLIC         — visible to anyone (federated when ActivityPub lands).
-//                    target_id / actor_dids / base_kind: unused.
+//                    target_id / actor_ptids / base_kind: unused.
 //   FOLLOWERS      — visible to author's followers + author. unused: as PUBLIC.
 //   CIRCLE         — visible to members of `target_id` circle (publisher-owned).
 //                    target_id required.
 //   GROUP          — visible to members of `target_id` chat.Group.
 //                    target_id required.
 //   SELF           — author-only (private note). all others unused.
-//   CUSTOM_ALLOW   — visible only to `actor_dids`. allow_list, length>=1.
+//   CUSTOM_ALLOW   — visible only to `actor_ptids`. allow_list, length>=1.
 //                    base_kind: unused (the list IS the rule).
-//   CUSTOM_DENY    — visible per `base_kind` MINUS `actor_dids`. base_kind
-//                    MUST be PUBLIC or FOLLOWERS, actor_dids MUST be non-empty.
+//   CUSTOM_DENY    — visible per `base_kind` MINUS `actor_ptids`. base_kind
+//                    MUST be PUBLIC or FOLLOWERS, actor_ptids MUST be non-empty.
 message Audience {
   enum Kind {
     KIND_UNSPECIFIED = 0;
@@ -612,7 +618,7 @@ message Audience {
   // Required iff kind == CIRCLE or GROUP.
   uint64 target_id = 2;
   // Required iff kind == CUSTOM_ALLOW or CUSTOM_DENY.
-  repeated string actor_dids = 3;
+  repeated string actor_ptids = 3;
   // ONLY meaningful when kind == CUSTOM_DENY: the base set the deny list
   // is subtracted from. MUST be PUBLIC or FOLLOWERS. For all other Kinds
   // this field is silently ignored.
@@ -647,7 +653,7 @@ message ReactionSummary {
 // indices into the post body so JS / Java / Swift can splice without
 // re-parsing. `display` is the rendered handle (no leading `@`).
 message Mention {
-  string actor_id = 1;
+  string actor_ptid = 1;
   int32 offset = 2;
   int32 length = 3;
   string display = 4;

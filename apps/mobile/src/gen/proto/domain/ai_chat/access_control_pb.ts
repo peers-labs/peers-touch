@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/ai_chat/access_control.proto.
  */
 export const file_domain_ai_chat_access_control: GenFile = /*@__PURE__*/
-  fileDesc("CiNkb21haW4vYWlfY2hhdC9hY2Nlc3NfY29udHJvbC5wcm90bxIccGVlcnNfdG91Y2gubW9kZWwuYWlfY2hhdC52MSKOAQoNQWNjZXNzQ29udHJvbBIKCgJpZBgBIAEoCRIPCgd1c2VyX2lkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEhIKCm1vZGVsX25hbWUYBCABKAkSDwoHYWxsb3dlZBgFIAEoCBISCgpjcmVhdGVkX2F0GAYgASgDEhIKCnVwZGF0ZWRfYXQYByABKANCTVpLZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9haV9jaGF0L21vZGVsO21vZGVsYgZwcm90bzM");
+  fileDesc("CiNkb21haW4vYWlfY2hhdC9hY2Nlc3NfY29udHJvbC5wcm90bxIccGVlcnNfdG91Y2gubW9kZWwuYWlfY2hhdC52MSKRAQoNQWNjZXNzQ29udHJvbBIKCgJpZBgBIAEoCRISCgphY3Rvcl9wdGlkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEhIKCm1vZGVsX25hbWUYBCABKAkSDwoHYWxsb3dlZBgFIAEoCBISCgpjcmVhdGVkX2F0GAYgASgDEhIKCnVwZGF0ZWRfYXQYByABKANCTVpLZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9haV9jaGF0L21vZGVsO21vZGVsYgZwcm90bzM");
 
 /**
  * 访问控制
@@ -24,9 +24,9 @@ export type AccessControl = Message<"peers_touch.model.ai_chat.v1.AccessControl"
   id: string;
 
   /**
-   * @generated from field: string user_id = 2;
+   * @generated from field: string actor_ptid = 2;
    */
-  userId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string provider_id = 3;

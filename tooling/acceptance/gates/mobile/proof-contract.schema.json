@@ -1,0 +1,2062 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:peers-touch:mobile-native-oauth-proof-contract",
+  "title": "Mobile Native OAuth Proof Contract",
+  "description": "Unversioned E2-0 contract for redacted Mobile OAuth proof producer payloads.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/mobileOAuthFixtureLease"
+    },
+    {
+      "$ref": "#/$defs/negativeFixtureOperation"
+    },
+    {
+      "$ref": "#/$defs/negativeCallbackIntent"
+    },
+    {
+      "$ref": "#/$defs/stationOAuthProofSnapshot"
+    },
+    {
+      "$ref": "#/$defs/providerAccountLease"
+    },
+    {
+      "$ref": "#/$defs/providerIdentityAssertion"
+    },
+    {
+      "$ref": "#/$defs/physicalDeviceLease"
+    },
+    {
+      "$ref": "#/$defs/providerBrowserSessionLease"
+    },
+    {
+      "$ref": "#/$defs/mobileApplicationBuildAttestation"
+    },
+    {
+      "$ref": "#/$defs/mobileFreshInstallTrace"
+    },
+    {
+      "$ref": "#/$defs/mobileInstalledBuildIdentity"
+    },
+    {
+      "$ref": "#/$defs/mobileLeaseOutcome"
+    }
+  ],
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "positiveFence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "sha256Hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "workspaceDigest": {
+      "type": "string",
+      "pattern": "^(?:clean|sha256:[0-9a-f]{64})$"
+    },
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "workspaceId",
+        "gateId",
+        "runId",
+        "path",
+        "sha256",
+        "mediaType"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "acceptance-artifact-ref"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "path": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256Hex"
+        },
+        "mediaType": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "mobileOAuthFixtureLease": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "fixtureId",
+        "resourceKey",
+        "holderRunId",
+        "fenceToken",
+        "runId",
+        "gateId",
+        "serviceId",
+        "stationPeerId",
+        "serviceAttestation",
+        "authorization",
+        "allowedOperations",
+        "state",
+        "heartbeatAt",
+        "renewBefore",
+        "expiresAt",
+        "cleanupRegistered"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "mobile-oauth-fixture-lease"
+        },
+        "fixtureId": {
+          "const": "mobile-oauth-negative-fixture"
+        },
+        "resourceKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "holderRunId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "fenceToken": {
+          "$ref": "#/$defs/positiveFence"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "serviceId": {
+          "enum": [
+            "station-primary",
+            "station-secondary"
+          ]
+        },
+        "stationPeerId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "serviceAttestation": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "authorization": {
+          "type": "object",
+          "required": [
+            "destructiveResetApproved",
+            "deploymentLeaseMatched",
+            "disposableTargetVerified"
+          ],
+          "properties": {
+            "destructiveResetApproved": {
+              "const": true
+            },
+            "deploymentLeaseMatched": {
+              "const": true
+            },
+            "disposableTargetVerified": {
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "allowedOperations": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "prepare_following_gate"
+            },
+            {
+              "const": "expire_awaiting_attempt"
+            },
+            {
+              "const": "read_proof_snapshot"
+            },
+            {
+              "const": "cleanup_run"
+            }
+          ],
+          "items": false
+        },
+        "state": {
+          "const": "LEASED"
+        },
+        "heartbeatAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "renewBefore": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "quarantineReason": {
+          "type": "string"
+        },
+        "cleanupRegistered": {
+          "const": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "negativeFixtureOperation": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "operationId",
+        "inputDigest",
+        "resourceKey",
+        "holderRunId",
+        "fenceToken",
+        "runId",
+        "gateId",
+        "variantId",
+        "operation",
+        "target",
+        "precondition",
+        "result"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "mobile-oauth-fixture-operation"
+        },
+        "operationId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "inputDigest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "resourceKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "holderRunId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "fenceToken": {
+          "$ref": "#/$defs/positiveFence"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "variantId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "operation": {
+          "enum": [
+            "prepare_following_gate",
+            "expire_awaiting_attempt",
+            "read_proof_snapshot",
+            "cleanup_run"
+          ]
+        },
+        "target": {
+          "type": "object",
+          "required": [
+            "serviceId",
+            "oauthAttemptRef",
+            "accessAttemptRef",
+            "deviceAlias",
+            "lifecycleGeneration"
+          ],
+          "properties": {
+            "serviceId": {
+              "enum": [
+                "station-primary",
+                "station-secondary"
+              ]
+            },
+            "oauthAttemptRef": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "accessAttemptRef": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "deviceAlias": {
+              "enum": [
+                "alice-ios",
+                "bob-ios",
+                "alice-android",
+                "bob-android"
+              ]
+            },
+            "lifecycleGeneration": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "precondition": {
+          "type": "object",
+          "required": [
+            "oauthState",
+            "runOwned"
+          ],
+          "properties": {
+            "oauthState": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "runOwned": {
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "required": [
+            "journalState",
+            "preconditionMatched",
+            "affectedRows",
+            "before",
+            "after",
+            "postCleanup"
+          ],
+          "properties": {
+            "journalState": {
+              "const": "COMMITTED"
+            },
+            "preconditionMatched": {
+              "const": true
+            },
+            "affectedRows": {
+              "const": 1
+            },
+            "before": {
+              "$ref": "#/$defs/artifactRef"
+            },
+            "after": {
+              "$ref": "#/$defs/artifactRef"
+            },
+            "postCleanup": {
+              "$ref": "#/$defs/artifactRef"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "negativeCallbackIntent": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "runId",
+        "gateId",
+        "variantId",
+        "clientId",
+        "operation",
+        "requiredLeaseRefs",
+        "holderRunId",
+        "fenceTokens",
+        "callbackReplayHandle",
+        "replayMode",
+        "alternateServiceId",
+        "expectedFailure"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "mobile-oauth-negative-callback-intent"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "variantId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "clientId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "operation": {
+          "enum": [
+            "replay",
+            "provider_mismatch",
+            "station_mismatch"
+          ]
+        },
+        "requiredLeaseRefs": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "holderRunId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "fenceTokens": {
+          "type": "object",
+          "required": [
+            "physicalDevice",
+            "providerAccount",
+            "browserSession"
+          ],
+          "properties": {
+            "physicalDevice": {
+              "$ref": "#/$defs/positiveFence"
+            },
+            "providerAccount": {
+              "$ref": "#/$defs/positiveFence"
+            },
+            "browserSession": {
+              "$ref": "#/$defs/positiveFence"
+            }
+          },
+          "additionalProperties": false
+        },
+        "callbackReplayHandle": {
+          "type": "string"
+        },
+        "replayMode": {
+          "type": "string"
+        },
+        "alternateServiceId": {
+          "type": "string"
+        },
+        "expectedFailure": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "stationOAuthProofSnapshot": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "runId",
+        "gateId",
+        "variantId",
+        "fixtureId",
+        "snapshotPhase",
+        "observedAt",
+        "observation",
+        "service",
+        "binding",
+        "access",
+        "oauth",
+        "candidate",
+        "credentialEnvelopeCount",
+        "session",
+        "providerBinding",
+        "fixture",
+        "runOwnedResidue",
+        "invariants",
+        "redaction"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "station-oauth-proof-snapshot"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "variantId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "fixtureId": {
+          "const": "mobile-oauth-negative-fixture"
+        },
+        "snapshotPhase": {
+          "enum": [
+            "before",
+            "post_action",
+            "post_cleanup"
+          ]
+        },
+        "observedAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "observation": {
+          "type": "object",
+          "required": [
+            "isolation",
+            "transactionSnapshot",
+            "startedAt",
+            "completedAt",
+            "freshnessSeconds"
+          ],
+          "properties": {
+            "isolation": {
+              "const": "postgresql-repeatable-read-read-only"
+            },
+            "transactionSnapshot": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "startedAt": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "completedAt": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "freshnessSeconds": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "service": {
+          "type": "object",
+          "required": [
+            "serviceId",
+            "stationPeerId",
+            "deploymentEnvironment",
+            "liveCommit",
+            "workspaceDigest",
+            "protocolDigest",
+            "attestation"
+          ],
+          "properties": {
+            "serviceId": {
+              "enum": [
+                "station-primary",
+                "station-secondary"
+              ]
+            },
+            "stationPeerId": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "deploymentEnvironment": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "liveCommit": {
+              "$ref": "#/$defs/gitCommit"
+            },
+            "workspaceDigest": {
+              "$ref": "#/$defs/workspaceDigest"
+            },
+            "protocolDigest": {
+              "$ref": "#/$defs/sha256Digest"
+            },
+            "attestation": {
+              "$ref": "#/$defs/artifactRef"
+            }
+          },
+          "additionalProperties": false
+        },
+        "binding": {
+          "type": "object",
+          "required": [
+            "accessAttemptRef",
+            "oauthAttemptRef",
+            "expectedProvider",
+            "gateId",
+            "deviceAlias",
+            "lifecycleGeneration"
+          ],
+          "properties": {
+            "accessAttemptRef": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "oauthAttemptRef": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "expectedProvider": {
+              "enum": [
+                "github",
+                "google"
+              ]
+            },
+            "gateId": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "deviceAlias": {
+              "enum": [
+                "alice-ios",
+                "bob-ios",
+                "alice-android",
+                "bob-android"
+              ]
+            },
+            "lifecycleGeneration": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "access": {
+          "type": "object",
+          "required": [
+            "status",
+            "currentGateId",
+            "decisionRevision"
+          ],
+          "properties": {
+            "status": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "currentGateId": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "decisionRevision": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "oauth": {
+          "type": "object",
+          "required": [
+            "state",
+            "result",
+            "errorCode",
+            "updatedAt",
+            "expiresRelation",
+            "claimedAtPresent",
+            "consumedAtPresent"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "result": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "errorCode": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "expiresRelation": {
+              "enum": [
+                "past",
+                "future"
+              ]
+            },
+            "claimedAtPresent": {
+              "type": "boolean"
+            },
+            "consumedAtPresent": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "candidate": {
+          "type": "object",
+          "required": [
+            "count",
+            "sessionRefPresent"
+          ],
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "state": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "actorPtid": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "sessionRefPresent": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "credentialEnvelopeCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "session": {
+          "type": "object",
+          "required": [
+            "count",
+            "activeCount",
+            "revokedCount",
+            "authMethod",
+            "decisionRevision"
+          ],
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "activeCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "revokedCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "authMethod": {
+              "type": "string"
+            },
+            "decisionRevision": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "providerBinding": {
+          "type": "object",
+          "required": [
+            "provider",
+            "candidateCorrelationPresent"
+          ],
+          "properties": {
+            "provider": {
+              "enum": [
+                "github",
+                "google"
+              ]
+            },
+            "candidateCorrelationPresent": {
+              "type": "boolean"
+            },
+            "providerSubjectFingerprint": {
+              "$ref": "#/$defs/sha256Digest"
+            },
+            "bindingCount": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "fixture": {
+          "type": "object",
+          "required": [
+            "operationId",
+            "journalState",
+            "policyBaselineDigest",
+            "policyObservedDigest",
+            "policyRestored"
+          ],
+          "properties": {
+            "operationId": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "journalState": {
+              "const": "COMMITTED"
+            },
+            "policyBaselineDigest": {
+              "$ref": "#/$defs/sha256Digest"
+            },
+            "policyObservedDigest": {
+              "$ref": "#/$defs/sha256Digest"
+            },
+            "policyRestored": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "runOwnedResidue": {
+          "type": "object",
+          "required": [
+            "accessAttempts",
+            "oauthAttempts",
+            "candidates",
+            "credentialEnvelopes",
+            "sessions",
+            "inviteCodes",
+            "policyOverrides",
+            "fixtureJournalEntries"
+          ],
+          "properties": {
+            "accessAttempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "oauthAttempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "candidates": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "credentialEnvelopes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sessions": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "inviteCodes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "policyOverrides": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "fixtureJournalEntries": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "invariants": {
+          "type": "object",
+          "required": [
+            "singleConsume",
+            "singleCandidate",
+            "noEarlyActiveSession",
+            "noUnexpectedEnvelope"
+          ],
+          "properties": {
+            "singleConsume": {
+              "const": true
+            },
+            "singleCandidate": {
+              "const": true
+            },
+            "noEarlyActiveSession": {
+              "const": true
+            },
+            "noUnexpectedEnvelope": {
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "redaction": {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "const": "passed"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "providerAccountLease": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "leaseId",
+        "resourceKey",
+        "holderRunId",
+        "fenceToken",
+        "runId",
+        "gateId",
+        "provider",
+        "accountRef",
+        "allowedClientIds",
+        "maxConcurrentAuthorizations",
+        "heartbeatAt",
+        "renewBefore",
+        "state",
+        "acquiredAt",
+        "expiresAt",
+        "releaseEvidence"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "provider-account-lease"
+        },
+        "leaseId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "resourceKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "holderRunId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "fenceToken": {
+          "$ref": "#/$defs/positiveFence"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "provider": {
+          "enum": [
+            "github",
+            "google"
+          ]
+        },
+        "accountRef": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "allowedClientIds": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "alice-ios",
+              "bob-ios",
+              "alice-android",
+              "bob-android"
+            ]
+          }
+        },
+        "maxConcurrentAuthorizations": {
+          "const": 1
+        },
+        "heartbeatAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "renewBefore": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "state": {
+          "const": "LEASED"
+        },
+        "acquiredAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "quarantineReason": {
+          "type": "string"
+        },
+        "releaseEvidence": {
+          "type": "null"
+        }
+      },
+      "additionalProperties": false
+    },
+    "providerIdentityAssertion": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "runId",
+        "gateId",
+        "provider",
+        "accountRef",
+        "providerSubjectFingerprint",
+        "identityMatched",
+        "observedAt"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "provider-identity-assertion"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "provider": {
+          "enum": [
+            "github",
+            "google"
+          ]
+        },
+        "accountRef": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "providerSubjectFingerprint": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "identityMatched": {
+          "const": true
+        },
+        "observedAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "physicalDeviceLease": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "leaseId",
+        "resourceKey",
+        "holderRunId",
+        "fenceToken",
+        "runId",
+        "gateId",
+        "clientId",
+        "platform",
+        "physicalDeviceRef",
+        "destinationClassRef",
+        "brokerRef",
+        "checks",
+        "heartbeatAt",
+        "renewBefore",
+        "acquiredAt",
+        "expiresAt",
+        "state",
+        "quarantineReason",
+        "releaseEvidence"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "physical-device-lease"
+        },
+        "leaseId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "resourceKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "holderRunId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "fenceToken": {
+          "$ref": "#/$defs/positiveFence"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "clientId": {
+          "enum": [
+            "alice-ios",
+            "bob-ios",
+            "alice-android",
+            "bob-android"
+          ]
+        },
+        "platform": {
+          "enum": [
+            "ios",
+            "android"
+          ]
+        },
+        "physicalDeviceRef": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "destinationClassRef": {
+          "enum": [
+            "ios-physical",
+            "android-physical"
+          ]
+        },
+        "brokerRef": {
+          "const": "mobile-physical-device-broker"
+        },
+        "checks": {
+          "type": "object",
+          "required": [
+            "connected",
+            "physical",
+            "simulator",
+            "platformMatched"
+          ],
+          "properties": {
+            "connected": {
+              "const": true
+            },
+            "physical": {
+              "const": true
+            },
+            "simulator": {
+              "const": false
+            },
+            "platformMatched": {
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "heartbeatAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "renewBefore": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "acquiredAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "state": {
+          "const": "BASELINE_VERIFIED"
+        },
+        "quarantineReason": {
+          "type": "string"
+        },
+        "releaseEvidence": {
+          "type": "null"
+        }
+      },
+      "additionalProperties": false
+    },
+    "providerBrowserSessionLease": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "leaseId",
+        "resourceKey",
+        "holderRunId",
+        "fenceToken",
+        "runId",
+        "gateId",
+        "clientId",
+        "platform",
+        "physicalDeviceLeaseRef",
+        "browserProfileRef",
+        "providerAccountLeaseRef",
+        "baseline",
+        "checks",
+        "cleanupPolicy",
+        "heartbeatAt",
+        "renewBefore",
+        "expiresAt",
+        "state",
+        "releaseEvidence"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "provider-browser-session-lease"
+        },
+        "leaseId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "resourceKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "holderRunId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "fenceToken": {
+          "$ref": "#/$defs/positiveFence"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "clientId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "platform": {
+          "enum": [
+            "ios",
+            "android"
+          ]
+        },
+        "physicalDeviceLeaseRef": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "browserProfileRef": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "providerAccountLeaseRef": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "baseline": {
+          "const": "preauthenticated-exclusive"
+        },
+        "checks": {
+          "type": "object",
+          "required": [
+            "expectedIdentityMatched",
+            "authorizationInProgress",
+            "mobileOAuthStateAbsent",
+            "stationRunStateAbsent"
+          ],
+          "properties": {
+            "expectedIdentityMatched": {
+              "const": true
+            },
+            "authorizationInProgress": {
+              "const": false
+            },
+            "mobileOAuthStateAbsent": {
+              "const": true
+            },
+            "stationRunStateAbsent": {
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "cleanupPolicy": {
+          "const": "preserve-login-verify-identity"
+        },
+        "heartbeatAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "renewBefore": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "state": {
+          "const": "BASELINE_VERIFIED"
+        },
+        "quarantineReason": {
+          "type": "string"
+        },
+        "releaseEvidence": {
+          "type": "null"
+        }
+      },
+      "additionalProperties": false
+    },
+    "mobileLeaseOutcome": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "runId",
+        "gateId",
+        "leaseId",
+        "leaseKind",
+        "resourceKey",
+        "holderRunId",
+        "fenceToken",
+        "acquisition",
+        "finalState",
+        "cleanupCompleted",
+        "baselineRestored",
+        "identityReverified",
+        "failureCode",
+        "observedAt"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "mobile-lease-outcome"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "leaseId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "leaseKind": {
+          "enum": [
+            "fixture",
+            "physical-device",
+            "provider-account",
+            "provider-browser-session"
+          ]
+        },
+        "resourceKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "holderRunId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "fenceToken": {
+          "$ref": "#/$defs/positiveFence"
+        },
+        "acquisition": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "finalState": {
+          "enum": [
+            "RELEASED",
+            "QUARANTINED"
+          ]
+        },
+        "cleanupCompleted": {
+          "type": "boolean"
+        },
+        "baselineRestored": {
+          "type": "boolean"
+        },
+        "identityReverified": {
+          "type": "boolean"
+        },
+        "operationSummary": {
+          "type": "object",
+          "required": [
+            "started",
+            "completed",
+            "maxObservedConcurrency",
+            "fenceValidated"
+          ],
+          "properties": {
+            "started": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxObservedConcurrency": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "fenceValidated": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "failureCode": {
+          "type": "string"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "mobileApplicationBuildAttestation": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "runId",
+        "gateId",
+        "producer",
+        "producerSourceDigest",
+        "toolchainDigest",
+        "buildIsolation",
+        "buildIdentity",
+        "embeddedIdentitySha256",
+        "artifact",
+        "signing",
+        "createdAt"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "mobile-application-build-attestation"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "producer": {
+          "const": "mobile-native-build"
+        },
+        "producerSourceDigest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "toolchainDigest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "buildIsolation": {
+          "type": "object",
+          "required": [
+            "environmentPolicy",
+            "dependencyPolicy",
+            "resolverArguments",
+            "inapplicableResolvers",
+            "cacheMissPolicy",
+            "ambientEnvironmentInherited"
+          ],
+          "properties": {
+            "environmentPolicy": {
+              "const": "empty-base-explicit-allowlist"
+            },
+            "dependencyPolicy": {
+              "const": "locked-preseeded-offline"
+            },
+            "resolverArguments": {
+              "type": "object",
+              "required": [
+                "pnpm",
+                "cargo"
+              ],
+              "properties": {
+                "pnpm": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "const": "--offline"
+                    },
+                    {
+                      "const": "--frozen-lockfile"
+                    }
+                  ],
+                  "items": false
+                },
+                "cargo": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "const": "--frozen"
+                    }
+                  ],
+                  "items": false
+                },
+                "gradle": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "const": "--offline"
+                    }
+                  ],
+                  "items": false
+                },
+                "xcode": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "const": "-disableAutomaticPackageResolution"
+                    }
+                  ],
+                  "items": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "inapplicableResolvers": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "gradle",
+                  "xcode"
+                ]
+              }
+            },
+            "cacheMissPolicy": {
+              "const": "BLOCK"
+            },
+            "ambientEnvironmentInherited": {
+              "const": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "buildIdentity": {
+          "type": "object",
+          "required": [
+            "schema",
+            "buildId",
+            "platform",
+            "configuration",
+            "sourceCommit",
+            "workspaceState",
+            "workspaceDigest",
+            "buildInputsDigest",
+            "allowlistedEnvironmentDigest",
+            "applicationId",
+            "harnessEnabled"
+          ],
+          "properties": {
+            "schema": {
+              "const": "peers-mobile-build-identity"
+            },
+            "buildId": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "platform": {
+              "enum": [
+                "ios",
+                "android"
+              ]
+            },
+            "configuration": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "sourceCommit": {
+              "$ref": "#/$defs/gitCommit"
+            },
+            "workspaceState": {
+              "enum": [
+                "clean",
+                "dirty"
+              ]
+            },
+            "workspaceDigest": {
+              "$ref": "#/$defs/workspaceDigest"
+            },
+            "buildInputsDigest": {
+              "$ref": "#/$defs/sha256Digest"
+            },
+            "allowlistedEnvironmentDigest": {
+              "$ref": "#/$defs/sha256Digest"
+            },
+            "applicationId": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "harnessEnabled": {
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "embeddedIdentitySha256": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "artifact": {
+          "type": "object",
+          "required": [
+            "kind",
+            "sha256",
+            "sizeBytes",
+            "artifactRef"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "ipa",
+                "apk"
+              ]
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256Digest"
+            },
+            "sizeBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "artifactRef": {
+              "$ref": "#/$defs/artifactRef"
+            }
+          },
+          "additionalProperties": false
+        },
+        "signing": {
+          "type": "object",
+          "required": [
+            "policyId",
+            "certificateSha256",
+            "applicationIdentifier",
+            "debuggable"
+          ],
+          "properties": {
+            "policyId": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "certificateSha256": {
+              "$ref": "#/$defs/sha256Digest"
+            },
+            "applicationIdentifier": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "debuggable": {
+              "const": true
+            },
+            "signerCertificateSha256": {
+              "$ref": "#/$defs/sha256Digest"
+            },
+            "enabledSigningSchemes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/nonEmptyString"
+              }
+            },
+            "teamIdentifier": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "applicationIdentifierEntitlement": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "cdHash": {
+              "type": "object",
+              "required": [
+                "source",
+                "algorithm",
+                "valueHex",
+                "candidateFullValueHex"
+              ],
+              "properties": {
+                "source": {
+                  "const": "codesign"
+                },
+                "algorithm": {
+                  "const": "sha256"
+                },
+                "valueHex": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "candidateFullValueHex": {
+                  "$ref": "#/$defs/sha256Hex"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "createdAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "buildIdentity": {
+                "properties": {
+                  "platform": {
+                    "const": "android"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "buildIsolation": {
+                "properties": {
+                  "resolverArguments": {
+                    "required": [
+                      "pnpm",
+                      "cargo",
+                      "gradle"
+                    ],
+                    "not": {
+                      "required": [
+                        "xcode"
+                      ]
+                    }
+                  },
+                  "inapplicableResolvers": {
+                    "prefixItems": [
+                      {
+                        "const": "xcode"
+                      }
+                    ],
+                    "items": false
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "buildIsolation": {
+                "properties": {
+                  "resolverArguments": {
+                    "required": [
+                      "pnpm",
+                      "cargo",
+                      "xcode"
+                    ],
+                    "not": {
+                      "required": [
+                        "gradle"
+                      ]
+                    }
+                  },
+                  "inapplicableResolvers": {
+                    "prefixItems": [
+                      {
+                        "const": "gradle"
+                      }
+                    ],
+                    "items": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "mobileFreshInstallTrace": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "runId",
+        "gateId",
+        "clientId",
+        "platform",
+        "physicalDeviceLease",
+        "buildAttestation",
+        "applicationId",
+        "artifactSha256",
+        "uninstall",
+        "install",
+        "observedAt"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "mobile-fresh-install-trace"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "clientId": {
+          "enum": [
+            "alice-ios",
+            "bob-ios",
+            "alice-android",
+            "bob-android"
+          ]
+        },
+        "platform": {
+          "enum": [
+            "ios",
+            "android"
+          ]
+        },
+        "physicalDeviceLease": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "buildAttestation": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "applicationId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "artifactSha256": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "uninstall": {
+          "type": "object",
+          "required": [
+            "stepIndex",
+            "requested",
+            "priorInstallationAbsent",
+            "completedAt"
+          ],
+          "properties": {
+            "stepIndex": {
+              "const": 1
+            },
+            "requested": {
+              "const": true
+            },
+            "priorInstallationAbsent": {
+              "const": true
+            },
+            "completedAt": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          },
+          "additionalProperties": false
+        },
+        "install": {
+          "type": "object",
+          "required": [
+            "stepIndex",
+            "completed",
+            "applicationPresent",
+            "completedAt"
+          ],
+          "properties": {
+            "stepIndex": {
+              "const": 2
+            },
+            "completed": {
+              "const": true
+            },
+            "applicationPresent": {
+              "const": true
+            },
+            "completedAt": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          },
+          "additionalProperties": false
+        },
+        "observedAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "mobileInstalledBuildIdentity": {
+      "type": "object",
+      "required": [
+        "artifactKind",
+        "runId",
+        "gateId",
+        "clientId",
+        "platform",
+        "buildAttestation",
+        "freshInstallTrace",
+        "buildId",
+        "activeApplicationId",
+        "webEmbeddedIdentitySha256",
+        "rustEmbeddedIdentitySha256",
+        "attestedEmbeddedIdentitySha256",
+        "allIdentitiesMatch",
+        "observedAt"
+      ],
+      "properties": {
+        "artifactKind": {
+          "const": "mobile-installed-build-identity"
+        },
+        "runId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gateId": {
+          "const": "mobile-native-access-e2e"
+        },
+        "clientId": {
+          "enum": [
+            "alice-ios",
+            "bob-ios",
+            "alice-android",
+            "bob-android"
+          ]
+        },
+        "platform": {
+          "enum": [
+            "ios",
+            "android"
+          ]
+        },
+        "buildAttestation": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "freshInstallTrace": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "buildId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "activeApplicationId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "webEmbeddedIdentitySha256": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "rustEmbeddedIdentitySha256": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "attestedEmbeddedIdentitySha256": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "allIdentitiesMatch": {
+          "const": true
+        },
+        "observedAt": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "x-peers-artifact-roles": {
+    "mobile-proof-contract-catalog": {
+      "path": "runtime/mobile/contracts.json",
+      "cardinality": 1
+    },
+    "mobile-build-attestation": {
+      "path": "runtime/mobile/builds/{platform}.json",
+      "dimensions": {
+        "platform": [
+          "ios",
+          "android"
+        ]
+      },
+      "cardinality": 2
+    },
+    "provider-account-lease": {
+      "path": "runtime/mobile/leases/accounts/{provider}.json",
+      "dimensions": {
+        "provider": [
+          "github",
+          "google"
+        ]
+      },
+      "cardinality": 2
+    },
+    "provider-identity-assertion": {
+      "path": "runtime/mobile/identities/providers/{provider}.json",
+      "dimensions": {
+        "provider": [
+          "github",
+          "google"
+        ]
+      },
+      "cardinality": 2
+    },
+    "physical-device-lease": {
+      "path": "runtime/mobile/leases/devices/{clientId}.json",
+      "dimensions": {
+        "clientId": [
+          "alice-ios",
+          "bob-ios",
+          "alice-android",
+          "bob-android"
+        ]
+      },
+      "cardinality": 4
+    },
+    "provider-browser-session-lease": {
+      "path": "runtime/mobile/leases/browsers/{clientId}.json",
+      "dimensions": {
+        "clientId": [
+          "alice-ios",
+          "bob-ios",
+          "alice-android",
+          "bob-android"
+        ]
+      },
+      "cardinality": 4
+    },
+    "mobile-oauth-fixture-lease": {
+      "path": "runtime/mobile/fixtures/{serviceId}/lease.json",
+      "dimensions": {
+        "serviceId": [
+          "station-primary",
+          "station-secondary"
+        ]
+      },
+      "cardinality": 2
+    },
+    "mobile-oauth-fixture-operation": {
+      "path": "runtime/mobile/fixtures/{serviceId}/operations/{operationId}.json",
+      "minimumCardinality": 6
+    },
+    "mobile-fresh-install-trace": {
+      "path": "evidence/mobile/runtime/{clientId}/install.json",
+      "dimensions": {
+        "clientId": [
+          "alice-ios",
+          "bob-ios",
+          "alice-android",
+          "bob-android"
+        ]
+      },
+      "cardinality": 4
+    },
+    "mobile-installed-build-identity": {
+      "path": "evidence/mobile/runtime/{clientId}/build-identity.json",
+      "dimensions": {
+        "clientId": [
+          "alice-ios",
+          "bob-ios",
+          "alice-android",
+          "bob-android"
+        ]
+      },
+      "cardinality": 4
+    },
+    "mobile-visible-proof": {
+      "path": "evidence/mobile/{variantId}/{clientId}/",
+      "cardinality": 16
+    },
+    "station-oauth-proof-snapshot": {
+      "path": "evidence/mobile/{variantId}/station/{serviceId}.json",
+      "cardinality": 18
+    },
+    "mobile-secure-storage-absence": {
+      "path": "evidence/mobile/cleanup/secure-storage/{clientId}.json",
+      "dimensions": {
+        "clientId": [
+          "alice-ios",
+          "bob-ios",
+          "alice-android",
+          "bob-android"
+        ]
+      },
+      "cardinality": 4
+    },
+    "provider-correlation-channel-destruction": {
+      "path": "evidence/mobile/cleanup/provider-correlation.json",
+      "cardinality": 1
+    },
+    "station-post-cleanup-proof": {
+      "path": "evidence/mobile/cleanup/station/{serviceId}.json",
+      "dimensions": {
+        "serviceId": [
+          "station-primary",
+          "station-secondary"
+        ]
+      },
+      "cardinality": 2
+    },
+    "mobile-lease-outcome": {
+      "path": "evidence/mobile/cleanup/leases/{leaseId}.json",
+      "cardinality": 12
+    },
+    "mobile-redaction-audit": {
+      "path": "evidence/mobile/cleanup/redaction-audit.json",
+      "cardinality": 1
+    },
+    "mobile-native-lifecycle": {
+      "path": "reports/mobile-native-lifecycle.json",
+      "cardinality": 1
+    },
+    "mobile-native-result": {
+      "path": "reports/mobile-native-result.json",
+      "cardinality": 1
+    }
+  },
+  "x-peers-contract-policy": {
+    "schemaRevision": null,
+    "protocolRevision": null,
+    "requiredGateId": "mobile-native-access-e2e",
+    "requiredPlatforms": [
+      "ios",
+      "android"
+    ],
+    "requiredProviders": [
+      "github",
+      "google"
+    ],
+    "requiredClients": [
+      "alice-ios",
+      "bob-ios",
+      "alice-android",
+      "bob-android"
+    ],
+    "requiredServices": [
+      "station-primary",
+      "station-secondary"
+    ],
+    "requiredVariants": [
+      "success-ios-github",
+      "success-ios-google",
+      "success-android-github",
+      "success-android-google",
+      "cancel-ios",
+      "cancel-android",
+      "following-gate-ios",
+      "following-gate-android",
+      "expiry-ios",
+      "expiry-android",
+      "replay-ios",
+      "replay-android",
+      "provider-mismatch-ios",
+      "provider-mismatch-android",
+      "station-mismatch-ios",
+      "station-mismatch-android"
+    ]
+  }
+}

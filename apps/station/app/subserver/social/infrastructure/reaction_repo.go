@@ -16,19 +16,24 @@ import (
 // no soft-delete, no version stamps; reaction churn is high enough
 // that physical deletes keep the table size bounded.
 type reactionRepo struct {
-	db *gorm.DB
+	db       *gorm.DB
+	identity *ActorIdentity
 }
 
 func NewReactionRepository(gdb *gorm.DB) domain.ReactionRepository {
-	return &reactionRepo{db: gdb}
+	return &reactionRepo{db: gdb, identity: NewActorIdentity(gdb)}
 }
 
 // Add inserts a reaction; idempotent on the composite key (re-adding
 // is a no-op via INSERT...ON CONFLICT DO NOTHING semantics).
 func (r *reactionRepo) Add(ctx context.Context, react *domain.Reaction) error {
+	actorID, err := r.identity.RequireID(ctx, react.ActorPTID)
+	if err != nil {
+		return err
+	}
 	row := db.SocialReaction{
 		PostID:    react.PostID,
-		ActorID:   react.ActorID,
+		ActorID:   actorID,
 		Kind:      react.Kind.String(),
 		PostClass: string(react.PostClass),
 		CreatedAt: time.Now(),
@@ -40,7 +45,7 @@ func (r *reactionRepo) Add(ctx context.Context, react *domain.Reaction) error {
 	if err := r.db.WithContext(ctx).
 		Model(&db.SocialReaction{}).
 		Where("post_id = ? AND actor_id = ? AND kind = ?",
-			react.PostID, react.ActorID, react.Kind.String()).
+			react.PostID, actorID, react.Kind.String()).
 		Count(&existing).Error; err != nil {
 		return err
 	}
@@ -50,7 +55,11 @@ func (r *reactionRepo) Add(ctx context.Context, react *domain.Reaction) error {
 	return r.db.WithContext(ctx).Create(&row).Error
 }
 
-func (r *reactionRepo) Remove(ctx context.Context, postID, actorID uint64, kind domain.ReactionKindStr) error {
+func (r *reactionRepo) Remove(ctx context.Context, postID uint64, actorPTID string, kind domain.ReactionKindStr) error {
+	actorID, err := r.identity.RequireID(ctx, actorPTID)
+	if err != nil {
+		return err
+	}
 	return r.db.WithContext(ctx).
 		Where("post_id = ? AND actor_id = ? AND kind = ?", postID, actorID, kind).
 		Delete(&db.SocialReaction{}).Error
@@ -65,11 +74,15 @@ func (r *reactionRepo) ListByPost(ctx context.Context, postID uint64) ([]domain.
 	}
 	out := make([]domain.Reaction, 0, len(rows))
 	for _, row := range rows {
+		actorPTID, err := r.identity.ResolveID(ctx, row.ActorID)
+		if err != nil {
+			return nil, err
+		}
 		kind := model.ReactionKind_value[row.Kind]
 		out = append(out, domain.Reaction{
 			PostID:    row.PostID,
 			PostClass: domain.PostClass(row.PostClass),
-			ActorID:   row.ActorID,
+			ActorPTID: actorPTID,
 			Kind:      model.ReactionKind(kind),
 			CreatedAt: row.CreatedAt,
 		})
@@ -106,24 +119,32 @@ func (r *reactionRepo) Aggregate(ctx context.Context, postID uint64) ([]domain.R
 	return out, nil
 }
 
-func (r *reactionRepo) IsReactedByViewer(ctx context.Context, postID, viewerID uint64, kind domain.ReactionKindStr) (bool, error) {
-	if viewerID == 0 {
+func (r *reactionRepo) IsReactedByViewer(ctx context.Context, postID uint64, viewerPTID string, kind domain.ReactionKindStr) (bool, error) {
+	if viewerPTID == "" {
 		return false, nil
 	}
+	viewerID, err := r.identity.RequireID(ctx, viewerPTID)
+	if err != nil {
+		return false, err
+	}
 	var count int64
-	err := r.db.WithContext(ctx).
+	err = r.db.WithContext(ctx).
 		Model(&db.SocialReaction{}).
 		Where("post_id = ? AND actor_id = ? AND kind = ?", postID, viewerID, kind).
 		Count(&count).Error
 	return count > 0, err
 }
 
-func (r *reactionRepo) HydrateReactedByViewer(ctx context.Context, postID, viewerID uint64, summaries []domain.ReactionSummary) ([]domain.ReactionSummary, error) {
-	if viewerID == 0 || len(summaries) == 0 {
+func (r *reactionRepo) HydrateReactedByViewer(ctx context.Context, postID uint64, viewerPTID string, summaries []domain.ReactionSummary) ([]domain.ReactionSummary, error) {
+	if viewerPTID == "" || len(summaries) == 0 {
 		return summaries, nil
 	}
+	viewerID, err := r.identity.RequireID(ctx, viewerPTID)
+	if err != nil {
+		return nil, err
+	}
 	var kinds []string
-	err := r.db.WithContext(ctx).
+	err = r.db.WithContext(ctx).
 		Model(&db.SocialReaction{}).
 		Where("post_id = ? AND actor_id = ?", postID, viewerID).
 		Pluck("kind", &kinds).Error

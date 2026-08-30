@@ -33,7 +33,7 @@ import {
   type TimelineSort,
 } from '../services/social_api';
 import { sealMomentDraftAudienceKeys } from '../services/momentAudienceKeys';
-import { currentAuthenticatedActorId } from './session';
+import { currentAuthenticatedActorPtid } from './session';
 import { log } from '../utils/logger';
 
 const TAG = 'moments-store';
@@ -128,7 +128,7 @@ interface MomentsState {
   ) => Promise<void>;
   syncProjection: (reason: string) => Promise<void>;
   loadCircleFeed: (circleId: string, refresh?: boolean) => Promise<void>;
-  loadUserFeed: (actorId: string, refresh?: boolean) => Promise<void>;
+  loadUserFeed: (actorPtid: string, refresh?: boolean) => Promise<void>;
 
   loadPost: (postId: string) => Promise<Post | undefined>;
   createPost: (draft: MomentDraft) => Promise<string>;
@@ -150,8 +150,8 @@ interface MomentsState {
   renameCircle: (circleId: string, name: string, description?: string) => Promise<void>;
   deleteCircle: (circleId: string) => Promise<void>;
   loadCircleMembers: (circleId: string) => Promise<void>;
-  addCircleMember: (circleId: string, actorId: string) => Promise<void>;
-  removeCircleMember: (circleId: string, actorId: string) => Promise<void>;
+  addCircleMember: (circleId: string, actorPtid: string) => Promise<void>;
+  removeCircleMember: (circleId: string, actorPtid: string) => Promise<void>;
 
   setComposerDraft: (draft: MomentsState['composerDraft']) => void;
   clearComposerDraft: () => void;
@@ -362,21 +362,21 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     log.info(TAG, 'loadCircleFeed: noop (P3)', { circleId });
   },
 
-  loadUserFeed: async (actorId, refresh = false) => {
-    const current = get().userFeeds[actorId] ?? emptyFeed();
+  loadUserFeed: async (actorPtid, refresh = false) => {
+    const current = get().userFeeds[actorPtid] ?? emptyFeed();
     if (current.loading) return;
     set((s) => ({
       userFeeds: {
         ...s.userFeeds,
-        [actorId]: { ...current, loading: true },
+        [actorPtid]: { ...current, loading: true },
       },
     }));
     const cursor = refresh ? '' : current.nextCursor;
     try {
-      const resp = await socialListByAuthor(actorId, cursor || undefined);
+      const resp = await socialListByAuthor(actorPtid, cursor || undefined);
       set((s) => {
         const merged = ingestPosts(s, resp.posts, resp.explanations);
-        const prevIds = refresh ? [] : (s.userFeeds[actorId]?.postIds ?? []);
+        const prevIds = refresh ? [] : (s.userFeeds[actorPtid]?.postIds ?? []);
         const seen = new Set(prevIds);
         const nextIds = [...prevIds, ...merged.ids.filter((id) => !seen.has(id))];
         return {
@@ -386,7 +386,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
           feedExplanations: merged.feedExplanations,
           userFeeds: {
             ...s.userFeeds,
-            [actorId]: {
+            [actorPtid]: {
               postIds: nextIds,
               nextCursor: resp.nextCursor,
               hasMore: resp.hasMore,
@@ -397,11 +397,11 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         };
       });
     } catch (err) {
-      log.warn(TAG, 'loadUserFeed failed', { actorId, err: String(err) });
+      log.warn(TAG, 'loadUserFeed failed', { actorPtid, err: String(err) });
       set((s) => ({
         userFeeds: {
           ...s.userFeeds,
-          [actorId]: { ...(s.userFeeds[actorId] ?? emptyFeed()), loading: false },
+          [actorPtid]: { ...(s.userFeeds[actorPtid] ?? emptyFeed()), loading: false },
         },
       }));
       throw err;
@@ -434,7 +434,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   },
 
   createPost: async (draft) => {
-    const sealedDraft = await sealMomentDraftAudienceKeys(draft, currentAuthenticatedActorId());
+    const sealedDraft = await sealMomentDraftAudienceKeys(draft, currentAuthenticatedActorPtid());
     const post = await socialCreateMoment(sealedDraft);
     if (!post || !post.id) {
       throw new Error('createPost: server returned no post');
@@ -638,20 +638,20 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     }));
   },
 
-  addCircleMember: async (circleId, actorId) => {
-    await socialCircleAddMembers(circleId, [actorId]);
+  addCircleMember: async (circleId, actorPtid) => {
+    await socialCircleAddMembers(circleId, [actorPtid]);
     // Refresh members so the UI reflects the canonical server state
     // (server may dedupe / reject already-present DIDs silently).
     await get().loadCircleMembers(circleId);
   },
 
-  removeCircleMember: async (circleId, actorId) => {
-    await socialCircleRemoveMembers(circleId, [actorId]);
+  removeCircleMember: async (circleId, actorPtid) => {
+    await socialCircleRemoveMembers(circleId, [actorPtid]);
     set((s) => ({
       circleMembers: {
         ...s.circleMembers,
         [circleId]: (s.circleMembers[circleId] ?? []).filter(
-          (m) => m.actorDid !== actorId,
+          (m) => m.actorPtid !== actorPtid,
         ),
       },
     }));

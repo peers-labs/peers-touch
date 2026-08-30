@@ -19,8 +19,8 @@ const { Text } = Typography;
 // matches under a fast typist.
 
 interface UserSearchViewProps {
-  viewerActorId?: string;
-  onOpenUser: (actorId: string) => void;
+  viewerActorPtid?: string;
+  onOpenUser: (actorPtid: string) => void;
 }
 
 function asPostAuthor(u: DiscoveryUser): PostAuthor {
@@ -38,7 +38,7 @@ function asPostAuthor(u: DiscoveryUser): PostAuthor {
   } as PostAuthor;
 }
 
-export function UserSearchView({ viewerActorId, onOpenUser }: UserSearchViewProps) {
+export function UserSearchView({ viewerActorPtid, onOpenUser }: UserSearchViewProps) {
   const { t } = useTranslation('moments');
   const [text, setText] = useState('');
   const { query, results, searching, searchUsers } = useActiveDiscoverySlice((s) => ({
@@ -93,7 +93,7 @@ export function UserSearchView({ viewerActorId, onOpenUser }: UserSearchViewProp
               >
                 <UserProfileHeader
                   actor={asPostAuthor(u)}
-                  viewerActorId={viewerActorId}
+                  viewerActorPtid={viewerActorPtid}
                   inline
                 />
               </List.Item>

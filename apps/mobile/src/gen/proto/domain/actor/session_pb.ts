@@ -12,16 +12,16 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/actor/session.proto.
  */
 export const file_domain_actor_session: GenFile = /*@__PURE__*/
-  fileDesc("Chpkb21haW4vYWN0b3Ivc2Vzc2lvbi5wcm90bxILcGVlcnMuYWN0b3IiyAEKFEFjdG9yU2Vzc2lvblNuYXBzaG90EhAKCGFjdG9yX2lkGAEgASgJEg4KBmhhbmRsZRgCIAEoCRIQCghwcm90b2NvbBgDIAEoCRIQCghiYXNlX3VybBgEIAEoCRIUCgxhY2Nlc3NfdG9rZW4YBSABKAkSFQoNcmVmcmVzaF90b2tlbhgGIAEoCRIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBINCgVyb2xlcxgIIAMoCUJJWkdnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9hY3RvcjthY3RvcmIGcHJvdG8z", [file_google_protobuf_timestamp]);
+  fileDesc("Chpkb21haW4vYWN0b3Ivc2Vzc2lvbi5wcm90bxILcGVlcnMuYWN0b3IiygEKFEFjdG9yU2Vzc2lvblNuYXBzaG90EhIKCmFjdG9yX3B0aWQYASABKAkSDgoGaGFuZGxlGAIgASgJEhAKCHByb3RvY29sGAMgASgJEhAKCGJhc2VfdXJsGAQgASgJEhQKDGFjY2Vzc190b2tlbhgFIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAYgASgJEi4KCmV4cGlyZXNfYXQYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg0KBXJvbGVzGAggAygJQklaR2dpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL2FjdG9yO2FjdG9yYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers.actor.ActorSessionSnapshot
  */
 export type ActorSessionSnapshot = Message<"peers.actor.ActorSessionSnapshot"> & {
   /**
-   * @generated from field: string actor_id = 1;
+   * @generated from field: string actor_ptid = 1;
    */
-  actorId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string handle = 2;

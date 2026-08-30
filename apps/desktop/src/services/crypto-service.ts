@@ -296,7 +296,7 @@ export const cryptoService = {
         );
       }
       return {
-        ptid: bundle.did,
+        ptid: bundle.ptid,
         deviceId: bundle.device_id,
         identityPublicKey: bundle.ik_pub,
         signedPreKey: {

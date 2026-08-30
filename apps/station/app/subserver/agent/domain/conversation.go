@@ -16,7 +16,7 @@ const (
 type Conversation struct {
 	ConversationID string
 	AgentID        string
-	UserID         string
+	ActorPTID      string
 	Title          string
 	Description    string
 	ProviderID     string

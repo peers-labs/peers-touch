@@ -69,7 +69,7 @@ export function MobileShell(props: MobileShellProps) {
   const activeSessionUlid = useSocialStore((state) => state.activeSessionUlid);
   const sessions = useSocialStore((state) => state.sessions);
   const messages = useSocialStore((state) => state.messages);
-  const currentUserDid = useSocialStore((state) => state.currentUserDid);
+  const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
   const peerOnline = useSocialStore((state) => state.peerOnline);
   const friendRequests = useSocialStore((state) => state.friendRequests);
   const friendConversationSettings = useSocialStore((state) => state.conversationSettings);
@@ -79,16 +79,16 @@ export function MobileShell(props: MobileShellProps) {
   const groupUnreadCounts = useGroupStore((state) => state.unreadCounts);
   const groupSettings = useGroupStore((state) => state.settings);
   const conversations = useMemo(
-    () => projectConversations({ sessions, messages, currentUserDid, peerOnline }),
-    [currentUserDid, messages, peerOnline, sessions],
+    () => projectConversations({ sessions, messages, currentUserPtid, peerOnline }),
+    [currentUserPtid, messages, peerOnline, sessions],
   );
   const groupConversations = useMemo(
     () => projectGroupConversations({ groups, messages: groupMessages, unreadCounts: groupUnreadCounts }),
     [groupMessages, groupUnreadCounts, groups],
   );
   const inboundRequests = useMemo(
-    () => projectPendingInboundRequests(friendRequests, currentUserDid),
-    [currentUserDid, friendRequests],
+    () => projectPendingInboundRequests(friendRequests, currentUserPtid),
+    [currentUserPtid, friendRequests],
   );
   const chatBadge = conversations.reduce(
     (total, conversation) =>

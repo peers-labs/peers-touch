@@ -52,9 +52,9 @@ export default function SessionsPage() {
 
   // ── Actions ──────────────────────────────────────────────────────────
 
-  const handleRevoke = async (sessionId: string) => {
+  const handleRevoke = async (actorPTID: string, sessionId: string) => {
     try {
-      await systemApi.revokePeersSession(sessionId);
+      await systemApi.revokePeersSession(actorPTID, sessionId);
       message.success('Session revoked');
       loadSessions();
     } catch (err) {
@@ -72,7 +72,8 @@ export default function SessionsPage() {
       width: 200,
       render: (_, r) => (
         <Flexbox gap={2}>
-          <Text strong>{r.preferred_username || `#${r.user_id}`}</Text>
+          <Text strong>{r.preferred_username || r.actor_ptid}</Text>
+          <Text code style={{ fontSize: 12 }}>{r.actor_ptid}</Text>
           {r.email ? (
             <Text type="secondary" style={{ fontSize: 12 }}>{r.email}</Text>
           ) : null}
@@ -143,7 +144,7 @@ export default function SessionsPage() {
         <Popconfirm
           title="Revoke this session?"
           description="The user will be signed out on this device."
-          onConfirm={() => handleRevoke(record.session_id)}
+          onConfirm={() => handleRevoke(record.actor_ptid, record.session_id)}
         >
           <Button type="text" danger size="small">
             Revoke

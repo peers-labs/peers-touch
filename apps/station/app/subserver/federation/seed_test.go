@@ -17,11 +17,11 @@ type testnetSeedConfig struct {
 }
 
 type seedStation struct {
-	PeerID  string
-	Name    string
-	URL     string
-	ActorID string
-	Handle  string
+	PeerID          string
+	Name            string
+	URL             string
+	ActorPTID       string
+	FederatedHandle string
 }
 
 func seedTestnet(t *testing.T, ctx context.Context, cfg *testnetSeedConfig, fedSvc *application.FederationService, ledgerSvc *application.LedgerService) error {
@@ -33,14 +33,14 @@ func seedTestnet(t *testing.T, ctx context.Context, cfg *testnetSeedConfig, fedS
 	creator := cfg.Stations[0]
 
 	fed, err := fedSvc.CreateFederation(ctx, &application.CreateFederationInput{
-		Name:          cfg.FederationName,
-		Description:   "Testnet federation seeded for testing",
-		PolicyType:    "single_admin",
-		ActorID:       creator.ActorID,
-		ActorHandle:   creator.Handle,
-		StationPeerID: creator.PeerID,
-		StationName:   creator.Name,
-		StationURL:    creator.URL,
+		Name:                 cfg.FederationName,
+		Description:          "Testnet federation seeded for testing",
+		PolicyType:           "single_admin",
+		ActorPTID:            creator.ActorPTID,
+		ActorFederatedHandle: creator.FederatedHandle,
+		StationPeerID:        creator.PeerID,
+		StationName:          creator.Name,
+		StationURL:           creator.URL,
 	})
 	if err != nil {
 		return fmt.Errorf("seed: create federation: %w", err)
@@ -53,8 +53,8 @@ func seedTestnet(t *testing.T, ctx context.Context, cfg *testnetSeedConfig, fedS
 
 		payload := &pb.StationJoinApprovedPayload{
 			ApprovedStationPeerId:          station.PeerID,
-			ApprovedByActorId:              creator.ActorID,
-			ApprovedByActorFederatedHandle: creator.Handle,
+			ApprovedByActorPtid:            creator.ActorPTID,
+			ApprovedByActorFederatedHandle: creator.FederatedHandle,
 			Role:                           "member_station",
 			ApprovedStationUrl:             station.URL,
 			ApprovedStationName:            station.Name,
@@ -74,14 +74,14 @@ func seedTestnet(t *testing.T, ctx context.Context, cfg *testnetSeedConfig, fedS
 		}
 
 		_, err = ledgerSvc.AppendEvent(ctx, &application.AppendEventInput{
-			FederationID:      fed.FederationID,
-			EventType:         pb.EventType_STATION_JOIN_APPROVED,
-			PayloadBytes:      payloadBytes,
-			ActorID:           creator.ActorID,
-			ActorHandle:       creator.Handle,
-			StationPeerID:     creator.PeerID,
-			ActorPrivateKey:   actorPriv,
-			StationPrivateKey: stationPriv,
+			FederationID:         fed.FederationID,
+			EventType:            pb.EventType_STATION_JOIN_APPROVED,
+			PayloadBytes:         payloadBytes,
+			ActorPTID:            creator.ActorPTID,
+			ActorFederatedHandle: creator.FederatedHandle,
+			StationPeerID:        creator.PeerID,
+			ActorPrivateKey:      actorPriv,
+			StationPrivateKey:    stationPriv,
 		})
 		if err != nil {
 			return fmt.Errorf("seed: join station %s: %w", station.PeerID, err)
@@ -103,9 +103,9 @@ func defaultTestnetSeedConfig() *testnetSeedConfig {
 	return &testnetSeedConfig{
 		FederationName: "Peers Testnet",
 		Stations: []seedStation{
-			{PeerID: "node-a", Name: "Station One", URL: "http://localhost:18080", ActorID: "actor-a", Handle: "@a@one.peers.touch"},
-			{PeerID: "node-b", Name: "Station Two", URL: "http://localhost:18081", ActorID: "actor-b", Handle: "@a@two.peers.touch"},
-			{PeerID: "node-c", Name: "Station Three", URL: "http://localhost:18082", ActorID: "actor-c", Handle: "@a@three.peers.touch"},
+			{PeerID: "node-a", Name: "Station One", URL: "http://localhost:18080", ActorPTID: "ptid:v1:actor:peers:p:a", FederatedHandle: "@a@one.peers.touch"},
+			{PeerID: "node-b", Name: "Station Two", URL: "http://localhost:18081", ActorPTID: "ptid:v1:actor:peers:p:b", FederatedHandle: "@a@two.peers.touch"},
+			{PeerID: "node-c", Name: "Station Three", URL: "http://localhost:18082", ActorPTID: "ptid:v1:actor:peers:p:c", FederatedHandle: "@a@three.peers.touch"},
 		},
 	}
 }

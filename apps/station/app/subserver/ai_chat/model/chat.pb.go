@@ -80,7 +80,7 @@ func (ChatRole) EnumDescriptor() ([]byte, []int) {
 type ChatSession struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,2,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	AgentId       string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	Title         string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
 	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
@@ -134,9 +134,9 @@ func (x *ChatSession) GetId() string {
 	return ""
 }
 
-func (x *ChatSession) GetUserId() string {
+func (x *ChatSession) GetActorPtid() string {
 	if x != nil {
-		return x.UserId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -957,10 +957,11 @@ var File_domain_ai_chat_chat_proto protoreflect.FileDescriptor
 
 const file_domain_ai_chat_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x19domain/ai_chat/chat.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1cgoogle/protobuf/struct.proto\"\xf0\x03\n" +
+	"\x19domain/ai_chat/chat.proto\x12\x1cpeers_touch.model.ai_chat.v1\x1a\x1cgoogle/protobuf/struct.proto\"\xf6\x03\n" +
 	"\vChatSession\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x19\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x02 \x01(\tR\tactorPtid\x12\x19\n" +
 	"\bagent_id\x18\x03 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05title\x18\x04 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x05 \x01(\tR\vdescription\x12\x16\n" +

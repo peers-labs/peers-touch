@@ -25,7 +25,7 @@ export interface DiscoveryUser {
   username: string;
   displayName: string;
   email?: string;
-  actorId?: string;
+  actorPtid?: string;
   avatar?: string;
   homeStationDomain?: string;
 }
@@ -88,11 +88,11 @@ export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery',
       // Drop late results: only honour the *last* search the user issued.
       if (token !== inFlightSearchToken) return;
       const items: DiscoveryUser[] = (data.items ?? []).map((raw) => ({
-        id: String(raw.id ?? ''),
+        id: String(raw.actorPtid ?? ''),
         username: String(raw.username ?? ''),
         displayName: String(raw.displayName ?? raw.username ?? ''),
         email: raw.email ? String(raw.email) : undefined,
-        actorId: raw.id ? String(raw.id) : undefined,
+        actorPtid: raw.actorPtid ? String(raw.actorPtid) : undefined,
         avatar: raw.avatar ? String(raw.avatar) : undefined,
       }));
       set({ results: items, total: data.total ?? items.length, searching: false });
@@ -114,7 +114,7 @@ export const useDiscoveryStore = createDesktopStore<DiscoveryState>('discovery',
         return undefined;
       }
       const me: MeProfile = {
-        id: String(data.id ?? ''),
+        id: String(data.actorPtid ?? ''),
         displayName: String(data.displayName ?? ''),
         username: String(data.username ?? ''),
         avatar: String(data.avatar ?? ''),

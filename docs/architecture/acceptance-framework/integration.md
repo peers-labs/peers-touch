@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.1
-> **Created**: 2026-08-15 | **Updated**: 2026-08-24
+> **Created**: 2026-08-15 | **Updated**: 2026-08-30
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/core/`
 
@@ -43,11 +43,11 @@
 |---|---|---|---|
 | `gates.yaml.environment` | 只有标签，没有 acquisition contract | Acceptance Provisioning Registry | environment contract |
 | active `.local` Profile | 文件名与内部 identity 可漂移 | Local Dev Environment | validated profile identity |
-| `make station` / `station-status` | 能 ready/check，但不产出 Gate 可消费的完整 attestation | Station deployment/runtime | station attestation |
+| `make station` / `station-status` | 能 ready/check，但不产出 Gate 可消费的完整 attestation | Station deployment/runtime | service-scoped Station attestation |
 | `CHAT_NATIVE_*_PTID` | 由调用方手工提供 | Chat Fixture | actor manifest |
 | `CHAT_NATIVE_DEMO_PASSWORD` | 来源未声明且 runner 有默认值 | approved credential source | credential reference |
-| `CHAT_NATIVE_STATION_ATTESTATION` | runner 只消费，没有生产者 | Station deployment/runtime | source-bound attestation artifact |
-| `CHAT_NATIVE_STATION_URL` | Profile 与 Gate 使用不同变量 | Environment Provisioner | runtime manifest station URL |
+| `CHAT_NATIVE_STATION_ATTESTATION` | runner 只消费，没有生产者 | Station deployment/runtime | source-bound service attestation artifact |
+| `CHAT_NATIVE_STATION_URL` | Profile 与 Gate 使用不同变量 | Environment Provisioner | `runtime manifest.services.station.endpoint` |
 | Gateway/Native ports | runner 局部计算，缺少统一 preflight record | Environment Provisioner + Driver | client isolation manifest |
 | Gate failure text log | 缺少 source-bound preflight identity | Provisioner/Gate Runner | structured blocked artifact |
 
@@ -301,6 +301,21 @@ Native runtime cell 迁移禁止：
 - 旧 ad-hoc 环境变量不是长期公共 API；迁移后由 runtime manifest 取代。
 - 缺少 provisioning artifact 时行为从文本失败升级为结构化 `BLOCKED/UNPROVEN`，
   不得伪装为 Gate 产品失败。
+
+### Runtime Manifest Service Topology Hard Cut
+
+所有 Runtime Manifest producer、consumer、validator、test 和 Gate helper 必须原子
+迁移到 `services[service-id]`：
+
+- Environment Contract 为每个 service role 声明 `kind`。
+- Station 与 Relay runtime owner 产生 kind-aware attestation。
+- Artifact 路径为
+  `runtime/services/<service-id>/attestation.json`。
+- Provisioner 在进入 `FIXTURE_READY` 前验证 required service ID 和 kind 闭包。
+- 缺失、重复、kind mismatch 或 legacy 顶层 `station` 都 fail closed。
+
+禁止 compatibility reader、dual-write period、按顺序选择第一台 Station，或由 Mobile
+Gate 创建第二份业务 manifest。
 
 D-11 compatibility boundary：
 

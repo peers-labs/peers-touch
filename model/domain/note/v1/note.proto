@@ -8,12 +8,14 @@ option go_package = "github.com/peers-labs/peers-touch/apps/applets/note/service
 
 message Note {
   string note_id = 1;
-  string owner_id = 2;
+  string owner_ptid = 2;
   string title = 3;
   string content = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
   google.protobuf.Timestamp deleted_at = 7;
+
+  reserved "owner_id";
 }
 
 message ListNotesRequest {

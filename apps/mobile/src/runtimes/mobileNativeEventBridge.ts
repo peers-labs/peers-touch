@@ -5,7 +5,12 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { dispatchSocialRuntimeExternalEvent } from '../features/social/socialRuntime';
+import type { OAuthPublicProjection } from '../services/mobileCommands';
 import { readableErrorMessage } from '../utils/errorMessage';
+import {
+  applyAuthRuntimeProjection,
+  restoreAuthRuntimeProjection,
+} from './authRuntime';
 
 interface NativeRuntimeEventErrorPayload {
   operation?: string;
@@ -36,6 +41,19 @@ export function installMobileNativeEventBridge(): () => void {
       })
       .catch((error) => reportBridgeError('listen-native-event', error));
   });
+
+  listen<OAuthPublicProjection>('mobile:oauth-projection', (event) => {
+    if (!disposed) applyAuthRuntimeProjection(event.payload);
+  })
+    .then((unlisten) => {
+      if (disposed) {
+        unlisten();
+        return;
+      }
+      unlisteners.push(unlisten);
+      void restoreAuthRuntimeProjection();
+    })
+    .catch((error) => reportBridgeError('listen-oauth-projection', error));
 
   listen<NativeRuntimeEventErrorPayload>('mobile:native-event-error', (event) => {
     reportBridgeError(event.payload?.operation || 'native-event', event.payload?.message || 'unknown');

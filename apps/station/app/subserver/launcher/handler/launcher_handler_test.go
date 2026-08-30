@@ -18,7 +18,7 @@ func TestHandleGetFeed(t *testing.T) {
 		wantError bool
 	}{
 		{
-			name: "valid request with user_id",
+			name: "valid request with actor_ptid",
 			setupCtx: func() context.Context {
 				ctx := context.Background()
 				return coreauth.WithSubject(ctx, &coreauth.Subject{
@@ -26,21 +26,21 @@ func TestHandleGetFeed(t *testing.T) {
 				})
 			},
 			req: &model.GetFeedRequest{
-				UserId: "user123",
-				Limit:  20,
+				ActorPtid: "user123",
+				Limit:     20,
 			},
 			wantError: false,
 		},
 		{
-			name: "empty user_id should use default",
+			name: "empty actor_ptid is rejected",
 			setupCtx: func() context.Context {
 				return context.Background()
 			},
 			req: &model.GetFeedRequest{
-				UserId: "",
-				Limit:  10,
+				ActorPtid: "",
+				Limit:     10,
 			},
-			wantError: false,
+			wantError: true,
 		},
 		{
 			name: "zero limit should use default",
@@ -48,8 +48,8 @@ func TestHandleGetFeed(t *testing.T) {
 				return context.Background()
 			},
 			req: &model.GetFeedRequest{
-				UserId: "user456",
-				Limit:  0,
+				ActorPtid: "user456",
+				Limit:     0,
 			},
 			wantError: false,
 		},
@@ -59,8 +59,8 @@ func TestHandleGetFeed(t *testing.T) {
 				return context.Background()
 			},
 			req: &model.GetFeedRequest{
-				UserId: "user789",
-				Limit:  -5,
+				ActorPtid: "user789",
+				Limit:     -5,
 			},
 			wantError: false,
 		},

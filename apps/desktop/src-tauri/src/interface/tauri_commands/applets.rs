@@ -25,7 +25,7 @@ use tauri::Window;
 
 const PRODUCT_WINDOW_E2E_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E";
 const PRODUCT_WINDOW_E2E_APPLET_ID_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E_APPLET_ID";
-const PRODUCT_WINDOW_E2E_ACTOR_ID_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E_ACTOR_ID";
+const PRODUCT_WINDOW_E2E_ACTOR_PTID_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E_ACTOR_PTID";
 const PRODUCT_WINDOW_E2E_TOKEN_ENV: &str = "PEERS_APPLET_PRODUCT_WINDOW_E2E_TOKEN";
 const PRODUCT_WINDOW_E2E_PROVIDER_BASE_URL_ENV: &str =
     "PEERS_APPLET_PRODUCT_WINDOW_E2E_PROVIDER_BASE_URL";
@@ -145,19 +145,15 @@ fn seed_product_window_e2e_provider() {
 fn bind_product_window_e2e_session(
     state: &Arc<AppState>,
     window: &Window,
-    actor_id: &str,
+    actor_ptid: &str,
     token: &str,
 ) {
     state.sessions.bind(ActiveSession::new(
         window.label(),
-        format!("{}:{}", PRODUCT_WINDOW_E2E_LOGIN_METHOD, actor_id),
-        ActorRef::new_person(actor_id.to_string()),
+        format!("{}:{}", PRODUCT_WINDOW_E2E_LOGIN_METHOD, actor_ptid),
+        ActorRef::new_person(actor_ptid.to_string()),
         token.to_string(),
     ));
-    if let Ok(mut legacy) = state.session.lock() {
-        legacy.actor_id = Some(actor_id.to_string());
-        legacy.token = Some(token.to_string());
-    }
 }
 
 fn applet_context(
@@ -172,8 +168,8 @@ fn applet_context(
             None,
         ));
     }
-    let actor_id = session_resolver::actor_id_for_window(state, window);
-    Ok(AccessContext { actor_id, token })
+    let actor_ptid = session_resolver::ptid_for_window(state, window);
+    Ok(AccessContext { actor_ptid, token })
 }
 
 #[tauri::command]
@@ -190,10 +186,10 @@ pub fn applets_product_window_launch_context(
 
     let applet_id = std::env::var(PRODUCT_WINDOW_E2E_APPLET_ID_ENV)
         .unwrap_or_else(|_| "generic-complex-applet".to_string());
-    let actor_id = std::env::var(PRODUCT_WINDOW_E2E_ACTOR_ID_ENV)
-        .unwrap_or_else(|_| "applet-product-window-e2e-actor".to_string());
+    let actor_ptid = std::env::var(PRODUCT_WINDOW_E2E_ACTOR_PTID_ENV)
+        .unwrap_or_else(|_| "ptid:test:applet-product-window-e2e-actor".to_string());
     let token = std::env::var(PRODUCT_WINDOW_E2E_TOKEN_ENV)
-        .unwrap_or_else(|_| format!("applet-product-window-e2e-token:{}", actor_id));
+        .unwrap_or_else(|_| format!("applet-product-window-e2e-token:{}", actor_ptid));
     let lifecycle_enabled = product_window_e2e_lifecycle_enabled();
     let secondary_applet_id = std::env::var(PRODUCT_WINDOW_E2E_SECONDARY_APPLET_ID_ENV)
         .unwrap_or_else(|_| "peers.note".to_string());
@@ -204,7 +200,7 @@ pub fn applets_product_window_launch_context(
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(3000);
 
-    if applet_id.trim().is_empty() || actor_id.trim().is_empty() || token.trim().is_empty() {
+    if applet_id.trim().is_empty() || actor_ptid.trim().is_empty() || token.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
             "applet product-window certification env is incomplete",
@@ -213,14 +209,14 @@ pub fn applets_product_window_launch_context(
     }
 
     seed_product_window_e2e_provider();
-    bind_product_window_e2e_session(state.inner(), &window, &actor_id, &token);
+    bind_product_window_e2e_session(state.inner(), &window, &actor_ptid, &token);
 
     status_payload(
         "applets_product_window_launch_context",
         json!({
             "enabled": true,
             "appletId": applet_id,
-            "actorId": actor_id,
+            "actorPtid": actor_ptid,
             "name": "Applet Product Window Certification",
             "email": "",
             "loginMethod": PRODUCT_WINDOW_E2E_LOGIN_METHOD,

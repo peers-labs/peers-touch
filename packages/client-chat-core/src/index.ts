@@ -55,7 +55,7 @@ export interface IMProjectionError {
 export interface IMConversationPreviewProjection {
   readonly content: string;
   readonly type: number;
-  readonly senderId: string;
+  readonly senderPtid: string;
 }
 
 export interface IMConversationProjectionInput {
@@ -95,7 +95,7 @@ export interface IMMessageProjectionInput<Attachment extends ChatAttachmentLike 
   readonly id: string;
   readonly conversationKind: IMConversationKind;
   readonly conversationId: string;
-  readonly senderId: string;
+  readonly senderPtid: string;
   readonly type: number;
   readonly content?: string;
   readonly attachments?: readonly Attachment[];
@@ -113,7 +113,7 @@ export interface IMMessageProjection<Attachment extends ChatAttachmentLike = Cha
   readonly id: string;
   readonly conversationKind: IMConversationKind;
   readonly conversationId: string;
-  readonly senderId: string;
+  readonly senderPtid: string;
   readonly type: number;
   readonly content: string;
   readonly attachments: readonly Attachment[];
@@ -210,7 +210,7 @@ export interface ChatEncryptedMessagePayload<Attachment extends ChatAttachmentLi
 
 export interface ChatMessageLike<Attachment extends ChatAttachmentLike = ChatAttachmentLike> {
   readonly ulid?: string;
-  readonly senderDid?: string;
+  readonly senderPtid?: string;
   readonly content?: string;
   readonly attachments?: readonly Attachment[];
   readonly replyToUlid?: string;
@@ -354,7 +354,7 @@ export interface ChatTypingEntry {
 export type ChatTypingPeers = Record<string, Record<string, ChatTypingEntry>>;
 
 export interface ChatPresenceParticipant {
-  readonly actorId?: string;
+  readonly actorPtid?: string;
   readonly online: boolean;
 }
 
@@ -413,8 +413,8 @@ export interface ChatMessageRowVisualInput {
 
 export interface ChatParticipantUnreadLike {
   readonly ulid?: string;
-  readonly participantADid?: string;
-  readonly participantBDid?: string;
+  readonly participantAPtid?: string;
+  readonly participantBPtid?: string;
   readonly unreadCountA?: number;
   readonly unreadCountB?: number;
 }
@@ -949,9 +949,9 @@ export function formatChatAttachmentSize(size: number | string | bigint | undefi
 
 export function isOwnChatMessage(
   message: ChatMessageLike,
-  currentUserDid: string | null | undefined,
+  currentUserPtid: string | null | undefined,
 ): boolean {
-  return Boolean(currentUserDid && message.senderDid === currentUserDid);
+  return Boolean(currentUserPtid && message.senderPtid === currentUserPtid);
 }
 
 export function messageReplyToUlid(message: ChatMessageLike): string {
@@ -1002,14 +1002,14 @@ export function canEditChatMessage(input: ChatMessageEditInput): boolean {
   return input.own && !input.recalled && !input.encrypted && Boolean(input.content?.trim());
 }
 
-export function chatMessageSenderDids(
+export function chatMessageSenderPtids(
   messages: readonly ChatMessageLike[],
-  currentUserDid?: string | null,
+  currentUserPtid?: string | null,
 ): string[] {
   return Array.from(new Set(
     messages
-      .map((message) => message.senderDid)
-      .filter((did): did is string => Boolean(did && did !== currentUserDid)),
+      .map((message) => message.senderPtid)
+      .filter((did): did is string => Boolean(did && did !== currentUserPtid)),
   ));
 }
 
@@ -1260,12 +1260,12 @@ export function pruneChatTypingPeers<Peers extends ChatTypingPeers>(
   for (const [sessionUlid, byActor] of Object.entries(typingPeers)) {
     let sessionChanged = false;
     const nextActors: Record<string, ChatTypingEntry> = {};
-    for (const [actorId, entry] of Object.entries(byActor)) {
+    for (const [actorPtid, entry] of Object.entries(byActor)) {
       if (!entry.typing || entry.lastUpdate < staleBefore) {
         sessionChanged = true;
         continue;
       }
-      nextActors[actorId] = entry;
+      nextActors[actorPtid] = entry;
     }
     if (sessionChanged) changed = true;
     if (Object.keys(nextActors).length > 0) {
@@ -1285,9 +1285,9 @@ export function seedChatPresenceFromParticipants<T>(
   const presence: Record<string, boolean> = {};
   for (const item of items) {
     for (const participant of resolveParticipants(item)) {
-      if (!participant.actorId) continue;
-      if (presence[participant.actorId] !== undefined) continue;
-      presence[participant.actorId] = participant.online;
+      if (!participant.actorPtid) continue;
+      if (presence[participant.actorPtid] !== undefined) continue;
+      presence[participant.actorPtid] = participant.online;
     }
   }
   return presence;
@@ -1295,12 +1295,12 @@ export function seedChatPresenceFromParticipants<T>(
 
 export function applyChatPresenceToMap(
   presence: Record<string, boolean>,
-  actorId: string,
+  actorPtid: string,
   online: boolean,
 ): Record<string, boolean> | null {
-  if (!actorId) return null;
-  if (presence[actorId] === online) return null;
-  return { ...presence, [actorId]: online };
+  if (!actorPtid) return null;
+  if (presence[actorPtid] === online) return null;
+  return { ...presence, [actorPtid]: online };
 }
 
 export function mergeChatNotifications<T extends ChatNotificationLike>(
@@ -1409,8 +1409,8 @@ export function chatUnreadForParticipant(
   const unreadA = session.unreadCountA ?? 0;
   const unreadB = session.unreadCountB ?? 0;
   if (!viewerDid) return Math.max(unreadA, unreadB);
-  if (session.participantADid === viewerDid) return unreadA;
-  if (session.participantBDid === viewerDid) return unreadB;
+  if (session.participantAPtid === viewerDid) return unreadA;
+  if (session.participantBPtid === viewerDid) return unreadB;
   return Math.max(unreadA, unreadB);
 }
 
@@ -1422,8 +1422,8 @@ export function clearChatUnreadForParticipant<T extends ChatParticipantUnreadLik
   if (!sessionUlid || !viewerDid) return [...sessions];
   return sessions.map((session) => {
     if (session.ulid !== sessionUlid) return session;
-    if (session.participantADid === viewerDid) return { ...session, unreadCountA: 0 } as T;
-    if (session.participantBDid === viewerDid) return { ...session, unreadCountB: 0 } as T;
+    if (session.participantAPtid === viewerDid) return { ...session, unreadCountA: 0 } as T;
+    if (session.participantBPtid === viewerDid) return { ...session, unreadCountB: 0 } as T;
     return session;
   });
 }
@@ -1483,7 +1483,7 @@ export function projectIMMessage<Attachment extends ChatAttachmentLike = ChatAtt
     id: input.id,
     conversationKind: input.conversationKind,
     conversationId: input.conversationId,
-    senderId: input.senderId,
+    senderPtid: input.senderPtid,
     type: input.type,
     content: input.content ?? '',
     attachments: input.attachments ?? [],

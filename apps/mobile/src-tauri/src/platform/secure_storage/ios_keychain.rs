@@ -77,7 +77,10 @@ extern "C" {
     fn SecItemAdd(attributes: CFMutableDictionaryRef, result: *mut CFTypeRef) -> OSStatus;
     fn SecItemCopyMatching(query: CFMutableDictionaryRef, result: *mut CFTypeRef) -> OSStatus;
     fn SecItemDelete(query: CFMutableDictionaryRef) -> OSStatus;
-    fn SecItemUpdate(query: CFMutableDictionaryRef, attributes_to_update: CFMutableDictionaryRef) -> OSStatus;
+    fn SecItemUpdate(
+        query: CFMutableDictionaryRef,
+        attributes_to_update: CFMutableDictionaryRef,
+    ) -> OSStatus;
 }
 
 fn keychain_set(key: &str, value: &str) -> MobileResult<()> {
@@ -101,7 +104,9 @@ fn keychain_set(key: &str, value: &str) -> MobileResult<()> {
         let attrs = cf_dictionary();
         if attrs.is_null() {
             CFRelease(query);
-            return Err(MobileError::secure_storage("keychain update dictionary allocation failed"));
+            return Err(MobileError::secure_storage(
+                "keychain update dictionary allocation failed",
+            ));
         }
         let value_data = cf_data(value.as_bytes())?;
         CFDictionarySetValue(attrs, kSecValueData, value_data);
@@ -142,8 +147,9 @@ fn keychain_get(key: &str) -> MobileResult<Option<String>> {
         let length = CFDataGetLength(data);
         let bytes = CFDataGetBytePtr(data);
         let slice = std::slice::from_raw_parts(bytes, length as usize);
-        let value = String::from_utf8(slice.to_vec())
-            .map_err(|err| MobileError::secure_storage(format!("keychain value is not utf-8: {err}")))?;
+        let value = String::from_utf8(slice.to_vec()).map_err(|err| {
+            MobileError::secure_storage(format!("keychain value is not utf-8: {err}"))
+        })?;
         CFRelease(result);
         Ok(Some(value))
     }
@@ -165,7 +171,9 @@ fn keychain_remove(key: &str) -> MobileResult<()> {
 unsafe fn make_base_query(key: &str) -> MobileResult<CFMutableDictionaryRef> {
     let dictionary = cf_dictionary();
     if dictionary.is_null() {
-        return Err(MobileError::secure_storage("keychain query dictionary allocation failed"));
+        return Err(MobileError::secure_storage(
+            "keychain query dictionary allocation failed",
+        ));
     }
 
     let service = cf_string(SERVICE_NAME)?;
@@ -190,7 +198,9 @@ fn cf_string(value: &str) -> MobileResult<CFStringRef> {
         )
     };
     if string.is_null() {
-        Err(MobileError::secure_storage("keychain string allocation failed"))
+        Err(MobileError::secure_storage(
+            "keychain string allocation failed",
+        ))
     } else {
         Ok(string)
     }
@@ -208,12 +218,16 @@ unsafe fn cf_dictionary() -> CFMutableDictionaryRef {
 fn cf_data(bytes: &[u8]) -> MobileResult<CFDataRef> {
     let data = unsafe { CFDataCreate(ptr::null(), bytes.as_ptr(), bytes.len() as c_long) };
     if data.is_null() {
-        Err(MobileError::secure_storage("keychain data allocation failed"))
+        Err(MobileError::secure_storage(
+            "keychain data allocation failed",
+        ))
     } else {
         Ok(data)
     }
 }
 
 fn status_error(operation: &str, status: OSStatus) -> MobileError {
-    MobileError::secure_storage(format!("keychain {operation} failed with OSStatus {status}"))
+    MobileError::secure_storage(format!(
+        "keychain {operation} failed with OSStatus {status}"
+    ))
 }

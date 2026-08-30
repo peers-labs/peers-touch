@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-06-03 | **Updated**: 2026-08-24
+> **Created**: 2026-06-03 | **Updated**: 2026-08-30
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -280,9 +280,17 @@ Provisioner 成功后必须输出一次运行的不可变 manifest。Manifest �
 不是产品业务真源。它必须：
 
 - 由实际 provisioning 结果生成，禁止手工伪造。
-- 绑定当前 worktree commit、workspace digest、proto digest 和 live Station metadata。
+- 绑定当前 worktree commit、workspace digest，以及每个 required service 的
+  deployment environment、live commit、protocol digest 和 runtime identity。
+- `EnvironmentContract.services` 与 `RuntimeManifest.services` 是唯一服务拓扑真源；
+  service ID 表示稳定环境角色，kind 表示服务类型。
+- Provisioning readiness 是 required service attestation 的完整闭包，不是单个
+  Station 的存在性。
+- Gate 必须按稳定 service ID 选择服务并验证 expected kind，禁止按 map 顺序推断
+  primary Station。
 - 包含 actor role 到 canonical PTID 的解析结果，但不包含密码、token、PIN 或私钥。
 - 作为 Gate evidence 的 source artifact，并由 validator 校验 freshness。
+- 顶层 singular `station` 已删除；禁止 dual-write、compatibility alias 或 fallback。
 - 完整 schema 见 [data-model.md §3](./data-model.md#3-runtime-resource-manifest)。
 
 ### 3.8 Acceptance Gap Contract

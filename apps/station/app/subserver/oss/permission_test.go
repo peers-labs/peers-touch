@@ -48,7 +48,7 @@ func TestCheckRead_PolicyMatrix(t *testing.T) {
 	mkMeta := func(vis, ownerID, sess string) *ossdb.FileMeta {
 		return &ossdb.FileMeta{
 			Key:           "k",
-			OwnerActorID:  ownerID,
+			OwnerPTID:     ownerID,
 			Visibility:    vis,
 			ChatSessionID: sess,
 		}
@@ -185,7 +185,7 @@ func TestCheckRead_PolicyMatrix(t *testing.T) {
 // caller access to every chat-visibility file.
 func TestCheckRead_ChatNoResolverDenies(t *testing.T) {
 	meta := &ossdb.FileMeta{
-		Key: "k", OwnerActorID: "owner", Visibility: ossdb.VisibilityChat,
+		Key: "k", OwnerPTID: "owner", Visibility: ossdb.VisibilityChat,
 		ChatSessionID: "sess",
 	}
 	got := checkRead(context.Background(), nil, meta, "did:test:bob", "")
@@ -203,7 +203,7 @@ func TestCheckRead_ChatNoResolverDenies(t *testing.T) {
 // a federated permission claim.
 func TestCheckRead_PeerSubjectTrumpsLocal(t *testing.T) {
 	meta := &ossdb.FileMeta{
-		Key: "k", OwnerActorID: "did:test:alice", Visibility: ossdb.VisibilityPrivate,
+		Key: "k", OwnerPTID: "did:test:alice", Visibility: ossdb.VisibilityPrivate,
 	}
 	// Local cookie = alice (would allow), peer JWT = bob (must deny).
 	got := checkRead(context.Background(), nil, meta, "did:test:alice", "did:test:bob")

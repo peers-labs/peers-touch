@@ -205,10 +205,10 @@ func runInstall(svc *service.StoreService, args []string) {
 		fail("install requires <applet-id>")
 	}
 	response, err := svc.InstallApplet(&model.InstallAppletRequest{
-		ActorId:  *actorID,
-		DeviceId: *deviceID,
-		AppletId: flags.Arg(0),
-		Channel:  parseChannel(*channel),
+		ActorPtid: *actorID,
+		DeviceId:  *deviceID,
+		AppletId:  flags.Arg(0),
+		Channel:   parseChannel(*channel),
 	})
 	if err != nil {
 		fail("install applet: %v", err)

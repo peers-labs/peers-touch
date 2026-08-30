@@ -8,10 +8,10 @@ pub struct LocalScope {
 }
 
 impl LocalScope {
-    pub fn from_actor(actor_id: &str) -> Self {
+    pub fn from_actor_ptid(actor_ptid: &str) -> Self {
         Self {
             station_scope: active_station_scope(),
-            actor_scope: storage::resolve_user_scope(Some(actor_id)),
+            actor_scope: storage::resolve_user_scope(actor_ptid),
         }
     }
 
@@ -20,8 +20,8 @@ impl LocalScope {
     }
 
     pub fn account_id(&self, provider: &str, provider_user_id: &str) -> String {
-        let provider = storage::resolve_user_scope(Some(provider));
-        let provider_user = storage::resolve_user_scope(Some(provider_user_id));
+        let provider = storage::sanitize_storage_segment(provider);
+        let provider_user = storage::sanitize_storage_segment(provider_user_id);
         format!(
             "station:{}:{}:{}",
             self.station_scope, provider, provider_user
@@ -35,66 +35,23 @@ impl LocalScope {
 
 pub fn active_station_scope() -> String {
     if let Some(peer_id) = station_client::active_station_peer_id() {
-        let peer = peer_id.trim();
-        if !peer.is_empty() {
-            return format!("station_peer_{}", storage::resolve_user_scope(Some(peer)));
+        let peer_id = peer_id.trim();
+        if !peer_id.is_empty() {
+            return format!(
+                "station_peer_{}",
+                storage::sanitize_storage_segment(peer_id)
+            );
         }
     }
-    let url = canonical_station_url(&station_client::station_base_url());
-    format!("station_url_{}", sha256_short(&url))
+    let station_url = station_client::station_base_url();
+    let digest = Sha256::digest(station_url.trim().as_bytes());
+    format!("station_url_{}", hex::encode(&digest[..12]))
 }
 
-pub fn user_scope_for_actor(actor_id: Option<&str>) -> String {
-    match actor_id {
-        Some(id) if !id.trim().is_empty() => LocalScope::from_actor(id).user_scope(),
-        _ => LocalScope {
-            station_scope: active_station_scope(),
-            actor_scope: "__default__".to_string(),
-        }
-        .user_scope(),
-    }
+pub fn user_scope_for_actor_ptid(actor_ptid: &str) -> String {
+    LocalScope::from_actor_ptid(actor_ptid).user_scope()
 }
 
-pub fn account_id_for_password_actor(actor_id: &str) -> String {
-    LocalScope::from_actor(actor_id).account_id("password", actor_id)
-}
-
-pub fn actor_id_from_account_id(account_id: &str) -> String {
-    account_id
-        .rsplit_once(':')
-        .map(|(_, id)| id.to_string())
-        .unwrap_or_else(|| account_id.to_string())
-}
-
-fn canonical_station_url(raw: &str) -> String {
-    let trimmed = raw.trim().trim_end_matches('/');
-    let Ok(mut url) = reqwest::Url::parse(trimmed) else {
-        return trimmed.to_ascii_lowercase();
-    };
-    let scheme = url.scheme().to_ascii_lowercase();
-    let _ = url.set_scheme(&scheme);
-    if let Some(host) = url.host_str().map(|host| host.to_ascii_lowercase()) {
-        let _ = url.set_host(Some(&host));
-    }
-    url.to_string().trim_end_matches('/').to_string()
-}
-
-fn sha256_short(value: &str) -> String {
-    let digest = Sha256::digest(value.as_bytes());
-    hex::encode(&digest[..12])
-}
-
-#[cfg(test)]
-mod tests {
-    use super::actor_id_from_account_id;
-
-    #[test]
-    fn extracts_actor_from_station_scoped_account_id() {
-        assert_eq!(
-            actor_id_from_account_id(
-                "station:station_peer_12D3KooWQZwHCzezsjLCSYpAm2wvwDL5xD4iZ48MjWKL7TXbKC1B:password:347760575490555906"
-            ),
-            "347760575490555906"
-        );
-    }
+pub fn account_id_for_password_ptid(actor_ptid: &str) -> String {
+    LocalScope::from_actor_ptid(actor_ptid).account_id("password", actor_ptid)
 }

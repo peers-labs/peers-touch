@@ -86,6 +86,52 @@ func reset(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func TestMigratePTIDColumnsIsIdempotent(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:oss-ptid-migration?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, statement := range []string{
+		"CREATE TABLE oss_files (id TEXT PRIMARY KEY, owner_actor_id TEXT NOT NULL)",
+		"CREATE TABLE oss_buckets (id TEXT PRIMARY KEY, owner_actor_id TEXT NOT NULL)",
+		"CREATE TABLE oss_audit (id INTEGER PRIMARY KEY, actor_id TEXT NOT NULL)",
+		"INSERT INTO oss_files (id, owner_actor_id) VALUES ('file-1', 'ptid-owner')",
+		"INSERT INTO oss_buckets (id, owner_actor_id) VALUES ('bucket-1', 'ptid-owner')",
+		"INSERT INTO oss_audit (id, actor_id) VALUES (1, 'ptid-actor')",
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare legacy schema: %v", err)
+		}
+	}
+
+	for run := 1; run <= 2; run++ {
+		if err := MigratePTIDColumns(db); err != nil {
+			t.Fatalf("migration run %d: %v", run, err)
+		}
+	}
+	for _, check := range []struct {
+		table     string
+		legacy    string
+		canonical string
+	}{
+		{table: "oss_files", legacy: "owner_actor_id", canonical: "owner_ptid"},
+		{table: "oss_buckets", legacy: "owner_actor_id", canonical: "owner_ptid"},
+		{table: "oss_audit", legacy: "actor_id", canonical: "actor_ptid"},
+	} {
+		if db.Migrator().HasColumn(check.table, check.legacy) ||
+			!db.Migrator().HasColumn(check.table, check.canonical) {
+			t.Fatalf("%s PTID columns not cut over", check.table)
+		}
+	}
+	var owner string
+	if err := db.Table("oss_files").Select("owner_ptid").Where("id = ?", "file-1").Scan(&owner).Error; err != nil {
+		t.Fatalf("read migrated file owner: %v", err)
+	}
+	if owner != "ptid-owner" {
+		t.Fatalf("migrated file owner = %q, want ptid-owner", owner)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // BucketRepository tests
 // ---------------------------------------------------------------------------
@@ -102,7 +148,7 @@ func TestBucketRepo_EnsureSystemIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure first: %v", err)
 	}
-	if first.OwnerActorID != actor || first.Name != ossmodel.SystemBucketChat {
+	if first.OwnerPTID != actor || first.Name != ossmodel.SystemBucketChat {
 		t.Fatalf("unexpected first row: %+v", first)
 	}
 
@@ -117,7 +163,7 @@ func TestBucketRepo_EnsureSystemIsIdempotent(t *testing.T) {
 	// Sanity: only one row per (owner, name).
 	var count int64
 	if err := db.Model(&ossmodel.Bucket{}).
-		Where("owner_actor_id = ? AND name = ?", actor, ossmodel.SystemBucketChat).
+		Where("owner_ptid = ? AND name = ?", actor, ossmodel.SystemBucketChat).
 		Count(&count).Error; err != nil {
 		t.Fatalf("count: %v", err)
 	}
@@ -234,7 +280,7 @@ func TestBucketRepo_Create_DuplicateReturnsErrBucketExists(t *testing.T) {
 	dup := &ossmodel.Bucket{
 		ID:                "synthetic-dup",
 		Name:              ossmodel.SystemBucketAvatar,
-		OwnerActorID:      actor,
+		OwnerPTID:         actor,
 		Kind:              ossmodel.BucketKindUser,
 		DefaultVisibility: ossmodel.VisibilityPublic,
 	}
@@ -245,7 +291,7 @@ func TestBucketRepo_Create_DuplicateReturnsErrBucketExists(t *testing.T) {
 	// And we must not have leaked a second row.
 	var n int64
 	_ = db.Model(&ossmodel.Bucket{}).
-		Where("owner_actor_id = ? AND name = ?", actor, ossmodel.SystemBucketAvatar).
+		Where("owner_ptid = ? AND name = ?", actor, ossmodel.SystemBucketAvatar).
 		Count(&n)
 	if n != 1 {
 		t.Fatalf("expected exactly 1 row, got %d", n)
@@ -338,8 +384,8 @@ func TestBucketRepo_ListByOwnerAndAll(t *testing.T) {
 		t.Fatalf("alice should own 2 buckets, got %d: %+v", len(rows), rows)
 	}
 	for _, row := range rows {
-		if row.OwnerActorID != "did:test:alice" {
-			t.Fatalf("ListByOwner leaked owner %q", row.OwnerActorID)
+		if row.OwnerPTID != "did:test:alice" {
+			t.Fatalf("ListByOwner leaked owner %q", row.OwnerPTID)
 		}
 	}
 
@@ -373,7 +419,7 @@ func TestAuditRepo_AppendQueryTrim(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		err := r.Append(ctx, ossmodel.Audit{
 			Action:    ossmodel.AuditActionUpload,
-			ActorID:   "did:test:logger",
+			ActorPTID: "did:test:logger",
 			TS:        now.Add(-time.Duration(i) * time.Hour),
 			Outcome:   ossmodel.AuditOutcomeOK,
 			SizeBytes: int64(i + 1),
@@ -383,7 +429,7 @@ func TestAuditRepo_AppendQueryTrim(t *testing.T) {
 		}
 	}
 
-	rows, total, err := r.Query(ctx, AuditQuery{ActorID: "did:test:logger"})
+	rows, total, err := r.Query(ctx, AuditQuery{ActorPTID: "did:test:logger"})
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -404,7 +450,7 @@ func TestAuditRepo_AppendQueryTrim(t *testing.T) {
 		t.Fatalf("expected trim to delete at least one row")
 	}
 
-	_, total, _ = r.Query(ctx, AuditQuery{ActorID: "did:test:logger"})
+	_, total, _ = r.Query(ctx, AuditQuery{ActorPTID: "did:test:logger"})
 	if total >= 5 {
 		t.Fatalf("trim did not reduce row count: total=%d", total)
 	}
@@ -625,7 +671,7 @@ func seedLiveFile(t *testing.T, db *gorm.DB, id, owner, key string) *ossmodel.Fi
 		Size:          10,
 		Backend:       "local",
 		Sha256:        "h",
-		OwnerActorID:  owner,
+		OwnerPTID:     owner,
 		BucketID:      "bk-" + id,
 		Visibility:    ossmodel.VisibilityPrivate,
 		ChatSessionID: "",
@@ -892,20 +938,20 @@ func TestMetaRepo_GetReturnsEmptyForMissingRow(t *testing.T) {
 func seedFileRow(t *testing.T, db *gorm.DB, id, owner, key, bucketID, vis, mime string, size int64, created time.Time, deletedAt *time.Time) *ossmodel.FileMeta {
 	t.Helper()
 	row := &ossmodel.FileMeta{
-		ID:           id,
-		Key:          key,
-		Name:         id,
-		Size:         size,
-		Mime:         mime,
-		Backend:      "test",
-		Path:         "/tmp/" + key,
-		Sha256:       "",
-		BucketID:     bucketID,
-		OwnerActorID: owner,
-		Visibility:   vis,
-		CreatedAt:    created,
-		UpdatedAt:    created,
-		DeletedAt:    deletedAt,
+		ID:         id,
+		Key:        key,
+		Name:       id,
+		Size:       size,
+		Mime:       mime,
+		Backend:    "test",
+		Path:       "/tmp/" + key,
+		Sha256:     "",
+		BucketID:   bucketID,
+		OwnerPTID:  owner,
+		Visibility: vis,
+		CreatedAt:  created,
+		UpdatedAt:  created,
+		DeletedAt:  deletedAt,
 	}
 	if err := db.Create(row).Error; err != nil {
 		t.Fatalf("seed file row %q: %v", id, err)
@@ -1134,7 +1180,7 @@ func TestBucketRepo_SetUsageRewritesAbsoluteCounters(t *testing.T) {
 	ctx := context.Background()
 
 	b := &ossmodel.Bucket{
-		ID: "bk_setusage", Name: "u", OwnerActorID: "did:test:alice",
+		ID: "bk_setusage", Name: "u", OwnerPTID: "did:test:alice",
 		Kind: ossmodel.BucketKindUser, DefaultVisibility: "private",
 		UsedBytes: 100, ObjectCount: 5,
 	}

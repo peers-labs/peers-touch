@@ -29,7 +29,7 @@
 //
 // When peers-oss lands its richer `Object` model (per-actor
 // uploader / bucket / lifecycle), this resolver will additionally
-// enforce `uploader_did == author_did` so callers cannot reference
+// enforce `uploader_ptid == author_ptid` so callers cannot reference
 // somebody else's locally-uploaded file. Tracked under D6 in
 // `.dev-workflow/20260429-094000/plan.md`.
 

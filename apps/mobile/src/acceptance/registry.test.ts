@@ -1,0 +1,423 @@
+// @ts-nocheck -- Vitest is supplied by the repository test runner, not the Mobile production bundle.
+
+import { readFileSync } from 'node:fs';
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const invokeMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: invokeMock,
+}));
+
+import { MobileAcceptanceActionRegistry } from './actionRegistry';
+import {
+  MOBILE_ACCEPTANCE_ACTION_NAMES,
+} from './contracts';
+import {
+  sanitizeNegativeOAuthProjection,
+  sanitizeOAuthPurgeOutput,
+} from './negativeOAuth';
+import { sanitizeMobileProjection } from './projection';
+import { createMobileAcceptanceHarness } from './registry';
+
+describe('Mobile Acceptance Harness', () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+  });
+
+  it('registers exactly the environment contract action names', () => {
+    const actionNames = Object.keys(createMobileAcceptanceHarness()).sort();
+    expect(actionNames).toEqual(
+      [...MOBILE_ACCEPTANCE_ACTION_NAMES].sort(),
+    );
+    expect(actionNames).toContain('build.identity');
+    expect(actionNames).toContain('oauth.replayHandle');
+    expect(actionNames).toContain('oauth.negativeCallback');
+  });
+
+  it('rejects duplicate action registration', () => {
+    const registry = new MobileAcceptanceActionRegistry();
+    const action = async () => ({
+      requested: true as const,
+      scope: 'webview' as const,
+    });
+
+    registry.register('lifecycle.restart', action);
+
+    expect(() => registry.register('lifecycle.restart', action))
+      .toThrow('acceptance.mobile.duplicateAction:lifecycle.restart');
+  });
+
+  it('returns only explicitly public projection fields', () => {
+    const projection = sanitizeMobileProjection({
+      stationRegistry: {
+        activeStationPeerId: 'station-peer',
+        entries: [{
+          stationPeerId: 'station-peer',
+          url: 'https://station.example',
+          label: 'Station',
+          createdAt: 1,
+          lastUsedAt: 2,
+          online: true,
+          privateKey: 'must-not-cross',
+        }],
+      },
+      access: {
+        decision: {
+          state: 'ACCESS_DECISION_STATE_GRANTED',
+          attemptId: 'attempt',
+          currentGateId: '',
+          accessGrantId: 'grant',
+          message: 'must-not-cross',
+          gates: [{
+            gateId: 'auth.login',
+            type: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
+            state: 'ACCESS_GATE_STATE_PASSED',
+            title: 'must-not-cross',
+            inputSchemaJson: '{"password":"must-not-cross"}',
+          }],
+        },
+        session: {
+          stationPeerId: 'station-peer',
+          actorPtid: 'ptid:alice',
+          expiresAt: '2026-08-29T00:00:00Z',
+          accessToken: 'must-not-cross',
+        },
+        loading: false,
+        errorKey: null,
+        restored: true,
+      },
+      oauth: {
+        phase: 'active_session',
+        stationPeerId: 'station-peer',
+        candidatePtid: 'ptid:alice',
+        errorKey: null,
+        recovery: 'none',
+        session: {
+          sessionId: 'must-not-cross',
+          actorPtid: 'ptid:alice',
+          expiresAt: '2026-08-29T00:00:00Z',
+        },
+        authorizationCode: 'must-not-cross',
+      },
+    });
+
+    expect(JSON.stringify(projection)).not.toMatch(
+      /accessToken|authorizationCode|inputSchemaJson|message|privateKey|sessionId/,
+    );
+    expect(projection).toMatchObject({
+      station: {
+        activeStationPeerId: 'station-peer',
+        entries: [{ stationPeerId: 'station-peer' }],
+      },
+      access: {
+        session: {
+          stationPeerId: 'station-peer',
+          actorPtid: 'ptid:alice',
+        },
+      },
+      oauth: {
+        phase: 'active_session',
+        session: { actorPtid: 'ptid:alice' },
+      },
+    });
+  });
+
+  it('keeps acceptance adapters outside direct Zustand mutation APIs', () => {
+    const source = readFileSync(
+      new URL('./actions.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).not.toMatch(/from ['"].*authStore['"]/);
+    expect(source).not.toMatch(/\.(?:getState|setState)\s*\(/);
+    expect(source).not.toMatch(/\bzustand\b/);
+  });
+
+  it('starts access through the production auth runtime before OAuth', () => {
+    const actionsSource = readFileSync(
+      new URL('./actions.ts', import.meta.url),
+      'utf8',
+    );
+    const runtimeSource = readFileSync(
+      new URL('../runtimes/authRuntime.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(actionsSource).toMatch(
+      /input\.kind === 'start'[\s\S]*startAccessAttemptForActiveStation\(\)/,
+    );
+    expect(runtimeSource).toMatch(
+      /startAccessAttemptForActiveStation[\s\S]*startStationAccessAttempt\([\s\S]*applyAccessGateRuntimeResult\(decision\)/,
+    );
+  });
+
+  it('projects negative OAuth results without callback or credential material', () => {
+    const projection = sanitizeNegativeOAuthProjection({
+      phase: 'failed',
+      stationPeerId: 'station-peer',
+      provider: 'github',
+      accessAttemptId: 'access-attempt',
+      gateId: 'auth.oauth',
+      result: 'OAUTH_ATTEMPT_RESULT_BINDING_MISMATCH',
+      errorCode: 'OAUTH_CALLBACK_BINDING_MISMATCH',
+      candidate: {
+        actorPtid: 'ptid:alice',
+        candidateId: 'must-not-cross',
+      },
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_PENDING',
+        currentGateId: 'auth.oauth',
+        message: 'must-not-cross',
+      },
+      session: null,
+      callbackUrl: 'must-not-cross',
+      code: 'must-not-cross',
+      state: 'must-not-cross',
+      pkceVerifier: 'must-not-cross',
+      nonce: 'must-not-cross',
+    });
+
+    expect(projection).toEqual({
+      phase: 'failed',
+      stationPeerId: 'station-peer',
+      provider: 'github',
+      accessAttemptId: 'access-attempt',
+      gateId: 'auth.oauth',
+      expiresAtUnixMs: undefined,
+      result: 'OAUTH_ATTEMPT_RESULT_BINDING_MISMATCH',
+      errorCode: 'OAUTH_CALLBACK_BINDING_MISMATCH',
+      candidatePtid: 'ptid:alice',
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_PENDING',
+        currentGateId: 'auth.oauth',
+      },
+      sessionPresent: false,
+    });
+    expect(JSON.stringify(projection)).not.toMatch(
+      /callbackUrl|candidateId|code|message|nonce|pkceVerifier/,
+    );
+  });
+
+  it('returns only authoritative Rust secure-storage absence flags', () => {
+    const projection = sanitizeOAuthPurgeOutput({
+      stationRevocation: 'confirmed',
+      secureStorage: {
+        activeAttemptIndexAbsent: true,
+        attemptSecretRecordAbsent: true,
+        currentSessionIndexAbsent: true,
+        credentialRecordAbsent: true,
+        publicProjectionAbsent: true,
+        credential: 'must-not-cross',
+      },
+      deletedKeys: ['must-not-cross'],
+    });
+
+    expect(projection).toEqual({
+      stationRevocation: 'confirmed',
+      secureStorage: {
+        activeAttemptIndexAbsent: true,
+        attemptSecretRecordAbsent: true,
+        currentSessionIndexAbsent: true,
+        credentialRecordAbsent: true,
+        publicProjectionAbsent: true,
+      },
+    });
+    expect(JSON.stringify(projection)).not.toMatch(
+      /must-not-cross|deletedKeys/,
+    );
+  });
+
+  it('routes negative OAuth input through the registered typed action', async () => {
+    const input = {
+      context: {
+        build: {
+          buildId: 'build-id',
+          harnessEnabled: true,
+        },
+        leases: [
+          {
+            leaseRef: 'physical-device-lease/alice-ios',
+            holderRunId: 'run-id',
+            fenceToken: 9,
+            state: 'IN_USE',
+            expiresAtUnixMs: Number.MAX_SAFE_INTEGER,
+          },
+          {
+            leaseRef: 'provider-account-lease/github',
+            holderRunId: 'run-id',
+            fenceToken: 42,
+            state: 'IN_USE',
+            expiresAtUnixMs: Number.MAX_SAFE_INTEGER,
+          },
+          {
+            leaseRef: 'browser-session-lease/alice-ios',
+            holderRunId: 'run-id',
+            fenceToken: 18,
+            state: 'IN_USE',
+            expiresAtUnixMs: Number.MAX_SAFE_INTEGER,
+          },
+        ],
+        services: [{
+          serviceId: 'station-primary',
+          stationOrigin: 'https://station.example',
+          stationPeerId: 'station-peer',
+        }],
+      },
+      intent: {
+        artifactKind: 'mobile-oauth-negative-callback-intent',
+        runId: 'run-id',
+        gateId: 'mobile-native-access-e2e',
+        variantId: 'provider-mismatch-ios',
+        clientId: 'alice-ios',
+        operation: 'provider_mismatch',
+        requiredLeaseRefs: [
+          'physical-device-lease/alice-ios',
+          'provider-account-lease/github',
+          'browser-session-lease/alice-ios',
+        ],
+        holderRunId: 'run-id',
+        fenceTokens: {
+          physicalDevice: 9,
+          providerAccount: 42,
+          browserSession: 18,
+        },
+        callbackReplayHandle: '',
+        replayMode: '',
+        alternateServiceId: '',
+        expectedFailure: 'oauthProviderMismatch',
+      },
+    };
+    invokeMock.mockResolvedValue({
+      operation: 'provider_mismatch',
+      failure: 'oauthProviderMismatch',
+      projection: {
+        phase: 'failed',
+        result: 'OAUTH_ATTEMPT_RESULT_BINDING_MISMATCH',
+        errorCode: 'OAUTH_CALLBACK_BINDING_MISMATCH',
+      },
+    });
+
+    const result = await createMobileAcceptanceHarness()[
+      'oauth.negativeCallback'
+    ](input);
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'oauth_acceptance_negative_callback',
+      { input },
+    );
+    expect(result).toMatchObject({
+      operation: 'provider_mismatch',
+      failure: 'oauthProviderMismatch',
+      projection: {
+        phase: 'failed',
+        sessionPresent: false,
+      },
+    });
+  });
+
+  it('routes replay handle acquisition through the registered typed action', async () => {
+    const input = {
+      runId: 'run-id',
+      gateId: 'mobile-native-access-e2e',
+      clientId: 'alice-ios',
+      context: {
+        build: {
+          buildId: 'build-id',
+          harnessEnabled: true,
+        },
+        leases: [],
+        services: [],
+      },
+    };
+    invokeMock.mockResolvedValue({
+      callbackReplayHandle: 'volatile-handle',
+    });
+
+    await expect(createMobileAcceptanceHarness()[
+      'oauth.replayHandle'
+    ](input)).resolves.toEqual({
+      callbackReplayHandle: 'volatile-handle',
+    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      'oauth_acceptance_callback_replay_handle',
+      { input },
+    );
+  });
+
+  it('keeps negative adapters acceptance-only and delegates purge to Rust', () => {
+    const actionsSource = readFileSync(
+      new URL('./actions.ts', import.meta.url),
+      'utf8',
+    );
+    const adapterSource = readFileSync(
+      new URL('./negativeOAuth.ts', import.meta.url),
+      'utf8',
+    );
+    const productionCommandsSource = readFileSync(
+      new URL('../services/mobileCommands.ts', import.meta.url),
+      'utf8',
+    );
+    const entrySource = readFileSync(
+      new URL('../main.tsx', import.meta.url),
+      'utf8',
+    );
+    const registrySource = readFileSync(
+      new URL('./registry.ts', import.meta.url),
+      'utf8',
+    );
+    const rustCommandsSource = readFileSync(
+      new URL('../../src-tauri/src/commands/mod.rs', import.meta.url),
+      'utf8',
+    );
+    const rustOAuthCommandsSource = readFileSync(
+      new URL('../../src-tauri/src/commands/oauth.rs', import.meta.url),
+      'utf8',
+    );
+    const [releaseHandler, acceptanceHandler = ''] = rustCommandsSource.split(
+      '#[cfg(feature = "acceptance-harness")]',
+    );
+
+    expect(entrySource).toMatch(
+      /VITE_ACCEPTANCE_HARNESS === '1'[\s\S]*import\('\.\/acceptance\/registry'\)/,
+    );
+    expect(adapterSource).toMatch(
+      /invoke<[^>]+>\(\s*'oauth_acceptance_negative_callback'/,
+    );
+    expect(adapterSource).toMatch(
+      /invoke<[^>]+>\(\s*'oauth_logout_purge'/,
+    );
+    expect(adapterSource).not.toMatch(
+      /secure_storage_(?:get|set|remove)|callbackUrl|authorizationCode|pkceVerifier|nonce/,
+    );
+    expect(productionCommandsSource).not.toMatch(
+      /oauth_acceptance_(?:callback_replay_handle|negative_callback)/,
+    );
+    expect(registrySource).toMatch(
+      /oauth\.replayHandle[\s\S]*oauth\.negativeCallback/,
+    );
+    expect(actionsSource).toMatch(
+      /build\.identity[\s\S]*oauth\.replayHandle[\s\S]*oauth\.negativeCallback/,
+    );
+    expect(releaseHandler).not.toMatch(
+      /mobile_build_identity|oauth_acceptance_(?:callback_replay_handle|negative_callback)/,
+    );
+    expect(acceptanceHandler).toMatch(
+      /mobile_build_identity[\s\S]*oauth_acceptance_callback_replay_handle[\s\S]*oauth_acceptance_negative_callback/,
+    );
+    expect(rustOAuthCommandsSource).toMatch(
+      /#\[cfg\(feature = "acceptance-harness"\)\][\s\S]*oauth_acceptance_callback_replay_handle/,
+    );
+    expect(rustOAuthCommandsSource).toMatch(
+      /#\[cfg\(feature = "acceptance-harness"\)\][\s\S]*oauth_acceptance_negative_callback/,
+    );
+    expect(productionCommandsSource).not.toMatch(
+      /oauth_acceptance_(?:callback_replay_handle|negative_callback)/,
+    );
+    expect(rustCommandsSource).toMatch(/oauth::oauth_logout_purge/);
+    expect(actionsSource).toMatch(
+      /const oauthPurge = await purgeNativeOAuth\([\s\S]*clearAuthRuntimeSession\(\)/,
+    );
+  });
+});

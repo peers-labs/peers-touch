@@ -545,7 +545,7 @@ func TestDirectRunRecordFromProviderPlanCreatesStationOwnedEntity(t *testing.T) 
 	}
 	if !strings.Contains(record.InputSnapshotJSON, `"model_intent":"gpt-4.1"`) ||
 		!strings.Contains(record.InputSnapshotJSON, `"provider_id":"openai"`) ||
-		!strings.Contains(record.InputSnapshotJSON, `"actor_id":"actor-1"`) ||
+		!strings.Contains(record.InputSnapshotJSON, `"actor_ptid":"actor-1"`) ||
 		!strings.Contains(record.InputSnapshotJSON, `"attachments":[]`) {
 		t.Fatalf("expected DirectRun input snapshot to preserve Station intent, got %s", record.InputSnapshotJSON)
 	}
@@ -644,7 +644,7 @@ func TestDirectRunLifecycleRecordsFromProviderPlanCreatesNoSessionTaskRunMarker(
 		records.Task.Surface != int32(model.TaskSurface_TASK_SURFACE_DIRECT_RUN) ||
 		records.Task.ConversationID != "" ||
 		records.Task.Status != int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING) ||
-		records.Task.OwnerActorID != "actor-1" {
+		records.Task.OwnerActorPTID != "actor-1" {
 		t.Fatalf("unexpected DirectRun TaskRun marker: %+v", records.Task)
 	}
 	if !strings.Contains(records.Task.MetaJSON, `"runtime_kind":"direct_run_no_session"`) ||
@@ -721,15 +721,15 @@ func TestDirectRunLifecycleMarkerPersistsDurableTaskCreatedEvent(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "direct_run_lifecycle_marker_event")
 	now := time.Date(2026, 7, 5, 11, 6, 0, 0, time.UTC)
 	task := &persistence.CollaborationTask{
-		ID:          "task-direct-run-marker",
-		Title:       "Run direct model",
-		Description: "Station owned DirectRun marker",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		GoalOwnerID: "actor-1",
-		WorkspaceID: "peers-touch",
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-direct-run-marker",
+		Title:         "Run direct model",
+		Description:   "Station owned DirectRun marker",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		GoalOwnerPTID: "actor-1",
+		WorkspaceID:   "peers-touch",
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	records, err := directRunLifecycleRecordsFromProviderPlan(task, "actor-1", &model.TaskProviderPlan{
 		Source:             "atelier.direct_run.intent",
@@ -1171,16 +1171,16 @@ func seedDirectRunRuntimeFixture(t *testing.T, db *gorm.DB, taskID string, provi
 		runtimeKind = "station"
 	}
 	task := &persistence.CollaborationTask{
-		ID:          taskID,
-		Title:       "Run direct model",
-		Description: "Answer directly from a Station-owned DirectRun provider.",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		GoalOwnerID: "actor-1",
-		WorkspaceID: "peers-touch",
-		MetaJSON:    "{}",
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            taskID,
+		Title:         "Run direct model",
+		Description:   "Answer directly from a Station-owned DirectRun provider.",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		GoalOwnerPTID: "actor-1",
+		WorkspaceID:   "peers-touch",
+		MetaJSON:      "{}",
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	records, err := directRunLifecycleRecordsFromProviderPlan(task, "actor-1", &model.TaskProviderPlan{
 		Source:             collaborationProviderPlanSourceDirectRun,
@@ -1251,7 +1251,7 @@ func directRunPreflightFixture() *directRunLifecycleRecords {
 			TaskID:         "task-direct-run-preflight",
 			Surface:        int32(model.TaskSurface_TASK_SURFACE_DIRECT_RUN),
 			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-			OwnerActorID:   "actor-1",
+			OwnerActorPTID: "actor-1",
 			ConversationID: "",
 			CreatedAt:      now,
 			StartedAt:      now,
@@ -1286,14 +1286,14 @@ func TestLoadRuntimeProviderOverrideForNodeUsesPersistedPlan(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "provider_plan_runtime_override")
 	now := time.Date(2026, 7, 5, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-provider-runtime",
-		Title:       "DirectRun runtime provider override",
-		Description: "Use Station provider plan at runtime.",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		GoalOwnerID: "actor-1",
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-provider-runtime",
+		Title:         "DirectRun runtime provider override",
+		Description:   "Use Station provider plan at runtime.",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		GoalOwnerPTID: "actor-1",
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-provider-runtime",
@@ -1460,7 +1460,7 @@ func TestClaimNodeLeaseTxFencesActiveExecutorLease(t *testing.T) {
 			description text,
 			engine_type integer NOT NULL,
 			status integer NOT NULL,
-			goal_owner_id text NOT NULL,
+			goal_owner_ptid text NOT NULL,
 			workspace_id text,
 			budget_tokens real NOT NULL DEFAULT 0,
 			budget_money real NOT NULL DEFAULT 0,
@@ -1502,13 +1502,13 @@ func TestClaimNodeLeaseTxFencesActiveExecutorLease(t *testing.T) {
 
 	now := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-lease",
-		GoalOwnerID: "actor-1",
-		Title:       "Lease claim",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-lease",
+		GoalOwnerPTID: "actor-1",
+		Title:         "Lease claim",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-lease",
@@ -1600,14 +1600,14 @@ func TestResumeCollaborationTaskTxResumesPausedTaskWithoutRunningNode(t *testing
 	db := openResumeCollaborationTaskDB(t, "resume_paused_no_running")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-resume",
-		Title:       "Resume task",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
-		MetaJSON:    `{"existing":"kept"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-resume",
+		Title:         "Resume task",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		MetaJSON:      `{"existing":"kept"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	nodes := []persistence.CollaborationTaskNode{
 		{
@@ -1667,14 +1667,14 @@ func TestResumeCollaborationTaskTxRejectsPausedTaskWithRunningNode(t *testing.T)
 	db := openResumeCollaborationTaskDB(t, "resume_paused_running_node")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-running-node",
-		Title:       "Running node",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
-		MetaJSON:    `{"existing":"kept"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-running-node",
+		Title:         "Running node",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		MetaJSON:      `{"existing":"kept"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	nodes := []persistence.CollaborationTaskNode{
 		{
@@ -1717,14 +1717,14 @@ func TestCanResumeCollaborationTaskTxRejectsPausedTaskWithRunningNodeWithoutMuta
 	db := openResumeCollaborationTaskDB(t, "can_resume_paused_running_node")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-can-resume-running-node",
-		Title:       "Running node preflight",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
-		MetaJSON:    `{"existing":"kept"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-can-resume-running-node",
+		Title:         "Running node preflight",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		MetaJSON:      `{"existing":"kept"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	nodes := []persistence.CollaborationTaskNode{
 		{
@@ -1761,14 +1761,14 @@ func TestCanResumeCollaborationTaskTxAllowsPausedTaskWithoutMutation(t *testing.
 	db := openResumeCollaborationTaskDB(t, "can_resume_paused_no_running")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-can-resume",
-		Title:       "Can resume task",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
-		MetaJSON:    `{"existing":"kept"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-can-resume",
+		Title:         "Can resume task",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		MetaJSON:      `{"existing":"kept"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	nodes := []persistence.CollaborationTaskNode{
 		{
@@ -1804,14 +1804,14 @@ func TestResolveCollaborationInterruptTxResumesPausedTaskAndPersistsResolvedEven
 	db := openResumeCollaborationTaskDB(t, "resolve_interrupt_resumes")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-resolve-interrupt",
-		Title:       "Resolve interrupt",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
-		MetaJSON:    `{"existing":"kept"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-resolve-interrupt",
+		Title:         "Resolve interrupt",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		MetaJSON:      `{"existing":"kept"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	nodes := []persistence.CollaborationTaskNode{
 		{
@@ -1891,10 +1891,10 @@ func TestResolveCollaborationInterruptTxAcceptsGateBlockedTask(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "resolve_gate_block_accept")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-gate-accept",
-		Title:       "Gate accept",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		ID:            "task-gate-accept",
+		Title:         "Gate accept",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"gate_blocked":         "true",
 			"gate_blocked_id":      "gate-block",
@@ -1953,10 +1953,10 @@ func TestResolveCollaborationInterruptTxRerunsGateBlockedNode(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "resolve_gate_block_rerun")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-gate-rerun",
-		Title:       "Gate rerun",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		ID:            "task-gate-rerun",
+		Title:         "Gate rerun",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"gate_blocked":         "true",
 			"gate_blocked_id":      "gate-block",
@@ -2018,10 +2018,10 @@ func TestResolveCollaborationInterruptTxRoutesHumanDecisionGateRerun(t *testing.
 	db := openResumeCollaborationTaskDB(t, "resolve_human_decision_route_gate_rerun")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-human-route-gate",
-		Title:       "Human route gate",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		ID:            "task-human-route-gate",
+		Title:         "Human route gate",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"gate_blocked":      "true",
 			"gate_blocked_id":   "gate-block",
@@ -2123,14 +2123,14 @@ func TestResolveCollaborationInterruptTxRoutesHumanDecisionBudgetContinue(t *tes
 	db := openResumeCollaborationTaskDB(t, "resolve_human_decision_route_budget_continue")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-human-route-budget",
-		Title:       "Budget route",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
-		MetaJSON:    `{"budget_blocked":"true","budget_ref":"budget-direct"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-human-route-budget",
+		Title:         "Budget route",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		MetaJSON:      `{"budget_blocked":"true","budget_ref":"budget-direct"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{{
 		ID:        "node-budget",
@@ -2234,14 +2234,14 @@ func TestResolveCollaborationInterruptTxRejectsPolicyContinueRoute(t *testing.T)
 	db := openResumeCollaborationTaskDB(t, "resolve_human_decision_route_policy_continue")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-human-route-policy",
-		Title:       "Policy route",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
-		MetaJSON:    `{"policy_blocked":"true"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-human-route-policy",
+		Title:         "Policy route",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		MetaJSON:      `{"policy_blocked":"true"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{{
 		ID:        "node-policy",
@@ -2312,10 +2312,10 @@ func TestResolveCollaborationInterruptTxCancelsGateBlockedTask(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "resolve_gate_block_cancel")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-gate-cancel",
-		Title:       "Gate cancel",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		ID:            "task-gate-cancel",
+		Title:         "Gate cancel",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"gate_blocked":         "true",
 			"gate_blocked_id":      "gate-block",
@@ -2391,10 +2391,10 @@ func TestResolveCollaborationInterruptTxRejectsGateBlockedTaskWithActiveLease(t 
 	db := openResumeCollaborationTaskDB(t, "resolve_gate_active_lease")
 	now := time.Now().UTC()
 	task := persistence.CollaborationTask{
-		ID:          "task-gate-active-lease",
-		Title:       "Gate active lease",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		ID:            "task-gate-active-lease",
+		Title:         "Gate active lease",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"gate_blocked":         "true",
 			"gate_blocked_id":      "gate-block",
@@ -2464,10 +2464,10 @@ func TestResolveCollaborationInterruptTxExpiresStaleLeaseBeforeGateRecovery(t *t
 	db := openResumeCollaborationTaskDB(t, "resolve_gate_expired_lease")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-gate-expired-lease",
-		Title:       "Gate expired lease",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		ID:            "task-gate-expired-lease",
+		Title:         "Gate expired lease",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"gate_blocked":         "true",
 			"gate_blocked_id":      "gate-block",
@@ -2541,14 +2541,14 @@ func TestResolveCollaborationInterruptTxRejectsPausedTaskWithRunningNodeWithoutE
 	db := openResumeCollaborationTaskDB(t, "resolve_interrupt_rejects_running_node")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-resolve-running-node",
-		Title:       "Resolve running node",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
-		MetaJSON:    `{"existing":"kept"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-resolve-running-node",
+		Title:         "Resolve running node",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		MetaJSON:      `{"existing":"kept"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	nodes := []persistence.CollaborationTaskNode{
 		{
@@ -2611,14 +2611,14 @@ func TestResolveCollaborationInterruptWithLiveResumeTxWakesWaitingTurn(t *testin
 	db := openResumeCollaborationTaskDB(t, "resolve_interrupt_live_waiter")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-live-resume",
-		Title:       "Resolve live waiter",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
-		MetaJSON:    `{"existing":"kept"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-live-resume",
+		Title:         "Resolve live waiter",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		MetaJSON:      `{"existing":"kept"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	nodes := []persistence.CollaborationTaskNode{
 		{
@@ -3158,13 +3158,13 @@ func TestSubmitCollaborationNodeResultTypedFixturePersistsArtifactGateIndexes(t 
 	now := time.Now().UTC()
 	seedDesktopExecutorAgent(t, db, "actor-1", "agent-provider", now)
 	task := persistence.CollaborationTask{
-		ID:          "task-submit-typed",
-		Title:       "Submit typed node result",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-submit-typed",
+		Title:         "Submit typed node result",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-submit-typed",
@@ -3346,13 +3346,13 @@ func TestSubmitCollaborationNodeResultRejectsTypedInvalidArtifactRefsBeforeMutat
 	now := time.Now().UTC()
 	seedDesktopExecutorAgent(t, db, "actor-1", "agent-provider", now)
 	task := persistence.CollaborationTask{
-		ID:          "task-submit-invalid-refs",
-		Title:       "Submit invalid refs",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-submit-invalid-refs",
+		Title:         "Submit invalid refs",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-submit-invalid-refs",
@@ -3433,13 +3433,13 @@ func TestGateRunnerAppendsBlockingGateResultOutbox(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "gate_runner_blocking_outbox")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-gate-runner",
-		Title:       "Gate runner",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-gate-runner",
+		Title:         "Gate runner",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-gate-runner",
@@ -3526,13 +3526,13 @@ func TestTaskEventWriterIndexesLegacyGateResultTurnEvent(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "gate_result_legacy_index")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-legacy-gate",
-		Title:       "Legacy gate",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-legacy-gate",
+		Title:         "Legacy gate",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-legacy-gate",
@@ -3601,23 +3601,23 @@ func TestPurgeAtelierTaskRecordsTxDeletesDurableIndexes(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "purge_atelier_indexes")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-purge-indexes",
-		Title:       "Purge indexes",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_CANCELLED),
-		MetaJSON:    `{"atelier_status":"deleted"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-purge-indexes",
+		Title:         "Purge indexes",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_CANCELLED),
+		MetaJSON:      `{"atelier_status":"deleted"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	otherTask := persistence.CollaborationTask{
-		ID:          "task-keep-indexes",
-		Title:       "Keep indexes",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-keep-indexes",
+		Title:         "Keep indexes",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{{
 		ID:        "node-purge",
@@ -4096,13 +4096,13 @@ func TestAppendNodeResultTaskEventsTxPersistsOrderedOutbox(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "node_result_projection_outbox")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-provider",
-		Title:       "Provider result",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-provider",
+		Title:         "Provider result",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-provider",
@@ -4188,14 +4188,14 @@ func TestRequestCollaborationInterruptTxPersistsPendingInterruptAndEvent(t *test
 	db := openResumeCollaborationTaskDB(t, "request_interrupt_pending")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-request-interrupt",
-		Title:       "Request interrupt",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{"existing":"kept"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-request-interrupt",
+		Title:         "Request interrupt",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{"existing":"kept"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 
@@ -4242,11 +4242,11 @@ func TestRunCollaborationSupervisorTickTxRequestsWorkspaceConflictReplan(t *test
 	db := openResumeCollaborationTaskDB(t, "supervisor_workspace_conflict_replan")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-supervisor-conflict",
-		Title:       "Supervisor conflict",
-		GoalOwnerID: "actor-1",
-		WorkspaceID: "workspace-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		ID:            "task-supervisor-conflict",
+		Title:         "Supervisor conflict",
+		GoalOwnerPTID: "actor-1",
+		WorkspaceID:   "workspace-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"workspace_conflict": "true",
 		}),
@@ -4370,10 +4370,10 @@ func TestRunCollaborationSupervisorTickTxSkipsDuplicatePendingReplan(t *testing.
 	db := openResumeCollaborationTaskDB(t, "supervisor_duplicate_replan")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-supervisor-duplicate",
-		Title:       "Supervisor duplicate",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		ID:            "task-supervisor-duplicate",
+		Title:         "Supervisor duplicate",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"workspace_conflict": "true",
 		}),
@@ -4418,10 +4418,10 @@ func TestResolveCollaborationInterruptTxAppliesSupervisorReplanDiff(t *testing.T
 	db := openResumeCollaborationTaskDB(t, "supervisor_replan_apply")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-supervisor-replan-apply",
-		Title:       "Supervisor replan apply",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		ID:            "task-supervisor-replan-apply",
+		Title:         "Supervisor replan apply",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"supervisor_state":       "replan_requested",
 			"replan_required":        "true",
@@ -4549,10 +4549,10 @@ func TestResolveCollaborationInterruptTxRejectsSupervisorReplanWithoutPendingInt
 	db := openResumeCollaborationTaskDB(t, "supervisor_replan_apply_missing_interrupt")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-supervisor-replan-missing",
-		Title:       "Supervisor replan missing",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		ID:            "task-supervisor-replan-missing",
+		Title:         "Supervisor replan missing",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"supervisor_state":       "replan_requested",
 			"replan_required":        "true",
@@ -4615,10 +4615,10 @@ func TestRunCollaborationSupervisorSweepRequestsEligibleTasks(t *testing.T) {
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	conflictTask := persistence.CollaborationTask{
-		ID:          "task-supervisor-sweep-conflict",
-		Title:       "Supervisor sweep conflict",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		ID:            "task-supervisor-sweep-conflict",
+		Title:         "Supervisor sweep conflict",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"workspace_conflict": "true",
 		}),
@@ -4627,20 +4627,20 @@ func TestRunCollaborationSupervisorSweepRequestsEligibleTasks(t *testing.T) {
 		EndedAt:   now.Add(-4 * time.Hour),
 	}
 	cleanTask := persistence.CollaborationTask{
-		ID:          "task-supervisor-sweep-clean",
-		Title:       "Supervisor sweep clean",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{}`,
-		CreatedAt:   now.Add(-3 * time.Hour),
-		StartedAt:   now.Add(-3 * time.Hour),
-		EndedAt:     now.Add(-3 * time.Hour),
+		ID:            "task-supervisor-sweep-clean",
+		Title:         "Supervisor sweep clean",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{}`,
+		CreatedAt:     now.Add(-3 * time.Hour),
+		StartedAt:     now.Add(-3 * time.Hour),
+		EndedAt:       now.Add(-3 * time.Hour),
 	}
 	duplicateTask := persistence.CollaborationTask{
-		ID:          "task-supervisor-sweep-duplicate",
-		Title:       "Supervisor sweep duplicate",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		ID:            "task-supervisor-sweep-duplicate",
+		Title:         "Supervisor sweep duplicate",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"workspace_conflict": "true",
 		}),
@@ -4649,10 +4649,10 @@ func TestRunCollaborationSupervisorSweepRequestsEligibleTasks(t *testing.T) {
 		EndedAt:   now.Add(-2 * time.Hour),
 	}
 	terminalTask := persistence.CollaborationTask{
-		ID:          "task-supervisor-sweep-terminal",
-		Title:       "Supervisor sweep terminal",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
+		ID:            "task-supervisor-sweep-terminal",
+		Title:         "Supervisor sweep terminal",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"workspace_conflict": "true",
 		}),
@@ -4716,10 +4716,10 @@ func TestSchedulerExecuteCollaborationSupervisorSweepRequestsEligibleTasks(t *te
 	injectOrchestrationServiceTestStore(t, db)
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-scheduled-supervisor-conflict",
-		Title:       "Scheduled supervisor conflict",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		ID:            "task-scheduled-supervisor-conflict",
+		Title:         "Scheduled supervisor conflict",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"workspace_conflict": "true",
 		}),
@@ -4788,10 +4788,10 @@ func TestCollaborationSupervisorDecisionDetectsMaxFixLoops(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "supervisor_max_fix_loops")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-supervisor-fix-loop",
-		Title:       "Supervisor fix loop",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		ID:            "task-supervisor-fix-loop",
+		Title:         "Supervisor fix loop",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"fix_loop_count": "3",
 			"max_fix_loops":  "3",
@@ -4815,14 +4815,14 @@ func TestResumeCollaborationTaskTxRunningTaskIsNoop(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "resume_running_noop")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-running",
-		Title:       "Running task",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		MetaJSON:    `{"existing":"kept"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-running",
+		Title:         "Running task",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		MetaJSON:      `{"existing":"kept"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 
@@ -4854,14 +4854,14 @@ func TestResumeCollaborationTaskTxRejectsTerminalTask(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "resume_terminal_reject")
 	now := time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-terminal",
-		Title:       "Terminal task",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
-		MetaJSON:    `{"existing":"kept"}`,
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-terminal",
+		Title:         "Terminal task",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_COMPLETED),
+		MetaJSON:      `{"existing":"kept"}`,
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	seedResumeCollaborationTask(t, db, task, nil)
 
@@ -4933,7 +4933,7 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
 			description text,
 			engine_type integer NOT NULL DEFAULT 0,
 			status integer NOT NULL,
-			goal_owner_id text NOT NULL,
+			goal_owner_ptid text NOT NULL,
 			workspace_id text,
 			budget_tokens real NOT NULL DEFAULT 0,
 			budget_money real NOT NULL DEFAULT 0,
@@ -4983,7 +4983,7 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
                           description text,
                           surface integer NOT NULL,
                           status integer NOT NULL,
-                          owner_actor_id text NOT NULL,
+                          owner_actor_ptid text NOT NULL,
                           workspace_id text,
                           conversation_id text,
                           root_turn_id text,
@@ -5150,7 +5150,7 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
 		`CREATE TABLE agent_conversations (
                                   id text PRIMARY KEY,
                                   agent_id text,
-                                  user_id text NOT NULL,
+                                  actor_ptid text NOT NULL,
                                   title text NOT NULL,
                                   description text,
                                   provider_id text NOT NULL,
@@ -5336,7 +5336,7 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
                   )`,
 		`CREATE TABLE agent_providers (
                                   id text PRIMARY KEY,
-                                  actor_id varchar(36) NOT NULL DEFAULT '',
+                                  actor_ptid varchar(36) NOT NULL DEFAULT '',
                                   name text NOT NULL,
                                   display_name varchar(256),
                                   base_url text,
@@ -5363,7 +5363,7 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
                                   model_name text,
                                   effort text,
                                   visibility text NOT NULL,
-                                  owner_actor_id text NOT NULL,
+                                  owner_actor_ptid text NOT NULL,
                                   config_json text,
                                   created_at datetime NOT NULL,
                                   updated_at datetime NOT NULL
@@ -5388,16 +5388,16 @@ func seedResumeCollaborationTask(t *testing.T, db *gorm.DB, task persistence.Col
 	}
 }
 
-func seedDesktopExecutorAgent(t *testing.T, db *gorm.DB, actorID string, agentID string, now time.Time) {
+func seedDesktopExecutorAgent(t *testing.T, db *gorm.DB, actorPTID string, agentID string, now time.Time) {
 	t.Helper()
 	if err := db.Create(&persistence.Agent{
-		ID:           agentID,
-		Name:         agentID,
-		Visibility:   string(domain.AgentVisibilityPrivate),
-		OwnerActorID: actorID,
-		ConfigJSON:   `{"executorKind":"desktop_device"}`,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:             agentID,
+		Name:           agentID,
+		Visibility:     string(domain.AgentVisibilityPrivate),
+		OwnerActorPTID: actorPTID,
+		ConfigJSON:     `{"executorKind":"desktop_device"}`,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}).Error; err != nil {
 		t.Fatalf("create desktop executor agent: %v", err)
 	}
@@ -5540,10 +5540,10 @@ func TestBlockingGateMetaSurvivesDesktopExecutorMetaUpdate(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "blocking_gate_meta_update")
 	now := time.Now()
 	task := persistence.CollaborationTask{
-		ID:          "task-blocked",
-		Title:       "blocked",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
+		ID:            "task-blocked",
+		Title:         "blocked",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_PAUSED),
 		MetaJSON: mergeStringMapJSON("", map[string]string{
 			"gate_blocked":         "true",
 			"gate_blocked_id":      "gate-typecheck",
@@ -5576,13 +5576,13 @@ func TestRunActiveTaskGatePlanTxExecutesPersistedPlan(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "active_gate_plan_execute")
 	now := time.Now()
 	task := persistence.CollaborationTask{
-		ID:          "task-gate-plan-active",
-		Title:       "gate plan active",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-gate-plan-active",
+		Title:         "gate plan active",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-gate-plan-active",
@@ -5624,13 +5624,13 @@ func TestRunActiveTaskGatePlanTxBlocksPersistedPlan(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "active_gate_plan_blocked")
 	now := time.Now()
 	task := persistence.CollaborationTask{
-		ID:          "task-gate-plan-blocked",
-		Title:       "gate plan blocked",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-gate-plan-blocked",
+		Title:         "gate plan blocked",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-gate-plan-blocked",
@@ -6151,15 +6151,15 @@ func TestFinishExecutedTaskPausesForEnginePolicyAwaitingHuman(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "engine_policy_finish_pauses")
 	now := time.Date(2026, 7, 6, 10, 0, 0, 0, time.UTC)
 	task := persistence.CollaborationTask{
-		ID:          "task-engine-finish",
-		Title:       "Engine policy finish",
-		EngineType:  int32(model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_ROUNDTABLE),
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		GoalOwnerID: "actor-1",
-		MetaJSON:    mergeStringMapJSON("", map[string]string{"engine_policy_runtime": "enabled", "engine_policy_authority_role": "goal_owner"}),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-engine-finish",
+		Title:         "Engine policy finish",
+		EngineType:    int32(model.CollaborationEngineType_COLLABORATION_ENGINE_TYPE_ROUNDTABLE),
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		GoalOwnerPTID: "actor-1",
+		MetaJSON:      mergeStringMapJSON("", map[string]string{"engine_policy_runtime": "enabled", "engine_policy_authority_role": "goal_owner"}),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	nodes := []persistence.CollaborationTaskNode{
 		{

@@ -21,18 +21,18 @@ message PresenceOfflineRequest {
 }
 
 message PresenceUpdateResponse {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string session_id = 2;
   PresenceState state = 3;
   google.protobuf.Timestamp lease_expires_at = 4;
 }
 
 message PresenceQueryRequest {
-  repeated string actor_ids = 1;
+  repeated string actor_ptids = 1;
 }
 
 message PresenceStatus {
-  string actor_id = 1;
+  string actor_ptid = 1;
   PresenceState state = 2;
   google.protobuf.Timestamp last_seen_at = 3;
   google.protobuf.Timestamp lease_expires_at = 4;

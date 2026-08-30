@@ -32,14 +32,14 @@ type StationMembership interface {
 
 type Proposal interface {
 	GetStationPeerID() string
-	GetActorID() string
+	GetActorPTID() string
 	GetEventType() string
 }
 
 type HandoverRequest interface {
 	GetOldSequencerPeerID() string
 	GetNewSequencerPeerID() string
-	GetInitiatedByActorID() string
+	GetInitiatedByActorPTID() string
 }
 
 type SequencerPolicy interface {

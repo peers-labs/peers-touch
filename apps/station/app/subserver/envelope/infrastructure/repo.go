@@ -5,6 +5,7 @@ import (
 	"time"
 
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -31,7 +32,7 @@ func (*OutboxModel) TableName() string { return "envelope_outbox" }
 type InboxModel struct {
 	ID                uint       `gorm:"column:id;primaryKey"`
 	InboxItemID       string     `gorm:"column:inbox_item_id;size:64;uniqueIndex"`
-	RecipientDID      string     `gorm:"column:recipient_did;size:255;index:idx_inbox_device"`
+	RecipientPTID     string     `gorm:"column:recipient_ptid;size:255;index:idx_inbox_device"`
 	RecipientDeviceID string     `gorm:"column:recipient_device_id;size:255;index:idx_inbox_device"`
 	IdempotencyKey    string     `gorm:"column:idempotency_key;size:255;index:idx_inbox_idemp,unique"`
 	EnvelopeBytes     []byte     `gorm:"column:envelope_bytes;type:bytea"`
@@ -63,6 +64,14 @@ func NewPostgresRepository(db *gorm.DB) *PostgresRepository {
 }
 
 func (r *PostgresRepository) AutoMigrate() error {
+	if err := modeldb.MigrateStringIdentityColumn(
+		r.db,
+		"envelope_inbox",
+		"recipient_did",
+		"recipient_ptid",
+	); err != nil {
+		return err
+	}
 	return r.db.AutoMigrate(&OutboxModel{}, &InboxModel{}, &IdempotencyModel{})
 }
 
@@ -173,7 +182,7 @@ func (r *PostgresRepository) EnqueueInbox(ctx context.Context, item *chat.Device
 	}
 	model := &InboxModel{
 		InboxItemID:       item.InboxItemId,
-		RecipientDID:      item.RecipientPtid,
+		RecipientPTID:     item.RecipientPtid,
 		RecipientDeviceID: item.RecipientDeviceId,
 		IdempotencyKey:    item.Envelope.IdempotencyKey,
 		EnvelopeBytes:     envBytes,
@@ -213,11 +222,11 @@ func (r *PostgresRepository) MarkInboxAcked(ctx context.Context, inboxItemID str
 		Update("status", int32(chat.InboxItemStatus_INBOX_ITEM_STATUS_ACKED)).Error
 }
 
-func (r *PostgresRepository) UnackedInboxItems(ctx context.Context, recipientDID, deviceID string, afterCursor string, limit int) ([]*chat.DeviceInboxItem, error) {
+func (r *PostgresRepository) UnackedInboxItems(ctx context.Context, recipientPTID, deviceID string, afterCursor string, limit int) ([]*chat.DeviceInboxItem, error) {
 	var models []InboxModel
 	q := r.db.WithContext(ctx).
-		Where("recipient_did = ? AND recipient_device_id = ? AND status != ?",
-			recipientDID, deviceID, int32(chat.InboxItemStatus_INBOX_ITEM_STATUS_ACKED),
+		Where("recipient_ptid = ? AND recipient_device_id = ? AND status != ?",
+			recipientPTID, deviceID, int32(chat.InboxItemStatus_INBOX_ITEM_STATUS_ACKED),
 		)
 	if afterCursor != "" {
 		q = q.Where("inbox_item_id > ?", afterCursor)
@@ -278,7 +287,7 @@ func (m *InboxModel) toProto() (*chat.DeviceInboxItem, error) {
 	}
 	return &chat.DeviceInboxItem{
 		InboxItemId:       m.InboxItemID,
-		RecipientPtid:     m.RecipientDID,
+		RecipientPtid:     m.RecipientPTID,
 		RecipientDeviceId: m.RecipientDeviceID,
 		Envelope:          env,
 		Status:            chat.InboxItemStatus(m.Status),

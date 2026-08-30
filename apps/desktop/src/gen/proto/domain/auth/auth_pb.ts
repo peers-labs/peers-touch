@@ -4,7 +4,8 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import { file_google_protobuf_any, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { ActorRef } from "../actor/actor_pb";
 import { file_domain_actor_actor } from "../actor/actor_pb";
 import type { Message } from "@bufbuild/protobuf";
@@ -13,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/auth/auth.proto.
  */
 export const file_domain_auth_auth: GenFile = /*@__PURE__*/
-  fileDesc("ChZkb21haW4vYXV0aC9hdXRoLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5hdXRoLnYxIkQKDExvZ2luUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRITCgtkZXZpY2VfdHlwZRgDIAEoCSJwCgpBdXRoVG9rZW5zEg0KBXRva2VuGAEgASgJEhQKDGFjY2Vzc190b2tlbhgCIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAMgASgJEhIKCnRva2VuX3R5cGUYBCABKAkSEgoKZXhwaXJlc19hdBgFIAEoCSJkCg1BdXRoQWN0b3JJbmZvEgoKAmlkGAEgASgJEhAKCGFjdG9yX2lkGAIgASgDEhAKCHVzZXJuYW1lGAMgASgJEhQKDGRpc3BsYXlfbmFtZRgEIAEoCRINCgVlbWFpbBgFIAEoCSLXAQoNTG9naW5SZXNwb25zZRI1CgZ0b2tlbnMYASABKAsyJS5wZWVyc190b3VjaC5tb2RlbC5hdXRoLnYxLkF1dGhUb2tlbnMSEgoKc2Vzc2lvbl9pZBgCIAEoCRI3CgVhY3RvchgDIAEoCzIoLnBlZXJzX3RvdWNoLm1vZGVsLmF1dGgudjEuQXV0aEFjdG9ySW5mbxJCCglhY3Rvcl9yZWYYBCABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZlIJYWN0b3JfcmVmQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp, file_google_protobuf_any, file_domain_actor_actor]);
+  fileDesc("ChZkb21haW4vYXV0aC9hdXRoLnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5hdXRoLnYxIkQKDExvZ2luUmVxdWVzdBINCgVlbWFpbBgBIAEoCRIQCghwYXNzd29yZBgCIAEoCRITCgtkZXZpY2VfdHlwZRgDIAEoCSJwCgpBdXRoVG9rZW5zEg0KBXRva2VuGAEgASgJEhQKDGFjY2Vzc190b2tlbhgCIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAMgASgJEhIKCnRva2VuX3R5cGUYBCABKAkSEgoKZXhwaXJlc19hdBgFIAEoCSKrAQoNTG9naW5SZXNwb25zZRI1CgZ0b2tlbnMYASABKAsyJS5wZWVyc190b3VjaC5tb2RlbC5hdXRoLnYxLkF1dGhUb2tlbnMSEgoKc2Vzc2lvbl9pZBgCIAEoCRJCCglhY3Rvcl9yZWYYBCABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZlIJYWN0b3JfcmVmSgQIAxAEUgVhY3RvciLpAgoUQXV0aFNlc3Npb25DYW5kaWRhdGUSFAoMY2FuZGlkYXRlX2lkGAEgASgJEkIKCWFjdG9yX3JlZhgCIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmUglhY3Rvcl9yZWYSGAoQb2F1dGhfYXR0ZW1wdF9pZBgDIAEoCRIZChFhY2Nlc3NfYXR0ZW1wdF9pZBgEIAEoCRIXCg9zdGF0aW9uX3BlZXJfaWQYBSABKAkSLQoJaXNzdWVkX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglkZXZpY2VfaWQYCCABKAkSHAoUbGlmZWN5Y2xlX2dlbmVyYXRpb24YCSABKAQSGQoRZGVjaXNpb25fcmV2aXNpb24YCiABKARCQ1pBZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_google_protobuf_timestamp, file_domain_actor_actor]);
 
 /**
  * @generated from message peers_touch.model.auth.v1.LoginRequest
@@ -80,45 +81,6 @@ export const AuthTokensSchema: GenMessage<AuthTokens> = /*@__PURE__*/
   messageDesc(file_domain_auth_auth, 1);
 
 /**
- * Actor identity returned in login/oauth-bridge responses.
- *
- * @generated from message peers_touch.model.auth.v1.AuthActorInfo
- */
-export type AuthActorInfo = Message<"peers_touch.model.auth.v1.AuthActorInfo"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
-  id: string;
-
-  /**
-   * @generated from field: int64 actor_id = 2;
-   */
-  actorId: bigint;
-
-  /**
-   * @generated from field: string username = 3;
-   */
-  username: string;
-
-  /**
-   * @generated from field: string display_name = 4;
-   */
-  displayName: string;
-
-  /**
-   * @generated from field: string email = 5;
-   */
-  email: string;
-};
-
-/**
- * Describes the message peers_touch.model.auth.v1.AuthActorInfo.
- * Use `create(AuthActorInfoSchema)` to create a new message.
- */
-export const AuthActorInfoSchema: GenMessage<AuthActorInfo> = /*@__PURE__*/
-  messageDesc(file_domain_auth_auth, 2);
-
-/**
  * @generated from message peers_touch.model.auth.v1.LoginResponse
  */
 export type LoginResponse = Message<"peers_touch.model.auth.v1.LoginResponse"> & {
@@ -133,11 +95,6 @@ export type LoginResponse = Message<"peers_touch.model.auth.v1.LoginResponse"> &
   sessionId: string;
 
   /**
-   * @generated from field: peers_touch.model.auth.v1.AuthActorInfo actor = 3;
-   */
-  actor?: AuthActorInfo | undefined;
-
-  /**
    * @generated from field: peers_touch.model.actor.v1.ActorRef actor_ref = 4 [json_name = "actor_ref"];
    */
   actorRef?: ActorRef | undefined;
@@ -148,5 +105,71 @@ export type LoginResponse = Message<"peers_touch.model.auth.v1.LoginResponse"> &
  * Use `create(LoginResponseSchema)` to create a new message.
  */
 export const LoginResponseSchema: GenMessage<LoginResponse> = /*@__PURE__*/
+  messageDesc(file_domain_auth_auth, 2);
+
+/**
+ * AuthSessionCandidate is an inactive pre-session result. It carries no token
+ * material and cannot authorize business APIs. Station activates it only after
+ * the bound Access Gate attempt reaches GRANTED.
+ *
+ * @generated from message peers_touch.model.auth.v1.AuthSessionCandidate
+ */
+export type AuthSessionCandidate = Message<"peers_touch.model.auth.v1.AuthSessionCandidate"> & {
+  /**
+   * @generated from field: string candidate_id = 1;
+   */
+  candidateId: string;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef actor_ref = 2 [json_name = "actor_ref"];
+   */
+  actorRef?: ActorRef | undefined;
+
+  /**
+   * @generated from field: string oauth_attempt_id = 3;
+   */
+  oauthAttemptId: string;
+
+  /**
+   * @generated from field: string access_attempt_id = 4;
+   */
+  accessAttemptId: string;
+
+  /**
+   * @generated from field: string station_peer_id = 5;
+   */
+  stationPeerId: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp issued_at = 6;
+   */
+  issuedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 7;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string device_id = 8;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: uint64 lifecycle_generation = 9;
+   */
+  lifecycleGeneration: bigint;
+
+  /**
+   * @generated from field: uint64 decision_revision = 10;
+   */
+  decisionRevision: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.auth.v1.AuthSessionCandidate.
+ * Use `create(AuthSessionCandidateSchema)` to create a new message.
+ */
+export const AuthSessionCandidateSchema: GenMessage<AuthSessionCandidate> = /*@__PURE__*/
   messageDesc(file_domain_auth_auth, 3);
 

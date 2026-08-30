@@ -7,23 +7,23 @@ import (
 )
 
 // noopActorResolver is the default `domain.ActorResolver` implementation
-// for P1. It returns empty DIDs and zero IDs — sufficient to keep the
+// for P1. It returns empty PTIDs and zero IDs — sufficient to keep the
 // build wired end-to-end and the application services running, but
-// effectively disables every CUSTOM_* / CIRCLE check that needs a DID
+// effectively disables every CUSTOM_* / CIRCLE check that needs a PTID
 // to enforce.
 //
 // P3 will swap in a real resolver backed by `frame/touch/actor` once
 // that surface ratifies a stable lookup API. Until then, posts using
 // CUSTOM_ALLOW / CUSTOM_DENY / CIRCLE audiences are visible only to
 // the author themselves (the author-shortcut in `CanRead` still works
-// because it doesn't need DID resolution). This degradation is logged
+// because it doesn't need PTID resolution). This degradation is logged
 // at WARN at startup so operators understand the limitation.
 type noopActorResolver struct{}
 
 func NewNoopActorResolver() domain.ActorResolver { return noopActorResolver{} }
 
-func (noopActorResolver) ResolveDIDs(_ context.Context, dids []string) ([]uint64, error) {
-	return make([]uint64, len(dids)), nil
+func (noopActorResolver) ResolvePTIDs(_ context.Context, ptids []string) ([]uint64, error) {
+	return make([]uint64, len(ptids)), nil
 }
 
 func (noopActorResolver) ResolveID(_ context.Context, _ uint64) (string, error) {
@@ -44,11 +44,11 @@ type noopGroupChecker struct{}
 
 func NewNoopGroupMembershipChecker() domain.GroupMembershipChecker { return noopGroupChecker{} }
 
-func (noopGroupChecker) IsMember(_ context.Context, _ uint64, _ uint64) (bool, error) {
+func (noopGroupChecker) IsMember(_ context.Context, _ uint64, _ string) (bool, error) {
 	return false, nil
 }
 
-func (noopGroupChecker) MembershipsForViewer(_ context.Context, _ uint64) ([]uint64, error) {
+func (noopGroupChecker) MembershipsForViewer(_ context.Context, _ string) ([]uint64, error) {
 	return nil, nil
 }
 

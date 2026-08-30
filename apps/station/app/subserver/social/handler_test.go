@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
+	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/driver/sqlite"
@@ -43,20 +45,53 @@ import (
 
 var handlerDBSeq atomic.Uint64
 
+type handlerTestStore struct {
+	mu sync.RWMutex
+	db *gorm.DB
+}
+
+func (*handlerTestStore) Init(context.Context, ...option.Option) error { return nil }
+
+func (s *handlerTestStore) RDS(context.Context, ...store.RDSDMLOption) (*gorm.DB, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.db, nil
+}
+
+func (*handlerTestStore) Name() string { return "social-handler-test-store" }
+
+func (s *handlerTestStore) setDB(db *gorm.DB) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.db = db
+}
+
+var (
+	handlerFixtureMu    sync.Mutex
+	handlerStore        = &handlerTestStore{}
+	handlerStoreOnce    sync.Once
+	handlerStoreInitErr error
+)
+
 type handlerFixture struct {
 	subserver *subServer
 	gdb       *gorm.DB
 	repos     *infrastructure.Repos
+	t         *testing.T
 }
 
 func newHandlerFixture(t *testing.T) *handlerFixture {
 	t.Helper()
+	handlerFixtureMu.Lock()
+	t.Cleanup(handlerFixtureMu.Unlock)
+
 	dsn := fmt.Sprintf("file:handler_test_%d?mode=memory&cache=shared&_pragma=foreign_keys(1)", handlerDBSeq.Add(1))
 	gdb, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	if err := gdb.AutoMigrate(
+		&db.Actor{},
 		&db.SocialPublicPost{},
 		&db.SocialPrivatePost{},
 		&db.SocialMomentDelivery{},
@@ -73,8 +108,8 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	if err := gdb.Exec(`
 CREATE TABLE friend_chat_friendships (
 	id integer primary key autoincrement,
-	actor_did text,
-	peer_did text,
+	actor_ptid text,
+	peer_ptid text,
 	status integer,
 	created_at datetime,
 	updated_at datetime
@@ -82,9 +117,17 @@ CREATE TABLE friend_chat_friendships (
 		t.Fatalf("migrate friendships: %v", err)
 	}
 
+	handlerStoreOnce.Do(func() {
+		handlerStoreInitErr = store.InjectStore(context.Background(), handlerStore)
+	})
+	if handlerStoreInitErr != nil {
+		t.Fatalf("inject actor store: %v", handlerStoreInitErr)
+	}
+	handlerStore.setDB(gdb)
+
 	resolver := application.NewNoopActorResolver()
 	groups := application.NewNoopGroupMembershipChecker()
-	repos := infrastructure.NewRepos(gdb, resolver.ResolveID)
+	repos := infrastructure.NewRepos(gdb)
 
 	reactionSvc := application.NewReactionService(gdb, repos)
 	momentSvc := application.NewMomentService(gdb, repos, resolver, groups, application.NewNoopMediaResolver(), reactionSvc)
@@ -92,7 +135,7 @@ CREATE TABLE friend_chat_friendships (
 	circleSvc := application.NewCircleService(repos)
 	timelineSvc := application.NewTimelineService(repos, momentSvc, resolver, groups)
 	relationshipSvc := application.NewRelationshipService(repos.Follows, repos.Blocks)
-	statsSvc := application.NewStatsService(gdb, repos)
+	statsSvc := application.NewStatsService(repos)
 	moderationSvc := application.NewModerationService(repos)
 
 	s := &subServer{
@@ -106,19 +149,31 @@ CREATE TABLE friend_chat_friendships (
 		moderationSvc:   moderationSvc,
 	}
 
-	return &handlerFixture{subserver: s, gdb: gdb, repos: repos}
+	return &handlerFixture{subserver: s, gdb: gdb, repos: repos, t: t}
 }
 
-// withViewer constructs a context carrying the auth subject as the
-// JWT middleware would. `userID == 0` simulates an anonymous request
-// (no JWT present).
-func withViewer(userID uint64) context.Context {
+// withViewer constructs a context carrying the canonical PTID subject that the
+// JWT middleware emits. userID == 0 simulates an anonymous request.
+func (f *handlerFixture) withViewer(userID uint64) context.Context {
 	if userID == 0 {
 		return context.Background()
 	}
+	ptid := fmt.Sprintf("ptid:v1:actor:peers:p:user-%d:fingerprint-%d", userID, userID)
+	record := &db.Actor{
+		ID:                userID,
+		PTID:              ptid,
+		Namespace:         "peers",
+		PreferredUsername: fmt.Sprintf("user-%d", userID),
+		Email:             fmt.Sprintf("user-%d@example.test", userID),
+		PasswordHash:      "test-only",
+		FederatedHandle:   fmt.Sprintf("@user-%d@test.local", userID),
+	}
+	if err := f.gdb.Where("id = ?", userID).FirstOrCreate(record).Error; err != nil {
+		f.t.Fatalf("seed actor %d: %v", userID, err)
+	}
 	return coreauth.WithSubject(
 		context.Background(),
-		&coreauth.Subject{ID: strconv.FormatUint(userID, 10)},
+		&coreauth.Subject{ID: ptid},
 	)
 }
 
@@ -152,7 +207,7 @@ func statusOf(err error) int {
 
 func TestHandler_CreatePost_RejectsAnonymous(t *testing.T) {
 	f := newHandlerFixture(t)
-	resp, err := f.subserver.handleCreatePost(withViewer(0), textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "hi"))
+	resp, err := f.subserver.handleCreatePost(f.withViewer(0), textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "hi"))
 	if resp != nil {
 		t.Fatalf("expected nil response on anon, got %+v", resp)
 	}
@@ -168,15 +223,16 @@ func TestHandler_CreatePost_RejectsAnonymous(t *testing.T) {
 
 func TestHandler_CreatePost_AuthorizedUserCreatesPost(t *testing.T) {
 	f := newHandlerFixture(t)
-	resp, err := f.subserver.handleCreatePost(withViewer(42), textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "hello"))
+	resp, err := f.subserver.handleCreatePost(f.withViewer(42), textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "hello"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if resp == nil || resp.Post == nil {
 		t.Fatalf("expected post in response, got %+v", resp)
 	}
-	if resp.Post.AuthorId != "42" {
-		t.Fatalf("expected author_id=42, got %q", resp.Post.AuthorId)
+	const expectedAuthorPTID = "ptid:v1:actor:peers:p:user-42:fingerprint-42"
+	if resp.Post.AuthorPtid != expectedAuthorPTID {
+		t.Fatalf("expected author PTID %q, got %q", expectedAuthorPTID, resp.Post.AuthorPtid)
 	}
 }
 
@@ -190,7 +246,7 @@ func TestHandler_React_NotFoundOnUnreadablePost(t *testing.T) {
 	// found" — a 404 rather than 403, so we don't leak existence.
 	f := newHandlerFixture(t)
 	created, err := f.subserver.handleCreatePost(
-		withViewer(1),
+		f.withViewer(1),
 		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "private"),
 	)
 	if err != nil {
@@ -198,7 +254,7 @@ func TestHandler_React_NotFoundOnUnreadablePost(t *testing.T) {
 	}
 	postID := created.Post.Id
 
-	_, err = f.subserver.handleReact(withViewer(2), &model.ReactToPostRequest{
+	_, err = f.subserver.handleReact(f.withViewer(2), &model.ReactToPostRequest{
 		PostId: postID,
 		Kind:   model.ReactionKind_REACTION_LIKE,
 	})
@@ -213,13 +269,13 @@ func TestHandler_React_NotFoundOnUnreadablePost(t *testing.T) {
 func TestHandler_React_AcceptsReactionFromAuthor(t *testing.T) {
 	f := newHandlerFixture(t)
 	created, err := f.subserver.handleCreatePost(
-		withViewer(1),
+		f.withViewer(1),
 		textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "shareable"),
 	)
 	if err != nil {
 		t.Fatalf("seed create: %v", err)
 	}
-	resp, err := f.subserver.handleReact(withViewer(1), &model.ReactToPostRequest{
+	resp, err := f.subserver.handleReact(f.withViewer(1), &model.ReactToPostRequest{
 		PostId: created.Post.Id,
 		Kind:   model.ReactionKind_REACTION_LIKE,
 	})
@@ -244,7 +300,7 @@ func TestHandler_React_AcceptsReactionFromAuthor(t *testing.T) {
 func TestHandler_GetPostComments_NotFoundOnUnreadablePost(t *testing.T) {
 	f := newHandlerFixture(t)
 	created, err := f.subserver.handleCreatePost(
-		withViewer(7),
+		f.withViewer(7),
 		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "secret"),
 	)
 	if err != nil {
@@ -252,7 +308,7 @@ func TestHandler_GetPostComments_NotFoundOnUnreadablePost(t *testing.T) {
 	}
 
 	// Viewer 9 (anonymous-ish — distinct from 7) attempts to list comments.
-	_, err = f.subserver.handleGetPostComments(withViewer(9), &model.GetCommentsRequest{
+	_, err = f.subserver.handleGetPostComments(f.withViewer(9), &model.GetCommentsRequest{
 		PostId: created.Post.Id,
 		Limit:  10,
 	})
@@ -271,14 +327,14 @@ func TestHandler_GetPostComments_NotFoundOnUnreadablePost(t *testing.T) {
 func TestHandler_Repost_AcceptsPublicSource(t *testing.T) {
 	f := newHandlerFixture(t)
 	src, err := f.subserver.handleCreatePost(
-		withViewer(1),
+		f.withViewer(1),
 		textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "original"),
 	)
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	commentText := "look at this"
-	resp, err := f.subserver.handleRepostPost(withViewer(2), &model.RepostRequest{
+	resp, err := f.subserver.handleRepostPost(f.withViewer(2), &model.RepostRequest{
 		PostId:  src.Post.Id,
 		Comment: &commentText,
 	})
@@ -296,14 +352,14 @@ func TestHandler_Repost_AcceptsPublicSource(t *testing.T) {
 func TestHandler_Repost_RejectsUnreadableSource(t *testing.T) {
 	f := newHandlerFixture(t)
 	src, err := f.subserver.handleCreatePost(
-		withViewer(1),
+		f.withViewer(1),
 		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "private"),
 	)
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	commentText := "nope"
-	resp, err := f.subserver.handleRepostPost(withViewer(2), &model.RepostRequest{
+	resp, err := f.subserver.handleRepostPost(f.withViewer(2), &model.RepostRequest{
 		PostId:  src.Post.Id,
 		Comment: &commentText,
 	})
@@ -318,7 +374,7 @@ func TestHandler_Repost_RejectsUnreadableSource(t *testing.T) {
 
 func TestHandler_GetMe_RejectsAnonymous(t *testing.T) {
 	f := newHandlerFixture(t)
-	_, err := f.subserver.handleGetMe(withViewer(0), &model.GetMeRequest{})
+	_, err := f.subserver.handleGetMe(f.withViewer(0), &model.GetMeRequest{})
 	if err == nil {
 		t.Fatal("expected anon caller to be rejected")
 	}
@@ -326,7 +382,7 @@ func TestHandler_GetMe_RejectsAnonymous(t *testing.T) {
 
 func TestHandler_SearchUsers_RejectsAnonymous(t *testing.T) {
 	f := newHandlerFixture(t)
-	_, err := f.subserver.handleSearchUsers(withViewer(0), &model.SearchUsersRequest{Q: "alice"})
+	_, err := f.subserver.handleSearchUsers(f.withViewer(0), &model.SearchUsersRequest{Q: "alice"})
 	if err == nil {
 		t.Fatal("expected anon caller to be rejected")
 	}
@@ -340,11 +396,8 @@ func TestActorSearchResultExposesPTIDWithoutInternalActorID(t *testing.T) {
 		Name:              "Alice",
 	})
 
-	if result.Id != "ptid:v1:actor:peers:p:alice:fingerprint" {
-		t.Fatalf("id = %q, want canonical PTID", result.Id)
-	}
-	if result.ActorId != 0 {
-		t.Fatalf("internal actor ID crossed the search boundary: %d", result.ActorId)
+	if result.GetRef().GetPtid() != "ptid:v1:actor:peers:p:alice:fingerprint" {
+		t.Fatalf("actor ref PTID = %q, want canonical PTID", result.GetRef().GetPtid())
 	}
 }
 
@@ -354,7 +407,7 @@ func TestActorSearchResultExposesPTIDWithoutInternalActorID(t *testing.T) {
 
 func TestHandler_DeletePost_RequiresPostID(t *testing.T) {
 	f := newHandlerFixture(t)
-	_, err := f.subserver.handleDeletePost(withViewer(1), &model.DeletePostRequest{})
+	_, err := f.subserver.handleDeletePost(f.withViewer(1), &model.DeletePostRequest{})
 	if err == nil {
 		t.Fatal("expected delete to require post_id")
 	}
@@ -378,7 +431,7 @@ func TestHandler_GetPost_RequiresPostID(t *testing.T) {
 
 func TestHandler_GetMyStats_RejectsAnonymous(t *testing.T) {
 	f := newHandlerFixture(t)
-	_, err := f.subserver.handleGetMyStats(withViewer(0), &model.GetMyMomentsStatsRequest{})
+	_, err := f.subserver.handleGetMyStats(f.withViewer(0), &model.GetMyMomentsStatsRequest{})
 	if err == nil {
 		t.Fatal("expected anon caller to be rejected from /me/stats")
 	}
@@ -394,14 +447,14 @@ func TestHandler_GetMyStats_ReflectsAuthorPostCount(t *testing.T) {
 
 	for i := 0; i < 2; i++ {
 		if _, err := f.subserver.handleCreatePost(
-			withViewer(author),
+			f.withViewer(author),
 			textPostReq(&model.Audience{Kind: model.Audience_PUBLIC}, "post"),
 		); err != nil {
 			t.Fatalf("seed post %d: %v", i, err)
 		}
 	}
 
-	resp, err := f.subserver.handleGetMyStats(withViewer(author), &model.GetMyMomentsStatsRequest{})
+	resp, err := f.subserver.handleGetMyStats(f.withViewer(author), &model.GetMyMomentsStatsRequest{})
 	if err != nil {
 		t.Fatalf("get my stats: %v", err)
 	}

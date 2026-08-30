@@ -29,6 +29,14 @@ echo ""
 generate_kotlin() {
     echo "--- Generating Kotlin (Java Lite) ---"
 
+    if [ ! -d "$PROJECT_ROOT/apps/mobile/android" ]; then
+        echo "Android native project is not configured; skipping Kotlin generation."
+        echo ""
+        return 0
+    fi
+
+    mkdir -p "$ANDROID_OUT"
+
     GOBIN=""
     if command -v go &>/dev/null; then
         GOBIN="$(go env GOPATH)/bin"
@@ -54,6 +62,12 @@ generate_kotlin() {
 
 generate_swift() {
     echo "--- Generating Swift ---"
+
+    if [ ! -d "$PROJECT_ROOT/apps/mobile/ios" ]; then
+        echo "iOS native project is not configured; skipping Swift generation."
+        echo ""
+        return 0
+    fi
 
     if ! command -v protoc-gen-swift &>/dev/null; then
         echo "[ERROR] protoc-gen-swift not found."

@@ -37,12 +37,12 @@ export interface RuntimeDescriptor {
   /** Reverse of `install`. Idempotent. */
   teardown(): void;
   /**
-   * Populate the runtime's owning store(s) for `actorId`. Called by the
+   * Populate the runtime's owning store(s) for `actorPtid`. Called by the
    * BootPipeline after `install` whenever `scope === 'session'`, and once
    * at install for `scope === 'app'`. Re-entrant calls for the same actor
    * MUST be no-ops (the registry guards this with sequence numbers).
    */
-  bootstrap(actorId: string | null): Promise<void>;
+  bootstrap(actorPtid: string | null): Promise<void>;
   /** Optional periodic / event-driven projection refresh. */
   reconcile?(reason: string): Promise<void>;
   /** Optional page-scoped runtime resource acquisition. Idempotent. */
@@ -57,7 +57,7 @@ interface RuntimeRecord {
   // Per-bootstrap sequence so a logout-during-bootstrap discards the
   // in-flight result instead of writing stale data.
   bootstrapSequence: number;
-  bootstrappedActorId: string | null;
+  bootstrappedActorPtid: string | null;
 }
 
 const records = new Map<string, RuntimeRecord>();
@@ -76,7 +76,7 @@ export function registerRuntime(desc: RuntimeDescriptor): void {
     desc,
     installed: false,
     bootstrapSequence: 0,
-    bootstrappedActorId: null,
+    bootstrappedActorPtid: null,
   });
 }
 
@@ -157,29 +157,29 @@ export function teardownRuntime(id: string): void {
     log.error('runtime', `${id}:teardown failed`, err);
   } finally {
     rec.installed = false;
-    rec.bootstrappedActorId = null;
+    rec.bootstrappedActorPtid = null;
     log.info('runtime', `${id}:teardown`, { ms: Math.round(nowMs() - t0) });
   }
 }
 
-export async function bootstrapRuntime(id: string, actorId: string | null): Promise<void> {
+export async function bootstrapRuntime(id: string, actorPtid: string | null): Promise<void> {
   const rec = records.get(id);
   if (!rec) return;
   if (!rec.installed) installRuntime(id);
   // App-scope runtimes bootstrap once with `null` actor; session-scope
   // bootstrap per actor edge. Both short-circuit when the actor matches.
-  if (rec.bootstrappedActorId === (actorId ?? null) && actorId !== null) return;
-  if (rec.desc.scope === 'app' && rec.bootstrappedActorId !== null) return;
+  if (rec.bootstrappedActorPtid === (actorPtid ?? null) && actorPtid !== null) return;
+  if (rec.desc.scope === 'app' && rec.bootstrappedActorPtid !== null) return;
 
   const sequence = ++rec.bootstrapSequence;
   const t0 = nowMs();
   try {
-    await rec.desc.bootstrap(actorId);
+    await rec.desc.bootstrap(actorPtid);
     if (sequence !== rec.bootstrapSequence) return;
-    rec.bootstrappedActorId = actorId ?? null;
+    rec.bootstrappedActorPtid = actorPtid ?? null;
     const ms = nowMs() - t0;
-    log.info('runtime', `${id}:bootstrap`, { ms: Math.round(ms), actorId });
-    recordRuntimeBootstrap(id, ms, actorId);
+    log.info('runtime', `${id}:bootstrap`, { ms: Math.round(ms), actorPtid });
+    recordRuntimeBootstrap(id, ms, actorPtid);
   } catch (err) {
     log.error('runtime', `${id}:bootstrap failed`, err);
   }
@@ -229,7 +229,7 @@ export function releaseRuntimePage(id: string, pageId: string, reason: RuntimePa
 export function resetSessionRuntimeBootstraps(): void {
   for (const rec of records.values()) {
     if (rec.desc.scope === 'session') {
-      rec.bootstrappedActorId = null;
+      rec.bootstrappedActorPtid = null;
       rec.bootstrapSequence += 1;
     }
   }

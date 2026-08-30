@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// ChatSessionResolver answers the question "is `actorID` part of the
+// ChatSessionResolver answers the question "is `actorPTID` part of the
 // audience of `sessionID`?". The OSS subserver consults this on every
 // `chat`-visibility GET.
 //
@@ -22,7 +22,7 @@ import (
 //     with a remote query against the peer station that owns the
 //     session.
 type ChatSessionResolver interface {
-	IsParticipant(ctx context.Context, sessionID, actorID string) (bool, error)
+	IsParticipant(ctx context.Context, sessionID, actorPTID string) (bool, error)
 }
 
 // sqlChatSessionResolver is the default ChatSessionResolver. It looks
@@ -44,13 +44,13 @@ func NewSQLChatSessionResolver(dbName string) ChatSessionResolver {
 	return &sqlChatSessionResolver{dbName: dbName}
 }
 
-// IsParticipant returns true when `actorID` matches either
+// IsParticipant returns true when `actorPTID` matches either
 // participant column of `friend_chat_sessions(ulid = sessionID)`. A
 // missing session row returns (false, nil) — *not* an error, because
 // the OSS audience check should fail-closed without surfacing
 // schema-mismatch noise.
-func (r *sqlChatSessionResolver) IsParticipant(ctx context.Context, sessionID, actorID string) (bool, error) {
-	if sessionID == "" || actorID == "" {
+func (r *sqlChatSessionResolver) IsParticipant(ctx context.Context, sessionID, actorPTID string) (bool, error) {
+	if sessionID == "" || actorPTID == "" {
 		return false, nil
 	}
 	if r.dbName == "" {
@@ -62,8 +62,8 @@ func (r *sqlChatSessionResolver) IsParticipant(ctx context.Context, sessionID, a
 	}
 	var n int64
 	err = db.Table("friend_chat_sessions").
-		Where("ulid = ? AND (participant_a_did = ? OR participant_b_did = ?)",
-			sessionID, actorID, actorID).
+		Where("ulid = ? AND (participant_a_ptid = ? OR participant_b_ptid = ?)",
+			sessionID, actorPTID, actorPTID).
 		Count(&n).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -104,7 +104,7 @@ const (
 //
 // `peerSubjectID` is reserved for the upcoming federation path
 // (peer-station-signed JWT). Currently it is treated identically to
-// `subjectID` — when both are present, the federation-token DID
+// `subjectID` — when both are present, the federation-token PTID
 // takes precedence so a peer station's audience claim cannot be
 // undermined by a stale local cookie.
 func checkRead(ctx context.Context, resolver ChatSessionResolver, meta *ossmodel.FileMeta, subjectID, peerSubjectID string) permissionDecision {
@@ -121,7 +121,7 @@ func checkRead(ctx context.Context, resolver ChatSessionResolver, meta *ossmodel
 		if caller == "" {
 			return permissionDecision{Allow: false, Reason: reasonNoSubject}
 		}
-		if caller != meta.OwnerActorID {
+		if caller != meta.OwnerPTID {
 			return permissionDecision{Allow: false, Reason: reasonNotOwner}
 		}
 		return permissionDecision{Allow: true, Reason: reasonOK}
@@ -135,7 +135,7 @@ func checkRead(ctx context.Context, resolver ChatSessionResolver, meta *ossmodel
 		// are by definition participants, and this short-circuit
 		// keeps owner reads working when the resolver is misconfigured
 		// in a development environment.
-		if caller == meta.OwnerActorID {
+		if caller == meta.OwnerPTID {
 			return permissionDecision{Allow: true, Reason: reasonOK}
 		}
 		if meta.ChatSessionID == "" {

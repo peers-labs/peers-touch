@@ -175,7 +175,7 @@ export async function listWorkers(hours?: number): Promise<OSSWorkersSummary> {
 export interface OSSBucketSummary {
   id: string;
   name: string;
-  owner_actor_id: string;
+  owner_ptid: string;
   kind: 'user' | 'system' | string;
   system_key?: string;
   default_visibility: 'public' | 'chat' | 'private' | string;
@@ -200,7 +200,7 @@ export interface OSSBucketListResponse {
  * `ttl_days = 0` ⇒ no auto-TTL).
  */
 export interface OSSBucketCreateRequest {
-  owner_actor_id: string;
+  owner_ptid: string;
   name: string;
   default_visibility: 'public' | 'chat' | 'private';
   quota_bytes: number;
@@ -212,7 +212,7 @@ export interface OSSBucketCreateRequest {
  * Body of `PATCH /oss/buckets/:id`. Each field is optional; an
  * omitted field means "leave unchanged". An empty `description`
  * string explicitly *clears* the description (the station treats
- * `*string` nil-vs-set differently). Name and owner_actor_id are
+ * `*string` nil-vs-set differently). Name and owner_ptid are
  * intentionally not patchable — recreate the bucket instead.
  */
 export interface OSSBucketUpdateRequest {
@@ -275,7 +275,7 @@ export interface OSSObjectSummary {
   mime: string;
   backend: string;
   bucket_id: string;
-  owner_actor_id: string;
+  owner_ptid: string;
   visibility: 'public' | 'chat' | 'private' | string;
   chat_session_id?: string;
   created_at: string;
@@ -301,7 +301,7 @@ export interface OSSObjectAdminDetail extends OSSObjectSummary {
 
 export interface OSSObjectListQuery {
   bucket_id?: string;
-  owner_actor_id?: string;
+  owner_ptid?: string;
   visibility?: string;
   mime?: string;
   page?: number;
@@ -334,7 +334,7 @@ export async function listObjects(
 ): Promise<OSSObjectListResponse> {
   const params: Record<string, string | number> = {};
   if (q.bucket_id) params.bucket_id = q.bucket_id;
-  if (q.owner_actor_id) params.owner_actor_id = q.owner_actor_id;
+  if (q.owner_ptid) params.owner_ptid = q.owner_ptid;
   if (q.visibility) params.visibility = q.visibility;
   if (q.mime) params.mime = q.mime;
   if (q.page && q.page > 0) params.page = q.page;
@@ -387,7 +387,7 @@ export interface OSSAdminUploadOptions {
 
 /**
  * Operator-driven upload to a specific bucket. The bucket's
- * `owner_actor_id` is what the station stamps on the resulting
+ * `owner_ptid` is what the station stamps on the resulting
  * `oss_files` row — the operator acts on behalf of the owner.
  *
  * The handler is multipart/form-data; we let axios infer the
@@ -437,7 +437,7 @@ export interface OSSAuditEvent {
   action: string;
   file_key: string;
   bucket_id: string;
-  actor_id: string;
+  actor_ptid: string;
   peer_station_id?: string;
   size_bytes: number;
   outcome: 'ok' | 'denied' | 'error' | string;
@@ -452,7 +452,7 @@ export interface OSSAuditListResponse {
 
 export interface OSSAuditListQuery {
   action?: string;
-  actor_id?: string;
+  actor_ptid?: string;
   bucket_id?: string;
   file_key?: string;
   outcome?: string;
@@ -469,7 +469,7 @@ export async function listAudit(
 ): Promise<OSSAuditListResponse> {
   const params: Record<string, string | number> = {};
   if (q.action) params.action = q.action;
-  if (q.actor_id) params.actor_id = q.actor_id;
+  if (q.actor_ptid) params.actor_ptid = q.actor_ptid;
   if (q.bucket_id) params.bucket_id = q.bucket_id;
   if (q.file_key) params.file_key = q.file_key;
   if (q.outcome) params.outcome = q.outcome;
@@ -486,7 +486,7 @@ export async function listAudit(
 // ---------------------------------------------------------------------------
 
 export interface OSSOwnerUsage {
-  owner_actor_id: string;
+  owner_ptid: string;
   bytes: number;
   files: number;
 }

@@ -60,11 +60,11 @@ function formatThreadTime(message: ChatMessage): string {
 interface ThreadMessageItemProps {
   activeConversationId: string;
   activeKind: 'friend' | 'group';
-  currentUserDid: string | null;
+  currentUserPtid: string | null;
   getSenderProfile: (
     kind: 'friend' | 'group',
     conversationUlid: string,
-    senderId: string,
+    senderPtid: string,
   ) => DesktopIMSenderProfileProjection;
   message: ChatMessage;
   messages: ChatMessage[];
@@ -79,7 +79,7 @@ interface ThreadMessageItemProps {
 function ThreadMessageItem({
   activeConversationId,
   activeKind,
-  currentUserDid,
+  currentUserPtid,
   getSenderProfile,
   message,
   messages,
@@ -92,8 +92,8 @@ function ThreadMessageItem({
 }: ThreadMessageItemProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderId);
-  const isOwn = isOwnMessage(message, currentUserDid);
+  const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderPtid);
+  const isOwn = isOwnMessage(message, currentUserPtid);
   const isRecalled = isRecalledMessage(message);
   const sentMs = messageTimestampMs(message);
   const withinWindow = sentMs > 0 && (Date.now() - sentMs) < FRIEND_RECALL_WINDOW_MS;
@@ -130,7 +130,7 @@ function ThreadMessageItem({
       className="thread-comment-row"
     >
       <span
-        data-chat-avatar-ptid={message.senderId}
+        data-chat-avatar-ptid={message.senderPtid}
         data-chat-avatar-src={senderProfile.avatar}
         style={{ display: 'inline-flex', flexShrink: 0 }}
       >
@@ -231,11 +231,7 @@ export function ChatThreadPanel() {
     threadError,
     threadHasMore,
     threadNextCursor,
-    currentUserDid,
-    currentUserProfile,
-    peerProfiles,
-    sessions,
-    groupMembers,
+    currentUserPtid,
     openThreadRootUlid,
     closeThread,
     loadThreadMessages,
@@ -258,11 +254,7 @@ export function ChatThreadPanel() {
     threadError: s.threadError,
     threadHasMore: s.threadHasMore,
     threadNextCursor: s.threadNextCursor,
-    currentUserDid: s.currentUserDid,
-    currentUserProfile: s.currentUserProfile,
-    peerProfiles: s.peerProfiles,
-    sessions: s.sessions,
-    groupMembers: s.groupMembers,
+    currentUserPtid: s.currentUserPtid,
     openThreadRootUlid: s.openThreadRootUlid,
     closeThread: s.closeThread,
     loadThreadMessages: s.loadThreadMessages,
@@ -277,10 +269,6 @@ export function ChatThreadPanel() {
     getIMConversations: s.getIMConversations,
     getIMSenderProfile: s.getIMSenderProfile,
   }));
-  void currentUserProfile;
-  void peerProfiles;
-  void sessions;
-  void groupMembers;
   const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
@@ -347,10 +335,10 @@ export function ChatThreadPanel() {
     try {
       const replyToUlid = chatThreadReplyTargetUlid(rootMessage, replyTarget);
       if (activeTab === 'friend') {
-        const receiverDid = activeConversation?.peerDid || '';
+        const receiverPtid = activeConversation?.peerPtid || '';
         await sendFriendMessage(
           activeUlid,
-          receiverDid,
+          receiverPtid,
           content,
           draft.messageType,
           replyToUlid,
@@ -558,7 +546,7 @@ export function ChatThreadPanel() {
               <ThreadMessageItem
                 activeConversationId={activeUlid || ''}
                 activeKind={activeKind}
-                currentUserDid={currentUserDid}
+                currentUserPtid={currentUserPtid}
                 getSenderProfile={getIMSenderProfile}
                 message={rootMessage}
                 messages={displayMessages}
@@ -594,7 +582,7 @@ export function ChatThreadPanel() {
                     key={reply.ulid}
                     activeConversationId={activeUlid || ''}
                     activeKind={activeKind}
-                    currentUserDid={currentUserDid}
+                    currentUserPtid={currentUserPtid}
                     getSenderProfile={getIMSenderProfile}
                     message={reply}
                     messages={displayMessages}

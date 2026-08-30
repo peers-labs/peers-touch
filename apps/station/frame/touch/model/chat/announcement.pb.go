@@ -25,13 +25,13 @@ const (
 // 群公告
 type GroupAnnouncement struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ulid          string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`                             // 公告唯一ID
-	GroupUlid     string                 `protobuf:"bytes,2,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`  // 所属群组ID
-	AuthorDid     string                 `protobuf:"bytes,3,opt,name=author_did,json=authorDid,proto3" json:"author_did,omitempty"`  // 发布者DID
-	Title         string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`                           // 标题
-	Content       string                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`                       // 内容
-	IsPinned      bool                   `protobuf:"varint,6,opt,name=is_pinned,json=isPinned,proto3" json:"is_pinned,omitempty"`    // 是否置顶
-	ReadCount     int32                  `protobuf:"varint,7,opt,name=read_count,json=readCount,proto3" json:"read_count,omitempty"` // 已读人数
+	Ulid          string                 `protobuf:"bytes,1,opt,name=ulid,proto3" json:"ulid,omitempty"`                               // 公告唯一ID
+	GroupUlid     string                 `protobuf:"bytes,2,opt,name=group_ulid,json=groupUlid,proto3" json:"group_ulid,omitempty"`    // 所属群组ID
+	AuthorPtid    string                 `protobuf:"bytes,3,opt,name=author_ptid,json=authorPtid,proto3" json:"author_ptid,omitempty"` // 发布者PTID
+	Title         string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`                             // 标题
+	Content       string                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`                         // 内容
+	IsPinned      bool                   `protobuf:"varint,6,opt,name=is_pinned,json=isPinned,proto3" json:"is_pinned,omitempty"`      // 是否置顶
+	ReadCount     int32                  `protobuf:"varint,7,opt,name=read_count,json=readCount,proto3" json:"read_count,omitempty"`   // 已读人数
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	DeletedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"` // 软删除时间
@@ -83,9 +83,9 @@ func (x *GroupAnnouncement) GetGroupUlid() string {
 	return ""
 }
 
-func (x *GroupAnnouncement) GetAuthorDid() string {
+func (x *GroupAnnouncement) GetAuthorPtid() string {
 	if x != nil {
-		return x.AuthorDid
+		return x.AuthorPtid
 	}
 	return ""
 }
@@ -143,7 +143,7 @@ func (x *GroupAnnouncement) GetDeletedAt() *timestamppb.Timestamp {
 type AnnouncementReadRecord struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	AnnouncementUlid string                 `protobuf:"bytes,1,opt,name=announcement_ulid,json=announcementUlid,proto3" json:"announcement_ulid,omitempty"`
-	ReaderDid        string                 `protobuf:"bytes,2,opt,name=reader_did,json=readerDid,proto3" json:"reader_did,omitempty"`
+	ReaderPtid       string                 `protobuf:"bytes,2,opt,name=reader_ptid,json=readerPtid,proto3" json:"reader_ptid,omitempty"`
 	ReadAt           *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=read_at,json=readAt,proto3" json:"read_at,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -186,9 +186,9 @@ func (x *AnnouncementReadRecord) GetAnnouncementUlid() string {
 	return ""
 }
 
-func (x *AnnouncementReadRecord) GetReaderDid() string {
+func (x *AnnouncementReadRecord) GetReaderPtid() string {
 	if x != nil {
-		return x.ReaderDid
+		return x.ReaderPtid
 	}
 	return ""
 }
@@ -939,13 +939,13 @@ var File_domain_chat_announcement_proto protoreflect.FileDescriptor
 
 const file_domain_chat_announcement_proto_rawDesc = "" +
 	"\n" +
-	"\x1edomain/chat/announcement.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x82\x03\n" +
+	"\x1edomain/chat/announcement.proto\x12\x19peers_touch.model.chat.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x84\x03\n" +
 	"\x11GroupAnnouncement\x12\x12\n" +
 	"\x04ulid\x18\x01 \x01(\tR\x04ulid\x12\x1d\n" +
 	"\n" +
-	"group_ulid\x18\x02 \x01(\tR\tgroupUlid\x12\x1d\n" +
-	"\n" +
-	"author_did\x18\x03 \x01(\tR\tauthorDid\x12\x14\n" +
+	"group_ulid\x18\x02 \x01(\tR\tgroupUlid\x12\x1f\n" +
+	"\vauthor_ptid\x18\x03 \x01(\tR\n" +
+	"authorPtid\x12\x14\n" +
 	"\x05title\x18\x04 \x01(\tR\x05title\x12\x18\n" +
 	"\acontent\x18\x05 \x01(\tR\acontent\x12\x1b\n" +
 	"\tis_pinned\x18\x06 \x01(\bR\bisPinned\x12\x1d\n" +
@@ -957,11 +957,11 @@ const file_domain_chat_announcement_proto_rawDesc = "" +
 	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x129\n" +
 	"\n" +
 	"deleted_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAt\"\x99\x01\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAt\"\x9b\x01\n" +
 	"\x16AnnouncementReadRecord\x12+\n" +
-	"\x11announcement_ulid\x18\x01 \x01(\tR\x10announcementUlid\x12\x1d\n" +
-	"\n" +
-	"reader_did\x18\x02 \x01(\tR\treaderDid\x123\n" +
+	"\x11announcement_ulid\x18\x01 \x01(\tR\x10announcementUlid\x12\x1f\n" +
+	"\vreader_ptid\x18\x02 \x01(\tR\n" +
+	"readerPtid\x123\n" +
 	"\aread_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x06readAt\"\x87\x01\n" +
 	"\x19CreateAnnouncementRequest\x12\x1d\n" +
 	"\n" +

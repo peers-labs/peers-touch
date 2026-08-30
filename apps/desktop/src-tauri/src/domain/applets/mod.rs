@@ -18,20 +18,20 @@ pub(crate) struct AppletAuditRecord {
     pub command: String,
     pub applet_id: String,
     pub capability: String,
-    pub actor_id: String,
+    pub actor_ptid: String,
     pub outcome: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct AccessContext {
-    pub actor_id: Option<String>,
+    pub actor_ptid: Option<String>,
     pub token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ActiveAppletSession {
     applet_id: String,
-    actor_id: Option<String>,
+    actor_ptid: Option<String>,
     destroyed: bool,
     #[serde(default)]
     manifest: Option<AppletSessionManifestSnapshot>,
@@ -170,7 +170,7 @@ pub fn ensure_active_session(
             if session.applet_id != applet_id {
                 return Err("applet session does not belong to requested applet".to_string());
             }
-            if session.actor_id != context.actor_id {
+            if session.actor_ptid != context.actor_ptid {
                 return Err("applet session actor mismatch".to_string());
             }
             let Some(trusted_manifest) = session.manifest.as_ref() else {
@@ -212,7 +212,7 @@ pub fn register_active_session(
             if session.applet_id != applet_id {
                 return Err("applet session does not belong to requested applet".to_string());
             }
-            if session.actor_id != context.actor_id {
+            if session.actor_ptid != context.actor_ptid {
                 return Err("applet session actor mismatch".to_string());
             }
             let Some(trusted_manifest) = session.manifest.as_ref() else {
@@ -229,7 +229,7 @@ pub fn register_active_session(
                 session_id.to_string(),
                 ActiveAppletSession {
                     applet_id: applet_id.to_string(),
-                    actor_id: context.actor_id.clone(),
+                    actor_ptid: context.actor_ptid.clone(),
                     destroyed: false,
                     manifest: Some(manifest.clone()),
                 },
@@ -299,10 +299,10 @@ pub fn emit_audit(
     command: &str,
     applet_id: Option<&str>,
     capability: &str,
-    actor_id: Option<&str>,
+    actor_ptid: Option<&str>,
     outcome: &str,
 ) {
-    let actor = actor_id.unwrap_or("anonymous");
+    let actor = actor_ptid.unwrap_or("anonymous");
     let target = applet_id.unwrap_or("*");
     if let Ok(mut guard) = audit_records().lock() {
         guard.push(AppletAuditRecord {
@@ -310,7 +310,7 @@ pub fn emit_audit(
             command: command.to_string(),
             applet_id: target.to_string(),
             capability: capability.to_string(),
-            actor_id: actor.to_string(),
+            actor_ptid: actor.to_string(),
             outcome: outcome.to_string(),
         });
         if guard.len() > 512 {

@@ -92,11 +92,14 @@ fn chat_stores() -> &'static Mutex<ChatStores> {
     })
 }
 
-fn with_chat_app_result<F>(actor_id: &str, f: F) -> AppResult<StubPayload>
+fn with_chat_app_result<F>(actor_ptid: &str, f: F) -> AppResult<StubPayload>
 where
     F: FnOnce(&mut ChatStore) -> AppResult<StubPayload>,
 {
-    let key = actor_bucket_id(actor_id);
+    let key = match actor_bucket_id(actor_ptid) {
+        Ok(key) => key,
+        Err(error) => return invalid_argument(error.to_string()),
+    };
     let mut stores = match chat_stores().lock() {
         Ok(g) => g,
         Err(e) => {
@@ -125,9 +128,9 @@ fn internal_error(message: &str) -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::InternalError, message, None)
 }
 
-pub fn chat_list_conversations(actor_id: &str) -> AppResult<StubPayload> {
+pub fn chat_list_conversations(actor_ptid: &str) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_list_conversations", "Listing conversations");
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         let mut conversations: Vec<_> = store.conversations.values().cloned().collect();
         conversations.sort_by(|a, b| b.last_timestamp_ms.cmp(&a.last_timestamp_ms));
         let data = conversations
@@ -159,7 +162,10 @@ pub fn chat_list_conversations(actor_id: &str) -> AppResult<StubPayload> {
     })
 }
 
-pub fn chat_list_messages(actor_id: &str, input: ChatListMessagesInput) -> AppResult<StubPayload> {
+pub fn chat_list_messages(
+    actor_ptid: &str,
+    input: ChatListMessagesInput,
+) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_list_messages", conversation_id = %input.conversation_id, "Listing messages");
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
@@ -169,7 +175,7 @@ pub fn chat_list_messages(actor_id: &str, input: ChatListMessagesInput) -> AppRe
     let cursor = chat::parse_cursor(input.cursor.as_deref());
 
     let agent_id = chat::extract_agent_id(&conversation_id);
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         let now = chat::now_ms();
         store.ensure_conversation(&conversation_id, &agent_id, now);
         let messages = store
@@ -234,7 +240,7 @@ pub fn chat_list_messages(actor_id: &str, input: ChatListMessagesInput) -> AppRe
     })
 }
 
-pub fn chat_send_message(actor_id: &str, input: ChatSendMessageInput) -> AppResult<StubPayload> {
+pub fn chat_send_message(actor_ptid: &str, input: ChatSendMessageInput) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_send_message", conversation_id = %input.conversation_id, "Sending message");
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
@@ -248,7 +254,7 @@ pub fn chat_send_message(actor_id: &str, input: ChatSendMessageInput) -> AppResu
 
     let agent_id = chat::extract_agent_id(&conversation_id);
     let timestamp_ms = chat::now_ms();
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         let unread_count = {
             let conversation = store.ensure_conversation(&conversation_id, &agent_id, timestamp_ms);
             conversation.last_message_id = Some(message_id.clone());
@@ -284,7 +290,7 @@ pub fn chat_send_message(actor_id: &str, input: ChatSendMessageInput) -> AppResu
 }
 
 pub fn record_agent_turn_messages(
-    actor_id: &str,
+    actor_ptid: &str,
     conversation_id: &str,
     agent_id: &str,
     user_content: &str,
@@ -308,7 +314,7 @@ pub fn record_agent_turn_messages(
     let user_timestamp_ms = chat::now_ms();
     let assistant_timestamp_ms = chat::now_ms();
 
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         {
             let conversation =
                 store.ensure_conversation(&conversation_id, &agent_id, assistant_timestamp_ms);
@@ -357,7 +363,7 @@ pub fn record_agent_turn_messages(
     })
 }
 
-pub fn chat_mark_read(actor_id: &str, input: ChatMarkReadInput) -> AppResult<StubPayload> {
+pub fn chat_mark_read(actor_ptid: &str, input: ChatMarkReadInput) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
@@ -367,7 +373,7 @@ pub fn chat_mark_read(actor_id: &str, input: ChatMarkReadInput) -> AppResult<Stu
         return invalid_argument("message_id is required".to_string());
     }
 
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         let messages = match store.messages.get_mut(&conversation_id) {
             Some(messages) => messages,
             None => return AppResult::fail(ErrorCode::NotFound, "Conversation not found", None),
@@ -400,14 +406,14 @@ pub fn chat_mark_read(actor_id: &str, input: ChatMarkReadInput) -> AppResult<Stu
 }
 
 pub fn chat_delete_conversation(
-    actor_id: &str,
+    actor_ptid: &str,
     input: ChatConversationInput,
 ) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
     };
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         store.conversations.remove(&conversation_id);
         store.messages.remove(&conversation_id);
         success_payload(
@@ -418,7 +424,7 @@ pub fn chat_delete_conversation(
 }
 
 pub fn chat_rename_conversation(
-    actor_id: &str,
+    actor_ptid: &str,
     input: ChatRenameConversationInput,
 ) -> AppResult<StubPayload> {
     tracing::info!(command = "chat_rename_conversation", conversation_id = %input.conversation_id, title = %input.title, "Renaming conversation");
@@ -431,7 +437,7 @@ pub fn chat_rename_conversation(
         return invalid_argument("title is required".to_string());
     }
     let agent_id = chat::extract_agent_id(&conversation_id);
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         let now = chat::now_ms();
         let conversation = store.ensure_conversation(&conversation_id, &agent_id, now);
         conversation.title = title.clone();
@@ -444,14 +450,14 @@ pub fn chat_rename_conversation(
 }
 
 pub fn chat_duplicate_conversation(
-    actor_id: &str,
+    actor_ptid: &str,
     input: ChatConversationInput,
 ) -> AppResult<StubPayload> {
     let source_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
     };
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         let source_conversation = match store.conversations.get(&source_id).cloned() {
             Some(conversation) => conversation,
             None => return AppResult::fail(ErrorCode::NotFound, "Conversation not found", None),
@@ -488,7 +494,7 @@ pub fn chat_duplicate_conversation(
 }
 
 pub fn chat_smart_rename_conversation(
-    actor_id: &str,
+    actor_ptid: &str,
     input: ChatConversationInput,
 ) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
@@ -496,7 +502,7 @@ pub fn chat_smart_rename_conversation(
         Err(message) => return invalid_argument(message),
     };
     let agent_id = chat::extract_agent_id(&conversation_id);
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         let now = chat::now_ms();
         let title = if let Some(messages) = store.messages.get(&conversation_id) {
             if let Some(last_message) = messages.last() {
@@ -523,7 +529,7 @@ pub fn chat_smart_rename_conversation(
 }
 
 pub fn chat_set_conversation_model(
-    actor_id: &str,
+    actor_ptid: &str,
     input: ChatSetConversationModelInput,
 ) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
@@ -532,7 +538,7 @@ pub fn chat_set_conversation_model(
     };
     let model = input.model.trim().to_string();
     let agent_id = chat::extract_agent_id(&conversation_id);
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         let now = chat::now_ms();
         let conversation = store.ensure_conversation(&conversation_id, &agent_id, now);
         conversation.model = if model.is_empty() {
@@ -548,12 +554,12 @@ pub fn chat_set_conversation_model(
     })
 }
 
-pub fn chat_delete_message(actor_id: &str, input: ChatMessageInput) -> AppResult<StubPayload> {
+pub fn chat_delete_message(actor_ptid: &str, input: ChatMessageInput) -> AppResult<StubPayload> {
     let message_id = input.message_id.trim().to_string();
     if message_id.is_empty() {
         return invalid_argument("message_id is required".to_string());
     }
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         let target = store
             .messages
             .iter()
@@ -584,7 +590,7 @@ pub fn chat_delete_message(actor_id: &str, input: ChatMessageInput) -> AppResult
 }
 
 pub fn chat_update_message(
-    actor_id: &str,
+    actor_ptid: &str,
     input: ChatUpdateMessageInput,
 ) -> AppResult<StubPayload> {
     let message_id = input.message_id.trim().to_string();
@@ -595,7 +601,7 @@ pub fn chat_update_message(
         Ok(content) => content,
         Err(message) => return invalid_argument(message),
     };
-    with_chat_app_result(actor_id, |store| {
+    with_chat_app_result(actor_ptid, |store| {
         let target = store
             .messages
             .iter()
@@ -626,7 +632,7 @@ pub fn chat_update_message(
     })
 }
 
-pub fn chat_stop(_actor_id: &str, input: ChatConversationInput) -> AppResult<StubPayload> {
+pub fn chat_stop(_actor_ptid: &str, input: ChatConversationInput) -> AppResult<StubPayload> {
     let conversation_id = match chat::normalize_conversation_id(&input.conversation_id) {
         Ok(value) => value,
         Err(message) => return invalid_argument(message),
@@ -638,7 +644,7 @@ pub fn chat_stop(_actor_id: &str, input: ChatConversationInput) -> AppResult<Stu
 }
 
 pub fn chat_completion_once(
-    actor_id: &str,
+    actor_ptid: &str,
     token: &str,
     input: ChatCompletionInput,
 ) -> AppResult<StubPayload> {
@@ -659,7 +665,7 @@ pub fn chat_completion_once(
         .to_string();
     let model_hint = input.model.as_deref().unwrap_or("").trim().to_string();
     let provider_id = if provider_id.is_empty() && !model_hint.is_empty() {
-        provider_cache::get_providers(token, actor_id)
+        provider_cache::get_providers(token, actor_ptid)
             .ok()
             .and_then(|providers| providers.iter().find(|p| p.enabled).map(|p| p.name.clone()))
             .unwrap_or_default()
@@ -710,7 +716,7 @@ pub fn chat_completion_once(
         Ok(result) => {
             tracing::info!(command = "chat_completion_once", session_id = %session_id, model = %model_id, "Completion succeeded");
             let agent_id = chat::extract_agent_id(&session_id);
-            with_chat_app_result(actor_id, |store| {
+            with_chat_app_result(actor_ptid, |store| {
                 let now = chat::now_ms();
                 store.ensure_conversation(&session_id, &agent_id, now);
 
@@ -774,8 +780,10 @@ pub fn chat_completion_once(
     }
 }
 
-pub fn list_conversations_by_agent(actor_id: &str, agent_name: &str) -> Vec<serde_json::Value> {
-    let key = actor_bucket_id(actor_id);
+pub fn list_conversations_by_agent(actor_ptid: &str, agent_name: &str) -> Vec<serde_json::Value> {
+    let Ok(key) = actor_bucket_id(actor_ptid) else {
+        return vec![];
+    };
     let mut stores = match chat_stores().lock() {
         Ok(s) => s,
         Err(e) => {

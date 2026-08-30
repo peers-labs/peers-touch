@@ -72,9 +72,9 @@ describe('group security projection', () => {
 describe('conversation message authority ordering', () => {
   it('orders committed messages by authority sequence before pending messages', () => {
     const messages = [
-      { ulid: 'pending', senderDid: 'alice', content: 'pending', type: 1, groupSeq: 0n },
-      { ulid: 'second', senderDid: 'bob', content: 'second', type: 1, groupSeq: 2n },
-      { ulid: 'first', senderDid: 'alice', content: 'first', type: 1, groupSeq: 1n },
+      { ulid: 'pending', senderPtid: 'alice', content: 'pending', type: 1, groupSeq: 0n },
+      { ulid: 'second', senderPtid: 'bob', content: 'second', type: 1, groupSeq: 2n },
+      { ulid: 'first', senderPtid: 'alice', content: 'first', type: 1, groupSeq: 1n },
     ] as unknown as SocialMessage[];
 
     expect(projectDesktopIMMessages('group', 'conversation-1', messages).map((message) => ({

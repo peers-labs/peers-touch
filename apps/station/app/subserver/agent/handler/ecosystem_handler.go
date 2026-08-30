@@ -36,13 +36,13 @@ func (h *EcosystemHandlers) HandleCreateAgentGroup(ctx context.Context, req serv
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
 		return nil
 	}
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 	group := &persistence.EcosystemAgentGroup{
 		Name:              input.Name,
 		Description:       input.Description,
 		MemberAgentIDs:    input.MemberAgentIDs,
 		OrchestrationMode: input.OrchestrationMode,
-		OwnerActorID:      actorID,
+		OwnerActorPTID:    actorPTID,
 	}
 	if err := h.svc.CreateAgentGroup(ctx, group); err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
@@ -104,8 +104,8 @@ func (h *EcosystemHandlers) HandleDeleteAgentGroup(ctx context.Context, req serv
 }
 
 func (h *EcosystemHandlers) HandleListAgentGroups(ctx context.Context, req server.Request, resp server.Response) error {
-	actorID := subjectActorID(ctx)
-	groups, err := h.svc.ListAgentGroups(ctx, actorID)
+	actorPTID := subjectActorPTID(ctx)
+	groups, err := h.svc.ListAgentGroups(ctx, actorPTID)
 	if err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
@@ -129,11 +129,11 @@ func (h *EcosystemHandlers) HandleCreateTopicComment(ctx context.Context, req se
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "topic_key and content are required"})
 		return nil
 	}
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 	comment := &persistence.EcosystemTopicComment{
-		TopicKey: input.TopicKey,
-		Content:  input.Content,
-		AuthorID: actorID,
+		TopicKey:   input.TopicKey,
+		Content:    input.Content,
+		AuthorPTID: actorPTID,
 	}
 	if err := h.svc.CreateTopicComment(ctx, comment); err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
@@ -197,12 +197,12 @@ func (h *EcosystemHandlers) HandleCreateEvalDataset(ctx context.Context, req ser
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
 		return nil
 	}
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 	dataset := &persistence.EcosystemEvalDataset{
-		Name:         input.Name,
-		Description:  input.Description,
-		ItemsJSON:    input.ItemsJSON,
-		OwnerActorID: actorID,
+		Name:           input.Name,
+		Description:    input.Description,
+		ItemsJSON:      input.ItemsJSON,
+		OwnerActorPTID: actorPTID,
 	}
 	if err := h.svc.CreateEvalDataset(ctx, dataset); err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
@@ -262,8 +262,8 @@ func (h *EcosystemHandlers) HandleDeleteEvalDataset(ctx context.Context, req ser
 }
 
 func (h *EcosystemHandlers) HandleListEvalDatasets(ctx context.Context, req server.Request, resp server.Response) error {
-	actorID := subjectActorID(ctx)
-	datasets, err := h.svc.ListEvalDatasets(ctx, actorID)
+	actorPTID := subjectActorPTID(ctx)
+	datasets, err := h.svc.ListEvalDatasets(ctx, actorPTID)
 	if err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
@@ -293,17 +293,17 @@ func (h *EcosystemHandlers) HandleCreateCustomPlugin(ctx context.Context, req se
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "endpoint is required"})
 		return nil
 	}
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 	plugin := &persistence.EcosystemCustomPlugin{
-		Name:         input.Name,
-		Description:  input.Description,
-		Endpoint:     input.Endpoint,
-		Method:       input.Method,
-		AuthType:     input.AuthType,
-		InputSchema:  input.InputSchema,
-		OutputSchema: input.OutputSchema,
-		Enabled:      input.Enabled,
-		OwnerActorID: actorID,
+		Name:           input.Name,
+		Description:    input.Description,
+		Endpoint:       input.Endpoint,
+		Method:         input.Method,
+		AuthType:       input.AuthType,
+		InputSchema:    input.InputSchema,
+		OutputSchema:   input.OutputSchema,
+		Enabled:        input.Enabled,
+		OwnerActorPTID: actorPTID,
 	}
 	if err := h.svc.CreateCustomPlugin(ctx, plugin); err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
@@ -373,8 +373,8 @@ func (h *EcosystemHandlers) HandleDeleteCustomPlugin(ctx context.Context, req se
 }
 
 func (h *EcosystemHandlers) HandleListCustomPlugins(ctx context.Context, req server.Request, resp server.Response) error {
-	actorID := subjectActorID(ctx)
-	plugins, err := h.svc.ListCustomPlugins(ctx, actorID)
+	actorPTID := subjectActorPTID(ctx)
+	plugins, err := h.svc.ListCustomPlugins(ctx, actorPTID)
 	if err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil

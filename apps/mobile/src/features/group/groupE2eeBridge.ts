@@ -2,6 +2,7 @@ import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import { invoke } from '@tauri-apps/api/core';
 
 import type { MobileAuthSession } from '../auth/authSession';
+import { mobileAuthScope, mobileAuthScopeKey } from '../auth/mobileAuthIdentity';
 import {
   ChatEncryptedMessagePayloadSchema,
   GroupCiphertextSchema,
@@ -18,7 +19,7 @@ export const GROUP_E2EE_ERROR_KEYS = {
 
 interface SenderKeyDistributionView {
   groupUlid: string;
-  senderDid: string;
+  senderPtid: string;
   senderKeyId: number;
   chainKey: number[];
   counter: number;
@@ -27,7 +28,7 @@ interface SenderKeyDistributionView {
 
 interface GroupCiphertextView {
   version: number;
-  senderDid: string;
+  senderPtid: string;
   senderKeyId: number;
   counter: number;
   ciphertext: number[];
@@ -59,14 +60,14 @@ export async function emitGroupSkdm(session: MobileAuthSession, groupUlid: strin
 
 export async function consumeGroupSkdm(
   session: MobileAuthSession,
-  senderDid: string,
+  senderPtid: string,
   skdmBytes: Uint8Array,
 ): Promise<void> {
   const payload = fromBinary(SenderKeyDistributionMessageSchema, skdmBytes);
   await invoke('crypto_group_sk_consume_skdm', {
     input: {
       userScope: userScopeForSession(session),
-      senderDid,
+      senderPtid,
       payload: senderKeyDistributionToView(payload),
     },
   });
@@ -150,21 +151,19 @@ export async function decryptGroupPayloadBytes(
 }
 
 export function userScopeForSession(session: MobileAuthSession): string {
-  return `${session.stationUrl.replace(/\/+$/, '')}|${session.sessionId}`;
+  return mobileAuthScopeKey(session);
 }
 
 function scopeInput(session: MobileAuthSession, groupUlid: string) {
   return {
     userScope: userScopeForSession(session),
-    actorDid: actorDidForSession(session),
+    actorPtid: actorPtidForSession(session),
     groupUlid: requireGroupUlid(groupUlid),
   };
 }
 
-function actorDidForSession(session: MobileAuthSession): string {
-  const actorDid = String(session.actor?.id || session.actor?.actorId || session.actor?.actor_id || '').trim();
-  if (!actorDid) throw new Error(GROUP_E2EE_ERROR_KEYS.MISSING_ACTOR);
-  return actorDid;
+function actorPtidForSession(session: MobileAuthSession): string {
+  return mobileAuthScope(session).ptid;
 }
 
 function requireGroupUlid(groupUlid: string): string {
@@ -176,7 +175,7 @@ function requireGroupUlid(groupUlid: string): string {
 function senderKeyDistributionFromView(view: SenderKeyDistributionView): SenderKeyDistributionMessage {
   return create(SenderKeyDistributionMessageSchema, {
     groupUlid: view.groupUlid,
-    senderDid: view.senderDid,
+    senderPtid: view.senderPtid,
     senderKeyId: view.senderKeyId,
     chainKey: bytesFromNumbers(view.chainKey),
     counter: view.counter,
@@ -187,7 +186,7 @@ function senderKeyDistributionFromView(view: SenderKeyDistributionView): SenderK
 function senderKeyDistributionToView(payload: SenderKeyDistributionMessage): SenderKeyDistributionView {
   return {
     groupUlid: payload.groupUlid,
-    senderDid: payload.senderDid,
+    senderPtid: payload.senderPtid,
     senderKeyId: payload.senderKeyId,
     chainKey: numbersFromBytes(payload.chainKey),
     counter: payload.counter,
@@ -198,7 +197,7 @@ function senderKeyDistributionToView(payload: SenderKeyDistributionMessage): Sen
 function groupCiphertextFromView(view: GroupCiphertextView): GroupCiphertext {
   return create(GroupCiphertextSchema, {
     version: view.version,
-    senderDid: view.senderDid,
+    senderPtid: view.senderPtid,
     senderKeyId: view.senderKeyId,
     counter: view.counter,
     ciphertext: bytesFromNumbers(view.ciphertext),
@@ -209,7 +208,7 @@ function groupCiphertextFromView(view: GroupCiphertextView): GroupCiphertext {
 function groupCiphertextToView(wire: GroupCiphertext): GroupCiphertextView {
   return {
     version: wire.version,
-    senderDid: wire.senderDid,
+    senderPtid: wire.senderPtid,
     senderKeyId: wire.senderKeyId,
     counter: wire.counter,
     ciphertext: numbersFromBytes(wire.ciphertext),

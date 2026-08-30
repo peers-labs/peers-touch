@@ -26,8 +26,8 @@ func NewWorkspaceManager(sourceRepo string) *WorkspaceManager {
 	}
 }
 
-func (m *WorkspaceManager) Create(actorID, sessionID string) (string, error) {
-	dir := filepath.Join(m.BaseDir, actorID, sessionID)
+func (m *WorkspaceManager) Create(actorPTID, sessionID string) (string, error) {
+	dir := filepath.Join(m.BaseDir, actorPTID, sessionID)
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return "", fmt.Errorf("create workspace parent: %w", err)
 	}
@@ -47,8 +47,8 @@ func (m *WorkspaceManager) Create(actorID, sessionID string) (string, error) {
 	return dir, nil
 }
 
-func (m *WorkspaceManager) Cleanup(actorID, sessionID string) error {
-	dir := filepath.Join(m.BaseDir, actorID, sessionID)
+func (m *WorkspaceManager) Cleanup(actorPTID, sessionID string) error {
+	dir := filepath.Join(m.BaseDir, actorPTID, sessionID)
 
 	if m.SourceRepo != "" {
 		cmd := exec.Command("git", "worktree", "remove", "--force", dir)

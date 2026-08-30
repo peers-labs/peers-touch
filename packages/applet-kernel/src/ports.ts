@@ -37,7 +37,7 @@ export interface KernelLogger {
 
 /** Identity of an applet instance (registry key dimension, architecture §5.1). */
 export interface InstanceKey {
-  userId: string;
+  actorPtid: string;
   workspaceId: string;
   appletId: string;
   instanceId: string;

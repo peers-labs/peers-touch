@@ -142,7 +142,7 @@ describe('event stream group membership decode', () => {
         authorityStationPeerId: 'station-a',
         eventHash: 'hash-2',
         messageUlid: 'message-1',
-        actorDid: 'did:peer:bob',
+        actorPtid: 'did:peer:bob',
       }),
     ]);
   });
@@ -184,7 +184,7 @@ function groupMembershipFrameBase64(kind: GroupMembershipChange_Kind): string {
       value: {
         eventId: 'membership-change-1',
         groupUlid: 'group-1',
-        actorDid: 'did:peer:member-1',
+        actorPtid: 'did:peer:member-1',
         kind,
         changedTsUnixMs: 123n,
       },
@@ -209,7 +209,7 @@ function groupFederationFrameBase64(): string {
         messageUlid: 'message-1',
         membershipEpoch: 1n,
         committedTsUnixMs: 123n,
-        actorDid: 'did:peer:bob',
+        actorPtid: 'did:peer:bob',
       },
     },
   });

@@ -40,7 +40,7 @@ const HEALTH_TICK_SLOW_MS = 5 * 60 * 1000;
 
 let unsubscribeSession: (() => void) | null = null;
 let healthTimer: ReturnType<typeof setTimeout> | null = null;
-let lastActorId: string | null = null;
+let lastActorPtid: string | null = null;
 
 function scheduleHealthTick(): void {
   if (healthTimer != null) return;
@@ -72,13 +72,13 @@ export const federationRuntime: RuntimeDescriptor = {
     if (unsubscribeSession) return;
 
     unsubscribeSession = useSessionStore.subscribe((state) => {
-      const nextActorId = state.authenticated
-        ? state.currentUser?.actorId ?? null
+      const nextActorPtid = state.authenticated
+        ? state.currentUser?.actorPtid ?? null
         : null;
-      if (nextActorId === lastActorId) return;
-      lastActorId = nextActorId;
+      if (nextActorPtid === lastActorPtid) return;
+      lastActorPtid = nextActorPtid;
 
-      if (nextActorId) {
+      if (nextActorPtid) {
         void useFederationStore.getState().refreshSelf();
         void useFederationStore.getState().refreshFederations();
       } else {
@@ -101,11 +101,11 @@ export const federationRuntime: RuntimeDescriptor = {
       unsubscribeSession = null;
     }
     stopHealthTick();
-    lastActorId = null;
+    lastActorPtid = null;
     log.debug('federation', 'runtime torn down');
   },
 
-  async bootstrap(actorId: string | null): Promise<void> {
+  async bootstrap(actorPtid: string | null): Promise<void> {
     const store = useFederationStore.getState();
     const tasks: Promise<unknown>[] = [store.refreshHealth()];
     // app-scope bootstrap is invoked once with `null`; later, the
@@ -113,13 +113,13 @@ export const federationRuntime: RuntimeDescriptor = {
     // is already present at boot (e.g. restored from disk), pick it
     // up here so the first paint after a relaunch has /me data.
     const session = useSessionStore.getState();
-    const restoredActor = actorId ?? (session.authenticated
-      ? session.currentUser?.actorId ?? null
+    const restoredActor = actorPtid ?? (session.authenticated
+      ? session.currentUser?.actorPtid ?? null
       : null);
     if (restoredActor) {
       tasks.push(store.refreshSelf());
       tasks.push(store.refreshFederations());
-      lastActorId = restoredActor;
+      lastActorPtid = restoredActor;
     }
     await Promise.allSettled(tasks);
   },
@@ -128,7 +128,7 @@ export const federationRuntime: RuntimeDescriptor = {
     log.debug('federation', 'reconcile', { reason });
     const store = useFederationStore.getState();
     const tasks: Promise<unknown>[] = [store.refreshHealth()];
-    if (lastActorId) tasks.push(store.refreshSelf());
+    if (lastActorPtid) tasks.push(store.refreshSelf());
     await Promise.allSettled(tasks);
   },
 };

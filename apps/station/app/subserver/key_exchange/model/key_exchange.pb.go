@@ -162,10 +162,10 @@ func (*UploadKeyBundleResponse) Descriptor() ([]byte, []int) {
 	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{1}
 }
 
-// One logical device publish for a DID (may share the DID across installs).
+// One logical device publish for a PTID (may share the PTID across installs).
 type KeyBundle struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Did   string                 `protobuf:"bytes,1,opt,name=did,proto3" json:"did,omitempty"`
+	Ptid  string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
 	// Stable per-install id from the publisher; empty string means legacy row
 	// (server key "legacy" is mapped to "").
 	DeviceId string `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
@@ -212,9 +212,9 @@ func (*KeyBundle) Descriptor() ([]byte, []int) {
 	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *KeyBundle) GetDid() string {
+func (x *KeyBundle) GetPtid() string {
 	if x != nil {
-		return x.Did
+		return x.Ptid
 	}
 	return ""
 }
@@ -282,11 +282,11 @@ func (x *KeyBundle) GetOpkIds() []int32 {
 	return nil
 }
 
-// Fetch another actor's key bundles by DID.
+// Fetch another actor's key bundles by PTID.
 type FetchKeyBundleRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Did   string                 `protobuf:"bytes,1,opt,name=did,proto3" json:"did,omitempty"`
-	// When empty, return all bundles for the DID. When set, only that device_id
+	Ptid  string                 `protobuf:"bytes,1,opt,name=ptid,proto3" json:"ptid,omitempty"`
+	// When empty, return all bundles for the PTID. When set, only that device_id
 	// (after server-side normalization matching upload).
 	DeviceId string `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	// Optional Station peer id for federated lookup. When present and different
@@ -327,9 +327,9 @@ func (*FetchKeyBundleRequest) Descriptor() ([]byte, []int) {
 	return file_domain_key_exchange_key_exchange_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *FetchKeyBundleRequest) GetDid() string {
+func (x *FetchKeyBundleRequest) GetPtid() string {
 	if x != nil {
-		return x.Did
+		return x.Ptid
 	}
 	return ""
 }
@@ -493,7 +493,7 @@ func (*ReplenishOpksResponse) Descriptor() ([]byte, []int) {
 // Count remaining one-time prekeys.
 type OpkCountRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	DeviceId      string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"` // empty => legacy bucket for this DID.
+	DeviceId      string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"` // empty => legacy bucket for this PTID.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -593,9 +593,9 @@ const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\bopk_pubs\x18\x06 \x03(\tR\aopkPubs\x12\x1b\n" +
 	"\tdevice_id\x18\a \x01(\tR\bdeviceId\x12-\n" +
 	"\x12supported_versions\x18\b \x03(\rR\x11supportedVersions\"\x19\n" +
-	"\x17UploadKeyBundleResponse\"\xa7\x02\n" +
-	"\tKeyBundle\x12\x10\n" +
-	"\x03did\x18\x01 \x01(\tR\x03did\x12\x1b\n" +
+	"\x17UploadKeyBundleResponse\"\xa9\x02\n" +
+	"\tKeyBundle\x12\x12\n" +
+	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12\x15\n" +
 	"\x06ik_pub\x18\x03 \x01(\tR\x05ikPub\x12\x17\n" +
 	"\aspk_pub\x18\x04 \x01(\tR\x06spkPub\x12\x17\n" +
@@ -605,9 +605,9 @@ const file_domain_key_exchange_key_exchange_proto_rawDesc = "" +
 	"\x12supported_versions\x18\b \x03(\rR\x11supportedVersions\x12\x15\n" +
 	"\x06spk_id\x18\t \x01(\x05R\x05spkId\x12\x17\n" +
 	"\aopk_ids\x18\n" +
-	" \x03(\x05R\x06opkIds\"w\n" +
-	"\x15FetchKeyBundleRequest\x12\x10\n" +
-	"\x03did\x18\x01 \x01(\tR\x03did\x12\x1b\n" +
+	" \x03(\x05R\x06opkIds\"y\n" +
+	"\x15FetchKeyBundleRequest\x12\x12\n" +
+	"\x04ptid\x18\x01 \x01(\tR\x04ptid\x12\x1b\n" +
 	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x12/\n" +
 	"\x14home_station_peer_id\x18\x03 \x01(\tR\x11homeStationPeerId\"`\n" +
 	"\x16FetchKeyBundleResponse\x12F\n" +

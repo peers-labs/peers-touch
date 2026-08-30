@@ -44,14 +44,12 @@ const TAURI_EVENT_NAME = 'auth:identity-changed';
 
 /** Rust serializes `IdentityChangeReason` with snake_case names. */
 interface TauriIdentityPayload {
-  reason?: string;
-  actor_id?: string | null;
-  actorId?: string | null;
+  reason: string;
+  actor_ptid: string | null;
   login_method?: string | null;
-  loginMethod?: string | null;
 }
 
-function normalizeReason(raw: string | undefined): IdentityChangeReason {
+function normalizeReason(raw: string): IdentityChangeReason | null {
   const map: Record<string, IdentityChangeReason> = {
     login: 'login',
     logout: 'logout',
@@ -59,16 +57,22 @@ function normalizeReason(raw: string | undefined): IdentityChangeReason {
     unlock: 'unlock',
     oauth_bridge: 'oauth_bridge',
   };
-  if (raw && map[raw]) return map[raw];
+  if (map[raw]) return map[raw];
   log.warn('identity', 'unknown identity change reason from Tauri', { raw });
-  return 'switch';
+  return null;
 }
 
-function toPipelinePayload(raw: TauriIdentityPayload | undefined): IdentityChangePayload {
+function toPipelinePayload(raw: TauriIdentityPayload): IdentityChangePayload | null {
+  const reason = normalizeReason(raw.reason);
+  if (!reason) return null;
+  if (reason !== 'logout' && !raw.actor_ptid?.startsWith('ptid:')) {
+    log.warn('identity', 'identity event missing canonical actor PTID', { reason });
+    return null;
+  }
   return {
-    reason: normalizeReason(raw?.reason),
-    actorId: raw?.actor_id ?? raw?.actorId ?? null,
-    loginMethod: raw?.login_method ?? raw?.loginMethod ?? null,
+    reason,
+    actorPtid: raw.actor_ptid,
+    loginMethod: raw.login_method ?? null,
   };
 }
 
@@ -95,9 +99,10 @@ export function installIdentityChangedBridge(): void {
   installed = true;
   listen<TauriIdentityPayload>(TAURI_EVENT_NAME, (event) => {
     const raw = event.payload;
-    log.info('identity', 'received auth:identity-changed', { reason: raw?.reason });
+    log.info('identity', 'received auth:identity-changed', { reason: raw.reason });
 
     const payload = toPipelinePayload(raw);
+    if (!payload) return;
     eventBus.publish(EVENT.AUTH_IDENTITY_CHANGED, undefined);
 
     let skipPipeline = false;
@@ -116,17 +121,17 @@ export function installIdentityChangedBridge(): void {
     // CreateWithKick policy, so route it through the normal kicked flow.
     if (isLoginLike(payload.reason)) {
       const current = useSessionStore.getState().currentUser;
-      if (current?.actorId && current.actorId === payload.actorId) {
+      if (current?.actorPtid && current.actorPtid === payload.actorPtid) {
         log.warn('identity', 'same actor logged in elsewhere; ending this session', {
-          actorId: current.actorId,
+          actorPtid: current.actorPtid,
         });
         eventBus.publish(EVENT.AUTH_SESSION_REVOKED, { reason: 'kicked' });
         return;
       }
-      if (current?.actorId) {
+      if (current?.actorPtid) {
         log.info('identity', 'ignoring remote login for different actor', {
-          currentActorId: current.actorId,
-          incomingActorId: payload.actorId,
+          currentActorPtid: current.actorPtid,
+          incomingActorPtid: payload.actorPtid,
         });
         return;
       }

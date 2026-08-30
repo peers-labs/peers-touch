@@ -5,7 +5,7 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/actor;actor";
 
 message ActorSessionSnapshot {
-  string actor_id = 1;
+  string actor_ptid = 1;
   string handle = 2;
   string protocol = 3;
   string base_url = 4;

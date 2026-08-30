@@ -31,7 +31,7 @@ message UploadMediaResponse {
 }
 
 message AudienceKeyEnvelope {
-  string recipient_did = 1;
+  string recipient_ptid = 1;
   string device_id = 2;
   string key_id = 3;
   bytes encrypted_key = 4;

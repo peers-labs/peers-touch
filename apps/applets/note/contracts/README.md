@@ -20,6 +20,10 @@ sdk.network.request({
 
 The applet frontend must not know or construct a backend base URL.
 
+The Host injects the authenticated actor PTID through
+`X-Peers-Actor-Ptid`. Note responses expose that identity as `owner_ptid`
+(`ownerPtid` in Proto JSON); the former `owner_id` name is reserved.
+
 ## HTTP Mapping
 
 ```text

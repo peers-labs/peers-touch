@@ -15,8 +15,8 @@ const rollupInsertBatchSize = 500
 
 type rawEventModel struct {
 	ID            uint       `gorm:"column:id;primaryKey"`
-	ActorID       string     `gorm:"column:actor_id;size:255;uniqueIndex:idx_frontend_telemetry_actor_event,priority:1;index"`
-	EventID       string     `gorm:"column:event_id;size:128;uniqueIndex:idx_frontend_telemetry_actor_event,priority:2;index"`
+	ActorPTID     string     `gorm:"column:actor_ptid;size:255;uniqueIndex:idx_frontend_telemetry_actor_ptid_event,priority:1;index"`
+	EventID       string     `gorm:"column:event_id;size:128;uniqueIndex:idx_frontend_telemetry_actor_ptid_event,priority:2;index"`
 	SchemaVersion int        `gorm:"column:schema_version;not null"`
 	TS            float64    `gorm:"column:ts;not null;index"`
 	Kind          string     `gorm:"column:kind;size:128;not null;index"`
@@ -43,7 +43,7 @@ func (rawEventModel) TableName() string { return "frontend_telemetry_events" }
 
 type rollupModel struct {
 	ID              uint      `gorm:"column:id;primaryKey"`
-	ActorID         string    `gorm:"column:actor_id;size:255;uniqueIndex:idx_frontend_telemetry_rollup,priority:1;index"`
+	ActorPTID       string    `gorm:"column:actor_ptid;size:255;uniqueIndex:idx_frontend_telemetry_rollup,priority:1;index"`
 	Runtime         string    `gorm:"column:runtime;size:64;uniqueIndex:idx_frontend_telemetry_rollup,priority:2;index"`
 	Module          string    `gorm:"column:module;size:255;uniqueIndex:idx_frontend_telemetry_rollup,priority:3;index"`
 	Kind            string    `gorm:"column:kind;size:128;uniqueIndex:idx_frontend_telemetry_rollup,priority:4;index"`
@@ -70,12 +70,17 @@ func newRawEventStore(db *gorm.DB) *rawEventStore {
 }
 
 func (s *rawEventStore) AutoMigrate() error {
+	for _, table := range []string{rawEventModel{}.TableName(), rollupModel{}.TableName()} {
+		if err := renameTelemetryPTIDColumn(s.db, table); err != nil {
+			return err
+		}
+	}
 	return s.db.AutoMigrate(&rawEventModel{}, &rollupModel{})
 }
 
-func (s *rawEventStore) PersistBatch(ctx context.Context, actorID, sessionID string, events []frontendTelemetryEvent) (ingestResult, error) {
-	if actorID == "" {
-		return ingestResult{}, fmt.Errorf("frontend telemetry: actorID is required")
+func (s *rawEventStore) PersistBatch(ctx context.Context, actorPTID, sessionID string, events []frontendTelemetryEvent) (ingestResult, error) {
+	if actorPTID == "" {
+		return ingestResult{}, fmt.Errorf("frontend telemetry: actorPTID is required")
 	}
 	if len(events) == 0 {
 		return ingestResult{}, fmt.Errorf("events must not be empty")
@@ -85,7 +90,7 @@ func (s *rawEventStore) PersistBatch(ctx context.Context, actorID, sessionID str
 	rows := make([]rawEventModel, 0, len(events))
 	rejected := make([]string, 0)
 	for _, event := range events {
-		row, reason := event.toRawEventModel(actorID, sessionID, now)
+		row, reason := event.toRawEventModel(actorPTID, sessionID, now)
 		if reason != "" {
 			rejected = append(rejected, reason)
 			continue
@@ -97,13 +102,13 @@ func (s *rawEventStore) PersistBatch(ctx context.Context, actorID, sessionID str
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := lockActorTelemetryRollups(ctx, tx, actorID); err != nil {
+		if err := lockActorTelemetryRollups(ctx, tx, actorPTID); err != nil {
 			return err
 		}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error; err != nil {
 			return fmt.Errorf("persist frontend telemetry events: %w", err)
 		}
-		return s.rebuildRollups(ctx, tx, actorID)
+		return s.rebuildRollups(ctx, tx, actorPTID)
 	})
 	if err != nil {
 		return ingestResult{}, err
@@ -111,25 +116,25 @@ func (s *rawEventStore) PersistBatch(ctx context.Context, actorID, sessionID str
 	return ingestResult{Accepted: len(rows), Rejected: len(rejected), RejectedReasons: rejected}, nil
 }
 
-func lockActorTelemetryRollups(ctx context.Context, tx *gorm.DB, actorID string) error {
+func lockActorTelemetryRollups(ctx context.Context, tx *gorm.DB, actorPTID string) error {
 	if tx.Dialector == nil || tx.Dialector.Name() != "postgres" {
 		return nil
 	}
-	if err := tx.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", actorID).Error; err != nil {
+	if err := tx.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", actorPTID).Error; err != nil {
 		return fmt.Errorf("lock frontend telemetry actor rollups: %w", err)
 	}
 	return nil
 }
 
-func (s *rawEventStore) Query(ctx context.Context, actorID string, req queryRequest) ([]rawEventModel, error) {
-	if actorID == "" {
-		return nil, fmt.Errorf("frontend telemetry: actorID is required")
+func (s *rawEventStore) Query(ctx context.Context, actorPTID string, req queryRequest) ([]rawEventModel, error) {
+	if actorPTID == "" {
+		return nil, fmt.Errorf("frontend telemetry: actorPTID is required")
 	}
 	limit := req.Limit
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	query := s.db.WithContext(ctx).Where("actor_id = ?", actorID)
+	query := s.db.WithContext(ctx).Where("actor_ptid = ?", actorPTID)
 	if req.InteractionID != "" {
 		query = query.Where("interaction_id = ?", req.InteractionID)
 	}
@@ -156,15 +161,15 @@ func (s *rawEventStore) Query(ctx context.Context, actorID string, req queryRequ
 	return rows, nil
 }
 
-func (s *rawEventStore) QueryRollups(ctx context.Context, actorID string, req rollupQueryRequest) ([]rollupModel, error) {
-	if actorID == "" {
-		return nil, fmt.Errorf("frontend telemetry: actorID is required")
+func (s *rawEventStore) QueryRollups(ctx context.Context, actorPTID string, req rollupQueryRequest) ([]rollupModel, error) {
+	if actorPTID == "" {
+		return nil, fmt.Errorf("frontend telemetry: actorPTID is required")
 	}
 	limit := req.Limit
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	query := s.db.WithContext(ctx).Where("actor_id = ?", actorID)
+	query := s.db.WithContext(ctx).Where("actor_ptid = ?", actorPTID)
 	if req.Runtime != "" {
 		query = query.Where("runtime = ?", req.Runtime)
 	}
@@ -182,13 +187,13 @@ func (s *rawEventStore) QueryRollups(ctx context.Context, actorID string, req ro
 	return rows, nil
 }
 
-func (s *rawEventStore) rebuildRollups(ctx context.Context, tx *gorm.DB, actorID string) error {
-	if err := tx.WithContext(ctx).Where("actor_id = ?", actorID).Delete(&rollupModel{}).Error; err != nil {
+func (s *rawEventStore) rebuildRollups(ctx context.Context, tx *gorm.DB, actorPTID string) error {
+	if err := tx.WithContext(ctx).Where("actor_ptid = ?", actorPTID).Delete(&rollupModel{}).Error; err != nil {
 		return fmt.Errorf("clear frontend telemetry rollups: %w", err)
 	}
 
 	var rows []rawEventModel
-	if err := tx.WithContext(ctx).Where("actor_id = ?", actorID).Find(&rows).Error; err != nil {
+	if err := tx.WithContext(ctx).Where("actor_ptid = ?", actorPTID).Find(&rows).Error; err != nil {
 		return fmt.Errorf("load frontend telemetry events for rollup: %w", err)
 	}
 
@@ -229,7 +234,7 @@ func (s *rawEventStore) rebuildRollups(ctx context.Context, tx *gorm.DB, actorID
 	for k, b := range buckets {
 		p50, p95, max := durationStats(b.durationValues)
 		rollups = append(rollups, rollupModel{
-			ActorID:         actorID,
+			ActorPTID:       actorPTID,
 			Runtime:         k.runtime,
 			Module:          k.module,
 			Kind:            k.kind,
@@ -250,6 +255,20 @@ func (s *rawEventStore) rebuildRollups(ctx context.Context, tx *gorm.DB, actorID
 	}
 	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&rollups, rollupInsertBatchSize).Error; err != nil {
 		return fmt.Errorf("persist frontend telemetry rollups: %w", err)
+	}
+	return nil
+}
+
+func renameTelemetryPTIDColumn(db *gorm.DB, table string) error {
+	const legacy, canonical = "actor_id", "actor_ptid"
+	if !db.Migrator().HasTable(table) || !db.Migrator().HasColumn(table, legacy) {
+		return nil
+	}
+	if db.Migrator().HasColumn(table, canonical) {
+		return fmt.Errorf("frontend telemetry: %s contains both %s and %s", table, legacy, canonical)
+	}
+	if err := db.Migrator().RenameColumn(table, legacy, canonical); err != nil {
+		return fmt.Errorf("frontend telemetry: rename %s.%s to %s: %w", table, legacy, canonical, err)
 	}
 	return nil
 }

@@ -233,12 +233,12 @@ func (NotificationStatus) EnumDescriptor() ([]byte, []int) {
 // Notification represents a single notification entity.
 // title and body carry server-generated fallback text for push previews.
 // Rich clients render locale-aware display text from the structured
-// references (type + target_type + target_id + actor_id).
+// references (type + target_type + target_id + actor_ptid).
 type Notification struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	RecipientId   string                 `protobuf:"bytes,2,opt,name=recipient_id,json=recipientId,proto3" json:"recipient_id,omitempty"`
-	ActorId       string                 `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	RecipientPtid string                 `protobuf:"bytes,2,opt,name=recipient_ptid,json=recipientPtid,proto3" json:"recipient_ptid,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,3,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Type          NotificationType       `protobuf:"varint,4,opt,name=type,proto3,enum=peers_touch.model.notification.v1.NotificationType" json:"type,omitempty"`
 	Category      NotificationCategory   `protobuf:"varint,5,opt,name=category,proto3,enum=peers_touch.model.notification.v1.NotificationCategory" json:"category,omitempty"`
 	Status        NotificationStatus     `protobuf:"varint,6,opt,name=status,proto3,enum=peers_touch.model.notification.v1.NotificationStatus" json:"status,omitempty"`
@@ -291,16 +291,16 @@ func (x *Notification) GetId() string {
 	return ""
 }
 
-func (x *Notification) GetRecipientId() string {
+func (x *Notification) GetRecipientPtid() string {
 	if x != nil {
-		return x.RecipientId
+		return x.RecipientPtid
 	}
 	return ""
 }
 
-func (x *Notification) GetActorId() string {
+func (x *Notification) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -393,7 +393,7 @@ type NotificationGroup struct {
 	Title         string                 `protobuf:"bytes,6,opt,name=title,proto3" json:"title,omitempty"`
 	Body          string                 `protobuf:"bytes,7,opt,name=body,proto3" json:"body,omitempty"`
 	Count         int32                  `protobuf:"varint,8,opt,name=count,proto3" json:"count,omitempty"`
-	ActorIds      []string               `protobuf:"bytes,9,rep,name=actor_ids,json=actorIds,proto3" json:"actor_ids,omitempty"`
+	ActorPtids    []string               `protobuf:"bytes,9,rep,name=actor_ptids,json=actorPtids,proto3" json:"actor_ptids,omitempty"`
 	Latest        *Notification          `protobuf:"bytes,10,opt,name=latest,proto3" json:"latest,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -486,9 +486,9 @@ func (x *NotificationGroup) GetCount() int32 {
 	return 0
 }
 
-func (x *NotificationGroup) GetActorIds() []string {
+func (x *NotificationGroup) GetActorPtids() []string {
 	if x != nil {
-		return x.ActorIds
+		return x.ActorPtids
 	}
 	return nil
 }
@@ -511,7 +511,7 @@ func (x *NotificationGroup) GetUpdatedAt() *timestamppb.Timestamp {
 // The type field is reserved for future per-type control granularity.
 type NotificationPreference struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
 	Category      NotificationCategory   `protobuf:"varint,2,opt,name=category,proto3,enum=peers_touch.model.notification.v1.NotificationCategory" json:"category,omitempty"`
 	Enabled       bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	PushEnabled   bool                   `protobuf:"varint,4,opt,name=push_enabled,json=pushEnabled,proto3" json:"push_enabled,omitempty"`
@@ -552,9 +552,9 @@ func (*NotificationPreference) Descriptor() ([]byte, []int) {
 	return file_domain_notification_notification_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *NotificationPreference) GetActorId() string {
+func (x *NotificationPreference) GetActorPtid() string {
 	if x != nil {
-		return x.ActorId
+		return x.ActorPtid
 	}
 	return ""
 }
@@ -1397,11 +1397,12 @@ var File_domain_notification_notification_proto protoreflect.FileDescriptor
 
 const file_domain_notification_notification_proto_rawDesc = "" +
 	"\n" +
-	"&domain/notification/notification.proto\x12!peers_touch.model.notification.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd6\x05\n" +
+	"&domain/notification/notification.proto\x12!peers_touch.model.notification.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xec\x05\n" +
 	"\fNotification\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
-	"\frecipient_id\x18\x02 \x01(\tR\vrecipientId\x12\x19\n" +
-	"\bactor_id\x18\x03 \x01(\tR\aactorId\x12G\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
+	"\x0erecipient_ptid\x18\x02 \x01(\tR\rrecipientPtid\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x03 \x01(\tR\tactorPtid\x12G\n" +
 	"\x04type\x18\x04 \x01(\x0e23.peers_touch.model.notification.v1.NotificationTypeR\x04type\x12S\n" +
 	"\bcategory\x18\x05 \x01(\x0e27.peers_touch.model.notification.v1.NotificationCategoryR\bcategory\x12M\n" +
 	"\x06status\x18\x06 \x01(\x0e25.peers_touch.model.notification.v1.NotificationStatusR\x06status\x12\x1f\n" +
@@ -1418,7 +1419,7 @@ const file_domain_notification_notification_proto_rawDesc = "" +
 	"\aread_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\x06readAt\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xed\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01R\frecipient_id\"\xf1\x03\n" +
 	"\x11NotificationGroup\x12\x1b\n" +
 	"\tgroup_key\x18\x01 \x01(\tR\bgroupKey\x12G\n" +
 	"\x04type\x18\x02 \x01(\x0e23.peers_touch.model.notification.v1.NotificationTypeR\x04type\x12S\n" +
@@ -1428,14 +1429,16 @@ const file_domain_notification_notification_proto_rawDesc = "" +
 	"\ttarget_id\x18\x05 \x01(\tR\btargetId\x12\x14\n" +
 	"\x05title\x18\x06 \x01(\tR\x05title\x12\x12\n" +
 	"\x04body\x18\a \x01(\tR\x04body\x12\x14\n" +
-	"\x05count\x18\b \x01(\x05R\x05count\x12\x1b\n" +
-	"\tactor_ids\x18\t \x03(\tR\bactorIds\x12G\n" +
+	"\x05count\x18\b \x01(\x05R\x05count\x12\x1f\n" +
+	"\vactor_ptids\x18\t \x03(\tR\n" +
+	"actorPtids\x12G\n" +
 	"\x06latest\x18\n" +
 	" \x01(\v2/.peers_touch.model.notification.v1.NotificationR\x06latest\x129\n" +
 	"\n" +
-	"updated_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xee\x02\n" +
-	"\x16NotificationPreference\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12S\n" +
+	"updated_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xf2\x02\n" +
+	"\x16NotificationPreference\x12\x1d\n" +
+	"\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12S\n" +
 	"\bcategory\x18\x02 \x01(\x0e27.peers_touch.model.notification.v1.NotificationCategoryR\bcategory\x12\x18\n" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12!\n" +
 	"\fpush_enabled\x18\x04 \x01(\bR\vpushEnabled\x12#\n" +

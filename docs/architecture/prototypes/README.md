@@ -61,7 +61,7 @@
 | desktop | `agent-lobehub-parity` | 历史 LobeHub benchmark 原型，不是产品身份 | `packages/prototypes/desktop/features/agent-lobehub-parity/` | 仅保留来源对标与历史证据 | agent/lobehub-parity | superseded | [prototype-lobehub-parity/README.md](../agent/prototype-lobehub-parity/README.md) |
 | desktop | `call` | Desktop Chat/通话能力原型，不是一级模块 | `packages/prototypes/desktop/features/call/` | Desktop 好友聊天通话（apps/desktop，CallSurface）；原型为 React web 展示 | voice-video-calls | confirmed | [prototype/README.md](../realtime/prototype/README.md)（历史路径，归属 desktop） |
 | desktop | `social-chat` | Desktop Chat 能力原型，不是一级模块 | `packages/prototypes/desktop/features/social-chat/` | Desktop 私聊 / 群聊体验；原型为 React web 展示 | client/chat + social-runtime | pending-review | [prototype/README.md](../social/prototype/README.md) |
-| mobile | `mobile-chat` | Mobile Shell 一级站点基准 | `packages/prototypes/mobile/chat/` | Mobile Shell / Access Gate / Chat / Moments / Contacts / Settings / Friend & Group flows；原型为 React web 展示 | apps/mobile MobileShell + client/chat + social-runtime | drafting | [prototype/README.md](../mobile/prototype/README.md) |
+| mobile | `mobile-chat` | Mobile Shell 一级站点基准 | `packages/prototypes/mobile/chat/` | Mobile Shell / Access Gate / Chat / Moments / Contacts / Settings / recovery states；原型为 React web 展示 | apps/mobile MobileShell + client/chat + social-runtime | confirmed | [prototype/README.md](../mobile/prototype/README.md) |
 | dashboard | `station-dashboard` | Station Dashboard 一级站点运维台体验基准 | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard / 管理台 / 运维台体验；原型为 React web 展示 | station/base | drafting | [base.md](../../station/base.md) |
 
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/presence/presence.proto.
  */
 export const file_domain_presence_presence: GenFile = /*@__PURE__*/
-  fileDesc("Ch5kb21haW4vcHJlc2VuY2UvcHJlc2VuY2UucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnByZXNlbmNlLnYxIioKGFByZXNlbmNlSGVhcnRiZWF0UmVxdWVzdBIOCgZyZWFzb24YASABKAkiKAoWUHJlc2VuY2VPZmZsaW5lUmVxdWVzdBIOCgZyZWFzb24YASABKAkisQEKFlByZXNlbmNlVXBkYXRlUmVzcG9uc2USEAoIYWN0b3JfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRI7CgVzdGF0ZRgDIAEoDjIsLnBlZXJzX3RvdWNoLm1vZGVsLnByZXNlbmNlLnYxLlByZXNlbmNlU3RhdGUSNAoQbGVhc2VfZXhwaXJlc19hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiKQoUUHJlc2VuY2VRdWVyeVJlcXVlc3QSEQoJYWN0b3JfaWRzGAEgAygJIscBCg5QcmVzZW5jZVN0YXR1cxIQCghhY3Rvcl9pZBgBIAEoCRI7CgVzdGF0ZRgCIAEoDjIsLnBlZXJzX3RvdWNoLm1vZGVsLnByZXNlbmNlLnYxLlByZXNlbmNlU3RhdGUSMAoMbGFzdF9zZWVuX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0ChBsZWFzZV9leHBpcmVzX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJYChVQcmVzZW5jZVF1ZXJ5UmVzcG9uc2USPwoIc3RhdHVzZXMYASADKAsyLS5wZWVyc190b3VjaC5tb2RlbC5wcmVzZW5jZS52MS5QcmVzZW5jZVN0YXR1cypmCg1QcmVzZW5jZVN0YXRlEh4KGlBSRVNFTkNFX1NUQVRFX1VOU1BFQ0lGSUVEEAASGQoVUFJFU0VOQ0VfU1RBVEVfT05MSU5FEAESGgoWUFJFU0VOQ0VfU1RBVEVfT0ZGTElORRACQk9aTWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL3ByZXNlbmNlO3ByZXNlbmNlYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("Ch5kb21haW4vcHJlc2VuY2UvcHJlc2VuY2UucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnByZXNlbmNlLnYxIioKGFByZXNlbmNlSGVhcnRiZWF0UmVxdWVzdBIOCgZyZWFzb24YASABKAkiKAoWUHJlc2VuY2VPZmZsaW5lUmVxdWVzdBIOCgZyZWFzb24YASABKAkiswEKFlByZXNlbmNlVXBkYXRlUmVzcG9uc2USEgoKYWN0b3JfcHRpZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEjsKBXN0YXRlGAMgASgOMiwucGVlcnNfdG91Y2gubW9kZWwucHJlc2VuY2UudjEuUHJlc2VuY2VTdGF0ZRI0ChBsZWFzZV9leHBpcmVzX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIrChRQcmVzZW5jZVF1ZXJ5UmVxdWVzdBITCgthY3Rvcl9wdGlkcxgBIAMoCSLJAQoOUHJlc2VuY2VTdGF0dXMSEgoKYWN0b3JfcHRpZBgBIAEoCRI7CgVzdGF0ZRgCIAEoDjIsLnBlZXJzX3RvdWNoLm1vZGVsLnByZXNlbmNlLnYxLlByZXNlbmNlU3RhdGUSMAoMbGFzdF9zZWVuX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI0ChBsZWFzZV9leHBpcmVzX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJYChVQcmVzZW5jZVF1ZXJ5UmVzcG9uc2USPwoIc3RhdHVzZXMYASADKAsyLS5wZWVyc190b3VjaC5tb2RlbC5wcmVzZW5jZS52MS5QcmVzZW5jZVN0YXR1cypmCg1QcmVzZW5jZVN0YXRlEh4KGlBSRVNFTkNFX1NUQVRFX1VOU1BFQ0lGSUVEEAASGQoVUFJFU0VOQ0VfU1RBVEVfT05MSU5FEAESGgoWUFJFU0VOQ0VfU1RBVEVfT0ZGTElORRACQk9aTWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL3ByZXNlbmNlO3ByZXNlbmNlYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.presence.v1.PresenceHeartbeatRequest
@@ -53,9 +53,9 @@ export const PresenceOfflineRequestSchema: GenMessage<PresenceOfflineRequest> = 
  */
 export type PresenceUpdateResponse = Message<"peers_touch.model.presence.v1.PresenceUpdateResponse"> & {
   /**
-   * @generated from field: string actor_id = 1;
+   * @generated from field: string actor_ptid = 1;
    */
-  actorId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: string session_id = 2;
@@ -85,9 +85,9 @@ export const PresenceUpdateResponseSchema: GenMessage<PresenceUpdateResponse> = 
  */
 export type PresenceQueryRequest = Message<"peers_touch.model.presence.v1.PresenceQueryRequest"> & {
   /**
-   * @generated from field: repeated string actor_ids = 1;
+   * @generated from field: repeated string actor_ptids = 1;
    */
-  actorIds: string[];
+  actorPtids: string[];
 };
 
 /**
@@ -102,9 +102,9 @@ export const PresenceQueryRequestSchema: GenMessage<PresenceQueryRequest> = /*@_
  */
 export type PresenceStatus = Message<"peers_touch.model.presence.v1.PresenceStatus"> & {
   /**
-   * @generated from field: string actor_id = 1;
+   * @generated from field: string actor_ptid = 1;
    */
-  actorId: string;
+  actorPtid: string;
 
   /**
    * @generated from field: peers_touch.model.presence.v1.PresenceState state = 2;

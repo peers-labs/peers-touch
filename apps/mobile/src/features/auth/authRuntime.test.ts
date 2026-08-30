@@ -1,0 +1,166 @@
+// @ts-nocheck -- Vitest is supplied by the repository test runner, not the Mobile production bundle.
+
+import { describe, expect, it } from 'vitest';
+
+import {
+  applyAuthRuntimeProjection,
+  authRuntimeTestContract,
+} from '../../runtimes/authRuntime';
+import { useAuthStore } from './authStore';
+
+describe('station-scoped authRuntime public projection', () => {
+  it('preserves the Rust-owned snake_case lifecycle phases', () => {
+    const snapshot = authRuntimeTestContract.snapshotFromProjection({
+      phase: 'awaiting_provider',
+      stationPeerId: '12D3KooWStation',
+      provider: 'github',
+      accessAttemptId: 'access-attempt',
+      gateId: 'auth.login',
+      expiresAtUnixMs: 42,
+    });
+
+    expect(snapshot).toMatchObject({
+      phase: 'awaiting_provider',
+      stationPeerId: '12D3KooWStation',
+      provider: 'github',
+      accessAttemptId: 'access-attempt',
+      gateId: 'auth.login',
+      expiresAtUnixMs: 42,
+      candidatePtid: null,
+      errorKey: null,
+      recovery: 'none',
+    });
+  });
+
+  it('maps public terminal results to localized recovery state', () => {
+    expect(authRuntimeTestContract.snapshotFromProjection({
+      phase: 'expired',
+      result: 'OAUTH_ATTEMPT_RESULT_EXPIRED',
+    })).toMatchObject({
+      errorKey: 'mobile.auth.oauthExpired',
+      recovery: 'restart',
+    });
+    expect(authRuntimeTestContract.snapshotFromProjection({
+      phase: 'failed',
+      result: 'OAUTH_ATTEMPT_RESULT_BINDING_MISMATCH',
+    })).toMatchObject({
+      errorKey: 'mobile.auth.oauthBindingMismatch',
+      recovery: 'restart',
+    });
+    expect(authRuntimeTestContract.snapshotFromProjection({
+      phase: 'credential_delivery',
+      result: 'OAUTH_ATTEMPT_RESULT_ACCESS_GRANTED',
+    })).toMatchObject({
+      errorKey: null,
+      recovery: 'check-status',
+    });
+  });
+
+  it('applies only the public access decision shape used by the gate UI', () => {
+    const decision = authRuntimeTestContract.sanitizeAccessDecision({
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'access-attempt',
+      currentGateId: 'terms',
+      accessGrantId: '',
+      message: '',
+      gates: [{
+        gateId: 'terms',
+        gateType: 'ACCESS_GATE_TYPE_TERMS',
+        state: 'ACCESS_GATE_STATE_REQUIRED',
+        title: 'terms.title',
+        description: 'terms.description',
+        blockingReason: '',
+        submitAction: '/actor/access/submit',
+        inputSchemaJson: '{}',
+        alternativeActions: [],
+      }],
+    });
+
+    expect(decision).toEqual({
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'access-attempt',
+      currentGateId: 'terms',
+      accessGrantId: '',
+      message: '',
+      gates: [{
+        gateId: 'terms',
+        type: 'ACCESS_GATE_TYPE_TERMS',
+        state: 'ACCESS_GATE_STATE_REQUIRED',
+        title: 'terms.title',
+        description: 'terms.description',
+        blockingReason: '',
+        submitAction: '/actor/access/submit',
+        inputSchemaJson: '{}',
+      }],
+    });
+  });
+
+  it('projects the sanitized access decision into authStore', () => {
+    useAuthStore.getState().setAccessDecision(null);
+    applyAuthRuntimeProjection({
+      phase: 'following_gate',
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+        attemptId: 'access-attempt',
+        currentGateId: 'invite.code',
+        accessGrantId: '',
+        message: '',
+        gates: [{
+          gateId: 'invite.code',
+          gateType: 'ACCESS_GATE_TYPE_INVITE_CODE',
+          state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+          title: 'invite.title',
+          description: 'invite.description',
+          blockingReason: '',
+          submitAction: '/actor/access/submit',
+          inputSchemaJson: '{}',
+          alternativeActions: [],
+        }],
+      },
+    });
+
+    expect(useAuthStore.getState().accessDecision).toMatchObject({
+      attemptId: 'access-attempt',
+      currentGateId: 'invite.code',
+      gates: [{ gateId: 'invite.code', type: 'ACCESS_GATE_TYPE_INVITE_CODE' }],
+    });
+  });
+
+  it('keeps only declared public projection fields', () => {
+    const projection = authRuntimeTestContract.sanitizeProjection({
+      phase: 'active_session',
+      stationPeerId: '12D3KooWStation',
+      session: {
+        sessionId: 'session-id',
+        actorPtid: 'ptid:alice',
+        expiresAt: '2026-08-29T00:00:00Z',
+      },
+      unexpectedPrivateMaterial: 'must-not-cross',
+    });
+
+    expect(projection).toEqual({
+      phase: 'active_session',
+      stationPeerId: '12D3KooWStation',
+      provider: undefined,
+      accessAttemptId: undefined,
+      gateId: undefined,
+      expiresAtUnixMs: undefined,
+      result: undefined,
+      errorCode: undefined,
+      candidate: undefined,
+      accessDecision: undefined,
+      session: {
+        sessionId: 'session-id',
+        actorPtid: 'ptid:alice',
+        expiresAt: '2026-08-29T00:00:00Z',
+      },
+    });
+  });
+
+  it('maps Rust projection phases onto existing localized copy keys', () => {
+    expect(authRuntimeTestContract.oauthPhaseMessageKey('following_gate'))
+      .toBe('mobile.auth.oauthState.following-gate');
+    expect(authRuntimeTestContract.oauthPhaseMessageKey('credential_delivery'))
+      .toBe('mobile.auth.oauthState.exchanging');
+  });
+});

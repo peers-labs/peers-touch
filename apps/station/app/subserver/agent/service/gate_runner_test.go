@@ -14,13 +14,13 @@ import (
 func TestGateRunnerProducesBlockingGateDecision(t *testing.T) {
 	now := time.Now()
 	task := &persistence.CollaborationTask{
-		ID:          "task-gate-runner",
-		Title:       "gate runner",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-gate-runner",
+		Title:         "gate runner",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := &persistence.CollaborationTaskNode{
 		ID:        "node-gate-runner",
@@ -65,13 +65,13 @@ func TestGateRunnerProducesBlockingGateDecision(t *testing.T) {
 func TestGateRunnerRunPlanProducesTypedResultsWithPlanLink(t *testing.T) {
 	now := time.Now()
 	task := &persistence.CollaborationTask{
-		ID:          "task-gate-plan",
-		Title:       "gate plan",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-gate-plan",
+		Title:         "gate plan",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := &persistence.CollaborationTaskNode{
 		ID:        "node-gate-plan",
@@ -128,13 +128,13 @@ func TestGateRunnerRunPlanProducesTypedResultsWithPlanLink(t *testing.T) {
 func TestGateRunnerRunPlanUsesTypedGateAndProviderSpecs(t *testing.T) {
 	now := time.Now()
 	task := &persistence.CollaborationTask{
-		ID:          "task-gate-typed",
-		Title:       "gate typed",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-gate-typed",
+		Title:         "gate typed",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := &persistence.CollaborationTaskNode{
 		ID:        "node-gate-typed",
@@ -308,13 +308,13 @@ func TestGateRunnerRunAndAppendTxPersistsGateResult(t *testing.T) {
 	db := openResumeCollaborationTaskDB(t, "gate_runner_append")
 	now := time.Now()
 	task := persistence.CollaborationTask{
-		ID:          "task-gate-runner",
-		Title:       "gate runner",
-		GoalOwnerID: "actor-1",
-		Status:      int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
-		CreatedAt:   now,
-		StartedAt:   now,
-		EndedAt:     now,
+		ID:            "task-gate-runner",
+		Title:         "gate runner",
+		GoalOwnerPTID: "actor-1",
+		Status:        int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		CreatedAt:     now,
+		StartedAt:     now,
+		EndedAt:       now,
 	}
 	node := persistence.CollaborationTaskNode{
 		ID:        "node-gate-runner",

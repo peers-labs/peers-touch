@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/actor/session_api.proto.
  */
 export const file_domain_actor_session_api: GenFile = /*@__PURE__*/
-  fileDesc("Ch5kb21haW4vYWN0b3Ivc2Vzc2lvbl9hcGkucHJvdG8SC3BlZXJzLmFjdG9yIhYKFFZlcmlmeVNlc3Npb25SZXF1ZXN0IqkCChVWZXJpZnlTZXNzaW9uUmVzcG9uc2USDQoFdmFsaWQYASABKAgSEgoKc3ViamVjdF9pZBgCIAEoCRJGCgphdHRyaWJ1dGVzGAMgAygLMjIucGVlcnMuYWN0b3IuVmVyaWZ5U2Vzc2lvblJlc3BvbnNlLkF0dHJpYnV0ZXNFbnRyeRIuCgpleHBpcmVzX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJCCglhY3Rvcl9yZWYYBSABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZlIJYWN0b3JfcmVmGjEKD0F0dHJpYnV0ZXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBQklaR2dpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL2FjdG9yO2FjdG9yYgZwcm90bzM", [file_google_protobuf_timestamp, file_domain_actor_actor]);
+  fileDesc("Ch5kb21haW4vYWN0b3Ivc2Vzc2lvbl9hcGkucHJvdG8SC3BlZXJzLmFjdG9yIhYKFFZlcmlmeVNlc3Npb25SZXF1ZXN0IqcCChVWZXJpZnlTZXNzaW9uUmVzcG9uc2USDQoFdmFsaWQYASABKAgSRgoKYXR0cmlidXRlcxgDIAMoCzIyLnBlZXJzLmFjdG9yLlZlcmlmeVNlc3Npb25SZXNwb25zZS5BdHRyaWJ1dGVzRW50cnkSLgoKZXhwaXJlc19hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASQgoJYWN0b3JfcmVmGAUgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWZSCWFjdG9yX3JlZhoxCg9BdHRyaWJ1dGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4AUoECAIQA1IKc3ViamVjdF9pZEJJWkdnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9hY3RvcjthY3RvcmIGcHJvdG8z", [file_google_protobuf_timestamp, file_domain_actor_actor]);
 
 /**
  * Empty request - token is in Authorization header
@@ -39,11 +39,6 @@ export type VerifySessionResponse = Message<"peers.actor.VerifySessionResponse">
    * @generated from field: bool valid = 1;
    */
   valid: boolean;
-
-  /**
-   * @generated from field: string subject_id = 2;
-   */
-  subjectId: string;
 
   /**
    * @generated from field: map<string, string> attributes = 3;

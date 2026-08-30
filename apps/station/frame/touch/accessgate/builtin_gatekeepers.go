@@ -4,12 +4,13 @@ import (
 	"context"
 
 	"github.com/peers-labs/peers-touch/station/frame/touch/accessgate/gatekeeper"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	pb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 )
 
 // allowedFunc resolves whether an actor satisfies the Station access policy.
 // It is injected so the allowlist gatekeeper stays decoupled from policy storage.
-type allowedFunc func(ctx context.Context, actor *pb.AccessGateActorRef) (bool, string)
+type allowedFunc func(ctx context.Context, actor *actormodel.ActorRef, username, email string) (bool, string)
 
 // capabilityGatekeeper validates Station/client compatibility. The MVP always
 // passes; it exists so capability checks have a home as the chain grows.
@@ -49,6 +50,18 @@ func (loginGatekeeper) Evaluate(_ context.Context, ec *gatekeeper.EvalContext) *
 		Title:        "Log in",
 		Description:  "Log in before entering this Station.",
 		SubmitAction: "submit_login",
+		AlternativeActions: []*pb.AccessGateAction{
+			{
+				ActionId:     "auth.password",
+				Type:         pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
+				SubmitAction: "submit_login",
+			},
+			{
+				ActionId:     "auth.oauth",
+				Type:         pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH,
+				SubmitAction: "start_oauth",
+			},
+		},
 	}
 }
 
@@ -67,7 +80,7 @@ func (g allowlistGatekeeper) Evaluate(ctx context.Context, ec *gatekeeper.EvalCo
 	state := pb.AccessGateState_ACCESS_GATE_STATE_PASSED
 	reason := ""
 	if ec.Actor != nil {
-		if ok, why := g.allowed(ctx, ec.Actor); !ok {
+		if ok, why := g.allowed(ctx, ec.Actor, ec.ActorUsername, ec.ActorEmail); !ok {
 			state = pb.AccessGateState_ACCESS_GATE_STATE_BLOCKED
 			reason = why
 		}

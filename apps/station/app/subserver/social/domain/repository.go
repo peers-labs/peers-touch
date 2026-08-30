@@ -14,15 +14,15 @@ import (
 type PublicPostRepository interface {
 	Create(ctx context.Context, p *Post) error
 	GetByID(ctx context.Context, id uint64) (*Post, error)
-	Delete(ctx context.Context, id, authorID uint64) error
+	Delete(ctx context.Context, id uint64, authorPTID string) error
 
-	ListByAuthor(ctx context.Context, authorID uint64, c Cursor, limit int) ([]*Post, error)
+	ListByAuthor(ctx context.Context, authorPTID string, c Cursor, limit int) ([]*Post, error)
 	ListPublic(ctx context.Context, c Cursor, limit int) ([]*Post, error)
 
 	// ListPublicByAuthors returns the most recent public posts authored
 	// by any of `authorIDs`. Used to feed the "public-followed" stream of
 	// the HOME multi-source merge. Empty `authorIDs` → empty result.
-	ListPublicByAuthors(ctx context.Context, authorIDs []uint64, c Cursor, limit int) ([]*Post, error)
+	ListPublicByAuthors(ctx context.Context, authorPTIDs []string, c Cursor, limit int) ([]*Post, error)
 
 	// ListPublicHot returns public posts ranked by an engagement-decayed
 	// score (newer + more interactions ranks higher), with a tie-break
@@ -58,36 +58,36 @@ type PublicPostRepository interface {
 // `audience_kind != 'PUBLIC'` at insert.
 type PrivatePostRepository interface {
 	Create(ctx context.Context, p *Post) error
-	GetByID(ctx context.Context, id, viewerID uint64) (*Post, error)
-	Delete(ctx context.Context, id, authorID uint64) error
+	GetByID(ctx context.Context, id uint64, viewerPTID string) (*Post, error)
+	Delete(ctx context.Context, id uint64, authorPTID string) error
 
 	// ListByFollowingForViewer returns private posts authored by any of
 	// `followedAuthorIDs` whose audience is FOLLOWERS (the only private
 	// kind broadcast to followers as a class). Posts targeting CIRCLE /
 	// GROUP / CUSTOM_* are intentionally excluded — those are served by
 	// the dedicated list methods below.
-	ListByFollowingForViewer(ctx context.Context, viewerID uint64, followedAuthorIDs []uint64, c Cursor, limit int) ([]*Post, error)
+	ListByFollowingForViewer(ctx context.Context, viewerPTID string, followedAuthorPTIDs []string, c Cursor, limit int) ([]*Post, error)
 
 	// ListSelfByAuthor returns the viewer's own SELF-audience posts.
 	// Distinct from `ListByAuthorVisibleTo` because SELF posts are only
 	// readable by the author and never appear in any other viewer's feed.
-	ListSelfByAuthor(ctx context.Context, authorID uint64, c Cursor, limit int) ([]*Post, error)
+	ListSelfByAuthor(ctx context.Context, authorPTID string, c Cursor, limit int) ([]*Post, error)
 
 	// ListByCircleForViewer returns posts whose audience is
 	// CIRCLE-targeting `circleID`, accessible to the viewer iff the
 	// viewer is a member of the circle. Membership is asserted by the
 	// application layer before calling this method; the repo trusts the
 	// caller (defense in depth: the third line `CanRead` re-checks).
-	ListByCircleForViewer(ctx context.Context, viewerID, circleID uint64, c Cursor, limit int) ([]*Post, error)
+	ListByCircleForViewer(ctx context.Context, viewerPTID string, circleID uint64, c Cursor, limit int) ([]*Post, error)
 
 	// ListByCirclesForViewer is the multi-circle variant used by the HOME
 	// merge — pass all circles the viewer is a member of.
-	ListByCirclesForViewer(ctx context.Context, viewerID uint64, circleIDs []uint64, c Cursor, limit int) ([]*Post, error)
+	ListByCirclesForViewer(ctx context.Context, viewerPTID string, circleIDs []uint64, c Cursor, limit int) ([]*Post, error)
 
 	// ListByGroupForViewer / ListByGroupsForViewer mirror the Circle
 	// variants; group membership is resolved via `GroupMembershipChecker`.
-	ListByGroupForViewer(ctx context.Context, viewerID, groupID uint64, c Cursor, limit int) ([]*Post, error)
-	ListByGroupsForViewer(ctx context.Context, viewerID uint64, groupIDs []uint64, c Cursor, limit int) ([]*Post, error)
+	ListByGroupForViewer(ctx context.Context, viewerPTID string, groupID uint64, c Cursor, limit int) ([]*Post, error)
+	ListByGroupsForViewer(ctx context.Context, viewerPTID string, groupIDs []uint64, c Cursor, limit int) ([]*Post, error)
 
 	// ListByAuthorVisibleTo returns posts authored by `authorID` that
 	// `viewerID` is allowed to see — used when rendering "someone else's
@@ -95,7 +95,7 @@ type PrivatePostRepository interface {
 	// `CanRead` for FOLLOWERS / CIRCLE / GROUP audiences; CUSTOM_* are
 	// resolved via the grants table; SELF posts are excluded unless
 	// `viewerID == authorID`.
-	ListByAuthorVisibleTo(ctx context.Context, authorID, viewerID uint64, c Cursor, limit int) ([]*Post, error)
+	ListByAuthorVisibleTo(ctx context.Context, authorPTID, viewerPTID string, c Cursor, limit int) ([]*Post, error)
 
 	UpdateCommentsCount(ctx context.Context, id uint64, delta int64) (int64, error)
 	UpdateReactionsCount(ctx context.Context, id uint64, snapshotJSON string) error
@@ -105,9 +105,9 @@ type PrivatePostRepository interface {
 // representing one entry on a CUSTOM_ALLOW or CUSTOM_DENY post's actor
 // list.
 type AudienceGrant struct {
-	PostID   uint64
-	ActorDID string
-	Role     GrantRole
+	PostID    uint64
+	ActorPTID string
+	Role      GrantRole
 }
 
 // GrantRole mirrors the DB column. Stored as the constants below; the
@@ -131,16 +131,16 @@ type AudienceGrantRepository interface {
 
 	// HasDenyGrant is the SQL-fast-path used by `PrivatePostRepository.
 	// GetByID` to short-circuit "viewer is on a CUSTOM_DENY list" before
-	// returning a row. Returns true iff `(postID, actorDID, 'deny')` is
+	// returning a row. Returns true iff `(postID, actorPTID, 'deny')` is
 	// present.
-	HasDenyGrant(ctx context.Context, postID uint64, actorDID string) (bool, error)
+	HasDenyGrant(ctx context.Context, postID uint64, actorPTID string) (bool, error)
 }
 
 type MomentDelivery struct {
 	ID           uint64
-	ViewerID     uint64
+	ViewerPTID   string
 	PostID       uint64
-	AuthorID     uint64
+	AuthorPTID   string
 	AudienceKind string
 	DeliveredAt  time.Time
 	RevokedAt    *time.Time
@@ -150,8 +150,23 @@ type MomentDelivery struct {
 // private Moments. It is the durable counterpart to realtime fan-out.
 type MomentDeliveryRepository interface {
 	Upsert(ctx context.Context, deliveries []MomentDelivery) error
-	ListInbox(ctx context.Context, viewerID uint64, c Cursor, limit int) ([]MomentDelivery, error)
+	ListInbox(ctx context.Context, viewerPTID string, c Cursor, limit int) ([]MomentDelivery, error)
 	RevokePost(ctx context.Context, postID uint64) error
+}
+
+type MomentsStatsSnapshot struct {
+	PostsCount             int64
+	CommentsCount          int64
+	ReactionsGivenCount    int64
+	CommentsReceivedCount  int64
+	ReactionsReceivedCount int64
+	CirclesCount           int64
+}
+
+// MomentsStatsRepository resolves PTID at the persistence boundary and keeps
+// numeric actor foreign keys private to its database queries.
+type MomentsStatsRepository interface {
+	GetByActorPTID(ctx context.Context, actorPTID string) (MomentsStatsSnapshot, error)
 }
 
 // CommentRepository persists `social_comments`. Comments are stored in a
@@ -160,7 +175,7 @@ type MomentDeliveryRepository interface {
 type CommentRepository interface {
 	Create(ctx context.Context, c *Comment) error
 	GetByID(ctx context.Context, id uint64) (*Comment, error)
-	Delete(ctx context.Context, id, authorID uint64) error
+	Delete(ctx context.Context, id uint64, authorPTID string) error
 	ListByPost(ctx context.Context, postID uint64, c Cursor, limit int) ([]*Comment, error)
 	CountByPost(ctx context.Context, postID uint64) (int64, error)
 }
@@ -170,16 +185,16 @@ type CommentRepository interface {
 // parent post; the ReactionService composes both.
 type ReactionRepository interface {
 	Add(ctx context.Context, r *Reaction) error
-	Remove(ctx context.Context, postID, actorID uint64, kind ReactionKindStr) error
+	Remove(ctx context.Context, postID uint64, actorPTID string, kind ReactionKindStr) error
 	ListByPost(ctx context.Context, postID uint64) ([]Reaction, error)
 	Aggregate(ctx context.Context, postID uint64) ([]ReactionSummary, error)
-	IsReactedByViewer(ctx context.Context, postID, viewerID uint64, kind ReactionKindStr) (bool, error)
+	IsReactedByViewer(ctx context.Context, postID uint64, viewerPTID string, kind ReactionKindStr) (bool, error)
 
 	// HydrateReactedByViewer takes a slice of reaction summaries (already
 	// populated with Kind+Count by `Aggregate`) and fills in the
 	// `ReactedByViewer` flag for each row from one round-trip. Anonymous
 	// viewer (viewerID==0) returns the input unchanged.
-	HydrateReactedByViewer(ctx context.Context, postID, viewerID uint64, summaries []ReactionSummary) ([]ReactionSummary, error)
+	HydrateReactedByViewer(ctx context.Context, postID uint64, viewerPTID string, summaries []ReactionSummary) ([]ReactionSummary, error)
 }
 
 // ReactionKindStr is the proto enum's String() form used as the DB
@@ -195,18 +210,18 @@ type CircleRepository interface {
 	Create(ctx context.Context, c *Circle) error
 	GetByID(ctx context.Context, id uint64) (*Circle, error)
 	Update(ctx context.Context, c *Circle) error
-	Delete(ctx context.Context, id, ownerID uint64) error
-	ListByOwner(ctx context.Context, ownerID uint64, c Cursor, limit int) ([]*Circle, error)
+	Delete(ctx context.Context, id uint64, ownerPTID string) error
+	ListByOwner(ctx context.Context, ownerPTID string, c Cursor, limit int) ([]*Circle, error)
 
-	AddMembers(ctx context.Context, circleID uint64, actorDIDs []string) (added int32, total int64, err error)
-	RemoveMembers(ctx context.Context, circleID uint64, actorDIDs []string) (removed int32, total int64, err error)
+	AddMembers(ctx context.Context, circleID uint64, actorPTIDs []string) (added int32, total int64, err error)
+	RemoveMembers(ctx context.Context, circleID uint64, actorPTIDs []string) (removed int32, total int64, err error)
 	ListMembers(ctx context.Context, circleID uint64, c Cursor, limit int) ([]*CircleMember, error)
-	IsMember(ctx context.Context, circleID uint64, actorDID string) (bool, error)
+	IsMember(ctx context.Context, circleID uint64, actorPTID string) (bool, error)
 
 	// MembershipsForViewer returns the IDs of circles the viewer is a
 	// member of. Used by the application layer to construct a `Viewer`
 	// for `CanRead` evaluation and to feed `ListByCirclesForViewer`.
-	MembershipsForViewer(ctx context.Context, viewerDID string) ([]uint64, error)
+	MembershipsForViewer(ctx context.Context, viewerPTID string) ([]uint64, error)
 }
 
 // FollowRepository is the existing `follows` table accessor. The interface
@@ -218,14 +233,14 @@ type FollowRepository interface {
 	// FollowingActorIDs returns the actor IDs the viewer follows. Callers
 	// should expect O(followCount) memory; for celebrity accounts a
 	// future iteration may need a bounded variant.
-	FollowingActorIDs(ctx context.Context, viewerID uint64) ([]uint64, error)
+	FollowingActorPTIDs(ctx context.Context, viewerPTID string) ([]string, error)
 
 	// FollowerActorIDs returns the actor IDs that follow `authorID`.
 	// Used by the application layer when deciding whether to enqueue
 	// fan-out for a FOLLOWERS-audience post.
-	FollowerActorIDs(ctx context.Context, authorID uint64) ([]uint64, error)
+	FollowerActorPTIDs(ctx context.Context, authorPTID string) ([]string, error)
 
-	IsFollowing(ctx context.Context, followerID, followingID uint64) (bool, error)
+	IsFollowing(ctx context.Context, followerPTID, followingPTID string) (bool, error)
 }
 
 // StationModerationRepository persists Station-scoped trust policy.

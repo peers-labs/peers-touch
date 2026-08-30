@@ -31,7 +31,7 @@ func NewBridge() *Bridge {
 	return &Bridge{}
 }
 
-func (b *Bridge) Produce(recipientID, actorID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) error {
+func (b *Bridge) Produce(recipientPTID, actorPTID string, notifType, category int32, targetType, targetID, title, body, groupKey string, metadata map[string]string) error {
 	globalBridge.mu.RLock()
 	svc := globalBridge.service
 	globalBridge.mu.RUnlock()
@@ -40,6 +40,6 @@ func (b *Bridge) Produce(recipientID, actorID string, notifType, category int32,
 		return nil
 	}
 
-	_, err := svc.Produce(recipientID, actorID, notifType, category, targetType, targetID, title, body, groupKey, metadata)
+	_, err := svc.Produce(recipientPTID, actorPTID, notifType, category, targetType, targetID, title, body, groupKey, metadata)
 	return err
 }

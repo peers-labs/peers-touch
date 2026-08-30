@@ -5,8 +5,8 @@ import type { Timestamp } from '@bufbuild/protobuf/wkt';
 
 export interface FriendRequestData {
   id: string;
-  senderId: string;
-  receiverId: string;
+  senderPtid: string;
+  receiverPtid: string;
   status: number;
   message: string;
   createdAt: string;
@@ -24,8 +24,8 @@ export function normalizeFriendChatSession(raw: unknown): FriendChatSession {
   const session = record as Partial<FriendChatSession>;
   return {
     ...(session as FriendChatSession),
-    participantADid: stringValue(session.participantADid, record.participant_a_did),
-    participantBDid: stringValue(session.participantBDid, record.participant_b_did),
+    participantAPtid: stringValue(session.participantAPtid, record.participant_a_ptid),
+    participantBPtid: stringValue(session.participantBPtid, record.participant_b_ptid),
     participantADisplayName: stringValue(session.participantADisplayName, record.participant_a_display_name),
     participantAAvatar: stringValue(session.participantAAvatar, record.participant_a_avatar),
     participantBDisplayName: stringValue(session.participantBDisplayName, record.participant_b_display_name),
@@ -40,12 +40,12 @@ export function normalizeFriendRequests(raw: unknown): FriendRequestData[] {
 
 export function friendRequestProfileDids(
   requests: FriendRequestData[],
-  currentUserDid: string | null,
+  currentUserPtid: string | null,
 ): string[] {
-  const ownDid = currentUserDid?.trim() || '';
+  const ownDid = currentUserPtid?.trim() || '';
   const dids = new Set<string>();
   for (const request of requests) {
-    for (const candidate of [request.senderId, request.receiverId]) {
+    for (const candidate of [request.senderPtid, request.receiverPtid]) {
       const did = candidate.trim();
       if (did && did !== ownDid) dids.add(did);
     }
@@ -57,8 +57,8 @@ export function normalizeFriendRequestData(raw: unknown): FriendRequestData {
   const record = recordFromUnknown(raw);
   return {
     id: stringValue(record.id, record.Id),
-    senderId: stringValue(record.senderId, record.sender_id, record.senderDid, record.sender_did),
-    receiverId: stringValue(record.receiverId, record.receiver_id, record.receiverDid, record.receiver_did),
+    senderPtid: stringValue(record.senderPtid),
+    receiverPtid: stringValue(record.receiverPtid),
     status: numberValue(record.status),
     message: stringValue(record.message),
     createdAt: stringValue(record.createdAt, record.created_at),

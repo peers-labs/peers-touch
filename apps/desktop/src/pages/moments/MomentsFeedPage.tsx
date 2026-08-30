@@ -18,16 +18,16 @@ import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
 // from a header button (no pull-to-refresh on desktop).
 
 interface MomentsFeedViewProps {
-  viewerActorId?: string;
+  viewerActorPtid?: string;
   onOpenPost: (postId: string) => void;
-  onAuthorClick: (actorId: string) => void;
+  onAuthorClick: (actorPtid: string) => void;
   onComposerPublished?: (postId: string) => void;
   composerOpen?: boolean;
   onCloseComposer?: () => void;
 }
 
 export function MomentsFeedView({
-  viewerActorId: _viewerActorId,
+  viewerActorPtid: _viewerActorPtid,
   onOpenPost,
   onAuthorClick,
   onComposerPublished,
@@ -96,7 +96,7 @@ export function MomentsFeedView({
           reactions={reactions[p.id]}
           explanation={feedExplanations[p.id]}
           commentPreview={comments[p.id]}
-          viewerActorId={_viewerActorId}
+          viewerActorPtid={_viewerActorPtid}
           surface="home"
           onOpen={onOpenPost}
           onOpenComments={onOpenPost}

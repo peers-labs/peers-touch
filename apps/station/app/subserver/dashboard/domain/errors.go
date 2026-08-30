@@ -16,5 +16,5 @@ var (
 	ErrSessionRevoked     = errors.New("session revoked")
 	ErrUnauthorized       = errors.New("unauthorized")
 	ErrForbidden          = errors.New("forbidden: local access only")
-	ErrDIDNotAllowed      = errors.New("DID not in allowed list")
+	ErrPTIDNotAllowed     = errors.New("PTID not in allowed list")
 )

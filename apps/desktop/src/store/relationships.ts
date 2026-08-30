@@ -17,15 +17,15 @@ import { log } from '../utils/logger';
 const TAG = 'relationships-store';
 
 // Per-actor relationship cache:
-//   - `relations[actorId]` — the viewer's edge to that actor
+//   - `relations[actorPtid]` — the viewer's edge to that actor
 //     (`following`, `followedBy`, timestamp). The map is sparse and
 //     gets populated lazily when a UI surface asks for an actor.
-//   - `followersByActor[actorId] / followingByActor[actorId]` —
+//   - `followersByActor[actorPtid] / followingByActor[actorPtid]` —
 //     paginated lists rendered on the User profile / mutual-friends
 //     drawer. Each list carries its own cursor + loading flag.
 //
 // We deliberately do NOT call `socialGetRelationship` on every render.
-// Components ask `useRelation(actorId)`; if the entry is missing the
+// Components ask `useRelation(actorPtid)`; if the entry is missing the
 // hook fires a single `loadRelationship` call. Repeated reads are
 // cache-hits.
 
@@ -52,12 +52,12 @@ interface RelationshipsState {
   followersByActor: Record<string, RelationListState<Follower>>;
   followingByActor: Record<string, RelationListState<Following>>;
 
-  loadRelationship: (targetActorId: string) => Promise<Relationship | undefined>;
-  follow: (targetActorId: string) => Promise<void>;
-  unfollow: (targetActorId: string) => Promise<void>;
+  loadRelationship: (targetActorPtid: string) => Promise<Relationship | undefined>;
+  follow: (targetActorPtid: string) => Promise<void>;
+  unfollow: (targetActorPtid: string) => Promise<void>;
 
-  loadFollowers: (actorId: string, refresh?: boolean) => Promise<void>;
-  loadFollowing: (actorId: string, refresh?: boolean) => Promise<void>;
+  loadFollowers: (actorPtid: string, refresh?: boolean) => Promise<void>;
+  loadFollowing: (actorPtid: string, refresh?: boolean) => Promise<void>;
 
   reset: () => void;
 }
@@ -75,31 +75,31 @@ const initialState: Pick<
 export const useRelationshipsStore = createDesktopStore<RelationshipsState>('relationships', (set, get) => ({
   ...initialState,
 
-  loadRelationship: async (targetActorId) => {
-    if (get().loading[targetActorId]) return get().relations[targetActorId];
-    set((s) => ({ loading: { ...s.loading, [targetActorId]: true } }));
+  loadRelationship: async (targetActorPtid) => {
+    if (get().loading[targetActorPtid]) return get().relations[targetActorPtid];
+    set((s) => ({ loading: { ...s.loading, [targetActorPtid]: true } }));
     try {
-      const resp = await socialGetRelationship(targetActorId);
+      const resp = await socialGetRelationship(targetActorPtid);
       if (resp.relationship) {
         set((s) => ({
-          relations: { ...s.relations, [targetActorId]: resp.relationship as Relationship },
-          loading: { ...s.loading, [targetActorId]: false },
+          relations: { ...s.relations, [targetActorPtid]: resp.relationship as Relationship },
+          loading: { ...s.loading, [targetActorPtid]: false },
         }));
         return resp.relationship;
       }
-      set((s) => ({ loading: { ...s.loading, [targetActorId]: false } }));
+      set((s) => ({ loading: { ...s.loading, [targetActorPtid]: false } }));
       return undefined;
     } catch (err) {
-      log.warn(TAG, 'loadRelationship failed', { targetActorId, err: String(err) });
-      set((s) => ({ loading: { ...s.loading, [targetActorId]: false } }));
+      log.warn(TAG, 'loadRelationship failed', { targetActorPtid, err: String(err) });
+      set((s) => ({ loading: { ...s.loading, [targetActorPtid]: false } }));
       throw err;
     }
   },
 
-  follow: async (targetActorId) => {
+  follow: async (targetActorPtid) => {
     // Optimistic flip — server confirms via the response payload.
     set((s) => {
-      const prev = s.relations[targetActorId];
+      const prev = s.relations[targetActorPtid];
       const optimistic: Relationship = {
         ...(prev ?? {
           $typeName: 'peers_touch.model.social.v1.Relationship',
@@ -107,80 +107,80 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
           followedBy: false,
           followedAt: undefined,
         } as Relationship),
-        targetActorId,
+        targetActorPtid,
         following: true,
       };
-      return { relations: { ...s.relations, [targetActorId]: optimistic } };
+      return { relations: { ...s.relations, [targetActorPtid]: optimistic } };
     });
     try {
-      const resp = await socialFollow(targetActorId);
+      const resp = await socialFollow(targetActorPtid);
       if (resp.relationship) {
         set((s) => ({
-          relations: { ...s.relations, [targetActorId]: resp.relationship as Relationship },
+          relations: { ...s.relations, [targetActorPtid]: resp.relationship as Relationship },
         }));
       }
-      eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId, action: 'follow' });
+      eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorPtid, action: 'follow' });
     } catch (err) {
       // Roll back the optimistic flip on failure so the UI doesn't
       // show a follow button stuck in the wrong state.
-      log.warn(TAG, 'follow failed; rolling back', { targetActorId, err: String(err) });
+      log.warn(TAG, 'follow failed; rolling back', { targetActorPtid, err: String(err) });
       set((s) => {
-        const prev = s.relations[targetActorId];
+        const prev = s.relations[targetActorPtid];
         if (!prev) return s;
         return {
-          relations: { ...s.relations, [targetActorId]: { ...prev, following: false } },
+          relations: { ...s.relations, [targetActorPtid]: { ...prev, following: false } },
         };
       });
       throw err;
     }
   },
 
-  unfollow: async (targetActorId) => {
+  unfollow: async (targetActorPtid) => {
     set((s) => {
-      const prev = s.relations[targetActorId];
+      const prev = s.relations[targetActorPtid];
       if (!prev) return s;
       return {
-        relations: { ...s.relations, [targetActorId]: { ...prev, following: false } },
+        relations: { ...s.relations, [targetActorPtid]: { ...prev, following: false } },
       };
     });
     try {
-      await socialUnfollow(targetActorId);
-      eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorId, action: 'unfollow' });
+      await socialUnfollow(targetActorPtid);
+      eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorPtid, action: 'unfollow' });
     } catch (err) {
-      log.warn(TAG, 'unfollow failed; rolling back', { targetActorId, err: String(err) });
+      log.warn(TAG, 'unfollow failed; rolling back', { targetActorPtid, err: String(err) });
       set((s) => {
-        const prev = s.relations[targetActorId];
+        const prev = s.relations[targetActorPtid];
         if (!prev) return s;
         return {
-          relations: { ...s.relations, [targetActorId]: { ...prev, following: true } },
+          relations: { ...s.relations, [targetActorPtid]: { ...prev, following: true } },
         };
       });
       throw err;
     }
   },
 
-  loadFollowers: async (actorId, refresh = false) => {
-    const current = get().followersByActor[actorId] ?? emptyList<Follower>();
+  loadFollowers: async (actorPtid, refresh = false) => {
+    const current = get().followersByActor[actorPtid] ?? emptyList<Follower>();
     if (current.loading) return;
     set((s) => ({
       followersByActor: {
         ...s.followersByActor,
-        [actorId]: { ...current, loading: true },
+        [actorPtid]: { ...current, loading: true },
       },
     }));
     try {
       const resp = await socialGetFollowers(
-        actorId,
+        actorPtid,
         refresh ? undefined : current.nextCursor || undefined,
       );
       set((s) => {
-        const prev = refresh ? [] : (s.followersByActor[actorId]?.items ?? []);
-        const seen = new Set(prev.map((f) => f.actorId));
-        const merged = [...prev, ...resp.followers.filter((f) => !seen.has(f.actorId))];
+        const prev = refresh ? [] : (s.followersByActor[actorPtid]?.items ?? []);
+        const seen = new Set(prev.map((f) => f.actorPtid));
+        const merged = [...prev, ...resp.followers.filter((f) => !seen.has(f.actorPtid))];
         return {
           followersByActor: {
             ...s.followersByActor,
-            [actorId]: {
+            [actorPtid]: {
               items: merged,
               nextCursor: resp.nextCursor,
               total: resp.total,
@@ -191,39 +191,39 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
         };
       });
     } catch (err) {
-      log.warn(TAG, 'loadFollowers failed', { actorId, err: String(err) });
+      log.warn(TAG, 'loadFollowers failed', { actorPtid, err: String(err) });
       set((s) => ({
         followersByActor: {
           ...s.followersByActor,
-          [actorId]: { ...(s.followersByActor[actorId] ?? emptyList<Follower>()), loading: false },
+          [actorPtid]: { ...(s.followersByActor[actorPtid] ?? emptyList<Follower>()), loading: false },
         },
       }));
       throw err;
     }
   },
 
-  loadFollowing: async (actorId, refresh = false) => {
-    const current = get().followingByActor[actorId] ?? emptyList<Following>();
+  loadFollowing: async (actorPtid, refresh = false) => {
+    const current = get().followingByActor[actorPtid] ?? emptyList<Following>();
     if (current.loading) return;
     set((s) => ({
       followingByActor: {
         ...s.followingByActor,
-        [actorId]: { ...current, loading: true },
+        [actorPtid]: { ...current, loading: true },
       },
     }));
     try {
       const resp = await socialGetFollowing(
-        actorId,
+        actorPtid,
         refresh ? undefined : current.nextCursor || undefined,
       );
       set((s) => {
-        const prev = refresh ? [] : (s.followingByActor[actorId]?.items ?? []);
-        const seen = new Set(prev.map((f) => f.actorId));
-        const merged = [...prev, ...resp.following.filter((f) => !seen.has(f.actorId))];
+        const prev = refresh ? [] : (s.followingByActor[actorPtid]?.items ?? []);
+        const seen = new Set(prev.map((f) => f.actorPtid));
+        const merged = [...prev, ...resp.following.filter((f) => !seen.has(f.actorPtid))];
         return {
           followingByActor: {
             ...s.followingByActor,
-            [actorId]: {
+            [actorPtid]: {
               items: merged,
               nextCursor: resp.nextCursor,
               total: resp.total,
@@ -234,11 +234,11 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
         };
       });
     } catch (err) {
-      log.warn(TAG, 'loadFollowing failed', { actorId, err: String(err) });
+      log.warn(TAG, 'loadFollowing failed', { actorPtid, err: String(err) });
       set((s) => ({
         followingByActor: {
           ...s.followingByActor,
-          [actorId]: { ...(s.followingByActor[actorId] ?? emptyList<Following>()), loading: false },
+          [actorPtid]: { ...(s.followingByActor[actorPtid] ?? emptyList<Following>()), loading: false },
         },
       }));
       throw err;
