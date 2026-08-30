@@ -4151,6 +4151,10 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   creating a journal or mutation. Revision-fenced restoration remains required
   whenever enabled bindings exist. Focused TypeScript and Python tests pass;
   runtime proof remains pending.
+- Checkpoint `98ed712f2` contains the approved zero-ready isolation correction.
+  The next action is an exact-source profile `two` deployment and serial
+  Foundation rerun; AS-F03 must regain its prior pass before AS-F07 evidence
+  can be evaluated.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
