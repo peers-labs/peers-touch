@@ -4172,6 +4172,17 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   action is to commit this tracking evidence, deploy the resulting clean HEAD
   exact-source to profile `two`, and rerun Foundation with Station restart
   authorization.
+- Tracking commit `05f59f4d2` was deployed to `station-two`, but the
+  independent post-deploy health check failed before any Foundation run.
+  PostgreSQL is looping through crash recovery because the remote root
+  filesystem has zero available blocks; each checkpoint aborts while writing
+  `pg_logical/replorigin_checkpoint.tmp`. Whole-disk inventory attributes
+  105 GiB to `/var`, including 101 GiB under Docker. The largest individual
+  file is the active Relay container JSON log at approximately 10.3 GiB, and
+  Docker build cache accounts for approximately 37.3 GiB. This is
+  `ENVIRONMENT_BLOCKED`; no Gate execution or product conclusion is recorded.
+  Destructive cleanup requires explicit approval before Station health can be
+  restored and exact-source Foundation execution can resume.
 - Tracking commit `7bf635c4b` was deployed exact-source. Run
   `20260830T203842372359Z-3e8aa65f2ac7ddefb381dbabaf74709e`
   passed the AS-F03 prefix and retained fully clean Native/Browser teardown,

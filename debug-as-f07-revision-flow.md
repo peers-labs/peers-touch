@@ -217,3 +217,11 @@
   This rejects AS-F03 zero-READY compatibility and AS-F06 restart handling as
   the current owner; AS-F07 requires a deterministic real positive-capability
   fixture before entering the strict isolation boundary.
+- Checkpoint `05f59f4d2` deployed to `station-two`, but the independent health
+  check failed before a post-fix Gate could start. Remote PostgreSQL repeatedly
+  aborts its recovery checkpoint with `No space left on device` while writing
+  `pg_logical/replorigin_checkpoint.tmp`. The remote root filesystem has zero
+  available blocks; `/var/lib/docker` accounts for 101 GiB and the active Relay
+  container JSON log alone accounts for approximately 10.3 GiB. This is an
+  environment blocker, not AS-F07 post-fix evidence. Debug instrumentation,
+  server, and retained logs remain active.
