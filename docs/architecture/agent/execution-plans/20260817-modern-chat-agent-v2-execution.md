@@ -4129,6 +4129,13 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   teardown enters `accountGate(logout)`. Acceptance delegates to this
   lifecycle-owned operation. Reducer/predicate behavior and source ordering are
   covered by focused tests; post-fix Native runtime evidence remains pending.
+- Checkpoint `a0fe943dd` contains the lifecycle-owned logout correction and
+  retained F-I instrumentation. Two independent source reviews approved it for
+  deployment. The next exact-source run must emit
+  `cleanup-identity-runtime-logout-finished` and
+  `cleanup-harness-logout-finished`, report clean Native teardown, and then
+  expose the previously masked `FoundationCandidateError` or advance into
+  AS-F07.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
