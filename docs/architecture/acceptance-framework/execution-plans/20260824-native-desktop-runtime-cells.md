@@ -1134,6 +1134,15 @@ request as complete before the winning reconciliation published its state,
 then return without selecting the canonical conversation ID. The aggregate is
 therefore 9 PASS / 1 FAIL and remains `PARTIAL/UNPROVEN`.
 
+The candidate repair uses the canonical conversation ID returned by
+`messaging_create_direct` to clear search state, select the conversation, and
+restore any hidden local state before scheduling `loadSessions` as background
+reconciliation. This preserves the component/runtime ownership boundary and
+removes the superseded-load race without weakening the product Gate. Focused
+selection tests, Product Closure static tests, Desktop check, Desktop tests,
+and the production web build pass. Runtime proof remains pending a clean
+commit and exact-source rerun.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

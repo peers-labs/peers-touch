@@ -1390,6 +1390,14 @@ reconciliation published the conversation and therefore skip selection.
 Cleanup passed for every Gate. MP-W13-F remains `PARTIAL/UNPROVEN` at
 9 PASS / 1 FAIL.
 
+The candidate repair treats the `messaging_create_direct` result as the
+interaction's authoritative completion value: the UI selects and restores that
+conversation ID immediately, then schedules `loadSessions` only as background
+reconciliation. This matches the existing Contacts message path and prevents a
+superseded reconciliation request from swallowing the user's click. Focused
+selection tests, Product Closure static tests, Desktop check, Desktop tests,
+and the production web build pass; clean-source runtime proof is pending.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification
