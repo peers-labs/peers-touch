@@ -142,7 +142,7 @@ impl StationRegistry {
             .clone()
     }
 
-    /// Add a new station entry. Deduplicates by normalized URL.
+    /// Add or refresh a station entry by normalized URL.
     pub fn add(&self, mut entry: StationEntry) -> io::Result<()> {
         entry.url = normalize_url(&entry.url);
         if entry.url.is_empty() {
@@ -155,11 +155,16 @@ impl StationRegistry {
             .state
             .write()
             .expect("StationRegistry write lock poisoned");
-        if state.entries.iter().any(|current| current.url == entry.url) {
-            return Ok(());
-        }
         let mut next = state.clone();
-        next.entries.push(entry);
+        if let Some(current) = next
+            .entries
+            .iter_mut()
+            .find(|current| current.url == entry.url)
+        {
+            *current = entry;
+        } else {
+            next.entries.push(entry);
+        }
         self.persist(&next)?;
         *state = next;
         Ok(())
@@ -295,6 +300,37 @@ mod tests {
             let registry = StationRegistry::new(&dir);
             assert_eq!(registry.active_url(), None);
             assert_eq!(registry.list()[0].url, "http://seed.example");
+        });
+    }
+
+    #[test]
+    fn adding_existing_seed_refreshes_and_persists_probe_metadata() {
+        with_seed(Some("http://seed.example/"), || {
+            let dir = temp_dir("seed-refresh");
+            let registry = StationRegistry::new(&dir);
+            registry
+                .add(StationEntry {
+                    url: "http://seed.example/".to_string(),
+                    label: Some("Seed Station".to_string()),
+                    peer_id: Some("12D3KooWSeed".to_string()),
+                    peers_count: Some(3),
+                    last_probe: Some("2026-08-30T00:00:00Z".to_string()),
+                    online: true,
+                })
+                .unwrap();
+            registry.set_active("http://seed.example").unwrap();
+
+            let refreshed = registry.list();
+            assert_eq!(refreshed.len(), 1);
+            assert_eq!(refreshed[0].peer_id.as_deref(), Some("12D3KooWSeed"));
+            assert!(refreshed[0].online);
+
+            let reloaded = StationRegistry::new(&dir);
+            assert_eq!(reloaded.list()[0].peer_id.as_deref(), Some("12D3KooWSeed"));
+            assert_eq!(
+                reloaded.active_url().as_deref(),
+                Some("http://seed.example")
+            );
         });
     }
 
