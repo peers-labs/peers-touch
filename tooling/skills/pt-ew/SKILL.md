@@ -1,16 +1,18 @@
 ---
 name: "pt-ew"
-description: "Unified workflow: coach user's English for naturalness, then execute via pt-god-view methodology. Combines language learning with structured project progress."
+description: "Unified English workflow: translate Chinese queries, correct English queries, respond in English by default, then execute via pt-god-view methodology."
 ---
 
 # English Workflow — Learn While Building
 
 When this skill is active, the agent operates as a **unified system** that combines:
 
-1. **Language coach** — evaluate the user's English, give concise feedback
+1. **Language coach** — translate Chinese input or correct English input
 2. **God-view executor** — apply full Peers-Touch methodology (stages, skills, gates)
 
-This is NOT "English check then freestyle code." It's "English check then structured execution."
+The task response is in English by default. This is NOT "English check then
+freestyle code." It is "English transformation, then structured execution in
+English."
 
 ---
 
@@ -20,13 +22,15 @@ Invoke when:
 - User explicitly activates this skill
 - User writes in English and wants both language coaching and project work done
 
-Once active, this skill **stays active** for the entire session. Every message gets the English check layer.
+Once active, this skill **stays active** for the entire session. Chinese input
+does not deactivate it. Only an explicit request such as "stop English mode"
+deactivates it.
 
 ---
 
 ## 2. Response Structure
 
-Every response MUST follow this format:
+For English input, every response MUST start with:
 
 ```
 ## 📝 English Check
@@ -45,9 +49,38 @@ Every response MUST follow this format:
 <god-view reasoning + task execution below>
 ```
 
+For Chinese or mixed-language input, every response MUST start with:
+
+```
+## English Version
+
+**Natural English**: <complete, natural English translation of the user's intent>
+
+**Notes** (only when useful):
+- <brief terminology or phrasing note>
+
+---
+
+<god-view reasoning + task execution in English below>
+```
+
+The task response after the language section MUST be English unless the user
+explicitly requests another response language.
+
 ---
 
 ## 3. Language Coaching Rules
+
+### Input routing
+
+- Chinese input: translate the complete intent into natural professional
+  English. Do not rate the Chinese source.
+- English input: preserve the original sentence, provide a corrected natural
+  version, notes when needed, and a rating.
+- Mixed Chinese and English: produce one complete natural English version.
+  Preserve code, commands, paths, identifiers, and product names verbatim.
+- Default response language: English.
+- A language switch in the user's query does not deactivate this skill.
 
 ### What to check (priority order):
 1. **Idiomaticness** — Does it sound like what a native speaker would say?
@@ -74,7 +107,8 @@ Every response MUST follow this format:
 
 ## 4. God-View Integration — Mandatory Execution Discipline
 
-After the English check, the agent enters **pt-god-view mode** for the task portion:
+After the translation or English check, the agent enters **pt-god-view mode**
+for the task portion:
 
 1. Classify the work (tracked / new multi-step / standalone / review)
 2. Detect current stage (PRODUCT / DESIGN / PLAN / EXECUTE / DELIVER)
@@ -86,10 +120,10 @@ All rules from `pt-god-view` apply in full. This skill is an **overlay** — it 
 ### Dispatch priority:
 ```
 User message arrives
-  → English Check (§3)
+  → Chinese-to-English translation or English correction (§3)
   → God-View reasoning (§3.1–3.7 of pt-god-view)
   → Skill dispatch (architecture / execution / commit / etc.)
-  → Task output
+  → Task output in English by default
 ```
 
 ### Hard Gate: No Freestyle Execution
@@ -113,8 +147,8 @@ The agent must never interpret "do it fast" / "不要打扰我" / "直接做" as
 | Situation | Behavior |
 |-----------|----------|
 | User's English is perfect | "✅ Natural — no notes" → god-view execution |
-| User mixes Chinese + English | Coach only the English portions; god-view applies regardless |
-| User writes only Chinese | Skip English check; fall back to pure god-view |
+| User mixes Chinese + English | Produce one complete natural English version; god-view applies |
+| User writes only Chinese | Translate the full intent into natural English; god-view applies |
 | User asks a pure language question | Give thorough language answer; no god-view needed |
 | Ambiguous meaning due to English | Clarify meaning FIRST (in god-view uncertainty protocol style) |
 | User says "continue" / "接着" in English | Coach + resume from active_work registry |
@@ -126,7 +160,9 @@ The agent must never interpret "do it fast" / "不要打扰我" / "直接做" as
 When this skill is active:
 - The agent remembers it's in "English workflow" mode for the whole session
 - No need to re-invoke per message
-- User can deactivate by switching to Chinese without the skill trigger, or saying "stop English mode"
+- Chinese input does not deactivate the skill
+- User can deactivate only by explicitly saying "stop English mode" or an
+  equivalent instruction
 
 ---
 
