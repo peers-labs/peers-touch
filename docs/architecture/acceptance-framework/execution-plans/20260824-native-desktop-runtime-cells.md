@@ -1171,6 +1171,21 @@ aggregate, required-proven validation, Gap Detector, Completion Audit, and
 submit-time review. NDR-W8 macOS and NDR-W9 Windows remain independent
 `UNPROVEN` workstreams.
 
+The first exact-source rerun on `da45c293cdff4635116c4f3c8c28bc5a4dabbcff`
+produced aggregate
+`20260830T113117121389Z-78a35291fa86c1feb0642f2814c16183` and failed before
+Linux product execution. The current canonical range selected 11 Gates; the
+formal closure still requires those Gates plus the seven retained Linux
+closure obligations from the historical 18-Gate set. Preflight exposed three
+mechanical integration defects: stale `peerDid` / `actor_did` static
+assertions after the PTID migration, a native environment contract omitted
+from the required-service-kind cutover, and `proto-build` newline churn that
+made later source attestations dirty. The correction updates the business
+assertions to canonical PTID names, classifies Station as the environment's
+only endpoint-backed required service, and restores generated output before
+rerunning one 18-Gate aggregate. No product assertion, runtime-cell ownership,
+or platform scope changes.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

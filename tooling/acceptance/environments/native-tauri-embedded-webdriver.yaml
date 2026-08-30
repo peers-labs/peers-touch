@@ -6,18 +6,12 @@
   },
   "services": {
     "station": {
+      "kind": "station",
       "required": true,
       "ready_action": "station",
       "health_action": "station-check",
       "status_action": "station-status",
       "attestation_producer": "station-deployment"
-    },
-    "desktop-acceptance-binary": {
-      "required": true,
-      "ready_action": "acceptance-driver-build",
-      "health_action": "acceptance-driver-smoke",
-      "status_action": "acceptance-driver-smoke",
-      "attestation_producer": "desktop-acceptance-build"
     }
   },
   "fixtures": [

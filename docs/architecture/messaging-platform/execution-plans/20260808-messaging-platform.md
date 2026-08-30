@@ -1435,6 +1435,19 @@ aggregate, Chat required-proven validation, Gap Detector, Completion Audit, and
 submit-time review before `MP-W13` and `MP-W11` can close for the current
 delivery candidate.
 
+The first rerun at `da45c293cdff4635116c4f3c8c28bc5a4dabbcff`,
+aggregate `20260830T113117121389Z-78a35291fa86c1feb0642f2814c16183`,
+stopped before product proof. The current four-file range selected 11 canonical
+Gates, while this closure retains seven additional source-bound Linux
+obligations from the prior 18-Gate set. Static checks still referenced the
+pre-migration `peerDid` / `actor_did` names, the Native Tauri environment had
+not joined the required service-kind cutover, and `proto-build` newline churn
+made subsequent source attestation dirty. These are mechanical integration
+corrections within `MP-W13-F`: update assertions to canonical PTID terms,
+declare Station as the environment's endpoint-backed required service, restore
+generated output, and rerun all 18 Gates. Product semantics and the Linux-only
+claim remain unchanged.
+
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
 ## 8. Standard Verification

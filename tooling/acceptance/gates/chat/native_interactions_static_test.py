@@ -411,7 +411,7 @@ class ContactMessageResilienceTest(unittest.TestCase):
         src = self.source(
             "apps/desktop/src/components/chat/ChatContactsDetailPanel.tsx"
         )
-        create_direct_pos = src.find("createDirect(peerDid)")
+        create_direct_pos = src.find("createDirect(peerPtid)")
         self.assertGreater(
             create_direct_pos, 0,
             "handleMessage must call imServiceV1.messaging.createDirect",
@@ -742,9 +742,8 @@ class ContactMessageResilienceTest(unittest.TestCase):
         )
 
         self.assertIn(
-            "actor_did", src,
-            "repairMemberIndex must detect the legacy 'actor_did' column to decide "
-            "whether repair is needed",
+            'columns[1].ColumnName != "ptid"', src,
+            "repairMemberIndex must repair every non-PTID member index shape",
         )
 
         early_return = src.find("len(columns) == 0")
