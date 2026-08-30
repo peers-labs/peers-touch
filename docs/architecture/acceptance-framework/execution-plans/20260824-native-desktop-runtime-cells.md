@@ -544,7 +544,7 @@ committed to this plan.
 | NDR-W4 Native adapter cutover | done | platform-neutral `NativeDesktopAdapter` with typed control/window diagnostics; macOS AppKit/CoreGraphics/Accessibility/clipboard/screenshot implementation extracted; Linux/Windows injection slots fail closed; adapter + MP-W13 static 50/50 PASS; Core tests 183/183 PASS; Chat and Infra structural validation PASS; Desktop check and Station messaging packages PASS; tree-wide Chat platform-API scan PASS |
 | NDR-W5 Linux cell | done | Actor-scoped Alice/Bob/Alice2 launch, WebDriver/Gateway tunnels, profiles, storage and reverse cleanup are implemented; source-bound Linux run `20260824T152615956669Z-5052adc5b3ba152e` reached `LEASED` at commit `d9509fd7348e4eadb82cfc80c511e44ada712474`; Xorg/input/focus/point/screenshot probes and final cleanup passed |
 | NDR-W6 Chat migration | in progress | Product and receiver runners already consume `NativeDesktopRuntimeBinding`. The remaining six Chat Native runners now have the same runtime-manifest, source identity, Evidence Store, actor-storage, and cleanup contracts; focused static/Infra tests pass, while exact-source Linux Gate evidence is pending. |
-| NDR-W7 Linux MP-W13 proof | reopened / in progress | Exact-source aggregate `20260829T220529357373Z-d9f2e09e9d76a4c60263e77bb47376bb` at `3eb76b57745a31f5ad7b7b444922e8e74ff9579a` passed 9 of 10 Gates with complete traceability and cleanup. Product Closure exposed a search-open projection race, so NDR-W7 remains `PARTIAL/UNPROVEN`. |
+| NDR-W7 Linux MP-W13 proof | done (Linux) | Unified exact-source aggregate `20260830T052209499498Z-ff6c99fc6e262b23e876f2c2e191a067` at `c69ed69bb6d8d6e7cf2275f0ce2c76a39f35049b` passed all 18 selected Gates with `DONE/PROVEN`, complete traceability, and successful cleanup. Chat required-proven validation passed all nine capabilities, and the exact Linux claim passed Gap Detector with no gaps. |
 | NDR-W8 macOS regression | pending | prior evidence predates cutover |
 | NDR-W9 Windows cell | pending | host unavailable |
 
@@ -1142,6 +1142,23 @@ removes the superseded-load race without weakening the product Gate. Focused
 selection tests, Product Closure static tests, Desktop check, Desktop tests,
 and the production web build pass. Runtime proof remains pending a clean
 commit and exact-source rerun.
+
+Clean commit `c69ed69bb6d8d6e7cf2275f0ce2c76a39f35049b` closed that
+pending Linux proof. Unified aggregate
+`20260830T052209499498Z-ff6c99fc6e262b23e876f2c2e191a067` contains all 18
+selected `ci-structure`, `ci-cheap`, and `env-evidence` Gates in one immutable
+run: 18 passed, zero failed, blocked, partial, incomplete, or unproven, with
+aggregate `completionStatus=DONE` and `proofStatus=PROVEN`. Every Linux Native
+Gate binds source, Station `18132`, and `desktop-linux-native` cell commit to
+that exact commit; every provisioned Gate records successful cleanup, and each
+Linux runtime cell reached `CLEANED`.
+
+Chat required-proven validation artifact
+`chat-domain-validation/20260830T064910746621Z-3c12efb2bf7bcc2a8d86918770b4bd61`
+marks all nine Chat capabilities `PROVEN`. Gap Detector accepted the exact
+NDR-W7 / MP-W13-F Linux claim with all 18 selected Gates present and no gaps.
+This closes NDR-W7 for Linux only. NDR-W8 macOS and NDR-W9 Windows remain
+independent `UNPROVEN` platform workstreams.
 
 ## 13. Final Readiness Gate
 
