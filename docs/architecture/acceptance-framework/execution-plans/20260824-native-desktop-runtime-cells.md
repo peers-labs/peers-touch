@@ -1207,6 +1207,32 @@ real reset against disposable Station `18132` pass. The candidate remains
 `PARTIAL/UNPROVEN` until the new exact-source 18-Gate aggregate and downstream
 required-proven, Gap Detector, Completion Audit, and submit checks pass.
 
+Exact-source aggregate
+`20260830T122322895251Z-c5b825341dd29386af4f8c9755a3e8b5` at
+`4786996440b62d67901ce16af225856718d1f1a1` reached the Linux Product Closure
+Gate with valid source, Station, runtime-cell, and binary identity, then failed
+at the shared pre-login `auth_logout` call because a freshly isolated client
+correctly had no committed session. The aggregate was cancelled before
+repeating that shared failure across the remaining Native Gates, and the Linux
+cell was verified `CLEANED`. The dependency-ready correction is to remove only
+the obsolete pre-login logout calls; authenticated cleanup logout remains
+required. NDR-W7 remains `PARTIAL/UNPROVEN`.
+
+The runner correction now removes that pre-login call from every shared and
+Gate-specific Native initial-authentication path without weakening the product
+`auth_logout` contract or changing Fixture accounts. Structural regression
+tests prove that initial login and restart paths do not log out, while existing
+authenticated cleanup paths still do. Focused Python tests pass 77/77; the
+`chat-native-visible-static` Gate passes at
+`20260830T131620861219Z-09126c6790ced771c627df7f8cc9d8a9`; Acceptance Infra
+validation is `STRUCTURALLY_VALID` at
+`20260830T131648607384Z-78a7f76a9d21c2a33cdb69d5721d24dc`; Station messaging,
+conversation, and envelope package tests pass; Desktop check, 365/365 executed
+tests, and build pass. A broad Chat validation run passed its six local Gates
+and stopped only because `local-desktop-gateway` was not provisioned. NDR-W7
+remains `PARTIAL/UNPROVEN` pending a clean commit, deployment, and the full
+exact-source 18-Gate Linux aggregate.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.

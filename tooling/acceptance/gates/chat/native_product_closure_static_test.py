@@ -623,7 +623,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'self.clients["bob"].stop()',
             offline_source,
         )
-        self.assertEqual(self.source.count("station.auth_logout()"), 1)
+        launch_actor = next(
+            node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "launch_actor"
+        )
+        launch_source = ast.get_source_segment(self.source, launch_actor) or ""
+        self.assertNotIn("station.auth_logout()", launch_source)
 
     def test_claimed_actions_cannot_use_store_or_command_bypasses(self) -> None:
         for forbidden in (

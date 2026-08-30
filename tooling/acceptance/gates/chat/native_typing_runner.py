@@ -320,10 +320,6 @@ class NativeTypingGate(AcceptanceGate):
             ptid = expected_ptid
         else:
             configure_station(client, self.station_url)
-            with StationDriver(
-                f"http://127.0.0.1:{client.gateway_port}"
-            ) as station:
-                station.auth_logout()
             account_ref = str(
                 self.actor_specs[actor].get("accountRef") or ""
             )

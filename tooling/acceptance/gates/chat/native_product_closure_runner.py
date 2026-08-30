@@ -420,10 +420,6 @@ class NativeProductClosureGate(AcceptanceGate):
             expected_ptid = str(self.actor_specs[actor_role].get("ptid") or "")
             if not restore_session:
                 self.configure_station(client, actor_station_url)
-                with StationDriver(
-                    f"http://127.0.0.1:{client.gateway_port}"
-                ) as station:
-                    station.auth_logout()
                 account_ref = str(
                     self.actor_specs[actor_role].get("accountRef") or ""
                 )
