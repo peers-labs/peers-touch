@@ -988,7 +988,7 @@ Closure enforcement (deterministic):
 | MP-W10-D | completed | W10-B/W10-C | Strict `MessagePrivateContent` decoding for Direct/OpenMLS, atomic SQLCipher commits for receiving message data (including FTS and attachments), Recovery format 2 for metadata restoration, failpoint/recovery/encryption codec tests pass. |
 | MP-W10-E | reopened by W13 | W05/W10-D | Prior byte-exact Engine evidence remains valid for its recorded runtime, but current product use proves the Native picker preview, send outcome handling, attachment-only draft retention, receiver rendering, and count conservation are not closed. W13-E/F must replace the product-proof claim with real UI evidence. |
 | MP-W12 | reopened by W13 (Desktop) | W04/W05/W07 + accepted MP-D26/MP-D27/MP-D28 | Prior authority/Engine interaction evidence remains useful, but current product use proves thread panel, reaction picker, hover toolbar, and complete transcript convergence were bypassed or unasserted. W13-A/B/F must rerun through real Native UI actions. Mobile remains pending W09. |
-| MP-W13 | in progress (Linux Desktop), `PARTIAL/UNPROVEN` | W10-E/W12 + Social Runtime Phase 3 | Product and receiver journeys passed on a prior clean candidate. The working-tree HTTP Gateway/PIN identity closure passes focused checks and independent blocker review, but MP-W13 still requires a clean commit and a new same-source Linux aggregate across the canonical exact range. macOS, Windows, and Mobile remain separate platform claims. |
+| MP-W13 | completed (Linux Desktop); macOS, Windows, and Mobile `UNPROVEN` | W10-E/W12 + Social Runtime Phase 3 | Unified exact-source aggregate `20260830T052209499498Z-ff6c99fc6e262b23e876f2c2e191a067` at `c69ed69bb6d8d6e7cf2275f0ce2c76a39f35049b` passed all 18 selected Gates with `DONE/PROVEN`, source/Station/runtime-cell identity, and successful cleanup. Chat required-proven validation passed all nine capabilities, and Gap Detector found no gap in the exact Linux claim. |
 | MP-W11 | reopened pending W13 | W02-W10/W12/W13 | The previous closure verdict is invalid for full product readiness because its Native evidence did not prove the receiver-visible paths exposed by W13. Rerun only after W13-F passes and stale reports are rejected by source/build/runtime identity. |
 
 The 2026-08-27 persistent Linux Desktop handoff exposed four additional MP-W13-F
@@ -1397,6 +1397,22 @@ reconciliation. This matches the existing Contacts message path and prevents a
 superseded reconciliation request from swallowing the user's click. Focused
 selection tests, Product Closure static tests, Desktop check, Desktop tests,
 and the production web build pass; clean-source runtime proof is pending.
+
+Clean commit `c69ed69bb6d8d6e7cf2275f0ce2c76a39f35049b` then passed unified
+aggregate `20260830T052209499498Z-ff6c99fc6e262b23e876f2c2e191a067`.
+The aggregate contains all 18 selected Gates from the canonical range in one
+immutable artifact and reports 18 passed, zero failed, blocked, partial,
+incomplete, or unproven, with `completionStatus=DONE` and
+`proofStatus=PROVEN`. Every Linux Native Gate binds source, disposable Station
+`18132`, and `desktop-linux-native` cell commit to the same commit and records
+successful cleanup.
+
+Chat required-proven validation artifact
+`chat-domain-validation/20260830T064910746621Z-3c12efb2bf7bcc2a8d86918770b4bd61`
+marks all nine Chat capabilities `PROVEN`. Gap Detector accepted the exact
+Linux MP-W13-F claim with all 18 selected Gates present and no gaps. MP-W13 is
+therefore complete for Linux Desktop only; macOS, Windows, and Mobile remain
+independent `UNPROVEN` platform claims.
 
 任何已有代码只能在 W00 reconciliation 后更新状态。
 
