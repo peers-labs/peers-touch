@@ -1523,7 +1523,7 @@ mod tests {
         let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256"}"#);
         let payload = URL_SAFE_NO_PAD.encode(
             serde_json::json!({
-                "sub": actor_ptid,
+                "subject_ptid": actor_ptid,
                 "exp": u64::MAX,
             })
             .to_string(),
