@@ -323,6 +323,36 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertNotIn("input.capabilitySessionId", scenario)
 
     def test_revision_scenario_disables_capabilities_and_restores_them(self) -> None:
+        helper_start = self.source.index(
+            "async function runFoundationF07WithCapabilityIsolation",
+        )
+        helper_end = self.source.index(
+            "function evaluateF01",
+            helper_start,
+        )
+        helper = self.source[helper_start:helper_end]
+        self.assertIn("foundationToolFixture(agentId, input.platform)", helper)
+        self.assertIn("CapabilityApprovalPolicy.MANUAL", helper)
+        self.assertIn(
+            "setupIdempotencyKey: crypto.randomUUID()",
+            helper,
+        )
+        self.assertIn("parseFoundationCapabilityFixtureJournal(", helper)
+        self.assertIn("await prepareFoundationCapabilityFixture(journal)", helper)
+        self.assertIn("await resolveFoundationToolTurnSession()", helper)
+        self.assertIn("withFoundationCapabilitiesDisabled(", helper)
+        self.assertIn("      true,", helper)
+        self.assertIn(
+            "await restorePersistedFoundationCapabilityFixture()",
+            helper,
+        )
+        self.assertIn("cleanupExpectedRevision", self.source)
+        self.assertIn("cleanupIdempotencyKey", self.source)
+        self.assertIn(
+            "BigInt(cleanupExpectedRevision), cleanupIdempotencyKey",
+            self.source,
+        )
+
         direct_probe = self.source.index("async foundationDirectProbe")
         scenario_start = self.source.index(
             "if (cell === 'AS-F07')",
@@ -334,9 +364,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         scenario = self.source[scenario_start:scenario_end]
 
-        self.assertIn("withFoundationCapabilitiesDisabled(", scenario)
-        self.assertIn("runFoundationF07Scenario({", scenario)
-        self.assertIn("toolIsolation", scenario)
+        self.assertIn("runFoundationF07WithCapabilityIsolation({", scenario)
         self.assertIn(
             "restorePersistedFoundationCapabilityIsolation",
             self.source,
@@ -411,7 +439,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "async function restorePersistedFoundationCapabilityIsolation",
         )
         restore_end = self.source.index(
-            "async function withFoundationCapabilitiesDisabled",
+            "function readFoundationCapabilityFixtureJournal",
             restore_start,
         )
         restore = self.source[restore_start:restore_end]

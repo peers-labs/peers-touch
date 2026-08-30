@@ -24,6 +24,22 @@ export interface FoundationCapabilityIsolationJournal {
   bindings: FoundationCapabilityIsolationBinding[];
 }
 
+export interface FoundationCapabilityFixtureJournal {
+  agentId: string;
+  agentVersion: number;
+  capabilityId: string;
+  capabilityVersion: string;
+  setupIdempotencyKey: string;
+  cleanupExpectedRevision?: string;
+  cleanupIdempotencyKey?: string;
+  originalBinding: {
+    bindingId: string;
+    enabled: boolean;
+    approvalPolicy: CapabilityApprovalPolicy;
+    revision: string;
+  } | null;
+}
+
 export interface FoundationCapabilityRestorationEntry {
   original: FoundationCapabilityIsolationBinding;
   current: AgentCapabilityBinding;
@@ -128,6 +144,83 @@ export function parseFoundationCapabilityIsolationJournal(
     originalReadyCapabilityCount,
     originalReadyCapabilityHash,
     bindings,
+  };
+}
+
+export function parseFoundationCapabilityFixtureJournal(
+  raw: string | null,
+): FoundationCapabilityFixtureJournal | null {
+  if (raw === null) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return invalidJournal();
+  }
+  const value = record(parsed);
+  const agentId = nonemptyString(value.agentId);
+  const capabilityId = nonemptyString(value.capabilityId);
+  const capabilityVersion = nonemptyString(value.capabilityVersion);
+  const setupIdempotencyKey = nonemptyString(value.setupIdempotencyKey);
+  const hasCleanupExpectedRevision =
+    value.cleanupExpectedRevision !== undefined;
+  const hasCleanupIdempotencyKey =
+    value.cleanupIdempotencyKey !== undefined;
+  if (hasCleanupExpectedRevision !== hasCleanupIdempotencyKey) {
+    return invalidJournal();
+  }
+  let cleanupExpectedRevision: string | undefined;
+  let cleanupIdempotencyKey: string | undefined;
+  if (hasCleanupExpectedRevision) {
+    cleanupExpectedRevision = nonemptyString(value.cleanupExpectedRevision);
+    cleanupIdempotencyKey = nonemptyString(value.cleanupIdempotencyKey);
+    if (!/^[1-9][0-9]*$/.test(cleanupExpectedRevision)) {
+      return invalidJournal();
+    }
+  }
+  const agentVersion = value.agentVersion;
+  if (
+    typeof agentVersion !== 'number'
+    || !Number.isSafeInteger(agentVersion)
+    || agentVersion <= 0
+  ) {
+    return invalidJournal();
+  }
+  let originalBinding: FoundationCapabilityFixtureJournal['originalBinding'] =
+    null;
+  if (value.originalBinding !== null) {
+    const original = record(value.originalBinding);
+    const bindingId = nonemptyString(original.bindingId);
+    const revision = nonemptyString(original.revision);
+    const enabled = original.enabled;
+    const approvalPolicy = original.approvalPolicy;
+    if (
+      typeof enabled !== 'boolean'
+      || typeof approvalPolicy !== 'number'
+      || !Number.isSafeInteger(approvalPolicy)
+      || !VALID_APPROVAL_POLICIES.has(approvalPolicy)
+      || !/^[1-9][0-9]*$/.test(revision)
+    ) {
+      return invalidJournal();
+    }
+    originalBinding = {
+      bindingId,
+      enabled,
+      approvalPolicy,
+      revision,
+    };
+  }
+  return {
+    agentId,
+    agentVersion,
+    capabilityId,
+    capabilityVersion,
+    setupIdempotencyKey,
+    ...(cleanupExpectedRevision && cleanupIdempotencyKey
+      ? { cleanupExpectedRevision, cleanupIdempotencyKey }
+      : {}),
+    originalBinding,
   };
 }
 
@@ -266,5 +359,26 @@ export function assertFoundationCapabilityIsolationAgentVersion(
     || currentVersion !== expectedVersion
   ) {
     throw new Error('agent.acceptance.foundationCapabilityIsolationAgentChanged');
+  }
+}
+
+export function assertFoundationCapabilityFixtureCleanupState(
+  prepared: AgentCapabilityBinding,
+  current: AgentCapabilityBinding,
+): void {
+  assertFoundationCapabilityBindingIdentity(prepared, current);
+  const preparedRevision = prepared.revision;
+  const currentRevision = current.revision;
+  if (
+    (
+      currentRevision !== preparedRevision
+      && currentRevision !== preparedRevision + 2n
+    )
+    || current.enabled !== prepared.enabled
+    || current.approvalPolicy !== prepared.approvalPolicy
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationCapabilityFixtureStateChanged',
+    );
   }
 }

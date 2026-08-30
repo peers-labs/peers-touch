@@ -42,12 +42,15 @@ import {
 } from '../../gen/proto/domain/agent/capability_pb';
 import { registerAcceptanceHarness } from '../registry';
 import {
+  assertFoundationCapabilityFixtureCleanupState,
   assertFoundationCapabilityIsolationPrerequisites,
   assertFoundationCapabilityIsolationAgentVersion,
   isFoundationCapabilityIsolationRestored,
+  parseFoundationCapabilityFixtureJournal,
   parseFoundationCapabilityIsolationJournal,
   planFoundationCapabilityBindingRestoration,
   restoreFoundationCapabilityBindings,
+  type FoundationCapabilityFixtureJournal,
   type FoundationCapabilityIsolationJournal,
 } from './capabilityIsolation';
 
@@ -189,6 +192,8 @@ interface FoundationF06FaultBoundary {
 const FOUNDATION_F06_STORAGE_KEY = 'pt.acceptance.agent.foundation.as-f06';
 const FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY =
   'pt.acceptance.agent.foundation.capability-isolation';
+const FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY =
+  'pt.acceptance.agent.foundation.capability-fixture';
 const FOUNDATION_F06_PHASE_BY_EVENT: Record<string, string> = {
   connection_lost: 'CONNECTION_LOST',
   reconnecting: 'RECONNECTING',
@@ -1312,6 +1317,7 @@ async function updateFoundationToolPolicy(
   current: AgentCapabilityBinding | null,
   policy: CapabilityApprovalPolicy,
   enabled = true,
+  idempotencyKey = crypto.randomUUID(),
 ): Promise<AgentCapabilityBinding> {
   return api.upsertAgentCapabilityBinding({
     bindingId: current?.bindingId,
@@ -1321,7 +1327,7 @@ async function updateFoundationToolPolicy(
     enabled,
     approvalPolicy: policy,
     expectedAgentVersion: agent.version,
-  }, current?.revision ?? 0, crypto.randomUUID());
+  }, current?.revision ?? 0, idempotencyKey);
 }
 
 async function updateFoundationCapabilityBindingEnabled(
@@ -1431,6 +1437,124 @@ async function restorePersistedFoundationCapabilityIsolation(
     restoredReadyCapabilityHash,
     restorationVerified,
   };
+}
+
+function readFoundationCapabilityFixtureJournal(
+): FoundationCapabilityFixtureJournal | null {
+  return parseFoundationCapabilityFixtureJournal(
+    window.localStorage.getItem(
+      FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY,
+    ),
+  );
+}
+
+async function prepareFoundationCapabilityFixture(
+  journal: FoundationCapabilityFixtureJournal,
+): Promise<AgentCapabilityBinding> {
+  const agent = await api.getAgent(journal.agentId);
+  assertFoundationCapabilityIsolationAgentVersion(
+    journal.agentVersion,
+    agent.version,
+  );
+  const original = journal.originalBinding;
+  const prepared = await api.upsertAgentCapabilityBinding({
+    bindingId: original?.bindingId,
+    agentId: journal.agentId,
+    capabilityId: journal.capabilityId,
+    capabilityVersion: journal.capabilityVersion,
+    enabled: true,
+    approvalPolicy: CapabilityApprovalPolicy.MANUAL,
+    expectedAgentVersion: agent.version,
+  }, original ? BigInt(original.revision) : 0n, journal.setupIdempotencyKey);
+  return prepared;
+}
+
+async function restorePersistedFoundationCapabilityFixture(): Promise<boolean> {
+  const journal = readFoundationCapabilityFixtureJournal();
+  if (!journal) return false;
+  const agent = await api.getAgent(journal.agentId);
+  assertFoundationCapabilityIsolationAgentVersion(
+    journal.agentVersion,
+    agent.version,
+  );
+  const original = journal.originalBinding;
+  const prepared = await prepareFoundationCapabilityFixture(journal);
+  let cleanupExpectedRevision = journal.cleanupExpectedRevision;
+  let cleanupIdempotencyKey = journal.cleanupIdempotencyKey;
+  if (!cleanupExpectedRevision || !cleanupIdempotencyKey) {
+    const currentBindings = await api.listAgentCapabilityBindings(
+      journal.agentId,
+    );
+    const current = currentBindings.find((binding) =>
+      binding.bindingId === prepared.bindingId
+      && !binding.tombstonedAt);
+    if (!current) {
+      throw new Error('agent.acceptance.foundationCapabilityBindingMissing');
+    }
+    assertFoundationCapabilityFixtureCleanupState(prepared, current);
+    cleanupExpectedRevision = current.revision.toString();
+    cleanupIdempotencyKey = crypto.randomUUID();
+    const cleanupJournal: FoundationCapabilityFixtureJournal = {
+      ...journal,
+      cleanupExpectedRevision,
+      cleanupIdempotencyKey,
+    };
+    const serializedJournal = JSON.stringify(cleanupJournal);
+    parseFoundationCapabilityFixtureJournal(serializedJournal);
+    window.localStorage.setItem(
+      FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY,
+      serializedJournal,
+    );
+  }
+
+  if (original) {
+    await api.upsertAgentCapabilityBinding({
+      bindingId: prepared.bindingId,
+      agentId: journal.agentId,
+      capabilityId: journal.capabilityId,
+      capabilityVersion: journal.capabilityVersion,
+      enabled: original.enabled,
+      approvalPolicy: original.approvalPolicy,
+      expectedAgentVersion: agent.version,
+    }, BigInt(cleanupExpectedRevision), cleanupIdempotencyKey);
+  } else {
+    await api.deleteAgentCapabilityBinding(
+      prepared.bindingId,
+      BigInt(cleanupExpectedRevision),
+      cleanupIdempotencyKey,
+      'acceptance_fixture_cleanup',
+    );
+  }
+
+  const finalBindings = await api.listAgentCapabilityBindings(journal.agentId);
+  const finalBinding = finalBindings.find((binding) =>
+    binding.bindingId === prepared.bindingId
+    && !binding.tombstonedAt);
+  if (original) {
+    if (
+      !finalBinding
+      || finalBinding.capabilityId !== journal.capabilityId
+      || finalBinding.capabilityVersion !== journal.capabilityVersion
+      || finalBinding.enabled !== original.enabled
+      || finalBinding.approvalPolicy !== original.approvalPolicy
+      || finalBinding.revision !== BigInt(cleanupExpectedRevision) + 1n
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationCapabilityFixtureRestoreVerificationFailed',
+      );
+    }
+  } else if (finalBinding) {
+    throw new Error(
+      'agent.acceptance.foundationCapabilityFixtureDeleteVerificationFailed',
+    );
+  }
+  const restoredAgent = await api.getAgent(journal.agentId);
+  assertFoundationCapabilityIsolationAgentVersion(
+    journal.agentVersion,
+    restoredAgent.version,
+  );
+  window.localStorage.removeItem(FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY);
+  return true;
 }
 
 async function withFoundationCapabilitiesDisabled<T>(
@@ -5075,6 +5199,83 @@ function evaluateF03(ctx: DirectCellAssertionContext): Record<string, boolean | 
   };
 }
 
+async function runFoundationF07WithCapabilityIsolation(input: {
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  platform: string;
+  sampleId: string;
+}) {
+  await restorePersistedFoundationCapabilityIsolation();
+  await restorePersistedFoundationCapabilityFixture();
+  const agentId = input.agent.id || input.agent.name;
+  const authoritativeAgent = await api.getAgent(agentId);
+  const fixture = await foundationToolFixture(agentId, input.platform);
+  const originalBinding = fixture.binding;
+  let operationError: unknown = null;
+
+  try {
+    if (
+      !originalBinding
+      || !originalBinding.enabled
+      || originalBinding.approvalPolicy !== CapabilityApprovalPolicy.MANUAL
+    ) {
+      const journal: FoundationCapabilityFixtureJournal = {
+        agentId,
+        agentVersion: authoritativeAgent.version,
+        capabilityId: fixture.manifest.capabilityId,
+        capabilityVersion: fixture.manifest.version,
+        setupIdempotencyKey: crypto.randomUUID(),
+        originalBinding: originalBinding
+          ? {
+              bindingId: originalBinding.bindingId,
+              enabled: originalBinding.enabled,
+              approvalPolicy: originalBinding.approvalPolicy,
+              revision: originalBinding.revision.toString(),
+            }
+          : null,
+      };
+      const serializedJournal = JSON.stringify(journal);
+      parseFoundationCapabilityFixtureJournal(serializedJournal);
+      window.localStorage.setItem(
+        FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY,
+        serializedJournal,
+      );
+      await prepareFoundationCapabilityFixture(journal);
+    }
+    const capabilitySession = await resolveFoundationToolTurnSession();
+    return await withFoundationCapabilitiesDisabled(
+      authoritativeAgent,
+      capabilitySession.capabilitySessionId,
+      async (toolIsolation) => {
+        const result = await runFoundationF07Scenario(input);
+        return {
+          ...result,
+          facts: {
+            ...result.facts,
+            toolIsolation,
+          },
+        };
+      },
+      true,
+    );
+  } catch (error) {
+    operationError = error;
+    throw error;
+  } finally {
+    try {
+      await restorePersistedFoundationCapabilityIsolation();
+      await restorePersistedFoundationCapabilityFixture();
+    } catch (cleanupError) {
+      throw Object.assign(
+        new Error('agent.acceptance.foundationCapabilityFixtureCleanupFailed'),
+        {
+          primaryError: operationError,
+          cleanupError,
+        },
+      );
+    }
+  }
+}
+
 function evaluateF01(ctx: DirectCellAssertionContext): Record<string, boolean | null> {
   const hasProvider = Boolean(ctx.agent?.provider);
   const hasModel = Boolean(ctx.agent?.model);
@@ -5409,9 +5610,13 @@ export function installAcceptanceHarness(): void {
 
     async restoreFoundationCapabilityIsolation() {
       const restoration = await restorePersistedFoundationCapabilityIsolation();
+      const fixtureRestorationRequired =
+        await restorePersistedFoundationCapabilityFixture();
       return {
         restorationRequired: restoration !== null,
         restoration,
+        fixtureRestorationRequired,
+        fixtureRestorationVerified: true,
       };
     },
 
@@ -6263,6 +6468,8 @@ export function installAcceptanceHarness(): void {
       stationRestart?: Record<string, unknown>;
       durableReloadEvidence?: Record<string, unknown>;
     }) {
+      await restorePersistedFoundationCapabilityIsolation();
+      await restorePersistedFoundationCapabilityFixture();
       const agent = selectedAgent();
       if (!agent) throw new Error('agent.acceptance.agentMissing');
       const agentId = agent.id || agent.name;
@@ -6324,30 +6531,11 @@ export function installAcceptanceHarness(): void {
       }
 
       if (cell === 'AS-F07') {
-        const capabilitySessionId =
-          capabilitySessions.selectedStationSession?.session_id;
-        if (!capabilitySessionId) {
-          throw new Error('agent.acceptance.capabilitySessionUnavailable');
-        }
-        const scenario = await withFoundationCapabilitiesDisabled(
+        const scenario = await runFoundationF07WithCapabilityIsolation({
           agent,
-          capabilitySessionId,
-          async (toolIsolation) => {
-            const result = await runFoundationF07Scenario({
-              agent,
-              platform,
-              sampleId,
-            });
-            return {
-              ...result,
-              facts: {
-                ...result.facts,
-                toolIsolation,
-              },
-            };
-          },
-          true,
-        );
+          platform,
+          sampleId,
+        });
         preparedConversationId = scenario.conversationId;
         preparedTurnId = scenario.turnId;
         preparedRuntimeEvent.current = scenario.runtimeEvent;

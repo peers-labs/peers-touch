@@ -837,10 +837,20 @@ def _restore_capability_isolation_for_cleanup(
             return f"{runtime} capability isolation restore returned invalid evidence"
         required = result.get("restorationRequired")
         restoration = result.get("restoration")
+        fixture_required = result.get("fixtureRestorationRequired")
+        fixture_verified = result.get("fixtureRestorationVerified")
         if not isinstance(required, bool):
             return (
                 f"{runtime} capability isolation restore "
                 "omitted restorationRequired"
+            )
+        if (
+            not isinstance(fixture_required, bool)
+            or fixture_verified is not True
+        ):
+            return (
+                f"{runtime} capability fixture restoration "
+                "was not verified"
             )
         if required is False:
             return (

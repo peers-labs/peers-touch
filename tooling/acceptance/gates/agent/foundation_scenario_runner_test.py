@@ -196,6 +196,7 @@ class CapabilityIsolationCleanupClient:
         always_fail: bool = False,
         malformed: bool = False,
         verified: bool = True,
+        fixture_verified: bool = True,
         connected: bool = True,
         storage_root: Path | None = None,
     ) -> None:
@@ -208,6 +209,7 @@ class CapabilityIsolationCleanupClient:
         self.always_fail = always_fail
         self.malformed = malformed
         self.verified = verified
+        self.fixture_verified = fixture_verified
         self.calls = 0
         self.restart_count = 0
 
@@ -231,6 +233,8 @@ class CapabilityIsolationCleanupClient:
             return {}
         return {
             "restorationRequired": True,
+            "fixtureRestorationRequired": False,
+            "fixtureRestorationVerified": self.fixture_verified,
             "restoration": {
                 "disabledBindingCount": 1,
                 "readyCapabilityCount": 0,
@@ -429,12 +433,29 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("omitted restorationRequired", errors[0])
 
+    def test_cleanup_rejects_unverified_fixture_restoration(self) -> None:
+        native = CapabilityIsolationCleanupClient(
+            "desktop_app",
+            fixture_verified=False,
+        )
+        browser = CapabilityIsolationCleanupClient("browser")
+
+        errors = foundation_scenario_runner._restore_capability_isolation_for_cleanup(
+            SimpleNamespace(native=native, browser=browser),
+            {},
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("fixture restoration was not verified", errors[0])
+
     def test_cleanup_rejects_contradictory_noop_restoration(self) -> None:
         native = CapabilityIsolationCleanupClient("desktop_app")
         browser = CapabilityIsolationCleanupClient("browser")
         native.harness = lambda *_args, **_kwargs: {
             "restorationRequired": False,
             "restoration": {"restorationVerified": True},
+            "fixtureRestorationRequired": False,
+            "fixtureRestorationVerified": True,
         }
 
         errors = foundation_scenario_runner._restore_capability_isolation_for_cleanup(
@@ -450,6 +471,8 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         browser = CapabilityIsolationCleanupClient("browser")
         native.harness = lambda *_args, **_kwargs: {
             "restorationRequired": True,
+            "fixtureRestorationRequired": False,
+            "fixtureRestorationVerified": True,
             "restoration": {
                 "disabledBindingCount": 1,
                 "readyCapabilityCount": 0,
@@ -475,6 +498,8 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         browser = CapabilityIsolationCleanupClient("browser")
         native.harness = lambda *_args, **_kwargs: {
             "restorationRequired": True,
+            "fixtureRestorationRequired": True,
+            "fixtureRestorationVerified": True,
             "restoration": {
                 "disabledBindingCount": 1,
                 "readyCapabilityCount": 0,

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  assertFoundationCapabilityFixtureCleanupState,
   assertFoundationCapabilityIsolationPrerequisites,
   assertFoundationCapabilityIsolationAgentVersion,
   isFoundationCapabilityIsolationRestored,
+  parseFoundationCapabilityFixtureJournal,
   parseFoundationCapabilityIsolationJournal,
   planFoundationCapabilityBindingRestoration,
   restoreFoundationCapabilityBindings,
@@ -327,6 +329,72 @@ describe('isFoundationCapabilityIsolationRestored', () => {
   });
 });
 
+describe('parseFoundationCapabilityFixtureJournal', () => {
+  const journal = {
+    agentId: 'agent-1',
+    agentVersion: 7,
+    capabilityId: 'skill:fixture',
+    capabilityVersion: '1',
+    setupIdempotencyKey: 'fixture-setup-key',
+    originalBinding: {
+      bindingId: 'binding-1',
+      enabled: false,
+      approvalPolicy: CapabilityApprovalPolicy.DENY,
+      revision: '4',
+    },
+  };
+
+  it('parses an exact original binding snapshot', () => {
+    expect(parseFoundationCapabilityFixtureJournal(
+      JSON.stringify(journal),
+    )).toEqual(journal);
+  });
+
+  it('parses a durable cleanup replay boundary', () => {
+    expect(parseFoundationCapabilityFixtureJournal(JSON.stringify({
+      ...journal,
+      cleanupExpectedRevision: '7',
+      cleanupIdempotencyKey: 'fixture-cleanup-key',
+    }))).toMatchObject({
+      cleanupExpectedRevision: '7',
+      cleanupIdempotencyKey: 'fixture-cleanup-key',
+    });
+  });
+
+  it.each([
+    { agentVersion: 0 },
+    { capabilityId: 1 },
+    { setupIdempotencyKey: '' },
+    {
+      originalBinding: {
+        ...journal.originalBinding,
+        revision: '0',
+      },
+    },
+    {
+      originalBinding: {
+        ...journal.originalBinding,
+        approvalPolicy: 999,
+      },
+    },
+    { cleanupExpectedRevision: '7' },
+    { cleanupIdempotencyKey: 'fixture-cleanup-key' },
+    {
+      cleanupExpectedRevision: '0',
+      cleanupIdempotencyKey: 'fixture-cleanup-key',
+    },
+  ])('rejects malformed fixture journals', (override) => {
+    expect(() => {
+      parseFoundationCapabilityFixtureJournal(JSON.stringify({
+        ...journal,
+        ...override,
+      }));
+    }).toThrow(
+      'agent.acceptance.foundationCapabilityIsolationJournalInvalid',
+    );
+  });
+});
+
 describe('assertFoundationCapabilityIsolationAgentVersion', () => {
   it('accepts the authoritative journaled version', () => {
     expect(() => {
@@ -344,6 +412,50 @@ describe('assertFoundationCapabilityIsolationAgentVersion', () => {
       );
     },
   );
+});
+
+describe('assertFoundationCapabilityFixtureCleanupState', () => {
+  const prepared = {
+    $typeName: 'peers_touch.model.agent.v1.AgentCapabilityBinding' as const,
+    bindingId: 'binding-fixture',
+    ptid: 'ptid:v1:actor:peers:p:test:1220abc',
+    agentId: 'agent-1',
+    capabilityId: 'skill:fixture',
+    capabilityVersion: '1',
+    enabled: true,
+    approvalPolicy: CapabilityApprovalPolicy.MANUAL,
+    expectedAgentVersion: 1n,
+    revision: 5n,
+    tombstonedByPtid: '',
+    tombstoneReason: '',
+  };
+
+  it.each([5n, 7n])(
+    'accepts the prepared or isolation-restored revision %s',
+    (revision) => {
+      expect(() => {
+        assertFoundationCapabilityFixtureCleanupState(prepared, {
+          ...prepared,
+          revision,
+        });
+      }).not.toThrow();
+    },
+  );
+
+  it.each([
+    { revision: 6n },
+    { revision: 8n },
+    { enabled: false },
+    { approvalPolicy: CapabilityApprovalPolicy.DENY },
+    { capabilityVersion: 'retargeted' },
+  ])('rejects concurrent fixture state drift', (override) => {
+    expect(() => {
+      assertFoundationCapabilityFixtureCleanupState(prepared, {
+        ...prepared,
+        ...override,
+      });
+    }).toThrow();
+  });
 });
 
 describe('assertFoundationCapabilityIsolationPrerequisites', () => {
