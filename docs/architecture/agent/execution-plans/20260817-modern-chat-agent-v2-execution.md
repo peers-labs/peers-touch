@@ -3487,6 +3487,26 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   targeted formatting, and `git diff --check` pass. AS-F06 and G-F remain
   `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source
   verification.
+- Checkpoint `121ff35bee1392169fbe2744615c0b7112647379` was deployed
+  exact-source to profile `two`. Run
+  `20260829T234856733226Z-73203c902073fa051754dc614e48de10`
+  stopped at the previously proven Browser AS-F01 with
+  `agent.acceptance.foundationTurnTimeout`; source matching, cleanup, and
+  redaction passed. An unchanged-source rerun
+  `20260829T235641883075Z-bb61197f590de8036c31c49358d84d6c`
+  crossed AS-F01 and the prior AS-F06 outage session-loss path, proving that
+  transient Station validation no longer clears the Browser Rust session. It
+  reached the complete Browser AS-F06 evaluator and failed closed with
+  `agent.acceptance.foundationF06ReplaySequencesMissing`; source matching,
+  cleanup, and redaction again passed. The Harness had used a non-empty array
+  parser before the unchanged `replayAfterAcknowledgedCursor` assertion, so an
+  empty replay observation hid the cursor/client/Station diagnostics from the
+  independent Python oracle. The local diagnostic correction accepts typed
+  empty replay collections into the evaluator while retaining its explicit
+  non-empty requirement, allowing the next exact-source run to report the
+  source-backed mismatch without weakening the Gate. Desktop typecheck, 47
+  native static tests, 104 focused Foundation tests, and `git diff --check`
+  pass. AS-F06 and G-F remain `PARTIAL / UNPROVEN`.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

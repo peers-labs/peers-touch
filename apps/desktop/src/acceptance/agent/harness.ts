@@ -3667,11 +3667,11 @@ async function evaluateF06(
     'CONNECTED',
   ];
   const phasePositions = requiredPhases.map((phase) => phases.indexOf(phase));
-  const replaySequences = evidenceArray(
+  const replaySequences = optionalEvidenceArray(
     replay.eventSequences,
     'foundationF06ReplaySequences',
   ).map(Number);
-  const replayDeliveries = evidenceArray(
+  const replayDeliveries = optionalEvidenceArray(
     replay.deliveries,
     'foundationF06ReplayDeliveries',
   ).map((delivery) => evidenceRecord(delivery, 'foundationF06ReplayDelivery'));
