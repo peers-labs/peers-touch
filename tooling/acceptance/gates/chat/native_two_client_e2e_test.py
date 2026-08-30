@@ -122,10 +122,15 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             "workspaceDigest": "clean",
         }
         station = {
-            "url": "http://station",
+            "kind": "station",
+            "deploymentEnvironment": "station-test",
+            "endpoint": "http://station",
             "liveCommit": "commit-a",
             "workspaceDigest": "clean",
-            "protoDigest": "d" * 64,
+            "protocolDigest": "d" * 64,
+            "attestationArtifact": {
+                "artifactKind": "acceptance-artifact-ref",
+            },
         }
         runtime_cell = SyntheticRuntimeBinding().runtime_identity()
         return {
@@ -139,7 +144,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 "runId": "provisioner-run-a",
                 "state": "FIXTURE_READY",
                 "source": source,
-                "station": station,
+                "services": {"station": station},
             },
             "runtime": {
                 "runtimeCell": "desktop-linux-native",
@@ -336,11 +341,14 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
                 "commit": "commit-a",
                 "workspaceDigest": "clean",
             },
-            "station": {
-                "url": "http://station",
-                "liveCommit": "commit-a",
-                "workspaceDigest": "clean",
-                "protoDigest": "d" * 64,
+            "services": {
+                "station": {
+                    "kind": "station",
+                    "endpoint": "http://station",
+                    "liveCommit": "commit-a",
+                    "workspaceDigest": "clean",
+                    "protocolDigest": "d" * 64,
+                },
             },
             "clients": [
                 {
@@ -397,6 +405,25 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertTrue(
             gate.report.runtime["cleanup"]["portsReleased"],
         )
+
+    def test_source_identity_rejects_malformed_station_protocol_digest(self) -> None:
+        manifest = self.valid_report()["manifest"]
+        manifest["services"]["station"]["protocolDigest"] = "z" * 64
+        gate = object.__new__(NativeTwoClientGate)
+        gate.manifest = manifest
+        gate.runtime_binding = SyntheticRuntimeBinding()
+        gate.report = EvidenceReport(
+            gate_id=self.module.GATE_ID,
+            status="RUNNING",
+            started_at="2026-08-30T00:00:00Z",
+            duration_ms=0,
+        )
+
+        with self.assertRaisesRegex(
+            GateError,
+            "source_build_runtime_identity",
+        ):
+            gate.source_identity({"build_commit": "commit-a"})
 
     def test_cleanup_failure_remains_structured(self) -> None:
         binding = SyntheticRuntimeBinding()
