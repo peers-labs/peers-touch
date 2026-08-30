@@ -10,6 +10,7 @@ freshness_file="tooling/skills/pt-github-review/FRESHNESS.md"
 fixtures_dir="tooling/review-fixtures"
 pr_template=".github/PULL_REQUEST_TEMPLATE.md"
 submit_pipeline="tooling/scripts/review/submit-pipeline.sh"
+review_runner="tooling/scripts/review/run.sh"
 gap_skill="tooling/skills/pt-acceptance-gap-detector/SKILL.md"
 gap_procedures="tooling/skills/pt-acceptance-gap-detector/PROCEDURES.md"
 gap_detector="tooling/scripts/acceptance-gap-detect.py"
@@ -32,6 +33,7 @@ require_file "$pr_skill_file"
 require_file "$freshness_file"
 require_file "$pr_template"
 require_file "$submit_pipeline"
+require_file "$review_runner"
 require_file "$gap_skill"
 require_file "$gap_procedures"
 require_file "$gap_detector"
@@ -155,6 +157,9 @@ if grep -Fq "User writes only Chinese | Skip English check" "$english_workflow_s
 fi
 if grep -Fq "User can deactivate by switching to Chinese" "$english_workflow_skill"; then
   fail "$english_workflow_skill must require explicit English-mode deactivation"
+fi
+if ! grep -Fq "^(tooling/skills/|" "$review_runner"; then
+  fail "$review_runner must run skill-check for every canonical project skill change"
 fi
 
 covered_docs=()
