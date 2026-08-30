@@ -116,7 +116,7 @@ export function parseFoundationCapabilityIsolationJournal(
     || agentVersion <= 0
     || typeof originalReadyCapabilityCount !== 'number'
     || !Number.isSafeInteger(originalReadyCapabilityCount)
-    || originalReadyCapabilityCount <= 0
+    || originalReadyCapabilityCount < 0
     || typeof originalReadyCapabilityHash !== 'string'
     || !/^[0-9a-f]{64}$/.test(originalReadyCapabilityHash)
   ) {
@@ -212,11 +212,16 @@ export async function restoreFoundationCapabilityBindings(
 export function assertFoundationCapabilityIsolationPrerequisites(
   bindings: readonly FoundationCapabilityIsolationBinding[],
   readyCapabilityCount: number,
+  requireEffectiveCapabilities: boolean,
 ): void {
   if (
-    bindings.length === 0
-    || !Number.isSafeInteger(readyCapabilityCount)
-    || readyCapabilityCount <= 0
+    !Number.isSafeInteger(readyCapabilityCount)
+    || readyCapabilityCount < 0
+    || (bindings.length === 0 && readyCapabilityCount !== 0)
+    || (
+      requireEffectiveCapabilities
+      && (bindings.length === 0 || readyCapabilityCount === 0)
+    )
   ) {
     throw new Error(
       'agent.acceptance.foundationCapabilityIsolationUnavailable',

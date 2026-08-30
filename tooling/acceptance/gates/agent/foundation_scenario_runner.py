@@ -868,7 +868,7 @@ def _restore_capability_isolation_for_cleanup(
             and disabled > 0
             and isolated_ready == 0
             and original_ready is not None
-            and original_ready > 0
+            and original_ready >= 0
             and restored_bindings == disabled
             and restored_ready == original_ready
             and isinstance(original_hash, str)

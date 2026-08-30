@@ -190,3 +190,19 @@
   still-live Rust session before `authLogout` finishes. The fix must dispatch
   `LOGOUT_REQUESTED` through the identity owner before running the existing
   session logout pipeline, then enter the auth gate.
+- Post-fix exact-source run
+  `20260830T201952431343Z-613a60e8abe65c11f8ee17d13db918fb`
+  on `128c044049aadb37d364f2d25e9f593a2780d6b7` closes
+  hypothesis I. Both clients emitted
+  `cleanup-identity-runtime-logout-finished` with
+  `authenticated=false` followed by `cleanup-harness-logout-finished`.
+  The inner cleanup sidecar is fully clean for both clients, all ports,
+  storage roots, and actor identity.
+- The newly visible first failure is Browser AS-F03
+  `agent.acceptance.foundationCapabilityIsolationUnavailable`. The strict
+  positive-READY prerequisite introduced for AS-F07 was incorrectly applied
+  to the shared AS-F03/F06 isolation helper. AS-F03 permits a real zero-READY
+  starting state and proves that readiness and tool-definition tokens remain
+  zero. The local correction scopes positive effective capability proof to
+  AS-F07, permits non-negative journal readiness for recovery, and skips
+  journal creation entirely when there are no enabled bindings to mutate.

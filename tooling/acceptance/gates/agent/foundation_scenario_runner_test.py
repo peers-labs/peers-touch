@@ -470,6 +470,30 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("was not verified", errors[0])
 
+    def test_cleanup_accepts_restored_zero_ready_isolation(self) -> None:
+        native = CapabilityIsolationCleanupClient("desktop_app")
+        browser = CapabilityIsolationCleanupClient("browser")
+        native.harness = lambda *_args, **_kwargs: {
+            "restorationRequired": True,
+            "restoration": {
+                "disabledBindingCount": 1,
+                "readyCapabilityCount": 0,
+                "originalReadyCapabilityCount": 0,
+                "originalReadyCapabilityHash": "a" * 64,
+                "restoredBindingCount": 1,
+                "restoredReadyCapabilityCount": 0,
+                "restoredReadyCapabilityHash": "a" * 64,
+                "restorationVerified": True,
+            },
+        }
+
+        errors = foundation_scenario_runner._restore_capability_isolation_for_cleanup(
+            SimpleNamespace(native=native, browser=browser),
+            {},
+        )
+
+        self.assertEqual(errors, [])
+
     def test_cleanup_failure_does_not_leak_raw_identity(self) -> None:
         native = CapabilityIsolationCleanupClient(
             "desktop_app",

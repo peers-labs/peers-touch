@@ -1437,6 +1437,7 @@ async function withFoundationCapabilitiesDisabled<T>(
   agent: NonNullable<ReturnType<typeof selectedAgent>>,
   capabilitySessionId: string,
   operation: (isolation: FoundationCapabilityIsolation) => Promise<T>,
+  requireEffectiveCapabilities = false,
 ): Promise<T> {
   await restorePersistedFoundationCapabilityIsolation();
   const agentId = agent.id || agent.name;
@@ -1466,6 +1467,7 @@ async function withFoundationCapabilitiesDisabled<T>(
   assertFoundationCapabilityIsolationPrerequisites(
     journalBindings,
     originalReadyCapabilityCount,
+    requireEffectiveCapabilities,
   );
   const isolation: FoundationCapabilityIsolation = {
     disabledBindingCount: originalBindings.length,
@@ -1477,6 +1479,10 @@ async function withFoundationCapabilitiesDisabled<T>(
     restoredReadyCapabilityHash: '',
     restorationVerified: false,
   };
+  if (journalBindings.length === 0) {
+    isolation.restorationVerified = true;
+    return operation(isolation);
+  }
   const journal: FoundationCapabilityIsolationJournal = {
     agentId,
     agentVersion: authoritativeAgent.version,
@@ -6340,6 +6346,7 @@ export function installAcceptanceHarness(): void {
               },
             };
           },
+          true,
         );
         preparedConversationId = scenario.conversationId;
         preparedTurnId = scenario.turnId;

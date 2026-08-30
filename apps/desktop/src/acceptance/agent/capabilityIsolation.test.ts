@@ -252,7 +252,7 @@ describe('parseFoundationCapabilityIsolationJournal', () => {
     { agentId: 123 },
     { agentVersion: '7' },
     { agentVersion: 0 },
-    { originalReadyCapabilityCount: 0 },
+    { originalReadyCapabilityCount: -1 },
     { originalReadyCapabilityHash: 'z'.repeat(64) },
     { bindings: [] },
     {
@@ -282,6 +282,15 @@ describe('parseFoundationCapabilityIsolationJournal', () => {
     }).toThrow(
       'agent.acceptance.foundationCapabilityIsolationJournalInvalid',
     );
+  });
+
+  it('accepts zero original readiness for non-revision scenarios', () => {
+    expect(parseFoundationCapabilityIsolationJournal(JSON.stringify({
+      ...journal,
+      originalReadyCapabilityCount: 0,
+    }))).toMatchObject({
+      originalReadyCapabilityCount: 0,
+    });
   });
 });
 
@@ -350,25 +359,34 @@ describe('assertFoundationCapabilityIsolationPrerequisites', () => {
 
   it('accepts a positive isolation boundary', () => {
     expect(() => {
-      assertFoundationCapabilityIsolationPrerequisites([binding], 1);
+      assertFoundationCapabilityIsolationPrerequisites([binding], 1, true);
     }).not.toThrow();
   });
 
   it.each([
-    { bindings: [], readyCapabilityCount: 1 },
-    { bindings: [binding], readyCapabilityCount: 0 },
-    { bindings: [binding], readyCapabilityCount: 1.5 },
+    { bindings: [], readyCapabilityCount: 1, required: false },
+    { bindings: [], readyCapabilityCount: 0, required: true },
+    { bindings: [binding], readyCapabilityCount: 0, required: true },
+    { bindings: [binding], readyCapabilityCount: 1.5, required: false },
   ])('rejects a journal that cleanup cannot restore', ({
     bindings,
     readyCapabilityCount,
+    required,
   }) => {
     expect(() => {
       assertFoundationCapabilityIsolationPrerequisites(
         bindings,
         readyCapabilityCount,
+        required,
       );
     }).toThrow(
       'agent.acceptance.foundationCapabilityIsolationUnavailable',
     );
+  });
+
+  it('allows an already isolated zero-capability scenario without a journal', () => {
+    expect(() => {
+      assertFoundationCapabilityIsolationPrerequisites([], 0, false);
+    }).not.toThrow();
   });
 });

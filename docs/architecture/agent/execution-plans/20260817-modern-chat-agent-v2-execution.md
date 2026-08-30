@@ -4136,6 +4136,21 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `cleanup-harness-logout-finished`, report clean Native teardown, and then
   expose the previously masked `FoundationCandidateError` or advance into
   AS-F07.
+- Tracking commit `128c04404` was deployed exact-source. Run
+  `20260830T201952431343Z-613a60e8abe65c11f8ee17d13db918fb`
+  proves the logout correction: both runtimes completed lifecycle-owned logout
+  with `authenticated=false`, Native and Browser cleanup were clean, and all
+  ports, storage roots, and actor identity were released. The newly exposed
+  first failure is Browser AS-F03
+  `agent.acceptance.foundationCapabilityIsolationUnavailable`.
+- The AS-F03 failure is a shared-helper contract regression. AS-F07 requires a
+  positive original READY set to prove that isolation actually removed tools;
+  AS-F03 and AS-F06 allow a legitimate zero-READY starting state. The local
+  correction scopes the positive prerequisite to AS-F07, permits non-negative
+  readiness in recovery journals, and executes zero-binding scenarios without
+  creating a journal or mutation. Revision-fenced restoration remains required
+  whenever enabled bindings exist. Focused TypeScript and Python tests pass;
+  runtime proof remains pending.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
