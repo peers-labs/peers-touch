@@ -23,6 +23,7 @@
 - Station request log: `/sub-agent/agent/conversation/events` returned HTTP 200 in about 8 ms during the failed operation.
 - Candidate cleanup `20260830T032249225036Z-1e39427660f5b7348beedab77dfebcec`: Native logout timed out; all runtime ports and storage were released.
 - Instrumentation points report Native replay start, renderer event receipt, completion, Station response acceptance, and Tauri `emit_to` success.
+- Instrumentation compile checks: Desktop TypeScript PASS, Rust binary check PASS, 106 Foundation tests PASS.
 
 ## Verification Conclusion
-Pending instrumentation.
+Pre-fix instrumentation is ready. A source-matched reproduction is pending.
