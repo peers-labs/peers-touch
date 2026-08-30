@@ -523,6 +523,7 @@ describe('chatRuntime Agent turn recovery', () => {
         conversationId: 'conversation-1',
         status: 'interrupted',
         terminal_reason: 'station_restart_interrupted',
+        text: 'authoritative replay text',
         seq: 5,
     }));
     const result = await reload;
@@ -531,7 +532,11 @@ describe('chatRuntime Agent turn recovery', () => {
       expect(mocks.reconcileRecoveredTurn).toHaveBeenCalledWith(
         'conversation-1',
         'turn-1',
-        { status: 'interrupted', reason: 'station_restart_interrupted' },
+        {
+          status: 'interrupted',
+          reason: 'station_restart_interrupted',
+          content: 'authoritative replay text',
+        },
       );
       expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
     });

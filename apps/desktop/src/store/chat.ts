@@ -116,6 +116,7 @@ export interface AgentSendLifecycle {
 export interface RecoveredTurnTerminal {
   status: 'completed' | 'cancelled' | 'failed' | 'interrupted';
   reason?: string;
+  content?: string;
 }
 
 export interface ErrorResolutionAction {
@@ -1150,6 +1151,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         await agentChatCache.upsertMessage({
           ...assistant,
           status: terminal.status,
+          content: terminal.content ?? assistant.content,
           updatedAt: new Date().toISOString(),
         });
         synced = await agentChatCache.getMessages(conversationId);

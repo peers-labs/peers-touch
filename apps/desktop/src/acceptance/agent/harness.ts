@@ -305,6 +305,9 @@ function installFoundationF06Observation(): void {
       ) {
         continue;
       }
+      if (current.phase === 'REPLAYING') {
+        foundationF06ReplayingScenarios.add(handoff.scenarioKey);
+      }
       foundationF06ReplayRecording = foundationF06ReplayRecording.then(() => {
         const pending = foundationF06PendingHandoffs.get(handoff.scenarioKey);
         const latest = pending ?? readFoundationF06Handoff(handoff.scenarioKey);
@@ -324,22 +327,32 @@ function installFoundationF06Observation(): void {
     const observed = payload as typeof payload & {
       sourceDelivery?: AgentTurnSourceDelivery;
     };
+    const sourceDelivery = observed.sourceDelivery;
+    const observedTurnId = sourceDelivery?.turnId
+      ?? String(payload.data.turnId || payload.data.turn_id || '');
     const observedHandoffs = [
       ...Object.values(readFoundationF06Handoffs()),
       ...foundationF06PendingHandoffs.values(),
     ];
     const handoff = observedHandoffs.find((candidate) =>
       payload.conversationId === candidate.conversationId
-      && String(payload.data.turnId || payload.data.turn_id || '') === candidate.turnId
+      && observedTurnId === candidate.turnId
       && payload.ptid === candidate.actorPtid
       && payload.streamId === candidate.streamId
-      && payload.streamGeneration === candidate.streamGeneration);
+      && payload.streamGeneration === candidate.streamGeneration
+      && (
+        !sourceDelivery
+        || (
+          sourceDelivery.ptid === candidate.actorPtid
+          && sourceDelivery.conversationId === candidate.conversationId
+          && sourceDelivery.turnId === candidate.turnId
+        )
+      ));
     if (!handoff) return;
     if (payload.event === 'replaying') {
       foundationF06ReplayingScenarios.add(handoff.scenarioKey);
       return;
     }
-    const sourceDelivery = observed.sourceDelivery;
     if (!sourceDelivery) return;
     foundationF06ReplayRecording = foundationF06ReplayRecording.then(async () => {
       const pending = foundationF06PendingHandoffs.get(handoff.scenarioKey);

@@ -3507,6 +3507,30 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   source-backed mismatch without weakening the Gate. Desktop typecheck, 47
   native static tests, 104 focused Foundation tests, and `git diff --check`
   pass. AS-F06 and G-F remain `PARTIAL / UNPROVEN`.
+- Diagnostic checkpoint
+  `a9613bd9aa30680d66a73338f6c0e6d2cf125917` was deployed exact-source to
+  profile `two`. Run
+  `20260830T001432603158Z-51e8130865d0e85ca69e332a96ac0315`
+  reached the complete Browser AS-F06 oracle with source matching, cleanup,
+  and redaction passing. The fault cursor was `3`; independent Station replay
+  contained exact persisted sequences `4..187`, while Browser observation was
+  empty. Recovery transitions still included `REPLAYING`, `RECONCILING`, and
+  `CONNECTED`. The replay observer's armed-state set was process-local and was
+  lost on Browser restart even though the durable handoff and recovery-store
+  transitions were restored, so it rejected every valid source delivery. The
+  same run reported matching `interrupted` terminal statuses and preserved
+  prefix but unequal content hashes. Station appends streamed text to the same
+  message sequence; cursor-only cache sync therefore retained the pre-restart
+  prefix because terminal snapshot reconciliation persisted status but not the
+  snapshot's authoritative text. The local correction re-arms observation from
+  the durable `REPLAYING` transition, matches source deliveries by their
+  source-bound identity, and carries authoritative snapshot text into the
+  terminal cache update before client restart. The strict replay and terminal
+  equality assertions remain unchanged. Twenty-six focused chat runtime/store
+  tests, Desktop typecheck, 47 native static tests, 104 focused Foundation
+  tests, and `git diff --check` pass. AS-F06 and G-F remain
+  `PARTIAL / UNPROVEN` pending checkpoint deployment and exact-source
+  verification.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.

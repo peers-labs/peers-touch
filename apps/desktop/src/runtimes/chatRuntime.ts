@@ -200,6 +200,10 @@ function currentRecord(
 function terminalFromEvent(event: StreamEvent): RecoveredTurnTerminal | null {
   const status = classifyAgentTurnTerminalEvent(event);
   if (!status || status === 'queued') return null;
+  const snapshotContent =
+    event.event === 'snapshot' && typeof event.data.text === 'string'
+      ? event.data.text
+      : undefined;
   return {
     status,
     reason: String(
@@ -207,6 +211,7 @@ function terminalFromEvent(event: StreamEvent): RecoveredTurnTerminal | null {
       || event.data.error
       || '',
     ).trim() || undefined,
+    ...(snapshotContent !== undefined ? { content: snapshotContent } : {}),
   };
 }
 
