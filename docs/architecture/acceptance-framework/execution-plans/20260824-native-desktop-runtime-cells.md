@@ -1233,6 +1233,32 @@ and stopped only because `local-desktop-gateway` was not provisioned. NDR-W7
 remains `PARTIAL/UNPROVEN` pending a clean commit, deployment, and the full
 exact-source 18-Gate Linux aggregate.
 
+Committed candidate `b851d221d261cd121a7077675da6dd112ecaab54` was deployed
+to disposable Station `18132`. Exact-source aggregate
+`20260830T132324598993Z-79e0e453e8aef5eac9ee376f8cf2003a` passed the local
+Gates and proved that Product Closure crossed the obsolete logout boundary,
+then failed during Alice login because the active Station registry entry had no
+`peer_id`. Product Gate
+`20260830T132344829627Z-f0a80cc7b04fd137c080ac6e7541ae75` retained valid
+source, Station, runtime-cell, and binary identity and completed cleanup
+without errors; the aggregate was cancelled before repeating the shared
+failure, and the Linux cell was verified `CLEANED`. The root cause is
+`StationRegistry::add`: a fresh environment-seeded entry already owns the URL,
+so the probed metadata from `station_add` is discarded as a duplicate. The
+dependency-ready correction is to merge and persist probed metadata when
+adding an existing normalized Station URL, with registry and command-path
+regression tests. NDR-W7 remains `PARTIAL/UNPROVEN`.
+
+The Station registry correction now atomically replaces an existing normalized
+URL entry with the latest probed metadata while preserving the active URL.
+Regression coverage starts from an environment-seeded entry, refreshes its
+`peer_id`, reloads the persisted registry, and verifies that the selected
+Station retains that identity. Normal and `acceptance-webdriver` Rust test
+targets pass 6/6 in both library and application binaries; `cargo fmt --check`,
+Chat Native static, Desktop check, 365/365 executed frontend tests, and Desktop
+build pass. NDR-W7 remains `PARTIAL/UNPROVEN` pending a clean commit,
+exact-source deployment, and the full 18-Gate Linux aggregate.
+
 ## 13. Final Readiness Gate
 
 `PLAN_READY_FOR_EXECUTION` requires independent review and owner approval.
