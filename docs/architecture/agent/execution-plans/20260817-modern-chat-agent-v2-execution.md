@@ -3844,6 +3844,16 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   already-fetched pre-retry attempt state plus the typed command error so the
   owner can be distinguished between Station retry admission and Desktop
   transport mapping without adding waits or changing product behavior.
+- The first `cb35152b8` diagnostic rerun,
+  `20260830T095130447358Z-e0eb35d39eae19c3651150749c988f8b`,
+  is non-product evidence. Coordinator process inspection incorrectly treated
+  its live remote source-lease transport as an orphan and terminated it. The
+  run consequently failed before AS-F07 with an invalid Native WebDriver
+  session, and cleanup correctly reported the source lease exiting before
+  cleanup. Two overlapping launch attempts were rejected by the profile lease
+  before provisioning and did not execute product scenarios. No product
+  conclusion is drawn from these runs; the next run must hold one uninterrupted
+  profile/source lease from provisioning through cleanup.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
