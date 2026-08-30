@@ -559,6 +559,13 @@ pub struct OAuthLoopbackPollInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnsureStationSessionInput {
+    pub session_id: String,
+    pub account_id: String,
+    pub actor_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthCallbackInput {
     pub provider: String,
     pub provider_user_id: String,

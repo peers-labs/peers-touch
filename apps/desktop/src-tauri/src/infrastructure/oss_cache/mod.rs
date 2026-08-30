@@ -321,14 +321,14 @@ pub fn capabilities_invalidate(origin: &str) {
 /// callers should re-key any persistent state on `host` rather than the
 /// origin they queried.
 pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheError> {
-    if let Some(cached) = capabilities_lookup(origin) {
+    let normalized = canonical_bound_origin(origin);
+    if let Some(cached) = capabilities_lookup(&normalized) {
         return Ok(cached);
     }
-    let normalized = normalize_origin(origin);
     if normalized.is_empty() || normalized == "self" {
-        // `self` means "the station this client is bound to" — route
-        // through station_client's configured base.
-        return capabilities_ensure(&station_client::station_base_url());
+        return Err(OssCacheError::InvalidUri(
+            "bound station origin is empty".into(),
+        ));
     }
 
     let url = format!("{}/sub-oss/capabilities", normalized);
@@ -336,9 +336,10 @@ pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheErro
     if !resp.status().is_success() {
         return Err(OssCacheError::Network(format!("status {}", resp.status())));
     }
-    let caps: OssCapabilities = resp
+    let mut caps: OssCapabilities = resp
         .json()
         .map_err(|e| OssCacheError::Decode(e.to_string()))?;
+    caps.host = canonical_capability_host(&normalized, &caps.host);
 
     if let Ok(mut m) = caps_map().write() {
         m.insert(normalized.clone(), caps.clone());
@@ -350,6 +351,24 @@ pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheErro
         }
     }
     Ok(caps)
+}
+
+fn canonical_bound_origin(origin: &str) -> String {
+    let normalized = normalize_origin(origin);
+    if normalized.is_empty() || normalized == "self" {
+        normalize_origin(&station_client::station_base_url())
+    } else {
+        normalized
+    }
+}
+
+fn canonical_capability_host(request_origin: &str, advertised_host: &str) -> String {
+    let advertised = normalize_origin(advertised_host);
+    if advertised.is_empty() || advertised == "self" {
+        normalize_origin(request_origin)
+    } else {
+        advertised
+    }
 }
 
 // ── attachment file cache ───────────────────────────────────────────
@@ -422,14 +441,21 @@ pub fn attachment_invalidate(uri: &OssUri) -> Result<(), OssCacheError> {
 /// Bound-station origin only (i.e. the URI was minted by the same
 /// station this client is talking to). For the federated path
 /// (URI's origin ≠ bound station), use `attachment_ensure_federated`.
+/// `bearer` carries the current local session for private and
+/// chat-scoped objects; public objects also accept an empty token.
 pub fn attachment_ensure(
     uri: &OssUri,
     signed_query: Option<&str>,
+    bearer: Option<&str>,
 ) -> Result<PathBuf, OssCacheError> {
-    if let Some(path) = attachment_lookup(uri) {
+    let canonical_uri = OssUri {
+        origin: canonical_bound_origin(&uri.origin),
+        key: uri.key.clone(),
+    };
+    if let Some(path) = attachment_lookup(&canonical_uri) {
         return Ok(path);
     }
-    let caps = capabilities_ensure(&uri.origin)?;
+    let caps = capabilities_ensure(&canonical_uri.origin)?;
     if caps.signed_url && signed_query.is_none() {
         return Err(OssCacheError::Network(
             "endpoint requires signed url, none supplied".into(),
@@ -449,8 +475,8 @@ pub fn attachment_ensure(
         }
     }
 
-    let bytes = http_get_bytes(&url, None)?;
-    write_to_cache(uri, &bytes)
+    let bytes = http_get_bytes(&url, bearer)?;
+    write_to_cache(&canonical_uri, &bytes)
 }
 
 /// Federation-aware download. Used when the OSS URI's origin is a
@@ -1112,6 +1138,22 @@ mod tests {
         // Pick a literally-impossible origin so we never collide with
         // a misconfigured PEERS_STATION_URL.
         assert!(!is_bound_station("https://this-is-foreign.example.invalid"));
+    }
+
+    #[test]
+    fn capability_self_host_resolves_to_requested_station_origin() {
+        assert_eq!(
+            canonical_capability_host("http://station.example:18080", "self"),
+            "http://station.example:18080"
+        );
+        assert_eq!(
+            canonical_capability_host("http://station.example:18080/", ""),
+            "http://station.example:18080"
+        );
+        assert_eq!(
+            canonical_capability_host("http://station.example:18080", "https://cdn.example.test/"),
+            "https://cdn.example.test"
+        );
     }
 
     // ── error mapping ─────────────────────────────────────────────

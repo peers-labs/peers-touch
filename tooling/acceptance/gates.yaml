@@ -8,6 +8,20 @@
       "tier": "ci-structure",
       "description": "Validate that the acceptance registry can plan the current diff."
     },
+    "acceptance-infra-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --infra",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection."
+    },
+    "acceptance-runtime-provisioning-self": {
+      "command": "python3 -m unittest tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_profile_lease && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate Runtime Provisioning contracts, owners, shared profile lease contention, runner failure semantics, behavior planning, domain structural closure, Infra/business responsibility isolation, redaction, freshness, Gap Detector fail-closed behavior, and quality evidence range/readiness integrity."
+    },
     "acceptance-run-static-gate": {
       "command": "python3 tooling/scripts/acceptance-run-test.py",
       "timeout_seconds": 30,
@@ -16,58 +30,113 @@
       "description": "Validate that acceptance-run preserves source artifact diagnostics, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata in latest-run evidence."
     },
     "chat-native-visible-static": {
-      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
+      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts && python3 -m unittest tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate W8 native runner fail-closed evidence, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey."
+      "description": "Validate native runner fail-closed evidence, MP-W13 no-bypass DOM actions, bounded telemetry, composer cleanup, Make launch, and stable selector contracts without launching a live journey."
     },
     "chat-native-two-client-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_runner && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
+      "command": "python3 -m tooling.acceptance.gates.chat.native_two_client_entry && python3 -m tooling.acceptance.gates.chat.native_two_client_e2e",
       "timeout_seconds": 1800,
       "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext plus DELIVERED receipt visibility."
     },
     "chat-native-interactions-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_interactions_runner",
       "timeout_seconds": 3600,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run isolated Native Direct and Group clients and prove reply/thread, author-only edit/retract, reaction, pin, read, offline, replay and restart convergence with Station and Engine durable readback."
+    },
+    "chat-native-product-closure-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.native_product_closure_entry",
+      "timeout_seconds": 3600,
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run Alice and Bob through real Native Chat DOM actions and prove transcript, thread, reaction, toolbar geometry, identity, Station attribution, settings/background, attachment conservation, restart and cleanup."
     },
     "chat-contact-message-resilience-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.contact_message_resilience_runner",
       "timeout_seconds": 600,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Prove that clicking the contact Message button opens the chat view immediately even when createDirect fails, and the error is presented within the open view."
     },
     "chat-native-typing-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_typing_runner",
       "timeout_seconds": 1800,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run isolated Native Direct and Group clients and prove authenticated ephemeral typing start, stop, session switch, disconnect and TTL cleanup without durable lane or history writes."
     },
     "chat-native-multi-device-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_multi_device_runner",
       "timeout_seconds": 1800,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run visible native direct-message acceptance with one recipient actor on two isolated devices."
     },
     "chat-native-recovery-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_recovery_runner",
       "timeout_seconds": 2400,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run visible native reinstall and 24-word recovery history-restore acceptance."
     },
     "chat-native-group-mls-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_group_mls_runner",
       "timeout_seconds": 2400,
-      "environment": "home-station",
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
       "tier": "env-evidence",
       "description": "Run visible native three-device MLS add, send, remove, restart, and recovery acceptance."
     },
@@ -149,16 +218,18 @@
       "description": "Validate the unified messaging platform ownership, protocol, queue, and crypto contracts."
     },
     "chat-desktop-gateway-e2e": {
-      "command": "python3 tooling/acceptance/gates/chat/desktop_gateway_e2e.py",
+      "command": "python3 -m tooling.acceptance.gates.chat.desktop_gateway_e2e",
       "timeout_seconds": 600,
       "environment": "local-desktop-gateway",
+      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
-      "description": "Run a real Desktop HTTP gateway flow proving MLS/E2EE direct conversation creation, message delivery, hydration, and decryption."
+      "description": "Run a real Desktop HTTP gateway flow proving atomic multi-account identity transitions, JWT-bound PIN unlock, legacy PIN fail-closed behavior, and MLS/E2EE direct conversation delivery."
     },
     "chat-federated-browser-prereq": {
       "command": "python3 tooling/acceptance/gates/chat/federated_browser_prereq.py",
       "timeout_seconds": 120,
       "environment": "home-station",
+      "provisioner": "home-station",
       "tier": "env-evidence",
       "description": "Validate live deployed federated browser prerequisites: distinct authority/follower Stations, healthy Relay, discoverable Station peer IDs, and optional Desktop gateway Station binding."
     },
@@ -222,6 +293,7 @@
       "command": "python3 tooling/acceptance/gates/desktop/gateway_smoke.py",
       "timeout_seconds": 600,
       "environment": "local-desktop-gateway",
+      "provisioner": "local-desktop-gateway",
       "tier": "env-evidence",
       "description": "Validate Desktop gateway active Station and collect render diagnostics."
     },

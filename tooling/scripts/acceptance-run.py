@@ -19,7 +19,14 @@ sys.path.insert(0, str(REPO_ROOT))
 
 RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
-RESULT_TRACEABILITY_FIELDS = ("sourceArtifact", "sourceArtifactKind", "sourcePhase", "sourceBom", "sourceSpec", "sourceGate")
+RESULT_TRACEABILITY_FIELDS = (
+    "sourceArtifact",
+    "sourceArtifactKind",
+    "sourcePhase",
+    "sourceBom",
+    "sourceSpec",
+    "sourceGate",
+)
 
 
 @contextlib.contextmanager
@@ -29,9 +36,15 @@ def run_environment(environment: dict[str, str]):
         "PT_ACCEPTANCE_WORKSPACE_ID",
         "PT_ACCEPTANCE_GATE_ID",
         "PT_ACCEPTANCE_RUN_ID",
+        "PT_ACCEPTANCE_REDACTION_VALUES",
+        "PT_ACCEPTANCE_RUNTIME_CELL",
     )
     previous = {key: os.environ.get(key) for key in keys}
-    os.environ.update({key: environment[key] for key in keys})
+    for key in keys:
+        if key in environment:
+            os.environ[key] = environment[key]
+        else:
+            os.environ.pop(key, None)
     try:
         yield
     finally:
@@ -42,22 +55,31 @@ def run_environment(environment: dict[str, str]):
                 os.environ[key] = value
 
 
+def environment_provisioner(environment_id: str) -> Any | None:
+    from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
+    from tooling.acceptance.provisioners import get_provisioner
+
+    contract_path = ENVIRONMENTS_DIR / f"{environment_id}.yaml"
+    if not contract_path.exists():
+        return None
+    return get_provisioner(EnvironmentContract.from_yaml(contract_path))
+
+
 def provision_environment(
     environment_id: str,
     gate_id: str,
+    provisioner: Any | None = None,
 ) -> tuple[Any | None, dict[str, Any] | None, Path | None]:
     if environment_id == "local":
         return None, None, None
 
     from tooling.acceptance.core import (
         ENVIRONMENTS_DIR,
-        EnvironmentContract,
         blocked_manifest,
         current_artifact_ref,
         write_current_artifact,
         new_manifest,
     )
-    from tooling.acceptance.provisioners import get_provisioner
 
     contract_path = ENVIRONMENTS_DIR / f"{environment_id}.yaml"
     if not contract_path.exists():
@@ -99,8 +121,11 @@ def provision_environment(
         ).to_dict()
         return None, manifest_dict, manifest_path
 
-    contract = EnvironmentContract.from_yaml(contract_path)
-    provisioner = get_provisioner(contract)
+    provisioner = provisioner or environment_provisioner(environment_id)
+    if provisioner is None:
+        raise RuntimeError(
+            f"environment provisioner is unavailable: {environment_id}"
+        )
     manifest = provisioner.provision(gate_id)
     manifest_dict = manifest.to_dict()
     manifest_path = provisioner.write_manifest()
@@ -111,82 +136,174 @@ def provision_environment(
     return provisioner, manifest_dict, manifest_path
 
 
-def credential_values(manifest: dict[str, Any] | None) -> tuple[str, ...]:
-    if not manifest:
+def credential_values(provisioner: Any | None) -> tuple[str, ...]:
+    """Use the values resolved by the active provisioner instance."""
+    if provisioner is None:
         return ()
-    from tooling.acceptance.core import CredentialRef
-
-    values: list[str] = []
-    refs = manifest.get("credentialRefs")
-    if not isinstance(refs, list):
-        return ()
-    for index, source_ref in enumerate(refs):
-        if not isinstance(source_ref, str):
-            continue
-        try:
-            value = CredentialRef(
-                id=f"runtime-{index}",
-                source_ref=source_ref,
-            ).resolve()
-        except Exception:
-            continue
-        if value:
-            values.append(value)
-    return tuple(values)
+    values = provisioner.resolved_credential_values
+    if not isinstance(values, tuple) or any(
+        not isinstance(value, str) for value in values
+    ):
+        raise TypeError(
+            "provisioner resolved_credential_values must be tuple[str, ...]"
+        )
+    return values
 
 
 def redact_runtime_text(
     text: str,
     secret_values: tuple[str, ...],
 ) -> str:
-    from tooling.acceptance.core.redaction import REDACTED, redact_text
+    from tooling.acceptance.core.redaction import redact_text_with_values
 
-    redacted = redact_text(text)
-    for value in secret_values:
-        if len(value) >= 4:
-            redacted = redacted.replace(value, REDACTED)
-    return redacted
+    return redact_text_with_values(text, secret_values)
 
 
-def redact_runtime_artifacts(
+def redact_runtime_value(
+    value: Any,
+    secret_values: tuple[str, ...],
+) -> tuple[Any, bool]:
+    from tooling.acceptance.core.redaction import redact_value
+
+    leaked = False
+    credential_values = tuple(
+        secret for secret in secret_values if len(secret) >= 4
+    )
+
+    def visit(item: Any) -> Any:
+        nonlocal leaked
+        if isinstance(item, str):
+            if any(secret in item for secret in credential_values):
+                leaked = True
+            return redact_runtime_text(item, secret_values)
+        if isinstance(item, dict):
+            return {key: visit(nested) for key, nested in item.items()}
+        if isinstance(item, list):
+            return [visit(nested) for nested in item]
+        if isinstance(item, tuple):
+            return tuple(visit(nested) for nested in item)
+        return item
+
+    return redact_value(visit(value)), leaked
+
+
+def audit_runtime_artifacts(
     run_dir: Path,
     secret_values: tuple[str, ...],
-) -> tuple[list[str], list[str]]:
-    redacted_paths: list[str] = []
-    leaked_paths: list[str] = []
-    high_entropy_values = tuple(
-        value for value in secret_values if len(value) >= 16
-    )
-    for path in run_dir.rglob("*"):
-        if not path.is_file() or path.name.startswith("."):
-            continue
-        try:
-            original = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        relative_path = path.relative_to(run_dir).as_posix()
-        if any(value in original for value in high_entropy_values):
-            leaked_paths.append(relative_path)
-        try:
-            payload = json.loads(original)
-        except json.JSONDecodeError:
-            redacted = redact_runtime_text(original, secret_values)
-        else:
-            from tooling.acceptance.core.redaction import redact_value
+) -> list[str]:
+    from tooling.acceptance.core.redaction import redact_artifact_bytes
 
-            redacted = (
-                json.dumps(
-                    redact_value(payload),
-                    indent=2,
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-            redacted = redact_runtime_text(redacted, secret_values)
-        if redacted != original:
-            path.write_text(redacted, encoding="utf-8")
-            redacted_paths.append(relative_path)
-    return sorted(redacted_paths), sorted(leaked_paths)
+    leaked_paths: list[str] = []
+    credential_values = tuple(
+        value for value in secret_values if len(value) >= 4
+    )
+    for path in list(run_dir.rglob("*")):
+        relative = path.relative_to(run_dir)
+        if (
+            not path.is_file()
+            or relative == Path(".active.lock")
+        ):
+            continue
+        relative_path = relative.as_posix()
+        current = run_dir
+        has_symlink = False
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                has_symlink = True
+                break
+        if has_symlink:
+            leaked_paths.append(relative_path)
+            continue
+        if any(value in relative_path for value in credential_values):
+            leaked_paths.append(relative_path)
+            continue
+        try:
+            raw_bytes = path.read_bytes()
+        except OSError:
+            leaked_paths.append(relative_path)
+            continue
+        _, redacted = redact_artifact_bytes(raw_bytes, secret_values)
+        if redacted:
+            leaked_paths.append(relative_path)
+    return sorted(set(leaked_paths))
+
+
+def persist_provisioner_cleanup_result(
+    *,
+    gate_run: Any,
+    gate_id: str,
+    environment: str,
+    provisioner_id: str,
+    cleanup_status: str,
+    completed_resources: tuple[str, ...],
+    cleanup_error: str,
+    secret_values: tuple[str, ...],
+    runtime_cell: str = "",
+    runtime_cell_cleanup_status: str = "not-required",
+    runtime_cell_cleanup: dict[str, Any] | None = None,
+    runtime_cell_cleanup_error: str = "",
+) -> dict[str, Any]:
+    payload = {
+        "artifactKind": "acceptance-provisioner-cleanup-result",
+        "gateId": gate_id,
+        "environment": environment,
+        "provisioner": provisioner_id,
+        "status": cleanup_status,
+        "completionStatus": (
+            "DONE" if cleanup_status == "passed" else "PARTIAL"
+        ),
+        "proofStatus": (
+            "PROVEN" if cleanup_status == "passed" else "UNPROVEN"
+        ),
+        "completedResources": list(completed_resources),
+        "error": cleanup_error,
+        "runtimeCell": runtime_cell or None,
+        "runtimeCellCleanupStatus": runtime_cell_cleanup_status,
+        "runtimeCellCleanup": runtime_cell_cleanup,
+        "runtimeCellCleanupError": runtime_cell_cleanup_error,
+    }
+    redacted_payload, _ = redact_runtime_value(payload, secret_values)
+    return gate_run.write_json(
+        "reports/provisioner-cleanup.json",
+        redacted_payload,
+        role="provisioner-cleanup",
+    ).to_dict()
+
+
+def provision_runtime_cell(
+    *,
+    cell_id: str,
+    gate_id: str,
+    gate_run: Any,
+) -> tuple[Any, dict[str, Any], Path]:
+    from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
+
+    lifecycle = get_runtime_cell_lifecycle(cell_id)
+    acquired = False
+    try:
+        manifest = lifecycle.ready(gate_id)
+        acquired = True
+        payload = manifest.to_dict()
+        manifest_ref = gate_run.write_json(
+            "runtime/runtime-cell-manifest.json",
+            payload,
+            role="runtime-cell-manifest",
+        )
+        payload["_manifest_ref"] = manifest_ref.to_dict()
+        return lifecycle, payload, gate_run.store.resolve(manifest_ref)
+    except BaseException as error:
+        if acquired:
+            try:
+                lifecycle.stop()
+            except Exception as cleanup_error:
+                from tooling.acceptance.core import ProvisioningError
+
+                raise ProvisioningError(
+                    f"runtime-cell provisioning failed ({error}); "
+                    f"cleanup also failed: {cleanup_error}"
+                ) from error
+        raise
 
 
 def provisioning_failure_result(
@@ -198,17 +315,19 @@ def provisioning_failure_result(
     error: Exception,
     duration_seconds: float,
 ) -> dict[str, Any]:
+    from tooling.acceptance.core import BlockedError
     from tooling.acceptance.core.redaction import redact_text
 
-    return {
+    blocked = isinstance(error, BlockedError)
+    result = {
         "id": gate_id,
         "command": command,
         "environment": environment,
         "tier": tier,
-        "status": "failed",
+        "status": "blocked" if blocked else "failed",
         "exit_code": None,
         "duration_seconds": duration_seconds,
-        "completionStatus": "PARTIAL",
+        "completionStatus": "BLOCKED" if blocked else "PARTIAL",
         "proofStatus": "UNPROVEN",
         "reason": redact_text(str(error)),
         "errorType": type(error).__name__,
@@ -222,6 +341,53 @@ def provisioning_failure_result(
             "execution"
         ),
     }
+    if blocked:
+        result["blockedReason"] = error.reason
+        result["blockedResource"] = error.resource
+    return result
+
+
+def runtime_cell_failure_result(
+    *,
+    gate_id: str,
+    command: str,
+    environment: str,
+    tier: str,
+    runtime_cell: str,
+    error: Exception,
+    duration_seconds: float,
+) -> dict[str, Any]:
+    from tooling.acceptance.core import BlockedError
+    from tooling.acceptance.core.redaction import redact_text
+
+    blocked = isinstance(error, BlockedError)
+    result = {
+        "id": gate_id,
+        "command": command,
+        "environment": environment,
+        "runtimeCell": runtime_cell,
+        "tier": tier,
+        "status": "blocked" if blocked else "failed",
+        "exit_code": None,
+        "duration_seconds": duration_seconds,
+        "completionStatus": "BLOCKED" if blocked else "PARTIAL",
+        "proofStatus": "UNPROVEN",
+        "reason": redact_text(str(error)),
+        "errorType": type(error).__name__,
+        "sourceArtifact": "tooling/acceptance/runtime-cells",
+        "sourceArtifactKind": "acceptance-runtime-cell-contract",
+        "sourcePhase": "Runtime Cell Provisioning",
+        "sourceBom": ["NDR-W1"],
+        "sourceSpec": ["D-13", "D-14"],
+        "sourceGate": (
+            "selected runtime cell must reach LEASED before product Gate "
+            "execution"
+        ),
+    }
+    if blocked:
+        result["blockedReason"] = redact_text(str(error))
+        result["blockedResource"] = f"runtime-cell:{runtime_cell}"
+    return result
 
 
 def load_plan(
@@ -259,6 +425,7 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
         "timeout_seconds": definition.get("timeout_seconds", 600),
         "environment": definition.get("environment", "local"),
         "provisioner": definition.get("provisioner", ""),
+        "requiredRuntimeCells": definition.get("requiredRuntimeCells", []),
         "tier": definition.get("tier", "local-evidence"),
         "description": definition.get("description", ""),
         "required_by": ["manual"],
@@ -275,8 +442,6 @@ def plan_gate_from_entry(entry: Any, definitions: dict[str, Any]) -> dict[str, A
     gate_id = entry.get("id")
     if not isinstance(gate_id, str) or not gate_id:
         raise SystemExit(f"plan selected_gates object is missing id: {entry!r}")
-    if "command" in entry:
-        return dict(entry)
     if gate_id not in definitions:
         raise SystemExit(f"gate {gate_id!r} is missing from gate definitions")
     gate = gate_from_definition(gate_id, definitions[gate_id])
@@ -288,6 +453,21 @@ def selected_gates_from_plan(plan: dict[str, Any], definitions: dict[str, Any]) 
     return [plan_gate_from_entry(entry, definitions) for entry in plan.get("selected_gates", [])]
 
 
+def resolve_requested_gates(
+    plan: dict[str, Any],
+    definitions: dict[str, Any],
+    requested_gate_ids: list[str],
+) -> list[dict[str, Any]]:
+    if not requested_gate_ids:
+        return selected_gates_from_plan(plan, definitions)
+    resolved: list[dict[str, Any]] = []
+    for gate_id in requested_gate_ids:
+        if gate_id not in definitions:
+            raise SystemExit(f"gate {gate_id!r} is missing from gate definitions")
+        resolved.append(gate_from_definition(gate_id, definitions[gate_id]))
+    return resolved
+
+
 def filter_gates_by_tier(gates: list[dict[str, Any]], tiers: list[str]) -> list[dict[str, Any]]:
     if not tiers:
         return gates
@@ -295,7 +475,37 @@ def filter_gates_by_tier(gates: list[dict[str, Any]], tiers: list[str]) -> list[
     return [gate for gate in gates if gate.get("tier", "local-evidence") in selected]
 
 
-def load_json_artifact(path: Path) -> dict[str, Any] | None:
+def select_runtime_cell(
+    gate: dict[str, Any],
+    requested_cell: str,
+) -> str:
+    from tooling.acceptance.core import parse_required_runtime_cells
+
+    gate_id = str(gate.get("id") or "")
+    try:
+        required_cells = parse_required_runtime_cells(
+            gate_id,
+            gate.get("requiredRuntimeCells"),
+        )
+    except Exception as error:
+        raise SystemExit(str(error)) from error
+    selected = requested_cell.strip()
+    if required_cells:
+        if not selected:
+            raise SystemExit(
+                f"gate {gate_id!r} requires explicit --runtime-cell; "
+                f"choose one of {required_cells}"
+            )
+        if selected not in required_cells:
+            raise SystemExit(
+                f"gate {gate_id!r} does not declare runtime cell "
+                f"{selected!r}; expected one of {required_cells}"
+            )
+        return selected
+    return ""
+
+
+def load_json_artifact(path: Path) -> Any | None:
     if not path.exists():
         return None
     try:
@@ -304,13 +514,19 @@ def load_json_artifact(path: Path) -> dict[str, Any] | None:
         return None
 
 
-def evidence_summary_from_artifact(path: Any, artifact: dict[str, Any]) -> dict[str, Any]:
+def evidence_summary_from_artifact(path: Any, artifact: Any) -> dict[str, Any]:
     summary: dict[str, Any] = {"path": path}
+    if not isinstance(artifact, dict):
+        summary["jsonValueType"] = "array" if isinstance(artifact, list) else type(artifact).__name__
+        if isinstance(artifact, list):
+            summary["itemCount"] = len(artifact)
+        return summary
     for key in (
         "artifactKind",
         "status",
         "completionStatus",
         "proofStatus",
+        "gateId",
         "phase",
         "bom",
         "spec",
@@ -368,13 +584,57 @@ def enrich_result_with_run_artifacts(
         return result
     enriched = dict(result)
     enriched["evidenceArtifacts"] = artifacts
-    primary = artifacts[0]
+    primary = next(
+        (
+            artifact
+            for artifact in artifacts
+            if artifact.get("artifactKind")
+            == "acceptance-gate-evidence-report"
+            and artifact.get("gateId") == result.get("id")
+        ),
+        None,
+    )
+    if primary is None and result.get("tier") == "env-evidence":
+        enriched.setdefault(
+            "reason",
+            str(
+                result.get("blockedReason")
+                or "Gate exited without a canonical acceptance evidence report"
+            ),
+        )
+        return enriched
+    if primary is None:
+        primary = next(
+            (
+                artifact
+                for artifact in artifacts
+                if any(
+                    key in artifact
+                    for key in (
+                        "artifactKind",
+                        "status",
+                        "completionStatus",
+                        "proofStatus",
+                    )
+                )
+            ),
+            artifacts[0],
+        )
+    traceability_artifact = next(
+        (
+            artifact
+            for artifact in artifacts
+            if all(key in artifact for key in ("phase", "bom", "spec", "gate"))
+        ),
+        primary,
+    )
     enriched["sourceArtifact"] = primary.get("path")
     for source_key, target_key in (
         ("artifactKind", "sourceArtifactKind"),
         ("status", "evidenceStatus"),
         ("completionStatus", "completionStatus"),
         ("proofStatus", "proofStatus"),
+        ("gateId", "evidenceGateId"),
         ("phase", "phase"),
         ("bom", "bom"),
         ("spec", "spec"),
@@ -391,8 +651,8 @@ def enrich_result_with_run_artifacts(
         ("spec", "sourceSpec"),
         ("gate", "sourceGate"),
     ):
-        if source_key in primary:
-            enriched[target_key] = primary[source_key]
+        if source_key in traceability_artifact:
+            enriched[target_key] = traceability_artifact[source_key]
     for key in (
         "details",
         "evidenceDetails",
@@ -441,14 +701,28 @@ def result_is_incomplete(result: dict[str, Any]) -> bool:
 
 
 def result_traceability(result: dict[str, Any]) -> dict[str, Any]:
-    missing = [key for key in RESULT_TRACEABILITY_FIELDS if key not in result]
-    incomplete = result_is_incomplete(result)
+    required_fields = list(RESULT_TRACEABILITY_FIELDS)
+    if result.get("cleanupStatus") in {"passed", "failed"}:
+        required_fields.append("cleanupArtifact")
+    missing = [key for key in required_fields if key not in result]
+    requires_traceability = (
+        result_is_incomplete(result)
+        or result.get("tier") == "env-evidence"
+    )
     if not missing:
         status = "complete"
-        reason = "result preserves source artifact Phase/BOM/Spec/Gate traceability"
-    elif incomplete:
+        reason = (
+            "result preserves source artifact Phase/BOM/Spec/Gate "
+            "traceability"
+        )
+        if "cleanupArtifact" in required_fields:
+            reason += " and immutable provisioner cleanup evidence"
+    elif requires_traceability:
         status = "missing"
-        reason = "incomplete acceptance result is missing source artifact Phase/BOM/Spec/Gate traceability"
+        reason = (
+            "environment or incomplete acceptance result is missing source "
+            "artifact Phase/BOM/Spec/Gate traceability"
+        )
     else:
         status = "not-required"
         reason = "passed static/local gate does not emit a source evidence artifact"
@@ -457,7 +731,7 @@ def result_traceability(result: dict[str, Any]) -> dict[str, Any]:
         "missingFields": missing,
         "reason": reason,
     }
-    for key in RESULT_TRACEABILITY_FIELDS:
+    for key in required_fields:
         if key in result:
             trace[key] = result[key]
     return trace
@@ -475,13 +749,136 @@ def standardize_result(result: dict[str, Any], plan_path: Any) -> dict[str, Any]
         or {"plan": plan_path, "resultGateId": gate_id},
     )
     standardized.setdefault("sampleEmissionAllowed", False)
-    if status == "passed":
+    environment_proof = standardized.get("tier") == "env-evidence"
+    evidence_status = str(standardized.get("evidenceStatus") or "").lower()
+    runtime_manifest = standardized.get("manifest")
+    traceability = result_traceability(standardized)
+    environment_evidence_valid = (
+        not environment_proof
+        or (
+            bool(standardized.get("sourceArtifact"))
+            and standardized.get("sourceArtifactKind")
+            == "acceptance-gate-evidence-report"
+            and standardized.get("evidenceGateId") == gate_id
+            and evidence_status in {"pass", "passed"}
+            and isinstance(runtime_manifest, dict)
+            and runtime_manifest.get("state") == "FIXTURE_READY"
+            and bool(runtime_manifest.get("runId"))
+            and traceability.get("status") == "complete"
+        )
+    )
+    if status == "passed" and environment_evidence_valid:
         standardized.setdefault("completionStatus", "DONE")
         standardized.setdefault("proofStatus", "PROVEN")
     elif status not in {"dry-run", "blocked"}:
-        standardized.setdefault("completionStatus", "PARTIAL")
-        standardized.setdefault("proofStatus", "UNPROVEN")
-    standardized["traceability"] = result_traceability(standardized)
+        if status == "passed" and environment_proof:
+            standardized["completionStatus"] = "PARTIAL"
+            standardized["proofStatus"] = "UNPROVEN"
+            standardized.setdefault(
+                "reason",
+                "environment Gate passed without complete typed runtime evidence",
+            )
+        else:
+            standardized["completionStatus"] = "PARTIAL"
+            standardized["proofStatus"] = "UNPROVEN"
+    standardized["traceability"] = traceability
+    return standardized
+
+
+def finalize_gate_result(
+    result: dict[str, Any],
+    gate_run: Any,
+    plan_path: Any,
+    runtime: dict[str, Any] | None = None,
+    runtime_cell: str | None = None,
+    secret_values: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    redacted_result, result_leaked = redact_runtime_value(
+        result,
+        secret_values,
+    )
+    redacted_runtime, runtime_leaked = redact_runtime_value(
+        runtime or {},
+        secret_values,
+    )
+    if runtime_cell:
+        redacted_result["runtimeCell"] = runtime_cell
+    leaked_fields = [
+        field
+        for field, leaked in (
+            ("run-result", result_leaked),
+            ("runtime-manifest", runtime_leaked),
+        )
+        if leaked
+    ]
+    secret_scan = result.get("secretScan")
+    existing_scan_failed = (
+        isinstance(secret_scan, dict)
+        and secret_scan.get("status") != "passed"
+    )
+    existing_scanned_high_entropy = (
+        secret_scan.get("scannedHighEntropyValues")
+        if isinstance(secret_scan, dict)
+        else 0
+    )
+    if (
+        isinstance(existing_scanned_high_entropy, bool)
+        or not isinstance(existing_scanned_high_entropy, int)
+        or existing_scanned_high_entropy < 0
+    ):
+        existing_scan_failed = True
+        existing_scanned_high_entropy = 0
+    existing_scanned_credentials = (
+        secret_scan.get("scannedCredentialValues")
+        if isinstance(secret_scan, dict)
+        else 0
+    )
+    if (
+        isinstance(existing_scanned_credentials, bool)
+        or not isinstance(existing_scanned_credentials, int)
+        or existing_scanned_credentials < 0
+    ):
+        existing_scan_failed = True
+        existing_scanned_credentials = 0
+    redacted_artifacts = (
+        list(secret_scan.get("redactedArtifacts") or ())
+        if isinstance(secret_scan, dict)
+        else []
+    )
+    redacted_result["secretScan"] = {
+        "status": (
+            "failed"
+            if existing_scan_failed or leaked_fields
+            else "passed"
+        ),
+        "scannedHighEntropyValues": max(
+            existing_scanned_high_entropy,
+            len(tuple(value for value in secret_values if len(value) >= 16)),
+        ),
+        "scannedCredentialValues": max(
+            existing_scanned_credentials,
+            len(tuple(value for value in secret_values if value)),
+        ),
+        "redactedArtifacts": sorted(
+            set(redacted_artifacts + leaked_fields)
+        ),
+    }
+    if existing_scan_failed or leaked_fields:
+        redacted_result["status"] = "failed"
+        redacted_result["completionStatus"] = "PARTIAL"
+        redacted_result["proofStatus"] = "UNPROVEN"
+        redacted_result.setdefault(
+            "reason",
+            (
+                "resolved credentials reached final Gate metadata"
+                if leaked_fields
+                else "resolved credentials reached a Gate artifact"
+            ),
+        )
+
+    standardized = standardize_result(redacted_result, plan_path)
+    gate_run.finalize(result=standardized, runtime=redacted_runtime)
+    gate_run.publish_latest(runtime_cell=runtime_cell)
     return standardized
 
 
@@ -631,6 +1028,13 @@ def build_run_report(plan_path: Any, results: list[dict[str, Any]]) -> dict[str,
         and not incomplete
         and missing_traceability == 0
     )
+    report_complete = bool(results) and not incomplete and not dry_run
+    report_proven = (
+        report_complete
+        and not failed
+        and not blocked
+        and not unproven
+    )
     report: dict[str, Any] = {
         "artifactKind": RUN_ARTIFACT_KIND,
         "plan": plan_path,
@@ -648,8 +1052,12 @@ def build_run_report(plan_path: Any, results: list[dict[str, Any]]) -> dict[str,
             "missingResultTraceability": missing_traceability,
             "sampleEmissionAllowed": sample_emission_allowed,
         },
-        "completionStatus": "BLOCKED" if blocked else ("DONE" if not incomplete else "PARTIAL"),
-        "proofStatus": "PROVEN" if not failed and not blocked and not unproven else "UNPROVEN",
+        "completionStatus": (
+            "BLOCKED"
+            if blocked
+            else ("DONE" if report_complete else "PARTIAL")
+        ),
+        "proofStatus": "PROVEN" if report_proven else "UNPROVEN",
         "sampleEmissionAllowed": sample_emission_allowed,
         "resultTraceabilityState": result_traceability_state(results),
         "results": results,
@@ -728,6 +1136,7 @@ def acceptance_exit_code(report: dict[str, Any]) -> int:
 
 def main() -> int:
     from tooling.acceptance.core import (
+        EvidenceConflict,
         EvidenceError,
         EvidenceStore,
         source_identity,
@@ -738,6 +1147,7 @@ def main() -> int:
     parser.add_argument("--gates", default="tooling/acceptance/gates.yaml")
     parser.add_argument("--gate", action="append", default=[])
     parser.add_argument("--tier", action="append", default=[])
+    parser.add_argument("--runtime-cell")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -762,17 +1172,7 @@ def main() -> int:
         return 1
 
     definitions = load_gate_definitions(Path(args.gates))
-    gates = selected_gates_from_plan(plan, definitions)
-    if args.gate:
-        selected_by_id = {gate["id"]: gate for gate in gates}
-        gates = []
-        for gate_id in args.gate:
-            if gate_id in selected_by_id:
-                gates.append(selected_by_id[gate_id])
-                continue
-            if gate_id not in definitions:
-                raise SystemExit(f"gate {gate_id!r} is missing from {args.gates}")
-            gates.append(gate_from_definition(gate_id, definitions[gate_id]))
+    gates = resolve_requested_gates(plan, definitions, args.gate)
     gates = filter_gates_by_tier(gates, args.tier)
 
     results: list[dict[str, Any]] = []
@@ -791,6 +1191,10 @@ def main() -> int:
             timeout = int(gate.get("timeout_seconds") or 600)
             environment = gate.get("environment", "local")
             tier = gate.get("tier", "local-evidence")
+            runtime_cell = select_runtime_cell(
+                gate,
+                str(args.runtime_cell or ""),
+            )
             print(f"[RUN] {gate_id} [{tier}/{environment}]: {command}")
             started = time.time()
 
@@ -800,6 +1204,7 @@ def main() -> int:
                         "id": gate_id,
                         "command": command,
                         "environment": environment,
+                        "runtimeCell": runtime_cell or None,
                         "tier": tier,
                         "status": "dry-run",
                         "duration_seconds": 0,
@@ -813,18 +1218,30 @@ def main() -> int:
             )
             active_gate_run = gate_run
             gate_env = gate_run.subprocess_environment(os.environ.copy())
+            if runtime_cell:
+                gate_env["PT_ACCEPTANCE_RUNTIME_CELL"] = runtime_cell
             provisioner = None
             manifest = None
             manifest_path = None
+            runtime_cell_lifecycle = None
+            runtime_cell_manifest = None
+            runtime_cell_manifest_path = None
             runtime_secrets: tuple[str, ...] = ()
             output_text = ""
             exit_code: int | None = None
             timed_out = False
             cleanup_status = "not-required"
+            cleanup_completed_resources: tuple[str, ...] = ()
             cleanup_error = ""
+            environment_cleanup_status = "not-required"
+            environment_cleanup_error = ""
+            runtime_cell_cleanup_status = "not-required"
+            runtime_cell_cleanup: dict[str, Any] | None = None
+            runtime_cell_cleanup_error = ""
+            cleanup_artifact: dict[str, Any] | None = None
             result: dict[str, Any] | None = None
+            provisioner_id = str(gate.get("provisioner") or "")
             try:
-                provisioner_id = str(gate.get("provisioner") or "")
                 if provisioner_id:
                     if provisioner_id != environment:
                         raise SystemExit(
@@ -833,10 +1250,23 @@ def main() -> int:
                         )
                     print(f"[PROVISION] {provisioner_id}")
                     try:
+                        preparation_error: Exception | None = None
+                        with run_environment(gate_env):
+                            provisioner = environment_provisioner(provisioner_id)
+                            try:
+                                provisioner.prepare_credentials()
+                            except Exception as error:
+                                preparation_error = error
+                        runtime_secrets = credential_values(provisioner)
+                        gate_run.configure_redaction(runtime_secrets)
+                        gate_env = gate_run.subprocess_environment(gate_env)
+                        if preparation_error is not None:
+                            raise preparation_error
                         with run_environment(gate_env):
                             provisioner, manifest, manifest_path = provision_environment(
                                 provisioner_id,
                                 gate_id,
+                                provisioner,
                             )
                     except EvidenceError:
                         raise
@@ -883,6 +1313,41 @@ def main() -> int:
                             f"state={manifest.get('state')}"
                         )
 
+                if result is None and runtime_cell:
+                    print(f"[CELL PROVISION] {runtime_cell}")
+                    try:
+                        with run_environment(gate_env):
+                            (
+                                runtime_cell_lifecycle,
+                                runtime_cell_manifest,
+                                runtime_cell_manifest_path,
+                            ) = provision_runtime_cell(
+                                cell_id=runtime_cell,
+                                gate_id=gate_id,
+                                gate_run=gate_run,
+                            )
+                    except EvidenceError:
+                        raise
+                    except Exception as error:
+                        output_text = (
+                            "Runtime-cell provisioning failed: "
+                            f"{type(error).__name__}: {error}\n"
+                        )
+                        result = runtime_cell_failure_result(
+                            gate_id=gate_id,
+                            command=command,
+                            environment=environment,
+                            tier=tier,
+                            runtime_cell=runtime_cell,
+                            error=error,
+                            duration_seconds=round(time.time() - started, 3),
+                        )
+                    if result is None and runtime_cell_manifest:
+                        print(
+                            f"[CELL PROVISIONED] {runtime_cell} "
+                            f"state={runtime_cell_manifest.get('state')}"
+                        )
+
                 if result is None:
                     gate_env = gate_run.subprocess_environment(os.environ.copy())
                     gate_env["PT_ACCEPTANCE_CURRENT_RESULTS"] = json.dumps(
@@ -893,7 +1358,12 @@ def main() -> int:
                         gate_env["PT_ACCEPTANCE_RUNTIME_MANIFEST"] = str(
                             manifest_path
                         )
-                    runtime_secrets = credential_values(manifest)
+                    if runtime_cell:
+                        gate_env["PT_ACCEPTANCE_RUNTIME_CELL"] = runtime_cell
+                    if runtime_cell_manifest_path is not None:
+                        gate_env["PT_ACCEPTANCE_RUNTIME_CELL_MANIFEST"] = str(
+                            runtime_cell_manifest_path
+                        )
                     try:
                         completed = subprocess.run(
                             command,
@@ -917,15 +1387,61 @@ def main() -> int:
                         )
                         output_text += f"\nGate timed out after {timeout} seconds\n"
             finally:
+                if runtime_cell_lifecycle is not None:
+                    try:
+                        with run_environment(gate_env):
+                            runtime_cell_cleanup = (
+                                runtime_cell_lifecycle.stop()
+                            )
+                        runtime_cell_cleanup_status = "passed"
+                    except Exception as error:
+                        runtime_cell_cleanup_status = "failed"
+                        runtime_cell_cleanup_error = str(error)
+                        output_text += (
+                            "\nRuntime-cell cleanup failed: "
+                            f"{error}\n"
+                        )
                 if provisioner is not None:
                     try:
                         with run_environment(gate_run.subprocess_environment(os.environ.copy())):
-                            provisioner.cleanup()
-                        cleanup_status = "passed"
+                            cleanup_completed_resources = provisioner.cleanup()
+                        environment_cleanup_status = "passed"
                     except Exception as error:
-                        cleanup_status = "failed"
-                        cleanup_error = str(error)
+                        environment_cleanup_status = "failed"
+                        environment_cleanup_error = str(error)
                         output_text += f"\nProvisioning cleanup failed: {error}\n"
+                cleanup_failures = tuple(
+                    error
+                    for error in (
+                        runtime_cell_cleanup_error,
+                        environment_cleanup_error,
+                    )
+                    if error
+                )
+                if cleanup_failures:
+                    cleanup_status = "failed"
+                    cleanup_error = "; ".join(cleanup_failures)
+                elif (
+                    runtime_cell_cleanup_status == "passed"
+                    or environment_cleanup_status == "passed"
+                ):
+                    cleanup_status = "passed"
+
+            if provisioner is not None or runtime_cell_lifecycle is not None:
+                cleanup_artifact = persist_provisioner_cleanup_result(
+                    gate_run=gate_run,
+                    gate_id=gate_id,
+                    environment=environment,
+                    provisioner_id=provisioner_id,
+                    cleanup_status=cleanup_status,
+                    completed_resources=cleanup_completed_resources,
+                    cleanup_error=cleanup_error,
+                    secret_values=runtime_secrets,
+                    runtime_cell=runtime_cell,
+                    runtime_cell_cleanup_status=runtime_cell_cleanup_status,
+                    runtime_cell_cleanup=runtime_cell_cleanup,
+                    runtime_cell_cleanup_error=runtime_cell_cleanup_error,
+                )
 
             output_text = redact_runtime_text(output_text, runtime_secrets)
             log_ref = gate_run.write_bytes(
@@ -934,10 +1450,18 @@ def main() -> int:
                 media_type="text/plain",
                 role="log",
             )
-            redacted_artifacts, leaked_artifacts = redact_runtime_artifacts(
+            leaked_artifacts = audit_runtime_artifacts(
                 gate_run.run_dir,
                 runtime_secrets,
             )
+            redacted_artifacts = list(gate_run.redacted_artifacts)
+            if leaked_artifacts:
+                gate_run.discard()
+                active_gate_run = None
+                raise EvidenceConflict(
+                    "resolved credentials bypassed the immutable artifact writer: "
+                    + ", ".join(leaked_artifacts)
+                )
             duration = round(time.time() - started, 3)
             if result is None:
                 status = (
@@ -951,6 +1475,7 @@ def main() -> int:
                     "id": gate_id,
                     "command": command,
                     "environment": environment,
+                    "runtimeCell": runtime_cell or None,
                     "tier": tier,
                     "status": status,
                     "exit_code": exit_code,
@@ -967,23 +1492,47 @@ def main() -> int:
                                 if len(value) >= 16
                             )
                         ),
+                        "scannedCredentialValues": len(
+                            tuple(
+                                value
+                                for value in runtime_secrets
+                                if value
+                            )
+                        ),
                         "redactedArtifacts": leaked_artifacts,
                     },
                 }
                 if manifest:
                     result["manifest"] = manifest
+                if runtime_cell_manifest:
+                    result["runtimeCellManifest"] = runtime_cell_manifest
                 if redacted_artifacts:
                     result["redactedArtifacts"] = redacted_artifacts
             else:
                 result["log"] = log_ref.to_dict()
                 result["cleanupStatus"] = cleanup_status
+                if runtime_cell_manifest:
+                    result["runtimeCellManifest"] = runtime_cell_manifest
+            if cleanup_artifact is not None:
+                result["cleanupArtifact"] = cleanup_artifact
             if cleanup_error:
                 result["cleanupError"] = cleanup_error
                 result["status"] = "failed"
 
             result = enrich_result_with_run_artifacts(result, gate_run)
-            gate_run.finalize(result=result, runtime=manifest or {})
-            gate_run.publish_latest()
+            finalized_runtime = dict(manifest or {})
+            if runtime_cell_manifest:
+                finalized_runtime["runtimeCellManifest"] = (
+                    runtime_cell_manifest
+                )
+            result = finalize_gate_result(
+                result,
+                gate_run,
+                plan_source,
+                finalized_runtime,
+                runtime_cell or None,
+                runtime_secrets,
+            )
             result["runManifest"] = gate_run.manifest_ref.to_dict()
             gate_run.close()
             active_gate_run = None

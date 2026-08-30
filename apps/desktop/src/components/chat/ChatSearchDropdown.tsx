@@ -1,14 +1,14 @@
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Empty, theme } from 'antd';
+import { Empty, theme, type GlobalToken } from 'antd';
 import { Search } from 'lucide-react';
-import type { IMConversationProjection } from '@peers-touch/client-chat-core';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import type { DesktopIMConversationProjection } from '../../store/socialProjection';
 
 interface ChatSearchDropdownProps {
   searchText: string;
-  results: IMConversationProjection[];
-  onSelect: (conversation: IMConversationProjection) => void;
+  results: DesktopIMConversationProjection[];
+  onSelect: (conversation: DesktopIMConversationProjection) => void;
   onDismiss?: () => void;
 }
 
@@ -65,14 +65,14 @@ export function ChatSearchDropdown({ searchText, results, onSelect, onDismiss }:
       ) : (
         <>
           {contacts.length > 0 && (
-            <Section token={token} label="Contacts">
+            <Section token={token} label={t('chat.social.contacts.friends')}>
               {contacts.map((c) => (
                 <ResultRow key={c.id} conversation={c} token={token} onSelect={onSelect} />
               ))}
             </Section>
           )}
           {groups.length > 0 && (
-            <Section token={token} label="Groups">
+            <Section token={token} label={t('chat.social.sessionList.groups')}>
               {groups.map((c) => (
                 <ResultRow key={c.id} conversation={c} token={token} onSelect={onSelect} />
               ))}
@@ -85,7 +85,15 @@ export function ChatSearchDropdown({ searchText, results, onSelect, onDismiss }:
   );
 }
 
-function Section({ token, label, children }: { token: any; label: string; children: React.ReactNode }) {
+function Section({
+  token,
+  label,
+  children,
+}: {
+  token: GlobalToken;
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div style={{ padding: '2px 0' }}>
       <div
@@ -109,15 +117,20 @@ function ResultRow({
   token,
   onSelect,
 }: {
-  conversation: IMConversationProjection;
-  token: any;
-  onSelect: (c: IMConversationProjection) => void;
+  conversation: DesktopIMConversationProjection;
+  token: GlobalToken;
+  onSelect: (c: DesktopIMConversationProjection) => void;
 }) {
-  const name = conversation.title || 'Unknown';
+  const { t } = useTranslation('chat');
+  const name = conversation.title || t('chat.social.sessionList.unknown');
   return (
     <button
       type="button"
       aria-label={name}
+      data-chat-search-result
+      data-chat-search-result-id={conversation.id}
+      data-chat-search-result-kind={conversation.kind}
+      data-chat-search-result-peer-did={conversation.peerDid || ''}
       onClick={() => onSelect(conversation)}
       style={{
         display: 'flex',
