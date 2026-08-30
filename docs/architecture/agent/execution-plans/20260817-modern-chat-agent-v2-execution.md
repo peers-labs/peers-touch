@@ -3952,6 +3952,20 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Go style, and `git diff --check` pass. Two independent post-fix reviews
   approved the Station and Desktop diffs. Runtime proof remains `UNPROVEN`
   pending a clean checkpoint, exact-source deploy/build, and Foundation rerun.
+- Checkpoint `10edb9b744c7a819b6da91dea6b42c065bd59933` was deployed
+  exact-source to `station-two`, and its Acceptance Desktop binary built
+  successfully. The subsequent Foundation attempt was stopped before AS-F07
+  because the host filesystem reached 100% capacity with about 108 MiB free
+  and could no longer create runner/evidence temporary files. This is
+  `ENVIRONMENT_BLOCKED`, not product evidence. The interrupted candidate left
+  its profile-owned Desktop/Vite process on port 3310; the Coordinator
+  terminated that process tree and verified the port was released. Debugger
+  instrumentation remains open. A new Gate run requires approved removal of
+  rebuildable build artifacts before source-matched proof can resume.
+- The host subsequently recovered to 77 GiB free through external cleanup; this
+  Coordinator did not delete the protected incremental cache. The environment
+  blocker is cleared, so exact-source verification may resume after this plan
+  evidence is checkpointed and the resulting source commit is redeployed.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
