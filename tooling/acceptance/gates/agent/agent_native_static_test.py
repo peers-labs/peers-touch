@@ -510,8 +510,161 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("getAgentCapabilitySessionSnapshot", source)
         self.assertIn("listAgentCapabilitySessions", source)
         self.assertIn("capability_session_id_hash", source)
+        self.assertIn("selectedLocalSession", source)
         self.assertIn("selectedStationSession", source)
         self.assertIn("waitForCapabilitySessionEvidence", source)
+
+    def test_foundation_f04_resolves_matched_session_before_each_turn(self) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        start = source.index("async function runFoundationF04Scenario")
+        end = source.index("const FOUNDATION_PNG_BYTES", start)
+        scenario = source[start:end]
+        run_case_start = scenario.index("const runCase")
+        loop_start = scenario.index(
+            "const loopCapabilitySession = await resolveFoundationToolTurnSession()"
+        )
+        run_case = scenario[run_case_start:loop_start]
+
+        self.assertLess(
+            run_case.index(
+                "const capabilitySession = await resolveFoundationToolTurnSession()"
+            ),
+            run_case.index("const turn = await startFoundationToolTurn"),
+        )
+        self.assertIn(
+            "capabilitySessionId: capabilitySession.capabilitySessionId",
+            run_case,
+        )
+        for label in ("'auto'", "'manual'", "'deny'", "'expiry'"):
+            self.assertIn(label, scenario)
+        self.assertLess(
+            loop_start,
+            scenario.index("const loopTurn = await startFoundationToolTurn"),
+        )
+        self.assertIn(
+            "capabilitySessionId: loopCapabilitySession.capabilitySessionId",
+            scenario,
+        )
+        self.assertEqual(
+            scenario.count("await resolveFoundationToolTurnSession()"),
+            2,
+        )
+        self.assertNotIn("input.capabilitySessionId", scenario)
+        self.assertIn("caseFact.capabilitySession = {", scenario)
+        self.assertIn("...capabilitySession.facts", scenario)
+        self.assertIn("...loopCapabilitySession.facts", scenario)
+        self.assertIn("turnId: turn.turnId", scenario)
+        self.assertIn("turnId: loopTurn.turnId", scenario)
+
+        resolver_start = source.index(
+            "async function resolveFoundationToolTurnSession"
+        )
+        resolver_end = source.index(
+            "function withoutDiagnosticGenerationTime",
+            resolver_start,
+        )
+        resolver = source[resolver_start:resolver_end]
+        self.assertIn(
+            "const capabilitySessions = await capabilitySessionEvidence()",
+            resolver,
+        )
+        self.assertEqual(resolver.count("capabilitySessionEvidence()"), 1)
+        self.assertNotIn("waitForCapabilitySessionEvidence", resolver)
+        resolver_facts = resolver[resolver.index("facts: {"):]
+        for hashed_identity in (
+            "sessionIdHash: localSession.capability_session_id_hash",
+            "actorIdHash: localSession.actor_id_hash",
+            "deviceIdHash: localSession.device_id_hash",
+        ):
+            self.assertEqual(resolver_facts.count(hashed_identity), 1)
+        for hashed_identity_key in (
+            "sessionIdHash:",
+            "actorIdHash:",
+            "deviceIdHash:",
+        ):
+            self.assertEqual(resolver_facts.count(hashed_identity_key), 1)
+        self.assertNotIn("sessionId:", resolver_facts)
+        self.assertNotIn("capabilitySessionId:", resolver_facts)
+        self.assertNotIn("actorId:", resolver_facts)
+        self.assertNotIn("deviceId:", resolver_facts)
+        self.assertNotIn("stationSession.session_id", resolver_facts)
+        self.assertNotIn("stationSession.ptid", resolver_facts)
+        self.assertNotIn("stationSession.device_id", resolver_facts)
+
+        direct_probe_start = source.index("async foundationDirectProbe")
+        direct_probe_end = source.index(
+            "async foundationNonAdvertisementProbe",
+            direct_probe_start,
+        )
+        direct_probe = source[direct_probe_start:direct_probe_end]
+        self.assertIn(
+            "let capabilitySessions = await waitForCapabilitySessionEvidence()",
+            direct_probe,
+        )
+        self.assertEqual(
+            direct_probe.count(
+                "let capabilitySessions = await waitForCapabilitySessionEvidence()"
+            ),
+            1,
+        )
+        self.assertEqual(
+            direct_probe.count(
+                "\n      capabilitySessions = await waitForCapabilitySessionEvidence()"
+            ),
+            1,
+        )
+        self.assertLess(
+            direct_probe.rindex(
+                "capabilitySessions = await waitForCapabilitySessionEvidence()"
+            ),
+            direct_probe.index("const [profile, readiness, conversations]"),
+        )
+
+    def test_foundation_f04_approval_wait_fails_on_terminal_event(self) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        terminal_start = source.index("function firstToolApprovalOutcome")
+        wait_start = source.index("async function waitForToolApprovalEvent")
+        wait_end = source.index(
+            "async function resolveFoundationToolTurnSession",
+            wait_start,
+        )
+        outcome_helper = source[terminal_start:wait_start]
+        approval_wait = source[wait_start:wait_end]
+
+        self.assertEqual(outcome_helper.count("observed.events.find"), 1)
+        self.assertIn(
+            "candidate.event === 'tool_approval_required'",
+            outcome_helper,
+        )
+        self.assertIn("['error', 'cancelled', 'done']", outcome_helper)
+        self.assertNotIn(".find(", approval_wait)
+        self.assertNotIn("toolApprovalEvent", approval_wait)
+        self.assertNotIn("toolApprovalTerminalEvent", approval_wait)
+        self.assertIn(
+            "const outcome = firstToolApprovalOutcome(turn.observed)",
+            approval_wait,
+        )
+        self.assertLess(
+            approval_wait.index("outcome?.event === 'tool_approval_required'"),
+            approval_wait.index("if (outcome)"),
+        )
+        self.assertIn(
+            "agent.acceptance.foundationToolApprovalTerminated",
+            approval_wait,
+        )
+        self.assertIn(
+            "const terminalStage = String(outcome.data.stage ?? outcome.event)",
+            approval_wait,
+        )
+        self.assertIn("stage=${terminalStage}", approval_wait)
+        self.assertIn(
+            "error=${error === null ? 'none' : stableJson(error)}",
+            approval_wait,
+        )
+        self.assertLess(
+            approval_wait.index("if (outcome)"),
+            approval_wait.index("setTimeout(resolve, 50)"),
+        )
 
     def test_queue_probe_requires_explicit_expected_capacity(self) -> None:
         source = HARNESS.read_text(encoding="utf-8")

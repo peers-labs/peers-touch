@@ -922,21 +922,25 @@ async function capabilitySessionEvidence() {
     api.getAgentCapabilitySessionSnapshot(),
     api.listAgentCapabilitySessions(),
   ]);
-  const matches: Array<(typeof station.sessions)[number]> = [];
+  const matches: Array<{
+    localSession: (typeof local.sessions)[number];
+    stationSession: (typeof station.sessions)[number];
+  }> = [];
   for (const session of station.sessions) {
     const [actorHash, deviceHash, sessionHash] = await Promise.all([
       sha256Hex(session.ptid),
       sha256Hex(session.device_id),
       sha256Hex(session.session_id),
     ]);
-    if (local.sessions.some(
+    const localSession = local.sessions.find(
       (candidate) =>
         candidate.actor_id_hash === actorHash &&
         candidate.device_id_hash === deviceHash &&
         candidate.capability_session_id_hash === sessionHash &&
         candidate.platform === session.platform,
-    )) {
-      matches.push(session);
+    );
+    if (localSession) {
+      matches.push({ localSession, stationSession: session });
     }
   }
   if (matches.length > 1) {
@@ -945,7 +949,8 @@ async function capabilitySessionEvidence() {
   return {
     local,
     station,
-    selectedStationSession: matches[0] ?? null,
+    selectedLocalSession: matches[0]?.localSession ?? null,
+    selectedStationSession: matches[0]?.stationSession ?? null,
   };
 }
 
@@ -1160,6 +1165,11 @@ interface FoundationToolTurn {
   conversationId: string;
   turnId: string;
   observed: ObservedFoundationTurn;
+}
+
+interface FoundationToolTurnSession {
+  capabilitySessionId: string;
+  facts: Record<string, unknown>;
 }
 
 function toolStatusName(value: unknown): string {
@@ -1423,12 +1433,12 @@ async function startFoundationToolTurn(input: {
   };
 }
 
-function toolApprovalEvent(
+function firstToolApprovalOutcome(
   observed: ObservedFoundationTurn,
-): Record<string, unknown> | null {
-  const event = observed.events.find((candidate) =>
-    candidate.event === 'tool_approval_required');
-  return event?.data ?? null;
+) {
+  return observed.events.find((candidate) =>
+    candidate.event === 'tool_approval_required'
+    || ['error', 'cancelled', 'done'].includes(candidate.event));
 }
 
 async function waitForToolApprovalEvent(
@@ -1436,11 +1446,47 @@ async function waitForToolApprovalEvent(
 ): Promise<Record<string, unknown>> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 60_000) {
-    const event = toolApprovalEvent(turn.observed);
-    if (event) return event;
+    const outcome = firstToolApprovalOutcome(turn.observed);
+    if (outcome?.event === 'tool_approval_required') return outcome.data;
+    if (outcome) {
+      const terminalStage = String(outcome.data.stage ?? outcome.event);
+      const error = evidenceField(
+        outcome.data,
+        'error',
+        'error',
+      ) ?? evidenceField(
+        outcome.data,
+        'errorCode',
+        'error_code',
+      ) ?? null;
+      throw new Error(
+        'agent.acceptance.foundationToolApprovalTerminated'
+        + `: stage=${terminalStage}`
+        + ` error=${error === null ? 'none' : stableJson(error)}`,
+      );
+    }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error('agent.acceptance.foundationToolApprovalMissing');
+}
+
+async function resolveFoundationToolTurnSession(
+): Promise<FoundationToolTurnSession> {
+  const capabilitySessions = await capabilitySessionEvidence();
+  const localSession = capabilitySessions.selectedLocalSession;
+  const stationSession = capabilitySessions.selectedStationSession;
+  if (!localSession || !stationSession) {
+    throw new Error('agent.acceptance.capabilitySessionUnavailable');
+  }
+  return {
+    capabilitySessionId: stationSession.session_id,
+    facts: {
+      sessionIdHash: localSession.capability_session_id_hash,
+      actorIdHash: localSession.actor_id_hash,
+      deviceIdHash: localSession.device_id_hash,
+      platform: stationSession.platform,
+    },
+  };
 }
 
 function withoutDiagnosticGenerationTime(
@@ -1578,7 +1624,6 @@ function diagnosticReplayTerminal(replay: Record<string, unknown>): boolean {
 
 async function runFoundationF04Scenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
-  capabilitySessionId: string;
   platform: string;
   sampleId: string;
 }): Promise<{
@@ -1622,9 +1667,10 @@ async function runFoundationF04Scenario(input: {
     decision?: boolean,
   ) => {
     await applyPolicy(policy);
+    const capabilitySession = await resolveFoundationToolTurnSession();
     const turn = await startFoundationToolTurn({
       agent: input.agent,
-      capabilitySessionId: input.capabilitySessionId,
+      capabilitySessionId: capabilitySession.capabilitySessionId,
       fixture,
       sampleId: input.sampleId,
       label,
@@ -1701,6 +1747,14 @@ async function runFoundationF04Scenario(input: {
       input.platform,
       fact,
     );
+    const caseFact: Record<string, unknown> = diagnosticToolCase(
+      fact,
+      sideEffectCount,
+    );
+    caseFact.capabilitySession = {
+      ...capabilitySession.facts,
+      turnId: turn.turnId,
+    };
     return {
       turn,
       fact,
@@ -1710,7 +1764,7 @@ async function runFoundationF04Scenario(input: {
         beforeReplay.facts[0],
         sideEffectCount,
       ),
-      caseFact: diagnosticToolCase(fact, sideEffectCount),
+      caseFact,
       decision: replayedDecision,
     };
   };
@@ -1739,9 +1793,10 @@ async function runFoundationF04Scenario(input: {
     );
 
     await applyPolicy(CapabilityApprovalPolicy.AUTO);
+    const loopCapabilitySession = await resolveFoundationToolTurnSession();
     const loopTurn = await startFoundationToolTurn({
       agent: input.agent,
-      capabilitySessionId: input.capabilitySessionId,
+      capabilitySessionId: loopCapabilitySession.capabilitySessionId,
       fixture,
       sampleId: input.sampleId,
       label: 'loop-budget',
@@ -1880,6 +1935,10 @@ async function runFoundationF04Scenario(input: {
           effectiveLimit,
           observedIterations,
           maximumIterations,
+          capabilitySession: {
+            ...loopCapabilitySession.facts,
+            turnId: loopTurn.turnId,
+          },
           executionAfterLimit:
             foundationDiagnosticToolFacts(loopReplay)
               .reduce(
@@ -6026,7 +6085,7 @@ export function installAcceptanceHarness(): void {
       const agent = selectedAgent();
       if (!agent) throw new Error('agent.acceptance.agentMissing');
       const agentId = agent.id || agent.name;
-      const capabilitySessions = await waitForCapabilitySessionEvidence();
+      let capabilitySessions = await waitForCapabilitySessionEvidence();
       let preparedConversationId: string | null = null;
       let preparedTurnId: string | null = null;
       const preparedRuntimeEvent: {
@@ -6550,14 +6609,8 @@ export function installAcceptanceHarness(): void {
       }
 
       if (cell === 'AS-F04') {
-        const capabilitySessionId =
-          capabilitySessions.selectedStationSession?.session_id;
-        if (!capabilitySessionId) {
-          throw new Error('agent.acceptance.capabilitySessionUnavailable');
-        }
         const scenario = await runFoundationF04Scenario({
           agent,
-          capabilitySessionId,
           platform,
           sampleId,
         });
@@ -6569,6 +6622,7 @@ export function installAcceptanceHarness(): void {
         await useChatStore.getState().selectSession(scenario.conversationId);
       }
 
+      capabilitySessions = await waitForCapabilitySessionEvidence();
       const [profile, readiness, conversations] = await Promise.all([
         api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
         api.getAgentCapabilityReadiness({

@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260830T122020868414Z-9839533f2d4beeafe189649535e82bd3` on `a05900a5c` passed AS-F06 and advanced the first failure to Browser AS-F07 synchronous retry transport timeout; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260830T144238391812Z-ff7ffc73fa6b50d1699f78ae58dcde40` on `31c96e7c8` exposed a Browser AS-F04 stale capability-session producer race before AS-F07; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2249,6 +2249,43 @@ AS-F04 implementation progress (2026-08-28):
   native Kotlin/Swift generation path remains unavailable because the local
   native protoc plugins are not installed. Runtime proof remains `UNPROVEN`
   until this checkpoint is committed and deployed.
+- Exact-source run
+  `20260830T144238391812Z-ff7ffc73fa6b50d1699f78ae58dcde40`
+  on checkpoint `31c96e7c8a3dc9e81e11584d2773186745ecc133`
+  failed first at Browser AS-F04 with
+  `agent.acceptance.foundationToolApprovalMissing`; AS-F07 instrumentation was
+  not reached. Local, Station, and evidence commits matched, the workspace was
+  clean, and outer cleanup passed. Because AS-F04 previously produced
+  source-matched Browser/Desktop proof and this fixture depends on a real
+  provider producing the manual-approval ToolCall, this single miss is not
+  sufficient evidence for a product change. Read-only provider/Turn/ToolCall
+  tracing and an unchanged-source rerun are required before changing product
+  or Acceptance behavior. G-F remains `PARTIAL / UNPROVEN`.
+- Read-only correlation then proved the failed manual Turn used the Browser
+  capability session identified by SHA-256
+  `63c73b2ef116156b707fc1014f80b3433d2e2b0bef903dfbf725bb91e98eae03`
+  after that lease had been revoked with `WORKER_SHUTDOWN`; replacement session
+  SHA-256
+  `9a5cc7f379f4668d1aa38e45d3ceb045b71d2cf042b2ffc19bdcd4444ff4a314`
+  was already active. Station
+  rejected readiness in 18 ms with no readiness snapshot, provider call,
+  ToolBatch, or ToolCall, while the Harness waited 60 seconds and misreported
+  the absence as a missing approval. Reconcile Gate A keeps Station's explicit
+  stale-session rejection fail-closed. The Acceptance-owned correction must
+  resolve and record the current production capability session immediately
+  before each AS-F04 Turn and stop approval waiting on an authoritative
+  terminal error. Product runtime lease-churn changes are not authorized until
+  the exact close caller is source-backed.
+- Reconcile Gate B now performs one fail-closed local/Station session
+  intersection immediately before every AS-F04 Turn, records only hashed
+  session/actor/device identity with the Turn, refreshes the final readiness
+  attestation after the scenario, and selects the first observed approval or
+  terminal event in production order. It neither retries until a later session
+  appears nor persists raw session identity. Desktop typecheck, 406 Desktop
+  tests with one unrelated skip, 91 focused Foundation/static tests, Agent
+  Domain validation, and `git diff --check` pass. Independent final review
+  approved the code and exact static guards. Runtime proof remains `UNPROVEN`
+  pending checkpoint commit and exact-source rerun.
 
 **W8a checks**:
 
