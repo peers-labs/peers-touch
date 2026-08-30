@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260830T144238391812Z-ff7ffc73fa6b50d1699f78ae58dcde40` on `31c96e7c8` exposed a Browser AS-F04 stale capability-session producer race before AS-F07; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260830T162124124250Z-d80b623b486ff157036d4f6beafbf873` on `06eeb9dce` advanced through AS-F04/AS-F06 and exposed a Browser AS-F07 retry conflict after a cancelled Turn persisted completed tool-call message evidence; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -2300,6 +2300,29 @@ AS-F04 implementation progress (2026-08-28):
   Foundation remains `PARTIAL / UNPROVEN`; retain instrumentation, restore the
   Debug Server, and repeat the same exact-source run before changing product
   behavior.
+- Runtime preflight
+  `20260830T161931137652Z-ad31f19c4f94b3c6dd287679a200afe4`
+  correctly blocked before client launch because checkpoint `06eeb9dce` had
+  not yet been deployed over Station `30c0fdb99`; cleanup passed. `make
+  station` then deployed and health-checked exact source `06eeb9dce`.
+- Exact-source run
+  `20260830T162124124250Z-d80b623b486ff157036d4f6beafbf873`
+  on `06eeb9dce5a2f92507dd7eeee503a01fb78da5d4` again advanced
+  through AS-F04 and AS-F06, then failed first at Browser AS-F07. Debug
+  checkpoints proved cancellation at durable provider admission and terminal
+  `cancelled` in 1.98 seconds; retry started from conversation version `4`
+  and returned HTTP `409 CONFLICT` after 96 ms. Station readback proved the
+  source Turn and attempt were cancelled, the conversation remained at version
+  `4`, and the prior provider tool-call assistant message was already
+  `completed`. `RevisionService` incorrectly treated that immutable
+  intermediate message status as retry eligibility despite the authoritative
+  source Turn being retryable. The local correction preserves the completed
+  tool-call message, creates a new pending assistant projection in the same
+  branch for the new attempt, and keeps retry context rooted at the source user
+  message. Focused race repetition, Agent package tests, Go style, and diff
+  checks pass locally. Runtime proof remains `UNPROVEN` pending review,
+  checkpoint, deployment, and exact-source rerun. Candidate cleanup again
+  released all ports/storage but reported a Native logout script timeout.
 
 **W8a checks**:
 

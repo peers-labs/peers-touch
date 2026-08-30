@@ -127,3 +127,23 @@
   remained empty and this run cannot distinguish a Station response,
   Turn-execution transport timeout, or native command failure. The same
   exact-source run must be repeated with the Debug Server retained.
+- Exact-source run
+  `20260830T162124124250Z-d80b623b486ff157036d4f6beafbf873`
+  on `06eeb9dce5a2f92507dd7eeee503a01fb78da5d4` retained the
+  Debug Server and reproduced the Browser failure. Debug lines 1-5 show
+  cancellation requested at provider admission, terminal `cancelled` at
+  1979.9 ms, retry start from conversation version `4`, and HTTP
+  `409 CONFLICT` at 2295.5 ms.
+- Station logs show `/turn/retry` returned 409 in 4 ms. Database readback shows
+  the source Turn and attempt were `cancelled`, the conversation version
+  remained `4`, no revision command was inserted, and the latest assistant
+  message for that Turn was `completed` because the provider tool-call message
+  had already been persisted.
+- Hypothesis D is refined and confirmed: transport and execution ownership are
+  no longer failing. `RevisionService` rejects the authoritative cancelled Turn
+  because it incorrectly applies retry eligibility to the immutable completed
+  tool-call assistant artifact.
+- The local fix preserves the completed tool-call message, creates a distinct
+  pending assistant projection for the new attempt under the existing branch,
+  and keeps provider context rooted at the source user message. Post-fix
+  runtime comparison is pending.

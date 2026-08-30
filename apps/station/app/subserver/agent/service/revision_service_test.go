@@ -36,9 +36,11 @@ func (f *revisionFakeTurnExecutor) ExecuteTurn(
 		var attempt persistence.TurnAttempt
 		_ = f.db.First(&attempt, "id = ?", config.AttemptID).Error
 		f.observedAttemptStatus = attempt.Status
-		var assistant persistence.AgentMessage
-		_ = f.db.First(&assistant, "id = ?", config.AssistantMessageID).Error
-		f.observedAssistantMsgStatus = assistant.Status
+		if config.AssistantMessageID != "" {
+			var assistant persistence.AgentMessage
+			_ = f.db.First(&assistant, "id = ?", config.AssistantMessageID).Error
+			f.observedAssistantMsgStatus = assistant.Status
+		}
 	}
 	if f.err != nil {
 		turnID := config.PrecreatedTurnID
@@ -418,6 +420,136 @@ func TestRetryAddsAttemptUnderSameTurnWithoutBranchMutation(t *testing.T) {
 	}
 	if messageCount != 2 || result.Conversation.ActiveBranchMessageID != "assistant-failed" {
 		t.Fatalf("retry created branch mutation: messages=%d conversation=%+v", messageCount, result.Conversation)
+	}
+}
+
+func TestRetryCancelledTurnPreservesCompletedToolCallMessageAndCreatesOneAttempt(t *testing.T) {
+	db := openConversationAuthorityDB(t, "revision_retry_after_tool_call_"+generateID("db"))
+	migrateRevisionModels(t, db)
+	seedRevisionConversation(t, db)
+	now := time.Now()
+	input := "question"
+	turnID := "turn-cancelled-after-tool-call"
+	if err := db.Create(&persistence.AgentTurn{
+		ID:             turnID,
+		ConversationID: "conversation-revision",
+		AgentID:        "agent-1",
+		UserInput:      &input,
+		Status:         string(domain.TurnStatusCancelled),
+		TerminalReason: "cancelled_by_user",
+		StartedAt:      now,
+		EndedAt:        &now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&persistence.AgentMessage{}).
+		Where("id = ?", "user-source").
+		Update("turn_id", turnID).Error; err != nil {
+		t.Fatal(err)
+	}
+	parent := "user-source"
+	branch := "branch-tool-call"
+	content := ""
+	toolCalls := []byte(`[{"id":"tool-call-1","name":"skills_list"}]`)
+	if err := db.Create(&persistence.AgentMessage{
+		ID:              "assistant-tool-call",
+		ConversationID:  "conversation-revision",
+		TurnID:          &turnID,
+		Role:            string(domain.MessageRoleAssistant),
+		Status:          "completed",
+		Content:         &content,
+		ToolCallsJSON:   toolCalls,
+		Seq:             2,
+		BranchID:        &branch,
+		ParentMessageID: &parent,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&persistence.Conversation{}).
+		Where("id = ?", "conversation-revision").
+		Update("active_branch_message_id", "assistant-tool-call").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	executor := &revisionFakeTurnExecutor{db: db}
+	service := NewRevisionService(NewConversationService(), executor)
+	request := RevisionRequest{
+		Ptid:                        "ptid:person:owner",
+		ConversationID:              "conversation-revision",
+		SourceTurnID:                turnID,
+		IdempotencyKey:              "retry-after-tool-call",
+		ExpectedConversationVersion: 1,
+	}
+	result, err := service.RetryTurn(context.Background(), request)
+	if err != nil {
+		t.Fatalf("retry cancelled turn after tool call: %v", err)
+	}
+	if result.Turn.TurnID != turnID || result.Attempt.AttemptIndex != 1 {
+		t.Fatalf("retry identity changed: %+v", result)
+	}
+	if executor.calls != 1 || len(executor.configs) != 1 ||
+		executor.configs[0].AssistantMessageID == "" ||
+		executor.configs[0].AssistantMessageID == "assistant-tool-call" ||
+		executor.configs[0].AssistantBranchID != branch {
+		t.Fatalf("retry output identity is invalid: %+v", executor.configs)
+	}
+
+	var preserved persistence.AgentMessage
+	if err := db.First(&preserved, "id = ?", "assistant-tool-call").Error; err != nil {
+		t.Fatal(err)
+	}
+	if preserved.Status != "completed" ||
+		string(preserved.ToolCallsJSON) != string(toolCalls) {
+		t.Fatalf("completed tool-call message was mutated: %+v", preserved)
+	}
+	var retryOutput persistence.AgentMessage
+	if err := db.First(
+		&retryOutput,
+		"id = ?",
+		executor.configs[0].AssistantMessageID,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if retryOutput.Status != "completed" ||
+		revisionStringValue(retryOutput.ParentMessageID) != parent ||
+		revisionStringValue(retryOutput.BranchID) != branch {
+		t.Fatalf("retry output did not restart the existing branch: %+v", retryOutput)
+	}
+	if result.AssistantMessage == nil ||
+		result.AssistantMessage.MessageID != retryOutput.ID ||
+		result.Conversation.ActiveBranchMessageID != retryOutput.ID {
+		t.Fatalf("retry result omitted the new assistant projection: %+v", result)
+	}
+	var messages int64
+	if err := db.Model(&persistence.AgentMessage{}).
+		Where("conversation_id = ?", "conversation-revision").
+		Count(&messages).Error; err != nil {
+		t.Fatal(err)
+	}
+	if messages != 3 {
+		t.Fatalf("message count=%d, want source+tool-call+retry output", messages)
+	}
+	replay, err := service.RetryTurn(context.Background(), request)
+	if err != nil {
+		t.Fatalf("replay completed retry: %v", err)
+	}
+	if executor.calls != 1 ||
+		replay.Attempt.ID != result.Attempt.ID ||
+		replay.AssistantMessage == nil ||
+		replay.AssistantMessage.MessageID != retryOutput.ID ||
+		replay.Conversation.Version != result.Conversation.Version {
+		t.Fatalf("retry replay changed admitted identities: first=%+v replay=%+v", result, replay)
+	}
+	var attempts int64
+	if err := db.Model(&persistence.TurnAttempt{}).
+		Where("turn_id = ?", turnID).
+		Count(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 {
+		t.Fatalf("retry attempts=%d, want 1", attempts)
 	}
 }
 

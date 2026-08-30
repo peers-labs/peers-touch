@@ -303,6 +303,9 @@ func (s *RevisionService) admitAndExecute(
 		branchID := generateID("branch")
 		var parentMessage persistence.AgentMessage
 		var retryAssistantMessage persistence.AgentMessage
+		var reuseRetryAssistantMessage bool
+		var createRetryAssistantMessage bool
+		var retryActiveBranchMessageID string
 
 		switch kind {
 		case revisionRetry:
@@ -329,13 +332,16 @@ func (s *RevisionService) admitAndExecute(
 			).Order("seq DESC").First(&retryAssistantMessage).Error; err != nil && err != gorm.ErrRecordNotFound {
 				return err
 			}
-			if retryAssistantMessage.ID != "" &&
-				retryAssistantMessage.Status != "failed" &&
-				retryAssistantMessage.Status != "cancelled" &&
-				retryAssistantMessage.Status != "interrupted" &&
-				retryAssistantMessage.Status != "partial" {
-				return errcode.New(errcode.AgentInvalidSourceState, http.StatusConflict,
-					"retry assistant message is not terminal", nil)
+			if retryAssistantMessage.ID != "" {
+				switch retryAssistantMessage.Status {
+				case "failed", "cancelled", "interrupted", "partial":
+					reuseRetryAssistantMessage = true
+				case "completed":
+					createRetryAssistantMessage = true
+				default:
+					return errcode.New(errcode.AgentInvalidSourceState, http.StatusConflict,
+						"retry assistant message is not terminal", nil)
+				}
 			}
 			var count int64
 			if err := tx.Model(&persistence.TurnAttempt{}).Where("turn_id = ?", turnID).Count(&count).Error; err != nil {
@@ -360,13 +366,38 @@ func (s *RevisionService) admitAndExecute(
 			}).Error; err != nil {
 				return err
 			}
-			if retryAssistantMessage.ID != "" {
+			if reuseRetryAssistantMessage {
 				if err := tx.Model(&retryAssistantMessage).Updates(map[string]interface{}{
 					"status":     "pending",
 					"updated_at": now,
 				}).Error; err != nil {
 					return err
 				}
+			} else if createRetryAssistantMessage {
+				seq, err := nextMessageSeqTx(tx, request.ConversationID)
+				if err != nil {
+					return err
+				}
+				empty := ""
+				retryParentID := parentMessage.ID
+				retryAssistantMessage = persistence.AgentMessage{
+					ID:              generateID("msg"),
+					ConversationID:  request.ConversationID,
+					TurnID:          &turnID,
+					ModelName:       retryAssistantMessage.ModelName,
+					Role:            string(domain.MessageRoleAssistant),
+					Status:          "pending",
+					Content:         &empty,
+					Seq:             seq,
+					BranchID:        retryAssistantMessage.BranchID,
+					ParentMessageID: &retryParentID,
+					CreatedAt:       now,
+					UpdatedAt:       now,
+				}
+				if err := tx.Create(&retryAssistantMessage).Error; err != nil {
+					return err
+				}
+				retryActiveBranchMessageID = retryAssistantMessage.ID
 			}
 			admission.AttemptID = attemptID
 		case revisionRegenerate, revisionEditResend:
@@ -447,6 +478,9 @@ func (s *RevisionService) admitAndExecute(
 			"version":    gorm.Expr("version + 1"),
 			"updated_at": now,
 		}
+		if retryActiveBranchMessageID != "" {
+			updates["active_branch_message_id"] = retryActiveBranchMessageID
+		}
 		if kind != revisionRetry {
 			assistantID := generateID("msg")
 			seq, err := nextMessageSeqTx(tx, request.ConversationID)
@@ -503,13 +537,13 @@ func (s *RevisionService) admitAndExecute(
 				ConversationID:      request.ConversationID,
 				SkipUserMessage:     true,
 				ContextBranchHeadID: parentMessage.ID,
-				AssistantMessageID:  retryAssistantMessage.ID,
 				AssistantBranchID:   revisionStringValue(retryAssistantMessage.BranchID),
 				AssistantParentID:   parentMessage.ID,
 				RequestedBudgetJSON: request.RequestedBudgetJSON,
 				AttemptID:           admission.AttemptID,
 			}
 			if retryAssistantMessage.ID != "" {
+				config.AssistantMessageID = retryAssistantMessage.ID
 				admission.MessageID = retryAssistantMessage.ID
 				admission.AssistantMessageID = retryAssistantMessage.ID
 			}
