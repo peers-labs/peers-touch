@@ -70,6 +70,14 @@
   The first `emitTurnEvent` consequently fails the ownership fence as
   superseded. The existing early-retry test supplied both IDs and masked this
   production shape.
+- Checkpoint `a05900a5caa699a7b1c7a33dee3959c386925d45`
+  resolved execution ownership from the admitted Turn ID. Exact-source run
+  `20260830T122020868414Z-9839533f2d4beeafe189649535e82bd3`
+  removed the prior 113 ms HTTP 500: Station accepted the retry, reused
+  `turn_47afbf8dcf8d18d4f93fe64d`, entered the provider path, and returned HTTP
+  200 after 34.338 seconds. The Desktop command failed after approximately
+  15 seconds with transport status `0`, before the Station response arrived.
+  Cleanup passed and AS-F07 remained the first failing tuple.
 
 ## Verification Conclusion
 - Hypothesis A is confirmed as nondeterministic: one run emitted cancellable
@@ -93,3 +101,20 @@
   the wrong Turn ID. The fix must bind ownership to the precreated/existing
   admission ID before execution starts; instrumentation remains for post-fix
   comparison.
+- The post-fix run confirms the ownership correction and refines Hypothesis D:
+  retry execution completes successfully on Station, but the synchronous
+  revision request exceeds Desktop's generic 15-second JSON transport timeout.
+  The next investigation must decide from the accepted revision contract
+  whether revision commands return a durable admission acknowledgement or use
+  a long-running Turn-specific transport timeout.
+- Source-backed timing identified a second Station defect: the original
+  execution used the pinned `128000` context window, while retry used `0`,
+  forced compression for only 190 estimated tokens, spent about 29 seconds
+  generating an unnecessary summary, and split the conversation before the
+  final provider call. The local fix now restores the context limit from the
+  persisted reconciled runtime snapshot and rejects invalid limits.
+- Reconcile Gate A retained the existing synchronous Proto response contract.
+  Desktop now routes retry/regenerate/edit through a bounded Turn-execution
+  transport policy and moves native blocking work off the Tauri main thread.
+  Branch/tombstone remain short interactive requests. Post-fix runtime
+  comparison is pending.

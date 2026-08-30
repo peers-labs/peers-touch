@@ -10,6 +10,35 @@ use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
 use std::sync::{LazyLock, OnceLock, RwLock};
+use std::time::Duration;
+
+const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const TURN_EXECUTION_WALL_TIME: Duration = Duration::from_secs(300);
+const TURN_EXECUTION_RESPONSE_MARGIN: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StationTransportPolicy {
+    Interactive,
+    TurnExecution,
+}
+
+impl StationTransportPolicy {
+    fn timeout(self) -> Duration {
+        match self {
+            Self::Interactive => INTERACTIVE_REQUEST_TIMEOUT,
+            // Station owns the Turn deadline. The transport stays open long
+            // enough to receive the synchronous terminal response it settles.
+            Self::TurnExecution => TURN_EXECUTION_WALL_TIME + TURN_EXECUTION_RESPONSE_MARGIN,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Interactive => "interactive",
+            Self::TurnExecution => "turn_execution",
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Global station registry (initialized once during bootstrap)
@@ -243,8 +272,12 @@ pub(crate) fn active_station_peer_id() -> Option<String> {
 }
 
 fn build_client() -> Result<Client, StationClientError> {
+    build_client_with_policy(StationTransportPolicy::Interactive)
+}
+
+fn build_client_with_policy(policy: StationTransportPolicy) -> Result<Client, StationClientError> {
     Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(policy.timeout())
         .build()
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to create HTTP client");
@@ -864,11 +897,29 @@ pub(crate) fn request_json(
     query: Option<&[(&str, String)]>,
     body: Option<Value>,
 ) -> Result<Value, StationClientError> {
+    request_json_with_policy(
+        method,
+        path,
+        token,
+        query,
+        body,
+        StationTransportPolicy::Interactive,
+    )
+}
+
+pub(crate) fn request_json_with_policy(
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<Value>,
+    policy: StationTransportPolicy,
+) -> Result<Value, StationClientError> {
     let url = format!("{}{}", station_base_url(), path);
-    tracing::debug!(method = %method, path = %path, "→ station (json)");
+    tracing::debug!(method = %method, path = %path, policy = ?policy, "→ station (json)");
 
     let start = std::time::Instant::now();
-    let client = build_client()?;
+    let client = build_client_with_policy(policy)?;
 
     let mut req = with_device_id(client.request(method.clone(), &url).bearer_auth(token));
 
@@ -887,10 +938,17 @@ pub(crate) fn request_json(
     let resp = req.send().map_err(|e| {
         let elapsed = start.elapsed().as_millis();
         tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
+        let details = e.is_timeout().then(|| {
+            serde_json::json!({
+                "reason": "request_timeout",
+                "transportPolicy": policy.label(),
+                "timeoutMs": policy.timeout().as_millis(),
+            })
+        });
         StationClientError::new(
             StationClientErrorKind::Network,
             format!("request failed: {}", e),
-            None,
+            details,
         )
     })?;
 
@@ -1451,9 +1509,27 @@ pub(crate) fn probe_station(url: &str) -> (bool, Option<String>, Option<String>,
 
 #[cfg(test)]
 mod tests {
-    use super::build_error_for_status_with_headers;
+    use super::{build_error_for_status_with_headers, StationTransportPolicy};
     use crate::error::ErrorCode;
     use serde_json::json;
+    use std::time::Duration;
+
+    #[test]
+    fn transport_policies_are_bounded_by_operation_semantics() {
+        assert_eq!(
+            StationTransportPolicy::Interactive.timeout(),
+            Duration::from_secs(15)
+        );
+        assert_eq!(
+            StationTransportPolicy::TurnExecution.timeout(),
+            Duration::from_secs(305)
+        );
+        assert_eq!(StationTransportPolicy::Interactive.label(), "interactive");
+        assert_eq!(
+            StationTransportPolicy::TurnExecution.label(),
+            "turn_execution"
+        );
+    }
 
     #[test]
     fn typed_station_error_headers_survive_json_transport() {

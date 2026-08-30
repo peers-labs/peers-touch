@@ -2320,12 +2320,61 @@ pub fn agent_conversation_restore(
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RevisionCommand {
+    RetryTurn,
+    RegenerateTurn,
+    EditAndResend,
+    SelectActiveBranch,
+    TombstoneMessage,
+}
+
+impl RevisionCommand {
+    fn route(
+        self,
+    ) -> (
+        &'static str,
+        &'static str,
+        station_client::StationTransportPolicy,
+    ) {
+        use station_client::StationTransportPolicy::{Interactive, TurnExecution};
+
+        match self {
+            Self::RetryTurn => (
+                "agent_retry_turn",
+                "/sub-agent/agent/turn/retry",
+                TurnExecution,
+            ),
+            Self::RegenerateTurn => (
+                "agent_regenerate_turn",
+                "/sub-agent/agent/turn/regenerate",
+                TurnExecution,
+            ),
+            Self::EditAndResend => (
+                "agent_edit_and_resend",
+                "/sub-agent/agent/message/edit-resend",
+                TurnExecution,
+            ),
+            Self::SelectActiveBranch => (
+                "agent_select_active_branch",
+                "/sub-agent/agent/conversation/select-branch",
+                Interactive,
+            ),
+            Self::TombstoneMessage => (
+                "agent_tombstone_message",
+                "/sub-agent/agent/message/tombstone",
+                Interactive,
+            ),
+        }
+    }
+}
+
 fn revision_command<Input: Serialize>(
-    command: &str,
-    path: &str,
+    revision: RevisionCommand,
     input: Input,
     token: &str,
 ) -> AppResult<StubPayload> {
+    let (command, path, transport_policy) = revision.route();
     let body = match serde_json::to_value(input) {
         Ok(body) => body,
         Err(error) => {
@@ -2336,67 +2385,49 @@ fn revision_command<Input: Serialize>(
             )
         }
     };
-    match station_client::request_json(Method::POST, path, token, None, Some(body)) {
+    match station_client::request_json_with_policy(
+        Method::POST,
+        path,
+        token,
+        None,
+        Some(body),
+        transport_policy,
+    ) {
         Ok(result) => success_payload(command, result),
         Err(error) => error.into_app_result(format!("{command} failed")),
     }
 }
 
 pub fn agent_retry_turn(input: AgentRetryTurnInput, token: &str) -> AppResult<StubPayload> {
-    revision_command(
-        "agent_retry_turn",
-        "/sub-agent/agent/turn/retry",
-        input,
-        token,
-    )
+    revision_command(RevisionCommand::RetryTurn, input, token)
 }
 
 pub fn agent_regenerate_turn(
     input: AgentRegenerateTurnInput,
     token: &str,
 ) -> AppResult<StubPayload> {
-    revision_command(
-        "agent_regenerate_turn",
-        "/sub-agent/agent/turn/regenerate",
-        input,
-        token,
-    )
+    revision_command(RevisionCommand::RegenerateTurn, input, token)
 }
 
 pub fn agent_edit_and_resend(
     input: AgentEditAndResendInput,
     token: &str,
 ) -> AppResult<StubPayload> {
-    revision_command(
-        "agent_edit_and_resend",
-        "/sub-agent/agent/message/edit-resend",
-        input,
-        token,
-    )
+    revision_command(RevisionCommand::EditAndResend, input, token)
 }
 
 pub fn agent_select_active_branch(
     input: AgentSelectActiveBranchInput,
     token: &str,
 ) -> AppResult<StubPayload> {
-    revision_command(
-        "agent_select_active_branch",
-        "/sub-agent/agent/conversation/select-branch",
-        input,
-        token,
-    )
+    revision_command(RevisionCommand::SelectActiveBranch, input, token)
 }
 
 pub fn agent_tombstone_message(
     input: AgentTombstoneMessageInput,
     token: &str,
 ) -> AppResult<StubPayload> {
-    revision_command(
-        "agent_tombstone_message",
-        "/sub-agent/agent/message/tombstone",
-        input,
-        token,
-    )
+    revision_command(RevisionCommand::TombstoneMessage, input, token)
 }
 
 fn turn_queue_entry_json(entry: &agent::TurnQueueEntry) -> Value {
@@ -2426,6 +2457,56 @@ fn turn_queue_entry_json(entry: &agent::TurnQueueEntry) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn revision_commands_route_by_execution_semantics() {
+        use station_client::StationTransportPolicy::{Interactive, TurnExecution};
+
+        for (revision, expected) in [
+            (
+                RevisionCommand::RetryTurn,
+                (
+                    "agent_retry_turn",
+                    "/sub-agent/agent/turn/retry",
+                    TurnExecution,
+                ),
+            ),
+            (
+                RevisionCommand::RegenerateTurn,
+                (
+                    "agent_regenerate_turn",
+                    "/sub-agent/agent/turn/regenerate",
+                    TurnExecution,
+                ),
+            ),
+            (
+                RevisionCommand::EditAndResend,
+                (
+                    "agent_edit_and_resend",
+                    "/sub-agent/agent/message/edit-resend",
+                    TurnExecution,
+                ),
+            ),
+            (
+                RevisionCommand::SelectActiveBranch,
+                (
+                    "agent_select_active_branch",
+                    "/sub-agent/agent/conversation/select-branch",
+                    Interactive,
+                ),
+            ),
+            (
+                RevisionCommand::TombstoneMessage,
+                (
+                    "agent_tombstone_message",
+                    "/sub-agent/agent/message/tombstone",
+                    Interactive,
+                ),
+            ),
+        ] {
+            assert_eq!(revision.route(), expected);
+        }
+    }
 
     #[test]
     fn tool_decision_hash_matches_station_canonical_contract() {

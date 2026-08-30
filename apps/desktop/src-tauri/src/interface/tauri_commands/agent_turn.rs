@@ -19,8 +19,7 @@ use crate::error::AppResult;
 use crate::error::ErrorCode;
 use crate::state::AppState;
 use std::sync::Arc;
-use tauri::State;
-use tauri::Window;
+use tauri::{Manager, State, Window};
 
 #[tauri::command]
 pub fn agent_execute_turn(
@@ -352,33 +351,65 @@ pub fn agent_conversation_restore(
 }
 
 #[tauri::command]
-pub fn agent_retry_turn(
+pub async fn agent_retry_turn(
     input: AgentRetryTurnInput,
-    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::agent_retry_turn(input, &token)
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = session_resolver::token_for_window(&state, &window).unwrap_or_default();
+    run_revision_command("agent_retry_turn", move || {
+        application_agent_turn::agent_retry_turn(input, &token)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn agent_regenerate_turn(
+pub async fn agent_regenerate_turn(
     input: AgentRegenerateTurnInput,
-    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::agent_regenerate_turn(input, &token)
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = session_resolver::token_for_window(&state, &window).unwrap_or_default();
+    run_revision_command("agent_regenerate_turn", move || {
+        application_agent_turn::agent_regenerate_turn(input, &token)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn agent_edit_and_resend(
+pub async fn agent_edit_and_resend(
     input: AgentEditAndResendInput,
-    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::agent_edit_and_resend(input, &token)
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = session_resolver::token_for_window(&state, &window).unwrap_or_default();
+    run_revision_command("agent_edit_and_resend", move || {
+        application_agent_turn::agent_edit_and_resend(input, &token)
+    })
+    .await
+}
+
+async fn run_revision_command(
+    command: &'static str,
+    operation: impl FnOnce() -> AppResult<StubPayload> + Send + 'static,
+) -> AppResult<StubPayload> {
+    match tokio::task::spawn_blocking(operation).await {
+        Ok(result) => result,
+        Err(error) => {
+            tracing::error!(command, error = %error, "Agent revision task failed");
+            AppResult::fail(
+                ErrorCode::InternalError,
+                "agent.error.revisionTaskFailed",
+                Some(serde_json::json!({
+                    "command": command,
+                    "reason": error.to_string(),
+                })),
+            )
+        }
+    }
 }
 
 #[tauri::command]

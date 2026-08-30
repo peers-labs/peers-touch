@@ -49,6 +49,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -1259,6 +1260,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, settleRunningFailure("failed to open authorized capability store", err)
+	}
+	if err := s.applyPinnedRuntimeExecutionPolicy(ctx, db, config); err != nil {
+		return nil, settleRunningFailure("failed to apply pinned runtime execution policy", err)
 	}
 	config.AuthorizedCapabilities, err = LoadAuthorizedCapabilitySet(ctx, db, config)
 	if err != nil {
@@ -3398,6 +3402,55 @@ func (s *TurnService) loadPinnedRuntimeBudget(
 		)
 	}
 	return cloneRuntimeBudget(snapshot.GetBudget()), nil
+}
+
+func (s *TurnService) applyPinnedRuntimeExecutionPolicy(
+	ctx context.Context,
+	db *gorm.DB,
+	config *TurnConfig,
+) error {
+	if db == nil || config == nil || strings.TrimSpace(config.AttemptID) == "" {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"pinned runtime execution policy requires database, turn config, and attempt",
+			nil,
+		)
+	}
+
+	var attempt persistence.TurnAttempt
+	if err := db.WithContext(ctx).
+		Select("runtime_snapshot").
+		Where("id = ?", strings.TrimSpace(config.AttemptID)).
+		First(&attempt).Error; err != nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"load persisted runtime snapshot for execution policy",
+			err,
+		)
+	}
+	snapshot, err := persistence.UnmarshalRuntimeSnapshot(attempt.RuntimeSnapshot)
+	if err != nil {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"decode persisted runtime snapshot for execution policy",
+			err,
+		)
+	}
+	contextTokens := snapshot.GetCapabilities().GetLimits().GetContextTokens()
+	if contextTokens == 0 || contextTokens > math.MaxInt32 {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"persisted runtime snapshot has an invalid context token limit",
+			nil,
+		)
+	}
+
+	config.ContextWindowSize = int(contextTokens)
+	return nil
 }
 
 func (s *TurnService) loadTurnTraceForResume(ctx context.Context, turnID string) (*domain.TurnTrace, error) {

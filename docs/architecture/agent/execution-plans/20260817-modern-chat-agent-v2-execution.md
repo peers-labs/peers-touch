@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: exact-source run `20260830T080743547253Z-f94c424ec124071ff62ece0ba30f48a5` passed AS-F06 and advanced the first failure to Browser AS-F07 branch/edit/regenerate semantics; proof remains UNPROVEN | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260830T122020868414Z-9839533f2d4beeafe189649535e82bd3` on `a05900a5c` passed AS-F06 and advanced the first failure to Browser AS-F07 synchronous retry transport timeout; proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3916,6 +3916,42 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   retry regression masked this by supplying both IDs. The Station fix must
   resolve the registration ID from precreated/existing admission before
   registration and remove the artificial `TurnID` from that regression.
+- Checkpoint `a05900a5caa699a7b1c7a33dee3959c386925d45` bound
+  retry execution ownership to the precreated/existing admission Turn ID and
+  removed the artificial `TurnID` from the early-retry regression. Agent+OSS
+  packages, focused race tests, Go style, the Acceptance Desktop build, and
+  `git diff --check` passed. Exact-source run
+  `20260830T122020868414Z-9839533f2d4beeafe189649535e82bd3`
+  then passed AS-F05 and AS-F06 and reached Browser AS-F07 with clean local and
+  Station source. The source Turn cancelled durably, and retry admission reused
+  the same Turn ID without the previous 113 ms ownership-fence HTTP 500.
+  Station entered provider execution and ultimately returned HTTP 200 after
+  34.338 seconds, but Desktop's retry command failed after approximately
+  15 seconds with transport status `0`, before `retry-finished`. Cleanup
+  passed. This confirms the ownership fix and exposes the next source-backed
+  first failure at the revision command's synchronous execution/transport
+  timeout boundary; G-F remains `PARTIAL / UNPROVEN`.
+- Reconcile Gate A retains the current synchronous revision response contract;
+  changing it to admission-only would require a separate architecture decision
+  and Proto response change. The dependency-ready closure has two owning-layer
+  fixes: Station must apply the reconciled immutable runtime snapshot's context
+  limit before compression, and Desktop must route only execution-backed
+  retry/regenerate/edit commands through a bounded Turn-execution transport
+  policy. Branch selection and tombstoning remain short metadata mutations.
+  No Gate, oracle, or assertion changes are authorized.
+- The local Reconcile Gate B implementation now applies the persisted,
+  reconciled runtime snapshot's `context_tokens` limit before compression and
+  rejects missing, zero, or non-`int32` limits. Desktop classifies only
+  retry/regenerate/edit as `TurnExecution` requests with a 305-second bounded
+  envelope around Station's 300-second runtime budget; branch selection and
+  tombstoning retain the 15-second interactive policy. Native Tauri wrappers
+  move those blocking requests through `spawn_blocking`, and timeout failures
+  preserve policy and duration details. Agent+OSS packages, focused race tests,
+  Desktop typecheck and 406 tests, Rust binary check, two focused Rust policy
+  tests, 89 Foundation/static tests, Agent Domain validation, Go/Rust format,
+  Go style, and `git diff --check` pass. Two independent post-fix reviews
+  approved the Station and Desktop diffs. Runtime proof remains `UNPROVEN`
+  pending a clean checkpoint, exact-source deploy/build, and Foundation rerun.
 
 ### AS-F08 Context Attribution And Omission
 - **Precondition**: Fixed memory, Skill, Knowledge, history, and token-budget fixtures.
