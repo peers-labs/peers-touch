@@ -49,6 +49,17 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
     def source(self, runner: str) -> str:
         return RUNNERS[runner].read_text(encoding="utf-8")
 
+    def function_source(self, path: Path, name: str) -> str:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        function = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == name
+        )
+        return ast.get_source_segment(source, function) or ""
+
     def assignment(self, runner: str, name: str):
         tree = ast.parse(self.source(runner))
         return next(
@@ -137,7 +148,41 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                     initial_start_index + len(initial_start),
                 )
                 initial_source = source[initial_start_index:initial_end_index]
-                self.assertEqual(initial_source.count("station.auth_logout()"), 1)
+                self.assertNotIn("station.auth_logout()", initial_source)
+
+    def test_initial_authentication_never_logs_out(self) -> None:
+        runner_functions = {
+            "contact_message_resilience_runner.py": "start_client",
+            "native_group_mls_runner.py": "start_injected_client",
+            "native_interactions_runner.py": "create_authenticated_client",
+            "native_multi_device_runner.py": "start_injected_client",
+            "native_product_closure_runner.py": "launch_actor",
+            "native_recovery_runner.py": "start_injected_client",
+            "native_support.py": "start_authenticated_client",
+            "native_two_client_runner.py": "start_client",
+            "native_typing_runner.py": "start_injected_client",
+        }
+        for runner, function_name in runner_functions.items():
+            with self.subTest(runner=runner):
+                path = ROOT / "tooling/acceptance/gates/chat" / runner
+                source = self.function_source(path, function_name)
+                self.assertIn("loginWithPassword", source)
+                self.assertNotIn("station.auth_logout()", source)
+
+    def test_authenticated_cleanup_still_logs_out(self) -> None:
+        cleanup_functions = {
+            "native_group_mls_runner.py": "stop_authenticated_client",
+            "native_multi_device_runner.py": "cleanup_runtime",
+            "native_recovery_runner.py": "stop_authenticated_client",
+            "native_support.py": "stop_client",
+            "native_two_client_runner.py": "cleanup_clients",
+            "native_typing_runner.py": "cleanup_runtime",
+        }
+        for runner, function_name in cleanup_functions.items():
+            with self.subTest(runner=runner):
+                path = ROOT / "tooling/acceptance/gates/chat" / runner
+                source = self.function_source(path, function_name)
+                self.assertIn("station.auth_logout()", source)
 
     def test_selected_runtime_rejects_uninjected_gate_construction(self) -> None:
         previous = os.environ.get("PT_ACCEPTANCE_RUNTIME_CELL")
