@@ -18,8 +18,9 @@
 |----|------------|------------|--------|----------|
 | A | Final capture prefers a stale failed operation over the authoritative interrupted message | High | Low | Secondary: the failed sample had both stale operation and message state |
 | B | Snapshot reduction does not replace the prior assistant content | High | Medium | Rejected at the pre-restart boundary |
-| C | Conversation reconciliation reintroduces stale local terminal content after snapshot | Medium | Medium | Confirmed across the restart boundary |
+| C | Conversation reconciliation reintroduces stale local terminal content after snapshot | Medium | Medium | Cache provenance was necessary but insufficient |
 | D | Browser replay records the snapshot but does not apply it to the owning chat store | Low | Medium | Rejected at the pre-restart boundary |
+| E | The recovery runtime closes on a persisted catch-up terminal before the authoritative snapshot | High | Low | Confirmed by the final phase sequence, source delivery, and runtime closure predicate |
 
 ## Log Evidence
 - Exact-source run `20260830T053507185569Z-beae2d48d453d4fb6921bc125303e699`
@@ -42,6 +43,17 @@
   pre-restart state was `interrupted` with content length `677`, while
   post-restart state was `failed` with content length `80`. Cross-host
   timestamps are therefore insufficient authority for equal-sequence rows.
+- Exact-source run
+  `20260830T070915770693Z-1cd477b38e87581aed2ca2ee1e5131c0`
+  disproved explicit cache provenance as the complete correction. Two AS-F06
+  tuples remained source-matching after restart; Browser `en` reverted to
+  `failed` with content length `45` while Station remained `interrupted` with
+  content length `665`. The replay source delivered every sequence through
+  terminal sequence `137`, but the final recovery phases ended in
+  `RECONNECTING, REPLAYING` without the transport's following
+  `RECONCILING, CONNECTED` projection. The source callback invokes
+  `consumeRecoveryEvent`, which currently terminally reduces `error` and aborts
+  the subscription before the same-sequence authoritative snapshot.
 
 ## Instrumentation
 - `chatRuntime.ts:reloadAgentTurnSnapshot.reconciled` records snapshot status
@@ -55,11 +67,13 @@
 
 ## Verification Conclusion
 The authoritative snapshot reaches and updates the owning store before restart.
-The stale projection is restored during restart synchronization because the
-cache accepts an older same-sequence message and the generic UI merge carries
-old terminal fields over an authoritative terminal message. The correction
-must make equal-sequence cache merges revision-aware and preserve authoritative
-snapshot terminal fields and content.
+Explicit cache provenance preserves that snapshot when no automatic replay
+overwrites it, but does not prevent the restart recovery runtime from closing
+on a persisted terminal row. Browser and Native transports both retain replay
+through the authoritative snapshot; `chatRuntime.consumeRecoveryEvent` is the
+remaining inconsistent closure layer. It must defer terminal removal during
+catch-up, retain the active recovery through snapshot, and close only on a
+terminal snapshot or a terminal event after `catchup_done`.
 
 ## Fix
 - Equal-sequence cached messages now resolve first by explicit reconciliation
@@ -71,5 +85,10 @@ snapshot terminal fields and content.
 - Generic message reconciliation no longer restores stale terminal fields over
   an authoritative terminal message, and explicit recovery reconciliation
   reapplies the supplied terminal snapshot after merging.
+- The runtime correction tracks whether catch-up has completed and defers
+  recovery-store terminal closure for persisted terminal events until the
+  authoritative snapshot or live-tail boundary. Focused tests prove both the
+  deferred `error(N) -> snapshot(interrupted,N)` path and normal
+  `catchup_done -> error(N)` closure.
 
 Post-fix exact-source runtime verification is pending.

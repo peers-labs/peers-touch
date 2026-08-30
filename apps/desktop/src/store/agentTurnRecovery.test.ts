@@ -219,6 +219,39 @@ describe('Agent turn recovery projection', () => {
     expect(reduction).toEqual({ accepted: true, terminal: true });
   });
 
+  it('advances a catch-up terminal cursor without closing the recovery record', () => {
+    const current = activeTurn({ cursor: 4 });
+    const reduction = reduceAgentTurnRecovery(
+      current.actorId,
+      current,
+      {
+        streamId: current.streamId,
+        ptid: current.actorId,
+        streamGeneration: current.streamGeneration,
+        conversationId: current.conversationId,
+        agentId: current.agentId,
+        event: 'error',
+        data: {
+          turnId: current.turnId,
+          seq: 5,
+          error: 'station_restart_interrupted',
+        },
+        timestampMs: 300,
+      },
+      { deferTerminalClosure: true },
+    );
+
+    expect(reduction).toMatchObject({
+      accepted: true,
+      terminal: false,
+      record: {
+        turnId: current.turnId,
+        cursor: 5,
+        phase: current.phase,
+      },
+    });
+  });
+
   it.each([
     ['snapshot', { status: 'completed' }],
     ['done', {}],

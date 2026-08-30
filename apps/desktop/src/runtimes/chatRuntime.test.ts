@@ -427,6 +427,89 @@ describe('chatRuntime Agent turn recovery', () => {
     expect(mocks.applyRecoveredTurnEvent).toHaveBeenCalledTimes(1);
   });
 
+  it('retains catch-up terminal recovery until the authoritative snapshot', async () => {
+    mocks.readValue.mockResolvedValueOnce({ 'conversation-1': activeTurn() });
+    await chatRuntime.bootstrap('ptid:person:alice');
+
+    mocks.replayOnEvents[0]({
+      event: 'error',
+      data: {
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        seq: 5,
+        error: 'station_restart_interrupted',
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active['conversation-1']).toMatchObject({
+        cursor: 5,
+        turnId: 'turn-1',
+      });
+    });
+    expect(mocks.replayControllers[0].signal.aborted).toBe(false);
+    expect(mocks.reconcileRecoveredTurn).not.toHaveBeenCalled();
+
+    mocks.replayOnEvents[0](stationSnapshot({
+      turnId: 'turn-1',
+      conversationId: 'conversation-1',
+      status: 'interrupted',
+      terminal_reason: 'station_restart_interrupted',
+      text: 'authoritative replay text',
+      seq: 5,
+    }));
+
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
+      expect(mocks.replayControllers[0].signal.aborted).toBe(true);
+    });
+    expect(mocks.reconcileRecoveredTurn).toHaveBeenCalledWith(
+      'conversation-1',
+      'turn-1',
+      {
+        status: 'interrupted',
+        reason: 'station_restart_interrupted',
+        content: 'authoritative replay text',
+      },
+    );
+  });
+
+  it('closes recovery on a terminal event after catch-up reaches the live tail', async () => {
+    mocks.readValue.mockResolvedValueOnce({ 'conversation-1': activeTurn() });
+    await chatRuntime.bootstrap('ptid:person:alice');
+
+    mocks.replayOnEvents[0]({
+      event: 'catchup_done',
+      data: {
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        seq: 4,
+      },
+    });
+    mocks.replayOnEvents[0]({
+      event: 'error',
+      data: {
+        turnId: 'turn-1',
+        conversationId: 'conversation-1',
+        seq: 5,
+        error: 'provider_failed',
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(useAgentTurnRecoveryStore.getState().active).toEqual({});
+      expect(mocks.replayControllers[0].signal.aborted).toBe(true);
+    });
+    expect(mocks.reconcileRecoveredTurn).toHaveBeenCalledWith(
+      'conversation-1',
+      'turn-1',
+      {
+        status: 'failed',
+        reason: 'provider_failed',
+      },
+    );
+  });
+
   it('rejects a late stream event from a different authenticated actor', async () => {
     mocks.readValue.mockResolvedValueOnce({});
     await chatRuntime.bootstrap('ptid:person:alice');

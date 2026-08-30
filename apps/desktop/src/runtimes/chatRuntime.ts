@@ -66,6 +66,7 @@ interface RecoverySubscription {
   turnId: string;
   streamGeneration: number;
   recoveryEpoch: number;
+  liveTailEstablished: boolean;
   controller: AbortController;
   eventChain: Promise<void>;
 }
@@ -444,10 +445,45 @@ async function consumeRecoveryEvent(
     };
     eventBus.publish(EVENT.AGENT_TURN_STREAM_EVENT, sourceDelivery);
   }
-  const reduction = useAgentTurnRecoveryStore.getState().consume(current.actorId, payload);
+  const subscription = recoverySubscriptions.get(current.conversationId);
+  if (
+    !subscription
+    || subscription.turnId !== current.turnId
+    || subscription.streamGeneration !== current.streamGeneration
+    || subscription.recoveryEpoch !== recoveryEpoch
+  ) {
+    return;
+  }
+  const terminal = terminalFromEvent(event);
+  const liveTailEstablished = subscription.liveTailEstablished;
+  const terminalClosesRecovery = Boolean(terminal)
+    && (event.event === 'snapshot' || liveTailEstablished);
+  if (event.event === 'catchup_done') {
+    subscription.liveTailEstablished = true;
+  }
+  const reduction = useAgentTurnRecoveryStore.getState().consume(
+    current.actorId,
+    payload,
+    { deferTerminalClosure: Boolean(terminal) && !terminalClosesRecovery },
+  );
+  // #region debug-point E:recovery-terminal-boundary
+  reportNativeReplayDebug(
+    'E',
+    'chatRuntime.ts:consumeRecoveryEvent',
+    'recovery event closure evaluated',
+    {
+      eventType: event.event,
+      sequence: Number(event.data.seq ?? event.data.sequence ?? 0),
+      terminalEvent: Boolean(terminal),
+      liveTailEstablished,
+      terminalClosesRecovery,
+      reductionAccepted: reduction.accepted,
+      reductionTerminal: reduction.terminal,
+    },
+  );
+  // #endregion
   if (!reduction.accepted) return;
 
-  const terminal = terminalFromEvent(event);
   try {
     useChatStore
       .getState()
@@ -457,20 +493,20 @@ async function consumeRecoveryEvent(
         current.turnId,
         { event: event.event, data: payload.data },
       );
-    if (terminal) {
+    if (terminalClosesRecovery && terminal) {
       await useChatStore
         .getState()
         .reconcileRecoveredTurn(current.conversationId, current.turnId, terminal);
     }
   } catch (error) {
-    if (!terminal) throw error;
+    if (!terminalClosesRecovery) throw error;
     log.warn('chatRuntime', 'terminal Agent turn message sync failed', {
       conversationId: current.conversationId,
       turnId: current.turnId,
       error: String(error),
     });
   } finally {
-    if (terminal) {
+    if (terminalClosesRecovery) {
       try {
         stopRecoverySubscription(current.conversationId);
       } finally {
@@ -508,6 +544,7 @@ function recoverTurn(
     turnId: replaying.turnId,
     streamGeneration: replaying.streamGeneration,
     recoveryEpoch,
+    liveTailEstablished: false,
     controller: new AbortController(),
     eventChain: Promise.resolve(),
   };

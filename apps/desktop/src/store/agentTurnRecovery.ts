@@ -30,6 +30,10 @@ export interface AgentTurnRecoveryReduction {
   record?: ActiveAgentTurnRecovery;
 }
 
+export interface AgentTurnRecoveryConsumeOptions {
+  deferTerminalClosure?: boolean;
+}
+
 interface AgentTurnRecoveryWatermark {
   actorId: string;
   turnId: string;
@@ -51,6 +55,7 @@ interface AgentTurnRecoveryState {
   consume: (
     actorId: string,
     payload: AgentTurnStreamEventPayload,
+    options?: AgentTurnRecoveryConsumeOptions,
   ) => AgentTurnRecoveryReduction;
   setPhase: (
     conversationId: string,
@@ -121,6 +126,7 @@ export function reduceAgentTurnRecovery(
   actorId: string,
   current: ActiveAgentTurnRecovery | undefined,
   payload: AgentTurnStreamEventPayload,
+  options: AgentTurnRecoveryConsumeOptions = {},
 ): AgentTurnRecoveryReduction {
   if (!payload.ptid || payload.ptid !== actorId) {
     return { accepted: false, terminal: false, record: current };
@@ -149,17 +155,17 @@ export function reduceAgentTurnRecovery(
   if (current && streamGeneration < current.streamGeneration) {
     return { accepted: false, terminal: false, record: current };
   }
-  const terminal =
+  const terminalEvent =
     TERMINAL_EVENTS.has(payload.event)
     || (payload.event === 'snapshot' && snapshotIsTerminal(payload.data));
   if (
     current
     && current.turnId !== turnId
-    && (terminal || streamGeneration === current.streamGeneration)
+    && (terminalEvent || streamGeneration === current.streamGeneration)
   ) {
     return { accepted: false, terminal: false, record: current };
   }
-  if (terminal && sequence === 0) {
+  if (terminalEvent && sequence === 0) {
     return { accepted: false, terminal: false, record: current };
   }
   if (
@@ -169,7 +175,7 @@ export function reduceAgentTurnRecovery(
     && (
       sequence < current.cursor
       || (
-        terminal
+        terminalEvent
         && payload.event !== 'snapshot'
         && sequence === current.cursor
       )
@@ -177,6 +183,7 @@ export function reduceAgentTurnRecovery(
   ) {
     return { accepted: false, terminal: false, record: current };
   }
+  const terminal = terminalEvent && !options.deferTerminalClosure;
   if (terminal) {
     return { accepted: true, terminal: true };
   }
@@ -245,7 +252,7 @@ export const useAgentTurnRecoveryStore = createDesktopStore<AgentTurnRecoverySta
       });
     },
 
-    consume: (nextActorId, payload) => {
+    consume: (nextActorId, payload, options) => {
       if (get().actorId !== nextActorId) {
         return { accepted: false, terminal: false };
       }
@@ -253,7 +260,7 @@ export const useAgentTurnRecoveryStore = createDesktopStore<AgentTurnRecoverySta
         stringField(payload.data, 'conversationId', 'conversation_id')
         || payload.conversationId.trim();
       const current = conversationId ? get().active[conversationId] : undefined;
-      const reduction = reduceAgentTurnRecovery(nextActorId, current, payload);
+      const reduction = reduceAgentTurnRecovery(nextActorId, current, payload, options);
       if (!reduction.accepted || !conversationId) return reduction;
       set((state) => {
         const active = { ...state.active };

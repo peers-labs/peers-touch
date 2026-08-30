@@ -250,7 +250,7 @@ Parallel policy:
 | W5 Connector Resource Tools | pending | G-F + W1 + W3 + W6 invocation join |
 | W6 Governed ToolCall Fencing | implementation checks complete; product proof deferred to W9 | W1 + W3 |
 | W8a Capability/ToolCall Cutover | complete: MCA-D15K K1-K5 and AS-F04 source-matched Browser/Desktop runtime proof pass | W1 + W3 + W6 |
-| G-F Complete Foundation Gate | in progress: the current local checkpoint carries source-validated AS-F06 durable reload evidence across the client restart boundary; local checks pass and proof remains UNPROVEN pending exact-source deployment and rerun | W8a |
+| G-F Complete Foundation Gate | in progress: exact-source run `20260830T070915770693Z-1cd477b38e87581aed2ca2ee1e5131c0` disproved cache provenance as the complete AS-F06 correction; the remaining first failure is the recovery runtime closing a catch-up terminal before its authoritative snapshot, and proof remains UNPROVEN | W8a |
 | W7 Evaluation Aggregate | pending | W1 + W6 + G-F complete 419-cell Foundation Gate |
 | W8b Remaining Consumer Cutover | pending | W2 + W4b + W5b + W7 |
 | W9 Native Acceptance/Final Audit | pending | W8b |
@@ -3745,6 +3745,41 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   Native static tests, Desktop typecheck/build, Agent Acceptance validation,
   and `git diff --check` pass. AS-F06 and G-F remain `PARTIAL / UNPROVEN`
   pending another exact-source run.
+- Checkpoint `898ea9f7ef868efdc0463f1dbea7bb8ac30a8d8b` was deployed
+  exact-source to profile `two`. Run
+  `20260830T070915770693Z-1cd477b38e87581aed2ca2ee1e5131c0`
+  proved the first two AS-F06 tuples source-matching after restart, then failed
+  at Browser `direct_model / en / single / sample-001` on
+  `terminalProjectionEqualsStation`. The final client projection was `failed`
+  with hash
+  `b7edb953de4072955b8ff7bd91abcac5e7515e59e61a25a4dbaf92e26a021b3d`,
+  while Station was `interrupted` with hash
+  `2e82651ac94a0272148877b0771f993fd9d6419aedf8f21ffebae04888ed1d06`.
+  Source, deployed Station, and evidence all matched `898ea9f7e`; redaction
+  passed. Station replay returned persisted terminal sequence `137` before its
+  authoritative same-sequence snapshot, while
+  `chatRuntime.consumeRecoveryEvent` treated that catch-up `error` as a closing
+  terminal, removed the active recovery record, and aborted the transport
+  before the snapshot could update the runtime projection. Cache provenance is
+  therefore necessary but not sufficient; the remaining correction belongs to
+  the `agent-chat` runtime closure predicate.
+  The outer Provisioner reported cleanup `passed`, but the candidate cleanup
+  artifact remained `failed` because Native logout timed out; all six ports,
+  both storage roots, and actor identity were released. AS-F06 and G-F remain
+  `PARTIAL / UNPROVEN`.
+- The local runtime correction now carries an explicit catch-up/live-tail
+  boundary in each recovery subscription. A persisted terminal event advances
+  the recovery cursor and may update the provisional message projection, but
+  cannot remove the active recovery or close its stream before the
+  authoritative snapshot. A terminal snapshot always closes; after
+  `catchup_done`, a terminal live-tail event closes normally. Focused runtime
+  regressions prove both `error(N) -> snapshot(interrupted,N)` and
+  `catchup_done -> error(N)` ordering. Desktop typecheck, 406 Desktop tests
+  with one unrelated skip, Desktop build, 106 focused Foundation tests, 48
+  Native static tests, `client-chat-core`, Desktop Rust library check, scoped
+  ESLint, Agent Acceptance validation, and `git diff --check` pass. This is
+  implementation evidence only; AS-F06 and G-F remain `PARTIAL / UNPROVEN`
+  pending checkpoint commit, exact-source deployment, and runtime proof.
 
 ### AS-F06 Disconnect, Replay, And Recovery
 - **Precondition**: Accepted streaming turn and acknowledged cursor.
